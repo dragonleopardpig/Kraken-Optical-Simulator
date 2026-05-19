@@ -29,6 +29,7 @@ def main() -> int:
     step_rotate_handles = inspect.getsource(Kraken3DInspector._add_step_rotation_handles)
     step_rotate_pick = inspect.getsource(Kraken3DInspector._apply_step_rotation_handle)
     step_import = inspect.getsource(Kraken3DInspector.import_step_overlay)
+    optical_step_import = inspect.getsource(Kraken3DInspector.import_optical_step_overlay)
     step_carry_grid = inspect.getsource(Kraken3DInspector._add_step_carry_grid_overlay)
     step_carry_spacing = inspect.getsource(Kraken3DInspector._step_carry_grid_spacing)
     step_carry_mode = inspect.getsource(Kraken3DInspector._on_step_carry_grid_selected)
@@ -138,6 +139,13 @@ def main() -> int:
         ("STEP rotation handles are pickable scene actors", "pick_step_rotate" in step_rotate_handles and "_actor_step_rotate_map" in pick),
         ("STEP rotation handle rotates selected component", "rotate_step_axis(label, axis" in step_rotate_pick),
         ("Open 3D STEP import enters carry mode", "_step_carry_active_label = label" in step_import),
+        (
+            "Open 3D optical STEP import uses a distinct overlay slot",
+            "import_optical_step(" in optical_step_import
+            and 'label = "optical"' in optical_step_import
+            and "import_lens_step(" not in optical_step_import
+            and "_start_step_carry_follow(label)" in optical_step_import,
+        ),
         (
             "Open 3D STEP carry has no cube lattice builder",
             "_step_carry_cube_grid_mesh" not in step_carry_grid

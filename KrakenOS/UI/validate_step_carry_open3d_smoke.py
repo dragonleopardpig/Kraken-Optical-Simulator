@@ -62,7 +62,7 @@ def _open_inspector(app: KrakenLayoutEditor) -> Kraken3DInspector:
     return inspector
 
 
-def _activate_hold_drag(inspector: Kraken3DInspector, label: str = "lens") -> dict[str, object]:
+def _activate_hold_drag(inspector: Kraken3DInspector, label: str = "optical") -> dict[str, object]:
     press_xy = (320, 260)
     inspector._cancel_step_carry_hold_timer()
     inspector._left_drag_active = True
@@ -104,14 +104,15 @@ def main() -> int:
         except Exception:
             pass
         app.imported_lens_step_path = PRISM_42779_STEP
-        app.select_step_component("lens")
+        app.imported_optical_step_path = PRISM_42779_STEP
+        app.select_step_component("optical")
         inspector = _open_inspector(app)
 
         inspector.start_selected_step_carry()
         inspector.update_idletasks()
         inspector.update()
-        if inspector._step_carry_label() != "lens":
-            raise AssertionError("Open 3D did not enter lens STEP carry mode.")
+        if inspector._step_carry_label() != "optical":
+            raise AssertionError("Open 3D did not enter optical STEP carry mode.")
         inspector.refresh_from_editor()
         inspector.update_idletasks()
         inspector.update()
@@ -129,28 +130,28 @@ def main() -> int:
         inspector._on_step_carry_grid_selected()
         inspector.update_idletasks()
         inspector.update()
-        _activate_hold_drag(inspector, "lens")
-        hold_before = app._step_placement_offset_xyz("lens")
+        _activate_hold_drag(inspector, "optical")
+        hold_before = app._step_placement_offset_xyz("optical")
         inspector._apply_step_carry_drag_motion(0.0, 0.0, current_xy=(620, 260))
-        hold_after = app._step_placement_offset_xyz("lens")
+        hold_after = app._step_placement_offset_xyz("optical")
         if hold_before == hold_after:
             inspector._apply_step_carry_drag_motion(0.0, 0.0, current_xy=(900, 260))
-            hold_after = app._step_placement_offset_xyz("lens")
+            hold_after = app._step_placement_offset_xyz("optical")
         if hold_before == hold_after:
             raise AssertionError("STEP carry drag-plane motion did not move persistent placement offset.")
         if inspector._step_carry_drag_state is not None:
             inspector._finish_step_carry_drag(inspector._step_carry_drag_state)
 
-        state = _activate_hold_drag(inspector, "lens")
-        before = app._step_placement_offset_xyz("lens")
+        state = _activate_hold_drag(inspector, "optical")
+        before = app._step_placement_offset_xyz("optical")
         inspector._step_carry_drag_state = state
         inspector._apply_step_carry_drag_motion(0.0, 0.0, current_xy=(620, 260))
-        after = app._step_placement_offset_xyz("lens")
+        after = app._step_placement_offset_xyz("optical")
         if before == after:
             inspector._apply_step_carry_drag_motion(0.0, 0.0, current_xy=(900, 260))
-            after = app._step_placement_offset_xyz("lens")
+            after = app._step_placement_offset_xyz("optical")
         if before == after:
-            raise AssertionError("STEP carry drag plane did not move the persistent lens placement offset.")
+            raise AssertionError("STEP carry drag plane did not move the persistent optical placement offset.")
         inspector.refresh_from_editor()
         inspector.update_idletasks()
         inspector.update()
@@ -158,15 +159,15 @@ def main() -> int:
             raise AssertionError("STEP carry Free status disappeared after drag.")
         if inspector._step_carry_drag_state is not None:
             inspector._finish_step_carry_drag(inspector._step_carry_drag_state)
-        mesh = app._transformed_imported_step_mesh_for_label("lens")
+        mesh = app._transformed_imported_step_mesh_for_label("optical")
         if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
             raise AssertionError("STEP mesh unavailable for normal-to-axis snap validation.")
         center = mesh.center
-        normal_before = app._step_rotation_deg_tuple("lens")
-        result = app.snap_step_feature_normal_to_optical_axis("lens", center, (1.0, 0.0, 0.0))
+        normal_before = app._step_rotation_deg_tuple("optical")
+        result = app.snap_step_feature_normal_to_optical_axis("optical", center, (1.0, 0.0, 0.0))
         if result is None:
             raise AssertionError("STEP normal-to-axis snap did not return a result.")
-        if app._step_rotation_deg_tuple("lens") == normal_before:
+        if app._step_rotation_deg_tuple("optical") == normal_before:
             raise AssertionError("STEP normal-to-axis snap did not update STEP rotation state.")
         if args.snapshot is not None:
             inspector.update_idletasks()

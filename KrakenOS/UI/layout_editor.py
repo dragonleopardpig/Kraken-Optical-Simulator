@@ -579,6 +579,8 @@ STEP_CARRY_GRID_FREE = "Free"
 STEP_CARRY_GRID_CHOICES = (
     STEP_CARRY_GRID_FREE,
 )
+STEP_OVERLAY_LABELS = ("lens", "optical", "led", "camera")
+STEP_OVERLAY_LABEL_SET = set(STEP_OVERLAY_LABELS)
 INSERTABLE_COMMON_LAYOUT_TITLES = {
     "Single Lens",
     "Doublet Lens",
@@ -5338,6 +5340,9 @@ class Kraken3DInspector(tk.Toplevel):
             set_event_info(event)
             self._cancel_step_carry_hold_timer()
             ctrl_pressed = control_pressed(event)
+            if self._step_carry_follow_state is not None and not ctrl_pressed:
+                self.stop_step_carry()
+                return "break"
             self._left_drag_active = True
             self._left_drag_start_xy = (int(event.x), int(event.y))
             self._left_drag_last_xy = (int(event.x), int(event.y))
@@ -5731,7 +5736,7 @@ class Kraken3DInspector(tk.Toplevel):
         if actor_key in self._actor_placement_move_map or actor_key in self._actor_placement_rotate_map:
             return None
         label = str(self._actor_step_map.get(actor_key) or "").strip().lower()
-        if label in {"lens", "led", "camera"} and self.editor._step_path_for_label(label) is not None:
+        if label in STEP_OVERLAY_LABEL_SET and self.editor._step_path_for_label(label) is not None:
             if pick_world.size >= 3 and np.all(np.isfinite(pick_world[:3])):
                 self._step_carry_hold_pick_world = tuple(float(value) for value in pick_world[:3])
             return label
@@ -5741,7 +5746,7 @@ class Kraken3DInspector(tk.Toplevel):
         if self._vtk_widget is None:
             return
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return
         self._cancel_step_carry_hold_timer()
         self._step_carry_hold_candidate_label = label
@@ -5871,7 +5876,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_hold_candidate_label = None
         self._step_carry_hold_press_xy = None
         self._step_carry_hold_pick_world = None
-        if not self._left_drag_active or label not in {"lens", "led", "camera"}:
+        if not self._left_drag_active or label not in STEP_OVERLAY_LABEL_SET:
             return
         state = self._new_step_carry_motion_state(label)
         if state is None:
@@ -5913,6 +5918,63 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set(f"{label.upper()} STEP center gripped: drag in snapped {spacing:.6g} mm steps; release to drop.")
         else:
             self.status_var.set(f"{label.upper()} STEP center gripped: drag freely on the 3D plane; release to drop.")
+
+    def _current_interactor_xy(self) -> tuple[int, int] | None:
+        if self._vtk_interactor is None:
+            return None
+        try:
+            x, y = self._vtk_interactor.GetEventPosition()
+            return (int(x), int(y))
+        except Exception:
+            return None
+
+    def _new_step_carry_follow_state(self, label: str) -> dict[str, object] | None:
+        state = self._new_step_carry_motion_state(label)
+        if state is None:
+            return None
+        center_world = self._step_overlay_center_world(label)
+        plane_normal = self._camera_view_normal()
+        current_xy = self._current_interactor_xy()
+        if center_world is None or plane_normal is None:
+            return state
+        state["center_world"] = tuple(float(value) for value in center_world[:3])
+        state["start_center_world"] = tuple(float(value) for value in center_world[:3])
+        state["drag_plane_origin"] = tuple(float(value) for value in center_world[:3])
+        state["drag_plane_normal"] = tuple(float(value) for value in plane_normal[:3])
+        anchor_world = None
+        if current_xy is not None:
+            anchor_world = self._cursor_plane_point(current_xy, center_world[:3], plane_normal[:3])
+        if anchor_world is None:
+            anchor_world = np.asarray(center_world[:3], dtype=float)
+        state["drag_anchor_world"] = tuple(float(value) for value in np.asarray(anchor_world, dtype=float).reshape(-1)[:3])
+        state["grip_world"] = tuple(float(value) for value in center_world[:3])
+        return state
+
+    def _start_step_carry_follow(self, label: str) -> None:
+        label = str(label).strip().lower()
+        state = self._new_step_carry_follow_state(label)
+        self._step_carry_active_label = label if state is not None else None
+        self._step_carry_follow_state = state
+        self._step_carry_drag_state = None
+        self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
+        self._set_step_carry_cursor(state is not None)
+        if state is not None:
+            try:
+                grip = np.asarray(state.get("grip_world"), dtype=float).reshape(-1)[:3]
+                if grip.size >= 3 and np.all(np.isfinite(grip[:3])):
+                    self._show_step_carry_grip_marker(grip[:3])
+            except Exception:
+                pass
+        self._update_mode_badge()
+
+    def _apply_step_carry_follow_motion(self) -> None:
+        state = self._step_carry_follow_state
+        current_xy = self._current_interactor_xy()
+        if state is None or current_xy is None:
+            return
+        self._set_step_carry_cursor(True)
+        self._apply_step_carry_plane_motion_state(state, current_xy)
 
     def _placement_drag_display_direction(self, kind: str, axis: str, signed_step: float, actor) -> np.ndarray:
         sign = 1.0 if float(signed_step) >= 0.0 else -1.0
@@ -6007,7 +6069,7 @@ class Kraken3DInspector(tk.Toplevel):
 
     def _new_step_carry_motion_state(self, label: str) -> dict[str, object] | None:
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
+        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
             return None
         axes = self._camera_screen_world_axes()
         if axes is None:
@@ -6028,7 +6090,7 @@ class Kraken3DInspector(tk.Toplevel):
 
     def _step_carry_label(self) -> str | None:
         label = str(self._step_carry_active_label or "").strip().lower()
-        if label in {"lens", "led", "camera"} and self.editor._step_path_for_label(label) is not None:
+        if label in STEP_OVERLAY_LABEL_SET and self.editor._step_path_for_label(label) is not None:
             return label
         return None
 
@@ -6423,7 +6485,7 @@ class Kraken3DInspector(tk.Toplevel):
             except Exception:
                 return 0
             label = str(state.get("label", "")).strip().lower()
-            if label not in {"lens", "led", "camera"} or not np.any(np.abs(delta) > 1e-12):
+            if label not in STEP_OVERLAY_LABEL_SET or not np.any(np.abs(delta) > 1e-12):
                 return 0
             if not bool(state.get("history_started", False)):
                 try:
@@ -6451,7 +6513,7 @@ class Kraken3DInspector(tk.Toplevel):
         if steps_y:
             delta += np.asarray(state.get("up_axis"), dtype=float).reshape(3) * float(steps_y) * spacing
         label = str(state.get("label", "")).strip().lower()
-        if label not in {"lens", "led", "camera"} or not np.any(np.abs(delta) > 1e-12):
+        if label not in STEP_OVERLAY_LABEL_SET or not np.any(np.abs(delta) > 1e-12):
             return 0
         if not bool(state.get("history_started", False)):
             try:
@@ -6515,7 +6577,7 @@ class Kraken3DInspector(tk.Toplevel):
             state["start_center_world"] = tuple(float(value) for value in current_center[:3])
             return 0
         label = str(state.get("label", "")).strip().lower()
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return 0
         if not bool(state.get("history_started", False)):
             try:
@@ -6888,19 +6950,14 @@ class Kraken3DInspector(tk.Toplevel):
         )
 
     def import_optical_step_overlay(self) -> None:
-        path = self.editor.import_lens_step(
-            dialog_parent=self,
-            title="Import optical STEP",
-            display_label="Optical STEP",
-            largest_component_only=False,
-        )
+        path = self.editor.import_optical_step(dialog_parent=self)
         if path is None:
             self.status_var.set(self.editor.status_var.get())
             return
-        label = "lens"
+        label = "optical"
         self.editor.select_step_component(label)
         self._step_rotation_active_label = label
-        self._step_carry_active_label = label
+        self._step_carry_active_label = None
         self._step_carry_follow_state = None
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
@@ -6911,9 +6968,10 @@ class Kraken3DInspector(tk.Toplevel):
         self._selected_step_feature_normal_world = None
         self.refresh_from_editor()
         self.show_step_rotation_handler(label)
+        self._start_step_carry_follow(label)
         self.status_var.set(
-            f"Optical STEP imported: {path.name}. Hold the STEP briefly to lift; "
-            "drag freely, release to drop. Click a face and use Snap STEP Normal->Optical Axis for alignment."
+            f"Optical STEP imported: {path.name}. Move the cursor to carry it, click to drop. "
+            "Click a face and use Snap STEP Normal->Optical Axis for alignment."
         )
 
     def clear_step_imports(self) -> None:
@@ -6931,12 +6989,12 @@ class Kraken3DInspector(tk.Toplevel):
         self._clear_step_carry_grip_marker(render=False)
         self._set_step_carry_cursor(False)
         self.refresh_from_editor()
-        self.status_var.set("Camera/lens/LED STEP imports cleared.")
+        self.status_var.set("Camera/lens/optical/LED STEP imports cleared.")
 
     def promote_selected_step_to_optical_solid_row(self) -> None:
         label = str(self.editor._selected_step_label or self._step_rotation_active_label or self._step_carry_active_label or "").strip().lower()
-        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
-            self.status_var.set("Promote STEP: select or import a lens, camera, or LED STEP first.")
+        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
+            self.status_var.set("Promote STEP: select or import a lens, optical, camera, or LED STEP first.")
             return
         try:
             result = self.editor.promote_imported_step_to_optical_solid_row(label)
@@ -6969,8 +7027,8 @@ class Kraken3DInspector(tk.Toplevel):
 
     def start_selected_step_carry(self) -> None:
         label = str(self.editor._selected_step_label or self._step_rotation_active_label or "").strip().lower()
-        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
-            self.status_var.set("Carry STEP: select or import a lens, camera, or LED STEP first.")
+        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
+            self.status_var.set("Carry STEP: select or import a lens, optical, camera, or LED STEP first.")
             return
         self._step_carry_active_label = label
         self._step_carry_follow_state = None
@@ -6991,7 +7049,7 @@ class Kraken3DInspector(tk.Toplevel):
             or self._step_carry_active_label
             or ""
         ).strip().lower()
-        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
+        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
             self.status_var.set("Snap STEP Normal->Optical Axis: select or import a STEP component first.")
             return
         if self._selected_step_feature_label != label:
@@ -7030,8 +7088,8 @@ class Kraken3DInspector(tk.Toplevel):
 
     def start_step_carry_snap_ray(self) -> None:
         label = str(self.editor._selected_step_label or self._step_rotation_active_label or self._step_carry_active_label or "").strip().lower()
-        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
-            self.status_var.set("Snap STEP->Ray: select or import a lens, camera, or LED STEP first.")
+        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
+            self.status_var.set("Snap STEP->Ray: select or import a lens, optical, camera, or LED STEP first.")
             return
         self._step_carry_active_label = label
         self._step_carry_follow_state = None
@@ -7060,8 +7118,8 @@ class Kraken3DInspector(tk.Toplevel):
 
     def start_step_carry_snap_target(self) -> None:
         label = str(self.editor._selected_step_label or self._step_rotation_active_label or self._step_carry_active_label or "").strip().lower()
-        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
-            self.status_var.set("Snap STEP->Target: select or import a lens, camera, or LED STEP first.")
+        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
+            self.status_var.set("Snap STEP->Target: select or import a lens, optical, camera, or LED STEP first.")
             return
         self._step_carry_active_label = label
         self._step_carry_follow_state = None
@@ -7224,7 +7282,7 @@ class Kraken3DInspector(tk.Toplevel):
 
     def show_step_rotation_handler(self, label: str) -> None:
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return
         if self.editor._step_path_for_label(label) is None:
             return
@@ -7244,13 +7302,13 @@ class Kraken3DInspector(tk.Toplevel):
 
     def _update_step_rotation_handler_state(self) -> None:
         label = self._step_rotation_active_label
-        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(str(label)) is None:
+        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(str(label)) is None:
             self._close_step_rotation_handler()
             return
 
     def _rotate_step_from_handler(self, axis: str, delta_deg: float) -> None:
         label = self._step_rotation_active_label or self.editor._selected_step_label
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             self.status_var.set("STEP rotation: select a STEP component first.")
             return
         self.editor.select_step_component(str(label))
@@ -7935,20 +7993,20 @@ class Kraken3DInspector(tk.Toplevel):
             return "OBJ -> LED\nClick the orange LED object-edge feature."
         requested_label = getattr(self.editor, "_cad_axis_pick_label", None)
         axis_pick_any = bool(getattr(self.editor, "_cad_axis_pick_any", False))
-        if requested_label in {"lens", "led", "camera"}:
+        if requested_label in STEP_OVERLAY_LABEL_SET:
             return f"CENTER {str(requested_label).upper()} STEP\nClick a STEP feature or KrakenOS surface."
         if axis_pick_any:
             selected_label = getattr(self.editor, "_selected_step_label", None)
-            if selected_label in {"lens", "led", "camera"} and self.editor._step_path_for_label(str(selected_label)) is not None:
+            if selected_label in STEP_OVERLAY_LABEL_SET and self.editor._step_path_for_label(str(selected_label)) is not None:
                 return f"CENTER STEP AXIS\nClick a STEP feature, or surface for {str(selected_label).upper()}."
             return "CENTER STEP AXIS\nClick a planar/circular STEP feature."
         if self._step_carry_snap_ray_mode:
             snap_label = self._step_carry_label() or str(self.editor._selected_step_label or "").strip().lower()
-            snap_text = str(snap_label).upper() if snap_label in {"lens", "led", "camera"} else "STEP"
+            snap_text = str(snap_label).upper() if snap_label in STEP_OVERLAY_LABEL_SET else "STEP"
             return f"SNAP {snap_text} STEP -> RAY\nClick a traced ray point."
         if self._step_carry_snap_target_mode:
             snap_label = self._step_carry_label() or str(self.editor._selected_step_label or "").strip().lower()
-            snap_text = str(snap_label).upper() if snap_label in {"lens", "led", "camera"} else "STEP"
+            snap_text = str(snap_label).upper() if snap_label in STEP_OVERLAY_LABEL_SET else "STEP"
             return f"SNAP {snap_text} STEP -> TARGET\nClick detector/object/target row or face."
         carry_label = self._step_carry_label()
         if carry_label is not None:
@@ -8102,7 +8160,7 @@ class Kraken3DInspector(tk.Toplevel):
 
     def _add_step_carry_grid_overlay(self, label: str, mesh) -> tuple[int, str]:
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
+        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
             return 0, ""
         spacing = self._step_carry_grid_spacing(label, mesh)
         self._step_carry_grid_label = label
@@ -8365,7 +8423,7 @@ class Kraken3DInspector(tk.Toplevel):
         if pv is None:
             return 0
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
+        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
             return 0
         center_extent = self._step_rotation_handle_center_and_extent(mesh)
         if center_extent is None:
@@ -8405,7 +8463,7 @@ class Kraken3DInspector(tk.Toplevel):
     def _apply_step_rotation_handle(self, label: str, axis: str, delta_deg: float) -> None:
         label = str(label).strip().lower()
         axis = str(axis).strip().lower()
-        if label not in {"lens", "led", "camera"} or axis not in {"x", "y", "z"}:
+        if label not in STEP_OVERLAY_LABEL_SET or axis not in {"x", "y", "z"}:
             self.status_var.set("STEP rotation handle: select a valid STEP component first.")
             return
         if self.editor._step_path_for_label(label) is None:
@@ -8586,6 +8644,7 @@ class Kraken3DInspector(tk.Toplevel):
         step_carry_grid_summary = ""
         for label, builder, color, opacity in (
             ("lens", self.editor._transformed_imported_lens_step_mesh, (0.25, 0.31, 0.39), 0.22),
+            ("optical", self.editor._transformed_imported_optical_step_mesh, (0.10, 0.62, 0.72), 0.30),
             ("led", self.editor._transformed_imported_led_step_mesh, (0.95, 0.62, 0.16), 0.35),
             ("camera", self.editor._transformed_imported_camera_step_mesh, (0.36, 0.39, 0.44), 0.32),
         ):
@@ -8664,7 +8723,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._renderer.ResetCamera()
             self.set_camera_preset(self._camera_preset)
         self.highlight_row(self.editor._current_selected_row_index())
-        if selected_step in {"lens", "led", "camera"} and self.editor._step_path_for_label(str(selected_step)) is not None:
+        if selected_step in STEP_OVERLAY_LABEL_SET and self.editor._step_path_for_label(str(selected_step)) is not None:
             self._step_rotation_active_label = str(selected_step)
             self._set_step_highlight(str(selected_step))
         else:
@@ -9393,8 +9452,8 @@ class Kraken3DInspector(tk.Toplevel):
 
     def _apply_step_carry_snap_ray(self, target_world_xyz, *, ray_index: int | None = None) -> None:
         label = self._step_carry_label() or str(self.editor._selected_step_label or "").strip().lower()
-        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
-            self.status_var.set("Snap STEP->Ray: select or import a lens, camera, or LED STEP first.")
+        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
+            self.status_var.set("Snap STEP->Ray: select or import a lens, optical, camera, or LED STEP first.")
             return
         try:
             result = self.editor.snap_step_overlay_center_to_world_point(label, target_world_xyz, target_kind="ray")
@@ -9425,8 +9484,8 @@ class Kraken3DInspector(tk.Toplevel):
 
     def _apply_step_carry_snap_target(self, row_index: int, *, face_id: str = "") -> None:
         label = self._step_carry_label() or str(self.editor._selected_step_label or "").strip().lower()
-        if label not in {"lens", "led", "camera"} or self.editor._step_path_for_label(label) is None:
-            self.status_var.set("Snap STEP->Target: select or import a lens, camera, or LED STEP first.")
+        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
+            self.status_var.set("Snap STEP->Target: select or import a lens, optical, camera, or LED STEP first.")
             return
         try:
             result = self.editor.snap_step_overlay_center_to_scene_target(
@@ -9610,7 +9669,7 @@ class Kraken3DInspector(tk.Toplevel):
         surface_target_label = requested_label
         if surface_target_label is None and axis_pick_any:
             selected_label = getattr(self.editor, "_selected_step_label", None)
-            if selected_label in {"lens", "led", "camera"} and self.editor._step_path_for_label(str(selected_label)) is not None:
+            if selected_label in STEP_OVERLAY_LABEL_SET and self.editor._step_path_for_label(str(selected_label)) is not None:
                 surface_target_label = str(selected_label)
         if surface_target_label is not None and row_index is not None:
             if self.editor._cad_led_object_edge_pick:
@@ -9796,11 +9855,39 @@ class Kraken3DInspector(tk.Toplevel):
         if self._step_carry_drag_state is not None:
             self._set_step_carry_cursor(True)
             return
+        if self._step_carry_follow_state is not None:
+            self._apply_step_carry_follow_motion()
+            return
         requested_label = self.editor._cad_axis_pick_label
         axis_pick_any = bool(getattr(self.editor, "_cad_axis_pick_any", False))
         led_edge_pick = bool(getattr(self.editor, "_cad_led_object_edge_pick", False))
         target_label = "led" if led_edge_pick else requested_label
         if target_label is None and not axis_pick_any:
+            if self._picker is not None and self._renderer is not None and self._vtk_interactor is not None:
+                try:
+                    x, y = self._vtk_interactor.GetEventPosition()
+                    self._picker.Pick(x, y, 0.0, self._renderer)
+                    actor = self._picker.GetActor()
+                    actor_key = self._actor_key(actor)
+                    step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
+                except Exception:
+                    actor = None
+                    actor_key = None
+                    step_label = None
+                if step_label is not None:
+                    try:
+                        cell_id = int(self._picker.GetCellId())
+                    except Exception:
+                        cell_id = -1
+                    hover_key = (actor_key, cell_id)
+                    outline = None
+                    if hover_key != self._hover_step_cell_key:
+                        feature = self._picked_feature_info(actor, self._picker)
+                        outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
+                    self._set_step_hover_outline(outline, hover_key)
+                    display = self.editor._step_overlay_display_label(str(step_label)).upper()
+                    self.status_var.set(f"{display} STEP face: click to select its normal for optical-axis snapping.")
+                    return
             self._set_step_hover_outline(None, None)
             self._set_axis_pick_cursor(False)
             return
@@ -9991,7 +10078,7 @@ class Kraken3DInspector(tk.Toplevel):
 
     def _remember_selected_step_feature(self, label: str, feature) -> bool:
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"} or feature is None:
+        if label not in STEP_OVERLAY_LABEL_SET or feature is None:
             return False
         try:
             center = np.asarray(feature[0], dtype=float).reshape(-1)[:3]
@@ -12012,23 +12099,29 @@ class KrakenLayoutEditor(tk.Tk):
         self._legacy_3d_after_id = None
         self.imported_camera_step_path: Path | None = None
         self.imported_lens_step_path: Path | None = None
+        self.imported_optical_step_path: Path | None = None
         self.imported_led_step_path: Path | None = None
         self.lens_step_largest_component_only = True
         self.camera_step_rotation_x_deg = 0.0
         self.lens_step_rotation_x_deg = 0.0
+        self.optical_step_rotation_x_deg = 0.0
         self.led_step_rotation_x_deg = 0.0
         self.camera_step_rotation_y_deg = 0.0
         self.lens_step_rotation_y_deg = 0.0
+        self.optical_step_rotation_y_deg = 0.0
         self.led_step_rotation_y_deg = 0.0
         self.camera_step_rotation_z_deg = 0.0
         self.lens_step_rotation_z_deg = 0.0
+        self.optical_step_rotation_z_deg = 0.0
         self.led_step_rotation_z_deg = 0.0
         self.led_object_edge_distance_mm = 0.0
         self.led_step_object_edge_local_z: float | None = None
         self.lens_step_axis_offset_xy = (0.0, 0.0)
+        self.optical_step_axis_offset_xy = (0.0, 0.0)
         self.camera_step_axis_offset_xy = (0.0, 0.0)
         self.led_step_axis_offset_xy = (0.0, 0.0)
         self.lens_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+        self.optical_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self.camera_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self.led_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self._cad_axis_pick_label: str | None = None
@@ -16024,6 +16117,38 @@ class KrakenLayoutEditor(tk.Tk):
         self._refresh_open_3d_views()
         return path
 
+    def _default_optical_step_import_offset(self) -> tuple[float, float, float]:
+        z_values = [0.0]
+        z = 0.0
+        for row in list(getattr(self, "rows", []) or []):
+            try:
+                z += float(getattr(row, "thickness", 0.0) or 0.0)
+                z_values.append(float(z))
+            except Exception:
+                continue
+        finite = [value for value in z_values if np.isfinite(value)]
+        if not finite:
+            return (0.0, 0.0, 0.0)
+        return (0.0, 0.0, 0.5 * (min(finite) + max(finite)))
+
+    def import_optical_step(self, dialog_parent: tk.Misc | None = None) -> Path | None:
+        path = self._ask_step_file("Import optical STEP", DEFAULT_LENS_STEP_PATH.parent, parent=dialog_parent)
+        if path is None:
+            return None
+        self._begin_history_capture()
+        self.imported_optical_step_path = path
+        self.optical_step_rotation_x_deg = 0.0
+        self.optical_step_rotation_y_deg = 0.0
+        self.optical_step_rotation_z_deg = 0.0
+        self.optical_step_axis_offset_xy = (0.0, 0.0)
+        self.optical_step_placement_offset_xyz = self._default_optical_step_import_offset()
+        self._selected_step_label = "optical"
+        self._cad_axis_pick_any = False
+        self._commit_history_capture()
+        self.status_var.set(f"Optical STEP imported: {path.name}. Carry and place it in Open 3D.")
+        self._refresh_open_3d_views(step_label="optical")
+        return path
+
     def import_camera_step(self, dialog_parent: tk.Misc | None = None) -> Path | None:
         path = self._ask_step_file("Import camera STEP", DEFAULT_CAMERA_STEP_PATH.parent, parent=dialog_parent)
         if path is None:
@@ -16192,16 +16317,18 @@ class KrakenLayoutEditor(tk.Tk):
             return "Optical"
         return {
             "lens": "Lens",
+            "optical": "Optical",
             "led": "LED",
             "camera": "Camera",
         }.get(label, "STEP")
 
     def _step_path_for_label(self, label: str) -> Path | None:
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return None
         return {
             "lens": self.imported_lens_step_path,
+            "optical": self.imported_optical_step_path,
             "led": self.imported_led_step_path,
             "camera": self.imported_camera_step_path,
         }.get(label)
@@ -16209,7 +16336,7 @@ class KrakenLayoutEditor(tk.Tk):
     def rotate_step_axis(self, label: str, axis: str, delta_deg: float) -> None:
         label = str(label).strip().lower()
         axis = str(axis).strip().lower()
-        if label not in {"lens", "led", "camera"} or axis not in {"x", "y", "z"}:
+        if label not in STEP_OVERLAY_LABEL_SET or axis not in {"x", "y", "z"}:
             return
         path = self._step_path_for_label(label)
         if path is None:
@@ -16227,7 +16354,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def rotate_selected_step_axis(self, axis: str, delta_deg: float) -> None:
         label = self._selected_step_label
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             self.status_var.set("Select a STEP component in the 3D view first.")
             return
         self.rotate_step_axis(label, axis, delta_deg)
@@ -16252,7 +16379,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def select_step_component(self, label: str) -> None:
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return
         self._selected_step_label = label
         self.status_var.set(
@@ -16261,7 +16388,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def start_any_step_axis_pick(self) -> None:
         if not self._has_imported_step_cad():
-            self.status_var.set("No lens, LED, or camera STEP is imported.")
+            self.status_var.set("No lens, optical, LED, or camera STEP is imported.")
             return
         self._cad_axis_pick_label = None
         self._cad_axis_pick_any = True
@@ -16287,13 +16414,9 @@ class KrakenLayoutEditor(tk.Tk):
 
     def start_step_axis_pick(self, label: str) -> None:
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return
-        path = {
-            "lens": self.imported_lens_step_path,
-            "led": self.imported_led_step_path,
-            "camera": self.imported_camera_step_path,
-        }.get(label)
+        path = self._step_path_for_label(label)
         if path is None:
             self.status_var.set(f"No {label} STEP is imported.")
             return
@@ -16322,7 +16445,7 @@ class KrakenLayoutEditor(tk.Tk):
             return (0.0, 0.0)
 
     def _set_step_axis_offset_xy(self, label: str, offset_xy: tuple[float, float]) -> None:
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return
         setattr(self, f"{label}_step_axis_offset_xy", (float(offset_xy[0]), float(offset_xy[1])))
 
@@ -16334,7 +16457,7 @@ class KrakenLayoutEditor(tk.Tk):
             return (0.0, 0.0, 0.0)
 
     def _set_step_placement_offset_xyz(self, label: str, offset_xyz) -> None:
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return
         values = np.asarray(offset_xyz, dtype=float).reshape(-1)
         if values.size < 3 or not np.all(np.isfinite(values[:3])):
@@ -16351,7 +16474,7 @@ class KrakenLayoutEditor(tk.Tk):
         record_history: bool = True,
     ) -> None:
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return
         if self._step_path_for_label(label) is None:
             self.status_var.set(f"No {label} STEP is imported.")
@@ -16381,6 +16504,7 @@ class KrakenLayoutEditor(tk.Tk):
         label = str(label).strip().lower()
         builders = {
             "lens": self._transformed_imported_lens_step_mesh,
+            "optical": self._transformed_imported_optical_step_mesh,
             "camera": self._transformed_imported_camera_step_mesh,
             "led": self._transformed_imported_led_step_mesh,
         }
@@ -16395,7 +16519,7 @@ class KrakenLayoutEditor(tk.Tk):
         open_face_editor: bool = True,
     ) -> dict[str, object] | None:
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return None
         source_path = self._step_path_for_label(label)
         if source_path is None:
@@ -16584,7 +16708,7 @@ class KrakenLayoutEditor(tk.Tk):
         target_kind: str = "ray",
     ) -> dict[str, object] | None:
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return None
         if self._step_path_for_label(label) is None:
             self.status_var.set(f"No {label} STEP is imported.")
@@ -16650,7 +16774,7 @@ class KrakenLayoutEditor(tk.Tk):
         system=None,
     ) -> dict[str, object] | None:
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return None
         if self._step_path_for_label(label) is None:
             self.status_var.set(f"No {label} STEP is imported.")
@@ -16747,7 +16871,7 @@ class KrakenLayoutEditor(tk.Tk):
     ) -> dict[str, object] | None:
         """Center an imported STEP overlay axis on a layout/world point.
 
-        The imported lens/camera/LED overlays use ``*_step_axis_offset_xy`` as
+        The imported lens/optical/camera/LED overlays use ``*_step_axis_offset_xy`` as
         a pre-rotation transverse offset. The transformed overlay axis lands at
         ``(-offset_x, -offset_y)`` in layout X/Y for the common unrotated case.
         Clicking a KrakenOS surface while STEP-axis centering is active is a
@@ -16756,7 +16880,7 @@ class KrakenLayoutEditor(tk.Tk):
         picked-feature correction.
         """
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return None
         if self._step_path_for_label(label) is None:
             self.status_var.set(f"No {label} STEP is imported.")
@@ -16864,7 +16988,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _set_step_rotation_deg_tuple(self, label: str, angles: tuple[float, float, float]) -> None:
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return
         x_deg, y_deg, z_deg = (float(value) % 360.0 for value in angles)
         setattr(self, f"{label}_step_rotation_x_deg", x_deg)
@@ -16901,7 +17025,7 @@ class KrakenLayoutEditor(tk.Tk):
         feature_normal_xyz,
     ) -> dict[str, object] | None:
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return None
         if self._step_path_for_label(label) is None:
             self.status_var.set(f"No {label} STEP is imported.")
@@ -16986,6 +17110,8 @@ class KrakenLayoutEditor(tk.Tk):
     def _step_roll_deg(self, label: str) -> float:
         if label == "lens":
             return float(getattr(self, "lens_step_rotation_z_deg", 0.0))
+        if label == "optical":
+            return float(getattr(self, "optical_step_rotation_z_deg", 0.0))
         if label == "camera":
             return float(getattr(self, "camera_step_rotation_z_deg", 0.0))
         if label == "led":
@@ -16995,6 +17121,8 @@ class KrakenLayoutEditor(tk.Tk):
     def _step_x_rotation_deg(self, label: str) -> float:
         if label == "lens":
             return float(getattr(self, "lens_step_rotation_x_deg", 0.0))
+        if label == "optical":
+            return float(getattr(self, "optical_step_rotation_x_deg", 0.0))
         if label == "camera":
             return float(getattr(self, "camera_step_rotation_x_deg", 0.0))
         if label == "led":
@@ -17004,6 +17132,8 @@ class KrakenLayoutEditor(tk.Tk):
     def _step_y_rotation_deg(self, label: str) -> float:
         if label == "lens":
             return float(getattr(self, "lens_step_rotation_y_deg", 0.0))
+        if label == "optical":
+            return float(getattr(self, "optical_step_rotation_y_deg", 0.0))
         if label == "camera":
             return float(getattr(self, "camera_step_rotation_y_deg", 0.0))
         if label == "led":
@@ -17021,7 +17151,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def apply_step_axis_pick(self, label: str, feature_center_xyz: np.ndarray) -> None:
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return
         feature_center = np.asarray(feature_center_xyz, dtype=float)
         if feature_center.size < 2 or not np.all(np.isfinite(feature_center[:2])):
@@ -17050,9 +17180,11 @@ class KrakenLayoutEditor(tk.Tk):
     def clear_step_axis_offsets(self) -> None:
         self._begin_history_capture()
         self.lens_step_axis_offset_xy = (0.0, 0.0)
+        self.optical_step_axis_offset_xy = (0.0, 0.0)
         self.camera_step_axis_offset_xy = (0.0, 0.0)
         self.led_step_axis_offset_xy = (0.0, 0.0)
         self.lens_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+        self.optical_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self.camera_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self.led_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self._cad_axis_pick_label = None
@@ -17066,23 +17198,29 @@ class KrakenLayoutEditor(tk.Tk):
         self._begin_history_capture()
         self.imported_camera_step_path = None
         self.imported_lens_step_path = None
+        self.imported_optical_step_path = None
         self.imported_led_step_path = None
         self.lens_step_largest_component_only = True
         self.camera_step_rotation_x_deg = 0.0
         self.lens_step_rotation_x_deg = 0.0
+        self.optical_step_rotation_x_deg = 0.0
         self.led_step_rotation_x_deg = 0.0
         self.camera_step_rotation_y_deg = 0.0
         self.lens_step_rotation_y_deg = 0.0
+        self.optical_step_rotation_y_deg = 0.0
         self.led_step_rotation_y_deg = 0.0
         self.camera_step_rotation_z_deg = 0.0
         self.lens_step_rotation_z_deg = 0.0
+        self.optical_step_rotation_z_deg = 0.0
         self.led_step_rotation_z_deg = 0.0
         self.led_object_edge_distance_mm = 0.0
         self.led_step_object_edge_local_z = None
         self.lens_step_axis_offset_xy = (0.0, 0.0)
+        self.optical_step_axis_offset_xy = (0.0, 0.0)
         self.camera_step_axis_offset_xy = (0.0, 0.0)
         self.led_step_axis_offset_xy = (0.0, 0.0)
         self.lens_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+        self.optical_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self.camera_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self.led_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self._cad_axis_pick_label = None
@@ -17090,7 +17228,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._cad_led_object_edge_pick = False
         self._selected_step_label = None
         self._commit_history_capture()
-        self.status_var.set("Camera/lens/LED STEP imports cleared.")
+        self.status_var.set("Camera/lens/optical/LED STEP imports cleared.")
         self._refresh_open_3d_views()
 
     def _has_imported_step_cad(self) -> bool:
@@ -17098,6 +17236,7 @@ class KrakenLayoutEditor(tk.Tk):
             path is not None
             for path in (
                 self.imported_lens_step_path,
+                self.imported_optical_step_path,
                 self.imported_led_step_path,
                 self.imported_camera_step_path,
             )
@@ -17120,6 +17259,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "x_rotation_deg": float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
                 "y_rotation_deg": float(getattr(self, "lens_step_rotation_y_deg", 0.0)),
                 "axis_offset_xy": self._step_axis_offset_xy("lens"),
+                "placement_offset_xyz": self._step_placement_offset_xyz("lens"),
             }
         if label == "camera":
             if self.imported_camera_step_path is None:
@@ -17136,6 +17276,23 @@ class KrakenLayoutEditor(tk.Tk):
                 "x_rotation_deg": float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
                 "y_rotation_deg": float(getattr(self, "camera_step_rotation_y_deg", 0.0)),
                 "axis_offset_xy": self._step_axis_offset_xy("camera"),
+                "placement_offset_xyz": self._step_placement_offset_xyz("camera"),
+            }
+        if label == "optical":
+            if self.imported_optical_step_path is None:
+                return None
+            return {
+                "path": self.imported_optical_step_path,
+                "largest_component": False,
+                "source_axis": "z",
+                "front_face": "min",
+                "target_front_z": 0.0,
+                "label": "Optical STEP",
+                "roll_deg": float(getattr(self, "optical_step_rotation_z_deg", 0.0)),
+                "x_rotation_deg": float(getattr(self, "optical_step_rotation_x_deg", 0.0)),
+                "y_rotation_deg": float(getattr(self, "optical_step_rotation_y_deg", 0.0)),
+                "axis_offset_xy": self._step_axis_offset_xy("optical"),
+                "placement_offset_xyz": self._step_placement_offset_xyz("optical"),
             }
         if label == "led":
             if self.imported_led_step_path is None:
@@ -17151,6 +17308,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "x_rotation_deg": float(getattr(self, "led_step_rotation_x_deg", 0.0)),
                 "y_rotation_deg": float(getattr(self, "led_step_rotation_y_deg", 0.0)),
                 "axis_offset_xy": self._step_axis_offset_xy("led"),
+                "placement_offset_xyz": self._step_placement_offset_xyz("led"),
             }
         return None
 
@@ -17170,6 +17328,7 @@ class KrakenLayoutEditor(tk.Tk):
             x_rotation_deg=float(params.get("x_rotation_deg", 0.0)),
             y_rotation_deg=float(params.get("y_rotation_deg", 0.0)),
             axis_offset_xy=params.get("axis_offset_xy"),
+            placement_offset_xyz=params.get("placement_offset_xyz"),
         )
         if aligned_mesh is None:
             return None
@@ -17181,7 +17340,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _collect_native_step_export_shapes(self, progress_callback=None) -> list[tuple[str, object]]:
         shape_items: list[tuple[str, object]] = []
-        labels = ("lens", "led", "camera")
+        labels = STEP_OVERLAY_LABELS
         for index, label in enumerate(labels, start=1):
             params = self._step_export_alignment_params(label)
             if params is None:
@@ -17302,6 +17461,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         for label, builder in (
             ("lens_step", self._transformed_imported_lens_step_mesh),
+            ("optical_step", self._transformed_imported_optical_step_mesh),
             ("led_step", self._transformed_imported_led_step_mesh),
             ("camera_step", self._transformed_imported_camera_step_mesh),
         ):
@@ -17360,6 +17520,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         for label, builder in (
             ("lens_step", self._transformed_imported_lens_step_mesh),
+            ("optical_step", self._transformed_imported_optical_step_mesh),
             ("led_step", self._transformed_imported_led_step_mesh),
             ("camera_step", self._transformed_imported_camera_step_mesh),
         ):
@@ -17398,7 +17559,7 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
         if self._legacy_3d_plotter is not None:
-            labels = [step_label] if step_label else ["lens", "led", "camera"]
+            labels = [step_label] if step_label else list(STEP_OVERLAY_LABELS)
             refreshed = False
             for label in labels:
                 if label and self._refresh_legacy_step_actor(self._legacy_3d_plotter, label):
@@ -17424,6 +17585,7 @@ class KrakenLayoutEditor(tk.Tk):
                 "camera": self._transformed_imported_camera_step_mesh,
                 "led": self._transformed_imported_led_step_mesh,
                 "lens": self._transformed_imported_lens_step_mesh,
+                "optical": self._transformed_imported_optical_step_mesh,
             }
             builder = builders.get(label)
             if builder is None:
@@ -17461,6 +17623,7 @@ class KrakenLayoutEditor(tk.Tk):
             try:
                 color, opacity = {
                     "lens": ("#4b5563", 0.22),
+                    "optical": ("#0891b2", 0.30),
                     "led": ("#f59e0b", 0.35),
                     "camera": ("#6b7280", 0.32),
                 }.get(label, ("#6b7280", 0.32))
@@ -17540,6 +17703,12 @@ class KrakenLayoutEditor(tk.Tk):
                     f"Lens STEP rotation: X={self.lens_step_rotation_x_deg:.0f}, "
                     f"Y={self.lens_step_rotation_y_deg:.0f}, "
                     f"Z={self.lens_step_rotation_z_deg:.0f} deg"
+                )
+            elif label == "optical":
+                self.status_var.set(
+                    f"Optical STEP rotation: X={self.optical_step_rotation_x_deg:.0f}, "
+                    f"Y={self.optical_step_rotation_y_deg:.0f}, "
+                    f"Z={self.optical_step_rotation_z_deg:.0f} deg"
                 )
             elif label == "led":
                 reference_text = (
@@ -21486,6 +21655,23 @@ class KrakenLayoutEditor(tk.Tk):
             placement_offset_xyz=self._step_placement_offset_xyz("lens"),
         )
 
+    def _transformed_imported_optical_step_mesh(self):
+        if self.imported_optical_step_path is None:
+            return None
+        mesh = self._load_step_mesh(self.imported_optical_step_path, largest_component=False)
+        return self._cad_mesh_aligned_to_optical_axis(
+            mesh,
+            source_axis="z",
+            front_face="min",
+            target_front_z=0.0,
+            label="Optical STEP",
+            roll_deg=float(getattr(self, "optical_step_rotation_z_deg", 0.0)),
+            x_rotation_deg=float(getattr(self, "optical_step_rotation_x_deg", 0.0)),
+            y_rotation_deg=float(getattr(self, "optical_step_rotation_y_deg", 0.0)),
+            axis_offset_xy=self._step_axis_offset_xy("optical"),
+            placement_offset_xyz=self._step_placement_offset_xyz("optical"),
+        )
+
     def _transformed_imported_camera_step_mesh(self):
         if self.imported_camera_step_path is None:
             return None
@@ -23017,6 +23203,7 @@ class KrakenLayoutEditor(tk.Tk):
 
         for label, builder, color, opacity in (
             ("lens", self._transformed_imported_lens_step_mesh, "#4b5563", 0.22),
+            ("optical", self._transformed_imported_optical_step_mesh, "#0891b2", 0.30),
             ("led", self._transformed_imported_led_step_mesh, "#f59e0b", 0.35),
             ("camera", self._transformed_imported_camera_step_mesh, "#6b7280", 0.32),
         ):
@@ -24284,7 +24471,7 @@ class KrakenLayoutEditor(tk.Tk):
         surface_target_label = requested_label
         if surface_target_label is None and axis_pick_any:
             selected_label = getattr(self, "_selected_step_label", None)
-            if selected_label in {"lens", "led", "camera"} and self._step_path_for_label(str(selected_label)) is not None:
+            if selected_label in STEP_OVERLAY_LABEL_SET and self._step_path_for_label(str(selected_label)) is not None:
                 surface_target_label = str(selected_label)
         if surface_target_label is not None and row_index is not None:
             if bool(getattr(self, "_cad_led_object_edge_pick", False)):
@@ -24435,7 +24622,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _legacy_3d_set_selected_step(self, plotter, label: str | None) -> None:
         label = str(label).strip().lower() if label is not None else None
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             label = None
         current = getattr(plotter, "_kraken_selected_step", None)
         if current == label:
@@ -24545,7 +24732,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _legacy_3d_set_step_visibility(self, plotter, label: str, visible: bool) -> None:
         label = str(label).strip().lower()
-        if label not in {"lens", "led", "camera"}:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return
         state = dict(getattr(plotter, "_kraken_visibility", {}) or {})
         state[f"step_{label}"] = bool(visible)
@@ -25023,23 +25210,29 @@ class KrakenLayoutEditor(tk.Tk):
     def _clear_imported_step_runtime_state(self) -> None:
         self.imported_camera_step_path = None
         self.imported_lens_step_path = None
+        self.imported_optical_step_path = None
         self.imported_led_step_path = None
         self.lens_step_largest_component_only = True
         self.camera_step_rotation_x_deg = 0.0
         self.lens_step_rotation_x_deg = 0.0
+        self.optical_step_rotation_x_deg = 0.0
         self.led_step_rotation_x_deg = 0.0
         self.camera_step_rotation_y_deg = 0.0
         self.lens_step_rotation_y_deg = 0.0
+        self.optical_step_rotation_y_deg = 0.0
         self.led_step_rotation_y_deg = 0.0
         self.camera_step_rotation_z_deg = 0.0
         self.lens_step_rotation_z_deg = 0.0
+        self.optical_step_rotation_z_deg = 0.0
         self.led_step_rotation_z_deg = 0.0
         self.led_object_edge_distance_mm = 0.0
         self.led_step_object_edge_local_z = None
         self.lens_step_axis_offset_xy = (0.0, 0.0)
+        self.optical_step_axis_offset_xy = (0.0, 0.0)
         self.camera_step_axis_offset_xy = (0.0, 0.0)
         self.led_step_axis_offset_xy = (0.0, 0.0)
         self.lens_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+        self.optical_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self.camera_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self.led_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self._cad_axis_pick_label = None
@@ -25557,6 +25750,12 @@ class KrakenLayoutEditor(tk.Tk):
             "lens_step_rotation_z_deg": float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
             "lens_step_axis_offset_xy": list(self._step_axis_offset_xy("lens")),
             "lens_step_placement_offset_xyz": list(self._step_placement_offset_xyz("lens")),
+            "optical_step_path": str(self.imported_optical_step_path) if self.imported_optical_step_path is not None else "",
+            "optical_step_rotation_x_deg": float(getattr(self, "optical_step_rotation_x_deg", 0.0)),
+            "optical_step_rotation_y_deg": float(getattr(self, "optical_step_rotation_y_deg", 0.0)),
+            "optical_step_rotation_z_deg": float(getattr(self, "optical_step_rotation_z_deg", 0.0)),
+            "optical_step_axis_offset_xy": list(self._step_axis_offset_xy("optical")),
+            "optical_step_placement_offset_xyz": list(self._step_placement_offset_xyz("optical")),
             "led_step_path": str(self.imported_led_step_path) if self.imported_led_step_path is not None else "",
             "led_step_rotation_x_deg": float(getattr(self, "led_step_rotation_x_deg", 0.0)),
             "led_step_rotation_y_deg": float(getattr(self, "led_step_rotation_y_deg", 0.0)),
@@ -25827,13 +26026,16 @@ class KrakenLayoutEditor(tk.Tk):
                 self.camera_model_var.set(CAMERA_NONE_LABEL)
         self.imported_camera_step_path = _path_setting("camera_step_path")
         self.imported_lens_step_path = _path_setting("lens_step_path")
+        self.imported_optical_step_path = _path_setting("optical_step_path")
         self.imported_led_step_path = _path_setting("led_step_path")
         self.lens_step_largest_component_only = _parse_bool(settings.get("lens_step_largest_component_only", True))
         self.camera_step_axis_offset_xy = _offset_setting("camera_step_axis_offset_xy")
         self.lens_step_axis_offset_xy = _offset_setting("lens_step_axis_offset_xy")
+        self.optical_step_axis_offset_xy = _offset_setting("optical_step_axis_offset_xy")
         self.led_step_axis_offset_xy = _offset_setting("led_step_axis_offset_xy")
         self.camera_step_placement_offset_xyz = _offset_xyz_setting("camera_step_placement_offset_xyz")
         self.lens_step_placement_offset_xyz = _offset_xyz_setting("lens_step_placement_offset_xyz")
+        self.optical_step_placement_offset_xyz = _offset_xyz_setting("optical_step_placement_offset_xyz")
         self.led_step_placement_offset_xyz = _offset_xyz_setting("led_step_placement_offset_xyz")
         self._cad_axis_pick_label = None
         self._cad_axis_pick_any = False
@@ -25863,6 +26065,18 @@ class KrakenLayoutEditor(tk.Tk):
             self.lens_step_rotation_z_deg = float(settings.get("lens_step_rotation_z_deg", 0.0)) % 360.0
         except Exception:
             self.lens_step_rotation_z_deg = 0.0
+        try:
+            self.optical_step_rotation_x_deg = float(settings.get("optical_step_rotation_x_deg", 0.0)) % 360.0
+        except Exception:
+            self.optical_step_rotation_x_deg = 0.0
+        try:
+            self.optical_step_rotation_y_deg = float(settings.get("optical_step_rotation_y_deg", 0.0)) % 360.0
+        except Exception:
+            self.optical_step_rotation_y_deg = 0.0
+        try:
+            self.optical_step_rotation_z_deg = float(settings.get("optical_step_rotation_z_deg", 0.0)) % 360.0
+        except Exception:
+            self.optical_step_rotation_z_deg = 0.0
         try:
             self.led_step_rotation_x_deg = float(settings.get("led_step_rotation_x_deg", 0.0)) % 360.0
         except Exception:

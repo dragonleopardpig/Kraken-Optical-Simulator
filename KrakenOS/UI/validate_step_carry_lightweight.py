@@ -16,8 +16,8 @@ from KrakenOS.UI.layout_editor import KrakenLayoutEditor
 def main() -> int:
     app = KrakenLayoutEditor(headless=True)
     try:
-        app.imported_lens_step_path = Path("/tmp/kraken-validation-arbitrary-optical.step")
-        app.lens_step_largest_component_only = False
+        app.imported_lens_step_path = Path("/tmp/kraken-existing-lens.step")
+        app.imported_optical_step_path = Path("/tmp/kraken-validation-arbitrary-optical.step")
         calls: list[tuple[bool, str | None]] = []
 
         def _fake_refresh(*, camera_only: bool = False, step_label: str | None = None) -> None:
@@ -26,7 +26,7 @@ def main() -> int:
         app._refresh_open_3d_views = _fake_refresh  # type: ignore[method-assign]
 
         app.translate_step_overlay(
-            "lens",
+            "optical",
             (1.0, 2.0, 3.0),
             grid_spacing_mm=None,
             refresh=False,
@@ -34,15 +34,15 @@ def main() -> int:
         )
         if calls:
             raise AssertionError(f"Lightweight carry unexpectedly refreshed Open 3D: {calls!r}")
-        if app._step_placement_offset_xyz("lens") != (1.0, 2.0, 3.0):
+        if app._step_placement_offset_xyz("optical") != (1.0, 2.0, 3.0):
             raise AssertionError("Lightweight carry did not persist the STEP placement offset.")
-        if app.lens_step_largest_component_only is not False:
-            raise AssertionError("Arbitrary optical STEP import mode did not preserve all STEP components.")
+        if app.imported_lens_step_path != Path("/tmp/kraken-existing-lens.step"):
+            raise AssertionError("Optical STEP carry replaced the existing lens STEP slot.")
 
-        app.translate_step_overlay("lens", (0.0, 0.0, 1.0), refresh=True, record_history=True)
-        if calls != [(False, "lens")]:
-            raise AssertionError(f"Explicit STEP translate refresh did not target the lens/optical overlay: {calls!r}")
-        if app._step_placement_offset_xyz("lens") != (1.0, 2.0, 4.0):
+        app.translate_step_overlay("optical", (0.0, 0.0, 1.0), refresh=True, record_history=True)
+        if calls != [(False, "optical")]:
+            raise AssertionError(f"Explicit STEP translate refresh did not target the optical overlay: {calls!r}")
+        if app._step_placement_offset_xyz("optical") != (1.0, 2.0, 4.0):
             raise AssertionError("Explicit STEP translate did not persist the final placement offset.")
     finally:
         app.destroy()

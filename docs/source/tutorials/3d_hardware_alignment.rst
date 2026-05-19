@@ -92,8 +92,9 @@ The same badge mechanism is used by ``Obj->LED``, ``Center Row->Ray``, and
 Rotate Imported STEP Hardware
 -----------------------------
 
-Clicking an imported lens, LED, or camera STEP overlay selects that component
-and draws coloured ``X/Y/Z`` rotation handles around it inside the 3D scene.
+Clicking an imported lens, optical, LED, or camera STEP overlay selects that
+component and draws coloured ``X/Y/Z`` rotation handles around it inside the 3D
+scene.
 
 .. figure:: ../_static/tutorials/3d_hardware_alignment/04_step_rotation_handler.png
    :alt: STEP rotation handles in the embedded 3D inspector
@@ -107,23 +108,29 @@ and draws coloured ``X/Y/Z`` rotation handles around it inside the 3D scene.
 Carry Imported STEP Freely
 --------------------------
 
-Open 3D can import lens, camera, or LED STEP hardware directly from
-``CAD / target -> Import STEP``. The imported component is selected immediately.
-Use ``CAD / target -> Arm Selected STEP Carry`` when an already-imported
-component should show carry status before it is moved again.
+Open 3D can import arbitrary optical STEP, lens STEP, camera STEP, or LED STEP
+hardware directly from ``CAD / target -> Import STEP``. The arbitrary optical
+STEP command uses a separate ``optical`` overlay slot, so importing an optical
+element into a preset with an existing lens STEP does not replace the lens
+overlay. A newly imported optical STEP is selected and carried by the cursor
+immediately until the next click drops it. Use ``CAD / target -> Arm Selected
+STEP Carry`` when an already-imported component should show carry status before
+it is moved again.
 
 .. figure:: ../_static/tutorials/3d_hardware_alignment/06_step_carry_grid.png
    :alt: Imported STEP hardware carried with free Open 3D movement
    :width: 100%
 
-   STEP carry uses free movement only. To carry a STEP overlay, hold the pointer
-   on the STEP body briefly, or start dragging on the body, until the carry
-   anchor snaps to the STEP center and an in-scene grip cursor appears there.
-   Release to drop/commit the placement. The OS pointer is not warped during
-   this hold-drag gesture; synthetic Tk/VTK pointer motion can feed back into
-   the drag loop and make the component jump. The carry path projects the cursor
-   ray onto a drag plane through the STEP center and moves continuously on that
-   plane. ``Ctrl+drag`` keeps the same left-drag gesture available for
+   STEP carry uses free movement only. A newly imported optical STEP follows the
+   cursor immediately and drops on the next click. To carry an already-imported
+   STEP overlay, hold the pointer on the STEP body briefly, or start dragging on
+   the body, until the carry anchor snaps to the STEP center and an in-scene
+   grip cursor appears there. Release to drop/commit the placement. The OS
+   pointer is not warped during this hold-drag gesture; synthetic Tk/VTK pointer
+   motion can feed back into the drag loop and make the component jump. The
+   carry path projects the cursor ray onto a drag plane through the STEP center
+   and moves continuously on that plane. ``Ctrl+drag`` keeps the same left-drag
+   gesture available for
    camera rotation, and ``Esc`` cancels the active carry/pick operation. The
    selected overlay keeps its rotation handles, so the normal workflow is:
    import, hold-drag the hardware near the traced ray bundle, click the STEP
@@ -194,11 +201,11 @@ Common Mistakes
   is consumed by that workflow rather than by normal row/ray selection.
 
 ``The STEP rotation handles rotate CAD/STL optical solid rows.``
-  They rotate imported lens/LED/camera STEP overlays. File-backed optical
-  CAD/STL rows use the separate ``CAD/STL placement handler``.
+  They rotate imported lens/optical/LED/camera STEP overlays. File-backed
+  optical CAD/STL rows use the separate ``CAD/STL placement handler``.
 
 ``I carried a STEP component but the ray trace did not change.``
-  Open 3D STEP carry moves lens/camera/LED hardware overlays. It is for
+  Open 3D STEP carry moves lens/optical/camera/LED hardware overlays. It is for
   mechanical context and placement planning until you run
   ``CAD / target -> Promote STEP to Optical Solid Row``. Ray-traced CAD/STL
   optics must be optical solid rows so the kernel receives real surface

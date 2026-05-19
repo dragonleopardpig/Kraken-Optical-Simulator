@@ -77,6 +77,7 @@ def _contains_menu_label(source: str, label: str) -> bool:
 def main() -> int:
     init_source = inspect.getsource(Kraken3DInspector.__init__)
     import_step_source = inspect.getsource(Kraken3DInspector.import_step_overlay)
+    import_optical_source = inspect.getsource(Kraken3DInspector.import_optical_step_overlay)
     view_direct = _direct_widget_count(init_source, "view_toolbar")
     scene_direct = _direct_widget_count(init_source, "scene_toolbar")
     carry_direct = _direct_widget_count(init_source, "carry_toolbar")
@@ -135,6 +136,13 @@ def main() -> int:
             "Open 3D STEP import selects imported overlay handles",
             "show_step_rotation_handler(label)" in import_step_source and "refresh_from_editor()" in import_step_source,
             "importing STEP from Open 3D should immediately refresh and select the in-scene handles",
+        ),
+        (
+            "Open 3D optical STEP import does not replace the lens STEP slot",
+            "import_optical_step(" in import_optical_source
+            and 'label = "optical"' in import_optical_source
+            and "import_lens_step(" not in import_optical_source,
+            "Import Optical STEP should create a separate optical overlay, not overwrite imported_lens_step_path",
         ),
         (
             "Open 3D carry row uses free movement guidance",

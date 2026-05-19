@@ -49,7 +49,7 @@ Estimated branch status:
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Near complete | `█████████░ 98%` | Optical solids, branched paths, scatter, detectors, media state, source identity, and path metadata are represented as traced scene data. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
-| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, categorized view/scene/carry control rows with a toolbar layout validator, direct optical/lens/camera/LED STEP import, free STEP carry placement, press-hold or drag-to-lift STEP movement with an in-scene center grip, release-to-drop, no OS pointer warping, Esc cancellation, Ctrl-drag camera pause, picked STEP-face normal snapping to the nearest traced optical axis/path, promotion of positioned STEP overlays to file-backed optical solid rows, and Sphinx coverage, in-scene STEP rotation handles, status-aware detector-miss terminal markers, active detector footprints, miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
+| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, categorized view/scene/carry control rows with a toolbar layout validator, direct optical/lens/camera/LED STEP import, a distinct arbitrary-optical STEP overlay slot that does not replace the lens overlay, immediate cursor-carry placement for new optical STEP imports, free STEP carry placement, press-hold or drag-to-lift STEP movement with an in-scene center grip, release-to-drop, no OS pointer warping, Esc cancellation, Ctrl-drag camera pause, default STEP-face hover outlines, picked STEP-face normal snapping to the nearest traced optical axis/path, promotion of positioned STEP overlays to file-backed optical solid rows, and Sphinx coverage, in-scene STEP rotation handles, status-aware detector-miss terminal markers, active detector footprints, miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
 | Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, imported STEP snap-to-target placement, row-to-target snap constraints, row-to-target normal-orientation constraints, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, per-ray detector aperture status, detector aperture hit/miss reports, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, folded-preview provenance, and CSV export. |
 | Arbitrary prisms and CAD solids | Achieved | `██████████ 100%` | Face identity, geometry-derived uncoated face-intent suggestions, cascaded row-scoped boundary/volume records, real multi-STL trace coverage, runtime output-port scene bounds, closed-solid media transitions, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
@@ -134,13 +134,16 @@ kraken-vtk-tk-check
   placement tools remain reachable when the window is not wide enough for one
   long button row.
 - Arbitrary optical STEP, lens, camera, and LED STEP overlays can now be
-  imported directly from the Open 3D `CAD / target -> Import STEP` submenu; the
-  imported component is selected immediately and gets the same in-scene rotation
-  handles. The generic optical STEP entry preserves all STEP components instead
-  of reducing the import to the largest lens-like component.
+  imported directly from the Open 3D `CAD / target -> Import STEP` submenu. The
+  generic optical STEP entry now uses a separate `optical` overlay slot, so it
+  does not overwrite the existing lens STEP overlay in presets such as Machine
+  Vision 150 mm. The imported optical component is selected immediately, enters
+  cursor-carry placement until the next click drops it, and gets the same
+  in-scene rotation handles. The generic optical STEP entry preserves all STEP
+  components instead of reducing the import to the largest lens-like component.
 - Open 3D imported STEP overlays are carried with free movement. Imported STEP
-  carry now uses
-  a press-hold or drag-to-lift gesture on the STEP body: hold briefly, or start
+  carry now uses a press-hold or drag-to-lift gesture on an existing STEP body:
+  hold briefly, or start
   dragging on the body, until the carry anchor snaps to the STEP center and an
   in-scene grip cursor appears on that center. Dragging moves the center grip
   and component together, and release drops/commits. The OS pointer is deliberately

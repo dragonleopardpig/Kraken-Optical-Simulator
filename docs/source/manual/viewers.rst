@@ -477,24 +477,28 @@ STEP and CAD overlays
 STEP support is beyond the 2021 manual but is available in the UI for real
 hardware context:
 
-* lens/camera/LED STEP import from the main File menu or directly from the
-  Open 3D ``CAD / target -> Import STEP`` menu
-* imported STEP carry placement in Open 3D: after a 3D import, hold the pointer
-  on the STEP body briefly, or start dragging on the STEP body, until the carry
-  anchor snaps to the STEP center and an in-scene grip cursor appears there.
-  Release to drop and commit the placement. The OS pointer is not warped during
-  hold-drag because synthetic Tk/VTK motion can be fed back into the drag loop
-  and make the component jump. The carry path projects the cursor ray onto a
-  drag plane through the STEP center and moves continuously on that plane.
+* lens/camera/LED STEP import from the main File menu, plus arbitrary optical
+  STEP import directly from the Open 3D ``CAD / target -> Import STEP`` menu.
+  The arbitrary optical import uses a separate ``optical`` overlay slot and
+  does not replace an existing lens STEP overlay.
+* imported STEP carry placement in Open 3D: a newly imported optical STEP is
+  selected and carried by the cursor immediately until the next click drops it.
+  To move an already-imported STEP, hold the pointer on the STEP body briefly,
+  or start dragging on the STEP body, until the carry anchor snaps to the STEP
+  center and an in-scene grip cursor appears there. Release to drop and commit
+  the placement. The OS pointer is not warped during hold-drag because synthetic
+  Tk/VTK motion can be fed back into the drag loop and make the component jump.
+  The carry path projects the cursor ray onto a drag plane through the STEP
+  center and moves continuously on that plane.
   The old cube lattice and carry snap-step controls are removed. ``Ctrl+drag``
   keeps left-drag available for camera rotation, and ``Esc`` cancels active
   carry or pick modes. Use ``Snap STEP Normal->Optical Axis`` after free
   placement when the picked face should land on a bent or straight traced axis.
 * CAD axis offset picking
 * selected STEP overlay rotation through in-scene coloured ``X/Y/Z`` rotation
-  handles around the selected lens, camera, or LED STEP component; clicking a
-  handle applies a persistent ``+/-90`` degree step without opening a floating
-  popup
+  handles around the selected lens, optical, camera, or LED STEP component;
+  clicking a handle applies a persistent ``+/-90`` degree step without opening
+  a floating popup
 * selected CAD/STL row placement through a click-open ``CAD/STL placement
   handler`` with axis-fit, rotation, centering, front-plane, and ``Done -> 2D``
   actions
