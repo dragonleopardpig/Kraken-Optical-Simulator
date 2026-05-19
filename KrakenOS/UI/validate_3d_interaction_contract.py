@@ -385,7 +385,25 @@ def main() -> int:
             "_add_optical_solid_assigned_face_overlays" in refresh
             and "assigned face overlays" in refresh
             and "triangle_indices" in assigned_face_triangles
-            and "backface_culling=False" in assigned_face_overlays,
+            and "backface_culling=False" in assigned_face_overlays
+            and "feature_edges=False" in assigned_face_overlays,
+        ),
+        (
+            "Open 3D CAD/STL faces hover before right-click assignment",
+            "right-click to assign surface physics" in mouse_move
+            and "_hover_overlay_for_feature" in mouse_move
+            and "optical_solid_face_record_at_world_point" in mouse_move
+            and '("row", actor_key, cell_id)' in mouse_move,
+        ),
+        (
+            "Open 3D normal-axis snap keeps picked axis highlighted",
+            "_set_optical_axis_highlight(axis_id)" in step_normal_axis_apply,
+        ),
+        (
+            "Open 3D refresh does not clear scene on empty surface rebuild",
+            "rebuilt trace produced no surface meshes" in refresh
+            and "previous_actor_count > 0" in refresh
+            and "return" in refresh.split("rebuilt trace produced no surface meshes", 1)[1].split("RemoveAllViewProps", 1)[0],
         ),
         (
             "Open 3D STEP promotion clears stale overlay interaction state",

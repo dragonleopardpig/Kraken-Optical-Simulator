@@ -144,14 +144,17 @@ is moved again.
    entrance/exit direction, and then click the intended blue ``Optical Axis N``
    overlay. During the second click mode, only optical-axis overlays are
    accepted; the overlays are generated from traced path branches and remain
-   pickable even when regular rays are hidden. The picked face center moves
-   onto the clicked optical path point, and the picked normal rotates parallel
-   to that local path direction. Click the coloured handles to flip the sign if
-   needed before assigning face functions. A right-click on a row-backed optical
-   CAD/STL face assigns ``Uncoated``, ``Full Reflecting``, splitter, absorber, or
-   unassigned physics directly on the picked face. Assigned faces remain tinted
-   in Open 3D so a previously authored face is visible before the next surface is
-   picked.
+   pickable even when regular rays are hidden. After the snap, the selected
+   optical axis remains highlighted so the chosen path is visible even when
+   ``Ray Off`` is active. The picked face center moves onto the clicked optical
+   path point, and the picked normal rotates parallel to that local path
+   direction. Click the coloured handles to flip the sign if needed before
+   assigning face functions. A right-click on a row-backed optical CAD/STL face
+   previews the picked face and assigns ``Uncoated``, ``Full Reflecting``,
+   splitter, absorber, or unassigned physics directly on that face. Assigned
+   faces remain softly tinted in Open 3D so a previously authored face is
+   visible before the next surface is picked without making the whole solid look
+   like a triangulated mesh.
 
 This is a hardware-overlay workflow. It places real vendor CAD in the same 3D
 scene as rays and optical objects. Use
@@ -225,3 +228,9 @@ Common Mistakes
   ``CAD / target -> Promote STEP to Optical Solid Row``. Ray-traced CAD/STL
   optics must be optical solid rows so the kernel receives real surface
   geometry and face-role metadata.
+
+``I assigned every CAD/STL face and then the 3D scene disappeared.``
+  That should not happen. Open 3D keeps the previous valid scene if a trace
+  rebuild produces no surface meshes, and the validator covers the path where a
+  promoted optical solid has all of its exposed faces assigned before the scene
+  refreshes.

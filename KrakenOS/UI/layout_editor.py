@@ -5536,6 +5536,8 @@ class Kraken3DInspector(tk.Toplevel):
         return {
             "actor": actor,
             "actor_key": actor_key,
+            "cell_id": int(cell_id),
+            "feature": feature,
             "row_index": self._actor_row_map.get(actor_key),
             "step_label": self._actor_step_map.get(actor_key),
             "point_world": target_point,
@@ -5586,6 +5588,15 @@ class Kraken3DInspector(tk.Toplevel):
                 return "break"
             if face is not None:
                 face_id = str(face.get("face_id", "") or "").strip()
+            try:
+                feature = context.get("feature")
+                actor_key = str(context.get("actor_key") or "")
+                cell_id = int(context.get("cell_id", -1))
+                if feature is not None and actor_key:
+                    outline = self._hover_overlay_for_feature(feature[0], feature[1])
+                    self._set_step_hover_outline(outline, ("row", actor_key, cell_id))
+            except Exception:
+                pass
             title = f"S{int(row_index)} {face_id or 'picked face'}"
             menu.add_command(label=title, state="disabled")
             for label in self._open3d_surface_function_menu_items():
@@ -7695,6 +7706,9 @@ class Kraken3DInspector(tk.Toplevel):
         try:
             self.refresh_from_editor()
             self.show_step_rotation_handler(label)
+            axis_id = str(axis_info.get("axis_id", "") or "").strip()
+            if axis_id:
+                self._set_optical_axis_highlight(axis_id)
         except Exception as exc:
             self.editor.append_debug(f"3D STEP normal-axis snap refresh failed: {exc}")
         axis_label = str(result.get("axis_label", "optical axis"))
@@ -8733,14 +8747,14 @@ class Kraken3DInspector(tk.Toplevel):
                 self._add_mesh_actor(
                     mesh,
                     color=color,
-                    opacity=0.34,
+                    opacity=0.22,
                     flat_shading=True,
                     backface_culling=False,
                 )
                 try:
                     edges = mesh.extract_feature_edges(
                         boundary_edges=True,
-                        feature_edges=True,
+                        feature_edges=False,
                         manifold_edges=False,
                     )
                     if int(getattr(edges, "n_points", 0)) > 0:
@@ -9526,6 +9540,22 @@ class Kraken3DInspector(tk.Toplevel):
         if self._renderer is None:
             raise RuntimeError(_VTK_TK_UNAVAILABLE_REASON or "Embedded VTK/Tk viewer unavailable")
 
+        mesh_items = list(self.editor._scene_surface_meshes(system, scene_bundle, include_reference_surfaces=True))
+        expects_surface_meshes = any(
+            str(getattr(row, "surface", "") or "") not in {"Object", "Image"}
+            for row in getattr(self.editor, "rows", [])
+        )
+        previous_actor_count = 0
+        try:
+            previous_actor_count = int(self._renderer.GetViewProps().GetNumberOfItems())
+        except Exception:
+            previous_actor_count = 0
+        if previous_actor_count > 0 and expects_surface_meshes and not mesh_items:
+            message = "3D refresh kept previous scene: rebuilt trace produced no surface meshes."
+            self.status_var.set(message)
+            self.editor.append_debug(message)
+            return
+
         camera_state = None
         if not bool(reset_camera):
             try:
@@ -9577,7 +9607,7 @@ class Kraken3DInspector(tk.Toplevel):
 
         drew_surfaces = 0
         step_carry_label = self._step_carry_label()
-        for mesh_item in self.editor._scene_surface_meshes(system, scene_bundle, include_reference_surfaces=True):
+        for mesh_item in mesh_items:
             mesh = mesh_item.mesh
             self._add_mesh_actor(mesh, color=mesh_item.color, opacity=mesh_item.opacity, pick_row_index=mesh_item.row_index)
             if not mesh_item.is_body:
@@ -11127,6 +11157,39 @@ class Kraken3DInspector(tk.Toplevel):
                     self._set_step_hover_outline(outline, hover_key)
                     display = self.editor._step_overlay_display_label(str(step_label)).upper()
                     self.status_var.set(f"{display} STEP face: click to select its normal for optical-axis snapping.")
+                    return
+                row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
+                if row_index is not None and self.editor._file_backed_stl_row_at(int(row_index)) is not None:
+                    try:
+                        cell_id = int(self._picker.GetCellId())
+                    except Exception:
+                        cell_id = -1
+                    hover_key = ("row", actor_key, cell_id)
+                    outline = None
+                    feature = None
+                    if hover_key != self._hover_step_cell_key:
+                        feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
+                        outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
+                    self._set_step_hover_outline(outline, hover_key)
+                    face_text = "picked face"
+                    try:
+                        point = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+                        normal = None
+                        if feature is not None:
+                            normal = np.asarray(feature[2], dtype=float).reshape(-1)[:3]
+                        face = self.editor.optical_solid_face_record_at_world_point(
+                            int(row_index),
+                            point[:3],
+                            normal_world=normal,
+                            assigned_only=False,
+                        )
+                        if face is not None:
+                            function = _optical_solid_face_function_display(face.get("function"), legacy_role=face.get("role"))
+                            face_text = f"{str(face.get('face_id', '') or 'face')} ({function})"
+                    except Exception:
+                        pass
+                    self._set_axis_pick_cursor(False)
+                    self.status_var.set(f"S{int(row_index)} CAD/STL {face_text}: right-click to assign surface physics.")
                     return
             self._set_step_hover_outline(None, None)
             self._set_axis_pick_cursor(False)

@@ -114,6 +114,27 @@ def main() -> int:
         if not Kraken3DInspector._assigned_optical_solid_face(saved[0]):
             raise AssertionError("Assigned Uncoated face was not recognized as an assigned face overlay.")
 
+        _row, _path, full_metadata = app._optical_solid_face_metadata_for_row(row_index)
+        face_ids = [
+            str(face.get("face_id", "") or "").strip()
+            for face in list(full_metadata.get("faces", []) or [])
+            if str(face.get("face_id", "") or "").strip()
+        ]
+        if len(face_ids) < 2:
+            raise AssertionError("Expected promoted optical solid to expose multiple assignable faces.")
+        for face_id in face_ids:
+            app.assign_optical_solid_face_function(row_index, face_id, "Uncoated")
+        all_metadata = normalize_optical_solid_face_metadata(
+            app.rows[row_index].advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+        )
+        assigned_count = sum(
+            1
+            for face in list(all_metadata.get("faces", []) or [])
+            if Kraken3DInspector._assigned_optical_solid_face(face)
+        )
+        if assigned_count < len(face_ids):
+            raise AssertionError("Assigning every picked CAD/STL face did not persist assigned-face metadata.")
+
         system, _rays, scene_bundle = app._build_preview_system_rays_bundle(
             sampling_mode=app._preview_3d_sampling_mode(),
             update_state=False,
