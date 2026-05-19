@@ -1,6 +1,6 @@
 # KrakenOS Non-Sequential UI Branch
 
-Last updated: 2026-05-18
+Last updated: 2026-05-19
 
 This document summarizes the `nonseq-display-refactor` branch. The upstream
 `README.md` is intentionally left unchanged; this branch README is the public
@@ -49,7 +49,7 @@ Estimated branch status:
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Near complete | `█████████░ 98%` | Optical solids, branched paths, scatter, detectors, media state, source identity, and path metadata are represented as traced scene data. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
-| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, categorized view/scene/carry control rows with a toolbar layout validator, direct optical/lens/camera/LED STEP import, lightweight STEP carry placement with hidden cube lattice, Free/Ray/Fine/Auto/Coarse carry modes, press-hold or drag-to-lift STEP movement with an in-scene center grip, release-to-drop, no OS pointer warping, Esc cancellation, Ctrl-drag camera pause, Snap ray placement, Snap target placement, promotion of positioned STEP overlays to file-backed optical solid rows, and Sphinx coverage, in-scene STEP rotation handles, status-aware detector-miss terminal markers, active detector footprints, miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
+| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, categorized view/scene/carry control rows with a toolbar layout validator, direct optical/lens/camera/LED STEP import, free STEP carry placement, press-hold or drag-to-lift STEP movement with an in-scene center grip, release-to-drop, no OS pointer warping, Esc cancellation, Ctrl-drag camera pause, picked STEP-face normal snapping to the nearest traced optical axis/path, promotion of positioned STEP overlays to file-backed optical solid rows, and Sphinx coverage, in-scene STEP rotation handles, status-aware detector-miss terminal markers, active detector footprints, miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
 | Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, imported STEP snap-to-target placement, row-to-target snap constraints, row-to-target normal-orientation constraints, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, per-ray detector aperture status, detector aperture hit/miss reports, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, folded-preview provenance, and CSV export. |
 | Arbitrary prisms and CAD solids | Achieved | `██████████ 100%` | Face identity, geometry-derived uncoated face-intent suggestions, cascaded row-scoped boundary/volume records, real multi-STL trace coverage, runtime output-port scene bounds, closed-solid media transitions, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
@@ -138,11 +138,8 @@ kraken-vtk-tk-check
   imported component is selected immediately and gets the same in-scene rotation
   handles. The generic optical STEP entry preserves all STEP components instead
   of reducing the import to the largest lens-like component.
-- Open 3D imported STEP overlays can be carried with snapped movement while
-  the old cube-line lattice stays hidden. Dragging in the canvas applies
-  discrete snap-step translations to persistent 3D STEP placement metadata
-  while moving existing VTK actors in place, so mouse carry no longer rebuilds
-  the full traced 3D scene for every snapped step. Imported STEP carry now uses
+- Open 3D imported STEP overlays are carried with free movement. Imported STEP
+  carry now uses
   a press-hold or drag-to-lift gesture on the STEP body: hold briefly, or start
   dragging on the body, until the carry anchor snaps to the STEP center and an
   in-scene grip cursor appears on that center. Dragging moves the center grip
@@ -150,23 +147,15 @@ kraken-vtk-tk-check
   not warped during the hold-drag gesture; Tk/VTK can feed synthetic pointer
   motion back into the drag loop and make the component jump unpredictably. The
   carry path projects the current cursor ray onto a drag plane through the STEP
-  center. The default ``Free`` mode moves continuously on that plane. ``Ray``
-  mode caches the rendered ray polylines for the drag, captures the candidate
-  center to the selected ray or nearest ray inside a local capture radius, then
-  stays on that captured ray and steps along it until release. ``Fine``, ``Auto``,
-  and ``Coarse`` snap the center displacement on the drag plane. This avoids
-  accumulating raw screen deltas and keeps snapping tied to a stable 3D target
-  instead of to Tk/VTK motion-event spacing. Hold `Ctrl` while
-  left-dragging to rotate the 3D view; press `Esc` to cancel
-  active carry/pick operations and revert uncommitted snapped carry movement.
-  The component can be walked toward traced rays before orientation is adjusted
-  with the colored handles. The 3D hardware-alignment Sphinx case study now
-  includes a captured Open 3D screenshot of this carry workflow. A visible
-  `Carry -> Snap step` selector switches Free/Ray/Fine/Auto/Coarse movement. `Snap ray`
-  places the selected imported STEP center on a picked traced 3D ray point,
-  `Snap target` places it on a detector, Object row, active target surface, or
-  CAD/STL face anchor through the shared scene target metadata. The CAD/target
-  promote menu turns the current placed
+  center and moves continuously on that plane. Hold `Ctrl` while left-dragging
+  to rotate the 3D view; press `Esc` to cancel active carry/pick operations and
+  revert uncommitted free carry movement. To make placement optical instead of
+  grid-driven, click a planar STEP face and choose `CAD / target -> Snap STEP
+  Normal->Optical Axis`. The picked face center moves onto the nearest traced
+  optical path segment, and the picked face normal is rotated parallel to that
+  local path direction. If the sign is not the intended one, use the colored
+  rotation handles to flip the STEP before assigning Uncoated, Reflective, or
+  other optical face functions. The CAD/target promote menu turns the current placed
   overlay into a cached file-backed optical solid row with source STEP path,
   overlay rotation/offsets, row placement, and promotion provenance preserved
   in row metadata. A validator checks that the promoted optical-solid row lands
@@ -264,10 +253,10 @@ kraken-vtk-tk-check
   by a coarse 15 degree step when snap is off. The rotation writes
   `TiltX/Y/Z` and `ScenePlacement` metadata through the same history/table path
   as other row pose edits.
-- The same Open 3D placement handles also support drag-to-step authoring. Drag
-  motion accumulates in screen space and repeatedly applies the same row-backed
-  translation or rotation service once the motion crosses a snap-step
-  threshold; clicking without dragging remains the precise one-step fallback.
+- The same Open 3D placement handles also support drag authoring. Drag motion
+  accumulates in screen space and repeatedly applies the same row-backed
+  translation or rotation service; clicking without dragging remains the
+  precise one-step fallback.
 - Open 3D `Snap Row->Target` lets the user select a movable surface/CAD row or
   face, then a target row or face. The solved translation writes `DespX/Y/Z`
   and records `target_surface` constraint metadata in the row's
@@ -493,9 +482,9 @@ Direct STEP optical-component placement in the 3D plot is also feasible. The
 branch already imports STEP/IGES through cached STL, displays CAD/STL solids in
 3D, stores face roles, supports path/face anchors, publishes row-backed
 `ScenePlacement3D` records for snap/grid/anchor intent, draws the row-backed
-placement grid inside Open 3D, and provides snap-aware translate handles for
-selected rows plus snap-aware rotate handles for `TiltX/Y/Z`. Those handles can
-now be clicked for one step or dragged for repeated snap-step edits while
+placement grid inside Open 3D, and provides translate handles for
+selected rows plus rotate handles for `TiltX/Y/Z`. Those handles can
+now be clicked for one edit or dragged for repeated edits while
 immediately persisting back to row pose plus `ScenePlacement` metadata. Open 3D
 also supports row-to-target snapping, where a movable row or face is translated
 onto another row or face and the solved constraint is preserved as row-backed

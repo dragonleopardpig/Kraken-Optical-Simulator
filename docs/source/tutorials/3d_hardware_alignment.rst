@@ -12,7 +12,8 @@ focusing on the 3D controls themselves:
 * use the ``CAD/STL placement handler`` instead of a dense second toolbar;
 * understand what each placement action changes in the table;
 * arm a 3D pick workflow and read the active-mode badge;
-* carry an imported STEP overlay with snapped Open 3D movement;
+* carry an imported STEP overlay with free Open 3D movement;
+* snap a picked STEP face normal to a straight or bent traced optical axis;
 * use in-scene ``STEP rotation handles`` for repeated vendor-hardware rotations;
 * know when to press ``Done -> 2D``.
 
@@ -103,8 +104,8 @@ and draws coloured ``X/Y/Z`` rotation handles around it inside the 3D scene.
    replaces the older floating popup and duplicate toolbar menu, so rotation is
    tied to the selected STEP component and does not cover the geometry.
 
-Carry Imported STEP With Snapped Steps
---------------------------------------
+Carry Imported STEP Freely
+--------------------------
 
 Open 3D can import lens, camera, or LED STEP hardware directly from
 ``CAD / target -> Import STEP``. The imported component is selected immediately.
@@ -112,31 +113,25 @@ Use ``CAD / target -> Arm Selected STEP Carry`` when an already-imported
 component should show carry status before it is moved again.
 
 .. figure:: ../_static/tutorials/3d_hardware_alignment/06_step_carry_grid.png
-   :alt: Imported STEP hardware carried with snapped Open 3D movement
+   :alt: Imported STEP hardware carried with free Open 3D movement
    :width: 100%
 
-   STEP carry no longer draws the old cube lattice. The ``Carry -> Snap step``
-   selector switches between ``Free``, ``Ray``, ``Fine``, ``Auto``, and ``Coarse``. To
-   carry a STEP overlay, hold the pointer on the STEP body briefly, or start
-   dragging on the body, until the carry anchor snaps to the STEP center and an
-   in-scene grip cursor appears there. Release to drop/commit the placement.
-   The OS pointer is not warped during this hold-drag gesture; synthetic Tk/VTK
-   pointer motion can feed back into the drag loop and make the component jump.
-   The carry path projects the cursor ray onto a drag plane through the STEP
-   center. ``Free`` mode, the default, moves continuously on that plane;
-   ``Ray`` mode caches traced ray polylines for the drag, captures the candidate
-   center to a selected ray or nearby ray, and stays on that ray while stepping
-   along it until release; ``Fine``, ``Auto``, and ``Coarse`` snap the center
-   displacement on the drag plane.
-   ``Ctrl+drag`` keeps the same left-drag gesture available for
+   STEP carry uses free movement only. To carry a STEP overlay, hold the pointer
+   on the STEP body briefly, or start dragging on the body, until the carry
+   anchor snaps to the STEP center and an in-scene grip cursor appears there.
+   Release to drop/commit the placement. The OS pointer is not warped during
+   this hold-drag gesture; synthetic Tk/VTK pointer motion can feed back into
+   the drag loop and make the component jump. The carry path projects the cursor
+   ray onto a drag plane through the STEP center and moves continuously on that
+   plane. ``Ctrl+drag`` keeps the same left-drag gesture available for
    camera rotation, and ``Esc`` cancels the active carry/pick operation. The
    selected overlay keeps its rotation handles, so the normal workflow is:
-   import, hold-drag the hardware near the traced ray bundle, use
-   ``Snap ray`` when the hardware center should land on a traced 3D ray point,
-   or use ``Snap target`` when the hardware center should land on a detector,
-   Object row, active target surface, or CAD/STL face anchor. Click the
-   coloured handles for coarse orientation, then release the mouse button to
-   drop the component.
+   import, hold-drag the hardware near the traced ray bundle, click the STEP
+   surface whose normal should define the optical entrance/exit direction, and
+   choose ``CAD / target -> Snap STEP Normal->Optical Axis``. The picked face
+   center moves onto the nearest traced optical path segment, and the picked
+   normal rotates parallel to that local path direction. Click the coloured
+   handles to flip the sign if needed before assigning face functions.
 
 This is a hardware-overlay workflow. It places real vendor CAD in the same 3D
 scene as rays and optical objects. Use
@@ -176,8 +171,8 @@ physics of one particular component:
 * contextual CAD/STL placement side panel with inline help;
 * table-backed row pose edits through ``Tilt`` and ``Desp`` fields;
 * active-mode badges for multi-click 3D workflows;
-* imported STEP carry placement with snapped movement;
-* imported STEP snap-to-ray and snap-to-target placement;
+* imported STEP carry placement with free movement;
+* imported STEP normal-to-optical-axis placement;
 * promotion from positioned STEP overlay to a file-backed optical solid row;
 * selected STEP rotation handles for imported hardware overlays;
 * source-target picking from the 3D view.

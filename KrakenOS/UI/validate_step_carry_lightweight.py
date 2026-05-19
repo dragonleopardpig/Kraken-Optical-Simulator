@@ -1,8 +1,8 @@
 """Validate the lightweight Open 3D STEP carry state path.
 
-This check does not open VTK. It verifies that snapped STEP carry motion can
+This check does not open VTK. It verifies that free STEP carry motion can
 persist placement offsets without forcing a full Open 3D scene rebuild on every
-mouse snap step. The inspector layer then moves already-rendered actors in
+mouse drag event. The inspector layer then moves already-rendered actors in
 place and performs one authoritative refresh on Drop.
 """
 
@@ -28,7 +28,7 @@ def main() -> int:
         app.translate_step_overlay(
             "lens",
             (1.0, 2.0, 3.0),
-            grid_spacing_mm=1.0,
+            grid_spacing_mm=None,
             refresh=False,
             record_history=False,
         )

@@ -45,20 +45,20 @@ def main() -> int:
         ("capture script exists", CAPTURE_SCRIPT.exists() and "DEFAULT_OUTPUT_DIR" in capture),
         ("case-study documents CAD/STL handler", "CAD/STL placement handler" in doc),
         ("case-study documents STEP rotation handles", "STEP rotation handles" in doc),
-        ("case-study documents STEP carry snap steps", "Carry Imported STEP With Snapped Steps" in doc and "Ctrl+drag" in doc),
+        ("case-study documents free STEP carry", "Carry Imported STEP Freely" in doc and "Ctrl+drag" in doc),
         (
             "case-study documents hold-drag STEP carry",
-            "hold the pointer on the STEP body briefly" in doc
+            "hold the pointer" in doc
+            and "on the STEP body briefly" in doc
             and "dragging on the body" in doc
             and "drop/commit" in doc
             and "OS pointer is not warped" in doc,
         ),
-        ("case-study documents STEP Snap ray carry", "``Snap ray``" in doc),
-        ("case-study documents STEP Snap target carry", "``Snap target``" in doc),
+        ("case-study documents STEP normal-to-axis snap", "Snap STEP Normal->Optical Axis" in doc),
         ("case-study documents STEP promotion", "Promote STEP to Optical Solid Row" in doc),
         ("case-study documents active-mode badges", "active-mode badge" in doc),
         ("case-study documents Done -> 2D", "Done -> 2D" in doc),
-        ("capture script captures STEP carry snap state", "06_step_carry_grid.png" in capture and "STEP carry lattice=0" in capture),
+        ("capture script captures STEP carry free state", "06_step_carry_grid.png" in capture and "STEP carry active=1" in capture),
         ("CAD/STL handler has inline help", "What this does" in stl_handler and "Fit Axis chooses" in stl_handler),
         ("CAD/STL handler exposes placement actions", "Front On Row" in stl_handler and "Center X/Y" in stl_handler),
         ("STEP handler selects in-scene handles", "colored STEP rotation handles" in step_handler and "tk.Toplevel" not in step_handler),

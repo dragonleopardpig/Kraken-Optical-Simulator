@@ -27,6 +27,7 @@ _MENU_EXPECTATIONS: dict[str, tuple[str, ...]] = {
         "Arm Selected STEP Carry",
         "Promote STEP to Optical Solid Row",
         "Center STEP Axis",
+        "Snap STEP Normal->Optical Axis",
         "Obj->LED",
         "Export STEP",
         "Faces...",
@@ -136,9 +137,9 @@ def main() -> int:
             "importing STEP from Open 3D should immediately refresh and select the in-scene handles",
         ),
         (
-            "Open 3D carry row exposes snap-step selector",
-            "step_carry_grid_var" in init_source and "Snap step" in init_source and "STEP_CARRY_GRID_CHOICES" in init_source,
-            "STEP carry should expose an Auto/Fine/Coarse snap-step selector",
+            "Open 3D carry row uses free movement guidance",
+            "Hold-drag STEP to move freely" in init_source and "Snap step" not in init_source,
+            "STEP carry should be free movement, with optical-axis alignment handled by a separate command",
         ),
         (
             "Open 3D carry row avoids explicit Lift/Drop buttons",
@@ -148,14 +149,10 @@ def main() -> int:
             "STEP carry should use press-hold lift and release drop instead of toolbar Lift/Drop buttons",
         ),
         (
-            "Open 3D carry row exposes visible snap-to-ray action",
-            'ttk.Button(carry_toolbar, text="Snap ray"' in init_source and "start_step_carry_snap_ray" in init_source,
-            "STEP carry should expose ray snapping without reopening a menu",
-        ),
-        (
-            "Open 3D carry row exposes visible snap-to-target action",
-            'ttk.Button(carry_toolbar, text="Snap target"' in init_source and "start_step_carry_snap_target" in init_source,
-            "STEP carry should expose scene-target snapping without reopening a menu",
+            "Open 3D carry row removes old snap buttons",
+            'ttk.Button(carry_toolbar, text="Snap ray"' not in init_source
+            and 'ttk.Button(carry_toolbar, text="Snap target"' not in init_source,
+            "STEP carry should not expose the old ray/target center snap buttons",
         ),
     ]
 

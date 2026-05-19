@@ -2,15 +2,14 @@
 
 Run this under a real display or Xvfb. It opens the embedded Tk/VTK 3D
 inspector, activates carry mode for a tracked vendor STEP file, verifies that
-snap spacing and rotation handles are available without drawing a cube lattice,
-and applies one snapped drag step through the same carry path used by the mouse
-bindings.
+free carry and rotation handles are available without drawing a cube lattice,
+applies one free drag through the same carry path used by the mouse bindings,
+and validates the explicit STEP-face-normal to optical-axis snap service.
 """
 
 from __future__ import annotations
 
 import argparse
-import re
 import time
 from pathlib import Path
 
@@ -43,20 +42,6 @@ def _actor_input(actor) -> str:
         return str(actor.GetInput())
     except Exception:
         return ""
-
-
-def _snap_spacing_from_text(text: str) -> float | None:
-    match = re.search(
-        r"snapped\s+([0-9.]+)\s*mm|step\s+([0-9.]+)\s*mm|([0-9.]+)\s*mm (?:cube )?grid|cube\s+([0-9.]+)\s*mm",
-        text,
-    )
-    if not match:
-        return None
-    value = next((part for part in match.groups() if part), None)
-    try:
-        return float(value)
-    except Exception:
-        return None
 
 
 def _open_inspector(app: KrakenLayoutEditor) -> Kraken3DInspector:
@@ -133,60 +118,12 @@ def main() -> int:
         if not getattr(inspector, "_actor_step_rotate_map", {}):
             raise AssertionError("STEP rotation handles were not present during carry mode.")
         status = str(inspector.status_var.get())
-        if "STEP carry lattice=" not in status:
-            raise AssertionError(f"3D status did not report a STEP carry lattice count: {status!r}")
-        try:
-            grid_count = int(status.split("STEP carry lattice=", 1)[1].split("|", 1)[0].strip())
-        except Exception as exc:
-            raise AssertionError(f"Could not parse STEP carry lattice count from status: {status!r}") from exc
-        if grid_count != 0:
-            raise AssertionError(f"Expected hidden STEP carry cube lattice, got {grid_count} grid lines.")
+        if "STEP carry active=1" not in status:
+            raise AssertionError(f"3D status did not report active free STEP carry: {status!r}")
         if inspector._step_carry_grid_mode() != "Free":
             raise AssertionError("STEP carry should default to Free movement.")
         if "free plane movement" not in _actor_input(inspector._placement_grid_status_actor):
             raise AssertionError("STEP carry Free mode did not appear in the 3D status overlay.")
-
-        inspector.step_carry_grid_var.set("Auto")
-        inspector._on_step_carry_grid_selected()
-        inspector.update_idletasks()
-        inspector.update()
-        badge_spacing = _snap_spacing_from_text(_actor_input(inspector._mode_badge_actor))
-        grid_spacing = _snap_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
-        if badge_spacing is None or grid_spacing is None or abs(badge_spacing - grid_spacing) > 1e-9:
-            raise AssertionError(
-                "STEP carry badge/grid spacing mismatch: "
-                f"badge={badge_spacing!r}, grid={grid_spacing!r}."
-            )
-        auto_spacing = grid_spacing
-
-        inspector.step_carry_grid_var.set("Fine")
-        inspector._on_step_carry_grid_selected()
-        inspector.update_idletasks()
-        inspector.update()
-        fine_spacing = _snap_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
-        if fine_spacing is None or fine_spacing >= auto_spacing:
-            raise AssertionError(
-                f"Fine STEP carry snap step did not reduce spacing: auto={auto_spacing}, fine={fine_spacing}."
-            )
-
-        inspector.step_carry_grid_var.set("Ray")
-        inspector._on_step_carry_grid_selected()
-        inspector.update_idletasks()
-        inspector.update()
-        ray_status = _actor_input(inspector._placement_grid_status_actor)
-        ray_spacing = _snap_spacing_from_text(ray_status)
-        if ray_spacing is None or "ray step" not in ray_status:
-            raise AssertionError(f"Ray STEP carry mode did not report a ray step: {ray_status!r}")
-
-        inspector.step_carry_grid_var.set("Coarse")
-        inspector._on_step_carry_grid_selected()
-        inspector.update_idletasks()
-        inspector.update()
-        coarse_spacing = _snap_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
-        if coarse_spacing is None or coarse_spacing <= auto_spacing:
-            raise AssertionError(
-                f"Coarse STEP carry snap step did not increase spacing: auto={auto_spacing}, coarse={coarse_spacing}."
-            )
 
         inspector.step_carry_grid_var.set("Free")
         inspector._on_step_carry_grid_selected()
@@ -204,24 +141,6 @@ def main() -> int:
         if inspector._step_carry_drag_state is not None:
             inspector._finish_step_carry_drag(inspector._step_carry_drag_state)
 
-        inspector.start_step_carry_snap_ray()
-        if not inspector._step_carry_snap_ray_mode:
-            raise AssertionError("STEP carry Snap ray did not enter pick mode.")
-        snap_before = app._step_placement_offset_xyz("lens")
-        inspector._apply_step_carry_snap_ray((0.0, 0.0, 25.0), ray_index=0)
-        snap_after = app._step_placement_offset_xyz("lens")
-        if snap_before == snap_after or inspector._step_carry_snap_ray_mode:
-            raise AssertionError("STEP carry Snap ray did not snap placement and leave pick mode.")
-
-        inspector.start_step_carry_snap_target()
-        if not inspector._step_carry_snap_target_mode:
-            raise AssertionError("STEP carry Snap target did not enter pick mode.")
-        target_before = app._step_placement_offset_xyz("lens")
-        inspector._apply_step_carry_snap_target(0)
-        target_after = app._step_placement_offset_xyz("lens")
-        if target_before == target_after or inspector._step_carry_snap_target_mode:
-            raise AssertionError("STEP carry Snap target did not snap placement and leave pick mode.")
-
         state = _activate_hold_drag(inspector, "lens")
         before = app._step_placement_offset_xyz("lens")
         inspector._step_carry_drag_state = state
@@ -235,17 +154,20 @@ def main() -> int:
         inspector.refresh_from_editor()
         inspector.update_idletasks()
         inspector.update()
-        if inspector._step_carry_grid_mode() == "Free":
-            if "free plane movement" not in _actor_input(inspector._placement_grid_status_actor):
-                raise AssertionError("STEP carry Free status disappeared after drag.")
-        else:
-            badge_spacing = _snap_spacing_from_text(_actor_input(inspector._mode_badge_actor))
-            grid_spacing = _snap_spacing_from_text(_actor_input(inspector._placement_grid_status_actor))
-            if badge_spacing is None or grid_spacing is None or abs(badge_spacing - grid_spacing) > 1e-9:
-                raise AssertionError(
-                    "STEP carry badge/grid spacing mismatch after snapped drag: "
-                    f"badge={badge_spacing!r}, grid={grid_spacing!r}."
-                )
+        if "free plane movement" not in _actor_input(inspector._placement_grid_status_actor):
+            raise AssertionError("STEP carry Free status disappeared after drag.")
+        if inspector._step_carry_drag_state is not None:
+            inspector._finish_step_carry_drag(inspector._step_carry_drag_state)
+        mesh = app._transformed_imported_step_mesh_for_label("lens")
+        if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+            raise AssertionError("STEP mesh unavailable for normal-to-axis snap validation.")
+        center = mesh.center
+        normal_before = app._step_rotation_deg_tuple("lens")
+        result = app.snap_step_feature_normal_to_optical_axis("lens", center, (1.0, 0.0, 0.0))
+        if result is None:
+            raise AssertionError("STEP normal-to-axis snap did not return a result.")
+        if app._step_rotation_deg_tuple("lens") == normal_before:
+            raise AssertionError("STEP normal-to-axis snap did not update STEP rotation state.")
         if args.snapshot is not None:
             inspector.update_idletasks()
             inspector.update()
