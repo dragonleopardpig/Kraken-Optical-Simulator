@@ -9,6 +9,7 @@ import numpy as np
 
 from KrakenOS.UI import layout_editor as le
 from KrakenOS.UI.layout_editor import (
+    Kraken3DInspector,
     KrakenLayoutEditor,
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
     OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
@@ -62,6 +63,10 @@ def main() -> int:
         row_index = int(promoted["row_index"])
         if app.imported_optical_step_path is not None:
             raise AssertionError("Promotion with clear_overlay=True left the display-only optical STEP overlay active.")
+        if getattr(app, "_selected_step_label", None) is not None:
+            raise AssertionError("Promotion with clear_overlay=True left a stale selected STEP label.")
+        if app._transformed_imported_optical_step_mesh() is not None:
+            raise AssertionError("Promotion with clear_overlay=True left display-only optical STEP geometry visible.")
 
         picked = _first_world_face(app, row_index)
         point = np.asarray(picked.get("centroid_world"), dtype=float)
@@ -96,6 +101,26 @@ def main() -> int:
         ]
         if not saved or str(saved[0].get("side_2d")) != "Auto":
             raise AssertionError("Direct Open 3D physics assignment should not require Left/Right/Up/Down side labels.")
+
+        _fmt, triangles = le._read_stl_triangle_vertices(Path(metadata["source_stl"]))
+        overlay_triangles = Kraken3DInspector._world_face_triangles_for_record(
+            app.rows[row_index],
+            triangles,
+            saved[0],
+            z_station=app._stl_row_z_station(row_index),
+        )
+        if overlay_triangles.ndim != 3 or overlay_triangles.shape[0] <= 0:
+            raise AssertionError("Assigned face overlay geometry was not built for the directly assigned face.")
+        if not Kraken3DInspector._assigned_optical_solid_face(saved[0]):
+            raise AssertionError("Assigned Uncoated face was not recognized as an assigned face overlay.")
+
+        system, _rays, scene_bundle = app._build_preview_system_rays_bundle(
+            sampling_mode=app._preview_3d_sampling_mode(),
+            update_state=False,
+        )
+        mesh_items = app._scene_surface_meshes(system, scene_bundle, include_reference_surfaces=True)
+        if not any(int(getattr(item, "row_index", -1)) == row_index for item in mesh_items):
+            raise AssertionError("Promoted optical solid disappeared from the rebuilt 3D scene meshes.")
     finally:
         app.destroy()
 

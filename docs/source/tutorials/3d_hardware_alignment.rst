@@ -13,7 +13,8 @@ focusing on the 3D controls themselves:
 * understand what each placement action changes in the table;
 * arm a 3D pick workflow and read the active-mode badge;
 * carry an imported STEP overlay with free Open 3D movement;
-* snap a picked STEP face normal to a straight or bent traced optical axis;
+* use ``Snap STEP Normal->Optical Axis`` to align a picked STEP face normal to a
+  straight or bent traced optical axis;
 * use in-scene ``STEP rotation handles`` for repeated vendor-hardware rotations;
 * know when to press ``Done -> 2D``.
 
@@ -49,11 +50,13 @@ Start from the fitted vendor prism layout used in
 Use The CAD/STL Placement Handler
 ---------------------------------
 
-Click the CAD/STL solid row in the 3D view, or choose
-``Actions -> 3D Place/Orient Selected CAD/STL Solid``. The embedded 3D view now
-opens a contextual right-side panel instead of a floating popup or a permanent
-second toolbar row. This keeps the controls visible when the main UI is tiled or
-fullscreen, and it avoids covering the 3D scene.
+Choose ``Actions -> 3D Place/Orient Selected CAD/STL Solid`` when row pose needs
+to be edited. Plain left-click on a CAD/STL solid only selects it; this keeps
+face-function assignment and ray/axis inspection from unexpectedly opening
+placement controls. The explicit placement command opens a contextual right-side
+panel instead of a floating popup or a permanent second toolbar row. This keeps
+the controls visible when the main UI is tiled or fullscreen, and it avoids
+covering the 3D scene.
 
 .. figure:: ../_static/tutorials/3d_hardware_alignment/02_cad_stl_placement_handler.png
    :alt: CAD STL placement handler side panel
@@ -127,10 +130,10 @@ is moved again.
    cursor immediately and drops on the next click; when the file dialog leaves
    the pointer outside the VTK canvas, the first in-canvas pointer motion
    attaches the STEP center to the cursor plane. To carry an already-imported
-   STEP overlay, hold the pointer on the STEP body briefly, or start dragging on
-   the body, until the carry anchor snaps to the STEP center and an in-scene
-   grip cursor appears there. Release to drop/commit the placement. The OS
-   pointer is not warped during this hold-drag gesture; synthetic Tk/VTK pointer
+   STEP overlay, hold the pointer on the STEP body briefly, or start
+   ``dragging on the body``, until the carry anchor snaps to the STEP center and
+   an in-scene grip cursor appears there. Release to drop/commit the placement.
+   The ``OS pointer is not warped`` during this hold-drag gesture; synthetic Tk/VTK pointer
    motion can feed back into the drag loop and make the component jump. The
    carry path projects the cursor ray onto a drag plane through the STEP center
    and moves continuously on that plane. ``Ctrl+drag`` keeps the same left-drag
@@ -144,7 +147,11 @@ is moved again.
    pickable even when regular rays are hidden. The picked face center moves
    onto the clicked optical path point, and the picked normal rotates parallel
    to that local path direction. Click the coloured handles to flip the sign if
-   needed before assigning face functions.
+   needed before assigning face functions. A right-click on a row-backed optical
+   CAD/STL face assigns ``Uncoated``, ``Full Reflecting``, splitter, absorber, or
+   unassigned physics directly on the picked face. Assigned faces remain tinted
+   in Open 3D so a previously authored face is visible before the next surface is
+   picked.
 
 This is a hardware-overlay workflow. It places real vendor CAD in the same 3D
 scene as rays and optical objects. Use
@@ -185,7 +192,9 @@ physics of one particular component:
 * table-backed row pose edits through ``Tilt`` and ``Desp`` fields;
 * active-mode badges for multi-click 3D workflows;
 * imported STEP carry placement with free movement;
-* imported STEP normal-to-optical-axis placement;
+* imported STEP ``Snap STEP Normal->Optical Axis`` placement;
+* direct picked-face optical function assignment with persistent assigned-face
+  overlays;
 * promotion from positioned STEP overlay to a file-backed optical solid row;
 * selected STEP rotation handles for imported hardware overlays;
 * source-target picking from the 3D view.

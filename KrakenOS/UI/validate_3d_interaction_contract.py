@@ -134,6 +134,9 @@ def main() -> int:
     refresh_from_editor = inspect.getsource(Kraken3DInspector.refresh_from_editor)
     endpoint_actor = inspect.getsource(Kraken3DInspector._add_ray_endpoint_actor)
     face_overlays = inspect.getsource(Kraken3DInspector._add_optical_solid_face_role_overlays)
+    assigned_face_overlays = inspect.getsource(Kraken3DInspector._add_optical_solid_assigned_face_overlays)
+    assigned_face_triangles = inspect.getsource(Kraken3DInspector._world_face_triangles_for_record)
+    clear_step_overlay_state = inspect.getsource(Kraken3DInspector._clear_step_overlay_interaction_state)
     virtual_plane_overlays = inspect.getsource(Kraken3DInspector._add_optical_solid_virtual_plane_overlays)
     runtime_face_markers = inspect.getsource(Kraken3DInspector._face_role_markers_from_runtime_transform)
     editor_refresh_plot = inspect.getsource(KrakenLayoutEditor.refresh_plot)
@@ -365,13 +368,32 @@ def main() -> int:
         ("active mode badge is a VTK overlay", "AddActor2D" in badge_update and "vtkTextActor" in badge_update),
         ("active mode badge survives 3D refresh", "_update_mode_badge" in refresh),
         ("embedded STL placement toolbar removed", "stl_toolbar" not in init and "placement toolbar" not in init),
-        ("CAD/STL selection opens placement handler", "show_stl_placement_handler(int(row_index))" in pick),
+        (
+            "CAD/STL selection does not open placement handler",
+            "show_stl_placement_handler(int(row_index))" not in pick
+            and "_update_stl_placement_handler_state()" in pick
+            and "Right-click a face to assign physics" in pick,
+        ),
         ("CAD/STL handler is embedded side panel", "CAD/STL placement side panel" in stl_handler and "tk.Toplevel" not in stl_handler),
         ("CAD/STL handler exposes axis fit", "Fit local axis to +Z" in stl_handler and "Fit Axis" in stl_handler),
         ("CAD/STL handler exposes repeated +/-90 rotations", "-90.0" in stl_handler and "90.0" in stl_handler),
         ("CAD/STL handler exposes placement finalization", "Done -> 2D" in stl_handler and "Front On Row" in stl_handler),
         ("CAD/STL handler stays current after pose changes", "_update_stl_placement_handler_state" in stl_refresh),
         ("Open 3D toolbar exposes Snapshot", "Snapshot" in init and "save_snapshot" in init),
+        (
+            "Open 3D face assignment has persistent face overlays",
+            "_add_optical_solid_assigned_face_overlays" in refresh
+            and "assigned face overlays" in refresh
+            and "triangle_indices" in assigned_face_triangles
+            and "backface_culling=False" in assigned_face_overlays,
+        ),
+        (
+            "Open 3D STEP promotion clears stale overlay interaction state",
+            "_clear_step_overlay_interaction_state(label)" in step_promote
+            and "refresh_open_3d=False" in step_promote
+            and "_selected_step_label = None" in clear_step_overlay_state
+            and "_close_step_rotation_handler()" in clear_step_overlay_state,
+        ),
         (
             "Open 3D toolbar uses categorized rows",
             "toolbar_container" in init and "view_toolbar" in init and "scene_toolbar" in init,

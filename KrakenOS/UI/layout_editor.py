@@ -5649,12 +5649,13 @@ class Kraken3DInspector(tk.Toplevel):
             return
         face_id = str(result.get("face_id", "") or "picked face")
         display = str(result.get("function_display", function_label) or function_label)
-        self.status_var.set(f"S{int(row_index)} {face_id}: set {display}. Rebuilding trace.")
+        message = f"S{int(row_index)} {face_id}: set {display}. Rebuilt trace with assigned-face overlay."
         try:
             self.refresh_from_editor()
             self.highlight_row(int(row_index))
         except Exception as exc:
             self.editor.append_debug(f"Open 3D refresh after face assignment failed: {exc}")
+        self.status_var.set(message)
 
     def _promote_step_from_context(self, label: str) -> None:
         self.editor.select_step_component(label)
@@ -5675,6 +5676,7 @@ class Kraken3DInspector(tk.Toplevel):
                 label,
                 open_face_editor=False,
                 clear_overlay=True,
+                refresh_open_3d=False,
             )
         except Exception as exc:
             self.status_var.set(f"Promote STEP failed: {_short_error_message(exc)}")
@@ -5695,11 +5697,7 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set(f"Promoted STEP, but face assignment failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"Open 3D promoted STEP face assignment failed: {exc}")
             return
-        self._step_carry_follow_state = None
-        self._step_carry_active_label = None
-        self._step_rotation_active_label = None
-        self._set_step_carry_cursor(False)
-        self._set_axis_pick_cursor(False)
+        self._clear_step_overlay_interaction_state(label)
         try:
             self.refresh_from_editor()
             self.highlight_row(row_index)
@@ -7337,6 +7335,7 @@ class Kraken3DInspector(tk.Toplevel):
         line_width: float = 1.0,
         wireframe: bool = False,
         flat_shading: bool = False,
+        backface_culling: bool = True,
     ):
         if self._renderer is None or vtkActor is None or vtkDataSetMapper is None:
             return None
@@ -7361,7 +7360,10 @@ class Kraken3DInspector(tk.Toplevel):
                 prop.SetSpecular(0.18)
                 prop.SetSpecularPower(12.0)
         try:
-            prop.BackfaceCullingOn()
+            if backface_culling:
+                prop.BackfaceCullingOn()
+            else:
+                prop.BackfaceCullingOff()
         except Exception:
             pass
         actor_key = self._actor_key(actor)
@@ -7578,7 +7580,7 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set("Promote STEP: select or import a lens, optical, camera, or LED STEP first.")
             return
         try:
-            result = self.editor.promote_imported_step_to_optical_solid_row(label, clear_overlay=True)
+            result = self.editor.promote_imported_step_to_optical_solid_row(label, clear_overlay=True, refresh_open_3d=False)
         except Exception as exc:
             self.status_var.set(f"Promote STEP failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"Open 3D STEP promotion failed: {exc}")
@@ -7586,13 +7588,7 @@ class Kraken3DInspector(tk.Toplevel):
         if result is None:
             self.status_var.set(self.editor.status_var.get())
             return
-        self._step_carry_follow_state = None
-        self._step_carry_snap_ray_mode = False
-        self._step_carry_snap_target_mode = False
-        self._step_carry_active_label = None
-        self._clear_step_carry_grip_marker(render=False)
-        self._set_step_carry_cursor(False)
-        self._set_axis_pick_cursor(False)
+        self._clear_step_overlay_interaction_state(label)
         row_index = int(result.get("row_index", -1))
         try:
             self.refresh_from_editor()
@@ -8044,6 +8040,33 @@ class Kraken3DInspector(tk.Toplevel):
 
     def _close_step_rotation_handler(self) -> None:
         self._step_rotation_active_label = None
+
+    def _clear_step_overlay_interaction_state(self, label: str | None = None) -> None:
+        label_text = str(label or "").strip().lower()
+        self._cancel_step_carry_hold_timer()
+        self._step_carry_active_label = None
+        self._step_carry_drag_state = None
+        self._step_carry_follow_state = None
+        self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
+        self._step_normal_axis_pick_mode = False
+        self._step_carry_grid_label = None
+        self._step_carry_grid_spacing_mm = None
+        self._selected_step_feature_label = None
+        self._selected_step_feature_center_world = None
+        self._selected_step_feature_normal_world = None
+        self._close_step_rotation_handler()
+        self._set_step_hover_outline(None, None)
+        self._set_step_carry_cursor(False)
+        self._set_axis_pick_cursor(False)
+        self._clear_step_carry_grip_marker(render=False)
+        if label_text:
+            try:
+                if getattr(self.editor, "_selected_step_label", None) == label_text:
+                    self.editor._selected_step_label = None
+            except Exception:
+                pass
+            self._set_step_highlight(None)
 
     def _stl_placement_status_text(self, row_index: int) -> str:
         row = self.editor.rows[int(row_index)]
@@ -8573,6 +8596,164 @@ class Kraken3DInspector(tk.Toplevel):
             for marker in markers:
                 if self._add_face_role_marker_actor(marker, scene_radius=scene_radius):
                     count += 1
+        return count
+
+    @staticmethod
+    def _assigned_optical_solid_face(face: dict[str, object]) -> bool:
+        function = _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+        side = _normalize_optical_solid_face_side(face.get("side_2d"))
+        role = _legacy_role_from_optical_solid_face_function(function)
+        return not (
+            role == OPTICAL_SOLID_FACE_ROLE_DEFAULT
+            and function == OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
+            and side == OPTICAL_SOLID_FACE_SIDE_DEFAULT
+        )
+
+    @staticmethod
+    def _world_face_triangles_for_record(
+        row,
+        triangles: np.ndarray,
+        face: dict[str, object],
+        *,
+        z_station: float,
+        transform=None,
+        scene_radius: float = 1.0,
+    ) -> np.ndarray:
+        indices: list[int] = []
+        for value in list(face.get("triangle_indices", []) or []):
+            try:
+                index = int(value)
+            except Exception:
+                continue
+            if 0 <= index < int(triangles.shape[0]):
+                indices.append(index)
+        if not indices:
+            return np.empty((0, 3, 3), dtype=float)
+        selected = np.asarray(triangles[np.asarray(indices, dtype=int)], dtype=float)
+        if selected.ndim != 3 or selected.shape[1:] != (3, 3) or selected.shape[0] == 0:
+            return np.empty((0, 3, 3), dtype=float)
+        points = selected.reshape((-1, 3))
+        normal_local = np.asarray(_unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))), dtype=float)
+        if bool(face.get("flip_normal", False)):
+            normal_local = -normal_local
+        if transform is not None:
+            try:
+                matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+                local_h = np.column_stack((points[:, 0], points[:, 1], points[:, 2], np.ones(points.shape[0], dtype=float)))
+                world = (matrix @ local_h.T).T[:, :3]
+                normal = np.asarray(matrix[:3, :3], dtype=float) @ normal_local[:3]
+                normal_norm = float(np.linalg.norm(normal))
+                if normal_norm > 1e-12 and np.isfinite(normal_norm):
+                    world = world + (normal[:3] / normal_norm) * max(float(scene_radius) * 0.0007, 0.02)
+                return world.reshape(selected.shape)
+            except Exception:
+                return np.empty((0, 3, 3), dtype=float)
+        rotation = _rotation_matrix_from_kraken_tilts(
+            float(getattr(row, "tilt_x", 0.0)),
+            float(getattr(row, "tilt_y", 0.0)),
+            float(getattr(row, "tilt_z", 0.0)),
+        )
+        offset = np.asarray(
+            (
+                float(getattr(row, "desp_x", 0.0)),
+                float(getattr(row, "desp_y", 0.0)),
+                float(z_station) + float(getattr(row, "desp_z", 0.0)),
+            ),
+            dtype=float,
+        )
+        world = points @ rotation.T + offset
+        normal = normal_local @ rotation.T
+        normal_norm = float(np.linalg.norm(normal))
+        if normal_norm > 1e-12 and np.isfinite(normal_norm):
+            world = world + (normal[:3] / normal_norm) * max(float(scene_radius) * 0.0007, 0.02)
+        return world.reshape(selected.shape)
+
+    @staticmethod
+    def _polydata_from_triangles(triangles: np.ndarray):
+        if pv is None:
+            return None
+        triangles = np.asarray(triangles, dtype=float)
+        if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or triangles.shape[0] == 0:
+            return None
+        points = triangles.reshape((-1, 3))
+        if points.shape[0] == 0 or not np.all(np.isfinite(points[:, :3])):
+            return None
+        faces = np.column_stack(
+            (
+                np.full(triangles.shape[0], 3, dtype=np.int64),
+                np.arange(points.shape[0], dtype=np.int64).reshape((-1, 3)),
+            )
+        ).ravel()
+        return pv.PolyData(points, faces)
+
+    def _add_optical_solid_assigned_face_overlays(self, system=None) -> int:
+        if self._renderer is None or pv is None:
+            return 0
+        z_positions = self.editor._row_z_positions()
+        _center, scene_radius = self._scene_bounds()
+        count = 0
+        for row_index, row in enumerate(self.editor.rows):
+            item = self.editor._file_backed_stl_row_at(row_index)
+            if item is None:
+                continue
+            _row, path = item
+            try:
+                metadata = normalize_optical_solid_face_metadata(
+                    (row.advanced or {}).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+                )
+                _fmt, triangles = _read_stl_triangle_vertices(path)
+                triangles = np.asarray(triangles, dtype=float)
+            except Exception as exc:
+                self.editor.append_debug(f"3D assigned face overlay unavailable for S{row_index}: {exc}")
+                continue
+            if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or triangles.shape[0] == 0:
+                continue
+            z_station = float(z_positions[row_index]) if row_index < len(z_positions) else 0.0
+            transform = self._runtime_transform_for_row(system, row_index)
+            for face in list(metadata.get("faces", []) or []):
+                if not isinstance(face, dict):
+                    continue
+                record = normalize_optical_solid_face_record(face)
+                if not self._assigned_optical_solid_face(record):
+                    continue
+                world_triangles = self._world_face_triangles_for_record(
+                    row,
+                    triangles,
+                    record,
+                    z_station=z_station,
+                    transform=transform,
+                    scene_radius=scene_radius,
+                )
+                mesh = self._polydata_from_triangles(world_triangles)
+                if mesh is None:
+                    continue
+                function = _normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role"))
+                role = _legacy_role_from_optical_solid_face_function(function)
+                color = optical_solid_face_role_color(role)
+                self._add_mesh_actor(
+                    mesh,
+                    color=color,
+                    opacity=0.34,
+                    flat_shading=True,
+                    backface_culling=False,
+                )
+                try:
+                    edges = mesh.extract_feature_edges(
+                        boundary_edges=True,
+                        feature_edges=True,
+                        manifold_edges=False,
+                    )
+                    if int(getattr(edges, "n_points", 0)) > 0:
+                        self._add_mesh_actor(
+                            edges,
+                            color=color,
+                            opacity=0.95,
+                            line_width=1.8,
+                            backface_culling=False,
+                        )
+                except Exception:
+                    pass
+                count += 1
         return count
 
     @staticmethod
@@ -9413,6 +9594,7 @@ class Kraken3DInspector(tk.Toplevel):
                     pass
             drew_surfaces += 1
 
+        assigned_face_overlays = self._add_optical_solid_assigned_face_overlays(system)
         face_role_markers = self._add_optical_solid_face_role_overlays(system)
         virtual_plane_markers = self._add_optical_solid_virtual_plane_overlays(system)
         if step_carry_label is not None:
@@ -9539,7 +9721,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._update_stl_placement_handler_state()
         ray_count = len(getattr(scene_bundle, "ray_paths", []) or []) if scene_bundle is not None else len(getattr(rays, "CC", []))
         self.status_var.set(
-            f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | optical axes={optical_axis_overlays} | face roles={face_role_markers} | virtual planes={virtual_plane_markers} | detector overlays={detector_overlay_lines} | placement grid={placement_grid_lines} | STEP carry active={step_carry_active} | STEP rotation handles={step_rotation_handles}"
+            f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | optical axes={optical_axis_overlays} | assigned face overlays={assigned_face_overlays} | face roles={face_role_markers} | virtual planes={virtual_plane_markers} | detector overlays={detector_overlay_lines} | placement grid={placement_grid_lines} | STEP carry active={step_carry_active} | STEP rotation handles={step_rotation_handles}"
         )
         grid_summary = " | ".join(part for part in (placement_grid_summary, step_carry_grid_summary) if part)
         self._update_placement_grid_status(grid_summary, render=False)
@@ -10769,8 +10951,11 @@ class Kraken3DInspector(tk.Toplevel):
             return
         if self.editor._file_backed_stl_row_at(row_index) is not None:
             self._stl_placement_row_index = int(row_index)
-            self.show_stl_placement_handler(int(row_index))
-            self.status_var.set(f"Selected CAD/STL row {row_index}: {row_name}. Use the placement handler.")
+            self._update_stl_placement_handler_state()
+            self.status_var.set(
+                f"Selected CAD/STL row {row_index}: {row_name}. "
+                "Right-click a face to assign physics, or use Place controls for pose changes."
+            )
         else:
             self._close_stl_placement_handler()
             self.status_var.set(f"Selected row {row_index}: {row_name}")
@@ -17852,6 +18037,7 @@ class KrakenLayoutEditor(tk.Tk):
         insert_at: int | None = None,
         open_face_editor: bool = True,
         clear_overlay: bool = False,
+        refresh_open_3d: bool = True,
     ) -> dict[str, object] | None:
         label = str(label).strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET:
@@ -18025,7 +18211,8 @@ class KrakenLayoutEditor(tk.Tk):
             self.status_var.set(
                 f"Promoted {label.upper()} STEP to optical solid row S{resolved_insert_at}. Assign faces/material, then Update."
             )
-        self._refresh_open_3d_views()
+        if refresh_open_3d:
+            self._refresh_open_3d_views()
         if open_face_editor:
             self.after(120, lambda idx=resolved_insert_at: self.open_optical_solid_face_role_editor(idx))
         return {
