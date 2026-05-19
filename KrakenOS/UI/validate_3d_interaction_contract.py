@@ -39,6 +39,9 @@ def main() -> int:
     step_carry_drag = inspect.getsource(Kraken3DInspector._apply_step_carry_drag_motion)
     step_carry_cursor_plane = inspect.getsource(Kraken3DInspector._cursor_plane_point)
     step_carry_display_world = inspect.getsource(Kraken3DInspector._display_to_world_3d)
+    step_carry_widget_pointer = inspect.getsource(Kraken3DInspector._current_widget_pointer_xy)
+    step_carry_follow_state = inspect.getsource(Kraken3DInspector._new_step_carry_follow_state)
+    step_carry_follow_motion = inspect.getsource(Kraken3DInspector._apply_step_carry_follow_motion)
     step_carry_pick_label = inspect.getsource(Kraken3DInspector._step_carry_label_from_current_pick)
     step_carry_hold_arm = inspect.getsource(Kraken3DInspector._arm_step_carry_hold)
     step_carry_hold_activate = inspect.getsource(Kraken3DInspector._activate_step_carry_hold)
@@ -56,6 +59,11 @@ def main() -> int:
     step_carry_snap_target_start = inspect.getsource(Kraken3DInspector.start_step_carry_snap_target)
     step_carry_snap_target_apply = inspect.getsource(Kraken3DInspector._apply_step_carry_snap_target)
     step_normal_snap = inspect.getsource(Kraken3DInspector.snap_selected_step_normal_to_optical_axis)
+    step_normal_axis_start = inspect.getsource(Kraken3DInspector.start_step_normal_axis_pick)
+    step_normal_axis_apply = inspect.getsource(Kraken3DInspector._apply_step_normal_axis_pick)
+    optical_axis_records = inspect.getsource(Kraken3DInspector._optical_axis_records_for_3d)
+    optical_axis_overlays = inspect.getsource(Kraken3DInspector._add_optical_axis_pick_overlays)
+    optical_axis_frame = inspect.getsource(Kraken3DInspector._optical_axis_frame_from_pick)
     picked_step_feature = inspect.getsource(Kraken3DInspector._picked_feature_info)
     remember_step_feature = inspect.getsource(Kraken3DInspector._remember_selected_step_feature)
     step_carry_drop = inspect.getsource(Kraken3DInspector.stop_step_carry)
@@ -169,8 +177,16 @@ def main() -> int:
             "Open 3D STEP normal snap is face-normal based",
             "Snap STEP Normal->Optical Axis" in init
             and "_remember_selected_step_feature" in pick
+            and "start_step_normal_axis_pick(step_label)" in pick
             and "feature[2]" in remember_step_feature
-            and "snap_step_feature_normal_to_optical_axis" in step_normal_snap
+            and "start_step_normal_axis_pick(label)" in step_normal_snap
+            and "_step_normal_axis_pick_mode = True" in step_normal_axis_start
+            and "_actor_optical_axis_map" in pick
+            and "_apply_step_normal_axis_pick(axis_info)" in pick
+            and "_optical_axis_frame_from_pick" in step_normal_axis_apply
+            and "axis_frame=axis_frame" in step_normal_axis_apply
+            and "pick_optical_axis=record" in optical_axis_overlays
+            and "_closest_polyline_point_and_direction" in optical_axis_frame
             and "_nearest_traced_ray_frame_near_point" in editor_step_axis_frame
             and "_rotation_matrix_between_vectors" in editor_step_normal_snap
             and "_affine_from_point_sets" in editor_step_normal_snap,
@@ -192,6 +208,9 @@ def main() -> int:
             and "drag_plane_normal" in step_carry_hold_activate
             and "drag_anchor_world" in step_carry_hold_activate
             and "start_center_world" in step_carry_hold_activate
+            and "attach_to_cursor_on_next_motion" in step_carry_follow_state
+            and "cursor_world[:3] - center_world[:3]" in step_carry_follow_motion
+            and "height - 1 - y" in step_carry_widget_pointer
             and "DisplayToWorld" in step_carry_display_world
             and "continuous_plane_center" in step_carry_plane_motion
             and "np.trunc(raw_delta / spacing)" not in step_carry_plane_motion,

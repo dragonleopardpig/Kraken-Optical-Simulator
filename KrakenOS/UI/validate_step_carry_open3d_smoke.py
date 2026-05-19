@@ -4,7 +4,7 @@ Run this under a real display or Xvfb. It opens the embedded Tk/VTK 3D
 inspector, activates carry mode for a tracked vendor STEP file, verifies that
 free carry and rotation handles are available without drawing a cube lattice,
 applies one free drag through the same carry path used by the mouse bindings,
-and validates the explicit STEP-face-normal to optical-axis snap service.
+and validates the two-click STEP-face-normal to optical-axis snap workflow.
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ from __future__ import annotations
 import argparse
 import time
 from pathlib import Path
+
+import numpy as np
 
 from KrakenOS.UI.layout_editor import KrakenLayoutEditor, Kraken3DInspector
 
@@ -121,6 +123,8 @@ def main() -> int:
         status = str(inspector.status_var.get())
         if "STEP carry active=1" not in status:
             raise AssertionError(f"3D status did not report active free STEP carry: {status!r}")
+        if not getattr(inspector, "_actor_optical_axis_map", {}):
+            raise AssertionError("Open 3D did not create pickable optical-axis overlays.")
         if inspector._step_carry_grid_mode() != "Free":
             raise AssertionError("STEP carry should default to Free movement.")
         if "free plane movement" not in _actor_input(inspector._placement_grid_status_actor):
@@ -164,9 +168,20 @@ def main() -> int:
             raise AssertionError("STEP mesh unavailable for normal-to-axis snap validation.")
         center = mesh.center
         normal_before = app._step_rotation_deg_tuple("optical")
-        result = app.snap_step_feature_normal_to_optical_axis("optical", center, (1.0, 0.0, 0.0))
-        if result is None:
-            raise AssertionError("STEP normal-to-axis snap did not return a result.")
+        inspector._selected_step_feature_label = "optical"
+        inspector._selected_step_feature_center_world = np.asarray(center, dtype=float)
+        inspector._selected_step_feature_normal_world = np.asarray((1.0, 0.0, 0.0), dtype=float)
+        inspector.start_step_normal_axis_pick("optical")
+        inspector.update_idletasks()
+        inspector.update()
+        if not inspector._step_normal_axis_pick_mode:
+            raise AssertionError("STEP normal-to-axis snap did not enter optical-axis pick mode.")
+        axis_info = next(iter(getattr(inspector, "_actor_optical_axis_map", {}).values()), None)
+        if axis_info is None:
+            raise AssertionError("STEP normal-to-axis snap had no pickable optical-axis overlay.")
+        inspector._apply_step_normal_axis_pick(axis_info)
+        if inspector._step_normal_axis_pick_mode:
+            raise AssertionError("STEP normal-to-axis snap did not leave optical-axis pick mode.")
         if app._step_rotation_deg_tuple("optical") == normal_before:
             raise AssertionError("STEP normal-to-axis snap did not update STEP rotation state.")
         if args.snapshot is not None:

@@ -95,10 +95,12 @@ Current UI coverage:
   feature center moves onto the optical axis. If a STEP component is already
   selected, clicking a KrakenOS optical surface centers that STEP axis on the
   surface center.
-* imported STEP normal-to-axis snapping: click a planar STEP face, then choose
-  ``CAD / target -> Snap STEP Normal->Optical Axis``. The picked face center
-  moves onto the nearest traced optical path segment, and the picked face
-  normal rotates parallel to that local path direction.
+* imported STEP normal-to-axis snapping: click a planar STEP face, then click
+  the intended blue ``Optical Axis N`` overlay. The second click accepts only
+  optical-axis overlays, which are generated from traced path branches and
+  remain pickable even when regular ray drawing is hidden. The picked face
+  center moves onto the clicked optical path point, and the picked face normal
+  rotates parallel to that local path direction.
 * long dotted optical-axis guide in 3D at ``X=0, Y=0``
 
 CAD/STL optical solids
@@ -483,6 +485,8 @@ hardware context:
   does not replace an existing lens STEP overlay.
 * imported STEP carry placement in Open 3D: a newly imported optical STEP is
   selected and carried by the cursor immediately until the next click drops it.
+  If the pointer is outside the VTK canvas when the file dialog closes, the
+  first in-canvas pointer motion attaches the STEP center to the cursor plane.
   To move an already-imported STEP, hold the pointer on the STEP body briefly,
   or start dragging on the STEP body, until the carry anchor snaps to the STEP
   center and an in-scene grip cursor appears there. Release to drop and commit
@@ -492,8 +496,11 @@ hardware context:
   center and moves continuously on that plane.
   The old cube lattice and carry snap-step controls are removed. ``Ctrl+drag``
   keeps left-drag available for camera rotation, and ``Esc`` cancels active
-  carry or pick modes. Use ``Snap STEP Normal->Optical Axis`` after free
-  placement when the picked face should land on a bent or straight traced axis.
+  carry or pick modes. Use the STEP face-to-axis workflow after free placement:
+  click a planar STEP face, then click the intended blue ``Optical Axis N``
+  overlay. During that second click mode, arbitrary rays, surfaces, and STEP
+  faces are ignored so the face normal can only align to the selected optical
+  path branch.
 * CAD axis offset picking
 * selected STEP overlay rotation through in-scene coloured ``X/Y/Z`` rotation
   handles around the selected lens, optical, camera, or LED STEP component;

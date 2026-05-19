@@ -113,16 +113,20 @@ hardware directly from ``CAD / target -> Import STEP``. The arbitrary optical
 STEP command uses a separate ``optical`` overlay slot, so importing an optical
 element into a preset with an existing lens STEP does not replace the lens
 overlay. A newly imported optical STEP is selected and carried by the cursor
-immediately until the next click drops it. Use ``CAD / target -> Arm Selected
-STEP Carry`` when an already-imported component should show carry status before
-it is moved again.
+immediately until the next click drops it. If the file dialog closes while the
+pointer is outside the VTK canvas, the first in-canvas pointer motion attaches
+the STEP center to the cursor plane. Use ``CAD / target -> Arm Selected STEP
+Carry`` when an already-imported component should show carry status before it
+is moved again.
 
 .. figure:: ../_static/tutorials/3d_hardware_alignment/06_step_carry_grid.png
    :alt: Imported STEP hardware carried with free Open 3D movement
    :width: 100%
 
    STEP carry uses free movement only. A newly imported optical STEP follows the
-   cursor immediately and drops on the next click. To carry an already-imported
+   cursor immediately and drops on the next click; when the file dialog leaves
+   the pointer outside the VTK canvas, the first in-canvas pointer motion
+   attaches the STEP center to the cursor plane. To carry an already-imported
    STEP overlay, hold the pointer on the STEP body briefly, or start dragging on
    the body, until the carry anchor snaps to the STEP center and an in-scene
    grip cursor appears there. Release to drop/commit the placement. The OS
@@ -130,15 +134,17 @@ it is moved again.
    motion can feed back into the drag loop and make the component jump. The
    carry path projects the cursor ray onto a drag plane through the STEP center
    and moves continuously on that plane. ``Ctrl+drag`` keeps the same left-drag
-   gesture available for
-   camera rotation, and ``Esc`` cancels the active carry/pick operation. The
-   selected overlay keeps its rotation handles, so the normal workflow is:
-   import, hold-drag the hardware near the traced ray bundle, click the STEP
-   surface whose normal should define the optical entrance/exit direction, and
-   choose ``CAD / target -> Snap STEP Normal->Optical Axis``. The picked face
-   center moves onto the nearest traced optical path segment, and the picked
-   normal rotates parallel to that local path direction. Click the coloured
-   handles to flip the sign if needed before assigning face functions.
+   gesture available for camera rotation, and ``Esc`` cancels the active
+   carry/pick operation. The selected overlay keeps its rotation handles, so the
+   normal workflow is: import, hold-drag the hardware near the traced ray
+   bundle, click the STEP surface whose normal should define the optical
+   entrance/exit direction, and then click the intended blue ``Optical Axis N``
+   overlay. During the second click mode, only optical-axis overlays are
+   accepted; the overlays are generated from traced path branches and remain
+   pickable even when regular rays are hidden. The picked face center moves
+   onto the clicked optical path point, and the picked normal rotates parallel
+   to that local path direction. Click the coloured handles to flip the sign if
+   needed before assigning face functions.
 
 This is a hardware-overlay workflow. It places real vendor CAD in the same 3D
 scene as rays and optical objects. Use

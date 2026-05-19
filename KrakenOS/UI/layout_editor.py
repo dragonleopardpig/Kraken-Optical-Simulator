@@ -5103,6 +5103,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._row_actor_map: dict[int, list[str]] = {}
         self._actor_ray_map: dict[str, int] = {}
         self._ray_actor_map: dict[int, list[str]] = {}
+        self._actor_optical_axis_map: dict[str, dict[str, object]] = {}
+        self._optical_axis_actor_map: dict[str, list[str]] = {}
         self._actor_by_key: dict[str, object] = {}
         self._actor_step_map: dict[str, str] = {}
         self._step_actor_map: dict[str, list[str]] = {}
@@ -5113,6 +5115,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._actor_placement_rotate_map: dict[str, tuple[int, str, float]] = {}
         self._picked_step_label: str | None = None
         self._picked_ray_index: int | None = None
+        self._picked_optical_axis_id: str | None = None
         self._hover_step_actor = None
         self._hover_step_outline_actor = None
         self._hover_step_cell_key = None
@@ -5149,6 +5152,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_follow_state: dict[str, object] | None = None
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
+        self._step_normal_axis_pick_mode = False
         self._step_carry_grid_label: str | None = None
         self._step_carry_grid_spacing_mm: float | None = None
         self._step_carry_hold_after_id: str | None = None
@@ -5471,6 +5475,7 @@ class Kraken3DInspector(tk.Toplevel):
             or self._placement_orient_ray_mode
             or self._step_carry_snap_ray_mode
             or self._step_carry_snap_target_mode
+            or self._step_normal_axis_pick_mode
             or bool(getattr(self.editor, "_cad_axis_pick_any", False))
         ):
             return None
@@ -5715,6 +5720,7 @@ class Kraken3DInspector(tk.Toplevel):
             or self._placement_orient_ray_mode
             or self._step_carry_snap_ray_mode
             or self._step_carry_snap_target_mode
+            or self._step_normal_axis_pick_mode
             or bool(getattr(self.editor, "_cad_axis_pick_any", False))
         ):
             return None
@@ -5902,6 +5908,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_follow_state = None
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
+        self._step_normal_axis_pick_mode = False
         self.editor.select_step_component(label)
         self._set_step_highlight(label)
         self.show_step_rotation_handler(label)
@@ -5919,7 +5926,23 @@ class Kraken3DInspector(tk.Toplevel):
         else:
             self.status_var.set(f"{label.upper()} STEP center gripped: drag freely on the 3D plane; release to drop.")
 
+    def _current_widget_pointer_xy(self) -> tuple[int, int] | None:
+        if self._vtk_widget is not None:
+            try:
+                x = int(self._vtk_widget.winfo_pointerx() - self._vtk_widget.winfo_rootx())
+                y = int(self._vtk_widget.winfo_pointery() - self._vtk_widget.winfo_rooty())
+                width = max(int(self._vtk_widget.winfo_width()), 1)
+                height = max(int(self._vtk_widget.winfo_height()), 1)
+                if 0 <= x <= width and 0 <= y <= height:
+                    return (x, max(0, height - 1 - y))
+            except Exception:
+                pass
+        return None
+
     def _current_interactor_xy(self) -> tuple[int, int] | None:
+        pointer_xy = self._current_widget_pointer_xy()
+        if pointer_xy is not None:
+            return pointer_xy
         if self._vtk_interactor is None:
             return None
         try:
@@ -5934,9 +5957,10 @@ class Kraken3DInspector(tk.Toplevel):
             return None
         center_world = self._step_overlay_center_world(label)
         plane_normal = self._camera_view_normal()
-        current_xy = self._current_interactor_xy()
+        current_xy = self._current_widget_pointer_xy()
         if center_world is None or plane_normal is None:
             return state
+        state["attach_to_cursor_on_next_motion"] = current_xy is None
         state["center_world"] = tuple(float(value) for value in center_world[:3])
         state["start_center_world"] = tuple(float(value) for value in center_world[:3])
         state["drag_plane_origin"] = tuple(float(value) for value in center_world[:3])
@@ -5946,8 +5970,24 @@ class Kraken3DInspector(tk.Toplevel):
             anchor_world = self._cursor_plane_point(current_xy, center_world[:3], plane_normal[:3])
         if anchor_world is None:
             anchor_world = np.asarray(center_world[:3], dtype=float)
-        state["drag_anchor_world"] = tuple(float(value) for value in np.asarray(anchor_world, dtype=float).reshape(-1)[:3])
-        state["grip_world"] = tuple(float(value) for value in center_world[:3])
+        anchor_world = np.asarray(anchor_world, dtype=float).reshape(-1)[:3]
+        if anchor_world.size >= 3 and np.all(np.isfinite(anchor_world[:3])):
+            delta = anchor_world[:3] - np.asarray(center_world[:3], dtype=float)
+            if np.any(np.abs(delta[:3]) > 1e-12):
+                try:
+                    self.editor._begin_history_capture()
+                    state["history_started"] = True
+                except Exception:
+                    pass
+                self.editor.translate_step_overlay(label, delta, grid_spacing_mm=None, refresh=False, record_history=False)
+                if self._translate_step_overlay_actors(label, delta) <= 0:
+                    self.refresh_from_editor()
+                center_world = anchor_world[:3]
+        state["center_world"] = tuple(float(value) for value in np.asarray(center_world, dtype=float).reshape(-1)[:3])
+        state["start_center_world"] = tuple(float(value) for value in np.asarray(center_world, dtype=float).reshape(-1)[:3])
+        state["drag_plane_origin"] = tuple(float(value) for value in np.asarray(center_world, dtype=float).reshape(-1)[:3])
+        state["drag_anchor_world"] = tuple(float(value) for value in np.asarray(center_world, dtype=float).reshape(-1)[:3])
+        state["grip_world"] = tuple(float(value) for value in np.asarray(center_world, dtype=float).reshape(-1)[:3])
         return state
 
     def _start_step_carry_follow(self, label: str) -> None:
@@ -5974,6 +6014,36 @@ class Kraken3DInspector(tk.Toplevel):
         if state is None or current_xy is None:
             return
         self._set_step_carry_cursor(True)
+        if bool(state.get("attach_to_cursor_on_next_motion", False)):
+            try:
+                center_world = np.asarray(state.get("center_world"), dtype=float).reshape(-1)[:3]
+                plane_origin = np.asarray(state.get("drag_plane_origin"), dtype=float).reshape(-1)[:3]
+                plane_normal = np.asarray(state.get("drag_plane_normal"), dtype=float).reshape(-1)[:3]
+            except Exception:
+                center_world = plane_origin = plane_normal = np.asarray([], dtype=float)
+            cursor_world = None
+            if center_world.size >= 3 and plane_origin.size >= 3 and plane_normal.size >= 3:
+                cursor_world = self._cursor_plane_point(current_xy, plane_origin[:3], plane_normal[:3])
+            if cursor_world is not None:
+                delta = np.asarray(cursor_world[:3] - center_world[:3], dtype=float)
+                if np.any(np.abs(delta[:3]) > 1e-12):
+                    if not bool(state.get("history_started", False)):
+                        try:
+                            self.editor._begin_history_capture()
+                            state["history_started"] = True
+                        except Exception:
+                            pass
+                    label = str(state.get("label", "")).strip().lower()
+                    self.editor.translate_step_overlay(label, delta, grid_spacing_mm=None, refresh=False, record_history=False)
+                    if self._translate_step_overlay_actors(label, delta) <= 0:
+                        self.refresh_from_editor()
+                    self._update_step_carry_grip_after_delta(state, delta)
+                state["center_world"] = tuple(float(value) for value in np.asarray(cursor_world, dtype=float).reshape(-1)[:3])
+                state["start_center_world"] = tuple(float(value) for value in np.asarray(cursor_world, dtype=float).reshape(-1)[:3])
+                state["drag_plane_origin"] = tuple(float(value) for value in np.asarray(cursor_world, dtype=float).reshape(-1)[:3])
+                state["drag_anchor_world"] = tuple(float(value) for value in np.asarray(cursor_world, dtype=float).reshape(-1)[:3])
+                state["attach_to_cursor_on_next_motion"] = False
+                return
         self._apply_step_carry_plane_motion_state(state, current_xy)
 
     def _placement_drag_display_direction(self, kind: str, axis: str, signed_step: float, actor) -> np.ndarray:
@@ -6811,6 +6881,35 @@ class Kraken3DInspector(tk.Toplevel):
             self._set_ray_actor_selected(actor, bool(ray_index is not None and actor_ray_index == ray_index))
         self._picked_ray_index = ray_index
 
+    def _set_optical_axis_highlight(self, axis_id: str | None) -> None:
+        axis_id = str(axis_id or "").strip() or None
+        if axis_id == self._picked_optical_axis_id:
+            return
+        if self._renderer is None:
+            self._picked_optical_axis_id = axis_id
+            return
+        collection = self._renderer.GetActors()
+        collection.InitTraversal()
+        for _ in range(collection.GetNumberOfItems()):
+            actor = collection.GetNextActor()
+            actor_key = self._actor_key(actor)
+            axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
+            if not axis_info:
+                continue
+            current_id = str(axis_info.get("axis_id", "") or "").strip()
+            prop = actor.GetProperty()
+            if prop is None:
+                continue
+            if axis_id is not None and current_id == axis_id:
+                prop.SetColor(1.0, 0.68, 0.05)
+                prop.SetOpacity(1.0)
+                prop.SetLineWidth(5.0)
+            else:
+                prop.SetColor(0.0, 0.43, 0.88)
+                prop.SetOpacity(0.82)
+                prop.SetLineWidth(3.0 if self._step_normal_axis_pick_mode else 2.0)
+        self._picked_optical_axis_id = axis_id
+
     def _add_mesh_actor(
         self,
         mesh,
@@ -6819,6 +6918,7 @@ class Kraken3DInspector(tk.Toplevel):
         opacity: float = 1.0,
         pick_row_index: int | None = None,
         pick_step_label: str | None = None,
+        pick_optical_axis: dict[str, object] | None = None,
         pick_step_rotate: tuple[str, str, float] | None = None,
         pick_placement_move: tuple[int, str, float] | None = None,
         pick_placement_rotate: tuple[int, str, float] | None = None,
@@ -6864,6 +6964,7 @@ class Kraken3DInspector(tk.Toplevel):
         if (
             pick_row_index is None
             and pick_step_label is None
+            and pick_optical_axis is None
             and pick_step_rotate is None
             and pick_placement_move is None
             and pick_placement_rotate is None
@@ -6877,6 +6978,12 @@ class Kraken3DInspector(tk.Toplevel):
                 step_label = str(pick_step_label)
                 self._actor_step_map[actor_key] = step_label
                 self._step_actor_map.setdefault(step_label, []).append(actor_key)
+            if actor_key is not None and pick_optical_axis is not None:
+                axis_info = dict(pick_optical_axis)
+                axis_id = str(axis_info.get("axis_id", "") or "").strip()
+                if axis_id:
+                    self._actor_optical_axis_map[actor_key] = axis_info
+                    self._optical_axis_actor_map.setdefault(axis_id, []).append(actor_key)
             if actor_key is not None and pick_step_rotate is not None:
                 step_label, axis, delta_deg = pick_step_rotate
                 self._actor_step_rotate_map[actor_key] = (str(step_label), str(axis), float(delta_deg))
@@ -6937,6 +7044,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_follow_state = None
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
+        self._step_normal_axis_pick_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
         self._selected_step_feature_label = None
@@ -6961,6 +7069,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_follow_state = None
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
+        self._step_normal_axis_pick_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
         self._selected_step_feature_label = None
@@ -6981,6 +7090,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_follow_state = None
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
+        self._step_normal_axis_pick_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
         self._selected_step_feature_label = None
@@ -7060,8 +7170,47 @@ class Kraken3DInspector(tk.Toplevel):
         if center is None or normal is None:
             self.status_var.set("Snap STEP Normal->Optical Axis: click a planar STEP face first.")
             return
+        self.start_step_normal_axis_pick(label)
+
+    def start_step_normal_axis_pick(self, label: str | None = None) -> None:
+        label = str(label or self._selected_step_feature_label or "").strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
+            self.status_var.set("Snap STEP Normal->Optical Axis: select or import a STEP component first.")
+            return
+        if self._selected_step_feature_label != label or self._selected_step_feature_center_world is None or self._selected_step_feature_normal_world is None:
+            self.status_var.set("Snap STEP Normal->Optical Axis: click a planar STEP face first.")
+            return
+        self._step_normal_axis_pick_mode = True
+        self._step_carry_follow_state = None
+        self._step_carry_drag_state = None
+        self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
+        self._source_target_pick_mode = False
+        self._center_row_to_ray_mode = False
+        self._placement_target_pick_mode = False
+        self._placement_orient_pick_mode = False
+        self._placement_orient_ray_mode = False
+        self._set_step_carry_cursor(False)
+        self._set_axis_pick_cursor(True)
+        self._update_mode_badge()
+        self.refresh_from_editor()
+        self.status_var.set(
+            f"Snap {label.upper()} STEP normal: click a blue Optical Axis path only."
+        )
+
+    def _apply_step_normal_axis_pick(self, axis_info: dict[str, object]) -> None:
+        label = str(self._selected_step_feature_label or "").strip().lower()
+        center = self._selected_step_feature_center_world
+        normal = self._selected_step_feature_normal_world
+        if label not in STEP_OVERLAY_LABEL_SET or center is None or normal is None:
+            self.status_var.set("Snap STEP Normal->Optical Axis: click a planar STEP face first.")
+            return
+        axis_frame = self._optical_axis_frame_from_pick(axis_info, self._picker)
+        if axis_frame is None:
+            self.status_var.set("Snap STEP Normal->Optical Axis: could not resolve the clicked optical axis.")
+            return
         try:
-            result = self.editor.snap_step_feature_normal_to_optical_axis(label, center, normal)
+            result = self.editor.snap_step_feature_normal_to_optical_axis(label, center, normal, axis_frame=axis_frame)
         except Exception as exc:
             self.status_var.set(f"Snap STEP Normal->Optical Axis failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"3D STEP normal-axis snap failed: {exc}")
@@ -7071,9 +7220,11 @@ class Kraken3DInspector(tk.Toplevel):
             return
         self._step_carry_active_label = label
         self._step_carry_follow_state = None
+        self._step_normal_axis_pick_mode = False
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
         self._set_axis_pick_cursor(False)
+        self._set_optical_axis_highlight(None)
         try:
             self.refresh_from_editor()
             self.show_step_rotation_handler(label)
@@ -7096,6 +7247,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_drag_state = None
         self._step_carry_snap_ray_mode = True
         self._step_carry_snap_target_mode = False
+        self._step_normal_axis_pick_mode = False
         self._source_target_pick_mode = False
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
@@ -7126,6 +7278,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_drag_state = None
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = True
+        self._step_normal_axis_pick_mode = False
         self._source_target_pick_mode = False
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
@@ -7177,6 +7330,8 @@ class Kraken3DInspector(tk.Toplevel):
             labels.append("STEP snap ray")
         if self._step_carry_snap_target_mode:
             labels.append("STEP snap target")
+        if self._step_normal_axis_pick_mode:
+            labels.append("STEP normal axis pick")
         if self._step_carry_hold_after_id is not None:
             labels.append("STEP carry hold")
         if self._source_target_pick_mode:
@@ -7229,6 +7384,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_follow_state = None
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
+        self._step_normal_axis_pick_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
         self._left_drag_active = False
@@ -7240,6 +7396,7 @@ class Kraken3DInspector(tk.Toplevel):
         self.editor._cad_axis_pick_label = None
         self.editor._cad_led_object_edge_pick = False
         self._set_step_hover_outline(None, None)
+        self._set_optical_axis_highlight(None)
         self._set_step_carry_cursor(False)
         self._clear_step_carry_grip_marker(render=False)
         self._set_axis_pick_cursor(False)
@@ -7574,6 +7731,130 @@ class Kraken3DInspector(tk.Toplevel):
                 actor.PickableOn()
         except Exception:
             pass
+
+    def _optical_axis_records_for_3d(self, scene_bundle: SceneBundle | None) -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
+        grouped: dict[str, list[object]] = {}
+        for path in list(getattr(scene_bundle, "ray_paths", []) or []):
+            points = np.asarray(getattr(path, "points_world", []), dtype=float)
+            if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+                continue
+            if not np.all(np.isfinite(points[:, :3])):
+                continue
+            branch_path = str(getattr(path, "branch_path", "") or "").strip()
+            if not branch_path:
+                branch_path = str(getattr(path, "branch_label", "") or "").strip()
+            if not branch_path:
+                try:
+                    branch_path = f"branch:{int(getattr(path, 'branch_id', 0))}"
+                except Exception:
+                    branch_path = "branch:0"
+            source_id = str(getattr(path, "source_id", "") or "").strip()
+            key = f"{source_id}|{branch_path}"
+            grouped.setdefault(key, []).append(path)
+        for index, (_key, paths) in enumerate(sorted(grouped.items(), key=lambda item: item[0]), start=1):
+            if not paths:
+                continue
+            def _path_rank(path) -> tuple[int, int]:
+                try:
+                    source_ray = int(getattr(path, "source_ray_index", 0) or 0)
+                except Exception:
+                    source_ray = 0
+                try:
+                    ray_index = int(getattr(path, "ray_index", 0) or 0)
+                except Exception:
+                    ray_index = 0
+                return (abs(source_ray), ray_index)
+
+            selected = sorted(paths, key=_path_rank)[0]
+            points = np.asarray(getattr(selected, "points_world", []), dtype=float)[:, :3]
+            branch_path = str(getattr(selected, "branch_path", "") or getattr(selected, "branch_label", "") or f"branch:{getattr(selected, 'branch_id', 0)}")
+            axis_id = f"axis:{index}"
+            records.append(
+                {
+                    "axis_id": axis_id,
+                    "axis_label": f"Optical Axis {index}",
+                    "branch_path": branch_path,
+                    "source_id": str(getattr(selected, "source_id", "") or ""),
+                    "ray_index": int(getattr(selected, "ray_index", -1)),
+                    "points": points.copy(),
+                }
+            )
+            if len(records) >= 24:
+                break
+        if records or self._renderer is None:
+            return records
+        try:
+            bounds = np.asarray(self._renderer.ComputeVisiblePropBounds(), dtype=float).reshape(6)
+            if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[4] >= bounds[5]:
+                raise ValueError("invalid bounds")
+            z0, z1 = float(bounds[4]), float(bounds[5])
+        except Exception:
+            z0, z1 = -50.0, 50.0
+        return [
+            {
+                "axis_id": "axis:global",
+                "axis_label": "Optical Axis 1",
+                "branch_path": "",
+                "source_id": "",
+                "ray_index": -1,
+                "points": np.asarray(((0.0, 0.0, z0), (0.0, 0.0, z1)), dtype=float),
+            }
+        ]
+
+    def _add_optical_axis_pick_overlays(self, scene_bundle: SceneBundle | None) -> int:
+        if pv is None:
+            return 0
+        count = 0
+        for record in self._optical_axis_records_for_3d(scene_bundle):
+            points = np.asarray(record.get("points"), dtype=float)
+            if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+                continue
+            try:
+                mesh = pv.lines_from_points(points[:, :3])
+            except Exception:
+                continue
+            if int(getattr(mesh, "n_points", 0)) < 2:
+                continue
+            actor = self._add_mesh_actor(
+                mesh,
+                color=(0.0, 0.43, 0.88),
+                opacity=0.82,
+                line_width=3.0 if self._step_normal_axis_pick_mode else 2.0,
+                pick_optical_axis=record,
+            )
+            if actor is not None:
+                count += 1
+        return count
+
+    def _optical_axis_frame_from_pick(self, axis_info: dict[str, object], picker) -> dict[str, object] | None:
+        points = np.asarray(axis_info.get("points"), dtype=float)
+        if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+            return None
+        try:
+            picked = np.asarray(picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+        except Exception:
+            picked = points[0, :3]
+        if picked.size < 3 or not np.all(np.isfinite(picked[:3])):
+            picked = points[0, :3]
+        try:
+            target_point, direction = self.editor._closest_polyline_point_and_direction(points[:, :3], picked[:3])
+            direction = self.editor._normalized_vector(direction)
+        except Exception:
+            segment = points[-1, :3] - points[0, :3]
+            norm = float(np.linalg.norm(segment))
+            if not np.isfinite(norm) or norm <= 1e-12:
+                return None
+            target_point = picked[:3]
+            direction = segment / norm
+        return {
+            "target_point": np.asarray(target_point, dtype=float).reshape(3),
+            "direction": np.asarray(direction, dtype=float).reshape(3),
+            "axis_label": str(axis_info.get("axis_label", "Optical Axis") or "Optical Axis"),
+            "branch_path": str(axis_info.get("branch_path", "") or ""),
+            "ray_index": int(axis_info.get("ray_index", -1)),
+            "source_id": str(axis_info.get("source_id", "") or ""),
+        }
 
     @staticmethod
     def _face_role_marker_scale(marker: OpticalSolidFaceMarker, scene_radius: float) -> float:
@@ -8566,6 +8847,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._row_actor_map.clear()
         self._actor_ray_map.clear()
         self._ray_actor_map.clear()
+        self._actor_optical_axis_map.clear()
+        self._optical_axis_actor_map.clear()
         self._actor_by_key.clear()
         self._actor_step_map.clear()
         self._step_actor_map.clear()
@@ -8576,6 +8859,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._actor_placement_rotate_map.clear()
         self._picked_step_label = None
         self._picked_ray_index = None
+        self._picked_optical_axis_id = None
         self._hover_step_actor = None
         self._hover_step_outline_actor = None
         self._hover_step_cell_key = None
@@ -8637,6 +8921,8 @@ class Kraken3DInspector(tk.Toplevel):
                     ray_index=ray_index,
                     terminal_status=terminal_status,
                 )
+
+        optical_axis_overlays = self._add_optical_axis_pick_overlays(scene_bundle)
 
         selected_step = getattr(self.editor, "_selected_step_label", None)
         step_rotation_handles = 0
@@ -8732,7 +9018,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._update_stl_placement_handler_state()
         ray_count = len(getattr(scene_bundle, "ray_paths", []) or []) if scene_bundle is not None else len(getattr(rays, "CC", []))
         self.status_var.set(
-            f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | face roles={face_role_markers} | virtual planes={virtual_plane_markers} | detector overlays={detector_overlay_lines} | placement grid={placement_grid_lines} | STEP carry active={step_carry_active} | STEP rotation handles={step_rotation_handles}"
+            f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | optical axes={optical_axis_overlays} | face roles={face_role_markers} | virtual planes={virtual_plane_markers} | detector overlays={detector_overlay_lines} | placement grid={placement_grid_lines} | STEP carry active={step_carry_active} | STEP rotation handles={step_rotation_handles}"
         )
         grid_summary = " | ".join(part for part in (placement_grid_summary, step_carry_grid_summary) if part)
         self._update_placement_grid_status(grid_summary, render=False)
@@ -9541,6 +9827,7 @@ class Kraken3DInspector(tk.Toplevel):
                 or self._placement_orient_ray_mode
                 or self._step_carry_snap_ray_mode
                 or self._step_carry_snap_target_mode
+                or self._step_normal_axis_pick_mode
                 or bool(getattr(self.editor, "_cad_axis_pick_any", False))
             ):
                 self.status_var.set("STEP rotation handle: finish the active pick mode first.")
@@ -9559,6 +9846,7 @@ class Kraken3DInspector(tk.Toplevel):
                 or self._placement_orient_ray_mode
                 or self._step_carry_snap_ray_mode
                 or self._step_carry_snap_target_mode
+                or self._step_normal_axis_pick_mode
                 or bool(getattr(self.editor, "_cad_axis_pick_any", False))
             ):
                 self.status_var.set("Placement handle: finish the active pick mode first.")
@@ -9577,12 +9865,33 @@ class Kraken3DInspector(tk.Toplevel):
                 or self._placement_orient_ray_mode
                 or self._step_carry_snap_ray_mode
                 or self._step_carry_snap_target_mode
+                or self._step_normal_axis_pick_mode
                 or bool(getattr(self.editor, "_cad_axis_pick_any", False))
             ):
                 self.status_var.set("Placement handle: finish the active pick mode first.")
                 self.render()
                 return
             self._apply_scene_placement_translate_handle(*placement_move)
+            self.render()
+            return
+        axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
+        if self._step_normal_axis_pick_mode:
+            if axis_info is not None:
+                axis_id = str(axis_info.get("axis_id", "") or "").strip()
+                self._set_optical_axis_highlight(axis_id)
+                self._apply_step_normal_axis_pick(axis_info)
+                self.render()
+                return
+            self.status_var.set("Snap STEP Normal->Optical Axis: click a blue Optical Axis path only.")
+            self.render()
+            return
+        if axis_info is not None:
+            axis_id = str(axis_info.get("axis_id", "") or "").strip()
+            axis_label = str(axis_info.get("axis_label", "Optical Axis") or "Optical Axis")
+            self._set_optical_axis_highlight(axis_id)
+            self._set_row_highlight(None)
+            self._set_ray_highlight(None)
+            self.status_var.set(f"Selected {axis_label}. To align a STEP face, click the face first, then Snap STEP Normal->Optical Axis.")
             self.render()
             return
         step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
@@ -9634,10 +9943,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self._set_step_highlight(step_label)
                 self.show_step_rotation_handler(step_label)
                 if remembered:
-                    self.status_var.set(
-                        f"Selected {step_label.upper()} STEP face normal. Use Snap STEP Normal->Optical Axis, "
-                        "or use the colored rotation handles."
-                    )
+                    self.start_step_normal_axis_pick(step_label)
                 else:
                     self.status_var.set(f"Selected {step_label.upper()} STEP. Use the colored rotation handles or Center STEP Axis.")
                 return
@@ -9843,6 +10149,25 @@ class Kraken3DInspector(tk.Toplevel):
         if self._source_target_pick_mode:
             self._set_axis_pick_cursor(True)
             self.status_var.set("Source Target: click a surface/CAD solid row.")
+            return
+        if self._step_normal_axis_pick_mode:
+            self._set_axis_pick_cursor(True)
+            if self._picker is not None and self._renderer is not None and self._vtk_interactor is not None:
+                try:
+                    x, y = self._vtk_interactor.GetEventPosition()
+                    self._picker.Pick(x, y, 0.0, self._renderer)
+                    actor_key = self._actor_key(self._picker.GetActor())
+                    axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
+                except Exception:
+                    axis_info = None
+                if axis_info is not None:
+                    axis_id = str(axis_info.get("axis_id", "") or "").strip()
+                    axis_label = str(axis_info.get("axis_label", "Optical Axis") or "Optical Axis")
+                    self._set_optical_axis_highlight(axis_id)
+                    self.status_var.set(f"Click {axis_label} to align the selected STEP face normal.")
+                    return
+            self._set_optical_axis_highlight(None)
+            self.status_var.set("Snap STEP Normal->Optical Axis: click a blue Optical Axis path only.")
             return
         if self._step_carry_snap_ray_mode:
             self._set_axis_pick_cursor(True)
@@ -17023,6 +17348,8 @@ class KrakenLayoutEditor(tk.Tk):
         label: str,
         feature_center_xyz,
         feature_normal_xyz,
+        *,
+        axis_frame: dict[str, object] | None = None,
     ) -> dict[str, object] | None:
         label = str(label).strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET:
@@ -17041,7 +17368,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.status_var.set("Snap STEP Normal->Optical Axis needs a finite picked STEP face center and normal.")
             return None
         feature_normal = self._normalized_vector(feature_normal[:3])
-        frame = self._step_optical_axis_frame_near_point(feature_center[:3])
+        frame = dict(axis_frame) if isinstance(axis_frame, dict) else self._step_optical_axis_frame_near_point(feature_center[:3])
         target_point = np.asarray(frame["target_point"], dtype=float).reshape(3)
         axis_direction = self._normalized_vector(frame["direction"])
         target_normal = axis_direction if float(np.dot(feature_normal, axis_direction)) >= 0.0 else -axis_direction
