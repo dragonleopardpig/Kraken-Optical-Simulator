@@ -5043,10 +5043,7 @@ def _ray_bundle_envelope_polylines(polylines: list[np.ndarray], rays_per_group: 
     return envelope
 
 
-def _dotted_optical_axis_mesh(bounds) -> object | None:
-    """Build a long dashed guide on the KrakenOS optical axis (X=Y=0)."""
-    if pv is None:
-        return None
+def _optical_axis_z_span(bounds) -> tuple[float, float]:
     try:
         b = np.asarray(bounds, dtype=float).reshape(-1)
     except Exception:
@@ -5058,6 +5055,14 @@ def _dotted_optical_axis_mesh(bounds) -> object | None:
     z1 = max(float(b[5]), 0.0) + 0.65 * span
     if z1 <= z0:
         z1 = z0 + max(span, 20.0)
+    return float(z0), float(z1)
+
+
+def _dotted_optical_axis_mesh(bounds) -> object | None:
+    """Build a long dashed guide on the KrakenOS optical axis (X=Y=0)."""
+    if pv is None:
+        return None
+    z0, z1 = _optical_axis_z_span(bounds)
     segment_count = 96
     dz = (z1 - z0) / float(segment_count)
     parts = []
@@ -7289,7 +7294,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._update_mode_badge()
         self.refresh_from_editor()
         self.status_var.set(
-            f"Snap {label.upper()} STEP normal: click a blue Optical Axis path only."
+            f"Snap {label.upper()} STEP normal: click the dotted Optical Axis guide."
         )
 
     def _apply_step_normal_axis_pick(self, axis_info: dict[str, object]) -> None:
@@ -7334,7 +7339,7 @@ class Kraken3DInspector(tk.Toplevel):
     def _center_row_axis_pick_message(self) -> str:
         if self._center_row_to_ray_index is None:
             return "Center Row->Optical Axis: click the surface/CAD row to move first."
-        return "Center Row->Optical Axis: click a blue Optical Axis path only."
+        return "Center Row->Optical Axis: click the dotted Optical Axis guide."
 
     def _optical_axis_pick_mode_active(self) -> bool:
         return bool(
@@ -7343,12 +7348,7 @@ class Kraken3DInspector(tk.Toplevel):
         )
 
     def _should_draw_optical_axis_overlays(self) -> bool:
-        try:
-            if bool(self.show_rays_var.get()):
-                return True
-        except Exception:
-            pass
-        return self._optical_axis_pick_mode_active()
+        return True
 
     def _hide_regular_rays_for_center_axis_pick(self) -> None:
         try:
@@ -7366,6 +7366,13 @@ class Kraken3DInspector(tk.Toplevel):
         return True
 
     def _center_row_pick_row_ignoring_axis_overlays(self, x: float, y: float) -> int | None:
+        pick = self._center_axis_source_pick_ignoring_axis_overlays(x, y)
+        row_index = pick.get("row_index") if pick is not None else None
+        if row_index is None:
+            return None
+        return int(row_index)
+
+    def _center_axis_source_pick_ignoring_axis_overlays(self, x: float, y: float) -> dict[str, object] | None:
         if self._renderer is None or self._picker is None:
             return None
         disabled: list[object] = []
@@ -7383,11 +7390,26 @@ class Kraken3DInspector(tk.Toplevel):
                 except Exception:
                     continue
             self._picker.Pick(float(x), float(y), 0.0, self._renderer)
-            actor_key = self._actor_key(self._picker.GetActor())
+            actor = self._picker.GetActor()
+            actor_key = self._actor_key(actor)
             row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
-            if row_index is None:
-                return None
-            return int(row_index)
+            step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
+            try:
+                cell_id = int(self._picker.GetCellId())
+            except Exception:
+                cell_id = -1
+            try:
+                pick_world = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+            except Exception:
+                pick_world = np.asarray([], dtype=float)
+            return {
+                "actor": actor,
+                "actor_key": actor_key,
+                "row_index": int(row_index) if row_index is not None else None,
+                "step_label": str(step_label) if step_label is not None else None,
+                "cell_id": int(cell_id),
+                "pick_world": pick_world,
+            }
         except Exception:
             return None
         finally:
@@ -7893,68 +7915,18 @@ class Kraken3DInspector(tk.Toplevel):
             pass
 
     def _optical_axis_records_for_3d(self, scene_bundle: SceneBundle | None) -> list[dict[str, object]]:
-        records: list[dict[str, object]] = []
-        grouped: dict[str, list[object]] = {}
-        for path in list(getattr(scene_bundle, "ray_paths", []) or []):
-            points = np.asarray(getattr(path, "points_world", []), dtype=float)
-            if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
-                continue
-            if not np.all(np.isfinite(points[:, :3])):
-                continue
-            branch_path = str(getattr(path, "branch_path", "") or "").strip()
-            if not branch_path:
-                branch_path = str(getattr(path, "branch_label", "") or "").strip()
-            if not branch_path:
-                try:
-                    branch_path = f"branch:{int(getattr(path, 'branch_id', 0))}"
-                except Exception:
-                    branch_path = "branch:0"
-            source_id = str(getattr(path, "source_id", "") or "").strip()
-            key = f"{source_id}|{branch_path}"
-            grouped.setdefault(key, []).append(path)
-        for index, (_key, paths) in enumerate(sorted(grouped.items(), key=lambda item: item[0]), start=1):
-            if not paths:
-                continue
-            def _path_rank(path) -> tuple[int, int]:
-                try:
-                    source_ray = int(getattr(path, "source_ray_index", 0) or 0)
-                except Exception:
-                    source_ray = 0
-                try:
-                    ray_index = int(getattr(path, "ray_index", 0) or 0)
-                except Exception:
-                    ray_index = 0
-                return (abs(source_ray), ray_index)
-
-            selected = sorted(paths, key=_path_rank)[0]
-            points = np.asarray(getattr(selected, "points_world", []), dtype=float)[:, :3]
-            branch_path = str(getattr(selected, "branch_path", "") or getattr(selected, "branch_label", "") or f"branch:{getattr(selected, 'branch_id', 0)}")
-            axis_id = f"axis:{index}"
-            records.append(
-                {
-                    "axis_id": axis_id,
-                    "axis_label": f"Optical Axis {index}",
-                    "branch_path": branch_path,
-                    "source_id": str(getattr(selected, "source_id", "") or ""),
-                    "ray_index": int(getattr(selected, "ray_index", -1)),
-                    "points": points.copy(),
-                }
-            )
-            if len(records) >= 24:
-                break
-        if records or self._renderer is None:
-            return records
         try:
             bounds = np.asarray(self._renderer.ComputeVisiblePropBounds(), dtype=float).reshape(6)
-            if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[4] >= bounds[5]:
+            if bounds.size != 6 or not np.all(np.isfinite(bounds)):
                 raise ValueError("invalid bounds")
-            z0, z1 = float(bounds[4]), float(bounds[5])
         except Exception:
-            z0, z1 = -50.0, 50.0
+            bounds = np.asarray([-10.0, 10.0, -10.0, 10.0, 0.0, 100.0], dtype=float)
+        z0, z1 = _optical_axis_z_span(bounds)
         return [
             {
                 "axis_id": "axis:global",
-                "axis_label": "Optical Axis 1",
+                "axis_label": "Optical Axis",
+                "axis_kind": "dotted_global_guide",
                 "branch_path": "",
                 "source_id": "",
                 "ray_index": -1,
@@ -7974,7 +7946,7 @@ class Kraken3DInspector(tk.Toplevel):
             record["points"] = points[:, :3].copy()
             self._optical_axis_pick_records.append(record)
             try:
-                mesh = pv.lines_from_points(points[:, :3])
+                mesh = _dotted_optical_axis_mesh(self._renderer.ComputeVisiblePropBounds())
             except Exception:
                 continue
             if int(getattr(mesh, "n_points", 0)) < 2:
@@ -7982,8 +7954,8 @@ class Kraken3DInspector(tk.Toplevel):
             actor = self._add_mesh_actor(
                 mesh,
                 color=(0.0, 0.43, 0.88),
-                opacity=0.82,
-                line_width=3.0 if self._step_normal_axis_pick_mode else 2.0,
+                opacity=0.95,
+                line_width=3.0 if self._optical_axis_pick_mode_active() else 2.2,
                 pick_optical_axis=record,
             )
             if actor is not None:
@@ -9155,14 +9127,6 @@ class Kraken3DInspector(tk.Toplevel):
                 flat_shading=True,
             )
 
-        if self._should_draw_optical_axis_overlays():
-            try:
-                axis_mesh = _dotted_optical_axis_mesh(self._renderer.ComputeVisiblePropBounds())
-                if axis_mesh is not None and int(getattr(axis_mesh, "n_points", 0)) > 0:
-                    self._add_mesh_actor(axis_mesh, color=(0.0, 0.43, 0.88), opacity=0.95, line_width=2.2)
-            except Exception as exc:
-                self.editor.append_debug(f"3D optical-axis guide failed: {exc}")
-
         if camera_state is not None:
             camera = self._renderer.GetActiveCamera()
             if camera is not None:
@@ -9814,7 +9778,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._set_row_highlight(int(self._center_row_to_ray_index))
             stl_note = " assigned optical-face anchor or" if self.editor._file_backed_stl_row_at(int(self._center_row_to_ray_index)) is not None else ""
             self.status_var.set(
-                f"Center Row->Optical Axis: selected S{int(self._center_row_to_ray_index)}. Regular rays are hidden; click the blue Optical Axis that should pass through its{stl_note} center."
+                f"Center Row->Optical Axis: selected S{int(self._center_row_to_ray_index)}. Regular rays are hidden; click the dotted Optical Axis guide that should pass through its{stl_note} center."
             )
             self._update_mode_badge()
             return
@@ -9862,7 +9826,7 @@ class Kraken3DInspector(tk.Toplevel):
     def _apply_center_row_to_optical_axis(self, axis_info: dict[str, object]) -> None:
         row_index = self._center_row_to_ray_index
         if row_index is None:
-            self.status_var.set("Center Row->Optical Axis: click a surface/CAD row first, then click the blue Optical Axis.")
+            self.status_var.set("Center Row->Optical Axis: click a surface/CAD row first, then click the dotted Optical Axis guide.")
             return
         try:
             result = self.editor.center_surface_row_on_optical_axis(int(row_index), axis_info)
@@ -10092,9 +10056,11 @@ class Kraken3DInspector(tk.Toplevel):
             self.render()
             return
         if self._center_row_to_ray_mode and self._center_row_to_ray_index is None:
-            fallback_row_index = self._center_row_pick_row_ignoring_axis_overlays(x, y)
-            if fallback_row_index is not None:
-                row_index = int(fallback_row_index)
+            source_pick = self._center_axis_source_pick_ignoring_axis_overlays(x, y)
+            row_index = source_pick.get("row_index") if source_pick is not None else None
+            step_label = source_pick.get("step_label") if source_pick is not None else None
+            if row_index is not None:
+                row_index = int(row_index)
                 if self.editor.rows[row_index].surface in {"Object", "Image"}:
                     self.status_var.set("Center Row->Optical Axis: Object/Image rows are references; choose a physical surface or CAD/STL row.")
                     self.render()
@@ -10106,13 +10072,38 @@ class Kraken3DInspector(tk.Toplevel):
                 row_name = self.editor.rows[row_index].name if 0 <= row_index < len(self.editor.rows) else "Surface"
                 self._center_row_to_ray_index = row_index
                 stl_note = " assigned optical-face anchor or" if self.editor._file_backed_stl_row_at(row_index) is not None else ""
-                message = f"Center Row->Optical Axis: selected S{row_index}: {row_name}. Now click the blue Optical Axis for its{stl_note} center."
+                message = f"Center Row->Optical Axis: selected S{row_index}: {row_name}. Now click the dotted Optical Axis guide for its{stl_note} center."
                 self._update_mode_badge()
                 self.refresh_from_editor()
                 self.highlight_row(row_index)
                 self.status_var.set(message)
                 self.render()
                 return
+            if step_label is not None:
+                actor = source_pick.get("actor")
+                source_actor_key = source_pick.get("actor_key")
+                try:
+                    cell_id = int(source_pick.get("cell_id", -1))
+                except Exception:
+                    cell_id = -1
+                step_label = str(step_label)
+                feature = self._picked_feature_info_cached(actor, self._picker, actor_key=str(source_actor_key) if source_actor_key else None, cell_id=cell_id)
+                if not self._remember_selected_step_feature(step_label, feature):
+                    self.status_var.set("Center Row->Optical Axis: click a planar imported STEP face or a KrakenOS surface row.")
+                    self.render()
+                    return
+                self._center_row_to_ray_mode = False
+                self._center_row_to_ray_index = None
+                self._set_row_highlight(None)
+                self.editor.select_step_component(step_label)
+                self._set_step_highlight(step_label)
+                self._set_step_hover_outline(None, None)
+                self.start_step_normal_axis_pick(step_label)
+                self.render()
+                return
+            self.status_var.set("Center Row->Optical Axis: click a surface/CAD row or imported STEP face before choosing Optical Axis.")
+            self.render()
+            return
         axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
         if self._center_row_to_ray_mode:
             if self._center_row_to_ray_index is not None:
@@ -10123,7 +10114,7 @@ class Kraken3DInspector(tk.Toplevel):
                     self._apply_center_row_to_optical_axis(axis_info)
                     self.render()
                     return
-                self.status_var.set("Center Row->Optical Axis: click a blue Optical Axis path only.")
+                self.status_var.set("Center Row->Optical Axis: click the dotted Optical Axis guide.")
                 self.render()
                 return
             if axis_info is not None:
@@ -10138,7 +10129,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self._apply_step_normal_axis_pick(axis_info)
                 self.render()
                 return
-            self.status_var.set("Snap STEP Normal->Optical Axis: click a blue Optical Axis path only.")
+            self.status_var.set("Snap STEP Normal->Optical Axis: click the dotted Optical Axis guide.")
             self.render()
             return
         if axis_info is not None:
@@ -10152,29 +10143,6 @@ class Kraken3DInspector(tk.Toplevel):
             return
         step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
         axis_pick_any = bool(getattr(self.editor, "_cad_axis_pick_any", False))
-        if self._center_row_to_ray_mode and step_label is not None:
-            if self._center_row_to_ray_index is not None:
-                self.status_var.set("Center Row->Optical Axis: row is selected; click a blue Optical Axis path, not a STEP overlay.")
-                self.render()
-                return
-            try:
-                cell_id = int(self._picker.GetCellId()) if self._picker is not None else -1
-            except Exception:
-                cell_id = -1
-            feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
-            if not self._remember_selected_step_feature(step_label, feature):
-                self.status_var.set("Center Row->Optical Axis: click a planar imported STEP face or a KrakenOS surface row.")
-                self.render()
-                return
-            self._center_row_to_ray_mode = False
-            self._center_row_to_ray_index = None
-            self._set_row_highlight(None)
-            self.editor.select_step_component(step_label)
-            self._set_step_highlight(step_label)
-            self._set_step_hover_outline(None, None)
-            self.start_step_normal_axis_pick(step_label)
-            self.render()
-            return
         if self._source_target_pick_mode and step_label is not None:
             self.status_var.set("Source Target: pick a KrakenOS surface/CAD solid row, not external STEP hardware.")
             return
@@ -10324,7 +10292,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self.render()
                 return
             if self._center_row_to_ray_mode:
-                self.status_var.set("Center Row->Optical Axis: regular rays are ignored; click a blue Optical Axis path.")
+                self.status_var.set("Center Row->Optical Axis: regular rays are ignored; click the dotted Optical Axis guide.")
                 self.render()
                 return
             self._set_row_highlight(None)
@@ -10400,7 +10368,7 @@ class Kraken3DInspector(tk.Toplevel):
             stl_note = " assigned optical-face anchor or" if self.editor._file_backed_stl_row_at(int(row_index)) is not None else ""
             self._set_ray_highlight(None)
             self._set_optical_axis_highlight(None)
-            message = f"Center Row->Optical Axis: selected S{row_index}: {row_name}. Now click the blue Optical Axis for its{stl_note} center."
+            message = f"Center Row->Optical Axis: selected S{row_index}: {row_name}. Now click the dotted Optical Axis guide for its{stl_note} center."
             self._update_mode_badge()
             self.refresh_from_editor()
             self.highlight_row(row_index)
@@ -10455,14 +10423,14 @@ class Kraken3DInspector(tk.Toplevel):
                 if self._renderer is not None and self._vtk_interactor is not None:
                     try:
                         x, y = self._vtk_interactor.GetEventPosition()
-                        if self._picker is not None:
-                            self._picker.Pick(x, y, 0.0, self._renderer)
-                            actor = self._picker.GetActor()
-                            actor_key = self._actor_key(actor)
-                            row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
-                            step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
+                        source_pick = self._center_axis_source_pick_ignoring_axis_overlays(x, y)
+                        if source_pick is not None:
+                            actor = source_pick.get("actor")
+                            actor_key = source_pick.get("actor_key")
+                            row_index = source_pick.get("row_index")
+                            step_label = source_pick.get("step_label")
                             try:
-                                cell_id = int(self._picker.GetCellId())
+                                cell_id = int(source_pick.get("cell_id", -1))
                             except Exception:
                                 cell_id = -1
                     except Exception:
@@ -10517,7 +10485,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self.status_var.set(f"Click {axis_label} to center the selected row.")
                 return
             self._set_optical_axis_highlight(None)
-            self.status_var.set("Center Row->Optical Axis: click a blue Optical Axis path only.")
+            self.status_var.set("Center Row->Optical Axis: click the dotted Optical Axis guide.")
             return
         if self._step_normal_axis_pick_mode:
             self._set_axis_pick_cursor(True)
@@ -10537,7 +10505,7 @@ class Kraken3DInspector(tk.Toplevel):
                     self.status_var.set(f"Click {axis_label} to align the selected STEP face normal.")
                     return
             self._set_optical_axis_highlight(None)
-            self.status_var.set("Snap STEP Normal->Optical Axis: click a blue Optical Axis path only.")
+            self.status_var.set("Snap STEP Normal->Optical Axis: click the dotted Optical Axis guide.")
             return
         if self._step_carry_snap_ray_mode:
             self._set_axis_pick_cursor(True)

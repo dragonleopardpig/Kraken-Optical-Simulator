@@ -49,7 +49,7 @@ Estimated branch status:
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Achieved | `██████████ 100%` | Optical solids, branched paths, scatter, detectors, media state, source identity, source/object row separation, path metadata, branch-field propagation, and event accounting are covered by the native non-sequential closure validator. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
-| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, categorized view/scene/carry control rows with a toolbar layout validator, direct optical/lens/camera/LED STEP import, a distinct arbitrary-optical STEP overlay slot that does not replace the lens overlay, immediate cursor-attached carry placement for new optical STEP imports, free STEP carry placement, press-hold or drag-to-lift STEP movement with an in-scene center grip, release-to-drop, no OS pointer warping, Esc cancellation, Ctrl-drag camera pause, default STEP-face hover outlines, screen-space pickable blue Optical Axis overlays that remain selectable when regular rays are hidden during axis-pick modes, two-click STEP-face-normal-to-optical-axis snapping, promotion of positioned STEP overlays to file-backed optical solid rows, and Sphinx coverage, in-scene STEP rotation handles, status-aware detector-miss terminal markers, active detector footprints, miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
+| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, categorized view/scene/carry control rows with a toolbar layout validator, direct optical/lens/camera/LED STEP import, a distinct arbitrary-optical STEP overlay slot that does not replace the lens overlay, immediate cursor-attached carry placement for new optical STEP imports, free STEP carry placement, press-hold or drag-to-lift STEP movement with an in-scene center grip, release-to-drop, no OS pointer warping, Esc cancellation, Ctrl-drag camera pause, default STEP-face hover outlines, a persistent pickable dotted Optical Axis guide independent of ray visibility, two-click STEP-face-normal-to-optical-axis snapping, promotion of positioned STEP overlays to file-backed optical solid rows, and Sphinx coverage, in-scene STEP rotation handles, status-aware detector-miss terminal markers, active detector footprints, miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
 | Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, imported STEP snap-to-target placement, row-to-target snap constraints, row-to-target normal-orientation constraints, row-to-optical-axis centering with regular rays hidden during target pick, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, per-ray detector aperture status, detector aperture hit/miss reports, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, folded-preview provenance, and CSV export. |
 | Arbitrary prisms and CAD solids | Achieved | `██████████ 100%` | Face identity, geometry-derived uncoated face-intent suggestions, cascaded row-scoped boundary/volume records, real multi-STL trace coverage, runtime output-port scene bounds, closed-solid media transitions, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
@@ -157,15 +157,14 @@ kraken-vtk-tk-check
   to rotate the 3D view; press `Esc` to cancel active carry/pick operations and
   revert uncommitted free carry movement. To make placement optical instead of
   grid-driven, click a planar STEP face. The inspector then enters a second
-  click mode where only blue Optical Axis overlays are accepted. Axis selection
-  uses a screen-space nearest-polyline test against the traced path branch
-  records, so it does not depend on VTK picking the thin blue line actor and it
-  still works when regular ray drawing is hidden. Click the intended `Optical
-  Axis 1`, `Optical Axis 2`, `Optical Axis 3`, and so on. The picked face center
-  moves onto the clicked optical path point, and the picked face normal is
-  rotated parallel to that local path direction. If the sign is not the intended
-  one, use the colored rotation handles to flip the STEP before assigning
-  Uncoated, Reflective, or other optical face functions. The CAD/target promote menu turns the current placed
+  click mode where only the persistent dotted `Optical Axis` guide is accepted.
+  Axis selection uses a screen-space nearest-line test against the same guide
+  record that is drawn in the viewport, so it does not depend on VTK hitting a
+  second actor and it still works when regular ray drawing is
+  hidden. The picked face center moves onto the clicked guide point, and the
+  picked face normal is rotated parallel to the layout optical axis. If the sign
+  is not the intended one, use the colored rotation handles to flip the STEP
+  before assigning Uncoated, Reflective, or other optical face functions. The CAD/target promote menu turns the current placed
   overlay into a cached file-backed optical solid row with source STEP path,
   overlay rotation/offsets, row placement, and promotion provenance preserved
   in row metadata. A validator checks that the promoted optical-solid row lands
@@ -277,14 +276,16 @@ kraken-vtk-tk-check
   `ScenePlacement` state.
 - Open 3D `Center Row->Optical Axis` hides regular ray actors, lets the user
   select either a movable surface/CAD row or an imported STEP face with visible
-  hover/selection highlighting. Optical-axis overlays are hidden during the
-  first-click phase, then only blue `Optical Axis N` overlays are accepted as the
-  second click. Imported STEP face picks transition to STEP normal-to-axis
+  hover/selection highlighting. The optical-axis target is the persistent dotted
+  `Optical Axis` guide itself, not an additional blue line; the guide is
+  ignored by the first-click source picker so it cannot block surfaces/STEP
+  faces, then only the guide is accepted as the second click. Imported STEP face
+  picks transition to STEP normal-to-axis
   alignment, and cached/throttled STEP face picking avoids rescanning large STEP
-  meshes on every mouse move. Optical-axis overlays are hidden when `Show rays`
-  is off unless an axis-pick mode is active. Row centering writes `DespX/Y/Z` so
-  the row center, or the best assigned CAD/STL optical-face anchor, lands on the
-  selected optical-axis branch.
+  meshes on every mouse move. `Show rays` now controls traced rays only; the
+  dotted optical-axis guide remains visible and pickable. Row centering writes
+  `DespX/Y/Z` so the row center, or the best assigned CAD/STL optical-face
+  anchor, lands on the selected optical-axis guide.
 - Open 3D `Orient Row->Ray` lets the user select a movable surface/CAD row or
   face, then a traced ray. The solved rotation aligns the selected row or face
   normal to the clicked ray segment direction, writes `TiltX/Y/Z`, and records

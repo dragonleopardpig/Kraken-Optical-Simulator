@@ -86,6 +86,7 @@ def main() -> int:
     center_row_axis_start = inspect.getsource(Kraken3DInspector.start_center_row_to_ray)
     center_row_axis_hide = inspect.getsource(Kraken3DInspector._hide_regular_rays_for_center_axis_pick)
     center_row_axis_row_pick = inspect.getsource(Kraken3DInspector._center_row_pick_row_ignoring_axis_overlays)
+    center_axis_source_pick = inspect.getsource(Kraken3DInspector._center_axis_source_pick_ignoring_axis_overlays)
     center_row_axis_visibility = inspect.getsource(Kraken3DInspector._should_draw_optical_axis_overlays)
     center_row_axis_apply = inspect.getsource(Kraken3DInspector._apply_center_row_to_optical_axis)
     editor_center_row_axis = inspect.getsource(KrakenLayoutEditor.center_surface_row_on_optical_axis)
@@ -392,17 +393,19 @@ def main() -> int:
             and "_hide_regular_rays_for_center_axis_pick()" in center_row_axis_start
             and "show_rays_var.set(False)" in center_row_axis_hide
             and "self._set_row_highlight(int(self._center_row_to_ray_index))" in center_row_axis_start
-            and "_center_row_pick_row_ignoring_axis_overlays(x, y)" in pick
-            and "_actor_optical_axis_map" in center_row_axis_row_pick
-            and "PickableOff()" in center_row_axis_row_pick
-            and "PickableOn()" in center_row_axis_row_pick
+            and "_center_axis_source_pick_ignoring_axis_overlays(x, y)" in pick
+            and "_actor_optical_axis_map" in center_axis_source_pick
+            and "_actor_ray_map" in center_axis_source_pick
+            and "PickableOff()" in center_axis_source_pick
+            and "PickableOn()" in center_axis_source_pick
+            and "\"step_label\"" in center_axis_source_pick
             and "_picked_feature_info_cached(actor, self._picker" in pick
             and "start_step_normal_axis_pick(step_label)" in pick
             and "_picked_feature_info_cached(actor, self._picker" in mouse_move
             and "self._set_row_highlight(int(row_index))" in mouse_move
-            and "self.show_rays_var.get()" in center_row_axis_visibility
-            and "self._center_row_to_ray_index is not None" in inspect.getsource(Kraken3DInspector._optical_axis_pick_mode_active)
-            and "_optical_axis_pick_mode_active()" in center_row_axis_visibility
+            and "return True" in center_row_axis_visibility
+            and "dotted_global_guide" in optical_axis_records
+            and "_dotted_optical_axis_mesh" in optical_axis_overlays
             and "_should_draw_optical_axis_overlays()" in refresh
             and "_mouse_move_due()" in mouse_move
             and "time.monotonic()" in mouse_move_due

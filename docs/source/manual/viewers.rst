@@ -45,11 +45,10 @@ Current UI coverage:
   around the current view focal point with fixed sensitivity, and ``Ctrl`` +
   left drag follows the same path for compatibility
 * ``Center Row->Optical Axis`` click workflow for centering a selected surface
-  or CAD/STL row on a traced optical-axis branch while regular rays are hidden;
-  imported STEP faces can use the same first-click gesture to arm
-  normal-to-axis alignment, the first-click hover is highlighted, and optical
-  axes remain visible only while an axis-pick mode needs them when ``Show rays``
-  is off
+  or CAD/STL row on the persistent dotted optical-axis guide while regular rays
+  are hidden; imported STEP faces can use the same first-click gesture to arm
+  normal-to-axis alignment, the first-click hover is highlighted, and the guide
+  stays visible and pickable even when ``Show rays`` is off
 * ``Snap Row->Target`` click workflow for moving a selected surface/CAD row or
   face onto another row or face
 * ``Orient Row->Target`` click workflow for rotating a selected surface/CAD row
@@ -100,12 +99,12 @@ Current UI coverage:
   selected, clicking a KrakenOS optical surface centers that STEP axis on the
   surface center.
 * imported STEP normal-to-axis snapping: click a planar STEP face, then click
-  the intended blue ``Optical Axis N`` overlay. The second click accepts only
-  optical-axis overlays, which are generated from traced path branches and
-  remain pickable even when regular ray drawing is hidden. The picked face
-  center moves onto the clicked optical path point, and the picked face normal
-  rotates parallel to that local path direction.
-* long dotted optical-axis guide in 3D at ``X=0, Y=0``
+  the persistent dotted ``Optical Axis`` guide. The second click accepts only
+  the optical-axis guide, which remains visible and pickable even when regular
+  ray drawing is hidden. The picked face center moves onto the clicked optical
+  axis point, and the picked face normal rotates parallel to the layout optical
+  axis.
+* persistent long dotted optical-axis guide in 3D at ``X=0, Y=0``
 
 CAD/STL optical solids
 ----------------------
@@ -459,29 +458,27 @@ the markers.
 
 Use ``Center Row->Optical Axis`` when manual CAD placement is hard to judge
 visually. Click the button, click the surface/CAD row to move, then click the
-blue ``Optical Axis N`` branch. The workflow hides regular rays during the pick
-so only the optical-axis overlays can be selected as the target after a row or
-STEP face is armed. During the first click, optical-axis overlays are hidden so
-an axis drawn through a solid does not block selection of the row surface or
-imported STEP face underneath it, and the hovered row or STEP face is
-highlighted before the click. When ``Show rays`` is off, the ray-derived
-optical-axis overlays and the dotted global axis guide are also hidden outside
-optical-axis pick modes; they reappear only while a workflow such as ``Center
-Row->Optical Axis`` needs an axis target.
+persistent dotted ``Optical Axis`` guide. The workflow hides regular rays during
+the pick but does not hide the optical-axis guide. During the first click, the
+guide is ignored by the source picker so an axis drawn through a solid does not
+block selection of the row surface or imported STEP face underneath it, and the
+hovered row or STEP face is highlighted before the click. ``Show rays`` only
+controls traced rays; the dotted optical-axis guide remains visible and
+pickable.
 
 If the first click lands on an imported, unpromoted STEP face instead of a
 KrakenOS row, the workflow becomes STEP face normal-to-axis alignment: the face
-normal and feature center are cached, the blue optical-axis overlays appear, and
-the second click rotates/translates the imported STEP overlay so that face lands
-on the selected axis. This is intentionally separate from row centering because
+normal and feature center are cached, and the second click on the dotted guide
+rotates/translates the imported STEP overlay so that face lands on the optical
+axis. This is intentionally separate from row centering because
 unpromoted STEP overlays do not yet own row metadata or ``DespX/Y/Z`` fields.
 For ordinary rows the editor computes the selected row's surface plane, finds
-where the picked optical-axis branch crosses that plane, and writes the row
-``DespX/Y/Z`` values so the surface center moves onto the branch without
+where the picked guide crosses that plane, and writes the row
+``DespX/Y/Z`` values so the surface center moves onto the optical axis without
 changing the row orientation. For file-backed CAD/STL solids with saved
 ``OpticalSolidFaces`` metadata, the same action now prefers the best assigned
 optical-face anchor
-instead of the generic row center. That makes snap-to-ray placement more useful
+instead of the generic row center. That makes optical-axis placement more useful
 for prisms and vendor CAD where the meaningful optical entry face is not the
 mesh centroid. This is still an alignment aid; use ``Fit Axis`` and ``Min Z On
 Row`` first when the CAD solid also needs orientation or front-face placement.
@@ -518,10 +515,9 @@ hardware context:
   The old cube lattice and carry snap-step controls are removed. ``Ctrl+drag``
   keeps left-drag available for camera rotation, and ``Esc`` cancels active
   carry or pick modes. Use the STEP face-to-axis workflow after free placement:
-  click a planar STEP face, then click the intended blue ``Optical Axis N``
-  overlay. During that second click mode, arbitrary rays, surfaces, and STEP
-  faces are ignored so the face normal can only align to the selected optical
-  path branch.
+  click a planar STEP face, then click the persistent dotted ``Optical Axis``
+  guide. During that second click mode, arbitrary rays, surfaces, and STEP faces
+  are ignored so the face normal can only align to the optical-axis guide.
 * CAD axis offset picking
 * selected STEP overlay rotation through in-scene coloured ``X/Y/Z`` rotation
   handles around the selected lens, optical, camera, or LED STEP component;

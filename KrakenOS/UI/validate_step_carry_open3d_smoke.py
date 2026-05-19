@@ -131,15 +131,15 @@ def main() -> int:
         inspector.update()
         if getattr(inspector, "_actor_ray_map", {}):
             raise AssertionError("Open 3D kept regular ray actors after Show rays was disabled.")
-        if getattr(inspector, "_actor_optical_axis_map", {}):
-            raise AssertionError("Open 3D kept ray-derived optical-axis overlays visible after Show rays was disabled outside an axis-pick mode.")
+        if not getattr(inspector, "_actor_optical_axis_map", {}):
+            raise AssertionError("Open 3D hid the persistent dotted optical-axis guide after Show rays was disabled.")
         inspector.start_center_row_to_ray()
         inspector.update_idletasks()
         inspector.update()
         if bool(inspector.show_rays_var.get()):
             raise AssertionError("Center Row->Optical Axis did not keep regular rays disabled.")
-        if getattr(inspector, "_actor_optical_axis_map", {}):
-            raise AssertionError("Center Row->Optical Axis first-click phase should not draw optical-axis overlays before a row or STEP face is armed.")
+        if not getattr(inspector, "_actor_optical_axis_map", {}):
+            raise AssertionError("Center Row->Optical Axis should keep the dotted optical-axis guide visible.")
         inspector._center_row_to_ray_mode = False
         inspector._center_row_to_ray_index = None
         inspector._update_mode_badge()
