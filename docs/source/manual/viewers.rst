@@ -130,9 +130,10 @@ KrakenOS tracing. Current UI workflows:
 * ``Actions -> 3D Place/Orient Selected CAD/STL Solid`` for in-view placement,
   axis alignment, and centring inside the existing 3D view
 * ``Actions -> Assign CAD/STL Optical Faces`` for recording face roles, with
-  assigned roles shown as coloured normal markers in the 3D inspector and
-  placement preview; the face preview uses the same click-select and left-drag
-  fixed-speed rotate behaviour as Open 3D
+  assigned roles shown as coloured normal markers in the full face-role editor
+  preview; direct Open 3D assignments are shown as coloured face outlines so
+  they cannot look like extra glass; the face preview uses the same
+  click-select and left-drag fixed-speed rotate behaviour as Open 3D
 * direct Open 3D right-click face assignment on row-backed optical CAD/STL
   faces; this writes ``OpticalSolidFaces`` immediately and refreshes the traced
   scene, while the older ``Save Roles`` button remains specific to the full
@@ -287,9 +288,10 @@ Python ``vtk`` module and ``libvtkRenderingTk.so`` from the same VTK build to
 avoid ABI mismatches.
 
 Assigned side/function labels are saved with the optical solid row as
-``OpticalSolidFaces`` metadata and are drawn in the embedded 3D inspector and
-isolated placement preview as coloured face-centre/normal markers. Snap-to-ray
-pose solving remains the next scene-object workflow step.
+``OpticalSolidFaces`` metadata. Direct Open 3D assignments are drawn as
+coloured face outlines only; the full face-role editor can still preview
+face-centre/normal markers when that dialog is being used. Snap-to-ray pose
+solving remains the next scene-object workflow step.
 
 The future prism workflow should validate these cases before it is considered
 complete:

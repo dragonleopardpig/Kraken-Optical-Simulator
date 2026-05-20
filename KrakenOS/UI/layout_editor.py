@@ -10024,7 +10024,7 @@ class Kraken3DInspector(tk.Toplevel):
         drew_surfaces = 0
         step_carry_label = self._step_carry_label()
         ray_visibility_requested = bool(self.show_rays_var.get())
-        ray_surface_edge_overlays: list[object] = []
+        ray_surface_edge_overlays: list[tuple[object, tuple[float, float, float], float]] = []
         for mesh_item in mesh_items:
             mesh = mesh_item.mesh
             try:
@@ -10032,8 +10032,10 @@ class Kraken3DInspector(tk.Toplevel):
             except Exception:
                 row_index = -1
             mesh_opacity = float(getattr(mesh_item, "opacity", 1.0))
-            if ray_visibility_requested and bool(getattr(mesh_item, "is_body", False)) and row_index in file_backed_rows:
-                mesh_opacity = max(mesh_opacity, 0.42)
+            if ray_visibility_requested and row_index >= 0:
+                mesh_opacity = max(mesh_opacity, 0.86)
+                if row_index in file_backed_rows:
+                    mesh_opacity = max(mesh_opacity, 0.94)
             self._add_mesh_actor(
                 mesh,
                 color=mesh_item.color,
@@ -10051,6 +10053,8 @@ class Kraken3DInspector(tk.Toplevel):
                     )
                     if int(getattr(edges, "n_points", 0)) > 0:
                         self._add_mesh_actor(edges, color=(0.15, 0.15, 0.15), opacity=1.0, line_width=1.0)
+                        if ray_visibility_requested and row_index >= 0:
+                            ray_surface_edge_overlays.append((edges, (0.02, 0.03, 0.05), 2.2 if row_index in file_backed_rows else 1.6))
                 except Exception:
                     pass
             elif row_index in file_backed_rows:
@@ -10062,14 +10066,15 @@ class Kraken3DInspector(tk.Toplevel):
                         manifold_edges=False,
                     )
                     if int(getattr(edges, "n_points", 0)) > 0:
-                        ray_surface_edge_overlays.append(edges)
+                        if ray_visibility_requested:
+                            ray_surface_edge_overlays.append((edges, (0.02, 0.03, 0.05), 2.4))
                         self._add_mesh_actor(edges, color=(0.10, 0.12, 0.16), opacity=0.96, line_width=1.2)
                 except Exception:
                     pass
             drew_surfaces += 1
 
         assigned_face_overlays = self._add_optical_solid_assigned_face_overlays(system)
-        face_role_markers = self._add_optical_solid_face_role_overlays(system)
+        face_role_markers = 0
         virtual_plane_markers = self._add_optical_solid_virtual_plane_overlays(system)
         if step_carry_label is not None:
             placement_grid_lines, placement_grid_summary = 0, ""
@@ -10103,8 +10108,8 @@ class Kraken3DInspector(tk.Toplevel):
                     ray_index=ray_index,
                     terminal_status=terminal_status,
                 )
-            for edges in ray_surface_edge_overlays:
-                self._add_mesh_actor(edges, color=(0.02, 0.03, 0.05), opacity=1.0, line_width=2.2, backface_culling=False)
+            for edges, edge_color, edge_width in ray_surface_edge_overlays:
+                self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width, backface_culling=False)
 
         optical_axis_overlays = 0
         if self._should_draw_optical_axis_overlays():
@@ -10128,10 +10133,13 @@ class Kraken3DInspector(tk.Toplevel):
                 cad_mesh = None
                 self.editor.append_debug(f"3D {label} STEP error: {exc}")
             if cad_mesh is not None and int(getattr(cad_mesh, "n_points", 0)) > 0:
+                display_opacity = float(opacity)
+                if ray_visibility_requested:
+                    display_opacity = max(display_opacity, 0.52)
                 self._add_mesh_actor(
                     cad_mesh,
                     color=color,
-                    opacity=opacity,
+                    opacity=display_opacity,
                     pick_row_index=None,
                     pick_step_label=label,
                     follow_step_label=label,
@@ -10149,7 +10157,7 @@ class Kraken3DInspector(tk.Toplevel):
                             cad_edges,
                             color=(0.08, 0.10, 0.14),
                             opacity=0.96,
-                            line_width=1.2,
+                            line_width=1.8 if ray_visibility_requested else 1.2,
                             follow_step_label=label,
                         )
                 except Exception:

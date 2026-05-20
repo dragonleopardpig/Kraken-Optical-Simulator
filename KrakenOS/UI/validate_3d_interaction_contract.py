@@ -415,6 +415,11 @@ def main() -> int:
             and "feature_edges=False" in assigned_face_overlays,
         ),
         (
+            "Open 3D direct face assignment suppresses normal-arrow marker actors",
+            "face_role_markers = 0" in refresh
+            and "_add_optical_solid_face_role_overlays(system)" not in refresh,
+        ),
+        (
             "Open 3D CAD/STL faces hover before right-click assignment",
             "right-click to assign surface physics" in mouse_move
             and "_hover_overlay_for_feature" in mouse_move
@@ -561,13 +566,19 @@ def main() -> int:
         ("named normal preview resolves scene target diagnostics", "_scene_named_normal_target" in editor_preview_named_normal and "angle_error_deg" in editor_preview_named_normal),
         ("named normal orientation exports detector/object target metadata", "constraint_kind = f\"{normalized_kind}_normal\"" in editor_orient_named_normal and "last_constraint_target_role" in editor_orient_named_normal),
         ("ScenePlacement diagnostics expose applied normal target", "constraint=" in placement_features and "target_row=S" in placement_detail),
-        ("CAD/STL face overlays use runtime TRANS_2A placement", "_runtime_transform_for_row(system, row_index)" in face_overlays),
+        ("CAD/STL assigned-face outlines use runtime TRANS_2A placement", "_runtime_transform_for_row(system, row_index)" in assigned_face_overlays),
         (
-            "CAD/STL face overlays avoid raw-pose duplicate arrows",
+            "CAD/STL face-role marker helper remains runtime-transform aware",
             "_face_role_markers_from_runtime_transform" in face_overlays and "centroid_world" in runtime_face_markers,
         ),
         ("CAD/STL virtual-plane overlays use runtime TRANS_2A placement", "_runtime_transform_for_row(system, row_index)" in virtual_plane_overlays),
-        ("3D refresh passes system into CAD/STL overlays", "_add_optical_solid_face_role_overlays(system)" in refresh),
+        ("3D refresh passes system into assigned-face overlays", "_add_optical_solid_assigned_face_overlays(system)" in refresh),
+        (
+            "Ray-on refresh redraws retained CAD/STL edges after ray actors",
+            "ray_surface_edge_overlays" in refresh
+            and "for edges, edge_color, edge_width in ray_surface_edge_overlays" in refresh
+            and "self._add_mesh_actor(edges, color=edge_color" in refresh,
+        ),
     ]
     failed = [name for name, ok in checks if not ok]
     if failed:

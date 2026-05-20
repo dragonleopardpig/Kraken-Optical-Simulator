@@ -522,7 +522,8 @@ input/output role assignment, checks that candidates expose triangle meshes for
 3D click-picking, checks beam-splitter split-ratio persistence, and confirms
 that saved ``OpticalSolidFaces`` metadata survives the advanced attribute
 parser. It also verifies that assigned face roles transform into finite
-unit-normal markers for the 3D inspector and CAD/STL placement preview.
+unit-normal marker data for the CAD/STL placement preview and into the
+triangle-indexed face records used by Open 3D outline overlays.
 
 Face-anchor snap-to-ray check
 -----------------------------
