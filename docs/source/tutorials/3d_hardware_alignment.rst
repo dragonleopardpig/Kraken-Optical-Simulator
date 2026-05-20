@@ -171,7 +171,11 @@ is moved again.
    double-sided and row-backed CAD/STL solids get stronger edge/body retention
    styling plus a final wireframe retention pass while rays are on, so a
    ray-off/ray-on refresh should not make CAD/STEP-derived bodies disappear
-   because of vendor mesh winding or dense ray overlays. The old cube/grid plane
+   because of vendor mesh winding or dense ray overlays. Escaped or missed ray
+   display segments are also capped to the current Open 3D scene envelope before
+   VTK camera bounds are recomputed. This is only a viewer safeguard: the traced
+   ray path, ray-event metadata, raykeeper arrays, and CSV export keep the
+   original physical coordinates and terminal status. The old cube/grid plane
    overlay is suppressed during this workflow; placement metadata still drives
    the handles and status text, but the three grid planes no longer obscure the
    picked faces.

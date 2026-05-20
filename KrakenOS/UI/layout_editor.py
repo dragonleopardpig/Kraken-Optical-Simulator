@@ -10089,9 +10089,17 @@ class Kraken3DInspector(tk.Toplevel):
         if self.show_rays_var.get():
             center, radius = self._scene_bounds()
             ray_radius = max(radius * 0.0015, 0.08)
+            bounded_ray_count = 0
             for ray_index, color, ray_pts, terminal_status in self.editor._iter_3d_scene_ray_records(rays, scene_bundle):
+                display_ray_pts, was_bounded = KrakenLayoutEditor._bounded_3d_ray_points_for_display(
+                    ray_pts,
+                    center,
+                    radius,
+                )
+                if was_bounded:
+                    bounded_ray_count += 1
                 try:
-                    ray_mesh = pv.lines_from_points(ray_pts)
+                    ray_mesh = pv.lines_from_points(display_ray_pts)
                 except Exception:
                     continue
                 if int(getattr(ray_mesh, "n_points", 0)) < 2:
@@ -10106,12 +10114,14 @@ class Kraken3DInspector(tk.Toplevel):
                     line_width=float(style["line_width"]),
                 )
                 self._add_ray_endpoint_actor(
-                    ray_pts[-1],
+                    display_ray_pts[-1],
                     radius=ray_radius * float(style["endpoint_scale"]),
                     color=style["endpoint_color"],
                     ray_index=ray_index,
                     terminal_status=terminal_status,
                 )
+            if bounded_ray_count:
+                self._debug_trace("ray_display_bounded", rays=bounded_ray_count, radius=float(radius))
             for edges, edge_color, edge_width in ray_surface_edge_overlays:
                 self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width, backface_culling=False)
             for mesh, wire_color, wire_width, row_index in ray_surface_wire_overlays:
@@ -25539,9 +25549,15 @@ class KrakenLayoutEditor(tk.Tk):
             self.append_debug(f"Legacy 3D optical-axis guide failed: {exc}")
 
         ray_radius = self._legacy_3d_ray_radius(system, rays)
+        ray_center, ray_scene_radius = self._scene_center_radius_from_bounds(plotter.bounds)
         for ray_index, color, ray_pts, terminal_status in self._iter_3d_scene_ray_records(rays, scene_bundle):
+            display_ray_pts, _was_bounded = self._bounded_3d_ray_points_for_display(
+                ray_pts,
+                ray_center,
+                ray_scene_radius,
+            )
             try:
-                line = pv.lines_from_points(ray_pts)
+                line = pv.lines_from_points(display_ray_pts)
             except Exception:
                 continue
             if int(getattr(line, "n_points", 0)) < 2:
@@ -25559,7 +25575,7 @@ class KrakenLayoutEditor(tk.Tk):
             )
             ray_actors.append(actor)
             try:
-                endpoint = np.asarray(ray_pts[-1], dtype=float).reshape(-1)[:3]
+                endpoint = np.asarray(display_ray_pts[-1], dtype=float).reshape(-1)[:3]
                 if endpoint.size >= 3 and np.all(np.isfinite(endpoint)):
                     marker = pv.Sphere(
                         radius=max(float(ray_radius) * float(style["endpoint_scale"]), 0.08),
@@ -25948,6 +25964,72 @@ class KrakenLayoutEditor(tk.Tk):
             (int(ray_index), tuple(_wavelength_to_rgb(float(wave) * 1000.0)), np.asarray(ray_pts, dtype=float), "")
             for ray_index, wave, ray_pts in self._iter_3d_display_ray_items(fallback_rays)
         ]
+
+    @staticmethod
+    def _scene_center_radius_from_bounds(bounds) -> tuple[np.ndarray, float]:
+        try:
+            values = np.asarray(bounds, dtype=float).reshape(-1)[:6]
+        except Exception:
+            values = np.asarray([], dtype=float)
+        if values.size != 6 or not np.all(np.isfinite(values)) or values[0] > values[1]:
+            return np.zeros(3, dtype=float), 1.0
+        center = np.array(
+            [
+                0.5 * (values[0] + values[1]),
+                0.5 * (values[2] + values[3]),
+                0.5 * (values[4] + values[5]),
+            ],
+            dtype=float,
+        )
+        radius = max(values[1] - values[0], values[3] - values[2], values[5] - values[4], 1.0)
+        return center, float(radius)
+
+    @staticmethod
+    def _bounded_3d_ray_points_for_display(
+        points,
+        center,
+        radius: float,
+    ) -> tuple[np.ndarray, bool]:
+        try:
+            pts = np.asarray(points, dtype=float)
+        except Exception:
+            return np.empty((0, 3), dtype=float), False
+        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+            return np.empty((0, 3), dtype=float), False
+        pts = np.array(pts[:, :3], dtype=float, copy=True)
+        finite = np.all(np.isfinite(pts), axis=1)
+        if not np.all(finite):
+            pts = pts[finite]
+        if pts.shape[0] < 2:
+            return np.empty((0, 3), dtype=float), True
+        try:
+            scene_center = np.asarray(center, dtype=float).reshape(-1)[:3]
+        except Exception:
+            scene_center = np.zeros(3, dtype=float)
+        if scene_center.size != 3 or not np.all(np.isfinite(scene_center)):
+            scene_center = np.zeros(3, dtype=float)
+        try:
+            scene_radius = float(radius)
+        except Exception:
+            scene_radius = 1.0
+        if not np.isfinite(scene_radius) or scene_radius <= 0.0:
+            scene_radius = 1.0
+        display_radius = max(scene_radius * 3.0, 250.0)
+        offsets = pts - scene_center
+        distances = np.linalg.norm(offsets, axis=1)
+        too_far = distances > display_radius
+        if np.any(too_far):
+            safe_distances = np.maximum(distances[too_far], 1.0e-12)
+            pts[too_far] = scene_center + offsets[too_far] * (display_radius / safe_distances)[:, None]
+        bounded = bool((not np.all(finite)) or np.any(too_far))
+        if pts.shape[0] > 2:
+            deltas = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+            keep = np.concatenate(([True], deltas > 1.0e-9))
+            if not np.all(keep):
+                pts = pts[keep]
+        if pts.shape[0] < 2:
+            return np.empty((0, 3), dtype=float), True
+        return pts, bounded
 
     @staticmethod
     def _ray_terminal_3d_style(
@@ -27043,9 +27125,15 @@ class KrakenLayoutEditor(tk.Tk):
         setattr(plotter, "_kraken_scene_bundle", scene_bundle)
         rays_visible = bool(dict(getattr(plotter, "_kraken_visibility", {}) or {}).get("rays", True))
         ray_radius = self._legacy_3d_ray_radius(system, rays)
+        ray_center, ray_scene_radius = self._scene_center_radius_from_bounds(plotter.bounds)
         for ray_index, color, ray_pts, terminal_status in self._iter_3d_scene_ray_records(rays, scene_bundle):
+            display_ray_pts, _was_bounded = self._bounded_3d_ray_points_for_display(
+                ray_pts,
+                ray_center,
+                ray_scene_radius,
+            )
             try:
-                line = pv.lines_from_points(ray_pts)
+                line = pv.lines_from_points(display_ray_pts)
             except Exception:
                 continue
             if int(getattr(line, "n_points", 0)) < 2:
@@ -27081,7 +27169,7 @@ class KrakenLayoutEditor(tk.Tk):
                 pass
             ray_actors.append(actor)
             try:
-                endpoint = np.asarray(ray_pts[-1], dtype=float).reshape(-1)[:3]
+                endpoint = np.asarray(display_ray_pts[-1], dtype=float).reshape(-1)[:3]
                 if endpoint.size >= 3 and np.all(np.isfinite(endpoint)):
                     marker = pv.Sphere(
                         radius=max(float(ray_radius) * float(style["endpoint_scale"]), 0.08),

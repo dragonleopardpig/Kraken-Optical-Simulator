@@ -12,6 +12,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import numpy as np
+
 from KrakenOS.UI import layout_editor as le
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
 
@@ -64,6 +66,71 @@ def _row_actor_rows(inspector: Kraken3DInspector) -> set[int]:
     }
 
 
+def _bounds_span(bounds) -> float:
+    values = np.asarray(bounds, dtype=float).reshape(-1)[:6]
+    if values.size != 6 or not np.all(np.isfinite(values)) or values[0] > values[1]:
+        return 0.0
+    return float(max(values[1] - values[0], values[3] - values[2], values[5] - values[4]))
+
+
+def _combine_bounds(bounds_list: list[tuple[float, float, float, float, float, float]]):
+    if not bounds_list:
+        return None
+    values = np.asarray(bounds_list, dtype=float)
+    if values.ndim != 2 or values.shape[1] != 6:
+        return None
+    finite = np.all(np.isfinite(values), axis=1)
+    values = values[finite]
+    if values.size == 0:
+        return None
+    return (
+        float(np.min(values[:, 0])),
+        float(np.max(values[:, 1])),
+        float(np.min(values[:, 2])),
+        float(np.max(values[:, 3])),
+        float(np.min(values[:, 4])),
+        float(np.max(values[:, 5])),
+    )
+
+
+def _assert_render_bounds_stay_near_scene(
+    inspector: Kraken3DInspector,
+    physical_rows: set[int],
+    *,
+    label: str,
+) -> None:
+    renderer = getattr(inspector, "_renderer", None)
+    if renderer is None:
+        raise AssertionError(f"{label}: Open 3D renderer was not available.")
+    row_bounds = []
+    for actor_key, row_index in list(getattr(inspector, "_actor_row_map", {}).items()):
+        if int(row_index) not in physical_rows:
+            continue
+        actor = inspector._actor_by_key.get(actor_key)
+        if actor is None:
+            continue
+        try:
+            bounds = tuple(float(value) for value in actor.GetBounds())
+        except Exception:
+            continue
+        if len(bounds) == 6 and all(np.isfinite(bounds)):
+            row_bounds.append(bounds)
+    combined = _combine_bounds(row_bounds)
+    if combined is None:
+        raise AssertionError(f"{label}: could not compute physical row actor bounds.")
+    row_span = max(_bounds_span(combined), 1.0)
+    try:
+        visible_span = _bounds_span(renderer.ComputeVisiblePropBounds())
+    except Exception as exc:
+        raise AssertionError(f"{label}: could not compute visible prop bounds: {exc}") from exc
+    limit = max(row_span * 12.0, 10000.0)
+    if visible_span > limit:
+        raise AssertionError(
+            f"{label}: ray display expanded Open 3D visible bounds too far "
+            f"(visible span={visible_span:.3g}, row span={row_span:.3g}, limit={limit:.3g})."
+        )
+
+
 def _assert_scene_rows_visible(
     app: KrakenLayoutEditor,
     inspector: Kraken3DInspector,
@@ -107,6 +174,8 @@ def _assert_scene_rows_visible(
                 pass
     if label == "Ray On" and not promoted_wireframe_seen:
         raise AssertionError(f"{label}: promoted optical STEP row has no ray-on wireframe retention actor.")
+    if label == "Ray On":
+        _assert_render_bounds_stay_near_scene(inspector, physical_rows, label=label)
 
 
 def main() -> int:
