@@ -376,23 +376,25 @@ For scene authoring, row pose is now accompanied by optional
 ``ScenePlacement`` metadata. This stores linear snap spacing, angular snap
 step, grid visibility, and the intended placement anchor on the surface row,
 then publishes the same data as ``ScenePlacement3D`` records in ``SceneBundle``
-and the Non-Sequential Scene Graph. Open 3D draws a grid from the selected or
-first visible placement record and reports the active spacing, extent, snap
-state, and placement count in the viewer. Plain Object/Image reference targets
-stay target records and do not create default placement grids or rotation
-handles; stale ``ScenePlacement`` metadata on those reference rows is ignored,
-and the reference marker size follows the editable row diameter. The colored
-translation handles move the selected row along global ``X/Y/Z`` by
-``ScenePlacement.snap_mm`` when snap is enabled, or by the placement grid
-spacing when snap is off. The rotation handles rotate the selected row around
-global ``X/Y/Z`` by
-``ScenePlacement.snap_deg`` when snap is enabled, or by 15 degrees when snap is
-off. These actions write the normal row ``DespX/Y/Z`` and ``TiltX/Y/Z`` fields
-and record the last placement edit in ``ScenePlacement`` metadata. Dragging a
-placement handle accumulates screen motion and applies repeated snap steps
-through the same row-backed services; clicking without dragging remains the
-one-step precise fallback. ``Snap Row->Target`` adds the first target-surface
-constraint tool: click the button, choose the movable surface/CAD row or face,
+and the Non-Sequential Scene Graph. Open 3D uses the selected or first visible
+placement record to report active spacing, extent, snap state, and placement
+count in the viewer, but the visible cube/grid planes are suppressed so they do
+not cover CAD faces during assignment. Plain Object/Image reference targets stay
+target records and do not create default placement handles; stale
+``ScenePlacement`` metadata on those reference rows is ignored, and the
+reference marker size follows the editable row diameter. The colored translation
+handles move the selected row along global ``X/Y/Z`` by
+``ScenePlacement.snap_mm`` when snap is enabled, or by the placement spacing
+when snap is off. The arrowheaded rotation handles rotate the selected row
+around global ``X/Y/Z`` by ``ScenePlacement.snap_deg`` when snap is enabled, or
+by 15 degrees when snap is off; the Open 3D ``Rotation handles`` checkbox hides
+these arcs when a clear face-picking view is needed. These actions write the
+normal row ``DespX/Y/Z`` and ``TiltX/Y/Z`` fields and record the last placement
+edit in ``ScenePlacement`` metadata. Dragging a placement handle accumulates
+screen motion and applies repeated snap steps through the same row-backed
+services; clicking without dragging remains the one-step precise fallback.
+``Snap Row->Target`` adds the first target-surface constraint tool: click the
+button, choose the movable surface/CAD row or face,
 then click the target row or face. The editor solves the translation in world
 coordinates, writes the normal row ``DespX/Y/Z`` fields, and records the
 ``target_surface`` constraint in the row's ``ScenePlacement`` metadata.

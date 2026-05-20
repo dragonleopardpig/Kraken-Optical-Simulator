@@ -5111,6 +5111,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._actor_optical_axis_map: dict[str, dict[str, object]] = {}
         self._optical_axis_actor_map: dict[str, list[str]] = {}
         self._optical_axis_pick_records: list[dict[str, object]] = []
+        self._optical_axis_highlight_actor = None
         self._actor_by_key: dict[str, object] = {}
         self._actor_step_map: dict[str, str] = {}
         self._step_actor_map: dict[str, list[str]] = {}
@@ -5174,11 +5175,14 @@ class Kraken3DInspector(tk.Toplevel):
         self._selected_step_feature_label: str | None = None
         self._selected_step_feature_center_world: tuple[float, float, float] | None = None
         self._selected_step_feature_normal_world: tuple[float, float, float] | None = None
+        self._last_valid_surface_mesh_items: list[SurfaceMesh3D] = []
+        self._last_valid_surface_mesh_row_count = 0
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.orient_axis_var = tk.StringVar(value="+Z")
         self.normal_target_var = tk.StringVar(value=SCENE_NORMAL_TARGET_LABELS["detector"])
         self.step_carry_grid_var = tk.StringVar(value=STEP_CARRY_GRID_FREE)
         self.show_rays_var = tk.BooleanVar(value=True)
+        self.show_rotation_handles_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="3D inspector ready")
 
         self.columnconfigure(0, weight=1)
@@ -5291,6 +5295,12 @@ class Kraken3DInspector(tk.Toplevel):
             carry_toolbar.grid(row=2, column=0, sticky="ew", pady=(4, 0))
             ttk.Label(carry_toolbar, text="Carry").pack(side="left", padx=(0, 6))
             ttk.Label(carry_toolbar, text="Hold-drag STEP to move freely; Ctrl+drag rotates view.").pack(side="left")
+            ttk.Checkbutton(
+                carry_toolbar,
+                text="Rotation handles",
+                variable=self.show_rotation_handles_var,
+                command=self._toggle_rotation_handles,
+            ).pack(side="left", padx=(12, 0))
 
             _prepare_vtk_tk_widget(host)
             self._vtk_widget = vtkTkRenderWindowInteractor(host, width=1100, height=720)
@@ -7301,13 +7311,32 @@ class Kraken3DInspector(tk.Toplevel):
             self._set_ray_actor_selected(actor, bool(ray_index is not None and actor_ray_index == ray_index))
         self._picked_ray_index = ray_index
 
+    def _remove_optical_axis_highlight_actor(self) -> bool:
+        actor = self._optical_axis_highlight_actor
+        self._optical_axis_highlight_actor = None
+        if actor is None or self._renderer is None:
+            return False
+        try:
+            actor_key = self._actor_key(actor)
+            if actor_key is not None:
+                self._actor_by_key.pop(actor_key, None)
+        except Exception:
+            pass
+        try:
+            self._renderer.RemoveActor(actor)
+            return True
+        except Exception:
+            return False
+
     def _set_optical_axis_highlight(self, axis_id: str | None) -> None:
         axis_id = str(axis_id or "").strip() or None
-        if axis_id == self._picked_optical_axis_id:
+        if axis_id == self._picked_optical_axis_id and (axis_id is None or self._optical_axis_highlight_actor is not None):
             return
         if self._renderer is None:
             self._picked_optical_axis_id = axis_id
             return
+        self._remove_optical_axis_highlight_actor()
+        selected_points = None
         collection = self._renderer.GetActors()
         collection.InitTraversal()
         for _ in range(collection.GetNumberOfItems()):
@@ -7323,11 +7352,48 @@ class Kraken3DInspector(tk.Toplevel):
             if axis_id is not None and current_id == axis_id:
                 prop.SetColor(1.0, 0.68, 0.05)
                 prop.SetOpacity(1.0)
-                prop.SetLineWidth(5.0)
+                prop.SetLineWidth(4.0)
+                try:
+                    selected_points = np.asarray(axis_info.get("points"), dtype=float)
+                except Exception:
+                    selected_points = None
             else:
                 prop.SetColor(0.0, 0.43, 0.88)
                 prop.SetOpacity(0.82)
                 prop.SetLineWidth(3.0 if self._step_normal_axis_pick_mode else 2.0)
+        if axis_id is not None and (selected_points is None or selected_points.ndim != 2):
+            for record in list(self._optical_axis_pick_records):
+                if str(record.get("axis_id", "") or "").strip() != axis_id:
+                    continue
+                try:
+                    selected_points = np.asarray(record.get("points"), dtype=float)
+                except Exception:
+                    selected_points = None
+                break
+        if (
+            axis_id is not None
+            and selected_points is not None
+            and selected_points.ndim == 2
+            and selected_points.shape[0] >= 2
+            and selected_points.shape[1] >= 3
+            and np.all(np.isfinite(selected_points[:, :3]))
+            and pv is not None
+        ):
+            try:
+                mesh = pv.lines_from_points(selected_points[:, :3])
+                actor = self._add_mesh_actor(
+                    mesh,
+                    color=(1.0, 0.68, 0.05),
+                    opacity=1.0,
+                    line_width=7.0,
+                    flat_shading=True,
+                    backface_culling=False,
+                )
+                if actor is not None:
+                    actor.PickableOff()
+                    self._optical_axis_highlight_actor = actor
+            except Exception as exc:
+                self.editor.append_debug(f"3D optical-axis solid highlight failed: {exc}")
         self._picked_optical_axis_id = axis_id
 
     def _add_mesh_actor(
@@ -7459,6 +7525,39 @@ class Kraken3DInspector(tk.Toplevel):
             except Exception:
                 pass
         return removed
+
+    def _remove_placement_rotation_handle_actors(self) -> bool:
+        if self._renderer is None:
+            return False
+        removed = False
+        for actor_key in list(self._actor_placement_rotate_map):
+            actor = self._actor_by_key.pop(actor_key, None)
+            self._actor_placement_rotate_map.pop(actor_key, None)
+            if actor is None:
+                continue
+            try:
+                self._renderer.RemoveActor(actor)
+                removed = True
+            except Exception:
+                pass
+        return removed
+
+    def _show_rotation_handles(self) -> bool:
+        try:
+            return bool(self.show_rotation_handles_var.get())
+        except Exception:
+            return True
+
+    def _toggle_rotation_handles(self) -> None:
+        if self._show_rotation_handles():
+            self.refresh_from_editor()
+            self.status_var.set("Rotation handles shown.")
+            return
+        removed = self._remove_step_rotation_handle_actors()
+        removed = self._remove_placement_rotation_handle_actors() or removed
+        self.status_var.set("Rotation handles hidden.")
+        if removed:
+            self.render()
 
     def _clear_open3d_selection(self, *, render: bool = True) -> bool:
         changed = False
@@ -8032,15 +8131,18 @@ class Kraken3DInspector(tk.Toplevel):
             self._step_carry_grid_spacing_mm = None
         self.editor.select_step_component(label)
         self._set_step_highlight(label)
-        self.status_var.set(
-            f"{self._step_rotation_status_text(label)}. Use the colored STEP rotation handles, or Center STEP Axis."
-        )
+        handle_text = "Use the colored STEP rotation handles, or Center STEP Axis."
+        if not self._show_rotation_handles():
+            handle_text = "Rotation handles are hidden; enable the toolbar checkbox or use Center STEP Axis."
+        self.status_var.set(f"{self._step_rotation_status_text(label)}. {handle_text}")
 
     def _update_step_rotation_handler_state(self) -> None:
         label = self._step_rotation_active_label
         if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(str(label)) is None:
             self._close_step_rotation_handler()
             return
+        if not self._show_rotation_handles():
+            self._remove_step_rotation_handle_actors()
 
     def _rotate_step_from_handler(self, axis: str, delta_deg: float) -> None:
         label = self._step_rotation_active_label or self.editor._selected_step_label
@@ -9191,14 +9293,6 @@ class Kraken3DInspector(tk.Toplevel):
             center = np.mean(np.asarray(centers, dtype=float), axis=0) if centers else np.zeros(3, dtype=float)
         spacing = max(float(getattr(primary, "grid_spacing_mm", 10.0) or 10.0), 1e-6)
         extent = max(float(getattr(primary, "grid_extent_mm", spacing) or spacing), spacing)
-        mesh = self._scene_placement_grid_mesh(center, spacing, extent)
-        if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
-            return 0, ""
-        self._add_mesh_actor(mesh, color=(0.46, 0.54, 0.62), opacity=0.28, line_width=0.8)
-        try:
-            line_count = int(np.asarray(getattr(mesh, "lines", []), dtype=np.int64).size / 3)
-        except Exception:
-            line_count = 0
         if bool(getattr(primary, "snap_enabled", False)):
             snap_text = (
                 f"snap {float(getattr(primary, 'snap_mm', 0.0) or 0.0):.6g} mm / "
@@ -9208,14 +9302,14 @@ class Kraken3DInspector(tk.Toplevel):
             snap_text = "snap off"
         row_text = f"S{int(primary.row_index)}" if getattr(primary, "row_index", None) is not None else "scene"
         summary = (
-            f"Placement grid: {row_text} | spacing {spacing:.6g} mm | extent {extent:.6g} mm | "
+            f"Placement handles: {row_text} | spacing {spacing:.6g} mm | extent {extent:.6g} mm | "
             f"{snap_text} | placements {len(placements)}"
         )
         handle_count = self._add_scene_placement_translate_handles(primary, center=center, spacing=spacing, extent=extent)
         handle_count += self._add_scene_placement_rotate_handles(primary, center=center, spacing=spacing, extent=extent)
         if handle_count:
             summary += f" | handles {handle_count}"
-        return line_count, summary
+        return 0, summary
 
     def _add_scene_detector_overlays(self, scene_bundle: SceneBundle | None) -> int:
         count = 0
@@ -9348,9 +9442,40 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             return None
         try:
-            return poly.tube(radius=float(tube_radius), n_sides=10)
+            parts = [poly.tube(radius=float(tube_radius), n_sides=10)]
         except Exception:
-            return poly
+            parts = [poly]
+        try:
+            point_array = np.asarray(points, dtype=float)
+            arrow_scale = max(float(radius) * 0.11, float(tube_radius) * 6.0, 0.35)
+            for index, tangent in (
+                (0, point_array[1] - point_array[0]),
+                (-1, point_array[-1] - point_array[-2]),
+            ):
+                norm = float(np.linalg.norm(tangent))
+                if norm <= 1e-12 or not np.isfinite(norm):
+                    continue
+                direction = tangent / norm
+                start = point_array[index] - direction * arrow_scale * 0.34
+                parts.append(
+                    pv.Arrow(
+                        start=tuple(float(value) for value in start),
+                        direction=tuple(float(value) for value in direction),
+                        scale=float(arrow_scale),
+                        tip_length=0.55,
+                        tip_radius=max(float(tube_radius) * 2.7, arrow_scale * 0.14),
+                        shaft_radius=max(float(tube_radius) * 0.65, arrow_scale * 0.035),
+                    )
+                )
+        except Exception:
+            pass
+        merged = parts[0]
+        for part in parts[1:]:
+            try:
+                merged = merged.merge(part)
+            except Exception:
+                pass
+        return merged
 
     def _add_scene_placement_rotate_handles(
         self,
@@ -9360,7 +9485,7 @@ class Kraken3DInspector(tk.Toplevel):
         spacing: float,
         extent: float,
     ) -> int:
-        if pv is None:
+        if pv is None or not self._show_rotation_handles():
             return 0
         try:
             row_index = int(placement.row_index)
@@ -9420,7 +9545,7 @@ class Kraken3DInspector(tk.Toplevel):
         return center, float(extent)
 
     def _add_step_rotation_handles(self, label: str, mesh) -> int:
-        if pv is None:
+        if pv is None or not self._show_rotation_handles():
             return 0
         label = str(label).strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
@@ -9541,9 +9666,52 @@ class Kraken3DInspector(tk.Toplevel):
             raise RuntimeError(_VTK_TK_UNAVAILABLE_REASON or "Embedded VTK/Tk viewer unavailable")
 
         mesh_items = list(self.editor._scene_surface_meshes(system, scene_bundle, include_reference_surfaces=True))
+        rows = list(getattr(self.editor, "rows", []) or [])
+        expected_physical_rows = {
+            index
+            for index, row in enumerate(rows)
+            if str(getattr(row, "surface", "") or "") not in {"Object", "Image"}
+        }
+        mesh_rows = {
+            int(getattr(mesh_item, "row_index", -1))
+            for mesh_item in mesh_items
+            if int(getattr(mesh_item, "row_index", -1)) >= 0
+        }
+        physical_mesh_rows = mesh_rows.intersection(expected_physical_rows)
+        file_backed_rows = {
+            index
+            for index in expected_physical_rows
+            if self.editor._file_backed_stl_row_at(int(index)) is not None
+        }
+        previous_mesh_items = list(getattr(self, "_last_valid_surface_mesh_items", []) or [])
+        previous_row_count = int(getattr(self, "_last_valid_surface_mesh_row_count", 0) or 0)
+        can_reuse_previous_meshes = bool(previous_mesh_items) and previous_row_count == len(rows)
+        previous_physical_rows = {
+            int(getattr(mesh_item, "row_index", -1))
+            for mesh_item in previous_mesh_items
+            if int(getattr(mesh_item, "row_index", -1)) in expected_physical_rows
+        }
+        missing_file_backed_rows = file_backed_rows.difference(mesh_rows)
+        suspicious_sparse_rebuild = (
+            can_reuse_previous_meshes
+            and bool(previous_physical_rows)
+            and len(physical_mesh_rows) < max(1, int(np.ceil(len(previous_physical_rows) * 0.5)))
+        )
+        if can_reuse_previous_meshes and (missing_file_backed_rows or suspicious_sparse_rebuild):
+            detail = "missing file-backed rows" if missing_file_backed_rows else "sparse surface rebuild"
+            message = f"3D refresh reused previous surface meshes: {detail} during trace refresh."
+            self.status_var.set(message)
+            self.editor.append_debug(message)
+            mesh_items = previous_mesh_items
+            mesh_rows = {
+                int(getattr(mesh_item, "row_index", -1))
+                for mesh_item in mesh_items
+                if int(getattr(mesh_item, "row_index", -1)) >= 0
+            }
+            physical_mesh_rows = mesh_rows.intersection(expected_physical_rows)
         expects_surface_meshes = any(
             str(getattr(row, "surface", "") or "") not in {"Object", "Image"}
-            for row in getattr(self.editor, "rows", [])
+            for row in rows
         )
         previous_actor_count = 0
         try:
@@ -9555,8 +9723,12 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set(message)
             self.editor.append_debug(message)
             return
+        if physical_mesh_rows:
+            self._last_valid_surface_mesh_items = list(mesh_items)
+            self._last_valid_surface_mesh_row_count = len(rows)
 
         camera_state = None
+        selected_axis_id = self._picked_optical_axis_id
         if not bool(reset_camera):
             try:
                 previous_bounds = np.asarray(self._renderer.ComputeVisiblePropBounds(), dtype=float)
@@ -9585,6 +9757,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._actor_optical_axis_map.clear()
         self._optical_axis_actor_map.clear()
         self._optical_axis_pick_records.clear()
+        self._optical_axis_highlight_actor = None
         self._actor_by_key.clear()
         self._actor_step_map.clear()
         self._step_actor_map.clear()
@@ -9663,6 +9836,8 @@ class Kraken3DInspector(tk.Toplevel):
         optical_axis_overlays = 0
         if self._should_draw_optical_axis_overlays():
             optical_axis_overlays = self._add_optical_axis_pick_overlays(scene_bundle)
+            if selected_axis_id:
+                self._set_optical_axis_highlight(selected_axis_id)
 
         selected_step = getattr(self.editor, "_selected_step_label", None)
         step_rotation_handles = 0
@@ -11453,39 +11628,26 @@ class Kraken3DInspector(tk.Toplevel):
         if pv is None:
             return outline_mesh
         parts = []
-        span = 20.0
         try:
             if outline_mesh is not None and int(getattr(outline_mesh, "n_points", 0)) > 0:
                 outline = pv.wrap(outline_mesh).copy(deep=True)
                 parts.append(outline)
-                bounds = outline.bounds
-                span = max(
-                    float(bounds[1] - bounds[0]),
-                    float(bounds[3] - bounds[2]),
-                    float(bounds[5] - bounds[4]),
-                    1.0,
-                )
         except Exception:
             pass
-        try:
-            center = np.asarray(center, dtype=float)
+        if not parts:
+            try:
+                center = np.asarray(center, dtype=float)
+            except Exception:
+                center = np.asarray([], dtype=float)
             if center.size >= 3 and np.all(np.isfinite(center[:3])):
-                radius = max(min(span * 0.04, 6.0), 1.5)
                 parts.append(
                     pv.Sphere(
-                        radius=radius,
+                        radius=1.5,
                         center=(float(center[0]), float(center[1]), float(center[2])),
                         theta_resolution=16,
                         phi_resolution=8,
                     )
                 )
-                arm = radius * 4.0
-                for axis in np.eye(3):
-                    start = center[:3] - axis * arm
-                    end = center[:3] + axis * arm
-                    parts.append(pv.Line(tuple(start), tuple(end)))
-        except Exception:
-            pass
         if not parts:
             return outline_mesh
         merged = parts[0]

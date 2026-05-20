@@ -49,8 +49,8 @@ Estimated branch status:
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Achieved | `██████████ 100%` | Optical solids, branched paths, scatter, detectors, media state, source identity, source/object row separation, path metadata, branch-field propagation, and event accounting are covered by the native non-sequential closure validator. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
-| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, categorized view/scene/carry control rows with a toolbar layout validator, direct optical/lens/camera/LED STEP import, a distinct arbitrary-optical STEP overlay slot that does not replace the lens overlay, immediate cursor-attached carry placement for new optical STEP imports, free STEP carry placement, press-hold or drag-to-lift STEP movement with an in-scene center grip, release-to-drop, no OS pointer warping, Esc cancellation with selection clearing, blank-click deselection, middle-drag CAD-style view pan, Ctrl-drag camera pause, default STEP-face hover outlines plus row-backed CAD/STL face hover previews, a persistent pickable dotted Optical Axis guide independent of ray visibility with selected-axis highlighting after normal snap, two-click STEP-face-normal-to-optical-axis snapping, promotion of positioned STEP overlays to file-backed optical solid rows, Open 3D right-click face-function assignment with persistent assigned-face tint overlays, transactional scene refresh that keeps the prior valid scene if a rebuild returns no surface meshes, explicit CAD/STL placement side-panel entry instead of selection-triggered popups, and Sphinx coverage, in-scene STEP rotation handles, status-aware detector-miss terminal markers, active detector footprints, miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
-| Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, the Open 3D placement grid, snap-aware click/drag translate-rotate handles, imported STEP snap-to-target placement, row-to-target snap constraints, row-to-target normal-orientation constraints, row-to-optical-axis centering with regular rays hidden during target pick, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
+| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, categorized view/scene/carry control rows with a toolbar layout validator, direct optical/lens/camera/LED STEP import, a distinct arbitrary-optical STEP overlay slot that does not replace the lens overlay, immediate cursor-attached carry placement for new optical STEP imports, free STEP carry placement, press-hold or drag-to-lift STEP movement with an in-scene center grip, release-to-drop, no OS pointer warping, Esc cancellation with selection clearing, blank-click deselection, middle-drag CAD-style view pan, Ctrl-drag camera pause, default STEP-face hover outlines plus row-backed CAD/STL face hover previews, a persistent pickable dotted Optical Axis guide independent of ray visibility with a solid selected-axis overlay after normal snap, two-click STEP-face-normal-to-optical-axis snapping, promotion of positioned STEP overlays to file-backed optical solid rows, Open 3D right-click face-function assignment with persistent assigned-face tint overlays, transactional scene refresh that keeps prior valid surface meshes if a trace rebuild returns no or suspiciously incomplete surface meshes, explicit CAD/STL placement side-panel entry instead of selection-triggered popups, and Sphinx coverage, optional arrowheaded in-scene STEP rotation handles, status-aware detector-miss terminal markers, active detector footprints, miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
+| Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, Open 3D placement handles with visible grid planes suppressed, snap-aware click/drag translate-rotate handles, imported STEP snap-to-target placement, row-to-target snap constraints, row-to-target normal-orientation constraints, row-to-optical-axis centering with regular rays hidden during target pick, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, per-ray detector aperture status, detector aperture hit/miss reports, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, folded-preview provenance, and CSV export. |
 | Arbitrary prisms and CAD solids | Achieved | `██████████ 100%` | Face identity, geometry-derived uncoated face-intent suggestions, function-only picked-face assignment without Left/Right/Up/Down side labels, display-only STEP overlay promotion into traceable row-backed optical solids, cascaded row-scoped boundary/volume records, real multi-STL trace coverage, runtime output-port scene bounds, closed-solid media transitions, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
 
@@ -204,7 +204,7 @@ kraken-vtk-tk-check
   add an orange crosshair at the projected detector-plane intercept, so the
   miss can be compared directly with the active aperture.
 - Object/Image reference rows remain scene targets but no longer create default
-  Open 3D placement grids or rotation handles, so the 3D reference size tracks
+  Open 3D placement handles, so the 3D reference size tracks
   the editable row diameter instead of placement-helper extent.
 
 ### Non-Sequential Physics And Metadata
@@ -259,20 +259,22 @@ kraken-vtk-tk-check
 - The Non-Sequential Scene Graph also includes a `3D placements` namespace for
   `ScenePlacement3D` records, and CSV export preserves those diagnostics beside
   sources, targets, volumes, and boundary faces.
-- Open 3D renders a placement grid from the selected or first visible
-  `ScenePlacement3D` record, including snap spacing, grid spacing, extent, and
-  placement count as an in-view status overlay. Plain Object/Image reference
-  targets do not become placement records; old placement metadata on those
-  reference rows is ignored by the 3D handle layer.
+- Open 3D uses the selected or first visible `ScenePlacement3D` record to drive
+  placement handles and status text, but visible cube/grid planes are suppressed
+  so face assignment and ray inspection are not obscured. Plain Object/Image
+  reference targets do not become placement records; old placement metadata on
+  those reference rows is ignored by the 3D handle layer.
 - Open 3D placement handles can move the selected surface row along global
   X/Y/Z by the row's `ScenePlacement.snap_mm` when snap is enabled, or by the
-  placement grid spacing when snap is off. The move writes `DespX/Y/Z` and
+  placement spacing when snap is off. The move writes `DespX/Y/Z` and
   `ScenePlacement` metadata through the same history/table path as other row
   pose edits.
 - Open 3D placement rotation handles can rotate the selected surface row around
   global X/Y/Z by the row's `ScenePlacement.snap_deg` when snap is enabled, or
-  by a coarse 15 degree step when snap is off. The rotation writes
-  `TiltX/Y/Z` and `ScenePlacement` metadata through the same history/table path
+  by a coarse 15 degree step when snap is off. Rotation arcs have start/end
+  arrowheads and can be hidden with the Open 3D `Rotation handles` checkbox.
+  The rotation writes `TiltX/Y/Z` and `ScenePlacement` metadata through the same
+  history/table path
   as other row pose edits.
 - The same Open 3D placement handles also support drag authoring. Drag motion
   accumulates in screen space and repeatedly applies the same row-backed
@@ -527,10 +529,10 @@ study/validator that verifies wavelength-dependent detector positions.
 Direct STEP optical-component placement in the 3D plot is also feasible. The
 branch already imports STEP/IGES through cached STL, displays CAD/STL solids in
 3D, stores face roles, supports path/face anchors, publishes row-backed
-`ScenePlacement3D` records for snap/grid/anchor intent, draws the row-backed
-placement grid inside Open 3D, and provides translate handles for
-selected rows plus rotate handles for `TiltX/Y/Z`. Those handles can
-now be clicked for one edit or dragged for repeated edits while
+`ScenePlacement3D` records for snap/grid/anchor intent, suppresses visible
+placement grid planes inside Open 3D, and provides translate handles for
+selected rows plus optional arrowheaded rotate handles for `TiltX/Y/Z`. Those
+handles can now be clicked for one edit or dragged for repeated edits while
 immediately persisting back to row pose plus `ScenePlacement` metadata. Open 3D
 also supports row-to-target snapping, where a movable row or face is translated
 onto another row or face and the solved constraint is preserved as row-backed

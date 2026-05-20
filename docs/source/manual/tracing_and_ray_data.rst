@@ -318,18 +318,18 @@ compatible with the current architecture. STEP/IGES already converts to cached
 STL for tracing, and CAD/STL faces already carry placement and optical-role
 metadata. Rows can now also carry ``ScenePlacement`` metadata for grid
 visibility, linear snap spacing, angular snap step, and placement anchor
-intent. ``SceneBundle`` exposes
-those records as ``ScenePlacement3D`` objects, and the Non-Sequential Scene
-Graph exports them beside sources, targets, volumes, and boundary faces. Open
-3D renders a placement grid from the selected or first visible placement record
-and shows the active snap/grid values in a VTK overlay. The visible translation
-handles move the selected row along global ``X/Y/Z`` by ``ScenePlacement`` snap
-spacing when snap is enabled, or by the grid spacing when snap is off. Each
-move writes ``DespX/Y/Z`` plus placement metadata through the normal row
-history/table path. Rotation handles rotate the selected row around global
-``X/Y/Z`` by ``ScenePlacement.snap_deg`` when snap is enabled, or by a coarse
-15 degree step when snap is off, and write ``TiltX/Y/Z`` through the same row
-history/table path. Dragging a placement handle accumulates screen motion and
+intent. ``SceneBundle`` exposes those records as ``ScenePlacement3D`` objects,
+and the Non-Sequential Scene Graph exports them beside sources, targets,
+volumes, and boundary faces. Open 3D reports the active snap/placement values in
+a VTK overlay, but visible cube/grid planes are suppressed so they do not cover
+CAD faces during assignment. The visible translation handles move the selected
+row along global ``X/Y/Z`` by ``ScenePlacement`` snap spacing when snap is
+enabled, or by the placement spacing when snap is off. Each move writes
+``DespX/Y/Z`` plus placement metadata through the normal row history/table path.
+Arrowheaded rotation handles rotate the selected row around global ``X/Y/Z`` by
+``ScenePlacement.snap_deg`` when snap is enabled, or by a coarse 15 degree step
+when snap is off, and write ``TiltX/Y/Z`` through the same row history/table
+path. Dragging a placement handle accumulates screen motion and
 applies repeated snap steps through the same row-backed services; clicking
 without dragging remains the precise one-step fallback. A full 3D placement
 tool should still add richer face/axis picking, but those controls must persist

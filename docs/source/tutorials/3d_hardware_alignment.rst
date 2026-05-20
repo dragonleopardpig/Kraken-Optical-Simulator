@@ -42,10 +42,12 @@ Start from the fitted vendor prism layout used in
    :alt: Embedded 3D inspector with optical axis and CAD face overlays
    :width: 100%
 
-   The long blue dotted line is the layout optical axis. The coloured face
-   markers are the assigned CAD/STL optical-face roles. Plain left-click
-   selects surfaces, rays, or imported hardware. Left hold-drag rotates the
-   camera around the current view center.
+   The long blue dotted line is the layout optical axis. When an axis is chosen
+   for placement it is drawn again as a solid highlighted line, so the selected
+   path remains visible even when rays are hidden. The coloured face markers are
+   the assigned CAD/STL optical-face roles. Plain left-click selects surfaces,
+   rays, or imported hardware. Left hold-drag rotates the camera around the
+   current view center.
 
 Use The CAD/STL Placement Handler
 ---------------------------------
@@ -103,10 +105,12 @@ scene.
    :alt: STEP rotation handles in the embedded 3D inspector
    :width: 100%
 
-   Click a red, green, or blue handle for successive ``X/Y/Z +/-90`` rotations
-   while watching the imported STEP overlay move in the same 3D scene. This
-   replaces the older floating popup and duplicate toolbar menu, so rotation is
-   tied to the selected STEP component and does not cover the geometry.
+   Click a red, green, or blue arrowheaded arc for successive ``X/Y/Z +/-90``
+   rotations while watching the imported STEP overlay move in the same 3D scene.
+   The Carry-row ``Rotation handles`` checkbox hides or shows these arcs when
+   face picking needs an unobstructed view. This replaces the older floating
+   popup and duplicate toolbar menu, so rotation is tied to the selected STEP
+   component and does not cover the geometry.
 
 Carry Imported STEP Freely
 --------------------------
@@ -138,23 +142,25 @@ is moved again.
    carry path projects the cursor ray onto a drag plane through the STEP center
    and moves continuously on that plane. ``Ctrl+drag`` keeps the same left-drag
    gesture available for camera rotation, and ``Esc`` cancels the active
-   carry/pick operation. The selected overlay keeps its rotation handles, so the
-   normal workflow is: import, hold-drag the hardware near the traced ray
-   bundle, click the STEP surface whose normal should define the optical
-   entrance/exit direction, and then click the intended blue ``Optical Axis N``
-   overlay. During the second click mode, only optical-axis overlays are
+   carry/pick operation. The selected overlay keeps its optional rotation
+   handles, so the normal workflow is: import, hold-drag the hardware near the
+   traced ray bundle, click the STEP surface whose normal should define the
+   optical entrance/exit direction, and then click the intended blue
+   ``Optical Axis N`` overlay. During the second click mode, only optical-axis overlays are
    accepted; the overlays are generated from traced path branches and remain
    pickable even when regular rays are hidden. After the snap, the selected
-   optical axis remains highlighted so the chosen path is visible even when
-   ``Ray Off`` is active. The picked face center moves onto the clicked optical
-   path point, and the picked normal rotates parallel to that local path
-   direction. Click the coloured handles to flip the sign if needed before
+   optical axis remains highlighted as a solid line so the chosen path is
+   visible even when ``Ray Off`` is active. The picked face center moves onto
+   the clicked optical path point, and the picked normal rotates parallel to
+   that local path direction. Click the coloured handles to flip the sign if needed before
    assigning face functions. A right-click on a row-backed optical CAD/STL face
    previews the picked face and assigns ``Uncoated``, ``Full Reflecting``,
    splitter, absorber, or unassigned physics directly on that face. Assigned
    faces remain softly tinted in Open 3D so a previously authored face is
    visible before the next surface is picked without making the whole solid look
-   like a triangulated mesh.
+   like a triangulated mesh. The old cube/grid plane overlay is suppressed during
+   this workflow; placement metadata still drives the handles and status text,
+   but the three grid planes no longer obscure the picked faces.
 
 This is a hardware-overlay workflow. It places real vendor CAD in the same 3D
 scene as rays and optical objects. Use
@@ -231,6 +237,6 @@ Common Mistakes
 
 ``I assigned every CAD/STL face and then the 3D scene disappeared.``
   That should not happen. Open 3D keeps the previous valid scene if a trace
-  rebuild produces no surface meshes, and the validator covers the path where a
-  promoted optical solid has all of its exposed faces assigned before the scene
-  refreshes.
+  rebuild produces no surface meshes or suspiciously drops previously visible
+  file-backed surfaces, and the validator covers the path where a promoted
+  optical solid has all of its exposed faces assigned before the scene refreshes.

@@ -28,6 +28,8 @@ def main() -> int:
     handler = inspect.getsource(Kraken3DInspector.show_step_rotation_handler)
     handler_rotate = inspect.getsource(Kraken3DInspector._rotate_step_from_handler)
     step_rotate_handles = inspect.getsource(Kraken3DInspector._add_step_rotation_handles)
+    rotation_arc_mesh = inspect.getsource(Kraken3DInspector._scene_placement_rotation_arc_mesh)
+    rotation_toggle = inspect.getsource(Kraken3DInspector._toggle_rotation_handles)
     step_rotate_pick = inspect.getsource(Kraken3DInspector._apply_step_rotation_handle)
     step_import = inspect.getsource(Kraken3DInspector.import_step_overlay)
     optical_step_import = inspect.getsource(Kraken3DInspector.import_optical_step_overlay)
@@ -63,6 +65,7 @@ def main() -> int:
     step_normal_axis_apply = inspect.getsource(Kraken3DInspector._apply_step_normal_axis_pick)
     optical_axis_records = inspect.getsource(Kraken3DInspector._optical_axis_records_for_3d)
     optical_axis_overlays = inspect.getsource(Kraken3DInspector._add_optical_axis_pick_overlays)
+    optical_axis_highlight = inspect.getsource(Kraken3DInspector._set_optical_axis_highlight)
     optical_axis_frame = inspect.getsource(Kraken3DInspector._optical_axis_frame_from_pick)
     optical_axis_screen_pick = inspect.getsource(Kraken3DInspector._optical_axis_info_near_display_xy)
     picked_step_feature = inspect.getsource(Kraken3DInspector._picked_feature_info)
@@ -172,6 +175,8 @@ def main() -> int:
         ("STEP rotation handles expose X/Y/Z axes", '("x",' in step_rotate_handles and '("y",' in step_rotate_handles and '("z",' in step_rotate_handles),
         ("STEP rotation handles expose repeated +/-90 rotations", "-1.0" in step_rotate_handles and "90.0" in step_rotate_handles),
         ("STEP rotation handles are pickable scene actors", "pick_step_rotate" in step_rotate_handles and "_actor_step_rotate_map" in pick),
+        ("STEP rotation handles can be hidden from the toolbar", "show_rotation_handles_var" in init and "_toggle_rotation_handles" in init and "_show_rotation_handles()" in step_rotate_handles and "_remove_step_rotation_handle_actors" in rotation_toggle),
+        ("STEP rotation arcs show start/end arrowheads", "pv.Arrow" in rotation_arc_mesh and "point_array[1] - point_array[0]" in rotation_arc_mesh and "point_array[-1] - point_array[-2]" in rotation_arc_mesh),
         ("STEP rotation handle rotates selected component", "rotate_step_axis(label, axis" in step_rotate_pick),
         ("Open 3D STEP import enters carry mode", "_step_carry_active_label = label" in step_import),
         (
@@ -400,10 +405,25 @@ def main() -> int:
             "_set_optical_axis_highlight(axis_id)" in step_normal_axis_apply,
         ),
         (
+            "Open 3D optical-axis highlight is a solid overlay",
+            "pv.lines_from_points" in optical_axis_highlight
+            and "line_width=7.0" in optical_axis_highlight
+            and "_optical_axis_highlight_actor" in optical_axis_highlight
+            and "selected_axis_id = self._picked_optical_axis_id" in refresh
+            and "_set_optical_axis_highlight(selected_axis_id)" in refresh,
+        ),
+        (
             "Open 3D refresh does not clear scene on empty surface rebuild",
             "rebuilt trace produced no surface meshes" in refresh
             and "previous_actor_count > 0" in refresh
             and "return" in refresh.split("rebuilt trace produced no surface meshes", 1)[1].split("RemoveAllViewProps", 1)[0],
+        ),
+        (
+            "Open 3D refresh reuses previous meshes for suspicious trace refreshes",
+            "_last_valid_surface_mesh_items" in refresh
+            and "missing_file_backed_rows" in refresh
+            and "suspicious_sparse_rebuild" in refresh
+            and "3D refresh reused previous surface meshes" in refresh,
         ),
         (
             "Open 3D STEP promotion clears stale overlay interaction state",
@@ -438,9 +458,9 @@ def main() -> int:
         ("Open 3D renders missed-detector projection crosshairs", "scene_target_detector_miss_crosshair_polylines" in editor_detector_overlays and "detector_miss_crosshair" in editor_detector_overlays),
         ("embedded 3D detector overlays are line meshes", "pv.lines_from_points" in detector_overlays and "line_width" in detector_overlays),
         ("legacy 3D includes detector overlays", "_scene_detector_overlay_specs(scene_bundle)" in legacy_open_3d),
-        ("Open 3D renders row-backed placement grid state", "self._scene_placements_for_3d(scene_bundle)" in placement_grid and "grid_spacing_mm" in placement_grid),
-        ("Open 3D placement grid is polyline data, not a UI-only table", "pv.PolyData" in placement_grid_mesh and "lines=" in placement_grid_mesh),
-        ("Open 3D placement grid status is a VTK overlay", "vtkTextActor" in placement_grid_status and "Placement grid:" in placement_grid),
+        ("Open 3D renders row-backed placement handle state", "self._scene_placements_for_3d(scene_bundle)" in placement_grid and "grid_spacing_mm" in placement_grid),
+        ("Open 3D suppresses visible placement grid planes", "_scene_placement_grid_mesh(" not in placement_grid and "Placement handles:" in placement_grid),
+        ("Open 3D placement status is a VTK overlay", "vtkTextActor" in placement_grid_status and "Placement handles:" in placement_grid),
         ("Open 3D refresh reports placement grid count", "placement_grid_lines" in refresh and "_update_placement_grid_status" in refresh),
         ("Open 3D placement handles are pickable scene actors", "pick_placement_move" in placement_handles and "_actor_placement_move_map" in pick),
         ("Open 3D placement handles write through row pose service", "translate_scene_row_pose" in placement_handle_pick),
