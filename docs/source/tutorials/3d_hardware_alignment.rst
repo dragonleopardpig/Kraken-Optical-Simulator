@@ -169,6 +169,15 @@ is moved again.
    the handles and status text, but the three grid planes no longer obscure the
    picked faces.
 
+   When an Open 3D assignment behaves unexpectedly, copy the main-window Debug
+   panel or read ``~/.cache/krakenos/logs/kraken_debug_latest.log``. Lines that
+   start with ``Open3DTrace`` show the exact interaction sequence: the
+   right-click actor, picked row or STEP overlay, matched face id, selected face
+   function, metadata save, ray visibility toggle, scene-refresh mesh rows, and
+   actor counts after refresh. This is the preferred evidence for debugging a
+   disappearing-body report because it records what the UI picked, not only what
+   the screenshot shows afterward.
+
 This is a hardware-overlay workflow. It places real vendor CAD in the same 3D
 scene as rays and optical objects. Use
 ``CAD / target -> Promote STEP to Optical Solid Row`` when the positioned
@@ -211,6 +220,8 @@ physics of one particular component:
 * imported STEP ``Snap STEP Normal->Optical Axis`` placement;
 * direct picked-face optical function assignment with persistent assigned-face
   overlays and immediate metadata save;
+* structured ``Open3DTrace`` diagnostics for click, assignment, and refresh
+  reconstruction;
 * promotion from positioned STEP overlay to a file-backed optical solid row;
 * selected STEP rotation handles for imported hardware overlays;
 * source-target picking from the 3D view.

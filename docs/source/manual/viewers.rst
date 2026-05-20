@@ -72,6 +72,10 @@ Current UI coverage:
 * optical surface meshes and solid-body meshes in the shared scene bundle
 * double-sided Open 3D surface actors for scene meshes, so STEP/STL vendor
   winding does not make physical components vanish after a ray off/on refresh
+* structured ``Open3DTrace`` diagnostics in the Debug panel and
+  ``~/.cache/krakenos/logs/kraken_debug_latest.log`` for left clicks,
+  right-click face context, matched face ids, face-function metadata writes,
+  STEP promotion, ray toggles, refresh mesh rows, and actor counts
 * row selection highlighting for surfaces and elements
 * escaped non-sequential rays projected to the configured detector/Image plane
   as explicit missed-detector terminal markers

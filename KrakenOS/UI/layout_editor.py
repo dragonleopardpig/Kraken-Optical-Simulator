@@ -5178,6 +5178,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._selected_step_feature_normal_world: tuple[float, float, float] | None = None
         self._last_valid_surface_mesh_items: list[SurfaceMesh3D] = []
         self._last_valid_surface_mesh_row_count = 0
+        self._open3d_debug_seq = 0
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.orient_axis_var = tk.StringVar(value="+Z")
         self.normal_target_var = tk.StringVar(value=SCENE_NORMAL_TARGET_LABELS["detector"])
@@ -5219,7 +5220,7 @@ class Kraken3DInspector(tk.Toplevel):
                 view_toolbar,
                 text="Show rays",
                 variable=self.show_rays_var,
-                command=self.refresh_from_editor,
+                command=self._on_show_rays_changed,
             ).pack(side="left", padx=(12, 0))
 
             scene_toolbar = ttk.Frame(toolbar_container)
@@ -5566,15 +5567,163 @@ class Kraken3DInspector(tk.Toplevel):
             OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
         )
 
+    @staticmethod
+    def _debug_vector(value, *, digits: int = 6):
+        try:
+            array = np.asarray(value, dtype=float).reshape(-1)
+        except Exception:
+            return None
+        if array.size <= 0 or not np.all(np.isfinite(array)):
+            return None
+        return [round(float(item), digits) for item in array[:3]]
+
+    def _debug_mode_state(self) -> dict[str, object]:
+        return {
+            "source_target": bool(self._source_target_pick_mode),
+            "center_row_axis": bool(self._center_row_to_ray_mode),
+            "center_row_index": self._center_row_to_ray_index,
+            "placement_target": bool(self._placement_target_pick_mode),
+            "placement_orient": bool(self._placement_orient_pick_mode),
+            "placement_orient_ray": bool(self._placement_orient_ray_mode),
+            "step_normal_axis": bool(self._step_normal_axis_pick_mode),
+            "step_carry": self._step_carry_label(),
+            "step_follow": self._step_carry_follow_state is not None,
+            "step_drag": self._step_carry_drag_state is not None,
+            "step_snap_ray": bool(self._step_carry_snap_ray_mode),
+            "step_snap_target": bool(self._step_carry_snap_target_mode),
+            "cad_axis_pick": bool(getattr(self.editor, "_cad_axis_pick_any", False)),
+            "cad_axis_label": getattr(self.editor, "_cad_axis_pick_label", None),
+        }
+
+    def _debug_actor_counts(self) -> dict[str, object]:
+        view_props = None
+        try:
+            if self._renderer is not None:
+                view_props = int(self._renderer.GetViewProps().GetNumberOfItems())
+        except Exception:
+            view_props = None
+        return {
+            "view_props": view_props,
+            "actors_by_key": len(getattr(self, "_actor_by_key", {}) or {}),
+            "row_actor_rows": sorted(int(row) for row in getattr(self, "_row_actor_map", {}) or {}),
+            "row_actor_count": sum(len(items) for items in (getattr(self, "_row_actor_map", {}) or {}).values()),
+            "ray_actors": len(getattr(self, "_actor_ray_map", {}) or {}),
+            "axis_actors": len(getattr(self, "_actor_optical_axis_map", {}) or {}),
+            "step_actor_labels": {
+                str(label): len(items)
+                for label, items in sorted((getattr(self, "_step_actor_map", {}) or {}).items())
+            },
+            "step_rotate_handles": len(getattr(self, "_actor_step_rotate_map", {}) or {}),
+            "placement_move_handles": len(getattr(self, "_actor_placement_move_map", {}) or {}),
+            "placement_rotate_handles": len(getattr(self, "_actor_placement_rotate_map", {}) or {}),
+            "show_rays": bool(self.show_rays_var.get()),
+            "selected_step": getattr(self.editor, "_selected_step_label", None),
+            "picked_row": self._picked_row_index,
+            "picked_axis": self._picked_optical_axis_id,
+        }
+
+    def _debug_face_metadata_summary(self, metadata: object) -> dict[str, object]:
+        faces = list(metadata.get("faces", []) or []) if isinstance(metadata, dict) else []
+        function_counts: dict[str, int] = {}
+        role_counts: dict[str, int] = {}
+        port_counts: dict[str, int] = {}
+        assigned = 0
+        for face in faces:
+            if not isinstance(face, dict):
+                continue
+            function = _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+            role = str(face.get("role", "") or "")
+            port_role = _normalize_optical_solid_face_port_role(face.get("port_role"))
+            function_counts[function] = function_counts.get(function, 0) + 1
+            role_counts[role] = role_counts.get(role, 0) + 1
+            port_counts[port_role] = port_counts.get(port_role, 0) + 1
+            if function != OPTICAL_SOLID_FACE_FUNCTION_DEFAULT:
+                assigned += 1
+        return {
+            "faces": len(faces),
+            "assigned_faces": assigned,
+            "function_counts": function_counts,
+            "role_counts": role_counts,
+            "port_counts": port_counts,
+        }
+
+    def _debug_trace(self, event: str, **fields: object) -> None:
+        try:
+            self._open3d_debug_seq = int(getattr(self, "_open3d_debug_seq", 0) or 0) + 1
+            payload = {
+                "seq": self._open3d_debug_seq,
+                "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "event": str(event),
+                **fields,
+            }
+            text = json.dumps(payload, sort_keys=True, default=str)
+        except Exception as exc:
+            text = f'{{"event": "{event}", "debug_error": "{_short_error_message(exc)}"}}'
+        try:
+            self.editor.append_debug(f"Open3DTrace {text}")
+        except Exception:
+            pass
+
+    def _debug_pick_payload(self, actor_key: str | None, *, x: int | None = None, y: int | None = None) -> dict[str, object]:
+        cell_id = None
+        pick_world = None
+        try:
+            cell_id = int(self._picker.GetCellId()) if self._picker is not None else None
+        except Exception:
+            cell_id = None
+        try:
+            pick_world = self._debug_vector(self._picker.GetPickPosition()) if self._picker is not None else None
+        except Exception:
+            pick_world = None
+        axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
+        return {
+            "x": x,
+            "y": y,
+            "actor_key": actor_key,
+            "cell_id": cell_id,
+            "pick_world": pick_world,
+            "row_index": self._actor_row_map.get(actor_key) if actor_key is not None else None,
+            "ray_index": self._actor_ray_map.get(actor_key) if actor_key is not None else None,
+            "step_label": self._actor_step_map.get(actor_key) if actor_key is not None else None,
+            "axis_id": axis_info.get("axis_id") if isinstance(axis_info, dict) else None,
+            "step_rotate": self._actor_step_rotate_map.get(actor_key) if actor_key is not None else None,
+            "placement_move": self._actor_placement_move_map.get(actor_key) if actor_key is not None else None,
+            "placement_rotate": self._actor_placement_rotate_map.get(actor_key) if actor_key is not None else None,
+        }
+
+    def _on_show_rays_changed(self) -> None:
+        self._debug_trace("show_rays_toggled", show_rays=bool(self.show_rays_var.get()), counts=self._debug_actor_counts())
+        self.refresh_from_editor()
+
     def _show_surface_function_context_menu(self, event) -> str:
         context = self._right_click_pick_context(event)
         if context is None:
+            self._debug_trace(
+                "right_click_no_context",
+                x=getattr(event, "x", None),
+                y=getattr(event, "y", None),
+                counts=self._debug_actor_counts(),
+                modes=self._debug_mode_state(),
+            )
             self.status_var.set("Right-click a CAD/STL optical face to assign its surface function.")
             return "break"
         row_index = context.get("row_index")
         step_label = str(context.get("step_label") or "").strip().lower()
         point = np.asarray(context.get("point_world", ()), dtype=float).reshape(-1)
         normal = context.get("normal_world")
+        self._debug_trace(
+            "right_click_context",
+            x=getattr(event, "x", None),
+            y=getattr(event, "y", None),
+            row_index=row_index,
+            step_label=step_label or None,
+            actor_key=context.get("actor_key"),
+            cell_id=context.get("cell_id"),
+            point_world=self._debug_vector(point),
+            normal_world=self._debug_vector(normal),
+            counts=self._debug_actor_counts(),
+            modes=self._debug_mode_state(),
+        )
         if row_index is None and step_label not in STEP_OVERLAY_LABEL_SET:
             self.status_var.set("Right-click assignment is available on optical CAD/STL rows or imported STEP bodies.")
             return "break"
@@ -5599,6 +5748,14 @@ class Kraken3DInspector(tk.Toplevel):
                 return "break"
             if face is not None:
                 face_id = str(face.get("face_id", "") or "").strip()
+            self._debug_trace(
+                "right_click_face_match",
+                row_index=int(row_index),
+                face_id=face_id or None,
+                face_function=_optical_solid_face_function_display(face.get("function"), legacy_role=face.get("role")) if face is not None else None,
+                face_role=face.get("role") if face is not None else None,
+                face_port_role=face.get("port_role") if face is not None else None,
+            )
             try:
                 feature = context.get("feature")
                 actor_key = str(context.get("actor_key") or "")
@@ -5658,6 +5815,14 @@ class Kraken3DInspector(tk.Toplevel):
         normal_world,
         function_label: str,
     ) -> None:
+        self._debug_trace(
+            "face_assignment_start",
+            row_index=int(row_index),
+            function_label=function_label,
+            point_world=self._debug_vector(point_world),
+            normal_world=self._debug_vector(normal_world),
+            counts_before=self._debug_actor_counts(),
+        )
         try:
             result = self.editor.assign_optical_solid_face_function_at_world_point(
                 int(row_index),
@@ -5668,19 +5833,36 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception as exc:
             self.status_var.set(f"Face assignment failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"Open 3D face assignment failed: {exc}")
+            self._debug_trace("face_assignment_failed", row_index=int(row_index), error=_short_error_message(exc))
             return
         face_id = str(result.get("face_id", "") or "picked face")
         display = str(result.get("function_display", function_label) or function_label)
+        self._debug_trace(
+            "face_assignment_metadata_saved",
+            row_index=int(row_index),
+            face_id=face_id,
+            function_display=display,
+            metadata=self._debug_face_metadata_summary(result.get("metadata")),
+        )
         message = f"S{int(row_index)} {face_id}: set {display}. Rebuilt trace with assigned-face overlay."
         try:
             self.refresh_from_editor()
             self.highlight_row(int(row_index))
         except Exception as exc:
             self.editor.append_debug(f"Open 3D refresh after face assignment failed: {exc}")
+            self._debug_trace("face_assignment_refresh_failed", row_index=int(row_index), face_id=face_id, error=_short_error_message(exc))
+        self._debug_trace(
+            "face_assignment_done",
+            row_index=int(row_index),
+            face_id=face_id,
+            function_display=display,
+            counts_after=self._debug_actor_counts(),
+        )
         self.status_var.set(message)
 
     def _promote_step_from_context(self, label: str) -> None:
         self.editor.select_step_component(label)
+        self._debug_trace("promote_step_from_context", label=label, counts_before=self._debug_actor_counts())
         self.promote_selected_step_to_optical_solid_row()
 
     def _promote_step_and_assign_face_function(
@@ -5693,6 +5875,14 @@ class Kraken3DInspector(tk.Toplevel):
         label = str(label).strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET:
             return
+        self._debug_trace(
+            "promote_step_face_assignment_start",
+            label=label,
+            function_label=function_label,
+            point_world=self._debug_vector(point_world),
+            normal_world=self._debug_vector(normal_world),
+            counts_before=self._debug_actor_counts(),
+        )
         try:
             result = self.editor.promote_imported_step_to_optical_solid_row(
                 label,
@@ -5703,11 +5893,19 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception as exc:
             self.status_var.set(f"Promote STEP failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"Open 3D STEP promotion for face assignment failed: {exc}")
+            self._debug_trace("promote_step_face_assignment_failed", label=label, error=_short_error_message(exc))
             return
         if result is None:
             self.status_var.set(self.editor.status_var.get())
+            self._debug_trace("promote_step_face_assignment_no_result", label=label, status=self.editor.status_var.get())
             return
         row_index = int(result.get("row_index", -1))
+        self._debug_trace(
+            "promote_step_face_assignment_promoted",
+            label=label,
+            row_index=row_index,
+            result={key: str(value) for key, value in dict(result).items()},
+        )
         try:
             assigned = self.editor.assign_optical_solid_face_function_at_world_point(
                 row_index,
@@ -5718,15 +5916,33 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception as exc:
             self.status_var.set(f"Promoted STEP, but face assignment failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"Open 3D promoted STEP face assignment failed: {exc}")
+            self._debug_trace("promoted_step_face_assignment_failed", label=label, row_index=row_index, error=_short_error_message(exc))
             return
+        self._debug_trace(
+            "promoted_step_face_assignment_metadata_saved",
+            label=label,
+            row_index=row_index,
+            face_id=str(assigned.get("face_id", "") or ""),
+            function_display=str(assigned.get("function_display", function_label) or function_label),
+            metadata=self._debug_face_metadata_summary(assigned.get("metadata")),
+        )
         self._clear_step_overlay_interaction_state(label)
         try:
             self.refresh_from_editor()
             self.highlight_row(row_index)
         except Exception as exc:
             self.editor.append_debug(f"Open 3D refresh after promoted STEP face assignment failed: {exc}")
+            self._debug_trace("promoted_step_face_assignment_refresh_failed", label=label, row_index=row_index, error=_short_error_message(exc))
         face_id = str(assigned.get("face_id", "") or "picked face")
         display = str(assigned.get("function_display", function_label) or function_label)
+        self._debug_trace(
+            "promoted_step_face_assignment_done",
+            label=label,
+            row_index=row_index,
+            face_id=face_id,
+            function_display=display,
+            counts_after=self._debug_actor_counts(),
+        )
         self.status_var.set(
             f"Promoted {label.upper()} STEP to S{row_index} and set {face_id} to {display}. "
             "The row now participates in non-sequential tracing."
@@ -9698,11 +9914,38 @@ class Kraken3DInspector(tk.Toplevel):
             and bool(previous_physical_rows)
             and len(physical_mesh_rows) < max(1, int(np.ceil(len(previous_physical_rows) * 0.5)))
         )
+        previous_actor_count = 0
+        try:
+            previous_actor_count = int(self._renderer.GetViewProps().GetNumberOfItems())
+        except Exception:
+            previous_actor_count = 0
+        self._debug_trace(
+            "refresh_scene_start",
+            rows=len(rows),
+            expected_physical_rows=sorted(expected_physical_rows),
+            mesh_items=len(mesh_items),
+            mesh_rows=sorted(mesh_rows),
+            physical_mesh_rows=sorted(physical_mesh_rows),
+            file_backed_rows=sorted(file_backed_rows),
+            missing_file_backed_rows=sorted(missing_file_backed_rows),
+            previous_physical_rows=sorted(previous_physical_rows),
+            previous_actor_count=previous_actor_count,
+            can_reuse_previous_meshes=can_reuse_previous_meshes,
+            suspicious_sparse_rebuild=suspicious_sparse_rebuild,
+            show_rays=bool(self.show_rays_var.get()),
+            reset_camera=bool(reset_camera),
+        )
         if can_reuse_previous_meshes and (missing_file_backed_rows or suspicious_sparse_rebuild):
             detail = "missing file-backed rows" if missing_file_backed_rows else "sparse surface rebuild"
             message = f"3D refresh reused previous surface meshes: {detail} during trace refresh."
             self.status_var.set(message)
             self.editor.append_debug(message)
+            self._debug_trace(
+                "refresh_scene_reuse_previous_meshes",
+                detail=detail,
+                missing_file_backed_rows=sorted(missing_file_backed_rows),
+                suspicious_sparse_rebuild=suspicious_sparse_rebuild,
+            )
             mesh_items = previous_mesh_items
             mesh_rows = {
                 int(getattr(mesh_item, "row_index", -1))
@@ -9714,15 +9957,11 @@ class Kraken3DInspector(tk.Toplevel):
             str(getattr(row, "surface", "") or "") not in {"Object", "Image"}
             for row in rows
         )
-        previous_actor_count = 0
-        try:
-            previous_actor_count = int(self._renderer.GetViewProps().GetNumberOfItems())
-        except Exception:
-            previous_actor_count = 0
         if previous_actor_count > 0 and expects_surface_meshes and not mesh_items:
             message = "3D refresh kept previous scene: rebuilt trace produced no surface meshes."
             self.status_var.set(message)
             self.editor.append_debug(message)
+            self._debug_trace("refresh_scene_abort_no_meshes", previous_actor_count=previous_actor_count)
             return
         if physical_mesh_rows:
             self._last_valid_surface_mesh_items = list(mesh_items)
@@ -9935,6 +10174,20 @@ class Kraken3DInspector(tk.Toplevel):
         ray_count = len(getattr(scene_bundle, "ray_paths", []) or []) if scene_bundle is not None else len(getattr(rays, "CC", []))
         self.status_var.set(
             f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | optical axes={optical_axis_overlays} | assigned face overlays={assigned_face_overlays} | face roles={face_role_markers} | virtual planes={virtual_plane_markers} | detector overlays={detector_overlay_lines} | placement grid={placement_grid_lines} | STEP carry active={step_carry_active} | STEP rotation handles={step_rotation_handles}"
+        )
+        self._debug_trace(
+            "refresh_scene_done",
+            surfaces=drew_surfaces,
+            rays=ray_count,
+            optical_axes=optical_axis_overlays,
+            assigned_face_overlays=assigned_face_overlays,
+            face_role_markers=face_role_markers,
+            virtual_plane_markers=virtual_plane_markers,
+            detector_overlays=detector_overlay_lines,
+            placement_grid=placement_grid_lines,
+            step_carry_active=step_carry_active,
+            step_rotation_handles=step_rotation_handles,
+            counts=self._debug_actor_counts(),
         )
         grid_summary = " | ".join(part for part in (placement_grid_summary, step_carry_grid_summary) if part)
         self._update_placement_grid_status(grid_summary, render=False)
@@ -10780,6 +11033,12 @@ class Kraken3DInspector(tk.Toplevel):
         self._picker.Pick(x, y, 0.0, self._renderer)
         actor = self._picker.GetActor()
         actor_key = self._actor_key(actor)
+        self._debug_trace(
+            "left_click_pick",
+            **self._debug_pick_payload(actor_key, x=int(x), y=int(y)),
+            counts=self._debug_actor_counts(),
+            modes=self._debug_mode_state(),
+        )
         step_rotate = self._actor_step_rotate_map.get(actor_key) if actor_key is not None else None
         if step_rotate is not None:
             if (

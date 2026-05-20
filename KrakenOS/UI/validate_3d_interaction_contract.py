@@ -31,6 +31,11 @@ def main() -> int:
     rotation_arc_mesh = inspect.getsource(Kraken3DInspector._scene_placement_rotation_arc_mesh)
     rotation_toggle = inspect.getsource(Kraken3DInspector._toggle_rotation_handles)
     rotation_hover = inspect.getsource(Kraken3DInspector._set_rotation_handle_hover)
+    debug_trace = inspect.getsource(Kraken3DInspector._debug_trace)
+    show_rays_changed = inspect.getsource(Kraken3DInspector._on_show_rays_changed)
+    surface_menu = inspect.getsource(Kraken3DInspector._show_surface_function_context_menu)
+    context_assign = inspect.getsource(Kraken3DInspector._assign_row_face_function_from_context)
+    context_promote_assign = inspect.getsource(Kraken3DInspector._promote_step_and_assign_face_function)
     step_rotate_pick = inspect.getsource(Kraken3DInspector._apply_step_rotation_handle)
     step_import = inspect.getsource(Kraken3DInspector.import_step_overlay)
     optical_step_import = inspect.getsource(Kraken3DInspector.import_optical_step_overlay)
@@ -180,6 +185,19 @@ def main() -> int:
         ("STEP rotation handles can be hidden from the toolbar", "show_rotation_handles_var" in init and "_toggle_rotation_handles" in init and "_show_rotation_handles()" in step_rotate_handles and "_remove_step_rotation_handle_actors" in rotation_toggle),
         ("STEP rotation arcs show start/end arrowheads", "pv.Arrow" in rotation_arc_mesh and "point_array[1] - point_array[0]" in rotation_arc_mesh and "point_array[-1] - point_array[-2]" in rotation_arc_mesh),
         ("STEP rotation handle rotates selected component", "rotate_step_axis(label, axis" in step_rotate_pick),
+        (
+            "Open 3D interaction trace captures clicks, face assignment, and refresh counts",
+            "_open3d_debug_seq" in init
+            and "Open3DTrace" in debug_trace
+            and "left_click_pick" in pick
+            and "right_click_context" in surface_menu
+            and "face_assignment_start" in context_assign
+            and "face_assignment_metadata_saved" in context_assign
+            and "promote_step_face_assignment_start" in context_promote_assign
+            and "refresh_scene_start" in refresh
+            and "refresh_scene_done" in refresh
+            and "show_rays_toggled" in show_rays_changed,
+        ),
         ("Open 3D STEP import enters carry mode", "_step_carry_active_label = label" in step_import),
         (
             "Open 3D optical STEP import uses a distinct overlay slot",
