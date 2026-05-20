@@ -1088,6 +1088,9 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
                 frame_source = "physics_exit_trace"
         if frame_origin is None or frame_rotation is None:
             if output_face is None:
+                if explicit_input_face is None:
+                    row_index += 1
+                    continue
                 z_station = float(z_positions[row_index]) if row_index < len(z_positions) else 0.0
                 reflected_frame = _reflected_frame_from_interaction_face(
                     world_faces,
@@ -1186,11 +1189,15 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
                         )
                         row_index = follower_index
                     else:
-                        reflected_frame = _reflected_frame_from_interaction_face(
-                            follower_faces,
-                            frame_origin,
-                            frame_rotation,
-                            float(getattr(follower, "thickness", 0.0) or 0.0),
+                        reflected_frame = (
+                            _reflected_frame_from_interaction_face(
+                                follower_faces,
+                                frame_origin,
+                                frame_rotation,
+                                float(getattr(follower, "thickness", 0.0) or 0.0),
+                            )
+                            if explicit_follower_input is not None
+                            else None
                         )
                         if reflected_frame is None:
                             break

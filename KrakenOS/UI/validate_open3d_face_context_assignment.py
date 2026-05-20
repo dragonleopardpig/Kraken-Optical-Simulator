@@ -147,6 +147,16 @@ def main() -> int:
             sampling_mode=app._preview_3d_sampling_mode(),
             update_state=False,
         )
+        downstream_overrides = {
+            int(key): value
+            for key, value in dict(getattr(system, "_optical_solid_output_port_pose_overrides", {}) or {}).items()
+            if int(key) > row_index
+        }
+        if downstream_overrides:
+            raise AssertionError(
+                "Direct Open 3D interaction-surface assignments should not re-anchor downstream rows: "
+                f"{sorted(downstream_overrides)}"
+            )
         mesh_items = app._scene_surface_meshes(system, scene_bundle, include_reference_surfaces=True)
         if not any(int(getattr(item, "row_index", -1)) == row_index for item in mesh_items):
             raise AssertionError("Promoted optical solid disappeared from the rebuilt 3D scene meshes.")

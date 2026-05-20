@@ -541,9 +541,10 @@ hardware context:
   dotted ``Optical Axis`` guide. Repeating the workflow with another picked face
   changes the centering anchor without editing side labels.
 * direct Open 3D right-click face assignment writes physics intent immediately:
-  ``Uncoated`` is stored as an interaction surface for physical ray events,
-  while explicit input/output ports remain available in the full face-role
-  editor for port-chain workflows.
+  ``Uncoated`` and ``Full Reflecting`` are stored as interaction surfaces for
+  physical ray events and do not re-anchor downstream rows; explicit
+  input/output ports remain available in the full face-role editor for
+  port-chain workflows.
 * CAD axis offset picking
 * selected STEP overlay rotation through in-scene coloured ``X/Y/Z`` rotation
   handles around the selected lens, optical, camera, or LED STEP component;

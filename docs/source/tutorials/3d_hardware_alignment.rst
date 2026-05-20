@@ -160,17 +160,18 @@ is moved again.
    splitter, absorber, or unassigned physics directly on that face. This
    right-click Open 3D workflow writes ``OpticalSolidFaces`` immediately and
    does not wait for the older face-role dialog's ``Save Roles`` button. In
-   this direct workflow, ``Uncoated`` is a physical interaction surface, not an
-   inferred output port; explicit input/output ports still belong to the full
-   face-role editor when a prescription-style port chain is intended.
+   this direct workflow, ``Uncoated`` and ``Full Reflecting`` are physical
+   interaction surfaces, not inferred output ports; they do not re-anchor the
+   downstream ``Image`` row. Explicit input/output ports still belong to the
+   full face-role editor when a prescription-style port chain is intended.
    Assigned faces remain visible as colored outlines in Open 3D so a
    previously authored face can be recognized before the next surface is
    picked, without adding a filled coplanar surface or default normal-arrow
    marker that could look like extra glass. Open 3D scene surface actors are drawn
    double-sided and row-backed CAD/STL solids get stronger edge/body retention
-   styling while rays are on, so a ray-off/ray-on refresh should not make
-   CAD/STEP-derived bodies disappear because of vendor mesh winding or dense
-   ray overlays. The old cube/grid plane
+   styling plus a final wireframe retention pass while rays are on, so a
+   ray-off/ray-on refresh should not make CAD/STEP-derived bodies disappear
+   because of vendor mesh winding or dense ray overlays. The old cube/grid plane
    overlay is suppressed during this workflow; placement metadata still drives
    the handles and status text, but the three grid planes no longer obscure the
    picked faces.

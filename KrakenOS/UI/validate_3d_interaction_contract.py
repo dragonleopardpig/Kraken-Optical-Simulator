@@ -579,6 +579,12 @@ def main() -> int:
             and "for edges, edge_color, edge_width in ray_surface_edge_overlays" in refresh
             and "self._add_mesh_actor(edges, color=edge_color" in refresh,
         ),
+        (
+            "Ray-on refresh redraws retained CAD/STL wireframes after ray actors",
+            "ray_surface_wire_overlays" in refresh
+            and "wireframe=True" in refresh
+            and "pick_row_index=row_index" in refresh,
+        ),
     ]
     failed = [name for name, ok in checks if not ok]
     if failed:

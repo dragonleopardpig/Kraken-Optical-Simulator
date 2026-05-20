@@ -80,6 +80,7 @@ def _assert_scene_rows_visible(
         raise AssertionError(f"{label}: Open 3D row actors missing physical rows {sorted(missing)}.")
     if not getattr(inspector, "_actor_ray_map", {}) and bool(inspector.show_rays_var.get()):
         raise AssertionError(f"{label}: Show rays is on but no ray actors were rendered.")
+    promoted_wireframe_seen = False
     for actor_key, row_index in list(getattr(inspector, "_actor_row_map", {}).items()):
         if int(row_index) not in physical_rows:
             continue
@@ -99,6 +100,13 @@ def _assert_scene_rows_visible(
                 raise AssertionError(f"{label}: promoted row actor opacity is unreadable: {exc}") from exc
             if opacity < 0.4:
                 raise AssertionError(f"{label}: promoted optical STEP actor is too transparent with rays on: opacity={opacity:.3g}.")
+            try:
+                if int(actor.GetProperty().GetRepresentation()) == 1:
+                    promoted_wireframe_seen = True
+            except Exception:
+                pass
+    if label == "Ray On" and not promoted_wireframe_seen:
+        raise AssertionError(f"{label}: promoted optical STEP row has no ray-on wireframe retention actor.")
 
 
 def main() -> int:

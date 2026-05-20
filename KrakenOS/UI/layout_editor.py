@@ -10025,6 +10025,7 @@ class Kraken3DInspector(tk.Toplevel):
         step_carry_label = self._step_carry_label()
         ray_visibility_requested = bool(self.show_rays_var.get())
         ray_surface_edge_overlays: list[tuple[object, tuple[float, float, float], float]] = []
+        ray_surface_wire_overlays: list[tuple[object, tuple[float, float, float], float, int]] = []
         for mesh_item in mesh_items:
             mesh = mesh_item.mesh
             try:
@@ -10036,6 +10037,9 @@ class Kraken3DInspector(tk.Toplevel):
                 mesh_opacity = max(mesh_opacity, 0.86)
                 if row_index in file_backed_rows:
                     mesh_opacity = max(mesh_opacity, 0.94)
+                wire_color = (0.02, 0.03, 0.05) if row_index in file_backed_rows else tuple(mesh_item.color)
+                wire_width = 1.9 if row_index in file_backed_rows else 1.35
+                ray_surface_wire_overlays.append((mesh, wire_color, wire_width, row_index))
             self._add_mesh_actor(
                 mesh,
                 color=mesh_item.color,
@@ -10110,6 +10114,16 @@ class Kraken3DInspector(tk.Toplevel):
                 )
             for edges, edge_color, edge_width in ray_surface_edge_overlays:
                 self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width, backface_culling=False)
+            for mesh, wire_color, wire_width, row_index in ray_surface_wire_overlays:
+                self._add_mesh_actor(
+                    mesh,
+                    color=wire_color,
+                    opacity=1.0,
+                    pick_row_index=row_index,
+                    line_width=wire_width,
+                    wireframe=True,
+                    backface_culling=False,
+                )
 
         optical_axis_overlays = 0
         if self._should_draw_optical_axis_overlays():
@@ -10135,7 +10149,7 @@ class Kraken3DInspector(tk.Toplevel):
             if cad_mesh is not None and int(getattr(cad_mesh, "n_points", 0)) > 0:
                 display_opacity = float(opacity)
                 if ray_visibility_requested:
-                    display_opacity = max(display_opacity, 0.52)
+                    display_opacity = max(display_opacity, 0.92)
                 self._add_mesh_actor(
                     cad_mesh,
                     color=color,
@@ -10157,8 +10171,9 @@ class Kraken3DInspector(tk.Toplevel):
                             cad_edges,
                             color=(0.08, 0.10, 0.14),
                             opacity=0.96,
-                            line_width=1.8 if ray_visibility_requested else 1.2,
+                            line_width=2.6 if ray_visibility_requested else 1.2,
                             follow_step_label=label,
+                            backface_culling=False,
                         )
                 except Exception:
                     pass
