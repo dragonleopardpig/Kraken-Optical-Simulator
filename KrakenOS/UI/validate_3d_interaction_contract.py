@@ -406,11 +406,12 @@ def main() -> int:
         ("CAD/STL handler stays current after pose changes", "_update_stl_placement_handler_state" in stl_refresh),
         ("Open 3D toolbar exposes Snapshot", "Snapshot" in init and "save_snapshot" in init),
         (
-            "Open 3D face assignment has persistent face overlays",
+            "Open 3D face assignment has persistent non-physical face outlines",
             "_add_optical_solid_assigned_face_overlays" in refresh
             and "assigned face overlays" in refresh
             and "triangle_indices" in assigned_face_triangles
-            and "backface_culling=False" in assigned_face_overlays
+            and "opacity=0.22" not in assigned_face_overlays
+            and "line_width=2.2" in assigned_face_overlays
             and "feature_edges=False" in assigned_face_overlays,
         ),
         (

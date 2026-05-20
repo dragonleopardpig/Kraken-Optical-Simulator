@@ -9072,13 +9072,6 @@ class Kraken3DInspector(tk.Toplevel):
                 function = _normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role"))
                 role = _legacy_role_from_optical_solid_face_function(function)
                 color = optical_solid_face_role_color(role)
-                self._add_mesh_actor(
-                    mesh,
-                    color=color,
-                    opacity=0.22,
-                    flat_shading=True,
-                    backface_culling=False,
-                )
                 try:
                     edges = mesh.extract_feature_edges(
                         boundary_edges=True,
@@ -9090,7 +9083,7 @@ class Kraken3DInspector(tk.Toplevel):
                             edges,
                             color=color,
                             opacity=0.95,
-                            line_width=1.8,
+                            line_width=2.2,
                             backface_culling=False,
                         )
                 except Exception:

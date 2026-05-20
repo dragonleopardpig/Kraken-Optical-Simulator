@@ -163,9 +163,10 @@ is moved again.
    this direct workflow, ``Uncoated`` is a physical interaction surface, not an
    inferred output port; explicit input/output ports still belong to the full
    face-role editor when a prescription-style port chain is intended.
-   Assigned faces remain softly tinted in Open 3D so a previously authored face
-   is visible before the next surface is picked without making the whole solid
-   look like a triangulated mesh. Open 3D scene surface actors are drawn
+   Assigned faces remain visible as colored outlines and normal markers in
+   Open 3D so a previously authored face can be recognized before the next
+   surface is picked, without adding a filled coplanar surface that could look
+   like extra glass. Open 3D scene surface actors are drawn
    double-sided and row-backed CAD/STL solids get stronger edge/body retention
    styling while rays are on, so a ray-off/ray-on refresh should not make
    CAD/STEP-derived bodies disappear because of vendor mesh winding or dense
@@ -223,8 +224,8 @@ physics of one particular component:
 * active-mode badges for multi-click 3D workflows;
 * imported STEP carry placement with free movement;
 * imported STEP ``Snap STEP Normal->Optical Axis`` placement;
-* direct picked-face optical function assignment with persistent assigned-face
-  overlays and immediate metadata save;
+* direct picked-face optical function assignment with persistent non-physical
+  assigned-face outlines/markers and immediate metadata save;
 * structured ``Open3DTrace`` diagnostics for click, assignment, and refresh
   reconstruction;
 * promotion from positioned STEP overlay to a file-backed optical solid row;
