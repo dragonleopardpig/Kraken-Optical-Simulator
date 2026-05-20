@@ -63,6 +63,8 @@ def main() -> int:
         mesh_path = Path(str(advanced.get("Solid_3d_stl", "")))
         if row.surface != "Standard" or not mesh_path.exists() or mesh_path.suffix.lower() != ".stl":
             raise AssertionError(f"Promoted row is not a file-backed optical solid row: {row!r}")
+        if float(row.thickness) <= 0.0:
+            raise AssertionError("Promoted STEP optical solid must reserve positive axial thickness.")
         if str(advanced.get("OpticalSolidSourcePath", "")) != str(PRISM_42779_STEP.resolve()):
             raise AssertionError("Promoted row did not preserve the original STEP source path.")
         if str(advanced.get("OpticalSolidSourceFormat", "")).upper() != "STEP":
@@ -76,6 +78,8 @@ def main() -> int:
         metadata_center = np.asarray(promotion.get("center_world", (np.nan, np.nan, np.nan)), dtype=float)
         if not np.allclose(metadata_center[:3], overlay_center[:3], atol=1e-6):
             raise AssertionError(f"Promotion center metadata drifted: {metadata_center!r} != {overlay_center!r}")
+        if float(promotion.get("row_thickness_mm", 0.0) or 0.0) != float(row.thickness):
+            raise AssertionError("Promotion metadata did not preserve the row axial thickness.")
 
         placement = normalize_scene_placement_settings(advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
         if placement.get("promotion_source") != "open3d_step_overlay":
@@ -84,6 +88,12 @@ def main() -> int:
             raise AssertionError(f"ScenePlacement did not preserve STEP label: {placement!r}")
 
         z_station = app._stl_row_z_station(row_index)
+        if row_index + 1 < len(app.rows) and app.rows[row_index + 1].surface == "Image":
+            image_station = app._stl_row_z_station(row_index + 1)
+            if image_station <= z_station:
+                raise AssertionError(
+                    "Promoted STEP optical solid did not push the downstream Image station beyond the solid row."
+                )
         _bounds_min, _bounds_max, promoted_center = transformed_stl_bounds(
             mesh_path,
             (float(row.tilt_x), float(row.tilt_y), float(row.tilt_z)),

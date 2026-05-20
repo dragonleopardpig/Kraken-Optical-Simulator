@@ -574,6 +574,11 @@ hardware context:
   tints, while automatic default faces keep the simple body look. Explicit
   input/output ports remain available in the full face-role editor for
   port-chain workflows.
+* STEP promotion reserves positive axial table thickness from the placed STEP
+  world bounds. This matters when the layout starts with only Object and Image:
+  the downstream Image/detector row is pushed behind the inserted optical solid
+  instead of staying coincident with the prism entrance and terminating rays
+  before they enter the CAD body.
 * CAD axis offset picking
 * selected STEP overlay rotation through in-scene coloured ``X/Y/Z`` rotation
   handles around the selected lens, optical, camera, or LED STEP component;

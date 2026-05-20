@@ -19381,10 +19381,17 @@ class KrakenLayoutEditor(tk.Tk):
         if arm_key:
             self._apply_arm_key_metadata_to_row(row, arm_key)
         span = float(max(float(np.max(extents)), 1.0))
+        axial_span = float(max(float(extents[2]) if extents.size >= 3 else 0.0, 0.0))
+        axial_reserve = max(
+            float(row.thickness),
+            axial_span,
+            float(bounds_max[2] - z_station) if np.isfinite(float(bounds_max[2] - z_station)) else 0.0,
+            1.0,
+        )
         display_label = self._step_overlay_display_label(label)
         row.element = f"{display_label.upper()} STEP solid"
         row.name = f"Promoted {display_label.upper()} STEP optical solid"
-        row.thickness = 0.0
+        row.thickness = float(axial_reserve)
         row.diameter = span
         row.tilt_x = 0.0
         row.tilt_y = 0.0
@@ -19407,6 +19414,8 @@ class KrakenLayoutEditor(tk.Tk):
             "center_world": [float(value) for value in center_world[:3]],
             "bounds_min_world": [float(value) for value in bounds_min[:3]],
             "bounds_max_world": [float(value) for value in bounds_max[:3]],
+            "row_thickness_mm": float(row.thickness),
+            "axial_reserve_mm": float(axial_reserve),
             "step_rotation_deg": [
                 float(self._step_x_rotation_deg(label)),
                 float(self._step_y_rotation_deg(label)),
