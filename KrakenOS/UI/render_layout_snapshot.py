@@ -339,7 +339,7 @@ def _render_layout_file(path: Path, output: Path, dpi: int, mode: str = "2d") ->
         wavelength,
         max_radius,
         allow_full_pupil=True,
-        sampling_mode=editor._preview_scene_sampling_mode(),
+        sampling_mode=editor._preview_2d_sampling_mode(),
     )
     editor.last_system = system
     editor.last_rays = rays

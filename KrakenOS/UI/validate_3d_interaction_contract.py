@@ -10,6 +10,7 @@ from KrakenOS.UI.layout_editor import (
     Kraken3DInspector,
     KrakenLayoutEditor,
 )
+from KrakenOS.UI.saved_layout_plot import build_saved_layout_figure
 
 
 def main() -> int:
@@ -157,6 +158,7 @@ def main() -> int:
     editor_refresh_plot = inspect.getsource(KrakenLayoutEditor.refresh_plot)
     refresh_3d_sync = inspect.getsource(KrakenLayoutEditor._refresh_3d_inspector_if_open)
     preview_sampling = inspect.getsource(KrakenLayoutEditor._preview_scene_sampling_mode)
+    saved_layout_figure = inspect.getsource(build_saved_layout_figure)
     scene_ray_records = inspect.getsource(KrakenLayoutEditor._iter_3d_scene_ray_records)
     ray_terminal_style = inspect.getsource(KrakenLayoutEditor._ray_terminal_3d_style)
     bounded_ray_display = inspect.getsource(KrakenLayoutEditor._bounded_3d_ray_points_for_display)
@@ -518,9 +520,26 @@ def main() -> int:
         ("Open 3D Snapshot has a short default filename", 'initialfile="3D.png"' in snapshot),
         ("Open 3D Snapshot uses VTK PNG capture", "vtkWindowToImageFilter" in snapshot and "vtkPNGWriter" in snapshot),
         ("Open 3D refresh reuses current SceneBundle when valid", "_current_preview_scene_trace" in refresh_from_editor),
+        (
+            "Open 3D fallback traces the same layout sampling used by 2D",
+            "_preview_2d_sampling_mode()" in refresh_from_editor
+            and "_preview_2d_sampling_mode()" in refresh_3d_sync
+            and "_preview_3d_sampling_mode()" not in refresh_3d_sync,
+        ),
+        (
+            "Open 3D sync keeps supplied 2D SceneBundle instead of rebuilding",
+            "if system is None or rays is None or scene_bundle is None" in refresh_3d_sync
+            and "_build_preview_system_rays_bundle" in refresh_3d_sync,
+        ),
         ("Open 3D ray-on leaves Object/Image reference disks translucent", 'row_surface in {"Object", "Image"}' in refresh and "mesh_opacity = min(mesh_opacity, 0.22)" in refresh),
         ("2D refresh uses shared 3D scene sampling", "_preview_scene_sampling_mode()" in editor_refresh_plot),
         ("2D refresh no longer traces display_slice as the main layout simulation", 'sampling_mode="display_slice"' not in editor_refresh_plot),
+        (
+            "saved 2D keeps an already-traced raykeeper instead of retracing a different sample",
+            "has_traced_rays" in saved_layout_figure
+            and "if not has_traced_rays" in saved_layout_figure
+            and "_preview_2d_sampling_mode()" in saved_layout_figure,
+        ),
         ("Open 3D sync receives the same SceneBundle as 2D", "scene_bundle=bundle" in editor_refresh_plot and "refresh_scene(" in refresh_3d_sync),
         ("shared scene sampling supports full-pupil and world-envelope modes", "full_pupil" in preview_sampling and "world_envelope" in preview_sampling),
         ("Open 3D ray records preserve terminal status", "ray_path_terminal_status_from_events(path)" in scene_ray_records),

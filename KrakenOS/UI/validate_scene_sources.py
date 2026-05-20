@@ -381,6 +381,40 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             f"angles_deg={np.round(cone_angles, 4).tolist()}",
         )
     )
+    editor.source_model_var.set("Random point cone")
+    editor.source_radius_var.set("0.0")
+    editor.source_cone_angle_var.set("8.0")
+    editor.source_seed_var.set("12")
+    live_point_bundle = editor._build_random_source_bundle(sample_count=31)
+    live_point_origins = np.empty((0, 3), dtype=float)
+    live_point_dirs = np.empty((0, 3), dtype=float)
+    live_point_angles = np.asarray([], dtype=float)
+    live_point_lm_span = np.asarray((0.0, 0.0), dtype=float)
+    if live_point_bundle is not None:
+        live_point_origins = np.column_stack(
+            [np.asarray(live_point_bundle[index], dtype=float) for index in (0, 1, 2)]
+        )
+        live_point_dirs = np.column_stack(
+            [np.asarray(live_point_bundle[index], dtype=float) for index in (3, 4, 5)]
+        )
+        live_point_angles = np.rad2deg(np.arccos(np.clip(live_point_dirs[:, 2], -1.0, 1.0)))
+        live_point_lm_span = np.ptp(live_point_dirs[:, :2], axis=0)
+    checks.append(
+        SceneSourceCheck(
+            "live Source panel random point cone launches a 3D cone, not a display plane",
+            live_point_bundle is not None
+            and live_point_origins.shape == (31, 3)
+            and np.allclose(np.ptp(live_point_origins, axis=0), 0.0, atol=1e-12)
+            and np.all(live_point_lm_span > 0.0)
+            and float(np.max(live_point_angles)) > 0.25
+            and float(np.max(live_point_angles)) <= 8.0 + 1e-9,
+            (
+                f"origin_span={np.round(np.ptp(live_point_origins, axis=0), 6).tolist()}, "
+                f"lm_span={np.round(live_point_lm_span, 6).tolist()}, "
+                f"angles_deg={np.round(live_point_angles, 4).tolist()}"
+            ),
+        )
+    )
     disk_cone_settings = {
         **settings,
         "source_model": "Collimated disk source",

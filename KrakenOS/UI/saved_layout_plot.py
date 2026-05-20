@@ -246,14 +246,25 @@ def build_saved_layout_figure(
     max_radius = max((max(row.diameter / 2.0, 0.5) for row in rows), default=1.0)
     wavelength = float(editor._current_wavelength())
     display_rays = rays if rays is not None else Kos.raykeeper(system)
-    editor._trace_preview_rays(
-        system,
-        display_rays,
-        wavelength,
-        max_radius,
-        allow_full_pupil=True,
-        sampling_mode=editor._preview_scene_sampling_mode(),
-    )
+    has_traced_rays = bool(len(getattr(display_rays, "CC", []) or []) > 0)
+    if not has_traced_rays:
+        editor._trace_preview_rays(
+            system,
+            display_rays,
+            wavelength,
+            max_radius,
+            allow_full_pupil=True,
+            sampling_mode=editor._preview_2d_sampling_mode(),
+        )
+    else:
+        try:
+            editor._preview_field_ray_count = max(1, int(settings.get("ray_count", len(getattr(display_rays, "CC", [])))))
+        except Exception:
+            editor._preview_field_ray_count = max(1, len(getattr(display_rays, "CC", [])))
+        try:
+            editor._preview_field_bundle_count = max(1, int(settings.get("field_count", 1)))
+        except Exception:
+            editor._preview_field_bundle_count = 1
     editor.last_system = system
     editor.last_rays = display_rays
     editor._last_preview_trace_signature = editor._preview_trace_signature()

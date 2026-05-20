@@ -10580,7 +10580,7 @@ class Kraken3DInspector(tk.Toplevel):
                 system, rays, scene_bundle = current
             else:
                 system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
-                    sampling_mode=self.editor._preview_3d_sampling_mode(),
+                    sampling_mode=self.editor._preview_2d_sampling_mode(),
                     update_state=True,
                 )
             row_names = [row.name for row in self.editor.rows]
@@ -25468,10 +25468,14 @@ class KrakenLayoutEditor(tk.Tk):
                         self._three_d_inspector = None
 
             self._close_legacy_3d_plotter()
-            system, rays, scene_bundle = self._build_preview_system_rays_bundle(
-                sampling_mode=self._preview_3d_sampling_mode(),
-                update_state=False,
-            )
+            current = self._current_preview_scene_trace()
+            if current is not None:
+                system, rays, scene_bundle = current
+            else:
+                system, rays, scene_bundle = self._build_preview_system_rays_bundle(
+                    sampling_mode=self._preview_2d_sampling_mode(),
+                    update_state=False,
+                )
             plotter = self._build_legacy_3d_plotter(system, rays, scene_bundle=scene_bundle)
             plotter.show(auto_close=False, interactive=True, interactive_update=True)
             self._legacy_3d_plotter = plotter
@@ -28192,18 +28196,15 @@ class KrakenLayoutEditor(tk.Tk):
             self._three_d_inspector = None
             return
         try:
-            try:
-                system, rays, scene_bundle = self._build_preview_system_rays_bundle(
-                    sampling_mode=self._preview_3d_sampling_mode(),
-                    update_state=False,
-                )
-            except Exception:
-                if system is None or rays is None or scene_bundle is None:
-                    current = self._current_preview_scene_trace()
-                    if current is not None:
-                        system, rays, scene_bundle = current
-                    else:
-                        system, rays, scene_bundle = self._build_preview_system_rays_bundle(update_state=False)
+            if system is None or rays is None or scene_bundle is None:
+                current = self._current_preview_scene_trace()
+                if current is not None:
+                    system, rays, scene_bundle = current
+                else:
+                    system, rays, scene_bundle = self._build_preview_system_rays_bundle(
+                        sampling_mode=self._preview_2d_sampling_mode(),
+                        update_state=False,
+                    )
             row_names = [row.name for row in self.rows]
             self._three_d_inspector.refresh_scene(
                 system,
