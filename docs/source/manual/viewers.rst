@@ -317,6 +317,8 @@ Ray Events CSV, detector-miss crosshair overlays, and the detector aperture
 rows in the normal results panel.
 Ray Inspector CSV also includes normalized per-ray aperture status fields next
 to the raw detector-miss event metadata.
+In Open 3D, detector active-footprint overlays remain scene geometry, but
+detector-miss crosshairs follow ``Show rays`` because they are ray diagnostics.
 
 Vendor CAD caveat: a downloaded cube beam-splitter STEP is usually mechanical
 geometry, not a complete optical prescription. Import it for external cube

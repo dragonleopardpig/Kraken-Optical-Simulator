@@ -9560,9 +9560,17 @@ class Kraken3DInspector(tk.Toplevel):
             summary += f" | handles {handle_count}"
         return 0, summary
 
-    def _add_scene_detector_overlays(self, scene_bundle: SceneBundle | None) -> int:
+    def _add_scene_detector_overlays(
+        self,
+        scene_bundle: SceneBundle | None,
+        *,
+        include_miss_crosshairs: bool = True,
+    ) -> int:
         count = 0
-        for spec in self.editor._scene_detector_overlay_specs(scene_bundle):
+        for spec in self.editor._scene_detector_overlay_specs(
+            scene_bundle,
+            include_miss_crosshairs=bool(include_miss_crosshairs),
+        ):
             try:
                 points = np.asarray(spec["points"], dtype=float)
                 if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
@@ -10193,7 +10201,10 @@ class Kraken3DInspector(tk.Toplevel):
             placement_grid_lines, placement_grid_summary = 0, ""
         else:
             placement_grid_lines, placement_grid_summary = self._add_scene_placement_grid_overlays(scene_bundle)
-        detector_overlay_lines = self._add_scene_detector_overlays(scene_bundle)
+        detector_overlay_lines = self._add_scene_detector_overlays(
+            scene_bundle,
+            include_miss_crosshairs=bool(self.show_rays_var.get()),
+        )
 
         if self.show_rays_var.get():
             center, radius = self._row_scene_bounds()
@@ -26375,7 +26386,12 @@ class KrakenLayoutEditor(tk.Tk):
             "endpoint_scale": 4.2 if status == "missed_detector" else 2.8,
         }
 
-    def _scene_detector_overlay_specs(self, scene_bundle: SceneBundle | None) -> list[dict[str, object]]:
+    def _scene_detector_overlay_specs(
+        self,
+        scene_bundle: SceneBundle | None,
+        *,
+        include_miss_crosshairs: bool = True,
+    ) -> list[dict[str, object]]:
         if scene_bundle is None:
             return []
         specs: list[dict[str, object]] = []
@@ -26398,43 +26414,44 @@ class KrakenLayoutEditor(tk.Tk):
                     }
                 )
 
-        targets_by_surface = {}
-        for target in targets:
-            trace_surface = getattr(target, "trace_surface", None)
-            if trace_surface is None:
-                continue
-            try:
-                targets_by_surface[int(trace_surface)] = target
-            except Exception:
-                continue
-        for path in list(getattr(scene_bundle, "ray_paths", []) or []):
-            metadata = ray_path_terminal_metadata(path)
-            surface = metadata.get("detector_miss_surface")
-            event = ray_path_terminal_event(path)
-            if surface in (None, "") and event is not None:
-                surface = getattr(event, "surface_id", None)
-            try:
-                target = targets_by_surface.get(int(surface))
-            except Exception:
-                target = None
-            if target is None:
-                continue
-            try:
-                row_index = int(getattr(target, "row_index", -1))
-            except Exception:
-                row_index = -1
-            for points in scene_target_detector_miss_crosshair_polylines(path, target):
-                specs.append(
-                    {
-                        "kind": "detector_miss_crosshair",
-                        "row_index": row_index,
-                        "points": np.asarray(points, dtype=float),
-                        "color": (0.92, 0.25, 0.05),
-                        "opacity": 0.98,
-                        "line_width": 2.4,
-                        "pickable": False,
-                    }
-                )
+        if bool(include_miss_crosshairs):
+            targets_by_surface = {}
+            for target in targets:
+                trace_surface = getattr(target, "trace_surface", None)
+                if trace_surface is None:
+                    continue
+                try:
+                    targets_by_surface[int(trace_surface)] = target
+                except Exception:
+                    continue
+            for path in list(getattr(scene_bundle, "ray_paths", []) or []):
+                metadata = ray_path_terminal_metadata(path)
+                surface = metadata.get("detector_miss_surface")
+                event = ray_path_terminal_event(path)
+                if surface in (None, "") and event is not None:
+                    surface = getattr(event, "surface_id", None)
+                try:
+                    target = targets_by_surface.get(int(surface))
+                except Exception:
+                    target = None
+                if target is None:
+                    continue
+                try:
+                    row_index = int(getattr(target, "row_index", -1))
+                except Exception:
+                    row_index = -1
+                for points in scene_target_detector_miss_crosshair_polylines(path, target):
+                    specs.append(
+                        {
+                            "kind": "detector_miss_crosshair",
+                            "row_index": row_index,
+                            "points": np.asarray(points, dtype=float),
+                            "color": (0.92, 0.25, 0.05),
+                            "opacity": 0.98,
+                            "line_width": 2.4,
+                            "pickable": False,
+                        }
+                    )
         return specs
 
     def _iter_3d_scene_rays(

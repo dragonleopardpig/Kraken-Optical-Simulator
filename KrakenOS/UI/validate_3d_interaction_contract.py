@@ -503,8 +503,13 @@ def main() -> int:
         ("Open 3D refresh draws status-aware ray endpoints", "terminal_status=terminal_status" in refresh and "endpoint_scale" in refresh),
         ("legacy 3D refresh keeps status-aware ray endpoints", "terminal_status in self._iter_3d_scene_ray_records" in legacy_replace_rays and "endpoint_scale" in legacy_replace_rays),
         ("embedded 3D missed detector endpoint resolution is higher", "terminal_status == \"missed_detector\"" in endpoint_actor),
-        ("Open 3D renders scene detector active footprints", "_add_scene_detector_overlays(scene_bundle)" in refresh and "scene_target_active_footprint_polylines" in editor_detector_overlays),
+        ("Open 3D renders scene detector active footprints", "_add_scene_detector_overlays(" in refresh and "scene_target_active_footprint_polylines" in editor_detector_overlays),
         ("Open 3D renders missed-detector projection crosshairs", "scene_target_detector_miss_crosshair_polylines" in editor_detector_overlays and "detector_miss_crosshair" in editor_detector_overlays),
+        (
+            "Open 3D hides missed-detector crosshairs when rays are hidden",
+            "include_miss_crosshairs=bool(self.show_rays_var.get())" in refresh
+            and "if bool(include_miss_crosshairs):" in editor_detector_overlays,
+        ),
         ("embedded 3D detector overlays are line meshes", "pv.lines_from_points" in detector_overlays and "line_width" in detector_overlays),
         ("legacy 3D includes detector overlays", "_scene_detector_overlay_specs(scene_bundle)" in legacy_open_3d),
         ("Open 3D renders row-backed placement handle state", "self._scene_placements_for_3d(scene_bundle)" in placement_grid and "grid_spacing_mm" in placement_grid),
