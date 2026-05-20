@@ -3255,6 +3255,12 @@ class system():
                 face_override["ambient_material"] = str(volume_record.get("ambient_material", "AIR") or "AIR")
                 face_override["media_transition"] = media_transition
                 face_override["media_state_method"] = media_state_method
+                if bool(face_override.get("force_reflection")) and volume_id:
+                    inside_before = volume_id in tuple(state.inside_volumes)
+                    if inside_before or media_transition == "exit":
+                        face_override.pop("external_reflection", None)
+                    elif media_transition == "entry":
+                        face_override["external_reflection"] = True
                 face_id = str(face_override.get("face_id", "") or "").strip()
                 if face_id:
                     mesh_hit_override["face_id"] = face_id

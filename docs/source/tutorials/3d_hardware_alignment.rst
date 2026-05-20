@@ -164,6 +164,10 @@ is moved again.
    interaction surfaces, not inferred output ports; they do not re-anchor the
    downstream ``Image`` row. Explicit input/output ports still belong to the
    full face-role editor when a prescription-style port chain is intended.
+   A ``Full Reflecting`` face on a closed optical solid is treated as external
+   only before the ray enters that volume. After entry, the mirror hit keeps
+   the ray inside the same solid so the next physical mirror or exit face can
+   be found by the non-sequential chooser.
    Assigned faces remain visible as colored outlines in Open 3D so a
    previously authored face can be recognized before the next surface is
    picked, without adding a filled coplanar surface or default normal-arrow
