@@ -397,10 +397,11 @@ target records and do not create default placement handles; stale
 reference marker size follows the editable row diameter. The colored translation
 handles move the selected row along global ``X/Y/Z`` by
 ``ScenePlacement.snap_mm`` when snap is enabled, or by the placement spacing
-when snap is off. The arrowheaded rotation handles rotate the selected row
-around global ``X/Y/Z`` by ``ScenePlacement.snap_deg`` when snap is enabled, or
-by 15 degrees when snap is off; the Open 3D ``Rotation handles`` checkbox hides
-these arcs when a clear face-picking view is needed. These actions write the
+when snap is off. The arrowheaded rotation handles use one half-arc per global
+``X/Y/Z`` axis with opposed end arrows, and rotate the selected row by
+``ScenePlacement.snap_deg`` when snap is enabled, or by 15 degrees when snap is
+off; the Open 3D ``Rotation handles`` checkbox hides these arcs when a clear
+face-picking view is needed. These actions write the
 normal row ``DespX/Y/Z`` and ``TiltX/Y/Z`` fields and record the last placement
 edit in ``ScenePlacement`` metadata. Dragging a placement handle accumulates
 screen motion and applies repeated snap steps through the same row-backed
@@ -548,7 +549,7 @@ hardware context:
 * CAD axis offset picking
 * selected STEP overlay rotation through in-scene coloured ``X/Y/Z`` rotation
   handles around the selected lens, optical, camera, or LED STEP component;
-  hovering a handle highlights it, and clicking applies a persistent ``+/-90``
+  hovering a handle highlights it, and clicking applies a persistent ``+90``
   degree step immediately around the component center without opening a
   floating popup
 * selected CAD/STL row placement through a click-open ``CAD/STL placement

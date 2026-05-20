@@ -62,7 +62,7 @@ def main() -> int:
         ("CAD/STL handler has inline help", "What this does" in stl_handler and "Fit Axis chooses" in stl_handler),
         ("CAD/STL handler exposes placement actions", "Front On Row" in stl_handler and "Center X/Y" in stl_handler),
         ("STEP handler selects in-scene handles", "colored STEP rotation handles" in step_handler and "tk.Toplevel" not in step_handler),
-        ("STEP handles expose repeated rotations", "pick_step_rotate" in step_handles and "-1.0" in step_handles and "90.0" in step_handles),
+        ("STEP handles expose one +90 half-arc per axis", "pick_step_rotate" in step_handles and "sign=1.0" in step_handles and "90.0" in step_handles and "-1.0" not in step_handles),
         ("mode badges cover source target", "SOURCE TARGET" in badge_text),
         ("mode badges cover center step axis", "CENTER STEP AXIS" in badge_text),
     ]

@@ -9168,6 +9168,37 @@ class Kraken3DInspector(tk.Toplevel):
         radius = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4], 1.0)
         return center, radius
 
+    def _row_scene_bounds(self) -> tuple[np.ndarray, float]:
+        if self._renderer is None:
+            return np.zeros(3, dtype=float), 1.0
+        mins = np.array((np.inf, np.inf, np.inf), dtype=float)
+        maxs = np.array((-np.inf, -np.inf, -np.inf), dtype=float)
+        found = False
+        for row_index, actor_keys in list(self._row_actor_map.items()):
+            try:
+                if int(row_index) < 0:
+                    continue
+            except Exception:
+                continue
+            for actor_key in list(actor_keys):
+                actor = self._actor_by_key.get(actor_key)
+                if actor is None:
+                    continue
+                try:
+                    bounds = np.asarray(actor.GetBounds(), dtype=float).reshape(6)
+                except Exception:
+                    continue
+                if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[0] > bounds[1]:
+                    continue
+                mins = np.minimum(mins, (bounds[0], bounds[2], bounds[4]))
+                maxs = np.maximum(maxs, (bounds[1], bounds[3], bounds[5]))
+                found = True
+        if not found:
+            return self._scene_bounds()
+        center = 0.5 * (mins + maxs)
+        radius = max(float(maxs[0] - mins[0]), float(maxs[1] - mins[1]), float(maxs[2] - mins[2]), 1.0)
+        return center, radius
+
     def _render_aspect(self) -> float:
         if self._vtk_widget is None:
             return 1.4
@@ -9645,9 +9676,9 @@ class Kraken3DInspector(tk.Toplevel):
             return None
         u_axis, v_axis = basis
         if float(sign) >= 0.0:
-            angles = np.linspace(np.deg2rad(-72.0), np.deg2rad(72.0), 32)
+            angles = np.linspace(np.deg2rad(-90.0), np.deg2rad(90.0), 36)
         else:
-            angles = np.linspace(np.deg2rad(108.0), np.deg2rad(252.0), 32)
+            angles = np.linspace(np.deg2rad(90.0), np.deg2rad(270.0), 36)
         center_vec = np.asarray(center, dtype=float).reshape(3)
         points = [
             tuple(float(value) for value in center_vec + float(radius) * (np.cos(theta) * u_axis + np.sin(theta) * v_axis))
@@ -9668,7 +9699,7 @@ class Kraken3DInspector(tk.Toplevel):
             point_array = np.asarray(points, dtype=float)
             arrow_scale = max(float(radius) * 0.11, float(tube_radius) * 6.0, 0.35)
             for index, tangent in (
-                (0, point_array[1] - point_array[0]),
+                (0, point_array[0] - point_array[1]),
                 (-1, point_array[-1] - point_array[-2]),
             ):
                 norm = float(np.linalg.norm(tangent))
@@ -9723,25 +9754,24 @@ class Kraken3DInspector(tk.Toplevel):
         )
         count = 0
         for axis, color in axes:
-            for sign in (-1.0, 1.0):
-                mesh = self._scene_placement_rotation_arc_mesh(
-                    center=center,
-                    axis=axis,
-                    sign=sign,
-                    radius=radius,
-                    tube_radius=tube_radius,
-                )
-                if mesh is None:
-                    continue
-                actor = self._add_mesh_actor(
-                    mesh,
-                    color=color,
-                    opacity=0.82 if sign > 0 else 0.55,
-                    pick_placement_rotate=(row_index, axis, float(sign * step)),
-                    flat_shading=True,
-                )
-                if actor is not None:
-                    count += 1
+            mesh = self._scene_placement_rotation_arc_mesh(
+                center=center,
+                axis=axis,
+                sign=1.0,
+                radius=radius,
+                tube_radius=tube_radius,
+            )
+            if mesh is None:
+                continue
+            actor = self._add_mesh_actor(
+                mesh,
+                color=color,
+                opacity=0.82,
+                pick_placement_rotate=(row_index, axis, float(step)),
+                flat_shading=True,
+            )
+            if actor is not None:
+                count += 1
         return count
 
     @staticmethod
@@ -9782,26 +9812,25 @@ class Kraken3DInspector(tk.Toplevel):
         )
         count = 0
         for axis, color in axes:
-            for sign in (-1.0, 1.0):
-                handle_mesh = self._scene_placement_rotation_arc_mesh(
-                    center=center,
-                    axis=axis,
-                    sign=sign,
-                    radius=radius,
-                    tube_radius=tube_radius,
-                )
-                if handle_mesh is None:
-                    continue
-                actor = self._add_mesh_actor(
-                    handle_mesh,
-                    color=color,
-                    opacity=0.88 if sign > 0 else 0.58,
-                    pick_step_rotate=(label, axis, float(sign * 90.0)),
-                    follow_step_label=label,
-                    flat_shading=True,
-                )
-                if actor is not None:
-                    count += 1
+            handle_mesh = self._scene_placement_rotation_arc_mesh(
+                center=center,
+                axis=axis,
+                sign=1.0,
+                radius=radius,
+                tube_radius=tube_radius,
+            )
+            if handle_mesh is None:
+                continue
+            actor = self._add_mesh_actor(
+                handle_mesh,
+                color=color,
+                opacity=0.88,
+                pick_step_rotate=(label, axis, 90.0),
+                follow_step_label=label,
+                flat_shading=True,
+            )
+            if actor is not None:
+                count += 1
         return count
 
     def _apply_step_rotation_handle(self, label: str, axis: str, delta_deg: float) -> None:
@@ -10087,7 +10116,7 @@ class Kraken3DInspector(tk.Toplevel):
         detector_overlay_lines = self._add_scene_detector_overlays(scene_bundle)
 
         if self.show_rays_var.get():
-            center, radius = self._scene_bounds()
+            center, radius = self._row_scene_bounds()
             ray_radius = max(radius * 0.0015, 0.08)
             bounded_ray_count = 0
             for ray_index, color, ray_pts, terminal_status in self.editor._iter_3d_scene_ray_records(rays, scene_bundle):

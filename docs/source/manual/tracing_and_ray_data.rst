@@ -326,10 +326,11 @@ CAD faces during assignment. The visible translation handles move the selected
 row along global ``X/Y/Z`` by ``ScenePlacement`` snap spacing when snap is
 enabled, or by the placement spacing when snap is off. Each move writes
 ``DespX/Y/Z`` plus placement metadata through the normal row history/table path.
-Arrowheaded rotation handles rotate the selected row around global ``X/Y/Z`` by
-``ScenePlacement.snap_deg`` when snap is enabled, or by a coarse 15 degree step
-when snap is off, and write ``TiltX/Y/Z`` through the same row history/table
-path. Dragging a placement handle accumulates screen motion and
+Arrowheaded rotation handles use one half-arc per global ``X/Y/Z`` axis with
+opposed end arrows. They rotate the selected row by ``ScenePlacement.snap_deg``
+when snap is enabled, or by a coarse 15 degree step when snap is off, and write
+``TiltX/Y/Z`` through the same row history/table path. Dragging a placement
+handle accumulates screen motion and
 applies repeated snap steps through the same row-backed services; clicking
 without dragging remains the precise one-step fallback. A full 3D placement
 tool should still add richer face/axis picking, but those controls must persist

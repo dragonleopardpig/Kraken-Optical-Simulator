@@ -82,6 +82,7 @@ def main() -> int:
     remove_step_handles = inspect.getsource(Kraken3DInspector._remove_step_rotation_handle_actors)
     key_press = inspect.getsource(Kraken3DInspector._on_key_press)
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
+    row_scene_bounds = inspect.getsource(Kraken3DInspector._row_scene_bounds)
     init = inspect.getsource(Kraken3DInspector.__init__)
     placement_grid = inspect.getsource(Kraken3DInspector._add_scene_placement_grid_overlays)
     placement_grid_mesh = inspect.getsource(Kraken3DInspector._scene_placement_grid_mesh)
@@ -179,11 +180,11 @@ def main() -> int:
         ("STEP click activates rotation handles", "show_step_rotation_handler(step_label)" in pick),
         ("STEP rotation handler is not a popup", "tk.Toplevel" not in handler and "_step_rotation_active_label" in handler),
         ("STEP rotation handles expose X/Y/Z axes", '("x",' in step_rotate_handles and '("y",' in step_rotate_handles and '("z",' in step_rotate_handles),
-        ("STEP rotation handles expose repeated +/-90 rotations", "-1.0" in step_rotate_handles and "90.0" in step_rotate_handles),
+        ("STEP rotation handles expose one +90 half-arc per axis", "sign=1.0" in step_rotate_handles and "90.0" in step_rotate_handles and "-1.0" not in step_rotate_handles),
         ("STEP rotation handles are pickable scene actors", "pick_step_rotate" in step_rotate_handles and "_actor_step_rotate_map" in pick),
         ("STEP rotation handles hover-highlight before click", "_set_rotation_handle_hover(actor_key)" in mouse_move and "STEP rotation handle: click" in mouse_move and "SetColor(1.0, 0.78, 0.08)" in rotation_hover),
         ("STEP rotation handles can be hidden from the toolbar", "show_rotation_handles_var" in init and "_toggle_rotation_handles" in init and "_show_rotation_handles()" in step_rotate_handles and "_remove_step_rotation_handle_actors" in rotation_toggle),
-        ("STEP rotation arcs show start/end arrowheads", "pv.Arrow" in rotation_arc_mesh and "point_array[1] - point_array[0]" in rotation_arc_mesh and "point_array[-1] - point_array[-2]" in rotation_arc_mesh),
+        ("STEP rotation arcs show opposed start/end arrowheads", "pv.Arrow" in rotation_arc_mesh and "point_array[0] - point_array[1]" in rotation_arc_mesh and "point_array[-1] - point_array[-2]" in rotation_arc_mesh),
         ("STEP rotation handle rotates selected component", "rotate_step_axis(label, axis" in step_rotate_pick),
         (
             "Open 3D interaction trace captures clicks, face assignment, and refresh counts",
@@ -573,6 +574,12 @@ def main() -> int:
         ),
         ("CAD/STL virtual-plane overlays use runtime TRANS_2A placement", "_runtime_transform_for_row(system, row_index)" in virtual_plane_overlays),
         ("3D refresh passes system into assigned-face overlays", "_add_optical_solid_assigned_face_overlays(system)" in refresh),
+        (
+            "Ray display envelope uses row geometry instead of overlay-inflated scene bounds",
+            "center, radius = self._row_scene_bounds()" in refresh
+            and "_row_actor_map" in row_scene_bounds
+            and "ComputeVisiblePropBounds" not in row_scene_bounds,
+        ),
         (
             "Ray-on refresh redraws retained CAD/STL edges after ray actors",
             "ray_surface_edge_overlays" in refresh

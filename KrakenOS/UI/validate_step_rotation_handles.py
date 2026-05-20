@@ -48,18 +48,15 @@ def main() -> int:
             raise AssertionError(f"Unexpected handle extent: {extent!r}")
 
         count = inspector._add_step_rotation_handles("lens", mesh)
-        if count != 6 or len(records) != 6:
-            raise AssertionError(f"Expected six STEP rotation handles, got count={count}, records={len(records)}.")
+        if count != 3 or len(records) != 3:
+            raise AssertionError(f"Expected three STEP rotation handles, got count={count}, records={len(records)}.")
         rotate_specs = sorted(
             tuple(record[1].get("pick_step_rotate", ())) for record in records
         )
         expected_specs = sorted(
             (
-                ("lens", "x", -90.0),
                 ("lens", "x", 90.0),
-                ("lens", "y", -90.0),
                 ("lens", "y", 90.0),
-                ("lens", "z", -90.0),
                 ("lens", "z", 90.0),
             )
         )
@@ -73,7 +70,7 @@ def main() -> int:
         center_before = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
         inspector._apply_step_rotation_handle("lens", "x", 90.0)
         center_after_x = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
-        inspector._apply_step_rotation_handle("lens", "y", -90.0)
+        inspector._apply_step_rotation_handle("lens", "y", 90.0)
         center_after_y = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
         inspector._apply_step_rotation_handle("lens", "z", 90.0)
         center_after_z = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
@@ -84,7 +81,7 @@ def main() -> int:
             )
         if (
             float(app.lens_step_rotation_x_deg) != 90.0
-            or float(app.lens_step_rotation_y_deg) != 270.0
+            or float(app.lens_step_rotation_y_deg) != 90.0
             or float(app.lens_step_rotation_z_deg) != 90.0
         ):
             raise AssertionError(

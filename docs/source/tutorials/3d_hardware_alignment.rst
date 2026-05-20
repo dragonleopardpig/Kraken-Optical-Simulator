@@ -105,10 +105,11 @@ scene.
    :alt: STEP rotation handles in the embedded 3D inspector
    :width: 100%
 
-   Hovering a red, green, or blue arrowheaded arc highlights that rotation
-   handle before it is clicked. Click the highlighted arc for successive
-   ``X/Y/Z +/-90`` rotations while watching the imported STEP overlay rotate
-   immediately around its own component center in the same 3D scene.
+   Hovering a red, green, or blue half-arc highlights that rotation handle
+   before it is clicked. There is one half-arc per axis, with opposed arrows at
+   the two ends. Click the highlighted arc for successive ``X/Y/Z +90``
+   rotations while watching the imported STEP overlay rotate immediately around
+   its own component center in the same 3D scene.
    The Carry-row ``Rotation handles`` checkbox hides or shows these arcs when
    face picking needs an unobstructed view. This replaces the older floating
    popup and duplicate toolbar menu, so rotation is tied to the selected STEP
