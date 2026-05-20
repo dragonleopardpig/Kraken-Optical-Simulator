@@ -5124,6 +5124,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._picked_step_label: str | None = None
         self._picked_ray_index: int | None = None
         self._picked_optical_axis_id: str | None = None
+        self._hover_rotation_handle_key: str | None = None
         self._hover_step_actor = None
         self._hover_step_outline_actor = None
         self._hover_step_cell_key = None
@@ -9767,6 +9768,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._actor_placement_move_map.clear()
         self._actor_placement_rotate_map.clear()
         self._step_feature_cache.clear()
+        self._hover_rotation_handle_key = None
         self._picked_step_label = None
         self._picked_ray_index = None
         self._picked_optical_axis_id = None
@@ -9782,7 +9784,13 @@ class Kraken3DInspector(tk.Toplevel):
         step_carry_label = self._step_carry_label()
         for mesh_item in mesh_items:
             mesh = mesh_item.mesh
-            self._add_mesh_actor(mesh, color=mesh_item.color, opacity=mesh_item.opacity, pick_row_index=mesh_item.row_index)
+            self._add_mesh_actor(
+                mesh,
+                color=mesh_item.color,
+                opacity=mesh_item.opacity,
+                pick_row_index=mesh_item.row_index,
+                backface_culling=False,
+            )
             if not mesh_item.is_body:
                 try:
                     edges = mesh.extract_feature_edges(
@@ -11170,6 +11178,7 @@ class Kraken3DInspector(tk.Toplevel):
         if self._step_carry_drag_state is None and self._step_carry_follow_state is None and not self._mouse_move_due():
             return
         if self._placement_target_pick_mode:
+            self._set_rotation_handle_hover(None)
             self._set_axis_pick_cursor(True)
             if self._placement_target_row_index is None:
                 self.status_var.set("Snap Row->Target: click movable row/face.")
@@ -11177,6 +11186,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self.status_var.set("Snap Row->Target: click target row/face.")
             return
         if self._placement_orient_pick_mode:
+            self._set_rotation_handle_hover(None)
             self._set_axis_pick_cursor(True)
             if self._placement_orient_row_index is None:
                 self.status_var.set("Orient Row->Target: click movable row/face.")
@@ -11184,6 +11194,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self.status_var.set("Orient Row->Target: click target row/face normal.")
             return
         if self._placement_orient_ray_mode:
+            self._set_rotation_handle_hover(None)
             self._set_axis_pick_cursor(True)
             if self._placement_orient_ray_row_index is None:
                 self.status_var.set("Orient Row->Ray: click movable row/face.")
@@ -11191,10 +11202,12 @@ class Kraken3DInspector(tk.Toplevel):
                 self.status_var.set("Orient Row->Ray: click target ray direction.")
             return
         if self._source_target_pick_mode:
+            self._set_rotation_handle_hover(None)
             self._set_axis_pick_cursor(True)
             self.status_var.set("Source Target: click a surface/CAD solid row.")
             return
         if self._center_row_to_ray_mode:
+            self._set_rotation_handle_hover(None)
             self._set_axis_pick_cursor(True)
             if self._center_row_to_ray_index is None:
                 row_index = None
@@ -11270,6 +11283,7 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set("Center Row->Optical Axis: click the dotted Optical Axis guide.")
             return
         if self._step_normal_axis_pick_mode:
+            self._set_rotation_handle_hover(None)
             self._set_axis_pick_cursor(True)
             if self._picker is not None and self._renderer is not None and self._vtk_interactor is not None:
                 try:
@@ -11290,14 +11304,17 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set("Snap STEP Normal->Optical Axis: click the dotted Optical Axis guide.")
             return
         if self._step_carry_snap_ray_mode:
+            self._set_rotation_handle_hover(None)
             self._set_axis_pick_cursor(True)
             self.status_var.set("Snap STEP->Ray: click a traced ray.")
             return
         if self._step_carry_snap_target_mode:
+            self._set_rotation_handle_hover(None)
             self._set_axis_pick_cursor(True)
             self.status_var.set("Snap STEP->Target: click detector/object/active target row or CAD/STL face anchor.")
             return
         if self._step_carry_drag_state is not None:
+            self._set_rotation_handle_hover(None)
             self._set_step_carry_cursor(True)
             return
         if self._step_carry_follow_state is not None:
@@ -11314,6 +11331,26 @@ class Kraken3DInspector(tk.Toplevel):
                     self._picker.Pick(x, y, 0.0, self._renderer)
                     actor = self._picker.GetActor()
                     actor_key = self._actor_key(actor)
+                    step_rotate = self._actor_step_rotate_map.get(actor_key) if actor_key is not None else None
+                    placement_rotate = self._actor_placement_rotate_map.get(actor_key) if actor_key is not None else None
+                    if step_rotate is not None:
+                        self._set_step_hover_outline(None, None)
+                        self._set_rotation_handle_hover(actor_key)
+                        label, axis, delta = step_rotate
+                        display = self.editor._step_overlay_display_label(str(label)).upper()
+                        self.status_var.set(
+                            f"{display} STEP rotation handle: click {str(axis).upper()}{float(delta):+.0f} deg."
+                        )
+                        return
+                    if placement_rotate is not None:
+                        self._set_step_hover_outline(None, None)
+                        self._set_rotation_handle_hover(actor_key)
+                        row_index, axis, delta = placement_rotate
+                        self.status_var.set(
+                            f"S{int(row_index)} rotation handle: click {str(axis).upper()}{float(delta):+.6g} deg."
+                        )
+                        return
+                    self._set_rotation_handle_hover(None)
                     step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
                 except Exception:
                     actor = None
@@ -11367,6 +11404,7 @@ class Kraken3DInspector(tk.Toplevel):
                     self.status_var.set(f"S{int(row_index)} CAD/STL {face_text}: right-click to assign surface physics.")
                     return
             self._set_step_hover_outline(None, None)
+            self._set_rotation_handle_hover(None)
             self._set_axis_pick_cursor(False)
             return
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
@@ -11378,6 +11416,24 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             actor = None
         actor_key = self._actor_key(actor)
+        step_rotate = self._actor_step_rotate_map.get(actor_key) if actor_key is not None else None
+        placement_rotate = self._actor_placement_rotate_map.get(actor_key) if actor_key is not None else None
+        if step_rotate is not None:
+            self._set_step_hover_outline(None, None)
+            self._set_rotation_handle_hover(actor_key)
+            label, axis, delta = step_rotate
+            self._set_axis_pick_cursor(False)
+            display = self.editor._step_overlay_display_label(str(label)).upper()
+            self.status_var.set(f"{display} STEP rotation handle: click {str(axis).upper()}{float(delta):+.0f} deg.")
+            return
+        if placement_rotate is not None:
+            self._set_step_hover_outline(None, None)
+            self._set_rotation_handle_hover(actor_key)
+            row_index, axis, delta = placement_rotate
+            self._set_axis_pick_cursor(False)
+            self.status_var.set(f"S{int(row_index)} rotation handle: click {str(axis).upper()}{float(delta):+.6g} deg.")
+            return
+        self._set_rotation_handle_hover(None)
         step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
         if step_label is not None and (axis_pick_any or step_label == target_label):
             try:
@@ -11412,6 +11468,72 @@ class Kraken3DInspector(tk.Toplevel):
                 self._vtk_interactor.SetCurrentCursor(9 if hand else 0)
         except Exception:
             pass
+
+    def _set_rotation_handle_hover(self, actor_key: str | None) -> None:
+        actor_key = str(actor_key or "").strip() or None
+        if actor_key == self._hover_rotation_handle_key:
+            return
+        if self._renderer is None:
+            self._hover_rotation_handle_key = actor_key
+            return
+
+        def restore(key: str | None) -> None:
+            if not key:
+                return
+            actor = self._actor_by_key.get(str(key))
+            if actor is None:
+                return
+            try:
+                prop = actor.GetProperty()
+            except Exception:
+                prop = None
+            if prop is None:
+                return
+            base = getattr(actor, "_kraken_rotation_hover_style", None)
+            if not isinstance(base, dict):
+                return
+            try:
+                color = tuple(base.get("color", (1.0, 1.0, 1.0)))
+                if len(color) == 3:
+                    prop.SetColor(*color)
+                prop.SetOpacity(float(base.get("opacity", 1.0)))
+                prop.SetAmbient(float(base.get("ambient", 0.0)))
+                prop.SetDiffuse(float(base.get("diffuse", 1.0)))
+                prop.SetLineWidth(float(base.get("line_width", 1.0)))
+            except Exception:
+                pass
+
+        restore(self._hover_rotation_handle_key)
+        self._hover_rotation_handle_key = actor_key
+        actor = self._actor_by_key.get(actor_key) if actor_key is not None else None
+        if actor is not None:
+            try:
+                prop = actor.GetProperty()
+            except Exception:
+                prop = None
+            if prop is not None:
+                base = getattr(actor, "_kraken_rotation_hover_style", None)
+                if not isinstance(base, dict):
+                    try:
+                        base = {
+                            "color": tuple(float(value) for value in prop.GetColor()),
+                            "opacity": float(prop.GetOpacity()),
+                            "ambient": float(prop.GetAmbient()),
+                            "diffuse": float(prop.GetDiffuse()),
+                            "line_width": float(prop.GetLineWidth()),
+                        }
+                        actor._kraken_rotation_hover_style = base
+                    except Exception:
+                        base = {}
+                try:
+                    prop.SetColor(1.0, 0.78, 0.08)
+                    prop.SetOpacity(1.0)
+                    prop.SetAmbient(max(float(base.get("ambient", 0.0)), 0.92))
+                    prop.SetDiffuse(0.18)
+                    prop.SetLineWidth(max(float(base.get("line_width", 1.0)), 4.0))
+                except Exception:
+                    pass
+        self.render()
 
     def _set_step_hover_outline(self, outline_mesh, hover_key) -> None:
         if hover_key is not None and hover_key == self._hover_step_cell_key:

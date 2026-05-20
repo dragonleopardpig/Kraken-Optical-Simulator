@@ -8,14 +8,20 @@ from KrakenOS.UI import layout_editor as le
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PRISM_42779_STEP = PROJECT_ROOT / "attachment" / "prisms" / "42779" / "step_42779.step"
+
+
 def main() -> int:
     le._load_3d_backends()
     if le.pv is None:
         raise RuntimeError("PyVista is required for STEP rotation handle validation.")
+    if not PRISM_42779_STEP.exists():
+        raise RuntimeError(f"Expected STEP fixture: {PRISM_42779_STEP}")
 
     app = KrakenLayoutEditor(headless=True)
     try:
-        app.imported_lens_step_path = Path("/tmp/kraken-validation-lens.step")
+        app.imported_lens_step_path = PRISM_42779_STEP
         app.select_step_component("lens")
 
         inspector = Kraken3DInspector.__new__(Kraken3DInspector)
@@ -61,10 +67,21 @@ def main() -> int:
             raise AssertionError(f"Unexpected STEP rotation pick specs: {rotate_specs!r}")
         if any(int(getattr(record[0], "n_points", 0)) <= 0 for record in records):
             raise AssertionError("A STEP rotation handle mesh was empty.")
+        if not any(int(getattr(record[0], "n_cells", 0)) > 32 for record in records):
+            raise AssertionError("STEP rotation handles did not include arrowhead geometry.")
 
+        center_before = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
         inspector._apply_step_rotation_handle("lens", "x", 90.0)
+        center_after_x = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
         inspector._apply_step_rotation_handle("lens", "y", -90.0)
+        center_after_y = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
         inspector._apply_step_rotation_handle("lens", "z", 90.0)
+        center_after_z = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
+        if center_before != center_after_x or center_before != center_after_y or center_before != center_after_z:
+            raise AssertionError(
+                "STEP rotation handles should rotate immediately around the component center, "
+                f"got before={center_before}, after={center_after_x}/{center_after_y}/{center_after_z}."
+            )
         if (
             float(app.lens_step_rotation_x_deg) != 90.0
             or float(app.lens_step_rotation_y_deg) != 270.0

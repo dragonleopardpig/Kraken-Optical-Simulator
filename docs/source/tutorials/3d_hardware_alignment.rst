@@ -105,8 +105,10 @@ scene.
    :alt: STEP rotation handles in the embedded 3D inspector
    :width: 100%
 
-   Click a red, green, or blue arrowheaded arc for successive ``X/Y/Z +/-90``
-   rotations while watching the imported STEP overlay move in the same 3D scene.
+   Hovering a red, green, or blue arrowheaded arc highlights that rotation
+   handle before it is clicked. Click the highlighted arc for successive
+   ``X/Y/Z +/-90`` rotations while watching the imported STEP overlay rotate
+   immediately around its own component center in the same 3D scene.
    The Carry-row ``Rotation handles`` checkbox hides or shows these arcs when
    face picking needs an unobstructed view. This replaces the older floating
    popup and duplicate toolbar menu, so rotation is tied to the selected STEP
@@ -155,12 +157,17 @@ is moved again.
    that local path direction. Click the coloured handles to flip the sign if needed before
    assigning face functions. A right-click on a row-backed optical CAD/STL face
    previews the picked face and assigns ``Uncoated``, ``Full Reflecting``,
-   splitter, absorber, or unassigned physics directly on that face. Assigned
-   faces remain softly tinted in Open 3D so a previously authored face is
-   visible before the next surface is picked without making the whole solid look
-   like a triangulated mesh. The old cube/grid plane overlay is suppressed during
-   this workflow; placement metadata still drives the handles and status text,
-   but the three grid planes no longer obscure the picked faces.
+   splitter, absorber, or unassigned physics directly on that face. This
+   right-click Open 3D workflow writes ``OpticalSolidFaces`` immediately and
+   does not wait for the older face-role dialog's ``Save Roles`` button.
+   Assigned faces remain softly tinted in Open 3D so a previously authored face
+   is visible before the next surface is picked without making the whole solid
+   look like a triangulated mesh. Open 3D scene surface actors are drawn
+   double-sided, so a ray-off/ray-on refresh should not make CAD/STEP-derived
+   bodies disappear because of vendor mesh winding. The old cube/grid plane
+   overlay is suppressed during this workflow; placement metadata still drives
+   the handles and status text, but the three grid planes no longer obscure the
+   picked faces.
 
 This is a hardware-overlay workflow. It places real vendor CAD in the same 3D
 scene as rays and optical objects. Use
@@ -203,7 +210,7 @@ physics of one particular component:
 * imported STEP carry placement with free movement;
 * imported STEP ``Snap STEP Normal->Optical Axis`` placement;
 * direct picked-face optical function assignment with persistent assigned-face
-  overlays;
+  overlays and immediate metadata save;
 * promotion from positioned STEP overlay to a file-backed optical solid row;
 * selected STEP rotation handles for imported hardware overlays;
 * source-target picking from the 3D view.
@@ -238,5 +245,8 @@ Common Mistakes
 ``I assigned every CAD/STL face and then the 3D scene disappeared.``
   That should not happen. Open 3D keeps the previous valid scene if a trace
   rebuild produces no surface meshes or suspiciously drops previously visible
-  file-backed surfaces, and the validator covers the path where a promoted
-  optical solid has all of its exposed faces assigned before the scene refreshes.
+  file-backed surfaces, draws surface actors double-sided, and the validator
+  covers the path where a promoted optical solid has all of its exposed faces
+  assigned before the scene refreshes. The direct Open 3D right-click face menu
+  applies immediately; the older ``Save Roles`` button only belongs to the full
+  face-role editor dialog.

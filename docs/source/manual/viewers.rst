@@ -70,6 +70,8 @@ Current UI coverage:
 * named normal selector for ``Active target``, ``Detector``, and ``Object``
   rows, with ``Preview Normal`` diagnostics and ``Orient Row->Normal`` apply
 * optical surface meshes and solid-body meshes in the shared scene bundle
+* double-sided Open 3D surface actors for scene meshes, so STEP/STL vendor
+  winding does not make physical components vanish after a ray off/on refresh
 * row selection highlighting for surfaces and elements
 * escaped non-sequential rays projected to the configured detector/Image plane
   as explicit missed-detector terminal markers
@@ -127,6 +129,10 @@ KrakenOS tracing. Current UI workflows:
   assigned roles shown as coloured normal markers in the 3D inspector and
   placement preview; the face preview uses the same click-select and left-drag
   fixed-speed rotate behaviour as Open 3D
+* direct Open 3D right-click face assignment on row-backed optical CAD/STL
+  faces; this writes ``OpticalSolidFaces`` immediately and refreshes the traced
+  scene, while the older ``Save Roles`` button remains specific to the full
+  face-role editor dialog
 * ``Shape...`` path staging for ``Solid_3d_stl``
 * row tilt/decenter alignment for the solid object
 * ``Actions -> Inspect Optical CAD/STL Solids`` topology and scale diagnostics
@@ -527,8 +533,9 @@ hardware context:
 * CAD axis offset picking
 * selected STEP overlay rotation through in-scene coloured ``X/Y/Z`` rotation
   handles around the selected lens, optical, camera, or LED STEP component;
-  clicking a handle applies a persistent ``+/-90`` degree step without opening
-  a floating popup
+  hovering a handle highlights it, and clicking applies a persistent ``+/-90``
+  degree step immediately around the component center without opening a
+  floating popup
 * selected CAD/STL row placement through a click-open ``CAD/STL placement
   handler`` with axis-fit, rotation, centering, front-plane, and ``Done -> 2D``
   actions

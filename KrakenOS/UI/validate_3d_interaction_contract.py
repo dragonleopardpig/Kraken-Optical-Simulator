@@ -30,6 +30,7 @@ def main() -> int:
     step_rotate_handles = inspect.getsource(Kraken3DInspector._add_step_rotation_handles)
     rotation_arc_mesh = inspect.getsource(Kraken3DInspector._scene_placement_rotation_arc_mesh)
     rotation_toggle = inspect.getsource(Kraken3DInspector._toggle_rotation_handles)
+    rotation_hover = inspect.getsource(Kraken3DInspector._set_rotation_handle_hover)
     step_rotate_pick = inspect.getsource(Kraken3DInspector._apply_step_rotation_handle)
     step_import = inspect.getsource(Kraken3DInspector.import_step_overlay)
     optical_step_import = inspect.getsource(Kraken3DInspector.import_optical_step_overlay)
@@ -175,6 +176,7 @@ def main() -> int:
         ("STEP rotation handles expose X/Y/Z axes", '("x",' in step_rotate_handles and '("y",' in step_rotate_handles and '("z",' in step_rotate_handles),
         ("STEP rotation handles expose repeated +/-90 rotations", "-1.0" in step_rotate_handles and "90.0" in step_rotate_handles),
         ("STEP rotation handles are pickable scene actors", "pick_step_rotate" in step_rotate_handles and "_actor_step_rotate_map" in pick),
+        ("STEP rotation handles hover-highlight before click", "_set_rotation_handle_hover(actor_key)" in mouse_move and "STEP rotation handle: click" in mouse_move and "SetColor(1.0, 0.78, 0.08)" in rotation_hover),
         ("STEP rotation handles can be hidden from the toolbar", "show_rotation_handles_var" in init and "_toggle_rotation_handles" in init and "_show_rotation_handles()" in step_rotate_handles and "_remove_step_rotation_handle_actors" in rotation_toggle),
         ("STEP rotation arcs show start/end arrowheads", "pv.Arrow" in rotation_arc_mesh and "point_array[1] - point_array[0]" in rotation_arc_mesh and "point_array[-1] - point_array[-2]" in rotation_arc_mesh),
         ("STEP rotation handle rotates selected component", "rotate_step_axis(label, axis" in step_rotate_pick),
@@ -424,6 +426,11 @@ def main() -> int:
             and "missing_file_backed_rows" in refresh
             and "suspicious_sparse_rebuild" in refresh
             and "3D refresh reused previous surface meshes" in refresh,
+        ),
+        (
+            "Open 3D scene surface actors are double-sided",
+            "pick_row_index=mesh_item.row_index" in refresh
+            and "backface_culling=False" in refresh.split("for mesh_item in mesh_items:", 1)[1].split("assigned_face_overlays", 1)[0],
         ),
         (
             "Open 3D STEP promotion clears stale overlay interaction state",
