@@ -544,7 +544,7 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             finite_world_cone_bundle is not None
             and finite_world_cone_count == 5
             and finite_world_cone_origins.shape == (5, 3)
-            and np.allclose(finite_world_cone_origins, 0.0, atol=1e-12)
+            and np.allclose(np.ptp(finite_world_cone_origins, axis=0), 0.0, atol=1e-12)
             and np.allclose(finite_world_cone_angles[1:], 7.0, atol=1e-9)
             and np.all(finite_world_cone_lm_span > 0.0),
             (
@@ -934,19 +934,88 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         enabled=True,
     )
     saved_finite_cone_angles = np.asarray([], dtype=float)
+    saved_finite_cone_lm_span = np.asarray((0.0, 0.0), dtype=float)
     if saved_enabled_finite_cone_bundle is not None:
         saved_finite_cone_dirs = np.column_stack(
             [np.asarray(saved_enabled_finite_cone_bundle[index], dtype=float) for index in (3, 4, 5)]
         )
-        saved_finite_cone_angles = np.rad2deg(np.arctan2(saved_finite_cone_dirs[:, 1], saved_finite_cone_dirs[:, 2]))
+        saved_finite_cone_angles = np.rad2deg(np.arccos(np.clip(saved_finite_cone_dirs[:, 2], -1.0, 1.0)))
+        saved_finite_cone_lm_span = np.ptp(saved_finite_cone_dirs[:, :2], axis=0)
     checks.append(
         SceneSourceCheck(
-            "saved layout pupil/field cone is gated to non-sequential intent",
+            "saved layout pupil/field cone is gated to non-sequential intent and samples 3D",
             saved_finite_cone_bundle is None
             and saved_enabled_finite_cone_bundle is not None
             and len(np.asarray(saved_enabled_finite_cone_bundle[0])) == 5
-            and np.allclose([saved_finite_cone_angles[0], saved_finite_cone_angles[-1]], [-7.0, 7.0], atol=1e-9),
-            f"angles_deg={np.round(saved_finite_cone_angles, 4).tolist()}",
+            and np.allclose(saved_finite_cone_angles[1:], 7.0, atol=1e-9)
+            and np.all(saved_finite_cone_lm_span > 0.0),
+            (
+                f"angles_deg={np.round(saved_finite_cone_angles, 4).tolist()}, "
+                f"lm_span={np.round(saved_finite_cone_lm_span, 6).tolist()}"
+            ),
+        )
+    )
+    infinity_cone_settings = {
+        **finite_cone_settings,
+        "object_mode": "Infinity",
+        "ray_count": "9",
+        "source_cone_angle": "4.0",
+    }
+    saved_infinity_cone_bundle = _default_finite_cone_bundle_from_settings(
+        infinity_cone_settings,
+        enabled=True,
+    )
+    saved_infinity_cone_origin_span = np.asarray((0.0, 0.0, 0.0), dtype=float)
+    saved_infinity_cone_lm_span = np.asarray((0.0, 0.0), dtype=float)
+    if saved_infinity_cone_bundle is not None:
+        saved_infinity_cone_origins = np.column_stack(
+            [np.asarray(saved_infinity_cone_bundle[index], dtype=float) for index in (0, 1, 2)]
+        )
+        saved_infinity_cone_dirs = np.column_stack(
+            [np.asarray(saved_infinity_cone_bundle[index], dtype=float) for index in (3, 4, 5)]
+        )
+        saved_infinity_cone_origin_span = np.ptp(saved_infinity_cone_origins, axis=0)
+        saved_infinity_cone_lm_span = np.ptp(saved_infinity_cone_dirs[:, :2], axis=0)
+    checks.append(
+        SceneSourceCheck(
+            "saved non-sequential infinity pupil/field cone launches from one 3D point",
+            saved_infinity_cone_bundle is not None
+            and len(np.asarray(saved_infinity_cone_bundle[0])) == 9
+            and np.allclose(saved_infinity_cone_origin_span, 0.0, atol=1e-12)
+            and np.all(saved_infinity_cone_lm_span > 0.0),
+            (
+                f"origin_span={np.round(saved_infinity_cone_origin_span, 6).tolist()}, "
+                f"lm_span={np.round(saved_infinity_cone_lm_span, 6).tolist()}"
+            ),
+        )
+    )
+    nonseq_cone_rows = [
+        SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, glass="AIR"),
+        SurfaceRow(label="1", surface="Object Target", name="Prism placeholder", thickness=25.0, diameter=20.0, glass="AIR"),
+        SurfaceRow(label="2", surface="Image", name="Image", thickness=0.0, diameter=1.0, glass="AIR"),
+    ]
+    nonseq_cone_editor = _snapshot_editor(nonseq_cone_rows, infinity_cone_settings)
+    nonseq_cone_2d_mode = nonseq_cone_editor._preview_2d_sampling_mode()
+    nonseq_cone_detectors = nonseq_cone_editor._scene_detector_surface_indices({"use_nonseq": True})
+    checks.append(
+        SceneSourceCheck(
+            "non-sequential pupil/field cone uses world-envelope sampling and does not auto-promote Image to detector",
+            nonseq_cone_2d_mode == "world_envelope" and 2 not in nonseq_cone_detectors,
+            f"mode={nonseq_cone_2d_mode}, detectors={sorted(nonseq_cone_detectors)}",
+        )
+    )
+    nonseq_lens_rows = [
+        SurfaceRow(label="0", surface="Object", name="Object", thickness=10.0, diameter=20.0, glass="AIR"),
+        SurfaceRow(label="1", surface="Standard", name="Lens", rc=100.0, thickness=5.0, diameter=20.0, glass="BK7"),
+        SurfaceRow(label="2", surface="Image", name="Image", thickness=0.0, diameter=10.0, glass="AIR"),
+    ]
+    nonseq_lens_editor = _snapshot_editor(nonseq_lens_rows, infinity_cone_settings)
+    nonseq_lens_detectors = nonseq_lens_editor._scene_detector_surface_indices({"use_nonseq": True})
+    checks.append(
+        SceneSourceCheck(
+            "non-sequential conventional lens keeps plain Image as detector",
+            2 in nonseq_lens_detectors,
+            f"detectors={sorted(nonseq_lens_detectors)}",
         )
     )
     legacy_nonphysical_settings = {

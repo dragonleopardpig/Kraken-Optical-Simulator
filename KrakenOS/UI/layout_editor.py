@@ -25605,6 +25605,12 @@ class KrakenLayoutEditor(tk.Tk):
         """
         if self._is_full_pupil_mode():
             return "full_pupil"
+        try:
+            trace_state = self._resolved_trace_mode(system=self.__dict__.get("last_system"))
+        except Exception:
+            trace_state = {}
+        if bool(trace_state.get("use_nonseq")) or bool(trace_state.get("use_folded")):
+            return self._preview_scene_sampling_mode()
         if self._current_source_model() == SOURCE_MODEL_DEFAULT:
             return "world_sections"
         return self._preview_scene_sampling_mode()
@@ -40417,6 +40423,26 @@ class KrakenLayoutEditor(tk.Tk):
             return True
         return index in self._scene_detector_surface_indices()
 
+    def _nonseq_plain_image_detector_enabled(self) -> bool:
+        """Treat a plain Image row as a detector only for conventional lens scenes."""
+        for row in getattr(self, "rows", []) or []:
+            surface = str(getattr(row, "surface", "") or "").strip()
+            if surface in {OBJECT_TARGET_SURFACE, DIFFUSE_OBJECT_SURFACE}:
+                return False
+            surface_key = re.sub(r"[^a-z0-9]", "", surface.lower())
+            if any(token in surface_key for token in ("solid3dstl", "cadsolid", "opticalsolid", "stlsolid")):
+                return False
+            advanced = getattr(row, "advanced", {})
+            if not isinstance(advanced, dict):
+                advanced = {}
+            if self._scene_graph_value_present(advanced.get("Solid_3d_stl")):
+                return False
+            if self._scene_graph_value_present(advanced.get("OpticalSolidSourcePath")):
+                return False
+            if self._scene_graph_value_present(advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR)):
+                return False
+        return True
+
     def _scene_detector_surface_indices(self, trace_state: dict[str, object] | None = None) -> set[int]:
         if trace_state is None:
             try:
@@ -40424,12 +40450,13 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 trace_state = {"use_nonseq": False}
         use_nonseq = bool(trace_state.get("use_nonseq"))
+        auto_image_detector = (not use_nonseq) or self._nonseq_plain_image_detector_enabled()
         detectors: set[int] = set()
         for index, row in enumerate(getattr(self, "rows", []) or []):
             metadata = self._element_metadata(row)
             role = str(metadata.get("arm_role", ELEMENT_ARM_ROLE_DEFAULT) or ELEMENT_ARM_ROLE_DEFAULT)
             surface = str(getattr(row, "surface", "") or "").strip()
-            if role == "Detector" or self._row_has_detector_output_metadata(row) or surface == "Image":
+            if role == "Detector" or self._row_has_detector_output_metadata(row) or (surface == "Image" and auto_image_detector):
                 detectors.add(int(index))
         target_index = self._current_nonseq_target_surface_index()
         if target_index is not None and 0 <= target_index < len(self.rows):
@@ -60497,8 +60524,6 @@ class KrakenLayoutEditor(tk.Tk):
         """
         if self._current_source_model() != SOURCE_MODEL_DEFAULT:
             return False
-        if self._current_object_mode() == "Infinity":
-            return False
         if float(self._current_source_cone_angle()) <= 1e-12:
             return False
         try:
@@ -60695,8 +60720,6 @@ class KrakenLayoutEditor(tk.Tk):
     ]:
         if self._current_source_model() != SOURCE_MODEL_DEFAULT:
             return [], 0
-        if self._current_object_mode() == "Infinity":
-            return [], 0
         cone_deg = float(self._current_source_cone_angle())
         if cone_deg <= 1e-12:
             return [], 0
@@ -60738,8 +60761,6 @@ class KrakenLayoutEditor(tk.Tk):
     ]:
         if self._current_source_model() != SOURCE_MODEL_DEFAULT:
             return [], 0
-        if self._current_object_mode() == "Infinity":
-            return [], 0
         cone_deg = float(self._current_source_cone_angle())
         if cone_deg <= 1e-12:
             return [], 0
@@ -60755,10 +60776,15 @@ class KrakenLayoutEditor(tk.Tk):
             l_values = np.concatenate(([0.0], np.sin(cone_rad) * np.cos(phi))).astype(float)
             m_values = np.concatenate(([0.0], np.sin(cone_rad) * np.sin(phi))).astype(float)
             n_values = np.concatenate(([1.0], np.full(rim_count, np.cos(cone_rad), dtype=float))).astype(float)
+        field_pairs = (
+            [(0.0, 0.0)]
+            if self._current_object_mode() == "Infinity"
+            else self._sample_field_grid_pairs(self._current_field_height())
+        )
         bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
-        for field_x, field_y in self._sample_field_grid_pairs(self._current_field_height()):
+        for field_x, field_y in field_pairs:
             bundles.append(
-                (
+                self._orient_source_points_and_dirs(
                     np.full(ray_count, float(field_x), dtype=float),
                     np.full(ray_count, float(field_y), dtype=float),
                     np.zeros(ray_count, dtype=float),

@@ -296,28 +296,41 @@ def _default_finite_cone_bundle_from_settings(
     source_model = str(settings.get("source_model", SOURCE_MODEL_DEFAULT) or SOURCE_MODEL_DEFAULT).strip()
     object_mode = str(settings.get("object_mode", "Infinity") or "Infinity").strip()
     cone_deg = _settings_float(settings, "source_cone_angle", 0.0, minimum=0.0)
-    if source_model != SOURCE_MODEL_DEFAULT or object_mode == "Infinity" or cone_deg <= 1e-12:
+    if source_model != SOURCE_MODEL_DEFAULT or cone_deg <= 1e-12:
         return None
     ray_count = _settings_int(settings, "ray_count", 5)
-    angles_deg = np.asarray([0.0] if ray_count == 1 else np.linspace(-cone_deg, cone_deg, ray_count), dtype=float)
-    angles_rad = np.deg2rad(angles_deg)
-    display_orientation = normalize_projection_plane(str(settings.get("display_orientation", "YZ") or "YZ").strip())
-    axis_index = 0 if display_orientation == "XZ" else 1
-    field_value = _settings_float(settings, "field_value", 0.0)
+    if ray_count == 1:
+        l_values = np.zeros(1, dtype=float)
+        m_values = np.zeros(1, dtype=float)
+        n_values = np.ones(1, dtype=float)
+    else:
+        cone_rad = float(np.deg2rad(cone_deg))
+        rim_count = max(1, ray_count - 1)
+        phi = np.linspace(0.0, 2.0 * np.pi, rim_count, endpoint=False)
+        l_values = np.concatenate(([0.0], np.sin(cone_rad) * np.cos(phi))).astype(float)
+        m_values = np.concatenate(([0.0], np.sin(cone_rad) * np.sin(phi))).astype(float)
+        n_values = np.concatenate(([1.0], np.full(rim_count, np.cos(cone_rad), dtype=float))).astype(float)
     x_values = np.zeros(ray_count, dtype=float)
     y_values = np.zeros(ray_count, dtype=float)
-    if axis_index == 0:
-        x_values.fill(field_value)
-    else:
-        y_values.fill(field_value)
-    l_values = np.zeros(ray_count, dtype=float)
-    m_values = np.zeros(ray_count, dtype=float)
-    if axis_index == 0:
-        l_values = np.sin(angles_rad).astype(float)
-    else:
-        m_values = np.sin(angles_rad).astype(float)
-    n_values = np.cos(angles_rad).astype(float)
-    return (
+    if object_mode != "Infinity":
+        display_orientation = normalize_projection_plane(str(settings.get("display_orientation", "YZ") or "YZ").strip())
+        axis_index = 0 if display_orientation == "XZ" else 1
+        field_value = _settings_float(settings, "field_value", 0.0)
+        if axis_index == 0:
+            x_values.fill(field_value)
+        else:
+            y_values.fill(field_value)
+    return orient_source_points_and_dirs(
+        (
+            _settings_float(settings, "source_x", 0.0),
+            _settings_float(settings, "source_y", 0.0),
+            _settings_float(settings, "source_z", 0.0),
+        ),
+        (
+            _settings_float(settings, "source_l", 0.0),
+            _settings_float(settings, "source_m", 0.0),
+            _settings_float(settings, "source_n", 1.0),
+        ),
         x_values,
         y_values,
         np.zeros(ray_count, dtype=float),
