@@ -483,7 +483,9 @@ guide is ignored by the source picker so an axis drawn through a solid does not
 block selection of the row surface or imported STEP face underneath it, and the
 hovered row or STEP face is highlighted before the click. ``Show rays`` only
 controls traced rays; the dotted optical-axis guide remains visible and
-pickable.
+pickable. During the second click, the dotted guide is highlighted as soon as
+the pointer is near it so the user can see which optical axis will be selected
+before committing the snap.
 
 If the first click lands on an imported, unpromoted STEP face instead of a
 KrakenOS row, the workflow becomes STEP face normal-to-axis alignment: the face
@@ -541,9 +543,13 @@ hardware context:
   first clicking the exact face to use as the anchor and then clicking the
   dotted ``Optical Axis`` guide. Repeating the workflow with another picked face
   changes the centering anchor without editing side labels.
-* direct Open 3D right-click face assignment writes physics intent immediately:
-  ``Uncoated`` and ``Full Reflecting`` are stored as interaction surfaces for
-  physical ray events and do not re-anchor downstream rows; explicit
+* direct Open 3D right-click face assignment writes physics intent immediately.
+  New optical CAD/STL imports default detected faces to ``Uncoated`` interaction
+  surfaces, so a plain glass-air boundary already uses Snell/Fresnel/TIR
+  physics. Hovering a row-backed face shows a small badge with the current face
+  function and port role. Manual assignments such as ``Full Reflecting`` or an
+  explicitly confirmed ``Uncoated`` face are shown as non-pickable surface
+  tints, while automatic default faces keep the simple body look. Explicit
   input/output ports remain available in the full face-role editor for
   port-chain workflows.
 * CAD axis offset picking

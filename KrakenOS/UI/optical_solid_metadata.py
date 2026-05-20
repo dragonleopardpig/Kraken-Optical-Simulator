@@ -330,6 +330,7 @@ def optical_solid_face_record_from_candidate(candidate) -> dict[str, object]:
         "suggestion_confidence": 0.0,
         "suggestion_reason": "",
         "suggestion_source": "",
+        "assignment_source": "",
         "notes": "",
     }
 
@@ -387,6 +388,7 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
         "suggestion_confidence": float(np.clip(float_or_default(record.get("suggestion_confidence"), 0.0), 0.0, 1.0)),
         "suggestion_reason": str(record.get("suggestion_reason", "") or "").strip(),
         "suggestion_source": str(record.get("suggestion_source", "") or "").strip(),
+        "assignment_source": str(record.get("assignment_source", "") or "").strip(),
         "notes": str(record.get("notes", "") or "").strip(),
     }
 
@@ -462,6 +464,7 @@ def normalize_optical_solid_face_metadata(
                             "suggestion_confidence",
                             "suggestion_reason",
                             "suggestion_source",
+                            "assignment_source",
                             "notes",
                         )
                         if key in existing

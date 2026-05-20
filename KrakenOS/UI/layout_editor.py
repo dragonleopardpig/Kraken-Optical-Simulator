@@ -1405,6 +1405,8 @@ OPTICAL_SOLID_FACE_PORT_VALUES = (
     OPTICAL_SOLID_FACE_PORT_OUTPUT,
     OPTICAL_SOLID_FACE_PORT_INTERACTION,
 )
+OPTICAL_SOLID_FACE_ASSIGNMENT_DEFAULT_UNCOATED = "default_uncoated"
+OPTICAL_SOLID_FACE_ASSIGNMENT_MANUAL = "manual"
 OPTICAL_SOLID_FACE_FIT_ROLL_DEFAULT = "Auto side labels"
 OPTICAL_SOLID_FACE_FIT_ROLL_NONE = "No roll constraint"
 OPTICAL_SOLID_FACE_FIT_ROLL_VALUES = (
@@ -5130,6 +5132,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._hover_step_cell_key = None
         self._mode_badge_actor = None
         self._placement_grid_status_actor = None
+        self._hover_status_actor = None
         self._step_rotation_active_label: str | None = None
         # Compatibility name: this is now an embedded side-panel widget, not a
         # separate popup, so it cannot disappear behind a fullscreen main UI.
@@ -8942,6 +8945,8 @@ class Kraken3DInspector(tk.Toplevel):
 
     @staticmethod
     def _assigned_optical_solid_face(face: dict[str, object]) -> bool:
+        if str(face.get("assignment_source", "") or "").strip() == OPTICAL_SOLID_FACE_ASSIGNMENT_DEFAULT_UNCOATED:
+            return False
         function = _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
         side = _normalize_optical_solid_face_side(face.get("side_2d"))
         role = _legacy_role_from_optical_solid_face_function(function)
@@ -9073,19 +9078,13 @@ class Kraken3DInspector(tk.Toplevel):
                 role = _legacy_role_from_optical_solid_face_function(function)
                 color = optical_solid_face_role_color(role)
                 try:
-                    edges = mesh.extract_feature_edges(
-                        boundary_edges=True,
-                        feature_edges=False,
-                        manifold_edges=False,
+                    self._add_mesh_actor(
+                        mesh,
+                        color=color,
+                        opacity=0.32 if function != OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT else 0.22,
+                        flat_shading=True,
+                        backface_culling=False,
                     )
-                    if int(getattr(edges, "n_points", 0)) > 0:
-                        self._add_mesh_actor(
-                            edges,
-                            color=color,
-                            opacity=0.95,
-                            line_width=2.2,
-                            backface_culling=False,
-                        )
                 except Exception:
                     pass
                 count += 1
@@ -9904,6 +9903,83 @@ class Kraken3DInspector(tk.Toplevel):
         if render:
             self.render()
 
+    def _update_hover_status(self, text: str, *, display_xy=None, render: bool = True) -> None:
+        if self._renderer is None:
+            return
+        text = str(text or "").strip()
+        actor = self._hover_status_actor
+        if not text:
+            if actor is not None:
+                try:
+                    self._renderer.RemoveActor2D(actor)
+                except Exception:
+                    try:
+                        self._renderer.RemoveActor(actor)
+                    except Exception:
+                        pass
+                self._hover_status_actor = None
+                if render:
+                    self.render()
+            return
+        if actor is None and vtkTextActor is not None:
+            try:
+                actor = vtkTextActor()
+                prop = actor.GetTextProperty()
+                prop.SetFontSize(12)
+                prop.SetColor(0.04, 0.06, 0.10)
+                try:
+                    prop.SetBackgroundColor(1.0, 1.0, 1.0)
+                    prop.SetBackgroundOpacity(0.88)
+                    prop.SetFrame(1)
+                    prop.SetFrameColor(0.12, 0.38, 0.70)
+                except Exception:
+                    pass
+                actor.SetPickable(False)
+                self._renderer.AddActor2D(actor)
+                self._hover_status_actor = actor
+            except Exception as exc:
+                self.editor.append_debug(f"3D hover status unavailable: {exc}")
+                self._hover_status_actor = None
+                return
+        if actor is None:
+            return
+        try:
+            x, y = (0, 0)
+            if display_xy is not None:
+                values = tuple(display_xy)
+                if len(values) >= 2:
+                    x, y = int(values[0]), int(values[1])
+            elif self._vtk_interactor is not None:
+                x, y = self._vtk_interactor.GetEventPosition()
+            width, height = 1100, 720
+            try:
+                if self._vtk_widget is not None:
+                    width, height = self._vtk_widget.GetRenderWindow().GetSize()
+                elif self._renderer is not None:
+                    width, height = self._renderer.GetSize()
+            except Exception:
+                pass
+            line_count = max(text.count("\n") + 1, 1)
+            pos_x = min(max(int(x) + 14, 8), max(int(width) - 330, 8))
+            pos_y = min(max(int(y) + 18, 8), max(int(height) - 22 * line_count - 12, 8))
+            actor.SetInput(text)
+            actor.SetDisplayPosition(pos_x, pos_y)
+            actor.SetVisibility(True)
+        except Exception as exc:
+            self.editor.append_debug(f"3D hover status update failed: {exc}")
+            return
+        if render:
+            self.render()
+
+    @staticmethod
+    def _face_hover_status_text(row_index: int, face: dict[str, object]) -> str:
+        function = _optical_solid_face_function_display(face.get("function"), legacy_role=face.get("role"))
+        port_role = _optical_solid_face_port_role(face)
+        face_id = str(face.get("face_id", "") or "face").strip() or "face"
+        source = str(face.get("assignment_source", "") or "").strip()
+        default_text = " (default)" if source == OPTICAL_SOLID_FACE_ASSIGNMENT_DEFAULT_UNCOATED else ""
+        return f"S{int(row_index)} {face_id}\n{function}{default_text}\n{port_role}"
+
     def refresh_scene(
         self,
         system,
@@ -10050,6 +10126,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._hover_step_cell_key = None
         self._mode_badge_actor = None
         self._placement_grid_status_actor = None
+        self._hover_status_actor = None
         self._step_carry_grip_actor = None
         self._picked_row_index = None
 
@@ -10293,7 +10370,7 @@ class Kraken3DInspector(tk.Toplevel):
             else:
                 system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
                     sampling_mode=self.editor._preview_3d_sampling_mode(),
-                    update_state=False,
+                    update_state=True,
                 )
             row_names = [row.name for row in self.editor.rows]
             self.refresh_scene(system, rays, row_names, scene_bundle=scene_bundle, reset_camera=False)
@@ -11259,7 +11336,7 @@ class Kraken3DInspector(tk.Toplevel):
         axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
         if self._center_row_to_ray_mode:
             if self._center_row_to_ray_index is not None:
-                axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=12.0)
+                axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=28.0)
                 if axis_info is not None:
                     axis_id = str(axis_info.get("axis_id", "") or "").strip()
                     self._set_optical_axis_highlight(axis_id)
@@ -11274,7 +11351,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self.render()
                 return
         if self._step_normal_axis_pick_mode:
-            axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=12.0)
+            axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=28.0)
             if axis_info is not None:
                 axis_id = str(axis_info.get("axis_id", "") or "").strip()
                 self._set_optical_axis_highlight(axis_id)
@@ -11547,10 +11624,17 @@ class Kraken3DInspector(tk.Toplevel):
         self.render()
 
     def _on_mouse_move(self, obj, _event) -> None:
-        if self._step_carry_drag_state is None and self._step_carry_follow_state is None and not self._mouse_move_due():
+        hover_critical = bool(self._center_row_to_ray_mode or self._step_normal_axis_pick_mode)
+        if (
+            self._step_carry_drag_state is None
+            and self._step_carry_follow_state is None
+            and not hover_critical
+            and not self._mouse_move_due()
+        ):
             return
         if self._placement_target_pick_mode:
             self._set_rotation_handle_hover(None)
+            self._update_hover_status("", render=False)
             self._set_axis_pick_cursor(True)
             if self._placement_target_row_index is None:
                 self.status_var.set("Snap Row->Target: click movable row/face.")
@@ -11559,6 +11643,7 @@ class Kraken3DInspector(tk.Toplevel):
             return
         if self._placement_orient_pick_mode:
             self._set_rotation_handle_hover(None)
+            self._update_hover_status("", render=False)
             self._set_axis_pick_cursor(True)
             if self._placement_orient_row_index is None:
                 self.status_var.set("Orient Row->Target: click movable row/face.")
@@ -11567,6 +11652,7 @@ class Kraken3DInspector(tk.Toplevel):
             return
         if self._placement_orient_ray_mode:
             self._set_rotation_handle_hover(None)
+            self._update_hover_status("", render=False)
             self._set_axis_pick_cursor(True)
             if self._placement_orient_ray_row_index is None:
                 self.status_var.set("Orient Row->Ray: click movable row/face.")
@@ -11575,6 +11661,7 @@ class Kraken3DInspector(tk.Toplevel):
             return
         if self._source_target_pick_mode:
             self._set_rotation_handle_hover(None)
+            self._update_hover_status("", render=False)
             self._set_axis_pick_cursor(True)
             self.status_var.set("Source Target: click a surface/CAD solid row.")
             return
@@ -11614,9 +11701,15 @@ class Kraken3DInspector(tk.Toplevel):
                     if self._picked_row_index is not None:
                         self._set_row_highlight(None)
                     display = self.editor._step_overlay_display_label(str(step_label)).upper()
+                    self._update_hover_status(
+                        f"{display} STEP face\nDefault after promotion: Uncoated",
+                        display_xy=(x, y) if "x" in locals() and "y" in locals() else None,
+                        render=True,
+                    )
                     self.status_var.set(f"Center Row->Optical Axis: click this {display} STEP face, then click Optical Axis.")
                     return
                 self._set_step_hover_outline(None, None)
+                self._update_hover_status("", render=False)
                 if row_index is not None and 0 <= int(row_index) < len(self.editor.rows):
                     row = self.editor.rows[int(row_index)]
                     if row.surface not in {"Object", "Image"}:
@@ -11642,16 +11735,19 @@ class Kraken3DInspector(tk.Toplevel):
                     self._picker.Pick(x, y, 0.0, self._renderer)
                     actor_key = self._actor_key(self._picker.GetActor())
                     axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
-                    axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=12.0)
+                    axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=28.0)
                 except Exception:
                     axis_info = None
             if axis_info is not None:
                 axis_id = str(axis_info.get("axis_id", "") or "").strip()
                 axis_label = str(axis_info.get("axis_label", "Optical Axis") or "Optical Axis")
                 self._set_optical_axis_highlight(axis_id)
+                self._update_hover_status(f"{axis_label}\nClick to center selected row.", display_xy=(x, y), render=True)
                 self.status_var.set(f"Click {axis_label} to center the selected row.")
                 return
             self._set_optical_axis_highlight(None)
+            self._update_hover_status("", render=False)
+            self.render()
             self.status_var.set("Center Row->Optical Axis: click the dotted Optical Axis guide.")
             return
         if self._step_normal_axis_pick_mode:
@@ -11663,30 +11759,36 @@ class Kraken3DInspector(tk.Toplevel):
                     self._picker.Pick(x, y, 0.0, self._renderer)
                     actor_key = self._actor_key(self._picker.GetActor())
                     axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
-                    axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=12.0)
+                    axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=28.0)
                 except Exception:
                     axis_info = None
                 if axis_info is not None:
                     axis_id = str(axis_info.get("axis_id", "") or "").strip()
                     axis_label = str(axis_info.get("axis_label", "Optical Axis") or "Optical Axis")
                     self._set_optical_axis_highlight(axis_id)
+                    self._update_hover_status(f"{axis_label}\nClick to align selected STEP face.", display_xy=(x, y), render=True)
                     self.status_var.set(f"Click {axis_label} to align the selected STEP face normal.")
                     return
             self._set_optical_axis_highlight(None)
+            self._update_hover_status("", render=False)
+            self.render()
             self.status_var.set("Snap STEP Normal->Optical Axis: click the dotted Optical Axis guide.")
             return
         if self._step_carry_snap_ray_mode:
             self._set_rotation_handle_hover(None)
+            self._update_hover_status("", render=False)
             self._set_axis_pick_cursor(True)
             self.status_var.set("Snap STEP->Ray: click a traced ray.")
             return
         if self._step_carry_snap_target_mode:
             self._set_rotation_handle_hover(None)
+            self._update_hover_status("", render=False)
             self._set_axis_pick_cursor(True)
             self.status_var.set("Snap STEP->Target: click detector/object/active target row or CAD/STL face anchor.")
             return
         if self._step_carry_drag_state is not None:
             self._set_rotation_handle_hover(None)
+            self._update_hover_status("", render=False)
             self._set_step_carry_cursor(True)
             return
         if self._step_carry_follow_state is not None:
@@ -11708,6 +11810,7 @@ class Kraken3DInspector(tk.Toplevel):
                     if step_rotate is not None:
                         self._set_step_hover_outline(None, None)
                         self._set_rotation_handle_hover(actor_key)
+                        self._update_hover_status("", render=False)
                         label, axis, delta = step_rotate
                         display = self.editor._step_overlay_display_label(str(label)).upper()
                         self.status_var.set(
@@ -11717,6 +11820,7 @@ class Kraken3DInspector(tk.Toplevel):
                     if placement_rotate is not None:
                         self._set_step_hover_outline(None, None)
                         self._set_rotation_handle_hover(actor_key)
+                        self._update_hover_status("", render=False)
                         row_index, axis, delta = placement_rotate
                         self.status_var.set(
                             f"S{int(row_index)} rotation handle: click {str(axis).upper()}{float(delta):+.6g} deg."
@@ -11740,6 +11844,11 @@ class Kraken3DInspector(tk.Toplevel):
                         outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
                     self._set_step_hover_outline(outline, hover_key)
                     display = self.editor._step_overlay_display_label(str(step_label)).upper()
+                    self._update_hover_status(
+                        f"{display} STEP face\nDefault after promotion: Uncoated",
+                        display_xy=(x, y),
+                        render=True,
+                    )
                     self.status_var.set(f"{display} STEP face: click to select its normal for optical-axis snapping.")
                     return
                 row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
@@ -11770,6 +11879,7 @@ class Kraken3DInspector(tk.Toplevel):
                         if face is not None:
                             function = _optical_solid_face_function_display(face.get("function"), legacy_role=face.get("role"))
                             face_text = f"{str(face.get('face_id', '') or 'face')} ({function})"
+                            self._update_hover_status(self._face_hover_status_text(int(row_index), face), display_xy=(x, y), render=True)
                     except Exception:
                         pass
                     self._set_axis_pick_cursor(False)
@@ -11777,6 +11887,7 @@ class Kraken3DInspector(tk.Toplevel):
                     return
             self._set_step_hover_outline(None, None)
             self._set_rotation_handle_hover(None)
+            self._update_hover_status("", render=False)
             self._set_axis_pick_cursor(False)
             return
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
@@ -11793,6 +11904,7 @@ class Kraken3DInspector(tk.Toplevel):
         if step_rotate is not None:
             self._set_step_hover_outline(None, None)
             self._set_rotation_handle_hover(actor_key)
+            self._update_hover_status("", render=False)
             label, axis, delta = step_rotate
             self._set_axis_pick_cursor(False)
             display = self.editor._step_overlay_display_label(str(label)).upper()
@@ -11801,6 +11913,7 @@ class Kraken3DInspector(tk.Toplevel):
         if placement_rotate is not None:
             self._set_step_hover_outline(None, None)
             self._set_rotation_handle_hover(actor_key)
+            self._update_hover_status("", render=False)
             row_index, axis, delta = placement_rotate
             self._set_axis_pick_cursor(False)
             self.status_var.set(f"S{int(row_index)} rotation handle: click {str(axis).upper()}{float(delta):+.6g} deg.")
@@ -11819,6 +11932,7 @@ class Kraken3DInspector(tk.Toplevel):
                 outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
             self._set_step_hover_outline(outline, hover_key)
             self._set_axis_pick_cursor(True)
+            self._update_hover_status(f"{str(step_label).upper()} STEP feature", display_xy=(x, y), render=True)
             if led_edge_pick:
                 self.status_var.set("Click orange LED edge used for Object-to-LED distance.")
             elif axis_pick_any:
@@ -11827,6 +11941,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self.status_var.set(f"Click orange {step_label} feature to center it on the optical axis.")
             return
         self._set_step_hover_outline(None, None)
+        self._update_hover_status("", render=False)
         self._set_axis_pick_cursor(False)
 
     def _set_axis_pick_cursor(self, hand: bool) -> None:
@@ -14428,6 +14543,9 @@ class KrakenLayoutEditor(tk.Tk):
         if source_path is not None:
             advanced["OpticalSolidSourcePath"] = str(source_path)
             advanced["OpticalSolidSourceFormat"] = source_label
+        default_metadata = self._default_uncoated_optical_solid_face_metadata(path)
+        if default_metadata is not None:
+            advanced[OPTICAL_SOLID_FACES_ADVANCED_ATTR] = default_metadata
         return SurfaceRow(
             surface="Standard",
             element=f"Solid {stem}",
@@ -14437,6 +14555,43 @@ class KrakenLayoutEditor(tk.Tk):
             diameter=25.0,
             axis_move=2.0,
             advanced=advanced,
+        )
+
+    @staticmethod
+    def _default_uncoated_optical_solid_face_metadata(
+        path: Path,
+        existing: object | None = None,
+    ) -> dict[str, object] | None:
+        try:
+            candidates = cluster_optical_solid_planar_faces(Path(path))
+        except Exception:
+            return None
+        if not candidates:
+            return None
+        metadata = normalize_optical_solid_face_metadata(existing or {}, candidates, source_stl=str(path))
+        faces: list[dict[str, object]] = []
+        for face in list(metadata.get("faces", []) or []):
+            if not isinstance(face, dict):
+                continue
+            record = normalize_optical_solid_face_record(face)
+            source = str(record.get("assignment_source", "") or "").strip()
+            function = _normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role"))
+            if source == OPTICAL_SOLID_FACE_ASSIGNMENT_MANUAL:
+                faces.append(record)
+                continue
+            if function == OPTICAL_SOLID_FACE_FUNCTION_DEFAULT or source == OPTICAL_SOLID_FACE_ASSIGNMENT_DEFAULT_UNCOATED:
+                record["function"] = OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT
+                record["role"] = _legacy_role_from_optical_solid_face_function(OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT)
+                record["port_role"] = OPTICAL_SOLID_FACE_PORT_INTERACTION
+                record["assignment_source"] = OPTICAL_SOLID_FACE_ASSIGNMENT_DEFAULT_UNCOATED
+            faces.append(record)
+        return normalize_optical_solid_face_metadata(
+            {
+                "faces": faces,
+                "virtual_planes": metadata.get("virtual_planes", []),
+                "source_stl": str(path),
+            },
+            source_stl=str(path),
         )
 
     def import_optical_stl_solid(self) -> None:
@@ -16709,6 +16864,7 @@ class KrakenLayoutEditor(tk.Tk):
                         else self._default_port_role_for_face_function(function, record.get("port_role"))
                     )
                 )
+                record["assignment_source"] = OPTICAL_SOLID_FACE_ASSIGNMENT_MANUAL
                 matched = normalize_optical_solid_face_record(record)
                 record = matched
             updated_faces.append(record)

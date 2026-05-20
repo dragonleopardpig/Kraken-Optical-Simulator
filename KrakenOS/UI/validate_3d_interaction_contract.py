@@ -36,6 +36,8 @@ def main() -> int:
     surface_menu = inspect.getsource(Kraken3DInspector._show_surface_function_context_menu)
     context_assign = inspect.getsource(Kraken3DInspector._assign_row_face_function_from_context)
     context_promote_assign = inspect.getsource(Kraken3DInspector._promote_step_and_assign_face_function)
+    hover_status = inspect.getsource(Kraken3DInspector._update_hover_status)
+    face_hover_status = inspect.getsource(Kraken3DInspector._face_hover_status_text)
     step_rotate_pick = inspect.getsource(Kraken3DInspector._apply_step_rotation_handle)
     step_import = inspect.getsource(Kraken3DInspector.import_step_overlay)
     optical_step_import = inspect.getsource(Kraken3DInspector.import_optical_step_overlay)
@@ -118,6 +120,7 @@ def main() -> int:
     placement_orient_named_normal = inspect.getsource(Kraken3DInspector.orient_selected_row_to_named_normal_target)
     editor_translate = inspect.getsource(KrakenLayoutEditor.translate_scene_row_pose)
     editor_rotate = inspect.getsource(KrakenLayoutEditor.rotate_scene_row_pose_world_axis)
+    default_uncoated = inspect.getsource(KrakenLayoutEditor._default_uncoated_optical_solid_face_metadata)
     editor_step_translate = inspect.getsource(KrakenLayoutEditor.translate_step_overlay)
     editor_step_promote = inspect.getsource(KrakenLayoutEditor.promote_imported_step_to_optical_solid_row)
     editor_step_snap = inspect.getsource(KrakenLayoutEditor.snap_step_overlay_center_to_world_point)
@@ -407,13 +410,27 @@ def main() -> int:
         ("CAD/STL handler stays current after pose changes", "_update_stl_placement_handler_state" in stl_refresh),
         ("Open 3D toolbar exposes Snapshot", "Snapshot" in init and "save_snapshot" in init),
         (
-            "Open 3D face assignment has persistent non-physical face outlines",
+            "Open 3D face assignment has persistent non-pickable face tints",
             "_add_optical_solid_assigned_face_overlays" in refresh
             and "assigned face overlays" in refresh
             and "triangle_indices" in assigned_face_triangles
-            and "opacity=0.22" not in assigned_face_overlays
-            and "line_width=2.2" in assigned_face_overlays
-            and "feature_edges=False" in assigned_face_overlays,
+            and "flat_shading=True" in assigned_face_overlays
+            and "backface_culling=False" in assigned_face_overlays
+            and "extract_feature_edges" not in assigned_face_overlays,
+        ),
+        (
+            "Open 3D imported optical solids default to Uncoated interaction faces",
+            "OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT" in default_uncoated
+            and "OPTICAL_SOLID_FACE_PORT_INTERACTION" in default_uncoated
+            and "OPTICAL_SOLID_FACE_ASSIGNMENT_DEFAULT_UNCOATED" in default_uncoated
+            and "_default_uncoated_optical_solid_face_metadata(path)" in inspect.getsource(KrakenLayoutEditor._optical_stl_solid_row),
+        ),
+        (
+            "Open 3D hover badge reports face assignment physics",
+            "vtkTextActor" in hover_status
+            and "_hover_status_actor" in init
+            and "_face_hover_status_text" in mouse_move
+            and "_optical_solid_face_port_role" in face_hover_status,
         ),
         (
             "Open 3D direct face assignment suppresses normal-arrow marker actors",
@@ -531,6 +548,7 @@ def main() -> int:
             and "SetEdgeVisibility(1)" in row_actor_highlight
             and "_apply_center_row_to_optical_axis(axis_info)" in pick
             and "_optical_axis_info_near_display_xy((x, y)" in pick
+            and "tolerance_px=28.0" in mouse_move
             and "center_surface_row_on_optical_axis" in center_row_axis_apply
             and "_ray_point_and_direction_on_surface_plane" in editor_center_row_axis,
         ),

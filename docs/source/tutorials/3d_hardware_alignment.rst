@@ -164,15 +164,19 @@ is moved again.
    this direct workflow, ``Uncoated`` and ``Full Reflecting`` are physical
    interaction surfaces, not inferred output ports; they do not re-anchor the
    downstream ``Image`` row. Explicit input/output ports still belong to the
-   full face-role editor when a prescription-style port chain is intended.
+   full face-role editor when a prescription-style port chain is intended. New
+   promoted optical STEP rows default detected faces to ``Uncoated`` interaction
+   surfaces, so a bare glass-air boundary does not need a manual assignment
+   before it can refract or TIR.
    A ``Full Reflecting`` face on a closed optical solid is treated as external
    only before the ray enters that volume. After entry, the mirror hit keeps
    the ray inside the same solid so the next physical mirror or exit face can
    be found by the non-sequential chooser.
-   Assigned faces remain visible as colored outlines in Open 3D so a
-   previously authored face can be recognized before the next surface is
-   picked, without adding a filled coplanar surface or default normal-arrow
-   marker that could look like extra glass. Open 3D scene surface actors are drawn
+   Hovering a row-backed face shows a small badge with its current function and
+   port role. Manually assigned faces remain visible as non-pickable colored
+   surface tints in Open 3D so a previously authored face can be recognized
+   before the next surface is picked, without converting the body into a
+   persistent mesh-outline display. Open 3D scene surface actors are drawn
    double-sided and row-backed CAD/STL solids get stronger edge/body retention
    styling plus a final wireframe retention pass while rays are on, so a
    ray-off/ray-on refresh should not make CAD/STEP-derived bodies disappear
