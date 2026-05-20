@@ -5140,6 +5140,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._stl_placement_dirty = False
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index: int | None = None
+        self._center_row_to_ray_face_id: str = ""
         self._source_target_pick_mode = False
         self._placement_target_pick_mode = False
         self._placement_target_row_index: int | None = None
@@ -5829,6 +5830,7 @@ class Kraken3DInspector(tk.Toplevel):
                 point_world,
                 function_label,
                 normal_world=normal_world,
+                direct_context=True,
             )
         except Exception as exc:
             self.status_var.set(f"Face assignment failed: {_short_error_message(exc)}")
@@ -5837,6 +5839,7 @@ class Kraken3DInspector(tk.Toplevel):
             return
         face_id = str(result.get("face_id", "") or "picked face")
         display = str(result.get("function_display", function_label) or function_label)
+        self.editor._select_table_row(int(row_index))
         self._debug_trace(
             "face_assignment_metadata_saved",
             row_index=int(row_index),
@@ -5912,6 +5915,7 @@ class Kraken3DInspector(tk.Toplevel):
                 point_world,
                 function_label,
                 normal_world=normal_world,
+                direct_context=True,
             )
         except Exception as exc:
             self.status_var.set(f"Promoted STEP, but face assignment failed: {_short_error_message(exc)}")
@@ -5927,6 +5931,7 @@ class Kraken3DInspector(tk.Toplevel):
             metadata=self._debug_face_metadata_summary(assigned.get("metadata")),
         )
         self._clear_step_overlay_interaction_state(label)
+        self.editor._select_table_row(row_index)
         try:
             self.refresh_from_editor()
             self.highlight_row(row_index)
@@ -7981,6 +7986,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_snap_target_mode = False
         self._source_target_pick_mode = False
         self._center_row_to_ray_mode = False
+        self._center_row_to_ray_face_id = ""
         self._placement_target_pick_mode = False
         self._placement_orient_pick_mode = False
         self._placement_orient_ray_mode = False
@@ -8131,6 +8137,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._source_target_pick_mode = False
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
+        self._center_row_to_ray_face_id = ""
         self._placement_target_pick_mode = False
         self._placement_target_row_index = None
         self._placement_target_face_id = ""
@@ -8162,6 +8169,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._source_target_pick_mode = False
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
+        self._center_row_to_ray_face_id = ""
         self._placement_target_pick_mode = False
         self._placement_target_row_index = None
         self._placement_target_face_id = ""
@@ -8254,6 +8262,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._source_target_pick_mode = False
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
+        self._center_row_to_ray_face_id = ""
         self._placement_target_pick_mode = False
         self._placement_target_row_index = None
         self._placement_target_face_id = ""
@@ -10021,12 +10030,21 @@ class Kraken3DInspector(tk.Toplevel):
 
         drew_surfaces = 0
         step_carry_label = self._step_carry_label()
+        ray_visibility_requested = bool(self.show_rays_var.get())
+        ray_surface_edge_overlays: list[object] = []
         for mesh_item in mesh_items:
             mesh = mesh_item.mesh
+            try:
+                row_index = int(getattr(mesh_item, "row_index", -1))
+            except Exception:
+                row_index = -1
+            mesh_opacity = float(getattr(mesh_item, "opacity", 1.0))
+            if ray_visibility_requested and bool(getattr(mesh_item, "is_body", False)) and row_index in file_backed_rows:
+                mesh_opacity = max(mesh_opacity, 0.42)
             self._add_mesh_actor(
                 mesh,
                 color=mesh_item.color,
-                opacity=mesh_item.opacity,
+                opacity=mesh_opacity,
                 pick_row_index=mesh_item.row_index,
                 backface_culling=False,
             )
@@ -10040,6 +10058,19 @@ class Kraken3DInspector(tk.Toplevel):
                     )
                     if int(getattr(edges, "n_points", 0)) > 0:
                         self._add_mesh_actor(edges, color=(0.15, 0.15, 0.15), opacity=1.0, line_width=1.0)
+                except Exception:
+                    pass
+            elif row_index in file_backed_rows:
+                try:
+                    edges = mesh.extract_feature_edges(
+                        feature_angle=20,
+                        boundary_edges=True,
+                        feature_edges=True,
+                        manifold_edges=False,
+                    )
+                    if int(getattr(edges, "n_points", 0)) > 0:
+                        ray_surface_edge_overlays.append(edges)
+                        self._add_mesh_actor(edges, color=(0.10, 0.12, 0.16), opacity=0.96, line_width=1.2)
                 except Exception:
                     pass
             drew_surfaces += 1
@@ -10079,6 +10110,8 @@ class Kraken3DInspector(tk.Toplevel):
                     ray_index=ray_index,
                     terminal_status=terminal_status,
                 )
+            for edges in ray_surface_edge_overlays:
+                self._add_mesh_actor(edges, color=(0.02, 0.03, 0.05), opacity=1.0, line_width=2.2, backface_culling=False)
 
         optical_axis_overlays = 0
         if self._should_draw_optical_axis_overlays():
@@ -10228,6 +10261,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._source_target_pick_mode = True
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
+        self._center_row_to_ray_face_id = ""
         self._placement_target_pick_mode = False
         self._placement_target_row_index = None
         self._placement_target_face_id = ""
@@ -10298,6 +10332,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._source_target_pick_mode = False
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
+        self._center_row_to_ray_face_id = ""
         self._placement_orient_pick_mode = False
         self._placement_orient_row_index = None
         self._placement_orient_face_id = ""
@@ -10396,6 +10431,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._source_target_pick_mode = False
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
+        self._center_row_to_ray_face_id = ""
         self._placement_target_pick_mode = False
         self._placement_target_row_index = None
         self._placement_target_face_id = ""
@@ -10494,6 +10530,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._source_target_pick_mode = False
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
+        self._center_row_to_ray_face_id = ""
         self._placement_target_pick_mode = False
         self._placement_target_row_index = None
         self._placement_target_face_id = ""
@@ -10615,6 +10652,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._source_target_pick_mode = False
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
+        self._center_row_to_ray_face_id = ""
         self._placement_target_pick_mode = False
         self._placement_target_row_index = None
         self._placement_target_face_id = ""
@@ -10632,6 +10670,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._stl_placement_row_index = int(row_index)
             self._stl_placement_dirty = True
         try:
+            self.editor._select_table_row(int(row_index))
             self.refresh_from_editor()
             self.highlight_row(int(row_index))
         except Exception as exc:
@@ -10804,6 +10843,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_ray_highlight(None)
         self._set_optical_axis_highlight(None)
         self._center_row_to_ray_index = None
+        self._center_row_to_ray_face_id = ""
         if row_index is not None and 0 <= int(row_index) < len(self.editor.rows):
             row = self.editor.rows[int(row_index)]
             if row.surface not in {"Object", "Image"}:
@@ -10827,17 +10867,21 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set("Center Row->Ray: click a surface/CAD row first, then click the target ray.")
             return
         try:
-            result = self.editor.center_surface_row_on_ray(int(row_index), int(ray_index))
+            face_id = str(self._center_row_to_ray_face_id or "").strip()
+            result = self.editor.center_surface_row_on_ray(int(row_index), int(ray_index), face_id=face_id)
         except Exception as exc:
             self.status_var.set(f"Center Row->Ray failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"Center Row->Ray failed: {exc}")
             return
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
+        self._center_row_to_ray_face_id = ""
         self._update_mode_badge()
         if self.editor._file_backed_stl_row_at(int(row_index)) is not None:
             self._stl_placement_dirty = True
+            self._stl_placement_row_index = int(row_index)
         try:
+            self.editor._select_table_row(int(row_index))
             self.refresh_from_editor()
             self.highlight_row(int(row_index))
             self._set_ray_highlight(int(ray_index))
@@ -10864,22 +10908,27 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set("Center Row->Optical Axis: click a surface/CAD row first, then click the dotted Optical Axis guide.")
             return
         try:
-            result = self.editor.center_surface_row_on_optical_axis(int(row_index), axis_info)
+            face_id = str(self._center_row_to_ray_face_id or "").strip()
+            result = self.editor.center_surface_row_on_optical_axis(int(row_index), axis_info, face_id=face_id)
         except Exception as exc:
             self.status_var.set(f"Center Row->Optical Axis failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"Center Row->Optical Axis failed: {exc}")
             return
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
+        self._center_row_to_ray_face_id = ""
         self._update_mode_badge()
         if self.editor._file_backed_stl_row_at(int(row_index)) is not None:
             self._stl_placement_dirty = True
+            self._stl_placement_row_index = int(row_index)
         axis_id = str(axis_info.get("axis_id", "") or "").strip()
         try:
+            self.editor._select_table_row(int(row_index))
             self.refresh_from_editor()
             self.highlight_row(int(row_index))
             self._set_ray_highlight(None)
             self._set_optical_axis_highlight(axis_id)
+            self.highlight_row(int(row_index))
         except Exception as exc:
             self.editor.append_debug(f"Center Row->Optical Axis refresh failed: {exc}")
         target = result.get("target", (float("nan"), float("nan"), float("nan")))
@@ -10909,6 +10958,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._stl_placement_row_index = int(row_index)
             self._stl_placement_dirty = True
         try:
+            self.editor._select_table_row(int(row_index))
             self.refresh_from_editor()
             self.highlight_row(int(row_index))
         except Exception as exc:
@@ -11112,8 +11162,10 @@ class Kraken3DInspector(tk.Toplevel):
                 self.editor._select_table_row(row_index)
                 row_name = self.editor.rows[row_index].name if 0 <= row_index < len(self.editor.rows) else "Surface"
                 self._center_row_to_ray_index = row_index
+                self._center_row_to_ray_face_id = self._picked_scene_face_id_for_row(row_index)
                 stl_note = " assigned optical-face anchor or" if self.editor._file_backed_stl_row_at(row_index) is not None else ""
-                message = f"Center Row->Optical Axis: selected S{row_index}: {row_name}. Now click the dotted Optical Axis guide for its{stl_note} center."
+                face_note = f" face {self._center_row_to_ray_face_id}" if self._center_row_to_ray_face_id else ""
+                message = f"Center Row->Optical Axis: selected S{row_index}{face_note}: {row_name}. Now click the dotted Optical Axis guide for its{stl_note} center."
                 self._update_mode_badge()
                 self.refresh_from_editor()
                 self.highlight_row(row_index)
@@ -11135,6 +11187,7 @@ class Kraken3DInspector(tk.Toplevel):
                     return
                 self._center_row_to_ray_mode = False
                 self._center_row_to_ray_index = None
+                self._center_row_to_ray_face_id = ""
                 self._set_row_highlight(None)
                 self.editor.select_step_component(step_label)
                 self._set_step_highlight(step_label)
@@ -11411,10 +11464,12 @@ class Kraken3DInspector(tk.Toplevel):
                 self.render()
                 return
             self._center_row_to_ray_index = int(row_index)
+            self._center_row_to_ray_face_id = self._picked_scene_face_id_for_row(int(row_index))
             stl_note = " assigned optical-face anchor or" if self.editor._file_backed_stl_row_at(int(row_index)) is not None else ""
             self._set_ray_highlight(None)
             self._set_optical_axis_highlight(None)
-            message = f"Center Row->Optical Axis: selected S{row_index}: {row_name}. Now click the dotted Optical Axis guide for its{stl_note} center."
+            face_note = f" face {self._center_row_to_ray_face_id}" if self._center_row_to_ray_face_id else ""
+            message = f"Center Row->Optical Axis: selected S{row_index}{face_note}: {row_name}. Now click the dotted Optical Axis guide for its{stl_note} center."
             self._update_mode_badge()
             self.refresh_from_editor()
             self.highlight_row(row_index)
@@ -16545,6 +16600,23 @@ class KrakenLayoutEditor(tk.Tk):
             return OPTICAL_SOLID_FACE_PORT_INTERACTION
         return OPTICAL_SOLID_FACE_PORT_DEFAULT
 
+    def _direct_context_port_role_for_face_function(self, function: str, existing: object = OPTICAL_SOLID_FACE_PORT_DEFAULT) -> str:
+        existing_role = _normalize_optical_solid_face_port_role(existing)
+        normalized = _normalize_optical_solid_face_function(function)
+        if normalized == OPTICAL_SOLID_FACE_FUNCTION_DEFAULT:
+            return OPTICAL_SOLID_FACE_PORT_DEFAULT
+        if existing_role == OPTICAL_SOLID_FACE_PORT_INPUT:
+            return OPTICAL_SOLID_FACE_PORT_INPUT
+        if normalized in {
+            OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
+            "TIR",
+            "Mirror",
+            "Beam Splitter",
+            "Absorber/Mechanical",
+        }:
+            return OPTICAL_SOLID_FACE_PORT_INTERACTION
+        return OPTICAL_SOLID_FACE_PORT_DEFAULT
+
     def assign_optical_solid_face_function(
         self,
         row_index: int,
@@ -16552,6 +16624,7 @@ class KrakenLayoutEditor(tk.Tk):
         function_label: str,
         *,
         port_role: str | None = None,
+        direct_context: bool = False,
     ) -> dict[str, object]:
         row_index = int(row_index)
         face_id = str(face_id or "").strip()
@@ -16572,7 +16645,11 @@ class KrakenLayoutEditor(tk.Tk):
                 record["port_role"] = (
                     _normalize_optical_solid_face_port_role(port_role)
                     if port_role is not None
-                    else self._default_port_role_for_face_function(function, record.get("port_role"))
+                    else (
+                        self._direct_context_port_role_for_face_function(function, record.get("port_role"))
+                        if direct_context
+                        else self._default_port_role_for_face_function(function, record.get("port_role"))
+                    )
                 )
                 matched = normalize_optical_solid_face_record(record)
                 record = matched
@@ -16611,6 +16688,7 @@ class KrakenLayoutEditor(tk.Tk):
         *,
         normal_world=None,
         port_role: str | None = None,
+        direct_context: bool = False,
     ) -> dict[str, object]:
         face = self.optical_solid_face_record_at_world_point(
             int(row_index),
@@ -16626,6 +16704,7 @@ class KrakenLayoutEditor(tk.Tk):
             face_id,
             function_label,
             port_role=port_role,
+            direct_context=direct_context,
         )
         result["matched_face"] = face
         return result
@@ -17129,6 +17208,24 @@ class KrakenLayoutEditor(tk.Tk):
     ) -> dict[str, object] | None:
         return optical_solid_metadata.optical_solid_face_snap_anchor(row, z_station, ray_points)
 
+    @classmethod
+    def _optical_solid_face_snap_anchor_by_id(
+        cls,
+        row: SurfaceRow,
+        z_station: float,
+        face_id: str,
+    ) -> dict[str, object] | None:
+        requested = str(face_id or "").strip()
+        if not requested:
+            return None
+        for face in optical_solid_face_world_records(row, z_station, assigned_only=False):
+            if str(face.get("face_id", "") or "").strip() != requested:
+                continue
+            payload = dict(face)
+            payload["label"] = _optical_solid_face_marker_label(face)
+            return payload
+        return None
+
     def _row_decenter_delta_for_world_delta(self, row_index: int, world_delta: np.ndarray) -> np.ndarray:
         base_rows = [SurfaceRow(**asdict(row)) for row in self.rows]
         base_origin = self._surface_origin_for_rows(base_rows, row_index)
@@ -17181,7 +17278,7 @@ class KrakenLayoutEditor(tk.Tk):
         local_rotation = self._orthonormal_rotation(local_rotation)
         return self._kraken_tilts_from_rotation_matrix(local_rotation)
 
-    def center_surface_row_on_ray(self, row_index: int, ray_index: int) -> dict[str, object]:
+    def center_surface_row_on_ray(self, row_index: int, ray_index: int, *, face_id: str = "") -> dict[str, object]:
         row_index = int(row_index)
         ray_index = int(ray_index)
         if not (0 <= row_index < len(self.rows)):
@@ -17205,7 +17302,9 @@ class KrakenLayoutEditor(tk.Tk):
         anchor_face_id = ""
         anchor = None
         if self._file_backed_stl_row_at(row_index) is not None:
-            anchor = self._optical_solid_face_snap_anchor(self.rows[row_index], self._stl_row_z_station(row_index), points[:, :3])
+            anchor = self._optical_solid_face_snap_anchor_by_id(self.rows[row_index], self._stl_row_z_station(row_index), face_id)
+            if anchor is None:
+                anchor = self._optical_solid_face_snap_anchor(self.rows[row_index], self._stl_row_z_station(row_index), points[:, :3])
         if anchor is not None:
             origin = np.asarray(
                 anchor.get("anchor_world", anchor.get("centroid_world", (0.0, 0.0, 0.0))),
@@ -17259,7 +17358,7 @@ class KrakenLayoutEditor(tk.Tk):
             "anchor_face_id": anchor_face_id,
         }
 
-    def center_surface_row_on_optical_axis(self, row_index: int, axis_info: dict[str, object]) -> dict[str, object]:
+    def center_surface_row_on_optical_axis(self, row_index: int, axis_info: dict[str, object], *, face_id: str = "") -> dict[str, object]:
         row_index = int(row_index)
         if not (0 <= row_index < len(self.rows)):
             raise RuntimeError(f"Surface row index is out of range: {row_index}")
@@ -17288,7 +17387,9 @@ class KrakenLayoutEditor(tk.Tk):
         anchor_face_id = ""
         anchor = None
         if self._file_backed_stl_row_at(row_index) is not None:
-            anchor = self._optical_solid_face_snap_anchor(self.rows[row_index], self._stl_row_z_station(row_index), points[:, :3])
+            anchor = self._optical_solid_face_snap_anchor_by_id(self.rows[row_index], self._stl_row_z_station(row_index), face_id)
+            if anchor is None:
+                anchor = self._optical_solid_face_snap_anchor(self.rows[row_index], self._stl_row_z_station(row_index), points[:, :3])
         if anchor is not None:
             origin = np.asarray(
                 anchor.get("anchor_world", anchor.get("centroid_world", (0.0, 0.0, 0.0))),

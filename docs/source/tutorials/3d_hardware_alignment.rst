@@ -159,12 +159,17 @@ is moved again.
    previews the picked face and assigns ``Uncoated``, ``Full Reflecting``,
    splitter, absorber, or unassigned physics directly on that face. This
    right-click Open 3D workflow writes ``OpticalSolidFaces`` immediately and
-   does not wait for the older face-role dialog's ``Save Roles`` button.
+   does not wait for the older face-role dialog's ``Save Roles`` button. In
+   this direct workflow, ``Uncoated`` is a physical interaction surface, not an
+   inferred output port; explicit input/output ports still belong to the full
+   face-role editor when a prescription-style port chain is intended.
    Assigned faces remain softly tinted in Open 3D so a previously authored face
    is visible before the next surface is picked without making the whole solid
    look like a triangulated mesh. Open 3D scene surface actors are drawn
-   double-sided, so a ray-off/ray-on refresh should not make CAD/STEP-derived
-   bodies disappear because of vendor mesh winding. The old cube/grid plane
+   double-sided and row-backed CAD/STL solids get stronger edge/body retention
+   styling while rays are on, so a ray-off/ray-on refresh should not make
+   CAD/STEP-derived bodies disappear because of vendor mesh winding or dense
+   ray overlays. The old cube/grid plane
    overlay is suppressed during this workflow; placement metadata still drives
    the handles and status text, but the three grid planes no longer obscure the
    picked faces.
@@ -259,5 +264,6 @@ Common Mistakes
   file-backed surfaces, draws surface actors double-sided, and the validator
   covers the path where a promoted optical solid has all of its exposed faces
   assigned before the scene refreshes. The direct Open 3D right-click face menu
-  applies immediately; the older ``Save Roles`` button only belongs to the full
-  face-role editor dialog.
+  applies immediately and stores direct ``Uncoated`` picks as interaction
+  surfaces; the older ``Save Roles`` button only belongs to the full face-role
+  editor dialog.

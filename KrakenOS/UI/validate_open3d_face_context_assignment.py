@@ -13,7 +13,6 @@ from KrakenOS.UI.layout_editor import (
     KrakenLayoutEditor,
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
     OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
-    OPTICAL_SOLID_FACE_PORT_DEFAULT,
     OPTICAL_SOLID_FACE_PORT_INTERACTION,
     SurfaceRow,
     optical_solid_face_world_records,
@@ -76,6 +75,7 @@ def main() -> int:
             point,
             "Full Reflecting",
             normal_world=normal,
+            direct_context=True,
         )
         if assigned.get("function") != "Mirror" or assigned.get("port_role") != OPTICAL_SOLID_FACE_PORT_INTERACTION:
             raise AssertionError(f"Reflecting context assignment did not set mirror interaction metadata: {assigned!r}")
@@ -85,11 +85,12 @@ def main() -> int:
             point,
             "Uncoated",
             normal_world=normal,
+            direct_context=True,
         )
         if reassigned.get("function") != OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT:
             raise AssertionError(f"Uncoated context assignment did not map to transmit physics: {reassigned!r}")
-        if reassigned.get("port_role") != OPTICAL_SOLID_FACE_PORT_DEFAULT:
-            raise AssertionError(f"Uncoated direct assignment should not require an Input/Output/side port: {reassigned!r}")
+        if reassigned.get("port_role") != OPTICAL_SOLID_FACE_PORT_INTERACTION:
+            raise AssertionError(f"Uncoated direct assignment should become a physical interaction surface, not an output port: {reassigned!r}")
 
         metadata = normalize_optical_solid_face_metadata(
             app.rows[row_index].advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
@@ -123,7 +124,7 @@ def main() -> int:
         if len(face_ids) < 2:
             raise AssertionError("Expected promoted optical solid to expose multiple assignable faces.")
         for face_id in face_ids:
-            app.assign_optical_solid_face_function(row_index, face_id, "Uncoated")
+            app.assign_optical_solid_face_function(row_index, face_id, "Uncoated", direct_context=True)
         all_metadata = normalize_optical_solid_face_metadata(
             app.rows[row_index].advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
         )
@@ -134,6 +135,13 @@ def main() -> int:
         )
         if assigned_count < len(face_ids):
             raise AssertionError("Assigning every picked CAD/STL face did not persist assigned-face metadata.")
+        output_count = sum(
+            1
+            for face in list(all_metadata.get("faces", []) or [])
+            if str(face.get("port_role", "") or "") == "Output Port"
+        )
+        if output_count:
+            raise AssertionError("Direct Open 3D Uncoated assignments should not create inferred output-port anchors.")
 
         system, _rays, scene_bundle = app._build_preview_system_rays_bundle(
             sampling_mode=app._preview_3d_sampling_mode(),

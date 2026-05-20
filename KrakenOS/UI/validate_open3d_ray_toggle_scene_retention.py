@@ -92,6 +92,13 @@ def _assert_scene_rows_visible(
             raise AssertionError(f"{label}: row actor S{int(row_index)} has no readable backface-culling state: {exc}") from exc
         if culling:
             raise AssertionError(f"{label}: row actor S{int(row_index)} is still backface culled.")
+        if label == "Ray On" and int(row_index) == int(promoted_row_index):
+            try:
+                opacity = float(actor.GetProperty().GetOpacity())
+            except Exception as exc:
+                raise AssertionError(f"{label}: promoted row actor opacity is unreadable: {exc}") from exc
+            if opacity < 0.4:
+                raise AssertionError(f"{label}: promoted optical STEP actor is too transparent with rays on: opacity={opacity:.3g}.")
 
 
 def main() -> int:
@@ -131,7 +138,7 @@ def main() -> int:
         if len(face_ids) < 2:
             raise AssertionError("Expected the promoted STEP prism to expose multiple faces.")
         for face_id in face_ids:
-            app.assign_optical_solid_face_function(promoted_row_index, face_id, "Uncoated")
+            app.assign_optical_solid_face_function(promoted_row_index, face_id, "Uncoated", direct_context=True)
 
         inspector = _open_inspector(app)
         inspector.show_rays_var.set(False)
