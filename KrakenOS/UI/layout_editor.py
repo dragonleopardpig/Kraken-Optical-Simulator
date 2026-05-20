@@ -9567,9 +9567,13 @@ class Kraken3DInspector(tk.Toplevel):
         include_miss_crosshairs: bool = True,
     ) -> int:
         count = 0
+        display_center, display_radius = self._row_scene_bounds()
         for spec in self.editor._scene_detector_overlay_specs(
             scene_bundle,
             include_miss_crosshairs=bool(include_miss_crosshairs),
+            cap_miss_crosshairs_to_scene=True,
+            display_center=display_center,
+            display_radius=display_radius,
         ):
             try:
                 points = np.asarray(spec["points"], dtype=float)
@@ -10150,13 +10154,17 @@ class Kraken3DInspector(tk.Toplevel):
             except Exception:
                 row_index = -1
             mesh_opacity = float(getattr(mesh_item, "opacity", 1.0))
+            row_surface = str(getattr(getattr(mesh_item, "row", None), "surface", "") or "")
             if ray_visibility_requested and row_index >= 0:
-                mesh_opacity = max(mesh_opacity, 0.86)
-                if row_index in file_backed_rows:
-                    mesh_opacity = max(mesh_opacity, 0.94)
-                wire_color = (0.02, 0.03, 0.05) if row_index in file_backed_rows else tuple(mesh_item.color)
-                wire_width = 1.9 if row_index in file_backed_rows else 1.35
-                ray_surface_wire_overlays.append((mesh, wire_color, wire_width, row_index))
+                if row_surface in {"Object", "Image"}:
+                    mesh_opacity = min(mesh_opacity, 0.22)
+                else:
+                    mesh_opacity = max(mesh_opacity, 0.86)
+                    if row_index in file_backed_rows:
+                        mesh_opacity = max(mesh_opacity, 0.94)
+                    wire_color = (0.02, 0.03, 0.05) if row_index in file_backed_rows else tuple(mesh_item.color)
+                    wire_width = 1.9 if row_index in file_backed_rows else 1.35
+                    ray_surface_wire_overlays.append((mesh, wire_color, wire_width, row_index))
             self._add_mesh_actor(
                 mesh,
                 color=mesh_item.color,
@@ -10208,14 +10216,19 @@ class Kraken3DInspector(tk.Toplevel):
 
         if self.show_rays_var.get():
             center, radius = self._row_scene_bounds()
+            paths_by_ray_index = KrakenLayoutEditor._scene_ray_path_by_index(scene_bundle)
             ray_radius = max(radius * 0.0015, 0.08)
             bounded_ray_count = 0
+            suppressed_endpoint_count = 0
             for ray_index, color, ray_pts, terminal_status in self.editor._iter_3d_scene_ray_records(rays, scene_bundle):
+                ray_path = paths_by_ray_index.get(int(ray_index))
+                terminal_target = KrakenLayoutEditor._missed_detector_target_for_path(scene_bundle, ray_path)
                 display_ray_pts, was_bounded = KrakenLayoutEditor._bounded_3d_ray_points_for_display(
                     ray_pts,
                     center,
                     radius,
                     terminal_status=terminal_status,
+                    terminal_target=terminal_target,
                 )
                 if was_bounded:
                     bounded_ray_count += 1
@@ -10234,15 +10247,20 @@ class Kraken3DInspector(tk.Toplevel):
                     opacity=float(style["line_opacity"]),
                     line_width=float(style["line_width"]),
                 )
-                self._add_ray_endpoint_actor(
-                    display_ray_pts[-1],
-                    radius=ray_radius * float(style["endpoint_scale"]),
-                    color=style["endpoint_color"],
-                    ray_index=ray_index,
-                    terminal_status=terminal_status,
-                )
+                if KrakenLayoutEditor._should_draw_3d_terminal_endpoint(terminal_status):
+                    self._add_ray_endpoint_actor(
+                        display_ray_pts[-1],
+                        radius=ray_radius * float(style["endpoint_scale"]),
+                        color=style["endpoint_color"],
+                        ray_index=ray_index,
+                        terminal_status=terminal_status,
+                    )
+                else:
+                    suppressed_endpoint_count += 1
             if bounded_ray_count:
                 self._debug_trace("ray_display_bounded", rays=bounded_ray_count, radius=float(radius))
+            if suppressed_endpoint_count:
+                self._debug_trace("ray_display_suppressed_nonphysical_endpoints", rays=suppressed_endpoint_count)
             for edges, edge_color, edge_width in ray_surface_edge_overlays:
                 self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width, backface_culling=False)
             for mesh, wire_color, wire_width, row_index in ray_surface_wire_overlays:
@@ -25841,7 +25859,13 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception as exc:
                 self.append_debug(f"Legacy 3D {label} STEP render error: {exc}")
 
-        for spec in self._scene_detector_overlay_specs(scene_bundle):
+        detector_display_center, detector_display_radius = self._scene_center_radius_from_bounds(plotter.bounds)
+        for spec in self._scene_detector_overlay_specs(
+            scene_bundle,
+            cap_miss_crosshairs_to_scene=True,
+            display_center=detector_display_center,
+            display_radius=detector_display_radius,
+        ):
             try:
                 points = np.asarray(spec["points"], dtype=float)
                 if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
@@ -25885,12 +25909,17 @@ class KrakenLayoutEditor(tk.Tk):
 
         ray_radius = self._legacy_3d_ray_radius(system, rays)
         ray_center, ray_scene_radius = self._scene_center_radius_from_bounds(plotter.bounds)
+        paths_by_ray_index = self._scene_ray_path_by_index(scene_bundle)
+        suppressed_endpoint_count = 0
         for ray_index, color, ray_pts, terminal_status in self._iter_3d_scene_ray_records(rays, scene_bundle):
+            ray_path = paths_by_ray_index.get(int(ray_index))
+            terminal_target = self._missed_detector_target_for_path(scene_bundle, ray_path)
             display_ray_pts, _was_bounded = self._bounded_3d_ray_points_for_display(
                 ray_pts,
                 ray_center,
                 ray_scene_radius,
                 terminal_status=terminal_status,
+                terminal_target=terminal_target,
             )
             try:
                 line = pv.lines_from_points(display_ray_pts)
@@ -25910,6 +25939,9 @@ class KrakenLayoutEditor(tk.Tk):
                 ray_index,
             )
             ray_actors.append(actor)
+            if not self._should_draw_3d_terminal_endpoint(terminal_status):
+                suppressed_endpoint_count += 1
+                continue
             try:
                 endpoint = np.asarray(display_ray_pts[-1], dtype=float).reshape(-1)[:3]
                 if endpoint.size >= 3 and np.all(np.isfinite(endpoint)):
@@ -25932,6 +25964,8 @@ class KrakenLayoutEditor(tk.Tk):
                     ray_actors.append(marker_actor)
             except Exception:
                 pass
+        if suppressed_endpoint_count:
+            self.append_debug(f"Legacy 3D suppressed {suppressed_endpoint_count} non-physical escaped/missed terminal endpoint markers.")
 
         self._add_legacy_3d_physical_dimensions(plotter, helper_actors)
 
@@ -26321,12 +26355,196 @@ class KrakenLayoutEditor(tk.Tk):
         return center, float(radius)
 
     @staticmethod
+    def _scene_ray_path_by_index(scene_bundle: SceneBundle | None) -> dict[int, object]:
+        if scene_bundle is None:
+            return {}
+        paths: dict[int, object] = {}
+        for path in list(getattr(scene_bundle, "ray_paths", []) or []):
+            try:
+                paths[int(getattr(path, "ray_index"))] = path
+            except Exception:
+                continue
+        return paths
+
+    @staticmethod
+    def _missed_detector_target_for_path(scene_bundle: SceneBundle | None, path: object | None) -> SceneTarget3D | None:
+        if scene_bundle is None or path is None:
+            return None
+        if ray_path_terminal_status_from_events(path) != "missed_detector":
+            return None
+        metadata = ray_path_terminal_metadata(path)
+        surface = metadata.get("detector_miss_surface")
+        if surface in (None, ""):
+            event = ray_path_terminal_event(path)
+            if event is not None:
+                surface = getattr(event, "surface_id", None)
+        try:
+            surface_index = int(surface)
+        except Exception:
+            return None
+        for target in list(getattr(scene_bundle, "targets", []) or []):
+            trace_surface = getattr(target, "trace_surface", None)
+            try:
+                if trace_surface is not None and int(trace_surface) == surface_index:
+                    return target
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _target_frame_axes_for_display(target: SceneTarget3D | None) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+        if target is None:
+            return None
+        try:
+            center = np.asarray(getattr(target, "center_world", ()), dtype=float).reshape(-1)[:3]
+            normal = np.asarray(getattr(target, "normal_world", ()), dtype=float).reshape(-1)[:3]
+            tangent = np.asarray(getattr(target, "tangent_world", ()), dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if (
+            center.size < 3
+            or normal.size < 3
+            or tangent.size < 3
+            or not np.all(np.isfinite(center[:3]))
+            or not np.all(np.isfinite(normal[:3]))
+            or not np.all(np.isfinite(tangent[:3]))
+        ):
+            return None
+        normal_norm = float(np.linalg.norm(normal[:3]))
+        if not np.isfinite(normal_norm) or normal_norm <= 1.0e-12:
+            return None
+        normal = normal[:3] / normal_norm
+        tangent = tangent[:3] - normal * float(np.dot(tangent[:3], normal))
+        tangent_norm = float(np.linalg.norm(tangent))
+        if not np.isfinite(tangent_norm) or tangent_norm <= 1.0e-12:
+            for candidate in (
+                np.asarray((1.0, 0.0, 0.0), dtype=float),
+                np.asarray((0.0, 1.0, 0.0), dtype=float),
+                np.asarray((0.0, 0.0, 1.0), dtype=float),
+            ):
+                tangent = candidate - normal * float(np.dot(candidate, normal))
+                tangent_norm = float(np.linalg.norm(tangent))
+                if np.isfinite(tangent_norm) and tangent_norm > 1.0e-12:
+                    break
+        if not np.isfinite(tangent_norm) or tangent_norm <= 1.0e-12:
+            return None
+        tangent = tangent / tangent_norm
+        bitangent = np.cross(normal, tangent)
+        bitangent_norm = float(np.linalg.norm(bitangent))
+        if not np.isfinite(bitangent_norm) or bitangent_norm <= 1.0e-12:
+            return None
+        return center[:3], tangent, bitangent / bitangent_norm
+
+    @staticmethod
+    def _target_active_dimensions_for_display(target: SceneTarget3D | None) -> tuple[float, float] | None:
+        if target is None:
+            return None
+        try:
+            diameter = max(float(getattr(target, "diameter", 0.0) or 0.0), 0.0)
+        except Exception:
+            diameter = 0.0
+        try:
+            width = max(float(getattr(target, "active_width_mm", 0.0) or 0.0), 0.0)
+        except Exception:
+            width = 0.0
+        try:
+            height = max(float(getattr(target, "active_height_mm", 0.0) or 0.0), 0.0)
+        except Exception:
+            height = 0.0
+        if width <= 1.0e-12:
+            width = diameter
+        if height <= 1.0e-12:
+            height = diameter
+        if width <= 1.0e-12 or height <= 1.0e-12:
+            return None
+        return float(width), float(height)
+
+    @staticmethod
+    def _display_detector_miss_limit(target: SceneTarget3D | None, radius: float) -> float:
+        try:
+            scene_radius = float(radius)
+        except Exception:
+            scene_radius = 1.0
+        if not np.isfinite(scene_radius) or scene_radius <= 0.0:
+            scene_radius = 1.0
+        dimensions = KrakenLayoutEditor._target_active_dimensions_for_display(target)
+        aperture_span = max(dimensions) if dimensions is not None else 1.0
+        scene_limit = max(25.0, min(scene_radius * 0.35, 250.0))
+        return float(max(aperture_span * 1.25, scene_limit))
+
+    @staticmethod
+    def _display_detector_miss_point_on_plane(
+        point,
+        target: SceneTarget3D | None,
+        radius: float,
+    ) -> tuple[np.ndarray | None, bool]:
+        try:
+            terminal = np.asarray(point, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None, False
+        if terminal.size < 3 or not np.all(np.isfinite(terminal[:3])):
+            return None, False
+        axes = KrakenLayoutEditor._target_frame_axes_for_display(target)
+        if axes is None:
+            return terminal[:3], False
+        center, tangent, bitangent = axes
+        rel = terminal[:3] - center
+        u = float(np.dot(rel, tangent))
+        v = float(np.dot(rel, bitangent))
+        limit = KrakenLayoutEditor._display_detector_miss_limit(target, radius)
+        radial = float(np.hypot(u, v))
+        capped = False
+        if np.isfinite(radial) and radial > limit > 0.0:
+            scale = limit / radial
+            u *= scale
+            v *= scale
+            capped = True
+        display_point = center + tangent * u + bitangent * v
+        if not np.allclose(display_point, terminal[:3], rtol=0.0, atol=1.0e-9):
+            capped = True
+        return display_point, capped
+
+    @staticmethod
+    def _detector_miss_crosshair_polylines_for_display(
+        path: object,
+        target: SceneTarget3D | None,
+        *,
+        display_center=None,
+        display_radius: float = 1.0,
+        cap_to_scene: bool = False,
+    ) -> list[np.ndarray]:
+        if not bool(cap_to_scene):
+            return scene_target_detector_miss_crosshair_polylines(path, target)
+        if ray_path_terminal_status_from_events(path) != "missed_detector":
+            return []
+        event = ray_path_terminal_event(path)
+        if event is None:
+            return []
+        point, _capped = KrakenLayoutEditor._display_detector_miss_point_on_plane(
+            getattr(event, "point_world", None),
+            target,
+            display_radius,
+        )
+        axes = KrakenLayoutEditor._target_frame_axes_for_display(target)
+        dimensions = KrakenLayoutEditor._target_active_dimensions_for_display(target)
+        if point is None or axes is None or dimensions is None:
+            return []
+        _center, tangent, bitangent = axes
+        width, height = dimensions
+        arm = max(min(float(min(width, height)) * 0.18, float(max(width, height)) * 0.35), 0.35)
+        return [
+            np.vstack((point - tangent * arm, point + tangent * arm)),
+            np.vstack((point - bitangent * arm, point + bitangent * arm)),
+        ]
+
+    @staticmethod
     def _bounded_3d_ray_points_for_display(
         points,
         center,
         radius: float,
         *,
         terminal_status: str = "",
+        terminal_target: SceneTarget3D | None = None,
     ) -> tuple[np.ndarray, bool]:
         try:
             pts = np.asarray(points, dtype=float)
@@ -26354,7 +26572,15 @@ class KrakenLayoutEditor(tk.Tk):
             scene_radius = 1.0
         status = str(terminal_status or "").strip().lower()
         terminal_was_capped = False
-        if status in {"escaped", "missed_detector"} and pts.shape[0] >= 2:
+        if status == "missed_detector" and terminal_target is not None and pts.shape[0] >= 2:
+            display_point, terminal_was_capped = KrakenLayoutEditor._display_detector_miss_point_on_plane(
+                pts[-1],
+                terminal_target,
+                scene_radius,
+            )
+            if display_point is not None:
+                pts[-1] = display_point[:3]
+        elif status == "escaped" and pts.shape[0] >= 2:
             terminal_segment = pts[-1] - pts[-2]
             terminal_length = float(np.linalg.norm(terminal_segment))
             max_terminal_length = max(25.0, min(scene_radius * 0.35, 250.0))
@@ -26377,6 +26603,11 @@ class KrakenLayoutEditor(tk.Tk):
         if pts.shape[0] < 2:
             return np.empty((0, 3), dtype=float), True
         return pts, bounded
+
+    @staticmethod
+    def _should_draw_3d_terminal_endpoint(terminal_status: str) -> bool:
+        status = str(terminal_status or "").strip().lower()
+        return status not in {"escaped", "missed_detector"}
 
     @staticmethod
     def _ray_terminal_3d_style(
@@ -26404,6 +26635,9 @@ class KrakenLayoutEditor(tk.Tk):
         scene_bundle: SceneBundle | None,
         *,
         include_miss_crosshairs: bool = True,
+        cap_miss_crosshairs_to_scene: bool = False,
+        display_center=None,
+        display_radius: float = 1.0,
     ) -> list[dict[str, object]]:
         if scene_bundle is None:
             return []
@@ -26453,7 +26687,13 @@ class KrakenLayoutEditor(tk.Tk):
                     row_index = int(getattr(target, "row_index", -1))
                 except Exception:
                     row_index = -1
-                for points in scene_target_detector_miss_crosshair_polylines(path, target):
+                for points in self._detector_miss_crosshair_polylines_for_display(
+                    path,
+                    target,
+                    display_center=display_center,
+                    display_radius=display_radius,
+                    cap_to_scene=bool(cap_miss_crosshairs_to_scene),
+                ):
                     specs.append(
                         {
                             "kind": "detector_miss_crosshair",
@@ -27479,12 +27719,17 @@ class KrakenLayoutEditor(tk.Tk):
         rays_visible = bool(dict(getattr(plotter, "_kraken_visibility", {}) or {}).get("rays", True))
         ray_radius = self._legacy_3d_ray_radius(system, rays)
         ray_center, ray_scene_radius = self._scene_center_radius_from_bounds(plotter.bounds)
+        paths_by_ray_index = self._scene_ray_path_by_index(scene_bundle)
+        suppressed_endpoint_count = 0
         for ray_index, color, ray_pts, terminal_status in self._iter_3d_scene_ray_records(rays, scene_bundle):
+            ray_path = paths_by_ray_index.get(int(ray_index))
+            terminal_target = self._missed_detector_target_for_path(scene_bundle, ray_path)
             display_ray_pts, _was_bounded = self._bounded_3d_ray_points_for_display(
                 ray_pts,
                 ray_center,
                 ray_scene_radius,
                 terminal_status=terminal_status,
+                terminal_target=terminal_target,
             )
             try:
                 line = pv.lines_from_points(display_ray_pts)
@@ -27522,6 +27767,9 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
             ray_actors.append(actor)
+            if not self._should_draw_3d_terminal_endpoint(terminal_status):
+                suppressed_endpoint_count += 1
+                continue
             try:
                 endpoint = np.asarray(display_ray_pts[-1], dtype=float).reshape(-1)[:3]
                 if endpoint.size >= 3 and np.all(np.isfinite(endpoint)):
@@ -27549,6 +27797,8 @@ class KrakenLayoutEditor(tk.Tk):
                     ray_actors.append(marker_actor)
             except Exception:
                 pass
+        if suppressed_endpoint_count:
+            self.append_debug(f"Legacy 3D suppressed {suppressed_endpoint_count} non-physical escaped/missed terminal endpoint markers.")
         try:
             plotter.render()
         except Exception:

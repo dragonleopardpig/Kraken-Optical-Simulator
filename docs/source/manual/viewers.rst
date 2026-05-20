@@ -72,6 +72,8 @@ Current UI coverage:
 * optical surface meshes and solid-body meshes in the shared scene bundle
 * double-sided Open 3D surface actors for scene meshes, so STEP/STL vendor
   winding does not make physical components vanish after a ray off/on refresh
+* Object/Image reference disks remain translucent when rays are shown, so they
+  mark row/detector size without looking like additional glass components
 * structured ``Open3DTrace`` diagnostics in the Debug panel and
   ``~/.cache/krakenos/logs/kraken_debug_latest.log`` for left clicks,
   right-click face context, matched face ids, face-function metadata writes,
@@ -81,16 +83,17 @@ Current UI coverage:
   as explicit missed-detector terminal markers
 * dense 2D views suppress redundant detector-hit endpoint glyphs but keep
   missed detector, absorbed, escaped, and stopped terminal markers visible;
-  missed detector/Image endpoints use a distinct orange marker in 2D and
-  Open 3D
-* Open 3D caps only the display tail for escaped or missed-detector rays to
-  the current scene scale, so a far off-screen miss does not expand the camera
-  clipping range; canonical ray events, Ray Inspector, and CSV exports keep the
-  full terminal diagnostic
+  missed detector/Image endpoints use a distinct orange marker in 2D
+* Open 3D caps only display diagnostics: escaped tails are shortened to the
+  current scene scale, and missed-detector points are capped inside the detector
+  plane so the view does not imply an off-plane physical stop; canonical ray
+  events, Ray Inspector, and CSV exports keep the full terminal diagnostic
 * active detector/Image footprints are drawn from the scene target detector
   metadata in 2D, embedded 3D, and legacy 3D. A missed-detector terminal adds
   an orange crosshair at the projected detector-plane intercept, making the
-  active aperture and miss point directly comparable.
+  active aperture and miss point directly comparable. If the miss is far outside
+  the visible scene, Open 3D caps the displayed crosshair within that detector
+  plane instead of drawing a fake terminal disk in free space.
 * 2D hover hints and 2D/3D ray selection messages show terminal diagnostics
   from the canonical ray event. For detector misses this includes detector
   surface, projected plane distance, radial miss, active half-aperture, local
@@ -323,9 +326,11 @@ Ray Inspector CSV also includes normalized per-ray aperture status fields next
 to the raw detector-miss event metadata.
 In Open 3D, detector active-footprint overlays remain scene geometry, but
 detector-miss crosshairs follow ``Show rays`` because they are ray diagnostics.
-Escaped and missed-detector ray tails are capped in Open 3D display only; the
-underlying terminal event still records the detector-plane projection, miss
-distance, and kernel termination reason.
+Escaped ray tails are capped in Open 3D display only. Missed-detector
+diagnostics are capped within the detector plane and do not draw endpoint
+spheres, so a displayed miss cannot look like an absorptive stop away from a
+surface. The underlying terminal event still records the full detector-plane
+projection, miss distance, and kernel termination reason.
 
 Vendor CAD caveat: a downloaded cube beam-splitter STEP is usually mechanical
 geometry, not a complete optical prescription. Import it for external cube
