@@ -247,6 +247,15 @@ and Open 3D keeps missed-detector diagnostics on the detector plane while
 suppressing escaped/missed endpoint spheres, so a display-only clipped tail is
 not confused with a physical absorbing surface.
 
+Selected-ray display labels are event-owned as well. The 2D projector preserves
+``mesh_face_id``, ``surface_name``, and interaction model fields when canonical
+``RayEvent3D`` records are projected into ``ProjectedRayEvent2D`` markers. The
+2D plot and embedded Open 3D viewer then format the selected path from the same
+record, using compact labels such as ``F003 Reflect``, ``F006 Transmit``, and
+``F007 Miss``. This makes a wrong-looking segment debuggable without guessing
+from color or projection alone: the visible label names the face and the event
+law that the trace actually applied.
+
 ``Actions -> Detector Aperture Report`` summarizes those same ray-analysis
 records by detector/Image surface. It reports ray/path count, unique source-ray
 count, detector hits, missed-detector projections, stopped/other terminals, hit
@@ -501,6 +510,9 @@ aperture are displayed and exported as misses instead of arbitrary short
 terminal segments. ``validate_scene_projection_terminal_bounds`` checks the
 2D projection autoscale guard: escaped terminal tails are display-capped, and
 missed-detector display points remain on the detector plane.
+``validate_selected_ray_event_labels`` checks that selected-ray labels preserve
+mesh face identity through projected subsegments and use the same compact
+face/action formatter for projected and canonical event records.
 
 Optical STL prism check
 -----------------------

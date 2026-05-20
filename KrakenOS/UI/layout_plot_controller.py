@@ -52,9 +52,103 @@ ANALYSIS_MODE_LABELS = {
     "mtf": "MTF",
 }
 
+RAY_EVENT_ACTION_LABELS = {
+    "reflection": "Reflect",
+    "reflect": "Reflect",
+    "mirror": "Reflect",
+    "reflect_mirror": "Reflect",
+    "full_reflecting": "Reflect",
+    "refraction": "Transmit",
+    "refract": "Transmit",
+    "transmit": "Transmit",
+    "transmission": "Transmit",
+    "pass": "Transmit",
+    "tir": "TIR",
+    "total_internal_reflection": "TIR",
+    "reflect_tir": "TIR",
+    "absorb": "Absorb",
+    "absorbed": "Absorb",
+    "absorption": "Absorb",
+    "detector": "Detect",
+    "hit_detector": "Detect",
+    "image": "Detect",
+    "termination": "Stop",
+    "terminal": "Stop",
+    "miss": "Miss",
+    "missed_detector": "Miss",
+    "missed_image": "Miss",
+    "no_hit": "Escape",
+    "no_next_intersection": "Escape",
+    "escaped": "Escape",
+    "escape": "Escape",
+    "diffract": "Diffract",
+    "diffraction": "Diffract",
+    "split_reflect": "Split R",
+    "split_transmit": "Split T",
+}
+
 
 def analysis_mode_label(mode: str) -> str:
     return ANALYSIS_MODE_LABELS.get(str(mode or ""), str(mode or "2D"))
+
+
+def _event_action_label(event_type: object, event_kind: object = "") -> str:
+    normalized = str(event_type or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if not normalized and str(event_kind or "").strip().lower() == "terminal":
+        normalized = "terminal"
+    label = RAY_EVENT_ACTION_LABELS.get(normalized)
+    if label:
+        return label
+    if not normalized:
+        return ""
+    return normalized.replace("_", " ").title()
+
+
+def ray_event_display_label(event: object) -> str:
+    """Return a compact label for a canonical ray/surface event."""
+    face_id = str(getattr(event, "mesh_face_id", "") or "").strip()
+    surface_id = getattr(event, "surface_id", None)
+    if not face_id and surface_id is not None:
+        try:
+            face_id = f"S{int(surface_id)}"
+        except Exception:
+            face_id = f"S{surface_id}"
+    event_kind = str(getattr(event, "event_kind", "") or "")
+    event_type = str(getattr(event, "event_type", "") or "")
+    terminal_status = str(getattr(event, "terminal_status", "") or "")
+    action = _event_action_label(terminal_status or event_type, event_kind)
+    if face_id and action:
+        return f"{face_id} {action}"
+    return face_id or action
+
+
+def projected_ray_event_label_items(
+    ray: object,
+    *,
+    include_terminal: bool = True,
+    limit: int = 14,
+) -> list[tuple[str, np.ndarray, str]]:
+    """Return labels and projected points for selected-ray event annotations."""
+    items: list[tuple[str, np.ndarray, str]] = []
+    events = list(getattr(ray, "events_2d", []) or [])
+    for event in events:
+        event_kind = str(getattr(event, "event_kind", "") or "").strip().lower()
+        if event_kind == "terminal" and not include_terminal:
+            continue
+        label = ray_event_display_label(event)
+        if not label:
+            continue
+        point = np.asarray(getattr(event, "point_2d", np.full(2, np.nan)), dtype=float).reshape(-1)
+        if point.size < 2 or not np.all(np.isfinite(point[:2])):
+            continue
+        items.append((label, np.asarray(point[:2], dtype=float), event_kind))
+    if len(items) <= max(int(limit), 0):
+        return items
+    limit = max(int(limit), 1)
+    terminal_items = [item for item in items if item[2] == "terminal"]
+    surface_items = [item for item in items if item[2] != "terminal"]
+    keep_surface = max(limit - len(terminal_items[:1]), 0)
+    return surface_items[:keep_surface] + terminal_items[:1]
 
 
 def active_plot_modes(selected_analysis_modes: Iterable[str], *, suppress_analysis: bool = False) -> list[str]:
@@ -445,6 +539,9 @@ def projected_ray_events_for_segment(
                 event_type=str(getattr(event, "event_type", "") or ""),
                 step=int(getattr(event, "step", 0) or 0),
                 surface_id=None if surface_id is None else int(surface_id),
+                mesh_face_id=str(getattr(event, "mesh_face_id", "") or ""),
+                surface_name=str(getattr(event, "surface_name", "") or ""),
+                interaction_model=str(getattr(event, "interaction_model", "") or ""),
                 point_index=int(local_index),
                 point_2d=np.asarray(point_2d, dtype=float),
                 terminal_status=str(getattr(event, "terminal_status", "") or ""),

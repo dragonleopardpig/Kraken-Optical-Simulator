@@ -100,6 +100,12 @@ Current UI coverage:
   surface, projected plane distance, radial miss, active half-aperture, local
   detector-plane X/Y, active detector width/height, and kernel terminal reason
   when available.
+* selecting a ray in the 2D plot outlines that ray and labels its canonical
+  face/action events, for example ``F003 Reflect``, ``F006 Transmit``, or
+  ``F007 Miss``. The embedded Open 3D viewer uses the same selected-ray event
+  formatter for billboard labels at the traced 3D event positions, so a
+  suspicious transmit/reflect decision can be checked directly against the
+  face that produced it.
 * ``Actions -> Detector Aperture Report`` groups the same event-owned detector
   terminals by detector/Image surface. It reports ray/path count, detector
   hits, missed detector projections, stopped/other terminals, hit fraction,

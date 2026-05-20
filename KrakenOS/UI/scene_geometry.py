@@ -816,6 +816,9 @@ class ProjectedRayEvent2D:
     event_type: str = ""
     step: int = 0
     surface_id: int | None = None
+    mesh_face_id: str = ""
+    surface_name: str = ""
+    interaction_model: str = ""
     point_index: int = 0
     point_2d: np.ndarray = field(default_factory=lambda: np.full(2, np.nan))
     terminal_status: str = ""

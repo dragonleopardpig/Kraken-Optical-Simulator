@@ -185,10 +185,12 @@ from KrakenOS.UI.layout_plot_controller import (
     plot_status_label,
     project_scene_bundle,
     projected_ray_events_for_segment,
+    projected_ray_event_label_items,
     projected_ray_terminal_surface_ids,
     projected_scene_for_layout_render,
     projected_pick_state,
     preview_trace_signature_matches,
+    ray_event_display_label,
     representative_projected_rays_by_branch,
     sequential_focus_diagnostic,
     thin_lens_glyph_polyline,
@@ -343,6 +345,7 @@ vtkCellPicker = None
 vtkDataSetMapper = None
 vtkRenderer = None
 vtkTextActor = None
+vtkBillboardTextActor3D = None
 _3D_BACKENDS_ATTEMPTED = False
 _VTK_TK_UNAVAILABLE_REASON = ""
 _x_error_handler_ref = None
@@ -3861,7 +3864,7 @@ def _load_3d_backends() -> None:
     """Load PyVista/VTK only when the user opens 3D or CAD overlays."""
     global _3D_BACKENDS_ATTEMPTED
     global pv, vtkTkRenderWindowInteractor, vtkTubeFilter, vtkOrientationMarkerWidget
-    global vtkAxesActor, vtkActor, vtkCellPicker, vtkDataSetMapper, vtkRenderer, vtkTextActor
+    global vtkAxesActor, vtkActor, vtkCellPicker, vtkDataSetMapper, vtkRenderer, vtkTextActor, vtkBillboardTextActor3D
     global _VTK_TK_UNAVAILABLE_REASON
     if _3D_BACKENDS_ATTEMPTED:
         return
@@ -3885,6 +3888,10 @@ def _load_3d_backends() -> None:
             vtkRenderer as _vtk_renderer,
             vtkTextActor as _vtk_text_actor,
         )
+        try:
+            from vtkmodules.vtkRenderingCore import vtkBillboardTextActor3D as _vtk_billboard_text_actor_3d
+        except Exception:
+            _vtk_billboard_text_actor_3d = None
 
         vtk_tk_library = _active_vtk_tk_widget_library()
         if vtk_tk_library is None:
@@ -3910,6 +3917,7 @@ def _load_3d_backends() -> None:
         vtkDataSetMapper = _vtk_mapper
         vtkRenderer = _vtk_renderer
         vtkTextActor = _vtk_text_actor
+        vtkBillboardTextActor3D = _vtk_billboard_text_actor_3d
     except Exception:
         vtkTkRenderWindowInteractor = None
         vtkTubeFilter = None
@@ -3920,6 +3928,7 @@ def _load_3d_backends() -> None:
         vtkDataSetMapper = None
         vtkRenderer = None
         vtkTextActor = None
+        vtkBillboardTextActor3D = None
         if not _VTK_TK_UNAVAILABLE_REASON:
             _VTK_TK_UNAVAILABLE_REASON = "VTK rendering modules are not importable."
 
@@ -5125,6 +5134,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_feature_cache: dict[tuple[str, int], tuple[np.ndarray, object | None, np.ndarray | None] | None] = {}
         self._picked_step_label: str | None = None
         self._picked_ray_index: int | None = None
+        self._current_scene_bundle: SceneBundle | None = None
+        self._ray_event_label_actors: list[object] = []
         self._picked_optical_axis_id: str | None = None
         self._hover_rotation_handle_key: str | None = None
         self._hover_step_actor = None
@@ -7519,12 +7530,96 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             pass
 
+    def _clear_ray_event_label_actors(self, *, render: bool = False) -> None:
+        if self._renderer is not None:
+            for actor in list(self._ray_event_label_actors):
+                try:
+                    self._renderer.RemoveActor(actor)
+                    continue
+                except Exception:
+                    pass
+                try:
+                    self._renderer.RemoveActor2D(actor)
+                except Exception:
+                    pass
+        self._ray_event_label_actors = []
+        if render:
+            self.render()
+
+    @staticmethod
+    def _ray_event_world_point(event: object) -> np.ndarray | None:
+        try:
+            point = np.asarray(getattr(event, "point_world", np.full(3, np.nan)), dtype=float).reshape(-1)
+        except Exception:
+            return None
+        if point.size < 3 or not np.all(np.isfinite(point[:3])):
+            return None
+        return np.asarray(point[:3], dtype=float)
+
+    def _add_selected_ray_event_label_actors(self, ray_index: int | None) -> None:
+        if self._renderer is None or ray_index is None or vtkBillboardTextActor3D is None:
+            return
+        paths_by_ray_index = KrakenLayoutEditor._scene_ray_path_by_index(self._current_scene_bundle)
+        path = paths_by_ray_index.get(int(ray_index))
+        if path is None:
+            return
+        events = []
+        for event in list(getattr(path, "events", []) or []):
+            kind = str(getattr(event, "event_kind", "") or "").strip().lower()
+            if kind not in {"surface", "terminal"}:
+                continue
+            label = ray_event_display_label(event)
+            point = self._ray_event_world_point(event)
+            if label and point is not None:
+                events.append((label, point, kind))
+        if not events:
+            return
+        terminal = [item for item in events if item[2] == "terminal"]
+        surface = [item for item in events if item[2] != "terminal"]
+        events = surface[:13] + terminal[:1]
+        _scene_center, scene_span = self._scene_bounds()
+        offset = max(float(scene_span) * 0.006, 0.18)
+        for ordinal, (label, point, _kind) in enumerate(events):
+            try:
+                actor = vtkBillboardTextActor3D()
+                actor.SetInput(str(label))
+                displacement = np.array(
+                    [
+                        offset * (1.0 + 0.18 * (ordinal % 3)),
+                        offset * (0.4 if ordinal % 2 else -0.4),
+                        offset * 0.25,
+                    ],
+                    dtype=float,
+                )
+                label_point = point[:3] + displacement
+                actor.SetPosition(float(label_point[0]), float(label_point[1]), float(label_point[2]))
+                try:
+                    actor.PickableOff()
+                except Exception:
+                    pass
+                try:
+                    text_prop = actor.GetTextProperty()
+                    text_prop.SetFontSize(12)
+                    text_prop.SetColor(0.04, 0.08, 0.16)
+                    text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
+                    text_prop.SetBackgroundOpacity(0.74)
+                    text_prop.SetFrame(1)
+                    text_prop.SetFrameColor(0.96, 0.45, 0.05)
+                except Exception:
+                    pass
+                self._renderer.AddActor(actor)
+                self._ray_event_label_actors.append(actor)
+            except Exception as exc:
+                self.editor.append_debug(f"3D selected-ray label skipped: {exc}")
+                return
+
     def _set_ray_highlight(self, ray_index: int | None) -> None:
-        if ray_index == self._picked_ray_index:
+        if ray_index == self._picked_ray_index and self._ray_event_label_actors:
             return
         if self._renderer is None:
             self._picked_ray_index = ray_index
             return
+        self._clear_ray_event_label_actors(render=False)
         collection = self._renderer.GetActors()
         collection.InitTraversal()
         for _ in range(collection.GetNumberOfItems()):
@@ -7534,6 +7629,7 @@ class Kraken3DInspector(tk.Toplevel):
             if actor_ray_index is None:
                 continue
             self._set_ray_actor_selected(actor, bool(ray_index is not None and actor_ray_index == ray_index))
+        self._add_selected_ray_event_label_actors(ray_index)
         self._picked_ray_index = ray_index
 
     def _remove_optical_axis_highlight_actor(self) -> bool:
@@ -10003,6 +10099,7 @@ class Kraken3DInspector(tk.Toplevel):
         ) -> None:
         if self._renderer is None:
             raise RuntimeError(_VTK_TK_UNAVAILABLE_REASON or "Embedded VTK/Tk viewer unavailable")
+        self._current_scene_bundle = scene_bundle
 
         mesh_items = list(self.editor._scene_surface_meshes(system, scene_bundle, include_reference_surfaces=True))
         rows = list(getattr(self.editor, "rows", []) or [])
@@ -10136,6 +10233,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._hover_step_actor = None
         self._hover_step_outline_actor = None
         self._hover_step_cell_key = None
+        self._ray_event_label_actors = []
         self._mode_badge_actor = None
         self._placement_grid_status_actor = None
         self._hover_status_actor = None
@@ -14264,6 +14362,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._selected_step_label: str | None = None
         self._layout_pick_regions: dict[int, np.ndarray] = {}
         self._layout_ray_pick_regions: list[tuple[int, np.ndarray]] = []
+        self._layout_projected_rays_by_index: dict[int, ProjectedRay2D] = {}
+        self._layout_selected_ray_index: int | None = None
         self._layout_selection_artists: list = []
         self._last_plot_hover_message = ""
         self._external_cad_mesh_cache: dict[str, pv.DataSet] = {}
@@ -24944,11 +25044,90 @@ class KrakenLayoutEditor(tk.Tk):
         if not table.exists(iid):
             self.status_var.set(f"Ray {index} is not available in the current Ray Inspector data.")
             return
+        self._layout_selected_ray_index = index
         table.selection_set(iid)
         table.focus(iid)
         table.see(iid)
         self._populate_ray_inspector_hits()
+        self._update_layout_selection_overlay()
         self.status_var.set(self._ray_terminal_hint_text(index, label=f"Selected ray {index} in Ray Inspector"))
+
+    def _draw_layout_selected_ray_overlay(self, ray_index: int) -> bool:
+        ray = self._layout_projected_rays_by_index.get(int(ray_index))
+        if ray is None or self.ax is None:
+            return False
+        pts = np.asarray(getattr(ray, "points_2d", []), dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 1 or pts.shape[1] < 2:
+            return False
+        pts = pts[np.all(np.isfinite(pts[:, :2]), axis=1)]
+        if pts.shape[0] < 1:
+            return False
+        artists: list = []
+        if pts.shape[0] == 1:
+            artists.append(
+                self.ax.scatter(
+                    pts[:, 0],
+                    pts[:, 1],
+                    s=58,
+                    c="#f97316",
+                    edgecolors="white",
+                    linewidths=1.4,
+                    zorder=982,
+                )
+            )
+        else:
+            underlay, = self.ax.plot(
+                pts[:, 0],
+                pts[:, 1],
+                color="white",
+                linewidth=6.0,
+                alpha=0.94,
+                zorder=980,
+            )
+            overlay, = self.ax.plot(
+                pts[:, 0],
+                pts[:, 1],
+                color="#f97316",
+                linewidth=2.8,
+                alpha=1.0,
+                zorder=981,
+            )
+            artists.extend([underlay, overlay])
+        for ordinal, (label, point, event_kind) in enumerate(projected_ray_event_label_items(ray, limit=14)):
+            marker_size = 42 if event_kind == "terminal" else 34
+            artists.append(
+                self.ax.scatter(
+                    [point[0]],
+                    [point[1]],
+                    s=marker_size,
+                    c="#f97316",
+                    edgecolors="white",
+                    linewidths=1.0,
+                    zorder=984,
+                )
+            )
+            offset_y = 7 if ordinal % 2 == 0 else -15
+            artists.append(
+                self.ax.annotate(
+                    label,
+                    xy=(float(point[0]), float(point[1])),
+                    xytext=(8, offset_y),
+                    textcoords="offset points",
+                    fontsize=8,
+                    color="#111827",
+                    zorder=985,
+                    clip_on=True,
+                    bbox={
+                        "boxstyle": "round,pad=0.24",
+                        "facecolor": "white",
+                        "edgecolor": "#f97316",
+                        "linewidth": 0.8,
+                        "alpha": 0.84,
+                    },
+                )
+            )
+        self._layout_selection_artists = artists
+        return True
 
     def _update_layout_selection_overlay(self, row_index: int | None = None) -> None:
         self._clear_layout_selection_overlay()
@@ -24957,6 +25136,11 @@ class KrakenLayoutEditor(tk.Tk):
                 self.canvas.draw_idle()
             return
         if row_index is None:
+            if self._layout_selected_ray_index is not None:
+                if self._draw_layout_selected_ray_overlay(int(self._layout_selected_ray_index)):
+                    self.canvas.draw_idle()
+                    return
+                self._layout_selected_ray_index = None
             row_index = self._current_selected_row_index()
         if row_index is None:
             if hasattr(self, "canvas"):
@@ -28108,6 +28292,7 @@ class KrakenLayoutEditor(tk.Tk):
         return "break"
 
     def _sync_surface_selection(self, row_index: int | None, *, from_table: bool = False) -> None:
+        self._layout_selected_ray_index = None
         if self._three_d_inspector is not None:
             try:
                 if self._three_d_inspector.winfo_exists() and self._three_d_inspector.available:
@@ -46293,6 +46478,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._clear_layout_selection_overlay()
         self._layout_pick_regions = {}
         self._layout_ray_pick_regions = []
+        self._layout_projected_rays_by_index = {}
         self._last_optics_info = None
         self._last_sequential_focus_diagnostic = {}
         self._analysis_ax = None
@@ -46418,6 +46604,10 @@ class KrakenLayoutEditor(tk.Tk):
 
             # Pick regions from the projected scene avoid a redundant scene rebuild.
             self._layout_pick_regions, self._layout_ray_pick_regions = projected_pick_state(projected)
+            self._layout_projected_rays_by_index = {
+                int(getattr(ray, "ray_index", index)): ray
+                for index, ray in enumerate(list(getattr(projected, "rays", []) or []))
+            }
 
             # Render surfaces, rays, and labels
             with warnings.catch_warnings():
@@ -46584,6 +46774,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._system_cache_has_solids = False
         self._layout_pick_regions = {}
         self._layout_ray_pick_regions = []
+        self._layout_projected_rays_by_index = {}
+        self._layout_selected_ray_index = None
         self._analysis_axes = []
         self._analysis_ax = None
         self._layout_projection_axes = {}
