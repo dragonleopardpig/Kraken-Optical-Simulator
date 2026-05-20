@@ -49,7 +49,7 @@ Estimated branch status:
 | --- | --- | --- | --- |
 | Native non-sequential tracing | Achieved | `██████████ 100%` | Optical solids, branched paths, scatter, detectors, media state, source identity, source/object row separation, path metadata, branch-field propagation, and event accounting are covered by the native non-sequential closure validator. |
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
-| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, categorized view/scene/carry control rows with a toolbar layout validator, direct optical/lens/camera/LED STEP import, a distinct arbitrary-optical STEP overlay slot that does not replace the lens overlay, immediate cursor-attached carry placement for new optical STEP imports, free STEP carry placement, press-hold or drag-to-lift STEP movement with an in-scene center grip, release-to-drop, no OS pointer warping, Esc cancellation with selection clearing, blank-click deselection, middle-drag CAD-style view pan, Ctrl-drag camera pause, default STEP-face hover outlines plus row-backed CAD/STL face hover previews with in-scene assignment badges, a persistent pickable dotted Optical Axis guide independent of ray visibility with pre-click hover highlight and a solid selected-axis overlay after normal snap, two-click STEP-face-normal-to-optical-axis snapping, face-specific row-to-optical-axis anchoring, promotion of positioned STEP overlays to file-backed optical solid rows with default Uncoated interaction face metadata, Open 3D right-click face-function assignment with physics-only interaction-surface semantics and non-pickable assigned-face surface tints, structured Open3DTrace click/assignment/refresh diagnostics, double-sided scene surface actors plus transactional scene refresh that keeps prior valid surface meshes if a trace rebuild returns no or suspiciously incomplete surface meshes, ray-on surface opacity plus final wireframe retention for CAD/STL rows while Object/Image reference disks stay translucent, shared row-geometry-bounded 2D/Open 3D ray display with escaped-tail capping, detector-miss diagnostics capped within the detector plane, selected-ray face/action labels in 2D and embedded Open 3D, suppressed non-physical escaped/missed endpoint disks, explicit CAD/STL placement side-panel entry instead of selection-triggered popups, and Sphinx coverage, hover-highlighted optional single-half-arc in-scene STEP rotation handles with opposed end arrows, active detector footprints, ray-visible miss crosshairs, hover/click terminal diagnostics, and row-sized Object/Image reference display. |
+| 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; Open 3D uses the same world trace envelope, categorized view/scene/carry control rows with a toolbar layout validator, direct optical/lens/camera/LED STEP import, a distinct arbitrary-optical STEP overlay slot that does not replace the lens overlay, immediate cursor-attached carry placement for new optical STEP imports, free STEP carry placement, press-hold or drag-to-lift STEP movement with an in-scene center grip, release-to-drop, no OS pointer warping, Esc cancellation with selection clearing, blank-click deselection, middle-drag CAD-style view pan, Ctrl-drag camera pause, default STEP-face hover outlines plus row-backed CAD/STL face hover previews with in-scene assignment badges, a persistent pickable dotted Optical Axis guide independent of ray visibility with pre-click hover highlight and a solid selected-axis overlay after normal snap, two-click STEP-face-normal-to-optical-axis snapping, face-specific row-to-optical-axis anchoring, promotion of positioned STEP overlays to file-backed optical solid rows with default Uncoated interaction face metadata, Open 3D right-click face-function assignment with physics-only interaction-surface semantics and non-pickable assigned-face surface tints, structured Open3DTrace click/assignment/refresh diagnostics, double-sided scene surface actors plus transactional scene refresh that keeps prior valid surface meshes if a trace rebuild returns no or suspiciously incomplete surface meshes, ray-on surface opacity plus final wireframe retention for CAD/STL rows while Object/Image reference disks are opt-in, shared row-geometry-bounded 2D/Open 3D ray display with escaped-tail capping, detector-miss diagnostics capped within the detector plane, selected-ray face/action labels in 2D and embedded Open 3D, suppressed non-physical escaped/missed endpoint disks, explicit CAD/STL placement side-panel entry instead of selection-triggered popups, and Sphinx coverage, hover-highlighted optional single-half-arc in-scene STEP rotation handles with opposed end arrows, opt-in reference-plane, detector-footprint, terminal-miss, and placement-handle diagnostic toggles, hover/click terminal diagnostics, and top-level Done 2D/Close refresh controls. |
 | Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, Open 3D placement handles with visible grid planes suppressed, snap-aware click/drag translate-rotate handles, imported STEP snap-to-target placement, row-to-target snap constraints, row-to-target normal-orientation constraints, row-to-optical-axis centering with regular rays hidden during target pick, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, per-ray detector aperture status, detector aperture hit/miss reports, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, folded-preview provenance, direct Open 3D mirror-face hits that keep same-solid faces eligible after reflection, and CSV export. |
 | Arbitrary prisms and CAD solids | Achieved | `██████████ 100%` | Face identity, geometry-derived uncoated face-intent suggestions, direct picked-face assignment without Left/Right/Up/Down side labels or inferred output ports, display-only STEP overlay promotion into traceable row-backed optical solids, cascaded row-scoped boundary/volume records, real multi-STL trace coverage, runtime output-port scene bounds, closed-solid media transitions, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
@@ -133,6 +133,10 @@ kraken-vtk-tk-check
   with CAD/target, placement, and orientation category menus, so camera and
   placement tools remain reachable when the window is not wide enough for one
   long button row.
+- Open 3D defaults to a clean physical scene. `Refs`, `Det`, `Miss`, and
+  `Placement handles` are explicit opt-in diagnostics, while `Done 2D` and
+  `Close` on the top row refresh the 2D layout whenever 3D placement,
+  promotion, or direct face assignment changed row metadata.
 - Arbitrary optical STEP, lens, camera, and LED STEP overlays can now be
   imported directly from the Open 3D `CAD / target -> Import STEP` submenu. The
   generic optical STEP entry now uses a separate `optical` overlay slot, so it
@@ -225,14 +229,17 @@ kraken-vtk-tk-check
   detector-plane coordinates, active detector width/height, and original kernel
   terminal reason when available.
 - Active detector/Image footprints are drawn from `SceneTarget3D` detector
-  metadata in 2D, embedded 3D, and legacy 3D. Missed-detector terminal events
-  add an orange crosshair at the projected detector-plane intercept, so the
-  miss can be compared directly with the active aperture.
-- Object/Image reference rows remain scene targets but no longer create default
-  Open 3D placement handles, so the 3D reference size tracks the editable row
-  diameter instead of placement-helper extent. During ray display these
-  reference disks remain translucent and do not receive the physical surface
-  opacity boost used for lenses, prisms, and CAD solids.
+  metadata in 2D and legacy 3D. Embedded Open 3D keeps them behind the `Det`
+  diagnostic toggle so an orange detector footprint cannot be mistaken for a
+  physical CAD face.
+- Missed-detector terminal events still compute the projected detector-plane
+  intercept and aperture miss distance, but embedded Open 3D draws those
+  crosshairs only when `Miss` is enabled. This keeps red/orange terminal
+  diagnostics available without making them look like ray-law stops.
+- Object/Image reference rows remain scene targets. Embedded Open 3D now shows
+  their row-sized reference disks only through the `Refs` diagnostic toggle, so
+  large blue reference planes do not hide placed prisms, mirrors, or STEP
+  optical solids during normal ray-law inspection.
 
 ### Non-Sequential Physics And Metadata
 
@@ -332,10 +339,10 @@ kraken-vtk-tk-check
   a specific row-backed CAD/STL face, that face becomes the centering anchor so
   the user can re-snap a different entrance, exit, or slanted surface without
   editing `Left`/`Right`/`Up`/`Down` labels.
-- Open 3D keeps detector active-footprint overlays visible as scene geometry,
-  but detector-miss crosshairs are ray diagnostics and now follow `Show rays`.
-  Ray Off therefore cannot leave a dense miss-crosshair cloud that dominates
-  the view after a mirror/prism face assignment.
+- Open 3D keeps detector active-footprint overlays, detector-miss crosshairs,
+  row-sized Object/Image reference disks, and placement handles as explicit
+  diagnostics. They are off by default and can be enabled independently through
+  the `Det`, `Miss`, `Refs`, and `Placement handles` controls.
 - Open 3D right-click on a CAD/STL optical face opens a compact function menu:
   `Uncoated`, `Full Reflecting`, `Partial Reflecting / Transmitting`,
   `Absorbing / Mechanical`, or `Unassigned`. The menu writes the same

@@ -33,6 +33,7 @@ def main() -> int:
     rotation_hover = inspect.getsource(Kraken3DInspector._set_rotation_handle_hover)
     debug_trace = inspect.getsource(Kraken3DInspector._debug_trace)
     show_rays_changed = inspect.getsource(Kraken3DInspector._on_show_rays_changed)
+    scene_visibility_changed = inspect.getsource(Kraken3DInspector._on_scene_visibility_changed)
     surface_menu = inspect.getsource(Kraken3DInspector._show_surface_function_context_menu)
     context_assign = inspect.getsource(Kraken3DInspector._assign_row_face_function_from_context)
     context_promote_assign = inspect.getsource(Kraken3DInspector._promote_step_and_assign_face_function)
@@ -87,6 +88,7 @@ def main() -> int:
     row_scene_bounds = inspect.getsource(Kraken3DInspector._row_scene_bounds)
     init = inspect.getsource(Kraken3DInspector.__init__)
     placement_grid = inspect.getsource(Kraken3DInspector._add_scene_placement_grid_overlays)
+    show_scene_placement_handles = inspect.getsource(Kraken3DInspector._show_scene_placement_handles)
     placement_grid_mesh = inspect.getsource(Kraken3DInspector._scene_placement_grid_mesh)
     placement_grid_status = inspect.getsource(Kraken3DInspector._update_placement_grid_status)
     detector_overlays = inspect.getsource(Kraken3DInspector._add_scene_detector_overlays)
@@ -339,10 +341,31 @@ def main() -> int:
             "Promote STEP to Optical Solid Row" in init and "promote_selected_step_to_optical_solid_row" in init,
         ),
         (
+            "Open 3D exposes top-level Done 2D and Close actions",
+            "Done 2D" in init
+            and "finish_stl_placement" in init
+            and "Close" in init
+            and "command=self._on_close" in init,
+        ),
+        (
+            "Open 3D visual diagnostics are opt-in toggles",
+            "show_reference_surfaces_var = tk.BooleanVar(value=False)" in init
+            and "show_detector_overlays_var = tk.BooleanVar(value=False)" in init
+            and "show_terminal_diagnostics_var = tk.BooleanVar(value=False)" in init
+            and "show_placement_handles_var = tk.BooleanVar(value=False)" in init
+            and "scene_visibility_toggled" in scene_visibility_changed,
+        ),
+        (
             "Open 3D STEP promotion refreshes and highlights the created row",
             "promote_imported_step_to_optical_solid_row" in step_promote
             and "highlight_row(row_index)" in step_promote
             and "Assign optical faces/material" in step_promote,
+        ),
+        (
+            "Open 3D STEP promotion and face assignment dirty the 2D refresh path",
+            "_stl_placement_dirty = True" in step_promote
+            and "_stl_placement_dirty = True" in context_assign
+            and "_stl_placement_dirty = True" in context_promote_assign,
         ),
         (
             "STEP promotion writes a file-backed optical solid row",
@@ -515,14 +538,17 @@ def main() -> int:
         ("Open 3D renders scene detector active footprints", "_add_scene_detector_overlays(" in refresh and "scene_target_active_footprint_polylines" in editor_detector_overlays),
         ("Open 3D renders plane-preserving missed-detector projection crosshairs", "_detector_miss_crosshair_polylines_for_display" in editor_detector_overlays and "detector_miss_crosshair" in editor_detector_overlays),
         (
-            "Open 3D hides missed-detector crosshairs when rays are hidden",
-            "include_miss_crosshairs=bool(self.show_rays_var.get())" in refresh
+            "Open 3D keeps detector footprints and miss crosshairs separately opt-in",
+            "include_footprints=bool(self.show_detector_overlays_var.get())" in refresh
+            and "include_miss_crosshairs=bool(self.show_terminal_diagnostics_var.get())" in refresh
+            and "if bool(include_footprints):" in editor_detector_overlays
             and "if bool(include_miss_crosshairs):" in editor_detector_overlays,
         ),
         ("embedded 3D detector overlays are line meshes", "pv.lines_from_points" in detector_overlays and "line_width" in detector_overlays),
         ("legacy 3D includes detector overlays", "_scene_detector_overlay_specs(" in legacy_open_3d and "cap_miss_crosshairs_to_scene=True" in legacy_open_3d),
         ("Open 3D renders row-backed placement handle state", "self._scene_placements_for_3d(scene_bundle)" in placement_grid and "grid_spacing_mm" in placement_grid),
         ("Open 3D suppresses visible placement grid planes", "_scene_placement_grid_mesh(" not in placement_grid and "Placement handles:" in placement_grid),
+        ("Open 3D placement handles are contextual or explicitly enabled", "_show_scene_placement_handles()" in refresh and "_stl_placement_panel_visible()" in show_scene_placement_handles),
         ("Open 3D placement status is a VTK overlay", "vtkTextActor" in placement_grid_status and "Placement handles:" in placement_grid),
         ("Open 3D refresh reports placement grid count", "placement_grid_lines" in refresh and "_update_placement_grid_status" in refresh),
         ("Open 3D placement handles are pickable scene actors", "pick_placement_move" in placement_handles and "_actor_placement_move_map" in pick),

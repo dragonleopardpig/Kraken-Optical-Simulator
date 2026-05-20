@@ -16,7 +16,7 @@ focusing on the 3D controls themselves:
 * use ``Snap STEP Normal->Optical Axis`` to align a picked STEP face normal to a
   straight or bent traced optical axis;
 * use in-scene ``STEP rotation handles`` for repeated vendor-hardware rotations;
-* know when to press ``Done -> 2D``.
+* know when to use ``Done 2D`` or ``Close`` from the 3D view.
 
 The screenshots in this tutorial are generated from the live Tk/VTK UI with:
 
@@ -49,6 +49,16 @@ Start from the fitted vendor prism layout used in
    rays, or imported hardware. Left hold-drag rotates the camera around the
    current view center.
 
+The embedded 3D inspector opens in a clean physical-scene mode. The ``Refs``
+checkbox adds row-sized Object/Image reference disks, ``Det`` adds detector
+active-footprint outlines, ``Miss`` adds detector-miss crosshairs, and
+``Placement handles`` adds row-backed pose handles. These diagnostics are
+independent so a blue reference disk, orange detector aperture, red miss marker,
+or placement handle cannot be mistaken for a ray-law interaction unless the
+user explicitly enables that overlay. The top ``Done 2D`` button and the top
+``Close`` button both refresh the 2D plot when 3D placement, STEP promotion, or
+direct right-click face assignment has changed row metadata.
+
 Use The CAD/STL Placement Handler
 ---------------------------------
 
@@ -74,8 +84,9 @@ covering the 3D scene.
 
 Practical rule: first use ``Fit Axis`` for the gross CAD coordinate convention,
 then use ``X/Y/Z +/-90`` for orientation, then use ``Center X/Y`` and
-``Front On Row`` for placement. Close only hides the panel; ``Done -> 2D`` is
-the button that applies the 3D placement back into the visible 2D layout.
+``Front On Row`` for placement. The side-panel ``Close`` button only hides the
+panel; the top-level ``Done 2D`` or top-level ``Close`` button refreshes the
+visible 2D layout when the 3D view has pending row metadata changes.
 
 Read Active-Mode Badges
 -----------------------
@@ -250,8 +261,9 @@ Common Mistakes
 ---------------
 
 ``I closed the placement panel but the 2D plot did not change.``
-  Closing the placement panel only hides the handler. Press ``Done -> 2D`` or close the
-  3D view when you want the 2D layout refreshed from the edited row pose.
+  Closing the placement panel only hides the handler. Use top-level ``Done 2D``
+  or close the 3D view when you want the 2D layout refreshed from the edited
+  row pose, STEP promotion, or direct face assignment.
 
 ``Fit Axis and X/Y/Z rotation look similar.``
   ``Fit Axis`` maps the CAD model's local coordinate convention onto layout

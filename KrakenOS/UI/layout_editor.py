@@ -5200,6 +5200,10 @@ class Kraken3DInspector(tk.Toplevel):
         self.step_carry_grid_var = tk.StringVar(value=STEP_CARRY_GRID_FREE)
         self.show_rays_var = tk.BooleanVar(value=True)
         self.show_rotation_handles_var = tk.BooleanVar(value=True)
+        self.show_reference_surfaces_var = tk.BooleanVar(value=False)
+        self.show_detector_overlays_var = tk.BooleanVar(value=False)
+        self.show_terminal_diagnostics_var = tk.BooleanVar(value=False)
+        self.show_placement_handles_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="3D inspector ready")
 
         self.columnconfigure(0, weight=1)
@@ -5237,6 +5241,26 @@ class Kraken3DInspector(tk.Toplevel):
                 variable=self.show_rays_var,
                 command=self._on_show_rays_changed,
             ).pack(side="left", padx=(12, 0))
+            ttk.Checkbutton(
+                view_toolbar,
+                text="Refs",
+                variable=self.show_reference_surfaces_var,
+                command=self._on_scene_visibility_changed,
+            ).pack(side="left", padx=(8, 0))
+            ttk.Checkbutton(
+                view_toolbar,
+                text="Det",
+                variable=self.show_detector_overlays_var,
+                command=self._on_scene_visibility_changed,
+            ).pack(side="left", padx=(6, 0))
+            ttk.Checkbutton(
+                view_toolbar,
+                text="Miss",
+                variable=self.show_terminal_diagnostics_var,
+                command=self._on_scene_visibility_changed,
+            ).pack(side="left", padx=(6, 0))
+            ttk.Button(view_toolbar, text="Done 2D", command=self.finish_stl_placement).pack(side="right", padx=(8, 0))
+            ttk.Button(view_toolbar, text="Close", command=self._on_close).pack(side="right", padx=(8, 0))
 
             scene_toolbar = ttk.Frame(toolbar_container)
             scene_toolbar.grid(row=1, column=0, sticky="ew", pady=(4, 0))
@@ -5317,6 +5341,12 @@ class Kraken3DInspector(tk.Toplevel):
                 text="Rotation handles",
                 variable=self.show_rotation_handles_var,
                 command=self._toggle_rotation_handles,
+            ).pack(side="left", padx=(12, 0))
+            ttk.Checkbutton(
+                carry_toolbar,
+                text="Placement handles",
+                variable=self.show_placement_handles_var,
+                command=self._on_scene_visibility_changed,
             ).pack(side="left", padx=(12, 0))
 
             _prepare_vtk_tk_widget(host)
@@ -5710,6 +5740,18 @@ class Kraken3DInspector(tk.Toplevel):
         self._debug_trace("show_rays_toggled", show_rays=bool(self.show_rays_var.get()), counts=self._debug_actor_counts())
         self.refresh_from_editor()
 
+    def _on_scene_visibility_changed(self) -> None:
+        self._debug_trace(
+            "scene_visibility_toggled",
+            show_rays=bool(self.show_rays_var.get()),
+            show_reference_surfaces=bool(self.show_reference_surfaces_var.get()),
+            show_detector_overlays=bool(self.show_detector_overlays_var.get()),
+            show_terminal_diagnostics=bool(self.show_terminal_diagnostics_var.get()),
+            show_placement_handles=bool(self.show_placement_handles_var.get()),
+            counts=self._debug_actor_counts(),
+        )
+        self.refresh_from_editor()
+
     def _show_surface_function_context_menu(self, event) -> str:
         context = self._right_click_pick_context(event)
         if context is None:
@@ -5854,6 +5896,7 @@ class Kraken3DInspector(tk.Toplevel):
         face_id = str(result.get("face_id", "") or "picked face")
         display = str(result.get("function_display", function_label) or function_label)
         self.editor._select_table_row(int(row_index))
+        self._stl_placement_dirty = True
         self._debug_trace(
             "face_assignment_metadata_saved",
             row_index=int(row_index),
@@ -5916,6 +5959,7 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set(self.editor.status_var.get())
             self._debug_trace("promote_step_face_assignment_no_result", label=label, status=self.editor.status_var.get())
             return
+        self._stl_placement_dirty = True
         row_index = int(result.get("row_index", -1))
         self._debug_trace(
             "promote_step_face_assignment_promoted",
@@ -7869,6 +7913,30 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             return True
 
+    def _stl_placement_panel_visible(self) -> bool:
+        popup = getattr(self, "_stl_placement_popup", None)
+        if popup is None:
+            return False
+        try:
+            return bool(popup.winfo_exists())
+        except Exception:
+            return False
+
+    def _show_scene_placement_handles(self) -> bool:
+        try:
+            if bool(self.show_placement_handles_var.get()):
+                return True
+        except Exception:
+            pass
+        return bool(
+            self._stl_placement_panel_visible()
+            or self._placement_target_pick_mode
+            or self._placement_orient_pick_mode
+            or self._placement_orient_ray_mode
+            or self._center_row_to_ray_mode
+            or self._placement_drag_state is not None
+        )
+
     def _toggle_rotation_handles(self) -> None:
         if self._show_rotation_handles():
             self.refresh_from_editor()
@@ -8019,6 +8087,7 @@ class Kraken3DInspector(tk.Toplevel):
         if result is None:
             self.status_var.set(self.editor.status_var.get())
             return
+        self._stl_placement_dirty = True
         self._clear_step_overlay_interaction_state(label)
         row_index = int(result.get("row_index", -1))
         try:
@@ -9660,12 +9729,14 @@ class Kraken3DInspector(tk.Toplevel):
         self,
         scene_bundle: SceneBundle | None,
         *,
+        include_footprints: bool = True,
         include_miss_crosshairs: bool = True,
     ) -> int:
         count = 0
         display_center, display_radius = self._row_scene_bounds()
         for spec in self.editor._scene_detector_overlay_specs(
             scene_bundle,
+            include_footprints=bool(include_footprints),
             include_miss_crosshairs=bool(include_miss_crosshairs),
             cap_miss_crosshairs_to_scene=True,
             display_center=display_center,
@@ -10101,7 +10172,14 @@ class Kraken3DInspector(tk.Toplevel):
             raise RuntimeError(_VTK_TK_UNAVAILABLE_REASON or "Embedded VTK/Tk viewer unavailable")
         self._current_scene_bundle = scene_bundle
 
-        mesh_items = list(self.editor._scene_surface_meshes(system, scene_bundle, include_reference_surfaces=True))
+        show_reference_surfaces = bool(self.show_reference_surfaces_var.get())
+        mesh_items = list(
+            self.editor._scene_surface_meshes(
+                system,
+                scene_bundle,
+                include_reference_surfaces=show_reference_surfaces,
+            )
+        )
         rows = list(getattr(self.editor, "rows", []) or [])
         expected_physical_rows = {
             index
@@ -10152,6 +10230,10 @@ class Kraken3DInspector(tk.Toplevel):
             can_reuse_previous_meshes=can_reuse_previous_meshes,
             suspicious_sparse_rebuild=suspicious_sparse_rebuild,
             show_rays=bool(self.show_rays_var.get()),
+            show_reference_surfaces=show_reference_surfaces,
+            show_detector_overlays=bool(self.show_detector_overlays_var.get()),
+            show_terminal_diagnostics=bool(self.show_terminal_diagnostics_var.get()),
+            show_placement_handles=bool(self.show_placement_handles_var.get()),
             reset_camera=bool(reset_camera),
         )
         if can_reuse_previous_meshes and (missing_file_backed_rows or suspicious_sparse_rebuild):
@@ -10303,13 +10385,14 @@ class Kraken3DInspector(tk.Toplevel):
         assigned_face_overlays = self._add_optical_solid_assigned_face_overlays(system)
         face_role_markers = 0
         virtual_plane_markers = self._add_optical_solid_virtual_plane_overlays(system)
-        if step_carry_label is not None:
+        if step_carry_label is not None or not self._show_scene_placement_handles():
             placement_grid_lines, placement_grid_summary = 0, ""
         else:
             placement_grid_lines, placement_grid_summary = self._add_scene_placement_grid_overlays(scene_bundle)
         detector_overlay_lines = self._add_scene_detector_overlays(
             scene_bundle,
-            include_miss_crosshairs=bool(self.show_rays_var.get()),
+            include_footprints=bool(self.show_detector_overlays_var.get()),
+            include_miss_crosshairs=bool(self.show_terminal_diagnostics_var.get()),
         )
 
         if self.show_rays_var.get():
@@ -26818,6 +26901,7 @@ class KrakenLayoutEditor(tk.Tk):
         self,
         scene_bundle: SceneBundle | None,
         *,
+        include_footprints: bool = True,
         include_miss_crosshairs: bool = True,
         cap_miss_crosshairs_to_scene: bool = False,
         display_center=None,
@@ -26827,23 +26911,24 @@ class KrakenLayoutEditor(tk.Tk):
             return []
         specs: list[dict[str, object]] = []
         targets = list(getattr(scene_bundle, "targets", []) or [])
-        for target in targets:
-            try:
-                row_index = int(getattr(target, "row_index", -1))
-            except Exception:
-                row_index = -1
-            for index, points in enumerate(scene_target_active_footprint_polylines(target)):
-                specs.append(
-                    {
-                        "kind": "detector_active_footprint" if index == 0 else "detector_active_center",
-                        "row_index": row_index,
-                        "points": np.asarray(points, dtype=float),
-                        "color": (0.98, 0.45, 0.05),
-                        "opacity": 0.92 if index == 0 else 0.72,
-                        "line_width": 2.2 if index == 0 else 1.2,
-                        "pickable": index == 0,
-                    }
-                )
+        if bool(include_footprints):
+            for target in targets:
+                try:
+                    row_index = int(getattr(target, "row_index", -1))
+                except Exception:
+                    row_index = -1
+                for index, points in enumerate(scene_target_active_footprint_polylines(target)):
+                    specs.append(
+                        {
+                            "kind": "detector_active_footprint" if index == 0 else "detector_active_center",
+                            "row_index": row_index,
+                            "points": np.asarray(points, dtype=float),
+                            "color": (0.98, 0.45, 0.05),
+                            "opacity": 0.92 if index == 0 else 0.72,
+                            "line_width": 2.2 if index == 0 else 1.2,
+                            "pickable": index == 0,
+                        }
+                    )
 
         if bool(include_miss_crosshairs):
             targets_by_surface = {}
