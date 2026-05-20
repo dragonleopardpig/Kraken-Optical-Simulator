@@ -157,6 +157,7 @@ def main() -> int:
     preview_sampling = inspect.getsource(KrakenLayoutEditor._preview_scene_sampling_mode)
     scene_ray_records = inspect.getsource(KrakenLayoutEditor._iter_3d_scene_ray_records)
     ray_terminal_style = inspect.getsource(KrakenLayoutEditor._ray_terminal_3d_style)
+    bounded_ray_display = inspect.getsource(KrakenLayoutEditor._bounded_3d_ray_points_for_display)
     editor_detector_overlays = inspect.getsource(KrakenLayoutEditor._scene_detector_overlay_specs)
     legacy_open_3d = inspect.getsource(KrakenLayoutEditor._populate_legacy_3d_plotter_scene)
     legacy_replace_rays = inspect.getsource(KrakenLayoutEditor._legacy_3d_replace_rays)
@@ -502,6 +503,13 @@ def main() -> int:
         ("Open 3D missed detector endpoints use status styling", "missed_detector" in ray_terminal_style and "endpoint_color" in ray_terminal_style),
         ("Open 3D refresh draws status-aware ray endpoints", "terminal_status=terminal_status" in refresh and "endpoint_scale" in refresh),
         ("legacy 3D refresh keeps status-aware ray endpoints", "terminal_status in self._iter_3d_scene_ray_records" in legacy_replace_rays and "endpoint_scale" in legacy_replace_rays),
+        (
+            "Open 3D caps escaped/missed terminal tails without changing trace data",
+            "terminal_status" in bounded_ray_display
+            and "max_terminal_length" in bounded_ray_display
+            and '"escaped"' in bounded_ray_display
+            and '"missed_detector"' in bounded_ray_display,
+        ),
         ("embedded 3D missed detector endpoint resolution is higher", "terminal_status == \"missed_detector\"" in endpoint_actor),
         ("Open 3D renders scene detector active footprints", "_add_scene_detector_overlays(" in refresh and "scene_target_active_footprint_polylines" in editor_detector_overlays),
         ("Open 3D renders missed-detector projection crosshairs", "scene_target_detector_miss_crosshair_polylines" in editor_detector_overlays and "detector_miss_crosshair" in editor_detector_overlays),

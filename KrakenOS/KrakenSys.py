@@ -3931,11 +3931,15 @@ class system():
                     ray_state = next_ray_state
                     PrevN = float(ray_state.current_index)
                     stl_exit_continuation = self.__NsTraceShouldNudgeAfterStlExit(j, jj, N, CurrN, sign, face_override)
-                    if (
+                    if stl_exit_continuation:
+                        skip_surface_once = int(j)
+                        RayOrig = self.__NudgeNsBranchOrigin(pTarget, ResVec)
+                        self.RAY.append(np.asarray(pTarget, dtype=float))
+                    elif (
                         isinstance(face_override, dict)
                         and bool(face_override.get("external_reflection"))
-                    ) or stl_exit_continuation:
-                        skip_surface_once = int(j)
+                    ):
+                        skip_surface_once = None
                         RayOrig = self.__NudgeNsBranchOrigin(pTarget, ResVec)
                         self.RAY.append(np.asarray(pTarget, dtype=float))
                     else:
@@ -4228,11 +4232,15 @@ class system():
                 ray_state = next_ray_state
                 PrevN = float(ray_state.current_index)
                 stl_exit_continuation = self.__NsTraceShouldNudgeAfterStlExit(j, jj, N, CurrN, sign, face_override)
-                if (
+                if stl_exit_continuation:
+                    skip_surface_once = int(j)
+                    RayOrig = self.__NudgeNsBranchOrigin(pTarget, ResVec)
+                    self.RAY.append(np.asarray(pTarget, dtype=float))
+                elif (
                     isinstance(face_override, dict)
                     and bool(face_override.get("external_reflection"))
-                ) or stl_exit_continuation:
-                    skip_surface_once = int(j)
+                ):
+                    skip_surface_once = None
                     RayOrig = self.__NudgeNsBranchOrigin(pTarget, ResVec)
                     self.RAY.append(np.asarray(pTarget, dtype=float))
                 else:

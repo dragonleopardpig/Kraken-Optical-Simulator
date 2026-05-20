@@ -83,6 +83,10 @@ Current UI coverage:
   missed detector, absorbed, escaped, and stopped terminal markers visible;
   missed detector/Image endpoints use a distinct orange marker in 2D and
   Open 3D
+* Open 3D caps only the display tail for escaped or missed-detector rays to
+  the current scene scale, so a far off-screen miss does not expand the camera
+  clipping range; canonical ray events, Ray Inspector, and CSV exports keep the
+  full terminal diagnostic
 * active detector/Image footprints are drawn from the scene target detector
   metadata in 2D, embedded 3D, and legacy 3D. A missed-detector terminal adds
   an orange crosshair at the projected detector-plane intercept, making the
@@ -319,6 +323,9 @@ Ray Inspector CSV also includes normalized per-ray aperture status fields next
 to the raw detector-miss event metadata.
 In Open 3D, detector active-footprint overlays remain scene geometry, but
 detector-miss crosshairs follow ``Show rays`` because they are ray diagnostics.
+Escaped and missed-detector ray tails are capped in Open 3D display only; the
+underlying terminal event still records the detector-plane projection, miss
+distance, and kernel termination reason.
 
 Vendor CAD caveat: a downloaded cube beam-splitter STEP is usually mechanical
 geometry, not a complete optical prescription. Import it for external cube

@@ -10215,6 +10215,7 @@ class Kraken3DInspector(tk.Toplevel):
                     ray_pts,
                     center,
                     radius,
+                    terminal_status=terminal_status,
                 )
                 if was_bounded:
                     bounded_ray_count += 1
@@ -25889,6 +25890,7 @@ class KrakenLayoutEditor(tk.Tk):
                 ray_pts,
                 ray_center,
                 ray_scene_radius,
+                terminal_status=terminal_status,
             )
             try:
                 line = pv.lines_from_points(display_ray_pts)
@@ -26323,6 +26325,8 @@ class KrakenLayoutEditor(tk.Tk):
         points,
         center,
         radius: float,
+        *,
+        terminal_status: str = "",
     ) -> tuple[np.ndarray, bool]:
         try:
             pts = np.asarray(points, dtype=float)
@@ -26348,6 +26352,15 @@ class KrakenLayoutEditor(tk.Tk):
             scene_radius = 1.0
         if not np.isfinite(scene_radius) or scene_radius <= 0.0:
             scene_radius = 1.0
+        status = str(terminal_status or "").strip().lower()
+        terminal_was_capped = False
+        if status in {"escaped", "missed_detector"} and pts.shape[0] >= 2:
+            terminal_segment = pts[-1] - pts[-2]
+            terminal_length = float(np.linalg.norm(terminal_segment))
+            max_terminal_length = max(25.0, min(scene_radius * 0.35, 250.0))
+            if np.isfinite(terminal_length) and terminal_length > max_terminal_length > 0.0:
+                pts[-1] = pts[-2] + (terminal_segment / terminal_length) * max_terminal_length
+                terminal_was_capped = True
         display_radius = max(scene_radius * 3.0, 250.0)
         offsets = pts - scene_center
         distances = np.linalg.norm(offsets, axis=1)
@@ -26355,7 +26368,7 @@ class KrakenLayoutEditor(tk.Tk):
         if np.any(too_far):
             safe_distances = np.maximum(distances[too_far], 1.0e-12)
             pts[too_far] = scene_center + offsets[too_far] * (display_radius / safe_distances)[:, None]
-        bounded = bool((not np.all(finite)) or np.any(too_far))
+        bounded = bool(terminal_was_capped or (not np.all(finite)) or np.any(too_far))
         if pts.shape[0] > 2:
             deltas = np.linalg.norm(np.diff(pts, axis=0), axis=1)
             keep = np.concatenate(([True], deltas > 1.0e-9))
@@ -27471,6 +27484,7 @@ class KrakenLayoutEditor(tk.Tk):
                 ray_pts,
                 ray_center,
                 ray_scene_radius,
+                terminal_status=terminal_status,
             )
             try:
                 line = pv.lines_from_points(display_ray_pts)

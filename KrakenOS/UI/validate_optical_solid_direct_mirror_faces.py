@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import inspect
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import KrakenOS.KrakenSys as KrakenSys
 
 from KrakenOS.UI import layout_editor as le
 from KrakenOS.UI.layout_editor import cluster_optical_solid_planar_faces, solve_optical_solid_left_input_pose
@@ -135,6 +137,15 @@ def validate_optical_solid_direct_mirror_faces() -> list[DirectMirrorFaceCheck]:
             len(solid_interactions) >= 4
             and solid_interactions[1:3] == ["reflect", "reflect"],
             detail,
+        )
+    )
+    system_source = inspect.getsource(KrakenSys.system)
+    checks.append(
+        DirectMirrorFaceCheck(
+            "external mirror reflection keeps same-solid faces eligible",
+            system_source.count('bool(face_override.get("external_reflection"))') >= 2
+            and system_source.count("skip_surface_once = None") >= 2,
+            "external reflection nudges the origin but no longer skips the whole optical-solid row",
         )
     )
     return checks
