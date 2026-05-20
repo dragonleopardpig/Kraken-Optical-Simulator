@@ -9844,12 +9844,15 @@ class Kraken3DInspector(tk.Toplevel):
             return
         self._step_rotation_active_label = label
         self.editor.select_step_component(label)
-        self.editor.rotate_step_axis(label, axis, float(delta_deg))
+        next_angles = self.editor.rotate_step_world_axis(label, axis, float(delta_deg))
+        if next_angles is None:
+            self.status_var.set(self.editor.status_var.get())
+            return
         self.status_var.set(
-            f"{label.upper()} STEP {axis.upper()}{float(delta_deg):+.0f} deg -> "
-            f"X={self.editor._step_x_rotation_deg(label):.0f}, "
-            f"Y={self.editor._step_y_rotation_deg(label):.0f}, "
-            f"Z={self.editor._step_roll_deg(label):.0f} deg."
+            f"{label.upper()} STEP world {axis.upper()}{float(delta_deg):+.0f} deg -> "
+            f"X={next_angles[0]:.0f}, "
+            f"Y={next_angles[1]:.0f}, "
+            f"Z={next_angles[2]:.0f} deg."
         )
 
     def _update_placement_grid_status(self, text: str, *, render: bool = True) -> None:
@@ -11032,7 +11035,7 @@ class Kraken3DInspector(tk.Toplevel):
 
     def _apply_scene_placement_rotate_handle(self, row_index: int, axis: str, delta_deg: float) -> None:
         try:
-            result = self.editor.rotate_scene_row_pose(int(row_index), str(axis), float(delta_deg))
+            result = self.editor.rotate_scene_row_pose_world_axis(int(row_index), str(axis), float(delta_deg))
         except Exception as exc:
             self.status_var.set(f"Placement rotate failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"3D placement rotate failed: {exc}")
@@ -16978,6 +16981,74 @@ class KrakenLayoutEditor(tk.Tk):
             "scene_placement_settings": settings,
         }
 
+    def rotate_scene_row_pose_world_axis(self, row_index: int, axis: str, delta_deg: float) -> dict[str, object]:
+        try:
+            row_index = int(row_index)
+        except Exception as exc:
+            raise RuntimeError("Invalid row index for 3D placement rotation") from exc
+        if not (0 <= row_index < len(self.rows)):
+            raise RuntimeError("3D placement rotation row is outside the table")
+        axis_key = str(axis or "").strip().lower()
+        if axis_key not in {"x", "y", "z"}:
+            raise RuntimeError(f"Unknown 3D placement rotation axis: {axis}")
+        try:
+            delta = float(delta_deg)
+        except Exception as exc:
+            raise RuntimeError("Invalid 3D placement rotation step") from exc
+        if not np.isfinite(delta) or abs(delta) <= 1e-12:
+            raise RuntimeError("3D placement rotation step is zero or non-finite")
+        row = self.rows[row_index]
+        before = (float(row.tilt_x), float(row.tilt_y), float(row.tilt_z))
+        current_matrix = _rotation_matrix_from_kraken_tilts(*before)
+        delta_matrix = self._world_axis_rotation_matrix(axis_key, delta)
+        next_tilts = tuple(float(value) for value in optical_solid_metadata.kraken_tilts_from_rotation_matrix(delta_matrix @ current_matrix))
+        history_started = False
+        if "_history_restoring" in self.__dict__ and "_history_pending_state" in self.__dict__:
+            try:
+                self._begin_history_capture()
+                history_started = True
+            except Exception:
+                history_started = False
+        row.tilt_x, row.tilt_y, row.tilt_z = next_tilts
+        row.advanced = dict(row.advanced or {})
+        settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
+        settings["last_rotate_axis"] = axis_key
+        settings["last_rotate_delta_deg"] = float(delta)
+        settings["last_rotate_step_deg"] = abs(float(delta))
+        settings["last_rotate_mode"] = "world_axis"
+        row.advanced[SCENE_PLACEMENT_ADVANCED_ATTR] = settings
+        if "table" in self.__dict__:
+            try:
+                self._sync_table()
+                self._select_table_row(row_index)
+            except Exception:
+                pass
+        if history_started:
+            self._commit_history_capture()
+        try:
+            self._mark_plot_update_pending()
+        except Exception:
+            pass
+        self.append_debug(
+            "3D placement world-axis rotate S{row}: axis={axis} delta={delta:.6g} deg "
+            "Tilt=({x:.6g},{y:.6g},{z:.6g})".format(
+                row=row_index,
+                axis=axis_key.upper(),
+                delta=float(delta),
+                x=float(row.tilt_x),
+                y=float(row.tilt_y),
+                z=float(row.tilt_z),
+            )
+        )
+        return {
+            "row_index": row_index,
+            "axis": axis_key,
+            "delta_deg": float(delta),
+            "before_deg": before,
+            "after_deg": next_tilts,
+            "scene_placement_settings": settings,
+        }
+
     def _surface_origin_for_rows(self, rows: list[SurfaceRow], row_index: int) -> np.ndarray:
         transform = self._surface_transform_for_rows(rows, int(row_index))
         return np.asarray(transform[:3, 3], dtype=float)
@@ -18633,6 +18704,59 @@ class KrakenLayoutEditor(tk.Tk):
         self.status_var.set(f"{label.upper()} STEP {axis.upper()} rotation: {next_angle:.0f} deg")
         self._refresh_open_3d_views(step_label=label)
 
+    def rotate_step_world_axis(self, label: str, axis: str, delta_deg: float) -> tuple[float, float, float] | None:
+        label = str(label).strip().lower()
+        axis_key = str(axis).strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET or axis_key not in {"x", "y", "z"}:
+            return None
+        path = self._step_path_for_label(label)
+        if path is None:
+            self.status_var.set(f"No {label} STEP is imported.")
+            return None
+        try:
+            delta = float(delta_deg)
+        except Exception:
+            self.status_var.set("STEP rotation handle: invalid rotation step.")
+            return None
+        if not np.isfinite(delta) or abs(delta) <= 1e-12:
+            self.status_var.set("STEP rotation handle: rotation step is zero or non-finite.")
+            return None
+        current_angles = self._step_rotation_deg_tuple(label)
+        current_matrix = self._step_rotation_matrix_from_angles(*current_angles)
+        delta_matrix = self._world_axis_rotation_matrix(axis_key, delta)
+        next_angles = self._step_angles_from_rotation_matrix(delta_matrix @ current_matrix)
+        current_offset = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
+        current_mesh = self._transformed_imported_step_mesh_for_label(label)
+        try:
+            current_center = np.asarray(current_mesh.center, dtype=float).reshape(3) if current_mesh is not None else None
+        except Exception:
+            current_center = None
+        self._set_step_rotation_deg_tuple(label, next_angles)
+        try:
+            rotated_mesh = self._transformed_imported_step_mesh_for_label(label)
+            rotated_center = np.asarray(rotated_mesh.center, dtype=float).reshape(3) if rotated_mesh is not None else None
+        finally:
+            self._set_step_rotation_deg_tuple(label, current_angles)
+        next_offset = current_offset
+        if (
+            current_center is not None
+            and rotated_center is not None
+            and np.all(np.isfinite(current_center))
+            and np.all(np.isfinite(rotated_center))
+        ):
+            next_offset = current_offset + (current_center - rotated_center)
+        self._begin_history_capture()
+        self._set_step_rotation_deg_tuple(label, next_angles)
+        self._set_step_placement_offset_xyz(label, next_offset)
+        self._selected_step_label = label
+        self._commit_history_capture()
+        self.status_var.set(
+            f"{label.upper()} STEP world {axis_key.upper()}{delta:+.0f} deg -> "
+            f"X={next_angles[0]:.0f}, Y={next_angles[1]:.0f}, Z={next_angles[2]:.0f} deg"
+        )
+        self._refresh_open_3d_views(step_label=label)
+        return next_angles
+
     def rotate_selected_step_axis(self, axis: str, delta_deg: float) -> None:
         label = self._selected_step_label
         if label not in STEP_OVERLAY_LABEL_SET:
@@ -19207,6 +19331,20 @@ class KrakenLayoutEditor(tk.Tk):
         row_index = int(row_index)
         target = self._surface_reference_world_point(row_index)
         return self.center_step_axis_on_world_point(label, target, row_index=row_index)
+
+    @staticmethod
+    def _world_axis_rotation_matrix(axis: str, angle_deg: float) -> np.ndarray:
+        angle = np.deg2rad(float(angle_deg))
+        cos_a = float(np.cos(angle))
+        sin_a = float(np.sin(angle))
+        axis_key = str(axis or "").strip().lower()
+        if axis_key == "x":
+            return np.asarray(((1.0, 0.0, 0.0), (0.0, cos_a, -sin_a), (0.0, sin_a, cos_a)), dtype=float)
+        if axis_key == "y":
+            return np.asarray(((cos_a, 0.0, sin_a), (0.0, 1.0, 0.0), (-sin_a, 0.0, cos_a)), dtype=float)
+        if axis_key == "z":
+            return np.asarray(((cos_a, -sin_a, 0.0), (sin_a, cos_a, 0.0), (0.0, 0.0, 1.0)), dtype=float)
+        raise ValueError(f"Unknown world rotation axis: {axis}")
 
     @staticmethod
     def _step_rotation_matrix_from_angles(x_deg: float, y_deg: float, z_deg: float) -> np.ndarray:

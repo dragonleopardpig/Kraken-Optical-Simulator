@@ -117,7 +117,7 @@ def main() -> int:
     placement_preview_named_normal = inspect.getsource(Kraken3DInspector.preview_selected_row_normal_target)
     placement_orient_named_normal = inspect.getsource(Kraken3DInspector.orient_selected_row_to_named_normal_target)
     editor_translate = inspect.getsource(KrakenLayoutEditor.translate_scene_row_pose)
-    editor_rotate = inspect.getsource(KrakenLayoutEditor.rotate_scene_row_pose)
+    editor_rotate = inspect.getsource(KrakenLayoutEditor.rotate_scene_row_pose_world_axis)
     editor_step_translate = inspect.getsource(KrakenLayoutEditor.translate_step_overlay)
     editor_step_promote = inspect.getsource(KrakenLayoutEditor.promote_imported_step_to_optical_solid_row)
     editor_step_snap = inspect.getsource(KrakenLayoutEditor.snap_step_overlay_center_to_world_point)
@@ -185,7 +185,7 @@ def main() -> int:
         ("STEP rotation handles hover-highlight before click", "_set_rotation_handle_hover(actor_key)" in mouse_move and "STEP rotation handle: click" in mouse_move and "SetColor(1.0, 0.78, 0.08)" in rotation_hover),
         ("STEP rotation handles can be hidden from the toolbar", "show_rotation_handles_var" in init and "_toggle_rotation_handles" in init and "_show_rotation_handles()" in step_rotate_handles and "_remove_step_rotation_handle_actors" in rotation_toggle),
         ("STEP rotation arcs show opposed start/end arrowheads", "pv.Arrow" in rotation_arc_mesh and "point_array[0] - point_array[1]" in rotation_arc_mesh and "point_array[-1] - point_array[-2]" in rotation_arc_mesh),
-        ("STEP rotation handle rotates selected component", "rotate_step_axis(label, axis" in step_rotate_pick),
+        ("STEP rotation handle rotates selected component around the visible world axis", "rotate_step_world_axis(label, axis" in step_rotate_pick),
         (
             "Open 3D interaction trace captures clicks, face assignment, and refresh counts",
             "_open3d_debug_seq" in init
@@ -498,7 +498,7 @@ def main() -> int:
         ("Open 3D placement handles write through row pose service", "translate_scene_row_pose" in placement_handle_pick),
         ("placement translate service writes Desp and ScenePlacement metadata", "desp_x" in editor_translate and "SCENE_PLACEMENT_ADVANCED_ATTR" in editor_translate),
         ("Open 3D placement rotation handles are pickable scene actors", "pick_placement_rotate" in placement_rotate_handles and "_actor_placement_rotate_map" in pick),
-        ("Open 3D placement rotation handles write through row pose service", "rotate_scene_row_pose" in placement_rotate_pick),
+        ("Open 3D placement rotation handles write through world-axis row pose service", "rotate_scene_row_pose_world_axis" in placement_rotate_pick),
         ("placement rotate service writes Tilt and ScenePlacement metadata", "tilt_x" in editor_rotate and "SCENE_PLACEMENT_ADVANCED_ATTR" in editor_rotate),
         ("Open 3D placement drag starts from picked handle actors", "_placement_drag_state_from_current_pick()" in bindings and "_placement_handle_info_for_actor_key" in placement_drag_start),
         ("Open 3D placement drag suppresses camera drag while active", "_apply_placement_drag_motion(dx, dy)" in bindings and "_rotate_camera_fixed_drag(dx, dy)" in bindings),

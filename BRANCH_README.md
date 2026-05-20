@@ -142,8 +142,9 @@ kraken-vtk-tk-check
   in-scene rotation handles. Each selected component gets one colored half-arc
   per X/Y/Z rotation axis, with opposed end arrows so the handle is visually
   unambiguous. Hovering a handle highlights it before click, and clicking
-  applies a 90 degree rotation immediately around the selected STEP component
-  center. If the pointer is not inside the 3D canvas when the
+  applies a 90 degree rotation around the visible world axis of that handle
+  immediately around the selected STEP component center. If the pointer is not
+  inside the 3D canvas when the
   file dialog closes, the first in-canvas pointer motion attaches the STEP
   center to the cursor plane so the component does not carry a large cursor
   offset. The generic optical STEP entry preserves all STEP components instead
@@ -286,8 +287,9 @@ kraken-vtk-tk-check
 - Open 3D placement rotation handles can rotate the selected surface row around
   global X/Y/Z by the row's `ScenePlacement.snap_deg` when snap is enabled, or
   by a coarse 15 degree step when snap is off. Rotation handles use one half-arc
-  per axis with opposed start/end arrowheads and can be hidden with the Open 3D
-  `Rotation handles` checkbox.
+  per axis with opposed start/end arrowheads; clicking a handle applies a
+  world-axis rotation matching the visible ring and can be hidden with the Open
+  3D `Rotation handles` checkbox.
   The rotation writes `TiltX/Y/Z` and `ScenePlacement` metadata through the same
   history/table path
   as other row pose edits.

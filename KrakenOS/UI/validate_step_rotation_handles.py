@@ -67,29 +67,26 @@ def main() -> int:
         if not any(int(getattr(record[0], "n_cells", 0)) > 32 for record in records):
             raise AssertionError("STEP rotation handles did not include arrowhead geometry.")
 
-        center_before = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
-        inspector._apply_step_rotation_handle("lens", "x", 90.0)
-        center_after_x = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
-        inspector._apply_step_rotation_handle("lens", "y", 90.0)
-        center_after_y = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
-        inspector._apply_step_rotation_handle("lens", "z", 90.0)
-        center_after_z = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
-        if center_before != center_after_x or center_before != center_after_y or center_before != center_after_z:
-            raise AssertionError(
-                "STEP rotation handles should rotate immediately around the component center, "
-                f"got before={center_before}, after={center_after_x}/{center_after_y}/{center_after_z}."
-            )
-        if (
-            float(app.lens_step_rotation_x_deg) != 90.0
-            or float(app.lens_step_rotation_y_deg) != 90.0
-            or float(app.lens_step_rotation_z_deg) != 90.0
-        ):
-            raise AssertionError(
-                "STEP rotation handles did not write through to the persistent lens STEP rotation state."
-            )
+        for axis in ("x", "y", "z"):
+            app._set_step_rotation_deg_tuple("lens", (25.0, 40.0, 65.0))
+            before_matrix = app._step_rotation_matrix_from_angles(*app._step_rotation_deg_tuple("lens"))
+            expected_matrix = app._world_axis_rotation_matrix(axis, 90.0) @ before_matrix
+            center_before = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
+            inspector._apply_step_rotation_handle("lens", axis, 90.0)
+            center_after = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
+            after_matrix = app._step_rotation_matrix_from_angles(*app._step_rotation_deg_tuple("lens"))
+            if not le.np.allclose(after_matrix, expected_matrix, atol=1e-8):
+                raise AssertionError(f"STEP {axis.upper()} handle did not apply a world-axis rotation.")
+            if center_before != center_after:
+                raise AssertionError(
+                    "STEP rotation handles should rotate immediately around the component center, "
+                    f"got before={center_before}, after={center_after} for axis {axis!r}."
+                )
         if app._selected_step_label != "lens" or inspector._step_rotation_active_label != "lens":
             raise AssertionError("STEP rotation handle did not preserve the selected STEP component.")
 
+        app._set_step_rotation_deg_tuple("lens", (0.0, 0.0, 0.0))
+        app._set_step_placement_offset_xyz("lens", (0.0, 0.0, 0.0))
         app.translate_step_overlay("lens", (1.0, -2.0, 3.0), grid_spacing_mm=1.0)
         if app._step_placement_offset_xyz("lens") != (1.0, -2.0, 3.0):
             raise AssertionError("STEP carry placement did not write persistent 3D placement offset state.")
