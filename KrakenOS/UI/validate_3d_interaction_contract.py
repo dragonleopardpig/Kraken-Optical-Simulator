@@ -192,7 +192,7 @@ def main() -> int:
         ("STEP rotation handles are pickable scene actors", "pick_step_rotate" in step_rotate_handles and "_actor_step_rotate_map" in pick),
         ("STEP rotation handles hover-highlight before click", "_set_rotation_handle_hover(actor_key)" in mouse_move and "STEP rotation handle: click" in mouse_move and "SetColor(1.0, 0.78, 0.08)" in rotation_hover),
         ("STEP rotation handles can be hidden from the toolbar", "show_rotation_handles_var" in init and "_toggle_rotation_handles" in init and "_show_rotation_handles()" in step_rotate_handles and "_remove_step_rotation_handle_actors" in rotation_toggle),
-        ("STEP rotation arcs show opposed start/end arrowheads", "pv.Arrow" in rotation_arc_mesh and "point_array[0] - point_array[1]" in rotation_arc_mesh and "point_array[-1] - point_array[-2]" in rotation_arc_mesh),
+        ("STEP rotation arcs show opposed start/end cone arrowheads", "pv.Cone" in rotation_arc_mesh and "point_array[0] - point_array[1]" in rotation_arc_mesh and "point_array[-1] - point_array[-2]" in rotation_arc_mesh),
         ("STEP rotation handle rotates selected component around the visible world axis", "rotate_step_world_axis(label, axis" in step_rotate_pick),
         (
             "Open 3D interaction trace captures clicks, face assignment, and refresh counts",

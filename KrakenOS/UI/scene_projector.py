@@ -601,7 +601,10 @@ def _bounded_ray_points_for_projection(
     elif status == "escaped" and pts.shape[0] >= 2:
         terminal_segment = pts[-1] - pts[-2]
         terminal_length = float(np.linalg.norm(terminal_segment))
-        max_terminal_length = max(25.0, min(scene_radius * 0.35, 250.0))
+        # Escaped rays are display diagnostics.  Keep the full trace metadata,
+        # but draw a scene-envelope tail long enough to show the output
+        # direction without letting one distant miss dominate autoscale.
+        max_terminal_length = max(75.0, min(scene_radius * 1.25, 600.0))
         if np.isfinite(terminal_length) and terminal_length > max_terminal_length > 0.0:
             pts[-1] = pts[-2] + (terminal_segment / terminal_length) * max_terminal_length
             terminal_was_capped = True

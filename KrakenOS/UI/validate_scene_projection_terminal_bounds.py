@@ -75,8 +75,8 @@ def validate_scene_projection_terminal_bounds() -> list[ProjectionBoundsCheck]:
     escaped_y_span = float(escaped_projected.bounds.y_max - escaped_projected.bounds.y_min)
     checks.append(
         ProjectionBoundsCheck(
-            "escaped terminal tails are display-capped before 2D autoscale",
-            escaped_y_min > -1000.0 and escaped_y_span < 1000.0,
+            "escaped terminal tails are scene-envelope-capped before 2D autoscale",
+            escaped_y_min < -300.0 and escaped_y_min > -1000.0 and escaped_y_span < 1000.0,
             f"y_min={escaped_y_min:.6g}, span={escaped_y_span:.6g}, terminal={escaped_points[-1].tolist()}",
         )
     )

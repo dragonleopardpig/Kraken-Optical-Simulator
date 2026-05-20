@@ -9884,15 +9884,17 @@ class Kraken3DInspector(tk.Toplevel):
                 if norm <= 1e-12 or not np.isfinite(norm):
                     continue
                 direction = tangent / norm
-                start = point_array[index] - direction * arrow_scale * 0.34
+                tip_height = max(float(arrow_scale) * 0.78, float(tube_radius) * 8.0)
+                tip_radius = max(float(tube_radius) * 2.0, float(arrow_scale) * 0.075)
+                tip_point = point_array[index]
+                center_point = tip_point - direction * (tip_height * 0.5)
                 parts.append(
-                    pv.Arrow(
-                        start=tuple(float(value) for value in start),
+                    pv.Cone(
+                        center=tuple(float(value) for value in center_point),
                         direction=tuple(float(value) for value in direction),
-                        scale=float(arrow_scale),
-                        tip_length=0.55,
-                        tip_radius=max(float(tube_radius) * 2.7, arrow_scale * 0.14),
-                        shaft_radius=max(float(tube_radius) * 0.65, arrow_scale * 0.035),
+                        height=float(tip_height),
+                        radius=float(tip_radius),
+                        resolution=24,
                     )
                 )
         except Exception:
@@ -26869,7 +26871,11 @@ class KrakenLayoutEditor(tk.Tk):
         elif status == "escaped" and pts.shape[0] >= 2:
             terminal_segment = pts[-1] - pts[-2]
             terminal_length = float(np.linalg.norm(terminal_segment))
-            max_terminal_length = max(25.0, min(scene_radius * 0.35, 250.0))
+            # Escaped rays are display diagnostics.  Keep the full trace
+            # metadata, but draw a scene-envelope tail long enough to show the
+            # output direction without letting one distant miss dominate the
+            # renderer bounds.
+            max_terminal_length = max(75.0, min(scene_radius * 1.25, 600.0))
             if np.isfinite(terminal_length) and terminal_length > max_terminal_length > 0.0:
                 pts[-1] = pts[-2] + (terminal_segment / terminal_length) * max_terminal_length
                 terminal_was_capped = True

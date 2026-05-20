@@ -333,12 +333,13 @@ Ray Inspector CSV also includes normalized per-ray aperture status fields next
 to the raw detector-miss event metadata.
 In Open 3D, detector active-footprint overlays remain scene geometry, but
 detector-miss crosshairs follow ``Show rays`` because they are ray diagnostics.
-Escaped ray tails are capped in 2D and Open 3D display only, so a far escaped
-ray cannot collapse YZ/XZ/XY autoscale. Missed-detector diagnostics are capped
-within the detector plane and do not draw endpoint spheres, so a displayed miss
-cannot look like an absorptive stop away from a surface. The underlying
-terminal event still records the full detector-plane
-projection, miss distance, and kernel termination reason.
+Escaped ray tails are capped in 2D and Open 3D display only, using a
+scene-envelope continuation long enough to show the output direction without
+collapsing YZ/XZ/XY autoscale. Missed-detector diagnostics are capped within
+the detector plane and do not draw endpoint spheres, so a displayed miss cannot
+look like an absorptive stop away from a surface. The underlying terminal event
+still records the full detector-plane projection, miss distance, and kernel
+termination reason.
 
 Vendor CAD caveat: a downloaded cube beam-splitter STEP is usually mechanical
 geometry, not a complete optical prescription. Import it for external cube
@@ -419,12 +420,12 @@ target records and do not create default placement handles; stale
 reference marker size follows the editable row diameter. The colored translation
 handles move the selected row along global ``X/Y/Z`` by
 ``ScenePlacement.snap_mm`` when snap is enabled, or by the placement spacing
-when snap is off. The arrowheaded rotation handles use one half-arc per global
-``X/Y/Z`` axis with opposed end arrows, and apply a world-axis rotation matching
-the visible ring by ``ScenePlacement.snap_deg`` when snap is enabled, or by 15
-degrees when snap is off; the Open 3D ``Rotation handles`` checkbox hides these
-arcs when a clear face-picking view is needed. These actions write the
-normal row ``DespX/Y/Z`` and ``TiltX/Y/Z`` fields and record the last placement
+when snap is off. The rotation handles use one half-arc per global ``X/Y/Z``
+axis with sharp opposed cone arrowheads, and apply a world-axis rotation
+matching the visible ring by ``ScenePlacement.snap_deg`` when snap is enabled,
+or by 15 degrees when snap is off; the Open 3D ``Rotation handles`` checkbox
+hides these arcs when a clear face-picking view is needed. These actions write
+the normal row ``DespX/Y/Z`` and ``TiltX/Y/Z`` fields and record the last placement
 edit in ``ScenePlacement`` metadata. Dragging a placement handle accumulates
 screen motion and applies repeated snap steps through the same row-backed
 services; clicking without dragging remains the one-step precise fallback.
