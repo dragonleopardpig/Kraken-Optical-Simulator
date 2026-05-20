@@ -84,10 +84,11 @@ Current UI coverage:
 * dense 2D views suppress redundant detector-hit endpoint glyphs but keep
   missed detector, absorbed, escaped, and stopped terminal markers visible;
   missed detector/Image endpoints use a distinct orange marker in 2D
-* Open 3D caps only display diagnostics: escaped tails are shortened to the
-  current scene scale, and missed-detector points are capped inside the detector
-  plane so the view does not imply an off-plane physical stop; canonical ray
-  events, Ray Inspector, and CSV exports keep the full terminal diagnostic
+* 2D and Open 3D cap only display diagnostics: escaped tails are shortened to
+  the current scene scale before 2D autoscale or 3D rendering, and
+  missed-detector points are capped inside the detector plane so the view does
+  not imply an off-plane physical stop; canonical ray events, Ray Inspector,
+  and CSV exports keep the full terminal diagnostic
 * active detector/Image footprints are drawn from the scene target detector
   metadata in 2D, embedded 3D, and legacy 3D. A missed-detector terminal adds
   an orange crosshair at the projected detector-plane intercept, making the
@@ -326,10 +327,11 @@ Ray Inspector CSV also includes normalized per-ray aperture status fields next
 to the raw detector-miss event metadata.
 In Open 3D, detector active-footprint overlays remain scene geometry, but
 detector-miss crosshairs follow ``Show rays`` because they are ray diagnostics.
-Escaped ray tails are capped in Open 3D display only. Missed-detector
-diagnostics are capped within the detector plane and do not draw endpoint
-spheres, so a displayed miss cannot look like an absorptive stop away from a
-surface. The underlying terminal event still records the full detector-plane
+Escaped ray tails are capped in 2D and Open 3D display only, so a far escaped
+ray cannot collapse YZ/XZ/XY autoscale. Missed-detector diagnostics are capped
+within the detector plane and do not draw endpoint spheres, so a displayed miss
+cannot look like an absorptive stop away from a surface. The underlying
+terminal event still records the full detector-plane
 projection, miss distance, and kernel termination reason.
 
 Vendor CAD caveat: a downloaded cube beam-splitter STEP is usually mechanical

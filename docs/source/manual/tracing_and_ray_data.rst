@@ -241,10 +241,11 @@ projected distance, radial miss, active half-aperture, plane-normal residual,
 and the original kernel terminal reason. The 2D and Open 3D viewers use the
 same terminal status: detector hits, missed detectors, absorbed paths, escaped
 paths, and diagnostic stops remain distinct. Dense 2D plots continue to show
-non-hit terminal markers even when normal detector-hit glyphs are hidden. Open
-3D keeps missed-detector diagnostics on the detector plane and suppresses
-escaped/missed endpoint spheres, so a display-only clipped tail is not confused
-with a physical absorbing surface.
+non-hit terminal markers even when normal detector-hit glyphs are hidden. The
+2D projector and Open 3D cap escaped display tails before autoscale/rendering,
+and Open 3D keeps missed-detector diagnostics on the detector plane while
+suppressing escaped/missed endpoint spheres, so a display-only clipped tail is
+not confused with a physical absorbing surface.
 
 ``Actions -> Detector Aperture Report`` summarizes those same ray-analysis
 records by detector/Image surface. It reports ray/path count, unique source-ray
@@ -497,7 +498,9 @@ target point, target normal, and residual angle error.
 ``validate_layout_plot_controller`` also checks detector-miss terminal
 projection so escaped rays that intersect the detector plane outside the active
 aperture are displayed and exported as misses instead of arbitrary short
-terminal segments.
+terminal segments. ``validate_scene_projection_terminal_bounds`` checks the
+2D projection autoscale guard: escaped terminal tails are display-capped, and
+missed-detector display points remain on the detector plane.
 
 Optical STL prism check
 -----------------------

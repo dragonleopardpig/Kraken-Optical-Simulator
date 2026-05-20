@@ -23,6 +23,7 @@ from .scene_geometry import (
     ray_path_terminal_event,
     ray_path_terminal_metadata,
     ray_path_terminal_status_from_events,
+    scene_target_active_dimensions,
     scene_target_active_footprint_polylines,
     scene_target_detector_miss_crosshair_polylines,
 )
@@ -287,6 +288,8 @@ class SceneProjector2D:
     def _project_rays(self, bundle: SceneBundle) -> list[ProjectedRay2D]:
         projected: list[ProjectedRay2D] = []
         folded_display = bundle.extra.get("folded_ray_display_paths")
+        scene_center, scene_radius = _scene_center_radius_for_projection(bundle)
+        targets_by_surface = _targets_by_trace_surface(bundle)
         for path in bundle.ray_paths:
             folded_pts = None
             if folded_display is not None and path.ray_index < len(folded_display):
@@ -298,6 +301,17 @@ class SceneProjector2D:
             else:
                 pts = np.asarray(path.points_world, dtype=float)
                 if pts.ndim != 2 or pts.shape[0] < 2:
+                    continue
+                terminal_status = ray_path_terminal_status_from_events(path)
+                terminal_target = _missed_detector_target_for_path(path, targets_by_surface)
+                pts, _was_capped = _bounded_ray_points_for_projection(
+                    pts,
+                    scene_center,
+                    scene_radius,
+                    terminal_status=terminal_status,
+                    terminal_target=terminal_target,
+                )
+                if pts.shape[0] < 2:
                     continue
                 display_points = self.project_xyz_points(pts)
             events_2d = self._project_ray_events(path, np.asarray(display_points, dtype=float))
@@ -370,6 +384,235 @@ class SceneProjector2D:
             if r.points_2d.shape[0] >= 2:
                 all_points.append(r.points_2d)
         return BoundsRect.from_points(all_points)
+
+
+def _unit_vector_or_none(value: object) -> np.ndarray | None:
+    try:
+        vector = np.asarray(value, dtype=float).reshape(-1)[:3]
+    except Exception:
+        return None
+    if vector.size < 3 or not np.all(np.isfinite(vector[:3])):
+        return None
+    norm = float(np.linalg.norm(vector[:3]))
+    if not np.isfinite(norm) or norm <= 1.0e-12:
+        return None
+    return vector[:3] / norm
+
+
+def _scene_center_radius_for_projection(bundle: SceneBundle) -> tuple[np.ndarray, float]:
+    points: list[np.ndarray] = []
+    for mesh_item in list(getattr(bundle, "surface_meshes", []) or []):
+        mesh = getattr(mesh_item, "mesh", None)
+        mesh_points = getattr(mesh, "points", None)
+        if mesh_points is None:
+            continue
+        pts = np.asarray(mesh_points, dtype=float)
+        if pts.ndim == 2 and pts.shape[0] and pts.shape[1] >= 3:
+            finite = np.all(np.isfinite(pts[:, :3]), axis=1)
+            if np.any(finite):
+                points.append(pts[finite, :3])
+    for curve in list(getattr(bundle, "surface_curves", []) or []):
+        pts = np.asarray(getattr(curve, "points_world", []), dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 1:
+            continue
+        if pts.shape[1] >= 3:
+            finite = np.all(np.isfinite(pts[:, :3]), axis=1)
+            if np.any(finite):
+                points.append(pts[finite, :3])
+        elif pts.shape[1] >= 2:
+            finite = np.all(np.isfinite(pts[:, :2]), axis=1)
+            if np.any(finite):
+                yz = pts[finite, :2]
+                points.append(np.column_stack((np.zeros(yz.shape[0], dtype=float), yz[:, 1], yz[:, 0])))
+    for target in list(getattr(bundle, "targets", []) or []):
+        footprints = scene_target_active_footprint_polylines(target)
+        if footprints:
+            for pts in footprints:
+                pts = np.asarray(pts, dtype=float)
+                if pts.ndim == 2 and pts.shape[0] and pts.shape[1] >= 3:
+                    finite = np.all(np.isfinite(pts[:, :3]), axis=1)
+                    if np.any(finite):
+                        points.append(pts[finite, :3])
+            continue
+        center = np.asarray(getattr(target, "center_world", []), dtype=float).reshape(-1)[:3]
+        if center.size >= 3 and np.all(np.isfinite(center[:3])):
+            points.append(center[:3].reshape(1, 3))
+    if not points:
+        bounds = getattr(bundle, "bounds", BoundsRect())
+        if not bool(getattr(bounds, "is_empty", True)):
+            pts2 = np.asarray(
+                (
+                    (float(bounds.x_min), float(bounds.y_min)),
+                    (float(bounds.x_max), float(bounds.y_max)),
+                ),
+                dtype=float,
+            )
+            points.append(np.column_stack((np.zeros(pts2.shape[0], dtype=float), pts2[:, 1], pts2[:, 0])))
+    if not points:
+        return np.zeros(3, dtype=float), max(float(getattr(bundle, "max_half", 1.0) or 1.0) * 2.0, 1.0)
+    all_points = np.vstack(points)
+    mins = np.min(all_points, axis=0)
+    maxs = np.max(all_points, axis=0)
+    center = 0.5 * (mins + maxs)
+    radius = max(float(maxs[0] - mins[0]), float(maxs[1] - mins[1]), float(maxs[2] - mins[2]), 1.0)
+    return center, float(radius)
+
+
+def _targets_by_trace_surface(bundle: SceneBundle) -> dict[int, object]:
+    targets: dict[int, object] = {}
+    for target in list(getattr(bundle, "targets", []) or []):
+        surface = getattr(target, "trace_surface", None)
+        try:
+            targets[int(surface)] = target
+        except Exception:
+            continue
+    return targets
+
+
+def _missed_detector_target_for_path(path: object, targets_by_surface: dict[int, object]) -> object | None:
+    if ray_path_terminal_status_from_events(path) != "missed_detector":
+        return None
+    metadata = ray_path_terminal_metadata(path)
+    surface = metadata.get("detector_miss_surface")
+    if surface in (None, ""):
+        event = ray_path_terminal_event(path)
+        if event is not None:
+            surface = getattr(event, "surface_id", None)
+    try:
+        return targets_by_surface.get(int(surface))
+    except Exception:
+        return None
+
+
+def _target_frame_axes_for_projection(target: object | None) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    if target is None:
+        return None
+    try:
+        center = np.asarray(getattr(target, "center_world", ()), dtype=float).reshape(-1)[:3]
+    except Exception:
+        return None
+    if center.size < 3 or not np.all(np.isfinite(center[:3])):
+        return None
+    normal = _unit_vector_or_none(getattr(target, "normal_world", None))
+    if normal is None:
+        return None
+    tangent = _unit_vector_or_none(getattr(target, "tangent_world", None))
+    if tangent is None:
+        tangent = np.asarray((1.0, 0.0, 0.0), dtype=float)
+        if abs(float(np.dot(tangent, normal))) > 0.95:
+            tangent = np.asarray((0.0, 1.0, 0.0), dtype=float)
+    tangent = tangent - normal * float(np.dot(tangent, normal))
+    tangent = _unit_vector_or_none(tangent)
+    if tangent is None:
+        return None
+    bitangent = _unit_vector_or_none(np.cross(normal, tangent))
+    if bitangent is None:
+        return None
+    return center[:3], tangent, bitangent
+
+
+def _display_detector_miss_limit(target: object | None, radius: float) -> float:
+    try:
+        scene_radius = float(radius)
+    except Exception:
+        scene_radius = 1.0
+    if not np.isfinite(scene_radius) or scene_radius <= 0.0:
+        scene_radius = 1.0
+    dimensions = scene_target_active_dimensions(target) if target is not None else None
+    aperture_span = max(dimensions) if dimensions is not None else 1.0
+    scene_limit = max(25.0, min(scene_radius * 0.35, 250.0))
+    return float(max(aperture_span * 1.25, scene_limit))
+
+
+def _display_detector_miss_point_on_plane(
+    point: object,
+    target: object | None,
+    radius: float,
+) -> tuple[np.ndarray | None, bool]:
+    try:
+        terminal = np.asarray(point, dtype=float).reshape(-1)[:3]
+    except Exception:
+        return None, False
+    if terminal.size < 3 or not np.all(np.isfinite(terminal[:3])):
+        return None, False
+    axes = _target_frame_axes_for_projection(target)
+    if axes is None:
+        return terminal[:3], False
+    center, tangent, bitangent = axes
+    rel = terminal[:3] - center
+    u = float(np.dot(rel, tangent))
+    v = float(np.dot(rel, bitangent))
+    limit = _display_detector_miss_limit(target, radius)
+    radial = float(np.hypot(u, v))
+    capped = False
+    if np.isfinite(radial) and radial > limit > 0.0:
+        scale = limit / radial
+        u *= scale
+        v *= scale
+        capped = True
+    display_point = center + tangent * u + bitangent * v
+    if not np.allclose(display_point, terminal[:3], rtol=0.0, atol=1.0e-9):
+        capped = True
+    return display_point, capped
+
+
+def _bounded_ray_points_for_projection(
+    points: object,
+    center: np.ndarray,
+    radius: float,
+    *,
+    terminal_status: str = "",
+    terminal_target: object | None = None,
+) -> tuple[np.ndarray, bool]:
+    try:
+        pts = np.asarray(points, dtype=float)
+    except Exception:
+        return np.empty((0, 3), dtype=float), False
+    if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+        return np.empty((0, 3), dtype=float), False
+    pts = np.array(pts[:, :3], dtype=float, copy=True)
+    finite = np.all(np.isfinite(pts), axis=1)
+    if not np.all(finite):
+        pts = pts[finite]
+    if pts.shape[0] < 2:
+        return np.empty((0, 3), dtype=float), True
+    scene_center = np.asarray(center, dtype=float).reshape(-1)[:3]
+    if scene_center.size != 3 or not np.all(np.isfinite(scene_center)):
+        scene_center = np.zeros(3, dtype=float)
+    try:
+        scene_radius = float(radius)
+    except Exception:
+        scene_radius = 1.0
+    if not np.isfinite(scene_radius) or scene_radius <= 0.0:
+        scene_radius = 1.0
+    status = str(terminal_status or "").strip().lower()
+    terminal_was_capped = False
+    if status == "missed_detector" and terminal_target is not None and pts.shape[0] >= 2:
+        display_point, terminal_was_capped = _display_detector_miss_point_on_plane(
+            pts[-1],
+            terminal_target,
+            scene_radius,
+        )
+        if display_point is not None:
+            pts[-1] = display_point[:3]
+    elif status == "escaped" and pts.shape[0] >= 2:
+        terminal_segment = pts[-1] - pts[-2]
+        terminal_length = float(np.linalg.norm(terminal_segment))
+        max_terminal_length = max(25.0, min(scene_radius * 0.35, 250.0))
+        if np.isfinite(terminal_length) and terminal_length > max_terminal_length > 0.0:
+            pts[-1] = pts[-2] + (terminal_segment / terminal_length) * max_terminal_length
+            terminal_was_capped = True
+    display_radius = max(scene_radius * 3.0, 250.0)
+    offsets = pts - scene_center
+    distances = np.linalg.norm(offsets, axis=1)
+    too_far = distances > display_radius
+    if np.any(too_far):
+        safe_distances = np.maximum(distances[too_far], 1.0e-12)
+        pts[too_far] = scene_center + offsets[too_far] * (display_radius / safe_distances)[:, None]
+    bounded = bool(terminal_was_capped or (not np.all(finite)) or np.any(too_far))
+    if pts.shape[0] < 2:
+        return np.empty((0, 3), dtype=float), True
+    return pts, bounded
 
 
 def _convex_hull_2d(points: np.ndarray) -> np.ndarray:
