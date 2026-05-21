@@ -5684,7 +5684,7 @@ class Kraken3DInspector(tk.Toplevel):
             self.schedule_live_refresh("manual", delay_ms=0)
             return
         try:
-            self.refresh_from_editor(sampling_mode=self.editor._preview_3d_sampling_mode())
+            self._refresh_live_preview_scene("manual")
             self.status_var.set("3D scene traced from Live Controls.")
         except Exception as exc:
             self.status_var.set(f"3D trace failed: {_short_error_message(exc)}")
@@ -5741,14 +5741,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self.editor._sync_left_mode_controls()
             except Exception:
                 pass
-            system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
-                sampling_mode=self.editor._preview_3d_sampling_mode(),
-                update_state=True,
-            )
-            row_names = [row.name for row in self.editor.rows]
-            self.refresh_scene(system, rays, row_names, scene_bundle=scene_bundle, reset_camera=False)
-            self.editor.status_var.set(f"Live Mode trace updated ({reason}).")
-            self._debug_trace("live_mode_refresh", reason=reason)
+            self._refresh_live_preview_scene(reason)
         except Exception as exc:
             self.status_var.set(f"Live Mode trace failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"Open 3D live trace failed: {exc}")
@@ -5757,6 +5750,23 @@ class Kraken3DInspector(tk.Toplevel):
             if self._live_refresh_pending and self._live_mode_enabled():
                 self._live_refresh_pending = False
                 self.schedule_live_refresh("pending scene change", delay_ms=40)
+
+    def _refresh_live_preview_scene(self, reason: str) -> None:
+        system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
+            sampling_mode=self.editor._preview_3d_sampling_mode(),
+            update_state=False,
+            include_live_step_overlays=True,
+        )
+        row_names = self.editor._preview_render_row_names(scene_bundle)
+        self.refresh_scene(system, rays, row_names, scene_bundle=scene_bundle, reset_camera=False)
+        live_records = list(getattr(self.editor, "_last_live_step_overlay_trace_records", []) or [])
+        suffix = " with transient optical STEP" if live_records else ""
+        self.editor.status_var.set(f"Live Mode trace updated{suffix} ({reason}).")
+        self._debug_trace(
+            "live_mode_refresh",
+            reason=reason,
+            transient_step_overlays=len(live_records),
+        )
 
     @staticmethod
     def _camera_preset_from_display_orientation(orientation: str) -> str:
@@ -10670,7 +10680,7 @@ class Kraken3DInspector(tk.Toplevel):
                     and str(getattr(getattr(mesh_item, "row", None), "surface", "") or "") == "Object"
                 )
             ]
-        rows = list(getattr(self.editor, "rows", []) or [])
+        rows = self.editor._preview_render_rows(scene_bundle)
         expected_physical_rows = {
             index
             for index, row in enumerate(rows)
@@ -11085,7 +11095,7 @@ class Kraken3DInspector(tk.Toplevel):
                     sampling_mode=sampling_mode or self.editor._preview_2d_sampling_mode(),
                     update_state=True,
                 )
-            row_names = [row.name for row in self.editor.rows]
+            row_names = self.editor._preview_render_row_names(scene_bundle)
             self.refresh_scene(system, rays, row_names, scene_bundle=scene_bundle, reset_camera=False)
             self.editor.status_var.set("3D inspector updated")
         except Exception as exc:
@@ -19799,6 +19809,197 @@ class KrakenLayoutEditor(tk.Tk):
         builder = builders.get(label)
         return builder() if builder is not None else None
 
+    def _step_overlay_optical_solid_row_plan(
+        self,
+        label: str,
+        *,
+        insert_at: int | None = None,
+        cache_subdir: str = "promoted_step_overlays",
+        transient_live_trace: bool = False,
+        use_current_selection: bool = True,
+        quiet: bool = False,
+    ) -> dict[str, object] | None:
+        label = str(label).strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET:
+            return None
+        source_path = self._step_path_for_label(label)
+        if source_path is None:
+            if not quiet:
+                self.status_var.set(f"No {label} STEP is imported.")
+            return None
+        mesh = self._transformed_imported_step_mesh_for_label(label)
+        if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+            if not quiet:
+                self.status_var.set(f"{label.upper()} STEP mesh unavailable for optical-solid promotion.")
+            return None
+        try:
+            mesh = mesh.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
+        except Exception:
+            try:
+                mesh = mesh.extract_surface(algorithm="dataset_surface").copy(deep=True)
+            except Exception:
+                mesh = mesh.copy(deep=True)
+        points = np.asarray(getattr(mesh, "points", np.empty((0, 3))), dtype=float)
+        if points.ndim != 2 or points.shape[0] == 0 or points.shape[1] < 3 or not np.all(np.isfinite(points[:, :3])):
+            if not quiet:
+                self.status_var.set(f"{label.upper()} STEP promotion found no finite mesh points.")
+            return None
+
+        bounds_min = np.min(points[:, :3], axis=0)
+        bounds_max = np.max(points[:, :3], axis=0)
+        center_world = 0.5 * (bounds_min + bounds_max)
+        extents = np.maximum(bounds_max - bounds_min, 0.0)
+        local_mesh = mesh.copy(deep=True)
+        local_mesh.points = points[:, :3] - center_world[:3]
+
+        digest = hashlib.sha1()
+        digest.update(str(source_path.resolve()).encode("utf-8", errors="ignore"))
+        digest.update(str(label).encode("utf-8"))
+        digest.update(np.ascontiguousarray(local_mesh.points, dtype=np.float64).tobytes())
+        digest.update(
+            repr(
+                {
+                    "rot_x": self._step_x_rotation_deg(label),
+                    "rot_y": self._step_y_rotation_deg(label),
+                    "rot_z": self._step_roll_deg(label),
+                    "axis_offset_xy": None if transient_live_trace else self._step_axis_offset_xy(label),
+                    "placement_offset_xyz": None if transient_live_trace else self._step_placement_offset_xyz(label),
+                    "largest_component_only": bool(getattr(self, "lens_step_largest_component_only", True))
+                    if label == "lens"
+                    else None,
+                    "transient_live_trace": bool(transient_live_trace),
+                }
+            ).encode("utf-8")
+        )
+        mesh_path = CAD_CACHE_DIR / str(cache_subdir or "promoted_step_overlays") / f"{label}_{digest.hexdigest()[:16]}.stl"
+        if not mesh_path.exists() or mesh_path.stat().st_size <= 0:
+            mesh_path.parent.mkdir(parents=True, exist_ok=True)
+            local_mesh.save(str(mesh_path))
+        diagnostics = inspect_stl_mesh(mesh_path)
+
+        arm_key = ""
+        if insert_at is None:
+            selected_indices = self._selected_table_indices() if use_current_selection else []
+            arm_key = self._current_arm_view_key() if use_current_selection else ""
+            if selected_indices:
+                resolved_insert_at = max(selected_indices) + 1
+            elif arm_key:
+                resolved_insert_at = self._default_insert_index_for_arm_key(arm_key)
+            else:
+                resolved_insert_at = len(self.rows)
+                if self.rows and self.rows[-1].surface == "Image":
+                    resolved_insert_at -= 1
+        else:
+            resolved_insert_at = int(insert_at)
+            arm_key = self._current_arm_view_key() if use_current_selection else ""
+        resolved_insert_at = max(
+            1,
+            min(resolved_insert_at, len(self.rows) - (1 if self.rows and self.rows[-1].surface == "Image" else 0)),
+        )
+        z_station = float(sum(float(getattr(row, "thickness", 0.0) or 0.0) for row in self.rows[:resolved_insert_at]))
+
+        row = self._optical_stl_solid_row(
+            mesh_path.resolve(),
+            source_path=source_path.resolve(),
+            source_format="STEP",
+        )
+        if arm_key:
+            self._apply_arm_key_metadata_to_row(row, arm_key)
+        span = float(max(float(np.max(extents)), 1.0))
+        axial_span = float(max(float(extents[2]) if extents.size >= 3 else 0.0, 0.0))
+        axial_reserve = max(
+            float(row.thickness),
+            axial_span,
+            float(bounds_max[2] - z_station) if np.isfinite(float(bounds_max[2] - z_station)) else 0.0,
+            1.0,
+        )
+        display_label = self._step_overlay_display_label(label)
+        row.element = f"{display_label.upper()} STEP solid"
+        row.name = (
+            f"Live {display_label.upper()} STEP optical solid"
+            if transient_live_trace
+            else f"Promoted {display_label.upper()} STEP optical solid"
+        )
+        row.thickness = float(axial_reserve)
+        row.diameter = span
+        row.tilt_x = 0.0
+        row.tilt_y = 0.0
+        row.tilt_z = 0.0
+        row.desp_x = float(center_world[0])
+        row.desp_y = float(center_world[1])
+        row.desp_z = float(center_world[2] - z_station)
+        row.axis_move = 0.0
+        row.advanced = dict(row.advanced or {})
+        row.advanced["Note"] = (
+            "Transient Open 3D live-trace optical STEP overlay. The cached Solid_3d_stl mesh is "
+            "not inserted in the editable table until the user promotes or accepts placement. "
+            "Face metadata, material, and placement are the same row-backed contract used by "
+            "promoted STEP optical solids."
+            if transient_live_trace
+            else "Promoted from an Open 3D imported STEP overlay. The cached Solid_3d_stl mesh is saved "
+            "in local coordinates around the overlay center, while row Desp stores the scene/world "
+            "center. AxisMove stays zero so the scene object's placement does not move downstream "
+            "Object/Image rows; explicit output ports provide the separate follower-row workflow. "
+            "Review material and CAD/STL optical face roles before relying on traced physics."
+        )
+        row.advanced["StepOverlayPromotion"] = {
+            "step_label": label,
+            "source_step_path": str(source_path.resolve()),
+            "promoted_mesh_path": str(mesh_path.resolve()),
+            "mesh_coordinates": "local_centered_from_open3d_overlay",
+            "center_world": [float(value) for value in center_world[:3]],
+            "bounds_min_world": [float(value) for value in bounds_min[:3]],
+            "bounds_max_world": [float(value) for value in bounds_max[:3]],
+            "row_thickness_mm": float(row.thickness),
+            "axial_reserve_mm": float(axial_reserve),
+            "step_rotation_deg": [
+                float(self._step_x_rotation_deg(label)),
+                float(self._step_y_rotation_deg(label)),
+                float(self._step_roll_deg(label)),
+            ],
+            "axis_offset_xy": [float(value) for value in self._step_axis_offset_xy(label)],
+            "placement_offset_xyz": [float(value) for value in self._step_placement_offset_xyz(label)],
+            "largest_component_only": bool(getattr(self, "lens_step_largest_component_only", True))
+            if label == "lens"
+            else None,
+            "transient_live_trace": bool(transient_live_trace),
+        }
+        row.advanced["LiveStepOverlayTrace"] = {
+            "enabled": bool(transient_live_trace),
+            "step_label": label,
+            "cache_mesh_path": str(mesh_path.resolve()),
+        }
+        placement = normalize_scene_placement_settings(
+            {
+                "enabled": True,
+                "anchor": "row_pose",
+                "snap_enabled": True,
+                "snap_mm": max(span / 20.0, 0.1),
+                "snap_deg": 5.0,
+                "grid_visible": not bool(transient_live_trace),
+                "grid_spacing_mm": max(span / 10.0, 0.5),
+                "grid_extent_mm": max(span * 2.0, 25.0),
+                "promotion_source": "open3d_step_overlay",
+                "promotion_step_label": label,
+                "promotion_source_step_path": str(source_path.resolve()),
+                "promotion_mesh_coordinates": "local_centered_from_open3d_overlay",
+                "transient_live_trace": bool(transient_live_trace),
+            }
+        )
+        row.advanced[SCENE_PLACEMENT_ADVANCED_ATTR] = placement
+        return {
+            "label": label,
+            "row_index": int(resolved_insert_at),
+            "row": row,
+            "mesh_path": str(mesh_path.resolve()),
+            "source_step_path": str(source_path.resolve()),
+            "center_world": tuple(float(value) for value in center_world[:3]),
+            "bounds_min_world": tuple(float(value) for value in bounds_min[:3]),
+            "bounds_max_world": tuple(float(value) for value in bounds_max[:3]),
+            "diagnostics": diagnostics,
+            "transient_live_trace": bool(transient_live_trace),
+        }
+
     def promote_imported_step_to_optical_solid_row(
         self,
         label: str,
@@ -26126,33 +26327,96 @@ class KrakenLayoutEditor(tk.Tk):
         *,
         sampling_mode: str | None = None,
         update_state: bool = True,
+        include_live_step_overlays: bool = False,
     ):
         wavelength = self._current_wavelength()
         capture = io.StringIO()
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            with redirect_stdout(capture), redirect_stderr(capture):
-                system = self.build_system(require_solids=True)
-                rays = Kos.raykeeper(system)
-                max_radius = max((max(row.diameter / 2.0, 0.5) for row in self.rows), default=1.0)
-                mode = sampling_mode
-                if mode is None:
-                    mode = self._preview_scene_sampling_mode()
-                self._trace_preview_rays(
-                    system,
-                    rays,
-                    wavelength,
-                    max_radius,
-                    sampling_mode=mode,
-                )
+        active_rows = self.rows
+        live_step_records: list[dict[str, object]] = []
+        if include_live_step_overlays:
+            active_rows, live_step_records = self._live_step_overlay_trace_rows()
+        else:
+            self._last_live_step_overlay_trace_rows = None
+            self._last_live_step_overlay_trace_records = []
+            self._last_live_step_overlay_scene_bundle = None
+        original_rows: list[SurfaceRow] | None = None
+        scene_bundle = None
+        try:
+            if active_rows is not self.rows:
+                original_rows = self.rows
+                self.rows = active_rows
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                with redirect_stdout(capture), redirect_stderr(capture):
+                    system = self.build_system(
+                        require_solids=True,
+                        force_rebuild=bool(live_step_records),
+                    )
+                    rays = Kos.raykeeper(system)
+                    max_radius = max((max(row.diameter / 2.0, 0.5) for row in self.rows), default=1.0)
+                    mode = sampling_mode
+                    if mode is None:
+                        mode = self._preview_scene_sampling_mode()
+                    self._trace_preview_rays(
+                        system,
+                        rays,
+                        wavelength,
+                        max_radius,
+                        sampling_mode=mode,
+                    )
+            scene_bundle = self._build_scene_bundle(system, rays, max_radius)
+            if include_live_step_overlays:
+                self._last_live_step_overlay_trace_rows = list(self.rows)
+                self._last_live_step_overlay_trace_records = list(live_step_records)
+                self._last_live_step_overlay_scene_bundle = scene_bundle
+        finally:
+            if original_rows is not None:
+                self.rows = original_rows
         self.append_debug(capture.getvalue())
-        scene_bundle = self._build_scene_bundle(system, rays, max_radius)
-        if update_state:
+        if update_state and not include_live_step_overlays:
             self.last_system = system
             self.last_rays = rays
             self._last_preview_trace_signature = self._preview_trace_signature()
             self._last_scene_bundle = scene_bundle
         return system, rays, scene_bundle
+
+    def _live_step_overlay_trace_rows(self) -> tuple[list[SurfaceRow], list[dict[str, object]]]:
+        if self._step_path_for_label("optical") is None:
+            return self.rows, []
+        base_rows = [SurfaceRow(**asdict(row)) for row in self.rows]
+        original_rows = self.rows
+        try:
+            self.rows = base_rows
+            plan = self._step_overlay_optical_solid_row_plan(
+                "optical",
+                cache_subdir="live_step_overlays",
+                transient_live_trace=True,
+                use_current_selection=False,
+                quiet=True,
+            )
+            if plan is None:
+                return original_rows, []
+            row = plan.get("row")
+            if not isinstance(row, SurfaceRow):
+                return original_rows, []
+            row_index = int(plan.get("row_index", len(base_rows)))
+            base_rows.insert(max(1, min(row_index, len(base_rows))), row)
+            return base_rows, [plan]
+        finally:
+            self.rows = original_rows
+
+    def _preview_render_rows(self, scene_bundle: SceneBundle | None = None) -> list[SurfaceRow]:
+        if (
+            scene_bundle is not None
+            and scene_bundle is self.__dict__.get("_last_live_step_overlay_scene_bundle")
+        ):
+            rows = self.__dict__.get("_last_live_step_overlay_trace_rows")
+            if rows:
+                return list(rows)
+        return list(self.rows)
+
+    def _preview_render_row_names(self, scene_bundle: SceneBundle | None = None) -> list[str]:
+        return [str(getattr(row, "name", "") or "") for row in self._preview_render_rows(scene_bundle)]
 
     def _preview_scene_sampling_mode(self) -> str:
         """Sampling mode for the shared traced scene used by 2D and Open 3D."""
