@@ -5213,6 +5213,11 @@ class Kraken3DInspector(tk.Toplevel):
         self.show_detector_overlays_var = tk.BooleanVar(value=False)
         self.show_terminal_diagnostics_var = tk.BooleanVar(value=False)
         self.show_placement_handles_var = tk.BooleanVar(value=False)
+        self.live_mode_var = tk.BooleanVar(value=False)
+        self._live_refresh_after_id: str | None = None
+        self._live_refresh_busy = False
+        self._live_refresh_pending = False
+        self._live_refresh_reason = ""
         self.status_var = tk.StringVar(value="3D inspector ready")
 
         self.columnconfigure(0, weight=1)
@@ -5368,6 +5373,12 @@ class Kraken3DInspector(tk.Toplevel):
                 command=self._on_scene_visibility_changed,
             ).pack(side="left", padx=(12, 0))
 
+            live_panel = ttk.LabelFrame(self, text="Live Controls", padding=8)
+            live_panel.grid(row=1, column=1, sticky="nsew", padx=(0, 8), pady=8)
+            live_panel.columnconfigure(0, weight=1)
+            live_panel.rowconfigure(1, weight=1)
+            self._build_live_left_panel(live_panel)
+
             _prepare_vtk_tk_widget(host)
             self._vtk_widget = vtkTkRenderWindowInteractor(host, width=1100, height=720)
             self._vtk_widget.grid(row=0, column=0, sticky="nsew")
@@ -5408,6 +5419,344 @@ class Kraken3DInspector(tk.Toplevel):
                 host.destroy()
             except Exception:
                 pass
+
+    def _build_live_left_panel(self, parent: tk.Widget) -> None:
+        header = ttk.Frame(parent)
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        header.columnconfigure(1, weight=1)
+        ttk.Checkbutton(
+            header,
+            text="Live Mode",
+            variable=self.live_mode_var,
+            command=self._on_live_mode_toggled,
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Button(header, text="Trace now", command=self._trace_live_now).grid(
+            row=0,
+            column=2,
+            sticky="e",
+            padx=(6, 0),
+        )
+        ttk.Button(header, text="Update 2D", command=self.editor._manual_update_plot).grid(
+            row=0,
+            column=3,
+            sticky="e",
+            padx=(6, 0),
+        )
+
+        canvas = tk.Canvas(parent, highlightthickness=0, borderwidth=0, width=280)
+        canvas.grid(row=1, column=0, sticky="nsew")
+        scroll = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        scroll.grid(row=1, column=1, sticky="ns", padx=(6, 0))
+        canvas.configure(yscrollcommand=scroll.set)
+        stack = ttk.Frame(canvas)
+        stack.columnconfigure(0, weight=1)
+        window_id = canvas.create_window((0, 0), window=stack, anchor="nw")
+        stack.bind("<Configure>", lambda _event: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda event: canvas.itemconfigure(window_id, width=max(int(event.width), 1)))
+
+        source = ttk.LabelFrame(stack, text="Source", padding=8)
+        source.grid(row=0, column=0, sticky="ew")
+        self._build_live_source_controls(source)
+
+        field = ttk.LabelFrame(stack, text="Field", padding=8)
+        field.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        self._build_live_field_controls(field)
+
+        trace = ttk.LabelFrame(stack, text="Trace / Display", padding=8)
+        trace.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        self._build_live_trace_controls(trace)
+
+    def _editor_var(self, name: str, default: str = ""):
+        var = getattr(self.editor, name, None)
+        if var is None:
+            var = tk.StringVar(value=default)
+        return var
+
+    def _live_labeled_entry(
+        self,
+        parent: tk.Widget,
+        row: int,
+        column: int,
+        label: str,
+        var_name: str,
+        *,
+        sync_fields: bool = False,
+        width: int = 10,
+    ) -> ttk.Entry:
+        ttk.Label(parent, text=label).grid(row=row, column=column, sticky="w", pady=(0, 2), padx=(8 if column else 0, 0))
+        entry = ttk.Entry(parent, textvariable=self._editor_var(var_name), width=width)
+        entry.grid(row=row + 1, column=column, sticky="ew", pady=(0, 8), padx=(8 if column else 0, 0))
+        entry.bind("<FocusIn>", self.editor._begin_history_capture, add="+")
+        entry.bind("<FocusOut>", lambda _event: self._commit_live_control_update(sync_fields=sync_fields), add="+")
+        entry.bind("<Return>", lambda _event: self._commit_live_control_update(sync_fields=sync_fields), add="+")
+        entry.bind("<KP_Enter>", lambda _event: self._commit_live_control_update(sync_fields=sync_fields), add="+")
+        return entry
+
+    def _live_labeled_combo(
+        self,
+        parent: tk.Widget,
+        row: int,
+        column: int,
+        label: str,
+        var_name: str,
+        values,
+        *,
+        handler=None,
+        width: int = 12,
+    ) -> ttk.Combobox:
+        ttk.Label(parent, text=label).grid(row=row, column=column, sticky="w", pady=(0, 2), padx=(8 if column else 0, 0))
+        combo = ttk.Combobox(
+            parent,
+            textvariable=self._editor_var(var_name),
+            state="readonly",
+            width=width,
+            values=tuple(values),
+        )
+        combo.grid(row=row + 1, column=column, sticky="ew", pady=(0, 8), padx=(8 if column else 0, 0))
+        combo.bind("<FocusIn>", self.editor._begin_history_capture, add="+")
+        combo.bind("<<ComboboxSelected>>", lambda _event: self._commit_live_control_update(handler=handler), add="+")
+        return combo
+
+    def _build_live_source_controls(self, parent: tk.Widget) -> None:
+        for column in range(2):
+            parent.columnconfigure(column, weight=1, uniform="live_source")
+        self._live_labeled_combo(
+            parent,
+            0,
+            0,
+            "Source model",
+            "source_model_var",
+            SOURCE_MODEL_VALUES,
+            handler=self.editor._on_source_model_changed,
+            width=14,
+        )
+        self._live_labeled_combo(
+            parent,
+            0,
+            1,
+            "Pupil pattern",
+            "pupil_pattern_var",
+            PUPIL_PATTERN_VALUES,
+            handler=self.editor._on_source_model_changed,
+            width=14,
+        )
+        self._live_labeled_entry(parent, 2, 0, "Ray count", "ray_count_var", sync_fields=True)
+        self._live_labeled_entry(parent, 2, 1, "Cone [deg]", "source_cone_angle_var")
+        self._live_labeled_entry(parent, 4, 0, "Source radius", "source_radius_var")
+        self._live_labeled_entry(parent, 4, 1, "Power", "source_power_var")
+        self._live_labeled_entry(parent, 6, 0, "Source X", "source_x_var")
+        self._live_labeled_entry(parent, 6, 1, "Source Y", "source_y_var")
+        self._live_labeled_entry(parent, 8, 0, "Source Z", "source_z_var")
+        self._live_labeled_entry(parent, 8, 1, "Seed", "source_seed_var")
+        self._live_labeled_entry(parent, 10, 0, "Source L", "source_l_var")
+        self._live_labeled_entry(parent, 10, 1, "Source M", "source_m_var")
+        self._live_labeled_entry(parent, 12, 0, "Source N", "source_n_var")
+        self._live_labeled_combo(
+            parent,
+            12,
+            1,
+            "Direction",
+            "source_direction_preset_var",
+            SOURCE_DIRECTION_PRESET_VALUES,
+            handler=self.editor._on_source_direction_preset_changed,
+            width=14,
+        )
+        ttk.Button(parent, text="Scene Source Manager...", command=self.editor.open_scene_source_manager).grid(
+            row=14,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            pady=(2, 0),
+        )
+
+    def _build_live_field_controls(self, parent: tk.Widget) -> None:
+        for column in range(2):
+            parent.columnconfigure(column, weight=1, uniform="live_field")
+        self._live_labeled_combo(
+            parent,
+            0,
+            0,
+            "Field type",
+            "field_type_var",
+            [self.editor._field_type_display_label(value) for value in FIELD_TYPE_CANONICAL_VALUES],
+            handler=self.editor._on_field_type_changed,
+            width=13,
+        )
+        self._live_labeled_entry(parent, 0, 1, "Field value", "field_value_var", sync_fields=True)
+        self._live_labeled_entry(parent, 2, 0, "Field samples", "field_count_var", sync_fields=True)
+        self._live_labeled_combo(
+            parent,
+            2,
+            1,
+            "Image dia",
+            "image_diameter_mode_var",
+            ("Auto", "Manual"),
+            handler=self.editor._on_image_diameter_mode_changed,
+        )
+        self._live_labeled_combo(
+            parent,
+            4,
+            0,
+            "Camera",
+            "camera_model_var",
+            [CAMERA_NONE_LABEL, *camera_names()],
+            handler=self.editor._on_camera_model_changed,
+            width=22,
+        ).grid(columnspan=2)
+
+    def _build_live_trace_controls(self, parent: tk.Widget) -> None:
+        for column in range(2):
+            parent.columnconfigure(column, weight=1, uniform="live_trace")
+        self._live_labeled_combo(
+            parent,
+            0,
+            0,
+            "Object mode",
+            "object_mode_var",
+            ("Finite", "Infinity"),
+            handler=self.editor._on_object_mode_changed,
+        )
+        self._live_labeled_entry(parent, 0, 1, "Wavelength", "wavelength_var", sync_fields=True)
+        self._live_labeled_entry(parent, 2, 0, "Pupil factor", "ray_height_factor_var", sync_fields=True)
+        self._live_labeled_combo(
+            parent,
+            2,
+            1,
+            "Trace",
+            "trace_mode_var",
+            ("Auto", "Non-Sequential Preview", "Sequential", "Folded Preview"),
+            handler=self.editor._on_trace_mode_changed,
+            width=18,
+        )
+        self._live_labeled_combo(
+            parent,
+            4,
+            0,
+            "Aperture",
+            "aperture_type_var",
+            ("STOP", "EPD", "FNO"),
+        )
+        self._live_labeled_entry(parent, 4, 1, "Aperture value", "aperture_value_var", sync_fields=True)
+        self._live_labeled_combo(
+            parent,
+            6,
+            0,
+            "NS target",
+            "nonseq_target_surface_var",
+            getattr(self.editor, "nonseq_target_surface_menu", None).cget("values")
+            if getattr(self.editor, "nonseq_target_surface_menu", None) is not None
+            else ("Auto",),
+        )
+        self._live_labeled_entry(parent, 6, 1, "NS hit limit", "nonseq_ns_limit_var")
+        ttk.Checkbutton(
+            parent,
+            text="NS probabilistic coating split",
+            variable=self._editor_var("nonseq_energy_probability_var"),
+            command=self._commit_live_control_update,
+        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
+    def _commit_live_control_update(self, *, sync_fields: bool = False, handler=None) -> None:
+        try:
+            if handler is not None:
+                handler()
+            elif sync_fields:
+                self.editor._sync_object_controls()
+                self.editor._mark_plot_update_pending()
+            else:
+                self.editor._sync_left_mode_controls()
+                self.editor._mark_plot_update_pending()
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D live control commit failed: {exc}")
+            self.status_var.set(f"Live control failed: {_short_error_message(exc)}")
+            return
+        self.schedule_live_refresh("3D controls")
+
+    def _on_live_mode_toggled(self) -> None:
+        if self._live_mode_enabled():
+            self.status_var.set("Live Mode enabled: source edits and row-backed placement retrace the 3D scene.")
+            self.schedule_live_refresh("enabled", delay_ms=0)
+        else:
+            self._cancel_live_refresh()
+            self.status_var.set("Live Mode disabled.")
+
+    def _trace_live_now(self) -> None:
+        if self._live_mode_enabled():
+            self.schedule_live_refresh("manual", delay_ms=0)
+            return
+        try:
+            self.refresh_from_editor(sampling_mode=self.editor._preview_3d_sampling_mode())
+            self.status_var.set("3D scene traced from Live Controls.")
+        except Exception as exc:
+            self.status_var.set(f"3D trace failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D trace-now failed: {exc}")
+
+    def _live_mode_enabled(self) -> bool:
+        try:
+            return bool(self.live_mode_var.get())
+        except Exception:
+            return False
+
+    def _cancel_live_refresh(self) -> None:
+        after_id = self._live_refresh_after_id
+        self._live_refresh_after_id = None
+        if after_id is not None:
+            try:
+                self.after_cancel(after_id)
+            except Exception:
+                pass
+        self._live_refresh_pending = False
+
+    def schedule_live_refresh(self, reason: str = "", *, delay_ms: int = 180) -> bool:
+        if not self._live_mode_enabled():
+            return False
+        if not bool(getattr(self, "available", False)):
+            return False
+        self._live_refresh_reason = str(reason or "scene change")
+        if self._live_refresh_busy:
+            self._live_refresh_pending = True
+            return True
+        after_id = self._live_refresh_after_id
+        if after_id is not None:
+            try:
+                self.after_cancel(after_id)
+            except Exception:
+                pass
+        delay = max(0, int(delay_ms))
+        self._live_refresh_after_id = self.after(delay, self._run_live_refresh)
+        self.status_var.set(f"Live Mode: scheduled trace ({self._live_refresh_reason}).")
+        return True
+
+    def _run_live_refresh(self) -> None:
+        self._live_refresh_after_id = None
+        if not self._live_mode_enabled():
+            return
+        if self._live_refresh_busy:
+            self._live_refresh_pending = True
+            return
+        self._live_refresh_busy = True
+        reason = self._live_refresh_reason or "scene change"
+        try:
+            try:
+                self.editor._sync_object_controls()
+                self.editor._sync_left_mode_controls()
+            except Exception:
+                pass
+            system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
+                sampling_mode=self.editor._preview_3d_sampling_mode(),
+                update_state=True,
+            )
+            row_names = [row.name for row in self.editor.rows]
+            self.refresh_scene(system, rays, row_names, scene_bundle=scene_bundle, reset_camera=False)
+            self.editor.status_var.set(f"Live Mode trace updated ({reason}).")
+            self._debug_trace("live_mode_refresh", reason=reason)
+        except Exception as exc:
+            self.status_var.set(f"Live Mode trace failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D live trace failed: {exc}")
+        finally:
+            self._live_refresh_busy = False
+            if self._live_refresh_pending and self._live_mode_enabled():
+                self._live_refresh_pending = False
+                self.schedule_live_refresh("pending scene change", delay_ms=40)
 
     @staticmethod
     def _camera_preset_from_display_orientation(orientation: str) -> str:
@@ -7314,6 +7663,7 @@ class Kraken3DInspector(tk.Toplevel):
         if self._translate_step_overlay_actors(label, delta) <= 0:
             self.refresh_from_editor()
         self._update_step_carry_grip_after_delta(state, delta)
+        self.schedule_live_refresh(f"{label} STEP carry moved")
         return max(applied_steps, 1)
 
     def _apply_step_carry_drag_motion(
@@ -7352,6 +7702,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self.refresh_from_editor()
             except Exception as exc:
                 self.editor.append_debug(f"STEP carry final refresh failed: {exc}")
+            self.schedule_live_refresh(f"{label} STEP carry dropped", delay_ms=0)
             self.status_var.set(f"{label} STEP dropped after free drag movement.")
 
     def _apply_placement_drag_motion(self, dx: int | float, dy: int | float) -> None:
@@ -10724,14 +11075,14 @@ class Kraken3DInspector(tk.Toplevel):
         self._update_mode_badge(render=False)
         self.render()
 
-    def refresh_from_editor(self) -> None:
+    def refresh_from_editor(self, *, sampling_mode: str | None = None) -> None:
         try:
-            current = self.editor._current_preview_scene_trace()
+            current = None if sampling_mode is not None else self.editor._current_preview_scene_trace()
             if current is not None:
                 system, rays, scene_bundle = current
             else:
                 system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
-                    sampling_mode=self.editor._preview_2d_sampling_mode(),
+                    sampling_mode=sampling_mode or self.editor._preview_2d_sampling_mode(),
                     update_state=True,
                 )
             row_names = [row.name for row in self.editor.rows]
@@ -12827,6 +13178,7 @@ class Kraken3DInspector(tk.Toplevel):
         dirty = bool(getattr(self, "_stl_placement_dirty", False))
         self._stl_placement_dirty = False
         self.editor._three_d_inspector = None
+        self._cancel_live_refresh()
         self._close_step_rotation_handler()
         self._close_stl_placement_handler()
         try:
@@ -22882,6 +23234,24 @@ class KrakenLayoutEditor(tk.Tk):
         self._sync_trace_state_badge()
         if hasattr(self, "status_var"):
             self.status_var.set("Display settings changed. Click Update.")
+        self._schedule_open3d_live_refresh("left panel edit")
+
+    def _schedule_open3d_live_refresh(self, reason: str, *, delay_ms: int = 220) -> bool:
+        inspector = getattr(self, "_three_d_inspector", None)
+        if inspector is None:
+            return False
+        try:
+            if not inspector.winfo_exists():
+                self._three_d_inspector = None
+                return False
+        except Exception:
+            self._three_d_inspector = None
+            return False
+        try:
+            return bool(inspector.schedule_live_refresh(reason, delay_ms=delay_ms))
+        except Exception as exc:
+            self.append_debug(f"Open 3D live refresh scheduling failed: {exc}")
+            return False
 
     def _on_display_plane_changed(self, _event=None) -> None:
         self._commit_history_capture()
