@@ -10539,7 +10539,10 @@ class Kraken3DInspector(tk.Toplevel):
                     opacity=float(style["line_opacity"]),
                     line_width=float(style["line_width"]),
                 )
-                if KrakenLayoutEditor._should_draw_3d_terminal_endpoint(terminal_status):
+                if KrakenLayoutEditor._should_draw_3d_terminal_endpoint(
+                    terminal_status,
+                    show_terminal_diagnostics=bool(self.show_terminal_diagnostics_var.get()),
+                ):
                     self._add_ray_endpoint_actor(
                         display_ray_pts[-1],
                         radius=ray_radius * float(style["endpoint_scale"]),
@@ -10552,7 +10555,7 @@ class Kraken3DInspector(tk.Toplevel):
             if bounded_ray_count:
                 self._debug_trace("ray_display_bounded", rays=bounded_ray_count, radius=float(radius))
             if suppressed_endpoint_count:
-                self._debug_trace("ray_display_suppressed_nonphysical_endpoints", rays=suppressed_endpoint_count)
+                self._debug_trace("ray_display_suppressed_diagnostic_endpoints", rays=suppressed_endpoint_count)
             for edges, edge_color, edge_width in ray_surface_edge_overlays:
                 self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width, backface_culling=False)
             for mesh, wire_color, wire_width, row_index in ray_surface_wire_overlays:
@@ -26341,7 +26344,10 @@ class KrakenLayoutEditor(tk.Tk):
                 ray_index,
             )
             ray_actors.append(actor)
-            if not self._should_draw_3d_terminal_endpoint(terminal_status):
+            if not self._should_draw_3d_terminal_endpoint(
+                terminal_status,
+                show_terminal_diagnostics=bool(self.show_terminal_diagnostics_var.get()),
+            ):
                 suppressed_endpoint_count += 1
                 continue
             try:
@@ -27051,9 +27057,17 @@ class KrakenLayoutEditor(tk.Tk):
         return pts, bounded
 
     @staticmethod
-    def _should_draw_3d_terminal_endpoint(terminal_status: str) -> bool:
+    def _should_draw_3d_terminal_endpoint(
+        terminal_status: str,
+        *,
+        show_terminal_diagnostics: bool = False,
+    ) -> bool:
         status = str(terminal_status or "").strip().lower()
-        return status not in {"escaped", "missed_detector"}
+        if status == "hit_detector":
+            return True
+        if status in {"absorbed", "stopped"}:
+            return bool(show_terminal_diagnostics)
+        return False
 
     @staticmethod
     def _ray_terminal_3d_style(
@@ -28222,7 +28236,10 @@ class KrakenLayoutEditor(tk.Tk):
             except Exception:
                 pass
             ray_actors.append(actor)
-            if not self._should_draw_3d_terminal_endpoint(terminal_status):
+            if not self._should_draw_3d_terminal_endpoint(
+                terminal_status,
+                show_terminal_diagnostics=bool(self.show_terminal_diagnostics_var.get()),
+            ):
                 suppressed_endpoint_count += 1
                 continue
             try:

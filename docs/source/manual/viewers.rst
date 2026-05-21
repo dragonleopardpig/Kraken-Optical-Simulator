@@ -93,6 +93,10 @@ Current UI coverage:
   wavelength line color in Open 3D because leaving the modeled scene is a normal
   physical outcome, not a separate ray type; canonical ray events, Ray Inspector,
   and CSV exports keep the full terminal diagnostic
+* Open 3D draws detector/Image hit endpoint markers by default. Stopped and
+  absorbed endpoint dots are diagnostic-only and appear only when ``Terminal
+  diagnostics`` is enabled, so a prism interior does not display apparent
+  physical termination points during normal design work
 * active detector/Image footprints are drawn from the scene target detector
   metadata in 2D, embedded 3D, and legacy 3D. A missed-detector terminal adds
   an orange crosshair at the projected detector-plane intercept, making the

@@ -163,6 +163,7 @@ def main() -> int:
     saved_layout_figure = inspect.getsource(build_saved_layout_figure)
     scene_ray_records = inspect.getsource(KrakenLayoutEditor._iter_3d_scene_ray_records)
     ray_terminal_style = inspect.getsource(KrakenLayoutEditor._ray_terminal_3d_style)
+    should_draw_endpoint = inspect.getsource(KrakenLayoutEditor._should_draw_3d_terminal_endpoint)
     bounded_ray_display = inspect.getsource(KrakenLayoutEditor._bounded_3d_ray_points_for_display)
     editor_detector_overlays = inspect.getsource(KrakenLayoutEditor._scene_detector_overlay_specs)
     legacy_open_3d = inspect.getsource(KrakenLayoutEditor._populate_legacy_3d_plotter_scene)
@@ -548,8 +549,20 @@ def main() -> int:
         ("Open 3D ray records preserve terminal status", "ray_path_terminal_status_from_events(path)" in scene_ray_records),
         ("Open 3D missed detector lines use status styling", "missed_detector" in ray_terminal_style and "line_opacity" in ray_terminal_style),
         ("Open 3D escaped rays preserve source/wavelength line color", '"escaped" else 0.74' in ray_terminal_style and '{"absorbed", "stopped"}' in ray_terminal_style),
-        ("Open 3D refresh suppresses non-physical escaped/missed endpoint disks", "_should_draw_3d_terminal_endpoint(terminal_status)" in refresh and "ray_display_suppressed_nonphysical_endpoints" in refresh),
-        ("legacy 3D refresh suppresses non-physical escaped/missed endpoint disks", "_should_draw_3d_terminal_endpoint(terminal_status)" in legacy_replace_rays and "suppressed_endpoint_count" in legacy_replace_rays),
+        (
+            "Open 3D refresh gates stopped/absorbed endpoint disks behind terminal diagnostics",
+            "_should_draw_3d_terminal_endpoint(" in refresh
+            and "show_terminal_diagnostics=bool(self.show_terminal_diagnostics_var.get())" in refresh
+            and "ray_display_suppressed_diagnostic_endpoints" in refresh
+            and 'status == "hit_detector"' in should_draw_endpoint
+            and 'status in {"absorbed", "stopped"}' in should_draw_endpoint,
+        ),
+        (
+            "legacy 3D refresh gates stopped/absorbed endpoint disks behind terminal diagnostics",
+            "_should_draw_3d_terminal_endpoint(" in legacy_replace_rays
+            and "show_terminal_diagnostics=bool(self.show_terminal_diagnostics_var.get())" in legacy_replace_rays
+            and "suppressed_endpoint_count" in legacy_replace_rays,
+        ),
         (
             "Open 3D caps escaped tails and plane-preserves detector misses without changing trace data",
             "terminal_status" in bounded_ray_display
