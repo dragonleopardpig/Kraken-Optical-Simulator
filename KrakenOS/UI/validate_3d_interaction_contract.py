@@ -547,6 +547,7 @@ def main() -> int:
         ("non-sequential scene bundles do not install YZ-only branch display overrides", 'not bool(trace_state.get("use_nonseq"))' in editor_build_scene_bundle and "_branch_output_display_path_overrides(rays)" in editor_build_scene_bundle),
         ("Open 3D ray records preserve terminal status", "ray_path_terminal_status_from_events(path)" in scene_ray_records),
         ("Open 3D missed detector lines use status styling", "missed_detector" in ray_terminal_style and "line_opacity" in ray_terminal_style),
+        ("Open 3D escaped rays preserve source/wavelength line color", '"escaped" else 0.74' in ray_terminal_style and '{"absorbed", "stopped"}' in ray_terminal_style),
         ("Open 3D refresh suppresses non-physical escaped/missed endpoint disks", "_should_draw_3d_terminal_endpoint(terminal_status)" in refresh and "ray_display_suppressed_nonphysical_endpoints" in refresh),
         ("legacy 3D refresh suppresses non-physical escaped/missed endpoint disks", "_should_draw_3d_terminal_endpoint(terminal_status)" in legacy_replace_rays and "suppressed_endpoint_count" in legacy_replace_rays),
         (

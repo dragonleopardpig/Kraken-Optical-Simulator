@@ -89,7 +89,9 @@ Current UI coverage:
 * 2D and Open 3D cap only display diagnostics: escaped tails are shortened to
   the current scene scale before 2D autoscale or 3D rendering, and
   missed-detector points are capped inside the detector plane so the view does
-  not imply an off-plane physical stop; canonical ray events, Ray Inspector,
+  not imply an off-plane physical stop. Escaped rays keep their source or
+  wavelength line color in Open 3D because leaving the modeled scene is a normal
+  physical outcome, not a separate ray type; canonical ray events, Ray Inspector,
   and CSV exports keep the full terminal diagnostic
 * active detector/Image footprints are drawn from the scene target detector
   metadata in 2D, embedded 3D, and legacy 3D. A missed-detector terminal adds

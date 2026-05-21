@@ -27068,10 +27068,14 @@ class KrakenLayoutEditor(tk.Tk):
             "escaped": (0.36, 0.42, 0.50),
             "stopped": (0.50, 0.11, 0.11),
         }
-        diagnostic_line_color = status_colors.get(status, color) if status in {"absorbed", "escaped", "stopped"} else color
+        # Escaped rays are ordinary physical exits from the modeled scene. Keep
+        # their source/wavelength color so prism output bundles do not look like
+        # a different class of ray; reserve full-line diagnostic recoloring for
+        # absorption and true stop conditions.
+        diagnostic_line_color = status_colors.get(status, color) if status in {"absorbed", "stopped"} else color
         return {
             "line_color": diagnostic_line_color,
-            "line_opacity": 0.74 if status == "missed_detector" else 0.88,
+            "line_opacity": 0.80 if status == "escaped" else 0.74 if status == "missed_detector" else 0.88,
             "line_width": 1.5 if status == "missed_detector" else 1.0,
             "endpoint_color": status_colors.get(status, color),
             "endpoint_scale": 4.2 if status == "missed_detector" else 2.8,
