@@ -17,6 +17,14 @@ CAD/STL optical solids, project the same traced 3D ray set into all three
 planes so 2D and Open 3D stay synchronized. The projection selector above the
 plot changes the view, not the underlying optical prescription.
 
+The synchronization contract is explicit: 2D plots are projections of the same
+bounded 3D display polylines used by Open 3D. Escaped-tail capping,
+missed-detector plane projection, ray identity, terminal status, and selected
+ray event labels are derived from the active ``SceneBundle``. A penta-prism
+regression checks that ``YZ``, ``XZ``, and ``XY`` 2D rays match the projection
+of the Open 3D ray polylines exactly, so a display-only mismatch is treated as a
+bug rather than an acceptable alternate view.
+
 Lens drawing PDF export
 ~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -93,7 +101,9 @@ Current UI coverage:
   not imply an off-plane physical stop. Escaped rays keep their source or
   wavelength line color in Open 3D because leaving the modeled scene is a normal
   physical outcome, not a separate ray type; canonical ray events, Ray Inspector,
-  and CSV exports keep the full terminal diagnostic
+  and CSV exports keep the full terminal diagnostic. The cap envelope and ray
+  point transform are shared between 2D and Open 3D instead of duplicated in
+  separate renderers.
 * Open 3D endpoint dots are diagnostic-only and appear only when ``Terminal
   diagnostics`` is enabled. Normal design views show the ray paths, detector
   planes, and selected-ray metadata without drawing hit/stopped/absorbed dots

@@ -257,7 +257,13 @@ from KrakenOS.UI.scene_geometry import (
     scene_target_active_footprint_polylines,
     scene_target_detector_miss_crosshair_polylines,
 )
-from KrakenOS.UI.scene_projector import auxiliary_projection_planes, normalize_projection_plane, projection_axis_labels
+from KrakenOS.UI.scene_projector import (
+    auxiliary_projection_planes,
+    bounded_ray_points_for_scene_display,
+    normalize_projection_plane,
+    projection_axis_labels,
+    scene_display_center_radius,
+)
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
 from KrakenOS.UI.scene_row_mapping import (
     SCENE_ROW_SOURCE,
@@ -10505,7 +10511,10 @@ class Kraken3DInspector(tk.Toplevel):
         )
 
         if self.show_rays_var.get():
-            center, radius = self._row_scene_bounds()
+            if scene_bundle is not None:
+                center, radius = scene_display_center_radius(scene_bundle)
+            else:
+                center, radius = self._row_scene_bounds()
             paths_by_ray_index = KrakenLayoutEditor._scene_ray_path_by_index(scene_bundle)
             ray_radius = max(radius * 0.0015, 0.08)
             bounded_ray_count = 0
@@ -26313,7 +26322,10 @@ class KrakenLayoutEditor(tk.Tk):
             self.append_debug(f"Legacy 3D optical-axis guide failed: {exc}")
 
         ray_radius = self._legacy_3d_ray_radius(system, rays)
-        ray_center, ray_scene_radius = self._scene_center_radius_from_bounds(plotter.bounds)
+        if scene_bundle is not None:
+            ray_center, ray_scene_radius = scene_display_center_radius(scene_bundle)
+        else:
+            ray_center, ray_scene_radius = self._scene_center_radius_from_bounds(plotter.bounds)
         paths_by_ray_index = self._scene_ray_path_by_index(scene_bundle)
         suppressed_endpoint_count = 0
         for ray_index, color, ray_pts, terminal_status in self._iter_3d_scene_ray_records(rays, scene_bundle):
@@ -26988,75 +27000,14 @@ class KrakenLayoutEditor(tk.Tk):
         terminal_target: SceneTarget3D | None = None,
         terminal_direction=None,
     ) -> tuple[np.ndarray, bool]:
-        try:
-            pts = np.asarray(points, dtype=float)
-        except Exception:
-            return np.empty((0, 3), dtype=float), False
-        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
-            return np.empty((0, 3), dtype=float), False
-        pts = np.array(pts[:, :3], dtype=float, copy=True)
-        finite = np.all(np.isfinite(pts), axis=1)
-        if not np.all(finite):
-            pts = pts[finite]
-        if pts.shape[0] < 2:
-            return np.empty((0, 3), dtype=float), True
-        try:
-            scene_center = np.asarray(center, dtype=float).reshape(-1)[:3]
-        except Exception:
-            scene_center = np.zeros(3, dtype=float)
-        if scene_center.size != 3 or not np.all(np.isfinite(scene_center)):
-            scene_center = np.zeros(3, dtype=float)
-        try:
-            scene_radius = float(radius)
-        except Exception:
-            scene_radius = 1.0
-        if not np.isfinite(scene_radius) or scene_radius <= 0.0:
-            scene_radius = 1.0
-        status = str(terminal_status or "").strip().lower()
-        terminal_was_capped = False
-        if status == "missed_detector" and terminal_target is not None and pts.shape[0] >= 2:
-            display_point, terminal_was_capped = KrakenLayoutEditor._display_detector_miss_point_on_plane(
-                pts[-1],
-                terminal_target,
-                scene_radius,
-            )
-            if display_point is not None:
-                pts[-1] = display_point[:3]
-        elif status == "escaped" and pts.shape[0] >= 2:
-            terminal_segment = pts[-1] - pts[-2]
-            terminal_length = float(np.linalg.norm(terminal_segment))
-            # Escaped rays are display diagnostics.  Keep the full trace
-            # metadata, but draw a scene-envelope tail long enough to show the
-            # output direction without letting one distant miss dominate the
-            # renderer bounds.
-            max_terminal_length = max(75.0, min(scene_radius * 1.25, 600.0))
-            direction = KrakenLayoutEditor._unit_3d_vector_or_none(terminal_direction)
-            if direction is None:
-                direction = KrakenLayoutEditor._unit_3d_vector_or_none(terminal_segment)
-            if direction is not None and np.isfinite(terminal_length) and max_terminal_length > 0.0:
-                if terminal_length > max_terminal_length:
-                    pts[-1] = pts[-2] + direction * max_terminal_length
-                else:
-                    remaining_length = max_terminal_length - terminal_length
-                    if remaining_length > 1.0e-9:
-                        pts = np.vstack((pts, pts[-1] + direction * remaining_length))
-                terminal_was_capped = True
-        display_radius = max(scene_radius * 3.0, 250.0)
-        offsets = pts - scene_center
-        distances = np.linalg.norm(offsets, axis=1)
-        too_far = distances > display_radius
-        if np.any(too_far):
-            safe_distances = np.maximum(distances[too_far], 1.0e-12)
-            pts[too_far] = scene_center + offsets[too_far] * (display_radius / safe_distances)[:, None]
-        bounded = bool(terminal_was_capped or (not np.all(finite)) or np.any(too_far))
-        if pts.shape[0] > 2:
-            deltas = np.linalg.norm(np.diff(pts, axis=0), axis=1)
-            keep = np.concatenate(([True], deltas > 1.0e-9))
-            if not np.all(keep):
-                pts = pts[keep]
-        if pts.shape[0] < 2:
-            return np.empty((0, 3), dtype=float), True
-        return pts, bounded
+        return bounded_ray_points_for_scene_display(
+            points,
+            center,
+            radius,
+            terminal_status=terminal_status,
+            terminal_target=terminal_target,
+            terminal_direction=terminal_direction,
+        )
 
     @staticmethod
     def _should_draw_3d_terminal_endpoint(
@@ -28187,7 +28138,10 @@ class KrakenLayoutEditor(tk.Tk):
         setattr(plotter, "_kraken_scene_bundle", scene_bundle)
         rays_visible = bool(dict(getattr(plotter, "_kraken_visibility", {}) or {}).get("rays", True))
         ray_radius = self._legacy_3d_ray_radius(system, rays)
-        ray_center, ray_scene_radius = self._scene_center_radius_from_bounds(plotter.bounds)
+        if scene_bundle is not None:
+            ray_center, ray_scene_radius = scene_display_center_radius(scene_bundle)
+        else:
+            ray_center, ray_scene_radius = self._scene_center_radius_from_bounds(plotter.bounds)
         paths_by_ray_index = self._scene_ray_path_by_index(scene_bundle)
         suppressed_endpoint_count = 0
         for ray_index, color, ray_pts, terminal_status in self._iter_3d_scene_ray_records(rays, scene_bundle):

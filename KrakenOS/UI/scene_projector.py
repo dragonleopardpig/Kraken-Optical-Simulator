@@ -290,7 +290,7 @@ class SceneProjector2D:
         folded_display = None
         if not _bundle_uses_native_nonsequential_projection(bundle):
             folded_display = bundle.extra.get("folded_ray_display_paths")
-        scene_center, scene_radius = _scene_center_radius_for_projection(bundle)
+        scene_center, scene_radius = scene_display_center_radius(bundle)
         targets_by_surface = _targets_by_trace_surface(bundle)
         for path in bundle.ray_paths:
             folded_pts = None
@@ -306,7 +306,7 @@ class SceneProjector2D:
                     continue
                 terminal_status = ray_path_terminal_status_from_events(path)
                 terminal_target = _missed_detector_target_for_path(path, targets_by_surface)
-                pts, _was_capped = _bounded_ray_points_for_projection(
+                pts, _was_capped = bounded_ray_points_for_scene_display(
                     pts,
                     scene_center,
                     scene_radius,
@@ -436,7 +436,8 @@ def _unit_vector_or_none(value: object) -> np.ndarray | None:
     return vector[:3] / norm
 
 
-def _scene_center_radius_for_projection(bundle: SceneBundle) -> tuple[np.ndarray, float]:
+def scene_display_center_radius(bundle: SceneBundle) -> tuple[np.ndarray, float]:
+    """Return the scene envelope used by both 2-D and 3-D ray display capping."""
     points: list[np.ndarray] = []
     for mesh_item in list(getattr(bundle, "surface_meshes", []) or []):
         mesh = getattr(mesh_item, "mesh", None)
@@ -493,6 +494,10 @@ def _scene_center_radius_for_projection(bundle: SceneBundle) -> tuple[np.ndarray
     center = 0.5 * (mins + maxs)
     radius = max(float(maxs[0] - mins[0]), float(maxs[1] - mins[1]), float(maxs[2] - mins[2]), 1.0)
     return center, float(radius)
+
+
+def _scene_center_radius_for_projection(bundle: SceneBundle) -> tuple[np.ndarray, float]:
+    return scene_display_center_radius(bundle)
 
 
 def _targets_by_trace_surface(bundle: SceneBundle) -> dict[int, object]:
@@ -593,7 +598,7 @@ def _display_detector_miss_point_on_plane(
     return display_point, capped
 
 
-def _bounded_ray_points_for_projection(
+def bounded_ray_points_for_scene_display(
     points: object,
     center: np.ndarray,
     radius: float,
@@ -662,6 +667,9 @@ def _bounded_ray_points_for_projection(
     if pts.shape[0] < 2:
         return np.empty((0, 3), dtype=float), True
     return pts, bounded
+
+
+_bounded_ray_points_for_projection = bounded_ray_points_for_scene_display
 
 
 def _convex_hull_2d(points: np.ndarray) -> np.ndarray:

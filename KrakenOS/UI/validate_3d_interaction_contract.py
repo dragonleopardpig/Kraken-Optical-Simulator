@@ -15,6 +15,7 @@ from KrakenOS.UI.layout_editor import (
 from KrakenOS.UI.saved_layout_plot import build_saved_layout_figure
 from KrakenOS.UI.scene_builder import _sync_path_display_geometry_from_events
 from KrakenOS.UI.scene_geometry import RayEvent3D, RayPath3D
+from KrakenOS.UI.scene_projector import bounded_ray_points_for_scene_display, scene_display_center_radius
 
 
 def _scene_path_preserves_raykeeper_terminal_continuation() -> tuple[bool, str]:
@@ -214,6 +215,8 @@ def main() -> int:
     ray_terminal_style = inspect.getsource(KrakenLayoutEditor._ray_terminal_3d_style)
     should_draw_endpoint = inspect.getsource(KrakenLayoutEditor._should_draw_3d_terminal_endpoint)
     bounded_ray_display = inspect.getsource(KrakenLayoutEditor._bounded_3d_ray_points_for_display)
+    shared_bounded_ray_display = inspect.getsource(bounded_ray_points_for_scene_display)
+    shared_scene_bounds = inspect.getsource(scene_display_center_radius)
     editor_detector_overlays = inspect.getsource(KrakenLayoutEditor._scene_detector_overlay_specs)
     legacy_open_3d = inspect.getsource(KrakenLayoutEditor._populate_legacy_3d_plotter_scene)
     legacy_replace_rays = inspect.getsource(KrakenLayoutEditor._legacy_3d_replace_rays)
@@ -620,11 +623,17 @@ def main() -> int:
             and "suppressed_endpoint_count" in legacy_replace_rays,
         ),
         (
-            "Open 3D caps escaped tails and plane-preserves detector misses without changing trace data",
-            "terminal_status" in bounded_ray_display
-            and "max_terminal_length" in bounded_ray_display
-            and '"escaped"' in bounded_ray_display
-            and '"missed_detector"' in bounded_ray_display,
+            "2D and Open 3D share escaped-tail and detector-miss display capping",
+            "bounded_ray_points_for_scene_display(" in bounded_ray_display
+            and "max_terminal_length" in shared_bounded_ray_display
+            and '"escaped"' in shared_bounded_ray_display
+            and '"missed_detector"' in shared_bounded_ray_display,
+        ),
+        (
+            "2D and Open 3D share the same scene envelope for display capping",
+            "scene_display_center_radius(scene_bundle)" in refresh
+            and "surface_meshes" in shared_scene_bounds
+            and "targets" in shared_scene_bounds,
         ),
         ("embedded 3D endpoint actors remain available for physical terminals", "pv.Sphere" in endpoint_actor),
         ("Open 3D renders scene detector active footprints", "_add_scene_detector_overlays(" in refresh and "scene_target_active_footprint_polylines" in editor_detector_overlays),
