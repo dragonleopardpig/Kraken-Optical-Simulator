@@ -25,6 +25,14 @@ regression checks that ``YZ``, ``XZ``, and ``XY`` 2D rays match the projection
 of the Open 3D ray polylines exactly, so a display-only mismatch is treated as a
 bug rather than an acceptable alternate view.
 
+When Open 3D is opened from the editor, the first camera is the active 2D
+projection camera: ``YZ`` opens as an orthographic YZ view, ``XZ`` as XZ, and
+``XY`` as the top view. The ``Iso`` button remains available for perspective
+scene inspection, but an isometric camera is not used as the default comparison
+view for a 2D plot. Camera presets are grouped under the ``Camera`` menu, and
+optional reference, detector, and miss diagnostics are grouped under
+``Overlays`` so the direct top-row controls stay compact.
+
 Lens drawing PDF export
 ~~~~~~~~~~~~~~~~~~~~~~~
 

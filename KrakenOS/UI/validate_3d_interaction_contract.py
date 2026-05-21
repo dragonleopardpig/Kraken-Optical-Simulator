@@ -138,6 +138,9 @@ def main() -> int:
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
     row_scene_bounds = inspect.getsource(Kraken3DInspector._row_scene_bounds)
     init = inspect.getsource(Kraken3DInspector.__init__)
+    open3d_display_camera = inspect.getsource(Kraken3DInspector._camera_preset_from_display_orientation)
+    legacy_configure = inspect.getsource(KrakenLayoutEditor._configure_legacy_3d_plotter)
+    legacy_display_camera = inspect.getsource(KrakenLayoutEditor._legacy_3d_camera_preset_from_display_orientation)
     placement_grid = inspect.getsource(Kraken3DInspector._add_scene_placement_grid_overlays)
     show_scene_placement_handles = inspect.getsource(Kraken3DInspector._show_scene_placement_handles)
     placement_grid_mesh = inspect.getsource(Kraken3DInspector._scene_placement_grid_mesh)
@@ -571,6 +574,22 @@ def main() -> int:
         (
             "Open 3D toolbar uses categorized rows",
             "toolbar_container" in init and "view_toolbar" in init and "scene_toolbar" in init,
+        ),
+        (
+            "Open 3D starts in the active 2D projection camera",
+            "_camera_preset_for_display_orientation()" in init
+            and '("YZ", "zy")' in init
+            and 'ttk.Menubutton(view_toolbar, text="Camera")' in init
+            and '"zy"' in open3d_display_camera
+            and '"xz"' in open3d_display_camera
+            and '"xy"' in open3d_display_camera,
+        ),
+        (
+            "legacy 3D fallback starts in the active 2D projection camera",
+            "_legacy_3d_camera_preset_from_display_orientation" in legacy_configure
+            and '"yz"' in legacy_display_camera
+            and '"xz"' in legacy_display_camera
+            and '"top"' in legacy_display_camera,
         ),
         (
             "Open 3D scene toolbar groups dense commands",

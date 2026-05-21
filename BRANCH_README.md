@@ -141,6 +141,13 @@ kraken-vtk-tk-check
   falls back to the same layout sampling mode used by 2D. This keeps the
   viewport YZ/XZ/XY camera presets as views of the same traced data rather than
   separate simulations.
+- A fresh Open 3D window starts in the active 2D projection camera: YZ opens as
+  an orthographic YZ view, XZ as XZ, and XY as the top view. `Iso` remains
+  available when the user wants a perspective 3D inspection view, but it is no
+  longer the default comparison view for a 2D plot.
+- Open 3D camera presets are grouped under `Camera`, and optional reference,
+  detector, and miss diagnostics are grouped under `Overlays` so the top row
+  remains usable on narrower windows.
 - Non-sequential `Pupil / field` layouts with a nonzero Source cone launch from
   a 3D Object/source reference aperture and apply the cone angle as a real
   angular spread around each sampled field direction. This keeps Open 3D and

@@ -5156,7 +5156,7 @@ class Kraken3DInspector(tk.Toplevel):
         # separate popup, so it cannot disappear behind a fullscreen main UI.
         self._stl_placement_popup: tk.Widget | None = None
         self._stl_placement_status_var: tk.StringVar | None = None
-        self._camera_preset = "iso"
+        self._camera_preset = self._camera_preset_for_display_orientation()
         self._stl_placement_row_index: int | None = None
         self._stl_placement_dirty = False
         self._center_row_to_ray_mode = False
@@ -5237,35 +5237,45 @@ class Kraken3DInspector(tk.Toplevel):
             ttk.Label(view_toolbar, text="View").pack(side="left", padx=(0, 6))
             ttk.Button(view_toolbar, text="Refresh", command=self.refresh_from_editor).pack(side="left")
             ttk.Button(view_toolbar, text="Snapshot", command=self.save_snapshot).pack(side="left", padx=(8, 0))
-            ttk.Button(view_toolbar, text="Iso", command=lambda: self.set_camera_preset("iso")).pack(side="left", padx=(8, 0))
-            ttk.Button(view_toolbar, text="ZY", command=lambda: self.set_camera_preset("zy")).pack(side="left", padx=(4, 0))
-            ttk.Button(view_toolbar, text="XY", command=lambda: self.set_camera_preset("xy")).pack(side="left", padx=(4, 0))
-            ttk.Button(view_toolbar, text="XZ", command=lambda: self.set_camera_preset("xz")).pack(side="left", padx=(4, 0))
-            ttk.Button(view_toolbar, text="Bottom", command=lambda: self.set_camera_preset("bottom")).pack(side="left", padx=(4, 0))
+            camera_button = ttk.Menubutton(view_toolbar, text="Camera")
+            camera_menu = tk.Menu(camera_button, tearoff=False)
+            for label, preset in (
+                ("Iso", "iso"),
+                ("YZ", "zy"),
+                ("XY", "xy"),
+                ("XZ", "xz"),
+                ("Bottom", "bottom"),
+            ):
+                camera_menu.add_command(label=label, command=lambda value=preset: self.set_camera_preset(value))
+            camera_button["menu"] = camera_menu
+            camera_button.pack(side="left", padx=(8, 0))
+            self._open3d_camera_menu = camera_menu
             ttk.Checkbutton(
                 view_toolbar,
                 text="Show rays",
                 variable=self.show_rays_var,
                 command=self._on_show_rays_changed,
             ).pack(side="left", padx=(12, 0))
-            ttk.Checkbutton(
-                view_toolbar,
-                text="Refs",
+            overlay_button = ttk.Menubutton(view_toolbar, text="Overlays")
+            overlay_menu = tk.Menu(overlay_button, tearoff=False)
+            overlay_menu.add_checkbutton(
+                label="Refs",
                 variable=self.show_reference_surfaces_var,
                 command=self._on_scene_visibility_changed,
-            ).pack(side="left", padx=(8, 0))
-            ttk.Checkbutton(
-                view_toolbar,
-                text="Det",
+            )
+            overlay_menu.add_checkbutton(
+                label="Det",
                 variable=self.show_detector_overlays_var,
                 command=self._on_scene_visibility_changed,
-            ).pack(side="left", padx=(6, 0))
-            ttk.Checkbutton(
-                view_toolbar,
-                text="Miss",
+            )
+            overlay_menu.add_checkbutton(
+                label="Miss",
                 variable=self.show_terminal_diagnostics_var,
                 command=self._on_scene_visibility_changed,
-            ).pack(side="left", padx=(6, 0))
+            )
+            overlay_button["menu"] = overlay_menu
+            overlay_button.pack(side="left", padx=(8, 0))
+            self._open3d_overlay_menu = overlay_menu
             ttk.Button(view_toolbar, text="Done 2D", command=self.finish_stl_placement).pack(side="right", padx=(8, 0))
             ttk.Button(view_toolbar, text="Close", command=self._on_close).pack(side="right", padx=(8, 0))
 
@@ -5396,6 +5406,22 @@ class Kraken3DInspector(tk.Toplevel):
                 host.destroy()
             except Exception:
                 pass
+
+    @staticmethod
+    def _camera_preset_from_display_orientation(orientation: str) -> str:
+        plane = normalize_projection_plane(orientation)
+        if plane == "XZ":
+            return "xz"
+        if plane == "XY":
+            return "xy"
+        return "zy"
+
+    def _camera_preset_for_display_orientation(self) -> str:
+        try:
+            orientation = self.editor._current_display_orientation()
+        except Exception:
+            orientation = "YZ"
+        return self._camera_preset_from_display_orientation(str(orientation or "YZ"))
 
     def _install_pick_only_left_click_bindings(self) -> None:
         """Left click selects; left drag rotates; middle drag pans the camera."""
@@ -27150,7 +27176,10 @@ class KrakenLayoutEditor(tk.Tk):
             "CAD/STL row selected: use bottom placement buttons, CenterRay, then Done2D or close.",
         ]
         plotter.add_text("\n".join(help_lines), position="upper_left", font_size=12, color="royalblue")
-        self._set_legacy_3d_camera(plotter, "iso")
+        self._set_legacy_3d_camera(
+            plotter,
+            self._legacy_3d_camera_preset_from_display_orientation(self._current_display_orientation()),
+        )
         plotter.add_key_event("i", lambda: self._set_legacy_3d_camera(plotter, "iso"))
         plotter.add_key_event("I", lambda: self._set_legacy_3d_camera(plotter, "iso"))
         plotter.add_key_event("y", lambda: self._set_legacy_3d_camera(plotter, "yz"))
@@ -28287,6 +28316,15 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception as exc:
             self.append_debug(f"3D screenshot failed: {exc}")
             self.status_var.set(f"3D screenshot failed: {_short_error_message(exc)}")
+
+    @staticmethod
+    def _legacy_3d_camera_preset_from_display_orientation(orientation: str) -> str:
+        plane = normalize_projection_plane(orientation)
+        if plane == "XZ":
+            return "xz"
+        if plane == "XY":
+            return "top"
+        return "yz"
 
     @staticmethod
     def _set_legacy_3d_camera(plotter, preset: str) -> None:
