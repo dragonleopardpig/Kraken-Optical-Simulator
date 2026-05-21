@@ -59,10 +59,11 @@ Achievability:
    This is achievable. The current display path already uses 3D raykeeper data
    and adaptive 3D source envelopes. Sequential ``Pupil / field`` previews now
    trace shared 3D section bundles for the 2D projections, and Open 3D requests
-   the world-envelope trace while preserving explicit fan patterns as section
-   fans. Remaining work is mostly consistency: every analysis and export path
-   should consume the same traced scene bundle instead of rebuilding an
-   independent ray set unless explicitly requested.
+   the world-envelope trace with a dedicated 3D angular-pupil source sampler
+   instead of treating 2D fan labels as scene geometry. Remaining work is mostly
+   consistency: every analysis and export path should consume the same traced
+   scene bundle instead of rebuilding an independent ray set unless explicitly
+   requested.
 
 Goal 3: object and illumination source are separate scene entities
 ------------------------------------------------------------------

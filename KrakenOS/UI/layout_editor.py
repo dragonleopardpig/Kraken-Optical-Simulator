@@ -60843,6 +60843,7 @@ class KrakenLayoutEditor(tk.Tk):
             display_orientation=self._current_display_orientation(),
             pupil_rad=self._current_pupil_rad(),
             pupil_theta=self._current_pupil_theta(),
+            seed=self._current_source_seed(),
         )
         ray_count = int(len(l_values))
         field_pairs = (

@@ -72,7 +72,14 @@ def finite_cone_direction_samples(
     display_orientation: str = "YZ",
     pupil_rad: float = 0.0,
     pupil_theta: float = 0.0,
+    seed: int = 1,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return source-cone samples for a non-sequential 3D scene.
+
+    The legacy Pupil pattern menu contains section-analysis controls such as
+    Meridional fan. Those are meaningful for 2D plots, but a non-sequential
+    scene source cone must sample an angular pupil in 3D.
+    """
     ray_total = max(1, int(ray_count))
     cone_rad = max(0.0, float(np.deg2rad(float(cone_deg))))
     pattern = str(pupil_pattern or PUPIL_PATTERN_DEFAULT).strip() or PUPIL_PATTERN_DEFAULT
@@ -97,29 +104,6 @@ def finite_cone_direction_samples(
             np.asarray([np.cos(angle)], dtype=float),
         )
 
-    orientation = normalize_projection_plane(str(display_orientation or "YZ"))
-
-    def _axis_for_fan(label: str) -> int:
-        if label == "Fan X":
-            return 0
-        if label == "Fan Y":
-            return 1
-        return 0 if orientation == "XZ" else 1
-
-    def _fan(axis_index: int, count: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        angles = np.asarray([0.0] if count <= 1 else np.linspace(-cone_rad, cone_rad, count), dtype=float)
-        l_values = np.zeros(angles.size, dtype=float)
-        m_values = np.zeros(angles.size, dtype=float)
-        if axis_index == 0:
-            l_values = np.sin(angles).astype(float)
-        else:
-            m_values = np.sin(angles).astype(float)
-        n_values = np.cos(angles).astype(float)
-        return l_values, m_values, n_values
-
-    if pattern in {"Meridional fan", "Fan X", "Fan Y"}:
-        return _fan(_axis_for_fan(pattern), ray_total)
-
     if pattern == "Cross fan":
         spoke_count = max(1, (ray_total - 1) // 4)
         axis_angles = np.linspace(-cone_rad, cone_rad, 2 * spoke_count + 1)
@@ -136,12 +120,50 @@ def finite_cone_direction_samples(
             np.concatenate((x_n, y_n)).astype(float),
         )
 
-    rim_count = max(1, ray_total - 1)
-    phi = np.linspace(0.0, 2.0 * np.pi, rim_count, endpoint=False)
+    if pattern == "Square":
+        side = int(np.ceil(np.sqrt(ray_total)))
+        coords = np.linspace(-1.0, 1.0, side)
+        points = np.asarray([(x, y) for y in coords for x in coords], dtype=float)
+        radius = np.linalg.norm(points, axis=1)
+        order = np.argsort(radius)
+        points = points[order[:ray_total]]
+        radius = np.linalg.norm(points, axis=1)
+        radius = np.where(radius > 1.0, 1.0, radius)
+        angle = cone_rad * radius
+        phi = np.arctan2(points[:, 1], points[:, 0])
+        return (
+            (np.sin(angle) * np.cos(phi)).astype(float),
+            (np.sin(angle) * np.sin(phi)).astype(float),
+            np.cos(angle).astype(float),
+        )
+
+    if pattern == "Random disk":
+        rng = np.random.default_rng(int(seed) % (2**32 - 1))
+        u = rng.random(ray_total)
+        phi = rng.random(ray_total) * 2.0 * np.pi
+        if ray_total:
+            u[0] = 0.0
+            phi[0] = 0.0
+        angle = cone_rad * np.sqrt(u)
+        return (
+            (np.sin(angle) * np.cos(phi)).astype(float),
+            (np.sin(angle) * np.sin(phi)).astype(float),
+            np.cos(angle).astype(float),
+        )
+
+    # Meridional fan, Fan X, and Fan Y are 2D section/analysis requests.  For a
+    # 3D scene source cone, interpret them as the default filled angular pupil.
+    golden_angle = np.pi * (3.0 - np.sqrt(5.0))
+    if ray_total == 1:
+        radial = np.asarray([0.0], dtype=float)
+    else:
+        radial = np.sqrt(np.linspace(0.0, 1.0, ray_total, dtype=float))
+    phi = np.arange(ray_total, dtype=float) * golden_angle
+    angle = cone_rad * radial
     return (
-        np.concatenate(([0.0], np.sin(cone_rad) * np.cos(phi))).astype(float),
-        np.concatenate(([0.0], np.sin(cone_rad) * np.sin(phi))).astype(float),
-        np.concatenate(([1.0], np.full(rim_count, np.cos(cone_rad), dtype=float))).astype(float),
+        (np.sin(angle) * np.cos(phi)).astype(float),
+        (np.sin(angle) * np.sin(phi)).astype(float),
+        np.cos(angle).astype(float),
     )
 
 
@@ -388,6 +410,7 @@ def _default_finite_cone_bundle_from_settings(
         display_orientation=display_orientation,
         pupil_rad=_settings_float(settings, "pupil_rad", 0.0),
         pupil_theta=_settings_float(settings, "pupil_theta", 0.0),
+        seed=_settings_int(settings, "source_seed", 1, minimum=0),
     )
     ray_count = int(len(l_values))
     x_values = np.zeros(ray_count, dtype=float)

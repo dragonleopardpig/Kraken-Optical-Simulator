@@ -74,9 +74,9 @@ Set Source Divergence
 Set ``Object Mode`` to ``Finite`` in the left panel, then use
 ``Scene Source Manager...`` in the Source panel to edit source divergence. For
 the default ideal workflow, keep ``Model`` as ``Pupil / field`` and edit
-``Cone half-angle [deg]`` in the manager. This launches a deterministic
-meridional cone from the object-field point. With ``Field = 0`` that point is
-the object center.
+``Cone half-angle [deg]`` in the manager. In Open 3D this launches a
+deterministic filled 3D angular-pupil cone from the object-field point. With
+``Field = 0`` that point is the object center.
 
 For physical source-object split workflows, choose a physical source model such
 as ``Random point cone``, ``Random circle source``, ``Random square source``, or

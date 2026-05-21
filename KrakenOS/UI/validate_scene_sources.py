@@ -540,15 +540,14 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         finite_world_cone_lm_span = np.ptp(finite_world_cone_dirs[:, :2], axis=0)
     checks.append(
         SceneSourceCheck(
-            "Open 3D finite pupil/field source honors meridional fan slice",
+            "Open 3D finite pupil/field source maps 2D fan to filled 3D angular pupil",
             finite_world_cone_bundle is not None
             and finite_world_cone_count == 5
             and finite_world_cone_origins.shape == (5, 3)
             and np.allclose(np.ptp(finite_world_cone_origins, axis=0), 0.0, atol=1e-12)
             and np.isclose(float(np.max(finite_world_cone_angles)), 7.0, atol=1e-9)
             and np.isclose(float(np.min(finite_world_cone_angles)), 0.0, atol=1e-9)
-            and np.isclose(float(finite_world_cone_lm_span[0]), 0.0, atol=1e-12)
-            and float(finite_world_cone_lm_span[1]) > 0.0,
+            and np.all(finite_world_cone_lm_span > 0.0),
             (
                 f"origins={np.round(finite_world_cone_origins, 6).tolist()}, "
                 f"angles_deg={np.round(finite_world_cone_angles, 4).tolist()}, "
@@ -579,10 +578,11 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         azimuthal_cone_lm_span = np.ptp(azimuthal_cone_dirs[:, :2], axis=0)
     checks.append(
         SceneSourceCheck(
-            "Open 3D finite pupil/field source keeps azimuthal sampling for 3D pupil patterns",
+            "Open 3D finite pupil/field source keeps filled angular-pupil sampling for 3D patterns",
             azimuthal_cone_bundle is not None
             and azimuthal_cone_count == 5
-            and np.allclose(azimuthal_cone_angles[1:], 7.0, atol=1e-9)
+            and np.isclose(float(np.max(azimuthal_cone_angles)), 7.0, atol=1e-9)
+            and np.isclose(float(np.min(azimuthal_cone_angles)), 0.0, atol=1e-9)
             and np.all(azimuthal_cone_lm_span > 0.0),
             (
                 f"angles_deg={np.round(azimuthal_cone_angles, 4).tolist()}, "
@@ -979,14 +979,13 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         saved_finite_cone_lm_span = np.ptp(saved_finite_cone_dirs[:, :2], axis=0)
     checks.append(
         SceneSourceCheck(
-            "saved layout pupil/field cone is gated to non-sequential intent and honors meridional fan",
+            "saved layout pupil/field cone is gated to non-sequential intent and uses filled 3D angular pupil",
             saved_finite_cone_bundle is None
             and saved_enabled_finite_cone_bundle is not None
             and len(np.asarray(saved_enabled_finite_cone_bundle[0])) == 5
             and np.isclose(float(np.max(saved_finite_cone_angles)), 7.0, atol=1e-9)
             and np.isclose(float(np.min(saved_finite_cone_angles)), 0.0, atol=1e-9)
-            and np.isclose(float(saved_finite_cone_lm_span[0]), 0.0, atol=1e-12)
-            and float(saved_finite_cone_lm_span[1]) > 0.0,
+            and np.all(saved_finite_cone_lm_span > 0.0),
             (
                 f"angles_deg={np.round(saved_finite_cone_angles, 4).tolist()}, "
                 f"lm_span={np.round(saved_finite_cone_lm_span, 6).tolist()}"
