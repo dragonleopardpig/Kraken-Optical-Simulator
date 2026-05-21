@@ -35,6 +35,7 @@ SOURCE_MODEL_VALUES = (
     SOURCE_MODEL_ZEMAX_RAYFILE,
 )
 SOURCE_ANGULAR_WEIGHT_DEFAULT = "Uniform solid angle"
+PUPIL_PATTERN_DEFAULT = "Meridional fan"
 PUPIL_PATTERN_TO_KRAKEN = {
     "Cross fan": "fan",
     "Fan X": "fanx",
@@ -61,6 +62,87 @@ def _settings_float(settings: dict[str, Any], key: str, default: float, *, minim
 
 def _settings_int(settings: dict[str, Any], key: str, default: int, *, minimum: int = 1) -> int:
     return max(int(minimum), int(round(_settings_float(settings, key, float(default), minimum=float(minimum)))))
+
+
+def finite_cone_direction_samples(
+    cone_deg: float,
+    ray_count: int,
+    *,
+    pupil_pattern: str = PUPIL_PATTERN_DEFAULT,
+    display_orientation: str = "YZ",
+    pupil_rad: float = 0.0,
+    pupil_theta: float = 0.0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ray_total = max(1, int(ray_count))
+    cone_rad = max(0.0, float(np.deg2rad(float(cone_deg))))
+    pattern = str(pupil_pattern or PUPIL_PATTERN_DEFAULT).strip() or PUPIL_PATTERN_DEFAULT
+
+    def _center() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        return (
+            np.zeros(1, dtype=float),
+            np.zeros(1, dtype=float),
+            np.ones(1, dtype=float),
+        )
+
+    if ray_total <= 1 or cone_rad <= 1e-15 or pattern == "Chief ray":
+        return _center()
+
+    if pattern == "R-theta":
+        radius = float(np.clip(abs(float(pupil_rad)), 0.0, 1.0))
+        theta = float(np.deg2rad(float(pupil_theta)))
+        angle = cone_rad * radius
+        return (
+            np.asarray([np.sin(angle) * np.cos(theta)], dtype=float),
+            np.asarray([np.sin(angle) * np.sin(theta)], dtype=float),
+            np.asarray([np.cos(angle)], dtype=float),
+        )
+
+    orientation = normalize_projection_plane(str(display_orientation or "YZ"))
+
+    def _axis_for_fan(label: str) -> int:
+        if label == "Fan X":
+            return 0
+        if label == "Fan Y":
+            return 1
+        return 0 if orientation == "XZ" else 1
+
+    def _fan(axis_index: int, count: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        angles = np.asarray([0.0] if count <= 1 else np.linspace(-cone_rad, cone_rad, count), dtype=float)
+        l_values = np.zeros(angles.size, dtype=float)
+        m_values = np.zeros(angles.size, dtype=float)
+        if axis_index == 0:
+            l_values = np.sin(angles).astype(float)
+        else:
+            m_values = np.sin(angles).astype(float)
+        n_values = np.cos(angles).astype(float)
+        return l_values, m_values, n_values
+
+    if pattern in {"Meridional fan", "Fan X", "Fan Y"}:
+        return _fan(_axis_for_fan(pattern), ray_total)
+
+    if pattern == "Cross fan":
+        spoke_count = max(1, (ray_total - 1) // 4)
+        axis_angles = np.linspace(-cone_rad, cone_rad, 2 * spoke_count + 1)
+        x_l = np.sin(axis_angles)
+        x_m = np.zeros(axis_angles.size, dtype=float)
+        x_n = np.cos(axis_angles)
+        y_angles = axis_angles[np.abs(axis_angles) > 1e-15]
+        y_l = np.zeros(y_angles.size, dtype=float)
+        y_m = np.sin(y_angles)
+        y_n = np.cos(y_angles)
+        return (
+            np.concatenate((x_l, y_l)).astype(float),
+            np.concatenate((x_m, y_m)).astype(float),
+            np.concatenate((x_n, y_n)).astype(float),
+        )
+
+    rim_count = max(1, ray_total - 1)
+    phi = np.linspace(0.0, 2.0 * np.pi, rim_count, endpoint=False)
+    return (
+        np.concatenate(([0.0], np.sin(cone_rad) * np.cos(phi))).astype(float),
+        np.concatenate(([0.0], np.sin(cone_rad) * np.sin(phi))).astype(float),
+        np.concatenate(([1.0], np.full(rim_count, np.cos(cone_rad), dtype=float))).astype(float),
+    )
 
 
 def _settings_bool_value(value: Any, default: bool = False) -> bool:
@@ -298,22 +380,19 @@ def _default_finite_cone_bundle_from_settings(
     cone_deg = _settings_float(settings, "source_cone_angle", 0.0, minimum=0.0)
     if source_model != SOURCE_MODEL_DEFAULT or cone_deg <= 1e-12:
         return None
-    ray_count = _settings_int(settings, "ray_count", 5)
-    if ray_count == 1:
-        l_values = np.zeros(1, dtype=float)
-        m_values = np.zeros(1, dtype=float)
-        n_values = np.ones(1, dtype=float)
-    else:
-        cone_rad = float(np.deg2rad(cone_deg))
-        rim_count = max(1, ray_count - 1)
-        phi = np.linspace(0.0, 2.0 * np.pi, rim_count, endpoint=False)
-        l_values = np.concatenate(([0.0], np.sin(cone_rad) * np.cos(phi))).astype(float)
-        m_values = np.concatenate(([0.0], np.sin(cone_rad) * np.sin(phi))).astype(float)
-        n_values = np.concatenate(([1.0], np.full(rim_count, np.cos(cone_rad), dtype=float))).astype(float)
+    display_orientation = normalize_projection_plane(str(settings.get("display_orientation", "YZ") or "YZ").strip())
+    l_values, m_values, n_values = finite_cone_direction_samples(
+        cone_deg,
+        _settings_int(settings, "ray_count", 5),
+        pupil_pattern=str(settings.get("pupil_pattern", PUPIL_PATTERN_DEFAULT) or PUPIL_PATTERN_DEFAULT),
+        display_orientation=display_orientation,
+        pupil_rad=_settings_float(settings, "pupil_rad", 0.0),
+        pupil_theta=_settings_float(settings, "pupil_theta", 0.0),
+    )
+    ray_count = int(len(l_values))
     x_values = np.zeros(ray_count, dtype=float)
     y_values = np.zeros(ray_count, dtype=float)
     if object_mode != "Infinity":
-        display_orientation = normalize_projection_plane(str(settings.get("display_orientation", "YZ") or "YZ").strip())
         axis_index = 0 if display_orientation == "XZ" else 1
         field_value = _settings_float(settings, "field_value", 0.0)
         if axis_index == 0:

@@ -52,6 +52,10 @@ The UI keeps ray generation 3D-first for scene/CAD workflows:
   filter it into the selected projection. If the active field span is zero,
   the UI disables ``Field Samples`` as ``NA`` and traces one effective on-axis
   field launch while preserving the requested field count in metadata.
+* Non-sequential ``Pupil / field`` source cones honor the selected pupil
+  pattern. ``Meridional fan``, ``Fan X``, and ``Fan Y`` stay in the requested
+  section plane; azimuthal patterns such as ``Hexapolar``, ``Square``, and
+  ``Random disk`` launch the 3D cone envelope.
 * Ray hover/click diagnostics in the 2D plot and 3D viewers read the canonical
   terminal event. A missed detector/Image reports the detector surface, plane
   distance, radial miss, active half-aperture, local detector-plane X/Y, active

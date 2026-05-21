@@ -60834,17 +60834,17 @@ class KrakenLayoutEditor(tk.Tk):
         if cone_deg <= 1e-12:
             return [], 0
         ray_count = max(1, int(self._current_ray_count()))
-        if ray_count == 1:
-            l_values = np.zeros(1, dtype=float)
-            m_values = np.zeros(1, dtype=float)
-            n_values = np.ones(1, dtype=float)
-        else:
-            cone_rad = float(np.deg2rad(cone_deg))
-            rim_count = max(1, ray_count - 1)
-            phi = np.linspace(0.0, 2.0 * np.pi, rim_count, endpoint=False)
-            l_values = np.concatenate(([0.0], np.sin(cone_rad) * np.cos(phi))).astype(float)
-            m_values = np.concatenate(([0.0], np.sin(cone_rad) * np.sin(phi))).astype(float)
-            n_values = np.concatenate(([1.0], np.full(rim_count, np.cos(cone_rad), dtype=float))).astype(float)
+        from KrakenOS.UI.source_trace_helpers import finite_cone_direction_samples
+
+        l_values, m_values, n_values = finite_cone_direction_samples(
+            cone_deg,
+            ray_count,
+            pupil_pattern=self._current_pupil_pattern_label(),
+            display_orientation=self._current_display_orientation(),
+            pupil_rad=self._current_pupil_rad(),
+            pupil_theta=self._current_pupil_theta(),
+        )
+        ray_count = int(len(l_values))
         field_pairs = (
             [(0.0, 0.0)]
             if self._current_object_mode() == "Infinity"
