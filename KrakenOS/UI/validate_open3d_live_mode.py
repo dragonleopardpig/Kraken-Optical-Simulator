@@ -29,6 +29,14 @@ def validate_open3d_live_mode() -> list[Open3DLiveModeCheck]:
             "Live Controls panel mirrors Source, Field, and Trace / Display controls.",
         ),
         Open3DLiveModeCheck(
+            "Live Controls are docked left of the 3D viewport",
+            "self.columnconfigure(0, weight=0)" in inspector_source
+            and "self.columnconfigure(1, weight=1)" in inspector_source
+            and 'host.grid(row=1, column=1, sticky="nsew")' in inspector_source
+            and 'live_panel.grid(row=1, column=0, sticky="nsew"' in inspector_source,
+            "The control panel owns the left column while the VTK viewport remains the expanding right column.",
+        ),
+        Open3DLiveModeCheck(
             "Live controls are bound to the main editor state",
             "textvariable=self._editor_var(" in inspector_source
             and "self.editor._on_source_model_changed" in inspector_source

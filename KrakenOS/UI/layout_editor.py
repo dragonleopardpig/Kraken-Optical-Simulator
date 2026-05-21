@@ -5220,12 +5220,12 @@ class Kraken3DInspector(tk.Toplevel):
         self._live_refresh_reason = ""
         self.status_var = tk.StringVar(value="3D inspector ready")
 
-        self.columnconfigure(0, weight=1)
-        self.columnconfigure(1, weight=0)
+        self.columnconfigure(0, weight=0)
+        self.columnconfigure(1, weight=1)
         self.rowconfigure(1, weight=1)
 
         host = ttk.Frame(self, padding=8)
-        host.grid(row=1, column=0, sticky="nsew")
+        host.grid(row=1, column=1, sticky="nsew")
         host.columnconfigure(0, weight=1)
         host.rowconfigure(0, weight=1)
 
@@ -5374,7 +5374,7 @@ class Kraken3DInspector(tk.Toplevel):
             ).pack(side="left", padx=(12, 0))
 
             live_panel = ttk.LabelFrame(self, text="Live Controls", padding=8)
-            live_panel.grid(row=1, column=1, sticky="nsew", padx=(0, 8), pady=8)
+            live_panel.grid(row=1, column=0, sticky="nsew", padx=(8, 0), pady=8)
             live_panel.columnconfigure(0, weight=1)
             live_panel.rowconfigure(1, weight=1)
             self._build_live_left_panel(live_panel)
@@ -9010,7 +9010,7 @@ class Kraken3DInspector(tk.Toplevel):
         popup = self._stl_placement_popup
         if popup is None or not bool(getattr(popup, "winfo_exists", lambda: False)()):
             popup = ttk.Frame(self, padding=10, borderwidth=1, relief="groove")
-            popup.grid(row=1, column=1, sticky="ns", padx=(0, 8), pady=8)
+            popup.grid(row=1, column=0, sticky="ns", padx=(8, 0), pady=8)
             popup.columnconfigure(0, weight=1)
             self._stl_placement_popup = popup
             self._stl_placement_status_var = tk.StringVar(value="")
@@ -9112,7 +9112,7 @@ class Kraken3DInspector(tk.Toplevel):
 
         self._update_stl_placement_handler_state()
         try:
-            popup.grid(row=1, column=1, sticky="ns", padx=(0, 8), pady=8)
+            popup.grid(row=1, column=0, sticky="ns", padx=(8, 0), pady=8)
             popup.tkraise()
             self.update_idletasks()
         except Exception:
@@ -14929,6 +14929,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.imported_lens_step_path: Path | None = None
         self.imported_optical_step_path: Path | None = None
         self.imported_led_step_path: Path | None = None
+        self._live_step_overlay_trace_plan_cache: dict[object, dict[str, object]] = {}
         self.lens_step_largest_component_only = True
         self.camera_step_rotation_x_deg = 0.0
         self.lens_step_rotation_x_deg = 0.0
@@ -26384,6 +26385,14 @@ class KrakenLayoutEditor(tk.Tk):
         if self._step_path_for_label("optical") is None:
             return self.rows, []
         base_rows = [SurfaceRow(**asdict(row)) for row in self.rows]
+        cache_key = self._live_step_overlay_trace_cache_key("optical", base_rows)
+        cached_plan = self._cached_live_step_overlay_trace_plan(cache_key)
+        if cached_plan is not None:
+            row = cached_plan.get("row")
+            if isinstance(row, SurfaceRow):
+                row_index = int(cached_plan.get("row_index", len(base_rows)))
+                base_rows.insert(max(1, min(row_index, len(base_rows))), row)
+                return base_rows, [cached_plan]
         original_rows = self.rows
         try:
             self.rows = base_rows
@@ -26401,9 +26410,73 @@ class KrakenLayoutEditor(tk.Tk):
                 return original_rows, []
             row_index = int(plan.get("row_index", len(base_rows)))
             base_rows.insert(max(1, min(row_index, len(base_rows))), row)
+            self._remember_live_step_overlay_trace_plan(cache_key, plan)
             return base_rows, [plan]
         finally:
             self.rows = original_rows
+
+    def _live_step_overlay_trace_cache_key(self, label: str, rows: list[SurfaceRow]) -> object | None:
+        label = str(label).strip().lower()
+        source_path = self._step_path_for_label(label)
+        if source_path is None:
+            return None
+        try:
+            row_signature = _row_specs_signature(self._serializable_specs_for_rows(rows))
+        except Exception:
+            row_signature = tuple(
+                (
+                    str(getattr(row, "surface", "") or ""),
+                    float(getattr(row, "thickness", 0.0) or 0.0),
+                    float(getattr(row, "diameter", 0.0) or 0.0),
+                    float(getattr(row, "desp_x", 0.0) or 0.0),
+                    float(getattr(row, "desp_y", 0.0) or 0.0),
+                    float(getattr(row, "desp_z", 0.0) or 0.0),
+                )
+                for row in rows
+            )
+        return (
+            label,
+            str(Path(source_path).resolve()),
+            float(self._step_x_rotation_deg(label)),
+            float(self._step_y_rotation_deg(label)),
+            float(self._step_roll_deg(label)),
+            tuple(float(value) for value in self._step_axis_offset_xy(label)),
+            tuple(float(value) for value in self._step_placement_offset_xyz(label)),
+            bool(getattr(self, "lens_step_largest_component_only", True)) if label == "lens" else None,
+            row_signature,
+        )
+
+    def _cached_live_step_overlay_trace_plan(self, cache_key: object | None) -> dict[str, object] | None:
+        if cache_key is None:
+            return None
+        cache = getattr(self, "_live_step_overlay_trace_plan_cache", {}) or {}
+        cached = cache.get(cache_key)
+        if not isinstance(cached, dict):
+            return None
+        row = cached.get("row")
+        if not isinstance(row, SurfaceRow):
+            return None
+        copied = dict(cached)
+        copied["row"] = SurfaceRow(**asdict(row))
+        copied["cache_hit"] = True
+        return copied
+
+    def _remember_live_step_overlay_trace_plan(self, cache_key: object | None, plan: dict[str, object]) -> None:
+        if cache_key is None or not isinstance(plan, dict):
+            return
+        row = plan.get("row")
+        if not isinstance(row, SurfaceRow):
+            return
+        cache = dict(getattr(self, "_live_step_overlay_trace_plan_cache", {}) or {})
+        cached = dict(plan)
+        cached["row"] = SurfaceRow(**asdict(row))
+        cache[cache_key] = cached
+        while len(cache) > 4:
+            try:
+                cache.pop(next(iter(cache)))
+            except Exception:
+                break
+        self._live_step_overlay_trace_plan_cache = cache
 
     def _preview_render_rows(self, scene_bundle: SceneBundle | None = None) -> list[SurfaceRow]:
         if (

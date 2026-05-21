@@ -56,6 +56,15 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             and "self.editor._preview_render_rows(scene_bundle)" in inspector_source,
             "Surface mesh accounting uses the transient trace rows for the live bundle.",
         ),
+        Open3DLiveTransientStepCheck(
+            "Live STEP row plans are cached across source-only refreshes",
+            "_live_step_overlay_trace_plan_cache" in editor_source
+            and "def _live_step_overlay_trace_cache_key" in editor_source
+            and "def _cached_live_step_overlay_trace_plan" in editor_source
+            and "def _remember_live_step_overlay_trace_plan" in editor_source
+            and "cache_hit" in editor_source,
+            "Unchanged optical STEP pose and row context can reuse the transient row plan instead of remeshing.",
+        ),
     ]
     return checks
 
