@@ -29,6 +29,13 @@ def validate_open3d_live_mode() -> list[Open3DLiveModeCheck]:
             "Live Controls panel mirrors Source, Field, and Trace / Display controls.",
         ),
         Open3DLiveModeCheck(
+            "Live Controls expose explicit STEP placement acceptance",
+            "def _build_live_step_controls" in inspector_source
+            and "Accept STEP Placement" in inspector_source
+            and "accept_selected_step_placement" in inspector_source,
+            "Transient STEP placement can be committed from the left Live Controls panel.",
+        ),
+        Open3DLiveModeCheck(
             "Live Controls are docked left of the 3D viewport",
             "self.columnconfigure(0, weight=0)" in inspector_source
             and "self.columnconfigure(1, weight=1)" in inspector_source

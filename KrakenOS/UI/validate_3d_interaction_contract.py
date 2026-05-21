@@ -115,6 +115,7 @@ def main() -> int:
     step_carry_grip_update = inspect.getsource(Kraken3DInspector._update_step_carry_grip_after_delta)
     step_carry_grip_clear = inspect.getsource(Kraken3DInspector._clear_step_carry_grip_marker)
     step_promote = inspect.getsource(Kraken3DInspector.promote_selected_step_to_optical_solid_row)
+    step_promote_helper = inspect.getsource(Kraken3DInspector._promote_step_overlay_to_optical_solid_row)
     step_carry_start = inspect.getsource(Kraken3DInspector.start_selected_step_carry)
     step_carry_snap_start = inspect.getsource(Kraken3DInspector.start_step_carry_snap_ray)
     step_carry_snap_apply = inspect.getsource(Kraken3DInspector._apply_step_carry_snap_ray)
@@ -407,6 +408,12 @@ def main() -> int:
             "Promote STEP to Optical Solid Row" in init and "promote_selected_step_to_optical_solid_row" in init,
         ),
         (
+            "Open 3D exposes explicit STEP placement acceptance",
+            "Accept STEP Placement" in init
+            and "accept_selected_step_placement" in init
+            and "def accept_selected_step_placement" in inspect.getsource(Kraken3DInspector.accept_selected_step_placement),
+        ),
+        (
             "Open 3D exposes top-level Done 2D and Close actions",
             "Done 2D" in init
             and "finish_stl_placement" in init
@@ -423,13 +430,13 @@ def main() -> int:
         ),
         (
             "Open 3D STEP promotion refreshes and highlights the created row",
-            "promote_imported_step_to_optical_solid_row" in step_promote
-            and "highlight_row(row_index)" in step_promote
+            "promote_imported_step_to_optical_solid_row" in step_promote_helper
+            and "highlight_row(row_index)" in step_promote_helper
             and "Assign optical faces/material" in step_promote,
         ),
         (
             "Open 3D STEP promotion and face assignment dirty the 2D refresh path",
-            "_stl_placement_dirty = True" in step_promote
+            "_stl_placement_dirty = True" in step_promote_helper
             and "_stl_placement_dirty = True" in context_assign
             and "_stl_placement_dirty = True" in context_promote_assign,
         ),
@@ -566,8 +573,8 @@ def main() -> int:
         ),
         (
             "Open 3D STEP promotion clears stale overlay interaction state",
-            "_clear_step_overlay_interaction_state(label)" in step_promote
-            and "refresh_open_3d=False" in step_promote
+            "_clear_step_overlay_interaction_state(label)" in step_promote_helper
+            and "refresh_open_3d=False" in step_promote_helper
             and "_selected_step_label = None" in clear_step_overlay_state
             and "_close_step_rotation_handler()" in clear_step_overlay_state,
         ),

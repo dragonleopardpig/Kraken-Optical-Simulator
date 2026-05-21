@@ -65,6 +65,15 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             and "cache_hit" in editor_source,
             "Unchanged optical STEP pose and row context can reuse the transient row plan instead of remeshing.",
         ),
+        Open3DLiveTransientStepCheck(
+            "Transient STEP placement has an explicit persistent-row accept path",
+            "def accept_selected_step_placement" in inspector_source
+            and "def _promote_step_overlay_to_optical_solid_row" in inspector_source
+            and "open_face_editor=False" in inspector_source
+            and "clear_overlay=True" in inspector_source
+            and "_live_step_overlay_trace_plan_cache = {}" in inspector_source,
+            "Accepting placement promotes the overlay into a row-backed optical solid and clears transient state.",
+        ),
     ]
     return checks
 

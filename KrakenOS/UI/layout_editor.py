@@ -5301,6 +5301,7 @@ class Kraken3DInspector(tk.Toplevel):
             cad_target_menu.add_command(label="Clear STEP Imports", command=self.clear_step_imports)
             cad_target_menu.add_separator()
             cad_target_menu.add_command(label="Arm Selected STEP Carry", command=self.start_selected_step_carry)
+            cad_target_menu.add_command(label="Accept STEP Placement", command=self.accept_selected_step_placement)
             cad_target_menu.add_command(label="Promote STEP to Optical Solid Row", command=self.promote_selected_step_to_optical_solid_row)
             cad_target_menu.add_separator()
             cad_target_menu.add_command(label="Center STEP Axis", command=self.editor.start_any_step_axis_pick)
@@ -5465,6 +5466,10 @@ class Kraken3DInspector(tk.Toplevel):
         trace = ttk.LabelFrame(stack, text="Trace / Display", padding=8)
         trace.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         self._build_live_trace_controls(trace)
+
+        step = ttk.LabelFrame(stack, text="STEP Placement", padding=8)
+        step.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        self._build_live_step_controls(step)
 
     def _editor_var(self, name: str, default: str = ""):
         var = getattr(self.editor, name, None)
@@ -5654,6 +5659,25 @@ class Kraken3DInspector(tk.Toplevel):
             variable=self._editor_var("nonseq_energy_probability_var"),
             command=self._commit_live_control_update,
         ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
+    def _build_live_step_controls(self, parent: tk.Widget) -> None:
+        for column in range(2):
+            parent.columnconfigure(column, weight=1, uniform="live_step")
+        ttk.Button(
+            parent,
+            text="Accept STEP Placement",
+            command=self.accept_selected_step_placement,
+        ).grid(row=0, column=0, columnspan=2, sticky="ew")
+        ttk.Button(
+            parent,
+            text="Promote STEP Row",
+            command=self.promote_selected_step_to_optical_solid_row,
+        ).grid(row=1, column=0, sticky="ew", pady=(6, 0), padx=(0, 3))
+        ttk.Button(
+            parent,
+            text="Clear STEP",
+            command=self.clear_step_imports,
+        ).grid(row=1, column=1, sticky="ew", pady=(6, 0), padx=(3, 0))
 
     def _commit_live_control_update(self, *, sync_fields: bool = False, handler=None) -> None:
         try:
@@ -8478,21 +8502,54 @@ class Kraken3DInspector(tk.Toplevel):
         self.refresh_from_editor()
         self.status_var.set("Camera/lens/optical/LED STEP imports cleared.")
 
-    def promote_selected_step_to_optical_solid_row(self) -> None:
-        label = str(self.editor._selected_step_label or self._step_rotation_active_label or self._step_carry_active_label or "").strip().lower()
+    def _selected_imported_step_label(self) -> str:
+        for candidate in (
+            self.editor._selected_step_label,
+            self._step_rotation_active_label,
+            self._step_carry_active_label,
+            "optical",
+        ):
+            label = str(candidate or "").strip().lower()
+            if label in STEP_OVERLAY_LABEL_SET and self.editor._step_path_for_label(label) is not None:
+                return label
+        return ""
+
+    def _promote_step_overlay_to_optical_solid_row(
+        self,
+        label: str,
+        *,
+        open_face_editor: bool,
+        action_label: str,
+    ) -> dict[str, object] | None:
+        label = str(label).strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
-            self.status_var.set("Promote STEP: select or import a lens, optical, camera, or LED STEP first.")
-            return
+            self.status_var.set(f"{action_label} STEP: select or import a lens, optical, camera, or LED STEP first.")
+            return None
+        self._debug_trace(
+            "step_overlay_promote_to_row",
+            label=label,
+            action_label=action_label,
+            open_face_editor=bool(open_face_editor),
+            counts_before=self._debug_actor_counts(),
+        )
         try:
-            result = self.editor.promote_imported_step_to_optical_solid_row(label, clear_overlay=True, refresh_open_3d=False)
+            result = self.editor.promote_imported_step_to_optical_solid_row(
+                label,
+                open_face_editor=bool(open_face_editor),
+                clear_overlay=True,
+                refresh_open_3d=False,
+            )
         except Exception as exc:
-            self.status_var.set(f"Promote STEP failed: {_short_error_message(exc)}")
-            self.editor.append_debug(f"Open 3D STEP promotion failed: {exc}")
-            return
+            self.status_var.set(f"{action_label} STEP failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D STEP {action_label.lower()} failed: {exc}")
+            self._debug_trace("step_overlay_promote_to_row_failed", label=label, error=_short_error_message(exc))
+            return None
         if result is None:
             self.status_var.set(self.editor.status_var.get())
-            return
+            self._debug_trace("step_overlay_promote_to_row_no_result", label=label, status=self.editor.status_var.get())
+            return None
         self._stl_placement_dirty = True
+        self.editor._live_step_overlay_trace_plan_cache = {}
         self._clear_step_overlay_interaction_state(label)
         row_index = int(result.get("row_index", -1))
         try:
@@ -8500,7 +8557,42 @@ class Kraken3DInspector(tk.Toplevel):
             if row_index >= 0:
                 self.highlight_row(row_index)
         except Exception as exc:
-            self.editor.append_debug(f"Open 3D STEP promotion refresh failed: {exc}")
+            self.editor.append_debug(f"Open 3D STEP {action_label.lower()} refresh failed: {exc}")
+        self._debug_trace(
+            "step_overlay_promote_to_row_done",
+            label=label,
+            row_index=row_index,
+            action_label=action_label,
+            counts_after=self._debug_actor_counts(),
+        )
+        return result
+
+    def accept_selected_step_placement(self) -> None:
+        label = self._selected_imported_step_label()
+        result = self._promote_step_overlay_to_optical_solid_row(
+            label,
+            open_face_editor=False,
+            action_label="Accept",
+        )
+        if result is None:
+            return
+        row_index = int(result.get("row_index", -1))
+        path = Path(str(result.get("mesh_path", "")))
+        self.status_var.set(
+            f"Accepted {label.upper()} STEP placement as optical solid row S{row_index}: {path.name}. "
+            "Use right-click face assignment or Faces before tracing final physics."
+        )
+
+    def promote_selected_step_to_optical_solid_row(self) -> None:
+        label = self._selected_imported_step_label()
+        result = self._promote_step_overlay_to_optical_solid_row(
+            label,
+            open_face_editor=True,
+            action_label="Promote",
+        )
+        if result is None:
+            return
+        row_index = int(result.get("row_index", -1))
         path = Path(str(result.get("mesh_path", "")))
         self.status_var.set(
             f"Promoted {label.upper()} STEP to optical solid row S{row_index}: {path.name}. "
@@ -19571,6 +19663,7 @@ class KrakenLayoutEditor(tk.Tk):
         placement_attr = f"{label}_step_placement_offset_xyz"
         if hasattr(self, placement_attr):
             setattr(self, placement_attr, (0.0, 0.0, 0.0))
+        self._live_step_overlay_trace_plan_cache = {}
         if label == "led":
             self.led_object_edge_distance_mm = 0.0
             self.led_step_object_edge_local_z = None
@@ -20709,6 +20802,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.optical_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self.camera_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self.led_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+        self._live_step_overlay_trace_plan_cache = {}
         self._cad_axis_pick_label = None
         self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
