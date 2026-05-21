@@ -7,6 +7,109 @@ same paraxial matrices used by ``system.ParaxMatrices()`` and
 layout work: waist size, beam radius, divergence, Rayleigh range, wavefront
 radius, Gouy phase, and CSV export at every paraxial step.
 
+Beam fundamentals
+-----------------
+
+A monochromatic Gaussian beam in homogeneous medium is fully specified by its
+**beam radius** :math:`w(z)`, **wavefront radius of curvature** :math:`R(z)`,
+and **Gouy phase** :math:`\psi(z)`, all measured from the waist position
+:math:`z_{w}`:
+
+.. math::
+
+   w(z)   &= w_{0}\,\sqrt{1 + \!\left(\frac{z - z_{w}}{z_{R}}\right)^{2}}, \\[4pt]
+   R(z)   &= (z - z_{w})\;\Bigl[\,1 + \!\bigl(z_{R}/(z - z_{w})\bigr)^{2}\,\Bigr], \\[4pt]
+   \psi(z) &= \arctan\!\left(\frac{z - z_{w}}{z_{R}}\right),
+
+with the **Rayleigh range** and far-field **half-divergence**:
+
+.. math::
+
+   z_{R} = \frac{\pi\,n\,w_{0}^{2}}{M^{2}\,\lambda},
+   \qquad
+   \theta = \frac{M^{2}\,\lambda}{\pi\,n\,w_{0}}.
+
+Here
+
+* :math:`w_{0}` is the waist radius (1/e² field amplitude),
+* :math:`z_{w}` is the waist position along the optical axis,
+* :math:`z_{R}` is the Rayleigh range — the distance from the waist at which
+  the beam area doubles (:math:`w(z_{w} + z_{R}) = w_{0}\sqrt{2}`),
+* :math:`R(z)` is the radius of curvature of the wavefront
+  (:math:`R \to \infty` at the waist; :math:`R \to z - z_{w}` in the far
+  field),
+* :math:`\psi(z)` is the Gouy phase — an axial phase slip of
+  :math:`\pi` rad between the two far fields,
+* :math:`\lambda` is the vacuum wavelength,
+* :math:`n` is the refractive index of the current medium,
+* :math:`M^{2}` is the beam-quality factor (1 for an ideal TEM₀₀).
+
+.. figure:: ../_static/manual/gaussian_beams/01_beam_fundamentals.svg
+   :alt: Gaussian beam fundamentals — w(z), w0, zR, divergence, R(z), Gouy
+   :align: center
+   :width: 100%
+
+   The amber envelope is :math:`\pm w(z)`. The waist sits where the envelope
+   pinches. :math:`z_R` is the distance to where the envelope has expanded
+   by :math:`\sqrt{2}`; the dashed grey lines are the far-field asymptotes
+   that open at the half-angle :math:`\theta`.
+
+**Worked example.** Take :math:`\lambda = 0.6328` µm
+(HeNe), :math:`n = 1`, :math:`M^{2} = 1`, :math:`w_{0} = 0.5` mm.
+
+* :math:`z_{R} = \pi \cdot 1 \cdot (0.5)^{2} / 0.0006328
+  \approx 1241` mm.
+* :math:`\theta = 0.0006328 / (\pi \cdot 0.5) \approx 4.03 \cdot 10^{-4}` rad
+  :math:`= 0.403` mrad
+  (full divergence :math:`\Theta_{\mathrm{full}} = 0.806` mrad).
+* At :math:`z - z_{w} = z_{R}`:
+  :math:`w = w_{0}\sqrt{2} = 0.707` mm,
+  :math:`R = z_{R}\,(1 + 1) = 2482` mm,
+  :math:`\psi = \arctan(1) = \pi/4 \approx 0.785` rad.
+* At :math:`z - z_{w} = 2\,z_{R}`:
+  :math:`w = w_{0}\sqrt{5} = 1.118` mm,
+  :math:`R = 2z_{R}(1 + 1/4) = 3103` mm.
+* Far-field beam diameter at 10 m:
+  :math:`2\,w(10\,\mathrm{m}) \approx 2\,w_{0}\,\sqrt{1 + (10000/1241)^{2}}
+  \approx 8.06` mm — i.e. essentially the far-field cone
+  :math:`2\theta \cdot z = 0.806\,\mathrm{mrad} \cdot 10\,\mathrm{m} = 8.06` mm.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   import numpy as np
+   import KrakenOS as Kos
+
+   lam_um = 0.6328
+   w0_mm  = 0.5
+   n      = 1.0
+   M2     = 1.0
+
+   lam_mm = lam_um * 1e-3
+   zR     = np.pi * n * w0_mm**2 / (M2 * lam_mm)
+   theta  = M2 * lam_mm / (np.pi * n * w0_mm)
+   print(f"zR = {zR:.2f} mm   theta_half = {theta*1e3:.3f} mrad")
+
+   # Trace q through a 100-mm propagation step using the q-transform:
+   beam   = Kos.GaussianBeamInput(wavelength_um=lam_um,
+                                  waist_radius_mm=w0_mm,
+                                  waist_offset_mm=0.0,
+                                  m2=M2)
+   z       = 100.0                          # mm from waist
+   q_in    = complex(0.0, zR)               # q at the waist
+   A, B, C, D = 1.0, z, 0.0, 1.0            # free-space propagation matrix
+   q_out   = (A*q_in + B) / (C*q_in + D)
+   w_z     = np.sqrt(-lam_mm / (np.pi * (1/q_out).imag))
+   R_z     = 1.0 / (1/q_out).real
+   psi_z   = np.arctan2(q_out.real, q_out.imag)
+   print(f"at z = {z:.0f} mm:  w = {w_z*1e3:.3f} um,  R = {R_z:.1f} mm,  "
+         f"Gouy = {psi_z:.4f} rad")
+
+
+Complex beam parameter and ABCD transformation
+----------------------------------------------
+
 The implementation uses the conventional complex beam parameter:
 
 .. math::
@@ -14,9 +117,69 @@ The implementation uses the conventional complex beam parameter:
    q_{out} = \frac{A q_{in} + B}{C q_{in} + D}
 
 where ``A``, ``B``, ``C``, and ``D`` are the step matrix values in the
-``(height, angle)`` convention. KrakenOS refraction matrices include refractive
-index transitions, so a flat air-to-glass interface scales the Rayleigh range
-correctly.
+``(height, angle)`` convention. The single complex number encodes *both*
+the beam radius and the wavefront curvature through
+
+.. math::
+
+   \frac{1}{q(z)} \;=\; \frac{1}{R(z)} \;-\; i\,\frac{\lambda}{\pi\,n\,w(z)^{2}}.
+
+KrakenOS refraction matrices include refractive index transitions, so a
+flat air-to-glass interface scales the Rayleigh range correctly.
+
+.. figure:: ../_static/manual/gaussian_beams/02_q_abcd.svg
+   :alt: q_in → ABCD → q_out
+   :align: center
+   :width: 100%
+
+   ``q`` is a single complex number that carries both
+   :math:`R(z)` (its inverse real part) and :math:`w(z)` (via the imaginary
+   part). It transforms by the same ABCD matrix that propagates paraxial
+   rays.
+
+**Worked example.** Pass the HeNe beam above (:math:`q_{0} = 0 + i\,z_{R}
+= i\,1241` mm) through a 100-mm free-space step and then through a thin
+lens of focal length :math:`f = 80` mm.
+
+* Free-space propagation matrix:
+  :math:`(A, B, C, D) = (1, 100, 0, 1)`. So
+  :math:`q_{1} = q_{0} + 100 = 100 + i\,1241` mm.
+  :math:`w(z = 100) = \sqrt{|q_{1}|^{2} \cdot \lambda / (\pi z_{R})}
+  = 0.5\,\sqrt{1 + (100/1241)^{2}} \approx 0.502` mm.
+* Thin-lens matrix:
+  :math:`(A, B, C, D) = (1, 0,\, -1/f,\, 1) = (1, 0, -0.0125, 1)`. Then
+  :math:`q_{2} = q_{1} / (1 - q_{1}/f)
+  = (100 + 1241i) / (1 - (100 + 1241i)/80)
+  = (100 + 1241i) / (-0.25 - 15.5125 i)`
+  :math:`\approx -3.20 - 79.7\,i` mm.
+* Read out: new waist offset = :math:`\mathrm{Re}(q_{2}) = -3.20` mm
+  (waist is 3.2 mm *before* the lens plane, i.e. on the source side),
+  new Rayleigh range = :math:`\mathrm{Im}(q_{2}) = 79.7` mm, so
+  :math:`w_{0}' = \sqrt{\lambda\,z_{R}' / \pi}
+  = \sqrt{0.0006328 \cdot 79.7 / \pi} \approx 0.127` mm — the lens has
+  refocused the beam to a tight new waist.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   # Same setup as the previous block; demonstrate the ABCD chain.
+   def step(q, A, B, C, D):
+       return (A*q + B) / (C*q + D)
+
+   q   = complex(0.0, zR)
+   q1  = step(q,   1.0, 100.0, 0.0,         1.0)        # 100 mm air
+   q2  = step(q1,  1.0,   0.0, -1.0/80.0,   1.0)        # thin lens f=80 mm
+
+   def w_R(q, lam, n=1.0):
+       w = np.sqrt(-lam / (np.pi * (1/q).imag * n))
+       R = 1.0 / (1/q).real if (1/q).real != 0 else np.inf
+       return w, R
+
+   for label, qq in [("q_in", q), ("after 100 mm", q1), ("after lens", q2)]:
+       w, R = w_R(qq, lam_mm)
+       print(f"{label:<14}  q = {qq.real:+.3f} {qq.imag:+.3f}i mm   "
+             f"w = {w*1e3:.2f} um   R = {R:+.1f} mm")
 
 Input conventions
 -----------------
@@ -100,9 +263,72 @@ The calculation uses:
 
    z = z_R \sqrt{\left(\frac{w}{w_0}\right)^2 - 1}
 
-where ``w`` is half the specified beam diameter at the source plane. If
-``w < w0``, the diameter/divergence pair is physically inconsistent and the UI
-reports an invalid Gaussian source input.
+where
+
+* :math:`\Theta_{\mathrm{full}}` is the full-angle far-field divergence
+  (datasheet value, mrad → rad),
+* :math:`\theta` is the corresponding half-divergence,
+* :math:`w_{0}` is the back-calculated waist radius (mm),
+* :math:`z_{R}` is the Rayleigh range implied by that :math:`w_{0}`,
+* :math:`w` is half the specified beam diameter at the source plane
+  (:math:`w = D/2`),
+* :math:`z` is the **signed offset** from the source plane to the waist:
+  positive when the waist sits *before* the source plane (``Waist
+  before source``), negative when it sits *after* it.
+
+If :math:`w < w_{0}` the requested (D, Θ_full) pair is unphysical and the
+UI flags an invalid Gaussian source input.
+
+.. figure:: ../_static/manual/gaussian_beams/03_datasheet_input.svg
+   :alt: Diameter and divergence to w0 and waist offset
+   :align: center
+   :width: 100%
+
+   The source plane defines where you measure D; the waist sits an offset
+   distance away — KrakenOS solves for that distance from the
+   diameter/divergence pair.
+
+**Worked example.** Datasheet entry for a small 650-nm visible diode:
+:math:`D = 1.0` mm, :math:`\Theta_{\mathrm{full}} = 2.0` mrad,
+:math:`M^{2} = 1`, :math:`n = 1`.
+
+* :math:`\theta = 2.0/2 = 1.0` mrad :math:`= 10^{-3}` rad.
+* :math:`w_{0} = M^{2}\,\lambda / (\pi\,n\,\theta)
+  = 1 \cdot 0.00065 / (\pi \cdot 1 \cdot 10^{-3})
+  \approx 0.2069` mm.
+* :math:`z_{R} = \pi\,n\,w_{0}^{2}/(M^{2}\,\lambda)
+  = \pi \cdot 1 \cdot 0.2069^{2}/0.00065
+  \approx 206.9` mm.
+* Source-plane radius :math:`w = D/2 = 0.5` mm.
+* Waist offset:
+  :math:`z = z_{R}\,\sqrt{(w/w_{0})^{2} - 1}
+  = 206.9\,\sqrt{(0.5/0.2069)^{2} - 1}
+  = 206.9\,\sqrt{4.836}
+  \approx 455.1` mm.
+
+So the laser-output plane is ~455 mm downstream of the implied waist.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   beam = Kos.gaussian_beam_from_diameter_divergence(
+       wavelength_um=0.650,
+       beam_diameter_mm=1.0,
+       full_divergence_mrad=2.0,
+       m2=1.0,
+       waist_after_input=False,            # waist before source plane
+   )
+   print(f"w0          = {beam.waist_radius_mm*1e3:.2f} um")
+   print(f"waist offset= {beam.waist_offset_mm:.2f} mm")
+
+   # Compare against the analytic value:
+   lam   = 0.650e-3
+   theta = 1.0e-3
+   w0    = 1.0 * lam / (np.pi * theta)
+   zR    = np.pi * w0**2 / lam
+   z     = zR * np.sqrt((0.5/w0)**2 - 1)
+   print(f"analytic w0 = {w0*1e3:.2f} um   z = {z:.2f} mm")
 
 Report columns
 --------------
@@ -136,6 +362,38 @@ Astigmatic and elliptical beams
 KrakenOS also exposes a two-axis helper for laser sources whose tangential and
 sagittal beam diameters, divergences, or ``M2`` values are different. This is
 useful for diode lasers and beam-shaping lenses where the source is elliptical.
+
+.. figure:: ../_static/manual/gaussian_beams/04_astigmatic_beam.svg
+   :alt: Astigmatic (elliptical) Gaussian beam — independent tangential and sagittal envelopes
+   :align: center
+   :width: 100%
+
+   Two independent q-states propagate along the same axis; the cross-section
+   ellipse rotates and changes aspect ratio as each axis crosses its own
+   waist.
+
+**Worked example.** Diode laser: :math:`\lambda = 0.6328` µm, M² = 1.1
+tangential and 1.3 sagittal, with datasheet
+:math:`D_{t} = 1.2` mm, :math:`\Theta_{t} = 0.9` mrad,
+:math:`D_{s} = 0.8` mm, :math:`\Theta_{s} = 1.4` mrad. Per-axis:
+
+* tangential:
+  :math:`\theta_{t} = 0.45` mrad,
+  :math:`w_{0,t} = 1.1 \cdot 0.0006328 / (\pi \cdot 0.45 \cdot 10^{-3})
+  \approx 0.4922` mm,
+  :math:`z_{R,t} = \pi \cdot 0.4922^{2}/(1.1 \cdot 0.0006328) \approx 1094` mm.
+* sagittal:
+  :math:`\theta_{s} = 0.70` mrad,
+  :math:`w_{0,s} = 1.3 \cdot 0.0006328 / (\pi \cdot 0.70 \cdot 10^{-3})
+  \approx 0.3738` mm,
+  :math:`z_{R,s} = \pi \cdot 0.3738^{2}/(1.3 \cdot 0.0006328) \approx 534` mm.
+* At :math:`z = 200` mm downstream of each waist:
+  :math:`w_{t}(200) = 0.4922\,\sqrt{1 + (200/1094)^{2}} \approx 0.501` mm,
+  :math:`w_{s}(200) = 0.3738\,\sqrt{1 + (200/534)^{2}} \approx 0.400` mm — the
+  beam is already noticeably elliptical (ratio 1.25).
+* The **astigmatic separation** (different waist positions for the two axes)
+  combined with different :math:`z_{R}` is why the cross-section ellipse
+  rotates with z.
 
 The current UI and ``ParaxMatrices()`` path use one centered ABCD sequence, so
 the two axes differ because the input beam data differ. Branch-carried Gaussian
@@ -249,7 +507,29 @@ plots without adding more analysis logic directly to the editor.
    contract. This is the bridge from Phase 7 detector-bin fields to future
    branch-field plots.
 
-Minimal API example:
+**Worked example.** Place a TEM₀₀ field of :math:`w_{0} = 0.55` mm at
+:math:`\lambda = 0.6328` µm on a 129×129 grid over ±4 mm. Propagate
+:math:`L = 250` mm forward and check what should happen analytically.
+
+* :math:`z_{R} = \pi \cdot 0.55^{2}/0.0006328 \approx 1501` mm.
+* :math:`w(250) = 0.55\,\sqrt{1 + (250/1501)^{2}}
+  \approx 0.55 \cdot 1.0138 \approx 0.558` mm — barely larger than at
+  the waist (we are well inside the Rayleigh range,
+  :math:`L/z_{R} \approx 0.166`).
+* :math:`R(250) = 250\,(1 + (1501/250)^{2})
+  \approx 250 \cdot 37.05 \approx 9{,}260` mm — long-radius curvature.
+* Gouy phase: :math:`\psi(250) = \arctan(250/1501) \approx 0.165` rad
+  :math:`\approx 9.5°`.
+* **Self-overlap** of the propagated field with a *waist-plane* TEM₀₀
+  template of the same :math:`w_{0}`: because the propagated field
+  carries curvature :math:`1/R(250)` that the flat template lacks, the
+  overlap drops slightly below 1. The closed-form for two co-axial
+  Gaussians with matched :math:`w_{0}` but mismatched curvature
+  :math:`(1/R_{1}, 1/R_{2}) = (0, 1/R(250))` gives
+  :math:`\eta \approx 1/\!\left[1 + (\pi\,w_{0}^{2}/(\lambda\,R(250)))^{2}\right]
+  \approx 0.9978` — slight curvature-mismatch loss.
+
+**KrakenOS code:**
 
 .. code-block:: python
 
@@ -266,9 +546,21 @@ Minimal API example:
        power=1.0,
    )
    propagated = Kos.propagate_branch_field(field, 250.0)
-   overlap = Kos.gaussian_mode_overlap(propagated, waist_radius_mm=0.55)
-   print(propagated.total_power)
-   print(overlap.efficiency)
+   overlap    = Kos.gaussian_mode_overlap(propagated, waist_radius_mm=0.55)
+   print(f"power conserved: {propagated.total_power:.6f}")
+   print(f"TEM00 overlap  : {overlap.efficiency:.6f}")
+
+   # Analytic comparison
+   lam   = 0.6328e-3
+   w0    = 0.55
+   zR    = np.pi * w0**2 / lam
+   L     = 250.0
+   w     = w0 * np.sqrt(1 + (L/zR)**2)
+   R     = L * (1 + (zR/L)**2)
+   psi   = np.arctan(L/zR)
+   eta_a = 1.0 / (1.0 + (np.pi*w0**2/(lam*R))**2)
+   print(f"analytic w({L:.0f}) = {w*1e3:.2f} um   R = {R:.0f} mm   "
+         f"Gouy = {psi:.3f} rad   eta = {eta_a:.6f}")
 
 Run the example and validators with:
 
@@ -368,8 +660,52 @@ The reported stability parameter is:
 
    g = \frac{A + D}{2 \sqrt{AD - BC}}
 
-and the mode is stable when ``|g| < 1`` and the solved ``q`` has a positive
-imaginary part.
+where :math:`(A, B, C, D)` are the entries of the round-trip matrix, and
+the mode is stable when :math:`|g| < 1` and the solved :math:`q` has a
+positive imaginary part. For a two-mirror cavity of length :math:`L` and
+radii :math:`R_{1}, R_{2}`, this is equivalent to the geometric
+
+.. math::
+
+   0 \le g_{1}\,g_{2} \le 1,
+   \quad g_{1} = 1 - L/R_{1},
+   \quad g_{2} = 1 - L/R_{2}.
+
+For a **symmetric** cavity (:math:`R_{1} = R_{2} = R`) the waist sits at
+the centre, and
+
+.. math::
+
+   z_{R} = \frac{L}{2}\,\sqrt{\frac{2R}{L} - 1},
+   \qquad
+   w_{0} = \sqrt{\frac{\lambda\,z_{R}}{\pi}}.
+
+.. figure:: ../_static/manual/gaussian_beams/05_cavity_eigenmode.svg
+   :alt: Two-mirror cavity with eigenmode envelope and round-trip ABCD
+   :align: center
+   :width: 100%
+
+   The mode profile that survives one full round trip is the cavity
+   eigenmode. For a symmetric cavity the waist sits at the geometric
+   centre.
+
+**Worked example.** Symmetric two-mirror cavity, :math:`L = 300` mm,
+:math:`R_{1} = R_{2} = 1000` mm, :math:`\lambda = 0.6328` µm,
+:math:`M^{2} = 1`.
+
+* :math:`g_{1} = g_{2} = 1 - 300/1000 = 0.7`,
+  :math:`g_{1}g_{2} = 0.49` → **stable**
+  (well inside :math:`[0, 1]`).
+* :math:`z_{R} = (L/2)\,\sqrt{2R/L - 1}
+  = 150\,\sqrt{2000/300 - 1}
+  = 150 \cdot \sqrt{5.667}
+  \approx 357.1` mm.
+* :math:`w_{0} = \sqrt{\lambda\,z_{R} / \pi}
+  = \sqrt{0.0006328 \cdot 357.1 / \pi}
+  \approx 0.268` mm.
+* Beam radius at each mirror (:math:`z = L/2 = 150` mm from waist):
+  :math:`w_{\mathrm{mirror}} = w_{0}\,\sqrt{1 + (150/357.1)^{2}}
+  \approx 0.290` mm.
 
 The same solve is available from Python:
 
@@ -381,8 +717,8 @@ The same solve is available from Python:
    L = 300.0
    R = 1000.0
    propagation = np.array([[1.0, L], [0.0, 1.0]])
-   mirror = np.array([[1.0, 0.0], [-2.0 / R, 1.0]])
-   round_trip = mirror @ propagation @ mirror @ propagation
+   mirror      = np.array([[1.0, 0.0], [-2.0/R, 1.0]])
+   round_trip  = mirror @ propagation @ mirror @ propagation
 
    mode = Kos.solve_gaussian_cavity_eigenmode(
        round_trip,
@@ -391,7 +727,14 @@ The same solve is available from Python:
    )
    if mode.stable:
        beam = mode.beam
-       print(beam.waist_radius_mm, beam.waist_offset_mm)
+       print(f"w0           = {beam.waist_radius_mm*1e3:.2f} um")
+       print(f"waist offset = {beam.waist_offset_mm:.2f} mm")
+
+   # Analytic cross-check (symmetric cavity, waist at centre):
+   zR_a = (L/2) * np.sqrt(2*R/L - 1)
+   w0_a = np.sqrt(0.6328e-3 * zR_a / np.pi)
+   g1   = 1.0 - L/R
+   print(f"analytic w0  = {w0_a*1e3:.2f} um   zR = {zR_a:.1f} mm   g1*g2 = {g1*g1:.3f}")
 
 UI workflow
 -----------

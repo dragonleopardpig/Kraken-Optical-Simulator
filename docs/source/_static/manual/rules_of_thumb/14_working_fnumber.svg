@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 380" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#111827"/>
+    </marker>
+    <marker id="arrR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#1d4ed8"/>
+    </marker>
+    <marker id="arrEnv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#b45309"/>
+    </marker>
+    <style>
+      .ttl   { fill:#111827; font-size:16px; font-weight:700; }
+      .sub   { fill:#374151; font-size:11.5px; }
+      .lbl   { fill:#111827; font-size:12px; }
+      .lblb  { fill:#111827; font-size:12px; font-weight:700; }
+      .axis  { stroke:#6b7280; stroke-width:1; stroke-dasharray:5,4; }
+      .dash  { stroke:#9ca3af; stroke-width:1; stroke-dasharray:4,3; fill:none; }
+      .ray   { stroke:#1d4ed8; stroke-width:1.6; fill:none; }
+      .rayA  { stroke:#7c3aed; stroke-width:1.6; fill:none; }
+      .env   { stroke:#b45309; stroke-width:2; fill:none; }
+      .envf  { fill:#b45309; fill-opacity:0.10; stroke:none; }
+      .acc   { stroke:#0f766e; stroke-width:1.8; fill:none; }
+      .warn  { stroke:#b91c1c; stroke-width:1.6; fill:none; }
+      .lens  { stroke:#0ea5e9; stroke-width:2.2; fill:#0ea5e9; fill-opacity:0.10; }
+      .mir   { stroke:#475569; stroke-width:2.4; fill:none; }
+    </style>
+  </defs>
+  <text x="360" y="22" text-anchor="middle" class="ttl">Working F-number    N_w = N · (1 + |m|)    (and N_w = N / (1 − m) for s in front)</text>
+  <text x="360" y="40" text-anchor="middle" class="sub">the cone that hits the sensor narrows as magnification grows</text>
+  <line x1="40" y1="200" x2="680" y2="200" class="axis"/>
+  <path d="M 380 125 C 372 162.5, 372 237.5, 380 275 C 388 237.5, 388 162.5, 380 125 Z" fill="#0ea5e9" fill-opacity="0.10" stroke="#0ea5e9" stroke-width="2"/>
+  <polygon points="374,128 380,119 386,128" fill="#0ea5e9"/>
+  <polygon points="374,272 380,281 386,272" fill="#0ea5e9"/>
+  <line x1="130" y1="200" x2="130" y2="145" stroke="#111827" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="122" y="141" text-anchor="end" class="lblb">y</text>
+  <line x1="580" y1="200" x2="580" y2="244.0" stroke="#111827" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="586" y="258.0" class="lblb">y'</text>
+  <polygon points="130,145 380,125 580,244.0" fill="#1d4ed8" fill-opacity="0.10" stroke="#1d4ed8"/>
+  <polygon points="130,145 380,275 580,244.0" fill="#1d4ed8" fill-opacity="0.10" stroke="#1d4ed8"/>
+  <path d="M 358 194 A 22 22 0 0 1 362 212" stroke="#b45309" stroke-width="2" fill="none"/>
+  <text x="352" y="206" text-anchor="end" class="lblb" fill="#b45309">u'</text>
+  <text x="360" y="60" text-anchor="middle" class="lbl">1/(2 N_w) = sin u'   →  effective f-number grows with magnification</text>
+  <text x="360" y="345" text-anchor="middle" class="sub">macro example:  N = f/4   at  m = 1   →   N_w = 8   →   diffraction Airy ≈ 5.4 µm @ 0.55 µm</text>
+</svg>

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 380" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#111827"/>
+    </marker>
+    <marker id="arrR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#1d4ed8"/>
+    </marker>
+    <marker id="arrEnv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#b45309"/>
+    </marker>
+    <style>
+      .ttl   { fill:#111827; font-size:16px; font-weight:700; }
+      .sub   { fill:#374151; font-size:11.5px; }
+      .lbl   { fill:#111827; font-size:12px; }
+      .lblb  { fill:#111827; font-size:12px; font-weight:700; }
+      .axis  { stroke:#6b7280; stroke-width:1; stroke-dasharray:5,4; }
+      .dash  { stroke:#9ca3af; stroke-width:1; stroke-dasharray:4,3; fill:none; }
+      .ray   { stroke:#1d4ed8; stroke-width:1.6; fill:none; }
+      .rayA  { stroke:#7c3aed; stroke-width:1.6; fill:none; }
+      .env   { stroke:#b45309; stroke-width:2; fill:none; }
+      .envf  { fill:#b45309; fill-opacity:0.10; stroke:none; }
+      .acc   { stroke:#0f766e; stroke-width:1.8; fill:none; }
+      .warn  { stroke:#b91c1c; stroke-width:1.6; fill:none; }
+      .lens  { stroke:#0ea5e9; stroke-width:2.2; fill:#0ea5e9; fill-opacity:0.10; }
+      .mir   { stroke:#475569; stroke-width:2.4; fill:none; }
+    </style>
+  </defs>
+  <text x="360" y="22" text-anchor="middle" class="ttl">Two-mirror cavity stability    0 ≤ g₁ g₂ ≤ 1,    g_i = 1 − L/R_i</text>
+  <text x="360" y="40" text-anchor="middle" class="sub">interior of hyperbolas — outside is unstable</text>
+  <rect x="130" y="70" width="460" height="240" fill="none" stroke="#6b7280"/>
+  <line x1="130" y1="190.0" x2="590" y2="190.0" stroke="#6b7280"/>
+  <line x1="360.0" y1="70" x2="360.0" y2="310" stroke="#6b7280"/>
+  <text x="596" y="194.0" class="lblb">g₁</text>
+  <text x="364.0" y="66" class="lblb">g₂</text>
+  <polyline points="463.5,71.5 467.3,75.7 471.2,79.7 475.0,83.3 478.8,86.8 482.7,90.0 486.5,93.0 490.3,95.9 494.2,98.6 498.0,101.1 501.8,103.5 505.7,105.8 509.5,107.9 513.3,110.0 517.2,112.0 521.0,113.8 524.8,115.6 528.7,117.3 532.5,118.9 536.3,120.4 540.2,121.9 544.0,123.3 547.8,124.7 551.7,126.0 555.5,127.3 559.3,128.5 563.2,129.6 567.0,130.7 570.8,131.8 574.7,132.9 578.5,133.9 582.3,134.8 586.2,135.8 590.0,136.7" stroke="#b45309" stroke-width="2" fill="none"/>
+  <polyline points="130.0,243.3 133.8,244.2 137.7,245.2 141.5,246.1 145.3,247.1 149.2,248.2 153.0,249.3 156.8,250.4 160.7,251.5 164.5,252.7 168.3,254.0 172.2,255.3 176.0,256.7 179.8,258.1 183.7,259.6 187.5,261.1 191.3,262.7 195.2,264.4 199.0,266.2 202.8,268.0 206.7,270.0 210.5,272.1 214.3,274.2 218.2,276.5 222.0,278.9 225.8,281.4 229.7,284.1 233.5,287.0 237.3,290.0 241.2,293.2 245.0,296.7 248.8,300.3 252.7,304.3 256.5,308.5" stroke="#b45309" stroke-width="2" fill="none"/>
+  <polygon points="360.0,190.0 363.8,110.0 367.7,110.0 371.5,110.0 375.3,110.0 379.2,110.0 383.0,110.0 386.8,110.0 390.7,110.0 394.5,110.0 398.3,110.0 402.2,110.0 406.0,110.0 409.8,110.0 413.7,110.0 417.5,110.0 421.3,110.0 425.2,110.0 429.0,110.0 432.8,110.0 436.7,110.0 440.5,110.0 444.3,110.0 448.2,110.0 452.0,110.0 455.8,110.0 459.7,110.0 463.5,110.0 467.3,110.0 471.2,110.0 475.0,110.0 478.8,110.0 482.7,110.0 486.5,110.0 490.3,110.0 494.2,110.0 498.0,110.0 501.8,110.0 505.7,110.0 509.5,110.0 513.3,110.0 360.0,110.0" fill="#0f766e" fill-opacity="0.18" stroke="none"/>
+  <polygon points="360.0,190.0 356.2,270.0 352.3,270.0 348.5,270.0 344.7,270.0 340.8,270.0 337.0,270.0 333.2,270.0 329.3,270.0 325.5,270.0 321.7,270.0 317.8,270.0 314.0,270.0 310.2,270.0 306.3,270.0 302.5,270.0 298.7,270.0 294.8,270.0 291.0,270.0 287.2,270.0 283.3,270.0 279.5,270.0 275.7,270.0 271.8,270.0 268.0,270.0 264.2,270.0 260.3,270.0 256.5,270.0 252.7,270.0 248.8,270.0 245.0,270.0 241.2,270.0 237.3,270.0 233.5,270.0 229.7,270.0 225.8,270.0 222.0,270.0 218.2,270.0 214.3,270.0 210.5,270.0 206.7,270.0 360.0,270.0" fill="#0f766e" fill-opacity="0.18" stroke="none"/>
+  <circle cx="360.0" cy="190.0" r="4" fill="#111827"/>
+  <text x="368.0" y="194.0" class="sub">confocal</text>
+  <text x="368.0" y="207.0" class="sub">(L = R)</text>
+  <circle cx="513.3" cy="110.0" r="4" fill="#111827"/>
+  <text x="521.3" y="114.0" class="sub">planar</text>
+  <text x="521.3" y="127.0" class="sub">unstable edge</text>
+  <circle cx="206.7" cy="270.0" r="4" fill="#111827"/>
+  <text x="214.7" y="274.0" class="sub">concentric</text>
+  <text x="214.7" y="287.0" class="sub">edge</text>
+  <circle cx="436.7" cy="150.0" r="4" fill="#111827"/>
+  <text x="444.7" y="154.0" class="sub">near-planar</text>
+  <circle cx="360.0" cy="110.0" r="4" fill="#111827"/>
+  <text x="368.0" y="114.0" class="sub">hemispherical</text>
+  <text x="206.7" y="204.0" text-anchor="middle" class="lbl">-1</text>
+  <text x="354.0" y="274.0" text-anchor="end" class="lbl">-1</text>
+  <text x="513.3" y="204.0" text-anchor="middle" class="lbl">1</text>
+  <text x="354.0" y="114.0" text-anchor="end" class="lbl">1</text>
+</svg>

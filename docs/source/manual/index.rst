@@ -31,6 +31,7 @@ Focused UI screenshots in these pages are generated from the live Tk editor:
    cardinal_points
    pupil_patterns
    analysis_tools
+   rules_of_thumb
    editable_table
    nonsequential_first_design
    tracing_and_ray_data

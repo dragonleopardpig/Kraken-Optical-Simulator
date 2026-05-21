@@ -502,6 +502,8 @@ LENSCAT_DIR = Path(__file__).resolve().parent.parent / "LensCat"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 ATTACHMENT_DIR = PROJECT_ROOT / "attachment"
 LEGACY_TESTING_DIR = PROJECT_ROOT / "testing"
+DOCS_HTML_DIR = PROJECT_ROOT / "docs" / "build" / "html"
+DOCS_SOURCE_DIR = PROJECT_ROOT / "docs" / "source"
 
 
 def _preferred_existing_path(*candidates: Path | str) -> Path:
@@ -14770,6 +14772,17 @@ class KrakenLayoutEditor(tk.Tk):
         help_menu = tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="Paraxial Calculator", command=self.open_paraxial_calculator)
         help_menu.add_command(label="Optics Formula Sheet", command=self.show_formula_help)
+        help_menu.add_separator()
+        help_menu.add_command(
+            label="Rules of Thumb  (Optics · Imaging · Laser)",
+            command=self.show_rules_of_thumb,
+        )
+        help_menu.add_command(label="Cardinal Points  (EP / XP / PP)", command=self.show_cardinal_points_docs)
+        help_menu.add_command(label="Analysis Tools Reference", command=self.show_analysis_tools_docs)
+        help_menu.add_command(label="Gaussian Beams", command=self.show_gaussian_beams_docs)
+        help_menu.add_command(label="Pupil Patterns", command=self.show_pupil_patterns_docs)
+        help_menu.add_separator()
+        help_menu.add_command(label="Open Manual Index…", command=self.show_manual_index)
         menubar.add_cascade(label="Help", menu=help_menu)
 
         self._menubar = menubar
@@ -44654,6 +44667,59 @@ class KrakenLayoutEditor(tk.Tk):
             self.append_debug(f"Help page open failed: {exc}")
             self.status_var.set(f"Help page failed: {_short_error_message(exc)}")
 
+    def _open_sphinx_docs_page(self, page: str, label: str | None = None) -> None:
+        """Open a built Sphinx HTML page; fall back to the source RST."""
+        label = label or page
+        html_path = DOCS_HTML_DIR / "manual" / f"{page}.html"
+        rst_path = DOCS_SOURCE_DIR / "manual" / f"{page}.rst"
+        target: Path | None = None
+        if html_path.exists():
+            target = html_path
+        elif rst_path.exists():
+            messagebox.showinfo(
+                "Documentation",
+                f"The built HTML for '{label}' was not found at\n  {html_path}\n\n"
+                "Showing the source RST instead. To build the HTML once:\n\n"
+                "  cd docs && sphinx-build -E -b html source build/html",
+                parent=self,
+            )
+            target = rst_path
+        else:
+            messagebox.showwarning(
+                "Documentation",
+                f"Docs page '{label}' was not found.\n\nLooked for:\n  {html_path}\n  {rst_path}",
+                parent=self,
+            )
+            return
+        try:
+            opened = webbrowser.open_new_tab(target.as_uri())
+            if not opened:
+                fallback = self._open_document_with_system_viewer(target)
+                if not fallback:
+                    raise RuntimeError("No browser opener available.")
+            self.status_var.set(f"Opened docs: {target}")
+        except Exception as exc:
+            self.append_debug(f"Docs open failed for {label}: {exc}")
+            self.status_var.set(f"Docs failed: {_short_error_message(exc)}")
+
+    def show_rules_of_thumb(self) -> None:
+        self._open_sphinx_docs_page("rules_of_thumb", "Rules of Thumb")
+
+    def show_cardinal_points_docs(self) -> None:
+        self._open_sphinx_docs_page("cardinal_points", "Cardinal Points")
+
+    def show_analysis_tools_docs(self) -> None:
+        self._open_sphinx_docs_page("analysis_tools", "Analysis Tools")
+
+    def show_gaussian_beams_docs(self) -> None:
+        self._open_sphinx_docs_page("gaussian_beams", "Gaussian Beams")
+
+    def show_pupil_patterns_docs(self) -> None:
+        self._open_sphinx_docs_page("pupil_patterns", "Pupil Patterns")
+
+    def show_manual_index(self) -> None:
+        self._open_sphinx_docs_page("index", "Manual Index")
+
     def open_paraxial_calculator(self) -> None:
         dialog = tk.Toplevel(self)
         dialog.withdraw()
@@ -45090,6 +45156,16 @@ class KrakenLayoutEditor(tk.Tk):
         )).pack(side="left")
         ttk.Button(buttons, text="Solve", command=_solve).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="Apply to Layout", command=_apply_and_close).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            buttons,
+            text="Rules of Thumb…",
+            command=self.show_rules_of_thumb,
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            buttons,
+            text="Formula Sheet…",
+            command=self.show_formula_help,
+        ).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="Close", command=dialog.destroy).pack(side="left", padx=(8, 0))
 
         solve_for_menu.bind("<<ComboboxSelected>>", lambda _e: (_refresh_mode_state(), _solve()))
@@ -45133,6 +45209,22 @@ class KrakenLayoutEditor(tk.Tk):
         sensor_size = float(self.rows[-1].diameter) if self.rows else float("nan")
         field_type = html.escape(self._field_type_display_label(self._current_field_type()))
         field_value = self._current_field_value()
+
+        def _doc_link(page: str, label: str) -> str:
+            html_path = DOCS_HTML_DIR / "manual" / f"{page}.html"
+            rst_path = DOCS_SOURCE_DIR / "manual" / f"{page}.rst"
+            target = html_path if html_path.exists() else rst_path
+            if target.exists():
+                href = html.escape(target.as_uri())
+                return f'<a href="{href}">{html.escape(label)}</a>'
+            return html.escape(label)
+
+        rules_link    = _doc_link("rules_of_thumb",  "Rules of Thumb — Optics · Imaging · Laser")
+        cardinal_link = _doc_link("cardinal_points", "Cardinal Points (EP, XP, PP) walkthrough")
+        analysis_link = _doc_link("analysis_tools",  "Analysis Tools reference (Spot, PSF, MTF, Seidel, …)")
+        gauss_link    = _doc_link("gaussian_beams",  "Gaussian beams and cavity eigenmodes")
+        parax_link    = _doc_link("parax_tool",      "Paraxial matrix tool")
+        pupil_link    = _doc_link("pupilcalc_tool",  "PupilCalc reference")
         effl_text = "Unavailable"
         ppa_text = "Unavailable"
         ppp_text = "Unavailable"
@@ -45299,6 +45391,24 @@ class KrakenLayoutEditor(tk.Tk):
         <li><code>Field samples</code> spans from <code>-max</code> to <code>+max</code> when the count is greater than 1.</li>
         <li>Paraxial solve is intended for centered refractive layouts. Mirror/tilt/decenter cases still need full trace validation.</li>
       </ul>
+    </section>
+
+    <section class="card">
+      <h2>Deeper reading — Sphinx docs</h2>
+      <p class="note">These pages go further than this popup: SVG ray-construction figures, worked numerical examples,
+        Strehl/Maréchal, diffraction-limited MTF, Gaussian-beam q-parameters, cavity stability, and the matching
+        KrakenOS code for every formula.</p>
+      <ul>
+        <li>{rules_link}</li>
+        <li>{cardinal_link}</li>
+        <li>{analysis_link}</li>
+        <li>{gauss_link}</li>
+        <li>{parax_link}</li>
+        <li>{pupil_link}</li>
+      </ul>
+      <p class="note">Not built yet?  Run
+        <code>cd docs &amp;&amp; sphinx-build -E -b html source build/html</code>
+        once, then re-open this page.</p>
     </section>
   </div>
 </body>

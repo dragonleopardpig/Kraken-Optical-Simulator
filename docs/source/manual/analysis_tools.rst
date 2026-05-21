@@ -90,6 +90,55 @@ Symbols that recur throughout the page:
    :depth: 1
 
 
+Shared setup for the code examples
+----------------------------------
+
+Every Python snippet below assumes the same achromatic doublet imaging a
+finite object — built once here and reused under each tool. Adapt
+``Doublet``, ``Pup``, ``W`` and ``Surf`` to your own design.
+
+.. code-block:: python
+   :caption: Common doublet system used by every code example below
+
+   import KrakenOS as Kos
+   import numpy as np
+
+   # --- Surfaces -----------------------------------------------------
+   P_Obj = Kos.surf(); P_Obj.Rc = 0.0; P_Obj.Thickness = 100
+   P_Obj.Glass = "AIR"; P_Obj.Diameter = 30.0; P_Obj.Name = "Object"
+
+   L1a = Kos.surf(); L1a.Rc =  92.847066; L1a.Thickness = 6.0
+   L1a.Glass = "N-BK7"; L1a.Diameter = 30.0
+
+   L1b = Kos.surf(); L1b.Rc = -30.716087; L1b.Thickness = 3.0
+   L1b.Glass = "F2";    L1b.Diameter = 30.0
+
+   L1c = Kos.surf(); L1c.Rc = -78.197307; L1c.Thickness = 57.376
+   L1c.Glass = "AIR";  L1c.Diameter = 30.0
+
+   Stop = Kos.surf(); Stop.Rc = 0.0; Stop.Thickness = 40.0
+   Stop.Glass = "AIR"; Stop.Diameter = 15.0; Stop.Name = "Stop"
+
+   P_Ima = Kos.surf(); P_Ima.Rc = 0.0; P_Ima.Thickness = 0.0
+   P_Ima.Glass = "AIR"; P_Ima.Diameter = 20.0; P_Ima.Name = "Image"
+
+   Doublet = Kos.system([P_Obj, L1a, L1b, L1c, Stop, P_Ima], Kos.Setup())
+
+   # --- Pupil + sampling --------------------------------------------
+   W       = 0.5876         # wavelength (µm)
+   Surf    = 4              # aperture-stop surface index
+   Pup     = Kos.PupilCalc(Doublet, Surf, W, "EPD", 10.0)   # EPD = 10 mm
+   Pup.Samp     = 12
+   Pup.Ptype    = "hexapolar"
+   Pup.FieldType = "angle"
+   Pup.FieldX, Pup.FieldY = 0.0, 2.0   # 2° field
+
+   # Useful first-order numbers (reused throughout):
+   Focal    = Pup.EFFL                     # focal length (mm)
+   Diameter = 2.0 * Pup.RadPupInp          # entrance-pupil diameter (mm)
+   Fno      = Focal / Diameter             # working F-number
+
+
 Geometric image quality
 -----------------------
 
@@ -133,6 +182,41 @@ spot is dominated by diffraction rather than geometric aberration.
    :align: center
    :width: 360px
 
+**Worked example.** Three rays land at
+:math:`(x_1, y_1) = (0.10,\, 0.05)`,
+:math:`(x_2, y_2) = (-0.04,\, 0.08)`,
+:math:`(x_3, y_3) = (0.02,\, -0.12)` mm.
+
+* :math:`\bar{x} = (0.10 - 0.04 + 0.02)/3 = 0.0267` mm,
+  :math:`\bar{y} = (0.05 + 0.08 - 0.12)/3 = 0.0033` mm.
+* per-ray squared offsets:
+  :math:`d_1^{2} = 0.0733^{2} + 0.0467^{2} = 0.00755`,
+  :math:`d_2^{2} = 0.0667^{2} + 0.0767^{2} = 0.01032`,
+  :math:`d_3^{2} = 0.0067^{2} + 0.1233^{2} = 0.01526` mm².
+* :math:`\sigma_{\mathrm{RMS}} = \sqrt{(0.00755 + 0.01032 + 0.01526)/3}
+  = \sqrt{0.01104} \approx 0.1051` mm = 105 µm.
+* Airy radius at :math:`\lambda = 0.5876` µm, :math:`F/\# = 8`:
+  :math:`r_{\mathrm{Airy}} = 1.22 \cdot 0.5876 \cdot 8 = 5.73` µm.
+* :math:`\sigma_{\mathrm{RMS}} / r_{\mathrm{Airy}} \approx 18` →
+  geometrically limited, not diffraction-limited.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   Rays = Kos.raykeeper(Doublet)
+   x, y, z, L, M, N = Pup.Pattern2Field()
+   for i in range(len(x)):
+       Doublet.Trace([x[i], y[i], z[i]], [L[i], M[i], N[i]], W)
+       Rays.push()
+
+   X, Y, *_ = Rays.pick(-1)             # ray landings on image surface
+   xbar, ybar = np.mean(X), np.mean(Y)
+   sigma_rms  = np.sqrt(np.mean((X - xbar)**2 + (Y - ybar)**2))
+   print(f"centroid = ({xbar:.4f}, {ybar:.4f}) mm")
+   print(f"sigma_RMS = {sigma_rms*1e3:.2f} um")
+   print(f"r_Airy   = {1.22 * W * Fno:.2f} um")
+
 
 .. _analysis-rms:
 
@@ -165,6 +249,37 @@ a full PSF.
    :alt: RMS spot radius vs field, several wavelengths
    :align: center
    :width: 360px
+
+**Worked example.** Suppose a Seidel-dominated lens has approximately
+:math:`\sigma_{\mathrm{RMS}}(h) = a + b\,h^{2}` with :math:`a = 4` µm,
+:math:`b = 5.25\,\mu\mathrm{m}\,/\,\mathrm{deg}^{2}`.
+
+* On axis (:math:`h = 0`):
+  :math:`\sigma_{\mathrm{RMS}}(0) = 4` µm.
+* At :math:`h = 2°`:
+  :math:`\sigma_{\mathrm{RMS}}(2) = 4 + 5.25 \cdot 4 = 25` µm.
+* Ratio:
+  :math:`\sigma_{\mathrm{RMS}}(2) / \sigma_{\mathrm{RMS}}(0) = 6.25\times`
+  — typical quadratic blow-up dominated by oblique spherical / coma.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   fields = np.linspace(0.0, 2.0, 9)     # field angles (deg)
+   sigma  = []
+   for h in fields:
+       Pup.FieldX, Pup.FieldY = 0.0, float(h)
+       Rays = Kos.raykeeper(Doublet)
+       x, y, z, L, M, N = Pup.Pattern2Field()
+       for i in range(len(x)):
+           Doublet.Trace([x[i], y[i], z[i]], [L[i], M[i], N[i]], W)
+           Rays.push()
+       X, Y, *_ = Rays.pick(-1)
+       sigma.append(np.sqrt(np.mean((X - X.mean())**2 + (Y - Y.mean())**2)))
+
+   for h, s in zip(fields, sigma):
+       print(f"h = {h:.2f} deg  sigma_RMS = {s*1e3:.2f} um")
 
 
 .. _analysis-psf:
@@ -208,6 +323,30 @@ with :math:`F/\#` the working F-number of the converging bundle.
    :alt: Schematic Airy-like PSF
    :align: center
    :width: 360px
+
+**Worked example.** Diffraction-limited (:math:`W \equiv 0`) circular
+pupil at :math:`\lambda = 0.5876` µm, :math:`F/\# = 8`,
+:math:`f = 80` mm, :math:`D_{\mathrm{EP}} = 10` mm:
+
+* central Airy radius:
+  :math:`r_{\mathrm{Airy}} = 1.22\,\lambda\,F/\# = 1.22 \cdot 0.5876 \cdot 8
+  \approx 5.73` µm.
+* first-zero diameter :math:`= 2\,r_{\mathrm{Airy}} \approx 11.47` µm.
+* peak irradiance (per unit input power) :math:`\propto (D_{\mathrm{EP}} / (\lambda f))^{2}
+  = (10 / (0.0005876 \cdot 80))^{2} \approx (212.7\,\mathrm{mm}^{-1})^{2}`.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   # Fit the wavefront to Zernikes so we have a COEF vector to feed psf().
+   X, Y, Z, P2V = Kos.Phase2(Pup)
+   Zcoef, *_ = Kos.Zernike_Fitting(X, Y, Z, np.ones(15))
+
+   I = Kos.psf(Zcoef, Focal, Diameter, W,
+               pixels=265, PupilSample=4, plot=1, sqr=1)
+   r_Airy_um = 1.22 * W * Fno
+   print(f"Airy radius = {r_Airy_um:.2f} um")
 
 
 .. _analysis-mtf:
@@ -267,6 +406,35 @@ diffraction-limited reference.
    :align: center
    :width: 360px
 
+**Worked example.** :math:`\lambda = 0.5876` µm, :math:`F/\# = 8`:
+
+* cut-off frequency
+  :math:`\nu_{c} = 1 / (\lambda\,F/\#)
+  = 1 / (0.0005876\,\mathrm{mm} \cdot 8) \approx 212.7` cycles/mm.
+* At :math:`\nu = \nu_{c}/2`:
+  :math:`\phi = \arccos(0.5) = \pi/3 \approx 1.047` rad,
+  :math:`\cos\phi\,\sin\phi = 0.5 \cdot 0.8660 = 0.4330`,
+  :math:`\mathrm{MTF}_{\mathrm{DL}}
+  = (2/\pi)(1.047 - 0.4330) \approx 0.391`.
+* At :math:`\nu = 0.2\,\nu_{c}`:
+  :math:`\phi = \arccos(0.2) \approx 1.369` rad,
+  :math:`\mathrm{MTF}_{\mathrm{DL}}
+  = (2/\pi)(1.369 - 0.196 \cdot 0.980) \approx 0.747`.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   X, Y, Z, P2V = Kos.Phase2(Pup)
+   Zcoef, *_ = Kos.Zernike_Fitting(X, Y, Z, np.ones(15))
+
+   mtf = Kos.calculate_mtf(Zcoef, Focal, Diameter, W,
+                           pixels=265, PupilSample=4)
+   Kos.plot_mtf(mtf, Diameter, W, freq_limit=300)
+
+   nu_c = 1.0 / (W * 1e-3 * Fno)        # cycles per mm
+   print(f"diffraction cut-off = {nu_c:.1f} cy/mm")
+
 
 Pupil and wavefront
 -------------------
@@ -323,6 +491,39 @@ where
    :align: center
    :width: 360px
 
+**Worked example.** Send a tiny fan with object-space half-angle
+:math:`\theta_{0} = 0.010` rad. Suppose the upstream optics reduce the
+half-angle at the stop surface to
+:math:`\theta_{\mathrm{stop}} = 0.0083` rad, and the full system expands
+it to :math:`\theta_{\mathrm{image}} = 0.0125` rad. With a measured
+stop diameter :math:`D_{\mathrm{stop}} = 10.0` mm:
+
+* :math:`m_{\mathrm{enter}} = 0.010 / 0.0083 \approx 1.205`.
+* :math:`m_{\mathrm{exit}}  = 0.010 / 0.0125 = 0.800`.
+* :math:`D_{\mathrm{EP}} = 10.0 / 1.205 \approx 8.30` mm.
+* :math:`D_{\mathrm{XP}} = 10.0 \cdot 0.800 = 8.00` mm.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   # 1) Read the cardinal quantities produced by PupilCalc.
+   D_EP = 2.0 * Pup.RadPupInp
+   D_XP = 2.0 * Pup.RadPupOut
+   print(f"EP diameter = {D_EP:.3f} mm  at z = {Pup.PosPupInp}")
+   print(f"XP diameter = {D_XP:.3f} mm  at z = {Pup.PosPupOut}")
+   print(f"EFFL (f')   = {Pup.EFFL:.3f} mm")
+
+   # 2) Recover the small-angle pupil magnifications from the formula
+   #    D_EP = D_stop / m_enter,  D_XP = D_stop * m_exit.
+   D_stop      = Doublet.SDT[Surf].Diameter      # physical stop diameter (mm)
+   m_enter     = D_stop / D_EP
+   m_exit      = D_XP / D_stop
+   print(f"D_stop      = {D_stop:.3f} mm")
+   print(f"m_enter     = D_stop / D_EP = {m_enter:.4f}")
+   print(f"m_exit      = D_XP   / D_stop = {m_exit:.4f}")
+   print(f"working F/# = {Pup.EFFL / D_EP:.2f}")
+
 
 .. _analysis-seidel:
 
@@ -374,6 +575,38 @@ bars so the dominant contributor can be identified.
    :align: center
    :width: 360px
 
+**Worked example.** Take
+:math:`S_{\mathrm{I}} = 0.50`,
+:math:`S_{\mathrm{II}} = -0.20`,
+:math:`S_{\mathrm{III}} = 0.30`,
+:math:`S_{\mathrm{IV}} = 0.10`,
+:math:`S_{\mathrm{V}} = -0.05` (all in waves). Evaluate the OPD at
+:math:`\rho = 0.7`, :math:`\theta = 30°`, :math:`h = 2`:
+
+* :math:`S_{\mathrm{I}}\,\rho^{4} = 0.50 \cdot 0.2401 = +0.1200`
+* :math:`S_{\mathrm{II}}\,h\,\rho^{3}\cos\theta
+  = -0.20 \cdot 2 \cdot 0.343 \cdot 0.866 = -0.1188`
+* :math:`S_{\mathrm{III}}\,h^{2}\,\rho^{2}\cos^{2}\theta
+  = 0.30 \cdot 4 \cdot 0.49 \cdot 0.75 = +0.4410`
+* :math:`S_{\mathrm{IV}}\,h^{2}\,\rho^{2}
+  = 0.10 \cdot 4 \cdot 0.49 = +0.1960`
+* :math:`S_{\mathrm{V}}\,h^{3}\,\rho\cos\theta
+  = -0.05 \cdot 8 \cdot 0.7 \cdot 0.866 = -0.2425`
+
+Sum: :math:`W \approx +0.396` waves at that pupil/field point —
+**astigmatism dominates** at this field height.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   AB = Kos.Seidel(Pup)
+   print("Seidel coefficients (S_I..S_V):", AB.SAC_TOTAL)
+   print("Seidel in waves (W040..W311) :", AB.SCW_TOTAL)
+   print("Transverse contributions     :", dict(zip(AB.TAC_NM, AB.TAC_TOTAL)))
+   print("Chromatic CL (axial) / CT (lateral):",
+         np.sum(AB.CL), np.sum(AB.CT))
+
 
 .. _analysis-wfront:
 
@@ -420,6 +653,29 @@ where
    :alt: Wavefront slice with PV / RMS / Strehl indicated
    :align: center
    :width: 360px
+
+**Worked example.** Assume the pupil-sampled wavefront has
+:math:`\max(W) = +0.18` waves, :math:`\min(W) = -0.12` waves and
+:math:`\mathrm{RMS} = 0.050` waves:
+
+* :math:`\mathrm{PV} = 0.18 - (-0.12) = 0.30` waves.
+* Maréchal Strehl:
+  :math:`S \approx \exp[-(2\pi \cdot 0.050)^{2}]
+  = \exp(-0.0987) \approx 0.906`.
+* Convention check: the Maréchal "diffraction-limited" criterion
+  :math:`\mathrm{RMS} \le \lambda/14 \approx 0.0714` waves corresponds
+  to :math:`S \gtrsim 0.82`; our 0.906 sits comfortably above that.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   X, Y, Z, P2V = Kos.Phase2(Pup)                      # Z is W in waves
+   PV   = Z.max() - Z.min()
+   RMS  = np.std(Z)
+   S    = np.exp(-(2.0 * np.pi * RMS) ** 2)
+   print(f"PV  = {PV:.4f} waves  (Phase2 reports P2V = {P2V:.4f})")
+   print(f"RMS = {RMS:.4f} waves   Strehl ~= {S:.3f}")
 
 
 .. _analysis-zernike:
@@ -472,6 +728,31 @@ bar chart and as a colour map of :math:`W(\rho, \theta)`.
    :align: center
    :width: 360px
 
+**Worked example.** Suppose a fit yields only
+:math:`a_{4}\,Z_{2}^{0}(\rho) = a_{4}(2\rho^{2} - 1)` (defocus) with
+:math:`a_{4} = +0.30` waves; all other coefficients negligible.
+
+* At :math:`\rho = 0`: :math:`W = +0.30 \cdot (-1) = -0.30` waves.
+* At :math:`\rho = 1`: :math:`W = +0.30 \cdot (+1) = +0.30` waves.
+* :math:`\mathrm{PV} = 0.60` waves; the **RMS of pure defocus** is
+  :math:`|a_{4}| / \sqrt{3} \approx 0.173` waves
+  (using :math:`\langle Z_{2}^{0\,2}\rangle_{\mathrm{disk}} = 1/3`).
+* Strehl from defocus alone:
+  :math:`S \approx \exp[-(2\pi \cdot 0.173)^{2}] \approx 0.305`.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   X, Y, Z, P2V = Kos.Phase2(Pup)
+   NC    = 15
+   A     = np.ones(NC)
+   Zcoef, Mat, RMS2Chief, RMS2Centroid, FE = Kos.Zernike_Fitting(X, Y, Z, A)
+   for i in range(NC):
+       print(f"z{i+1:>2}  {float(Zcoef[i]):+ .6f}  {Mat[i]}")
+   print(f"RMS (to centroid) = {RMS2Centroid:.4f} waves")
+   print(f"fitting error     = {FE:.4f} waves")
+
 
 Field-dependent metrics
 -----------------------
@@ -516,6 +797,64 @@ where
    :align: center
    :width: 360px
 
+**Worked example.** Paraxial image height at :math:`h = 5°` for an
+:math:`f' = 80` mm lens is
+:math:`h_{\mathrm{paraxial}} = f' \tan h = 80 \tan(5°) = 6.998` mm.
+Suppose the real chief ray lands at
+:math:`h_{\mathrm{real}} = 6.892` mm and the best-focus surface curves
+by :math:`\Delta z_{\mathrm{best}}(5°) = -0.42` mm
+(tangential branch, image-side focus drift):
+
+* :math:`\mathrm{distortion}(5°)
+  = (6.892 - 6.998) / 6.998 \approx -1.51\%` (barrel).
+* Defocus at edge of field:
+  :math:`\Delta z = -0.42` mm → corresponds to
+  :math:`\lambda/(8\,(F/\#)^{2})`-style depth-of-focus units of
+  :math:`-0.42 / (8 \cdot 8^{2} \cdot 0.5876 \cdot 10^{-3})
+  \approx -1.40` Rayleigh units — significant for diffraction-limited
+  imaging.
+
+**KrakenOS code:**
+
+This snippet evaluates **both** parts of the formula above — the
+field-curvature focus shift :math:`\Delta z_{\mathrm{focus}}(h)` (from
+``Kos.BestFocus``) and the distortion :math:`(h_{\mathrm{real}} -
+h_{\mathrm{paraxial}})/h_{\mathrm{paraxial}}`:
+
+.. code-block:: python
+
+   fields = np.linspace(0.0, 5.0, 11)
+   saved_p = Pup.Ptype
+
+   for h in fields:
+       Pup.FieldX, Pup.FieldY = 0.0, float(h)
+
+       # -- (a) field curvature: best-focus axial shift ----------------
+       Pup.Ptype = "fan"                                # tangential fan
+       Rays = Kos.raykeeper(Doublet)
+       x, y, z, L, M, N = Pup.Pattern2Field()
+       for i in range(len(x)):
+           Doublet.Trace([x[i], y[i], z[i]], [L[i], M[i], N[i]], W)
+           Rays.push()
+       X, Y, Z, Lp, Mp, Np = Rays.pick(-1)
+       dz_focus = float(Kos.BestFocus(X, Y, Z, Lp, Mp, Np))
+
+       # -- (b) distortion: chief-ray height vs paraxial ---------------
+       Pup.Ptype = "chief"
+       Rays = Kos.raykeeper(Doublet)
+       x, y, z, L, M, N = Pup.Pattern2Field()
+       Doublet.Trace([x[0], y[0], z[0]], [L[0], M[0], N[0]], W)
+       Rays.push()
+       Xc, Yc, *_ = Rays.pick(-1)
+       h_real  = float(np.hypot(Xc, Yc))
+       h_parax = Focal * np.tan(np.deg2rad(h))
+       d_pct   = (h_real - h_parax) / h_parax * 100 if h > 0 else 0.0
+
+       print(f"h = {h:.1f} deg  Δz_focus = {dz_focus:+.4f} mm  "
+             f"h_real = {h_real:.4f} mm  distortion = {d_pct:+.3f} %")
+
+   Pup.Ptype = saved_p
+
 
 .. _analysis-illum:
 
@@ -556,6 +895,58 @@ also captures vignetting and pupil aberration, on top of that reference.
    :align: center
    :width: 360px
 
+**Worked example.** Pure cos⁴ falloff, no vignetting:
+
+* :math:`\theta = 10°`: :math:`\cos^{4}\theta = 0.9848^{4} \approx 0.940`
+  → 94.0% of on-axis irradiance.
+* :math:`\theta = 20°`: :math:`\cos^{4}\theta = 0.9397^{4} \approx 0.780`
+  → 78.0%.
+* :math:`\theta = 30°`: :math:`\cos^{4}\theta = 0.8660^{4} \approx 0.563`
+  → 56.3%.
+
+If the measured curve at :math:`\theta = 20°` reads only 0.60 instead of
+the geometric 0.78, the **vignetting fraction** at that field is
+:math:`1 - 0.60/0.78 \approx 23\%`.
+
+**KrakenOS code:**
+
+Compute the **irradiance** in a small box around each chief-ray
+landing point (so the cos α projection is included), then take the
+ratio :math:`E(\theta)/E(0)` — this matches the formula directly.
+
+.. code-block:: python
+
+   def irradiance_near_chief(theta_deg, n_rays=10_000, box=0.20):
+       """Mean E = Σ w_i cos α_i / A around the chief-ray hit point."""
+       # Chief ray = centre of the box.
+       Pup.FieldX, Pup.FieldY = 0.0, float(theta_deg)
+       Pup.Ptype = "chief"
+       Rch = Kos.raykeeper(Doublet)
+       x, y, z, L, M, N = Pup.Pattern2Field()
+       Doublet.Trace([x[0], y[0], z[0]], [L[0], M[0], N[0]], W)
+       Rch.push()
+       xc, yc, *_ = Rch.pick(-1); xc, yc = float(xc), float(yc)
+
+       # Filled pupil → irradiance estimate at the box around (xc, yc).
+       Pup.Ptype = "rand"
+       Pup.Samp  = int(np.sqrt(n_rays) / 2) + 1
+       Rays = Kos.raykeeper(Doublet)
+       x, y, z, L, M, N = Pup.Pattern2Field()
+       launched = len(x)
+       for i in range(launched):
+           Doublet.Trace([x[i], y[i], z[i]], [L[i], M[i], N[i]], W)
+           Rays.push()
+       Xs, Ys, _, Ls, Ms, Ns = Rays.pick(-1)
+       mask  = (np.abs(Xs - xc) < box/2) & (np.abs(Ys - yc) < box/2)
+       power = np.sum(np.abs(Ns[mask]))         # Σ cos α_i, w_i = 1
+       return power / (box * box) / launched    # E in (W / mm^2) per launched ray
+
+   E0 = irradiance_near_chief(0.0)
+   for h in (10.0, 20.0, 30.0):
+       RI   = irradiance_near_chief(h) / E0
+       cos4 = np.cos(np.deg2rad(h)) ** 4
+       print(f"h = {h:.1f} deg  RI = {RI:.3f}   cos^4 ideal = {cos4:.3f}")
+
 
 .. _analysis-latclr:
 
@@ -589,6 +980,44 @@ The result is a coloured spread along the field direction.
    :alt: Lateral color curves for two wavelengths vs field
    :align: center
    :width: 360px
+
+**Worked example.** At :math:`h = 2°` the chief ray hits the image at:
+
+* :math:`\lambda_{0} = 0.5876` µm (reference d-line):
+  :math:`y_{\mathrm{chief}} = 6.9920` mm
+* :math:`\lambda = 0.4861` µm (F-line):
+  :math:`y_{\mathrm{chief}} = 6.9985` mm
+* :math:`\lambda = 0.6563` µm (C-line):
+  :math:`y_{\mathrm{chief}} = 6.9875` mm
+
+Then
+
+* :math:`\Delta y_{\mathrm{lat}}(0.4861;\,2°) = +6.5` µm
+* :math:`\Delta y_{\mathrm{lat}}(0.6563;\,2°) = -4.5` µm
+* total F-to-C spread :math:`= 11.0` µm — for a 5 µm-pixel detector
+  that is **2.2 pixels of colour fringe**.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   Pup.FieldX, Pup.FieldY = 0.0, 2.0
+   Pup.Ptype = "chief"
+   bands = {"F":   0.4861,
+            "d":   0.5876,
+            "C":   0.6563}
+   y_chief = {}
+   for name, lam in bands.items():
+       Rays = Kos.raykeeper(Doublet)
+       x, y, z, L, M, N = Pup.Pattern2Field()
+       Doublet.Trace([x[0], y[0], z[0]], [L[0], M[0], N[0]], lam)
+       Rays.push()
+       _, Y, *_ = Rays.pick(-1)
+       y_chief[name] = float(Y)
+
+   y0 = y_chief["d"]
+   for name in ("F", "C"):
+       print(f"Delta y_lat({name}) = {(y_chief[name] - y0)*1e3:+.2f} um")
 
 
 .. _analysis-pol:
@@ -659,6 +1088,50 @@ where
    :align: center
    :width: 360px
 
+**Worked example.** Air → N-BK7 interface (:math:`n_{1} = 1.0`,
+:math:`n_{2} = 1.5`) at :math:`\theta_{1} = 45°`. Snell:
+
+* :math:`\sin\theta_{2} = \sin 45° / 1.5 = 0.4714` →
+  :math:`\theta_{2} = 28.13°`.
+* :math:`\cos\theta_{1} = 0.7071`, :math:`\cos\theta_{2} = 0.8819`.
+
+Fresnel coefficients:
+
+* :math:`r_{s} = (1.0 \cdot 0.7071 - 1.5 \cdot 0.8819) /
+  (1.0 \cdot 0.7071 + 1.5 \cdot 0.8819) = -0.6158/2.0300 = -0.3033`,
+  so :math:`R_{s} = 0.0920`, :math:`T_{s} = 0.9080`.
+* :math:`r_{p} = (1.5 \cdot 0.7071 - 1.0 \cdot 0.8819) /
+  (1.5 \cdot 0.7071 + 1.0 \cdot 0.8819) = +0.1788/1.9426 = +0.0920`,
+  so :math:`R_{p} = 0.00847`, :math:`T_{p} = 0.9915`.
+
+Diattenuation at this interface
+:math:`= (T_{p} - T_{s}) / (T_{p} + T_{s}) \approx 0.044`.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   # Fresnel calculator that matches the formulas used inside KrakenOS.
+   def fresnel(n1, n2, theta1_deg):
+       t1 = np.deg2rad(theta1_deg)
+       s2 = (n1 / n2) * np.sin(t1)
+       if abs(s2) > 1.0:
+           return None                   # total internal reflection
+       t2 = np.arcsin(s2)
+       c1, c2 = np.cos(t1), np.cos(t2)
+       rs = (n1*c1 - n2*c2) / (n1*c1 + n2*c2)
+       rp = (n2*c1 - n1*c2) / (n2*c1 + n1*c2)
+       return rs**2, rp**2, 1 - rs**2, 1 - rp**2
+
+   Rs, Rp, Ts, Tp = fresnel(1.0, 1.5, 45.0)
+   print(f"R_s={Rs:.4f}  T_s={Ts:.4f}")
+   print(f"R_p={Rp:.4f}  T_p={Tp:.4f}")
+
+   # System-level: in the |ui|, set surface coating + polarization input on
+   # the source, then read the Stokes vector / DoP from the polarization
+   # analysis. See KrakenOS/Examples/Examp_Beam_Splitter_Fresnel_Polarization.py
+   # for a full end-to-end sample.
+
 
 .. _analysis-atmos:
 
@@ -701,6 +1174,53 @@ attributes documented in :doc:`pupilcalc_tool`).
    :align: center
    :width: 360px
 
+**Worked example.** Use round Cassini coefficients
+:math:`A = 60.4''`, :math:`B = 0.06''` (standard atmosphere, mid-visible):
+
+* :math:`z = 30°`: :math:`\tan z = 0.5774`,
+  :math:`R = 60.4 \cdot 0.5774 - 0.06 \cdot 0.5774^{3} = 34.86 - 0.012
+  \approx 34.85''`.
+* :math:`z = 45°`: :math:`\tan z = 1.0`,
+  :math:`R = 60.4 - 0.06 = 60.34''`.
+* :math:`z = 60°`: :math:`\tan z = 1.7321`,
+  :math:`R = 60.4 \cdot 1.7321 - 0.06 \cdot 1.7321^{3}
+  = 104.62 - 0.312 \approx 104.31''`.
+
+Between :math:`\lambda = 0.45` µm and :math:`\lambda = 0.70` µm,
+:math:`A` typically differs by :math:`\sim 4''` at sea level, so the
+**atmospheric-dispersion smear** at :math:`z = 45°` is of order
+:math:`4''` (about :math:`1.6` µm on a 80-mm-focal lens).
+
+**KrakenOS code:**
+
+Two halves: (a) plug numbers into the Cassini formula so you can
+verify the table above by hand, and (b) hand the same parameters to
+``PupilCalc`` for a self-consistent atmosphere-corrected ray launch.
+
+.. code-block:: python
+
+   # (a) Closed-form Cassini check ----------------------------------
+   def cassini_arcsec(z_deg, A_arcsec=60.4, B_arcsec=0.06):
+       t = np.tan(np.deg2rad(z_deg))
+       return A_arcsec * t - B_arcsec * t**3
+
+   for z in (30.0, 45.0, 60.0):
+       print(f"z = {z:.0f} deg  R = {cassini_arcsec(z):.2f} arcsec")
+
+   # (b) AstroAtmosphere model inside PupilCalc ---------------------
+   Pup.AtmosRef = 1
+   Pup.T   = 283.15           # K
+   Pup.P   = 101300           # Pa
+   Pup.H   = 0.5              # relative humidity (0–1)
+   Pup.xc  = 400              # ppm CO2
+   Pup.lat = 31               # latitude (degrees)
+   Pup.h   = 2800             # observatory altitude (m)
+   Pup.l1  = 0.5876           # reference wavelength (µm)
+   Pup.l2  = 0.4861           # wavelength of interest (µm)
+   Pup.z0  = 45.0             # zenith distance (deg)
+   xa, ya, za, La, Ma, Na = Pup.Pattern2Field()
+   # Repeat with a different Pup.l2 to inspect the per-wavelength shift.
+
 
 Map analyses on the detector / pupil
 ------------------------------------
@@ -742,6 +1262,36 @@ where
    :align: center
    :width: 360px
 
+**Worked example.** A :math:`5 \times 5` PSF map at 2° corner field has
+local Strehl values:
+
+* on-axis cell: :math:`S(0, 0) \approx 0.94`.
+* corner cell: :math:`S(2°, 2°) \approx 0.55`.
+* the field-averaged Strehl is the unweighted mean of the cells; if all
+  25 cells yielded the corner value, the system would already be below
+  :math:`S = 0.8` (the practical "well-corrected" threshold).
+
+For each cell the local Airy radius is unchanged
+(:math:`r_{\mathrm{Airy}} = 5.73` µm at :math:`F/\# = 8`,
+:math:`\lambda = 0.5876` µm); it is the field-dependent
+:math:`W(u, v;\, x_{f}, y_{f})` that broadens the spot.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   fx = np.linspace(-2.0, 2.0, 5)
+   fy = np.linspace(-2.0, 2.0, 5)
+   for yf in fy:
+       for xf in fx:
+           Pup.FieldX, Pup.FieldY = float(xf), float(yf)
+           X, Y, Z, _ = Kos.Phase2(Pup)
+           Zc, *_ = Kos.Zernike_Fitting(X, Y, Z, np.ones(15))
+           I = Kos.psf(Zc, Focal, Diameter, W,
+                       pixels=128, PupilSample=3, plot=0, sqr=1)
+           Imax = float(np.max(I))
+           print(f"field ({xf:+.1f},{yf:+.1f})  peak I = {Imax:.3e}")
+
 
 .. _analysis-fldmap:
 
@@ -776,6 +1326,42 @@ azimuthal component captures lateral colour and field-dependent decentre.
    :alt: Real (red) vs paraxial (grey) image grid showing distortion
    :align: center
    :width: 360px
+
+**Worked example.** Field-grid sample at :math:`(x_{f}, y_{f}) = (3°,
+4°)`, :math:`f' = 80` mm. Paraxial chief-ray landing:
+
+* :math:`x_{p} = f' \tan(3°) = 80 \cdot 0.0524 = 4.195` mm
+* :math:`y_{p} = f' \tan(4°) = 80 \cdot 0.0699 = 5.595` mm
+
+Real chief-ray landing (from full trace):
+:math:`(x_{r}, y_{r}) = (4.150,\, 5.531)` mm. Then
+
+* :math:`\Delta\mathbf{r} = (4.150 - 4.195,\, 5.531 - 5.595)
+  = (-0.045,\, -0.064)` mm.
+* Radial component (distortion):
+  :math:`(\Delta\mathbf{r}\cdot\hat{r}) = -0.078` mm
+  (:math:`|\hat{r}| = 1`, :math:`\hat{r}` points from axis outward).
+* Tangential / azimuthal component: :math:`\approx 0`
+  (consistent with rotationally symmetric distortion).
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   grid = np.linspace(-5.0, 5.0, 7)        # degrees
+   Pup.Ptype = "chief"
+   for yf in grid:
+       for xf in grid:
+           Pup.FieldX, Pup.FieldY = float(xf), float(yf)
+           Rays = Kos.raykeeper(Doublet)
+           x, y, z, L, M, N = Pup.Pattern2Field()
+           Doublet.Trace([x[0], y[0], z[0]], [L[0], M[0], N[0]], W)
+           Rays.push()
+           X, Y, *_ = Rays.pick(-1)
+           xp = Focal * np.tan(np.deg2rad(xf))
+           yp = Focal * np.tan(np.deg2rad(yf))
+           print(f"({xf:+.1f},{yf:+.1f})  real=({float(X):+.4f},{float(Y):+.4f})  "
+                 f"d=({float(X)-xp:+.4f},{float(Y)-yp:+.4f}) mm")
 
 
 .. _analysis-illmap:
@@ -818,6 +1404,46 @@ a single picture.
    :align: center
    :width: 360px
 
+**Worked example.** Pixel pitch :math:`p = 5` µm
+(:math:`A_{\mathrm{pix}} = 25 \cdot 10^{-6}` mm²); a single pixel
+collects 12 traced rays each of weight :math:`w_{i} = 1.0` µW landing at
+incidence angle :math:`\alpha_{i} = 10°`. Then
+
+.. math::
+
+   E \;=\; \frac{12 \cdot 1.0 \cdot \cos 10°}{25 \cdot 10^{-6}\,\mathrm{mm}^{2}}
+       \;\approx\; \frac{12 \cdot 0.9848}{25 \cdot 10^{-6}}\,\mathrm{\mu W/mm^{2}}
+       \;\approx\; 4.73 \cdot 10^{5}\,\mathrm{\mu W/mm^{2}}
+       \;=\; 0.473\,\mathrm{W/mm^{2}}.
+
+If the on-axis pixel reads :math:`E_{0} = 0.612` W/mm² with the same
+trace, the local relative illumination is :math:`0.473/0.612 = 0.773` —
+matching the cos⁴ prediction for a 20° off-axis field point.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   # Build an irradiance map by histogramming ray landings into pixels.
+   def illum_map(theta_deg, n_rays=20_000, pitch=0.005, half_extent=2.0):
+       Pup.FieldX, Pup.FieldY = 0.0, float(theta_deg)
+       Pup.Ptype = "rand"
+       Pup.Samp  = int(np.sqrt(n_rays) / 2) + 1
+       Rays = Kos.raykeeper(Doublet)
+       x, y, z, L, M, N = Pup.Pattern2Field()
+       for i in range(len(x)):
+           Doublet.Trace([x[i], y[i], z[i]], [L[i], M[i], N[i]], W)
+           Rays.push()
+       X, Y, _, Lp, Mp, Np = Rays.pick(-1)
+       cos_a = np.abs(Np)
+       bins = np.arange(-half_extent, half_extent + pitch, pitch)
+       H, *_ = np.histogram2d(X, Y, bins=bins, weights=cos_a)
+       return H / (pitch ** 2)            # W per mm^2 per unit input ray weight
+
+   E20 = illum_map(20.0)
+   E0  = illum_map(0.0)
+   print(f"peak E(20 deg) / peak E(0 deg) = {E20.max() / E0.max():.3f}")
+
 
 .. _analysis-wfemap:
 
@@ -854,6 +1480,35 @@ where
    :align: center
    :width: 360px
 
+**Worked example.** Suppose the WFE map is pure defocus,
+:math:`W(u, v) = 0.30\,(2\rho^{2} - 1)` waves with
+:math:`\rho^{2} = u^{2} + v^{2}`:
+
+* :math:`\max W = 0.30 \cdot (+1) = +0.30` at the pupil edge,
+  :math:`\min W = 0.30 \cdot (-1) = -0.30` at the centre, so
+  :math:`\mathrm{PV} = 0.60` waves.
+* :math:`\langle W \rangle = 0` (defocus is mean-free).
+* :math:`\mathrm{RMS}^{2}
+  = \frac{1}{\pi}\!\iint_{\rho\le 1}(0.30)^{2}(2\rho^{2}-1)^{2}\,
+  \mathrm{d}A
+  = 0.09 \cdot \frac{1}{3} = 0.030` → :math:`\mathrm{RMS} = 0.173`
+  waves, in agreement with :ref:`analysis-zernike`.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   X, Y, Z, P2V = Kos.Phase2(Pup)            # Z is W in waves
+   print(f"PV   (Phase2)          = {P2V:.4f} waves")
+   print(f"PV   (recomputed)      = {Z.max() - Z.min():.4f} waves")
+   print(f"<W>                    = {Z.mean():+.4f} waves")
+   print(f"RMS  (about mean)      = {np.sqrt(np.mean((Z - Z.mean())**2)):.4f} waves")
+
+   # Optional: render the map as a heat plot
+   import matplotlib.pyplot as plt
+   plt.scatter(X, Y, c=Z, s=12); plt.axis("equal"); plt.colorbar(label="W (waves)")
+   plt.title("Wavefront error map"); plt.show()
+
 
 .. _analysis-detmap:
 
@@ -884,6 +1539,39 @@ hot spots. ``CohDet`` (next) replaces the sum with a coherent one.
    :alt: Detector power map - binned ray weights per pixel
    :align: center
    :width: 360px
+
+**Worked example.** A 5×5 µm pixel collects 8 rays of weight
+:math:`w_{i} = 1.0` µW each:
+
+* :math:`P_{kl} = 8 \cdot 1.0 = 8.0` µW.
+* Equivalent irradiance on that pixel (incoherent):
+  :math:`E = 8.0\,\mu\mathrm{W} / (25 \cdot 10^{-6}\,\mathrm{mm}^{2})
+  = 3.2 \cdot 10^{5}\,\mathrm{\mu W/mm^{2}}
+  = 0.32`\ W/mm².
+* Contrast with the **coherent** sum (:ref:`analysis-cohdet`) — if all
+  8 rays were perfectly in phase, the coherent intensity would scale
+  as :math:`(\sum \sqrt{w_{i}})^{2} = (8\sqrt{1.0})^{2} = 64` µW²
+  (units differ; coherent uses :math:`|E|^{2}` not :math:`P`).
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   pitch       = 0.005                          # mm
+   half_extent = 2.0                            # mm
+   bins        = np.arange(-half_extent, half_extent + pitch, pitch)
+
+   Rays = Kos.raykeeper(Doublet)
+   x, y, z, L, M, N = Pup.Pattern2Field()
+   for i in range(len(x)):
+       Doublet.Trace([x[i], y[i], z[i]], [L[i], M[i], N[i]], W)
+       Rays.push()
+   X, Y, *_ = Rays.pick(-1)
+
+   w = np.ones_like(X)                          # uniform 1.0 weights
+   P, *_ = np.histogram2d(X, Y, bins=bins, weights=w)
+   k, l = np.unravel_index(np.argmax(P), P.shape)
+   print(f"hottest pixel (k={k}, l={l}) carries P_kl = {P.max():.2f} ray weights")
 
 
 .. _analysis-cohdet:
@@ -929,6 +1617,44 @@ the trace can resolve.
    :align: center
    :width: 360px
 
+**Worked example.** Two coherent rays land in the same pixel with equal
+weights :math:`w_{1} = w_{2} = 1.0`, no extra phase
+(:math:`\varphi_{i} = 0`), and OPLs differing by exactly half a
+wavelength (:math:`\mathrm{OPL}_{2} - \mathrm{OPL}_{1} = \lambda/2`).
+Set :math:`k_{\lambda}\,\mathrm{OPL}_{1} = 0` for convenience:
+
+* coherent sum:
+  :math:`A = \sqrt{1}\,e^{i \cdot 0} + \sqrt{1}\,e^{i\pi} = 1 - 1 = 0`,
+  :math:`I_{kl} = |A|^{2} = 0` — **fully destructive**.
+* incoherent sum (DetMap):
+  :math:`P_{kl} = 1 + 1 = 2`.
+
+Now flip the OPL difference to a **whole** wavelength
+(:math:`k_{\lambda}\Delta\mathrm{OPL} = 2\pi`):
+
+* :math:`A = 1 + 1 = 2`, :math:`I_{kl} = 4` — **constructive**, twice
+  what incoherent addition would give.
+
+Fringe visibility for two unit-weight rays:
+:math:`V = 2\sqrt{w_{1}w_{2}}/(w_{1}+w_{2}) = 1` (perfect fringes).
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   # Toy coherent-sum at one pixel, fed by two rays with controlled OPL.
+   lam       = W * 1e-3                          # wavelength in mm
+   k_lambda  = 2.0 * np.pi / lam
+   w         = np.array([1.0, 1.0])
+   OPL       = np.array([10.000, 10.000 + lam / 2])   # half-wave apart
+   phi       = np.zeros_like(OPL)
+
+   A         = np.sum(np.sqrt(w) * np.exp(1j * (k_lambda * OPL + phi)))
+   I_coh     = np.abs(A) ** 2
+   P_inc     = np.sum(w)
+   print(f"incoherent sum P_kl = {P_inc:.2f}")
+   print(f"coherent   sum I_kl = {I_coh:.4f}")
+
 
 .. _analysis-bfield:
 
@@ -966,6 +1692,47 @@ where
    :alt: Branch field intensity, phase, and TEM00 overlap template
    :align: center
    :width: 360px
+
+**Worked example.** A measured field
+:math:`E(x) = \exp(-x^{2}/w_{e}^{2})` (Gaussian, waist :math:`w_{e}`)
+is correlated against an ideal TEM₀₀ template
+:math:`u(x) = \exp(-x^{2}/w_{0}^{2})` of waist :math:`w_{0}`.
+
+For two identical Gaussians (:math:`w_{e} = w_{0} = w`),
+:math:`\eta = 1`. If the template waist is mis-sized by 20%
+(:math:`w_{0} = 1.2\,w_{e}`), the analytic 1-D overlap reduces to
+:math:`\eta = 4\,w_{e}^{2}\,w_{0}^{2}/(w_{e}^{2} + w_{0}^{2})^{2}`:
+
+* :math:`\eta = 4 \cdot 1 \cdot 1.44 / (1 + 1.44)^{2}
+  = 5.76 / 5.9536 \approx 0.967` — 3.3% coupling loss from
+  waist mismatch alone.
+
+For a 50% mismatch (:math:`w_{0} = 1.5\,w_{e}`):
+:math:`\eta = 4 \cdot 2.25 / (1 + 2.25)^{2} = 9/10.5625 \approx 0.852`
+— now a 15% coupling penalty.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   # Mode-overlap on sampled field arrays (E and u defined on the same grid)
+   def mode_overlap(E, u, dA):
+       num   = np.abs(np.sum(np.conj(E) * u) * dA) ** 2
+       den_E = np.sum(np.abs(E) ** 2) * dA
+       den_u = np.sum(np.abs(u) ** 2) * dA
+       return num / (den_E * den_u)
+
+   x_grid  = np.linspace(-3.0, 3.0, 2001)
+   dx      = x_grid[1] - x_grid[0]
+   we, w0  = 1.0, 1.2
+   E       = np.exp(-x_grid**2 / we**2)
+   u       = np.exp(-x_grid**2 / w0**2)
+   print(f"eta (Gaussian, w0/we=1.2) = {mode_overlap(E, u, dx):.4f}")
+
+   # In KrakenOS, a Gaussian-branch source's propagated field is exported
+   # from the branch field analysis (UI 'BField' button) -- pass the
+   # exported (x, E) array into `mode_overlap()` against your reference
+   # TEM00 template.
 
 
 .. _analysis-diffr:
@@ -1006,6 +1773,48 @@ far-field diffraction studies.
    :alt: Diffraction angular spectrum (sinc^2 example)
    :align: center
    :width: 360px
+
+**Worked example.** Square aperture of side :math:`a = 1.0` mm
+illuminated at :math:`\lambda = 0.5` µm.
+
+The 1-D angular spectrum of a top-hat of width :math:`a` is
+:math:`\tilde{E}(k_{x}) \propto \mathrm{sinc}(k_{x} a / 2)`, so the
+**first zero** occurs at :math:`k_{x} a / 2 = \pi`, i.e.
+:math:`k_{x} = 2\pi/a = 2\pi/1.0\,\mathrm{mm} = 6.283\,\mathrm{rad/mm}`.
+
+Converted to a propagation angle:
+
+* :math:`\theta_{x} = k_{x} / k_{\lambda}
+  = 6.283 / (2\pi / 0.0005\,\mathrm{mm})
+  = 5.0 \cdot 10^{-4}\,\mathrm{rad}
+  \approx 103\,\mathrm{arcsec}`.
+* In micrometres at a 1-m screen: :math:`500` µm to the first dark
+  fringe.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   # Compute the angular spectrum of a sampled field via 2D FFT.
+   def angular_spectrum(E, dx):
+       Et = np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(E))) * dx * dx
+       N  = E.shape[0]
+       kx = 2 * np.pi * np.fft.fftshift(np.fft.fftfreq(N, dx))
+       return Et, kx
+
+   # Toy square aperture (replace E by the coherent field exported from
+   # KrakenOS' diffraction-detector analysis):
+   N, dx  = 512, 0.01                            # mm
+   x      = (np.arange(N) - N/2) * dx
+   E      = (np.abs(x)[:, None] < 0.5) & (np.abs(x)[None, :] < 0.5)
+   E      = E.astype(float)
+   Et, kx = angular_spectrum(E, dx)
+   theta  = kx / (2 * np.pi / (W * 1e-3))        # propagation angle, rad
+   peak   = np.argmax(np.abs(Et[N//2, :]))
+   # First zero index off-centre — find it
+   row    = np.abs(Et[N//2, :])
+   zero   = N//2 + 1 + np.argmin(row[N//2 + 1:])
+   print(f"first zero at theta = {theta[zero]*206265:.1f} arcsec")
 
 
 Comparative analyses
@@ -1051,6 +1860,43 @@ does.
    :alt: Mock interferogram fringes over the pupil
    :align: center
    :width: 360px
+
+**Worked example.** Equal-intensity beams (:math:`I_{1} = I_{2} = 1`),
+no carrier (:math:`\varphi_{0} = 0`), wavelength
+:math:`\lambda = 0.5876` µm. Tabulate :math:`I(u, v)` at three
+representative wavefront-error samples:
+
+* :math:`W = 0`: :math:`I = 1 + 1 + 2\sqrt{1}\cos 0 = 4`
+  (bright fringe).
+* :math:`W = \lambda/4`:
+  :math:`I = 1 + 1 + 2\cos(\pi/2) = 2`
+  (mid-fringe).
+* :math:`W = \lambda/2`:
+  :math:`I = 1 + 1 + 2\cos(\pi) = 0`
+  (dark fringe).
+
+Adding a 5-wave tilt to :math:`W` (e.g.
+:math:`W = 5\lambda \cdot u`) produces **10 straight fringes** across
+the pupil diameter; tilt provides the spatial "carrier" used in real
+interferometer fringe-readout algorithms.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   X, Y, Z, _ = Kos.Phase2(Pup)                 # Z = W in waves
+   I1, I2 = 1.0, 1.0
+   phi0   = 0.0                                  # carrier-phase offset
+   tilt   = 5.0                                  # waves of tilt across the pupil
+   Z_test = Z + tilt * X / np.max(np.abs(X))
+
+   I = I1 + I2 + 2*np.sqrt(I1*I2) * np.cos(2*np.pi * Z_test + phi0)
+
+   import matplotlib.pyplot as plt
+   plt.scatter(X, Y, c=I, s=12, cmap="gray")
+   plt.axis("equal"); plt.colorbar(label="I (arb.)")
+   plt.title("Mock interferogram with 5-wave tilt carrier")
+   plt.show()
 
 
 .. _analysis-tolcmp:
@@ -1098,6 +1944,61 @@ cluster.
    :alt: Nominal vs worst Monte-Carlo spot overlay
    :align: center
    :width: 360px
+
+**Worked example.** Two toleranced parameters: surface-1 radius
+:math:`R_{1}` with :math:`\delta R_{1} \sim U(-0.05, +0.05)` mm, and
+element-2 axial thickness :math:`t_{2}` with
+:math:`\delta t_{2} \sim N(0, 0.020)` mm. Run :math:`K = 500`
+Monte-Carlo trials. Suppose the empirical distribution of
+:math:`M = \sigma_{\mathrm{RMS}}` is:
+
+* nominal: :math:`\sigma_{\mathrm{RMS}} = 5.0` µm.
+* median Monte-Carlo: :math:`\sigma_{\mathrm{RMS}} = 8.4` µm.
+* 95th percentile: :math:`\sigma_{\mathrm{RMS}} = 16.9` µm.
+* worst sample (max): :math:`\sigma_{\mathrm{RMS}} = 22.3` µm.
+
+The overlay plots the nominal cluster (tight, around the centroid) and
+the worst-sample cluster (offset and broadened) on the same axes; the
+ratio :math:`22.3 / 5.0 = 4.5\times` is a quick sensitivity score.
+
+**KrakenOS code:**
+
+.. code-block:: python
+
+   rng = np.random.default_rng(0)
+
+   def perturbed_sigma(seed_delta):
+       # Apply perturbations in-place, retrace, restore.
+       dR1, dt2 = seed_delta
+       L1a.Rc       += dR1
+       L1b.Thickness += dt2
+       sys_p = Kos.system([P_Obj, L1a, L1b, L1c, Stop, P_Ima], Kos.Setup())
+       Pup_p = Kos.PupilCalc(sys_p, Surf, W, "EPD", 10.0)
+       Pup_p.Samp = Pup.Samp; Pup_p.Ptype = Pup.Ptype
+       Pup_p.FieldType = Pup.FieldType
+       Pup_p.FieldX, Pup_p.FieldY = Pup.FieldX, Pup.FieldY
+       Rays = Kos.raykeeper(sys_p)
+       x, y, z, L, M, N = Pup_p.Pattern2Field()
+       for i in range(len(x)):
+           sys_p.Trace([x[i], y[i], z[i]], [L[i], M[i], N[i]], W)
+           Rays.push()
+       X, Y, *_ = Rays.pick(-1)
+       L1a.Rc       -= dR1
+       L1b.Thickness -= dt2
+       return np.sqrt(np.mean((X - X.mean())**2 + (Y - Y.mean())**2))
+
+   K = 200
+   results = []
+   for _ in range(K):
+       dR1 = rng.uniform(-0.05, 0.05)
+       dt2 = rng.normal(0.0, 0.020)
+       results.append(perturbed_sigma((dR1, dt2)))
+
+   results = np.array(results) * 1e3            # mm -> um
+   print(f"nominal  sigma_RMS ~= 5 um   (trace once with no perturbations)")
+   print(f"MC median            = {np.median(results):.2f} um")
+   print(f"MC 95th percentile   = {np.percentile(results, 95):.2f} um")
+   print(f"MC max (worst)       = {results.max():.2f} um")
 
 
 Cross-reference table
