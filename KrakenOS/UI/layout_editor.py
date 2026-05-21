@@ -26966,8 +26966,9 @@ class KrakenLayoutEditor(tk.Tk):
             "escaped": (0.36, 0.42, 0.50),
             "stopped": (0.50, 0.11, 0.11),
         }
+        diagnostic_line_color = status_colors.get(status, color) if status in {"absorbed", "escaped", "stopped"} else color
         return {
-            "line_color": color,
+            "line_color": diagnostic_line_color,
             "line_opacity": 0.74 if status == "missed_detector" else 0.88,
             "line_width": 1.5 if status == "missed_detector" else 1.0,
             "endpoint_color": status_colors.get(status, color),
@@ -51079,6 +51080,7 @@ class KrakenLayoutEditor(tk.Tk):
                 else None
             ),
             detector_surface_indices=self._scene_detector_surface_indices(trace_state),
+            allow_target_plane_contact=True,
             source_row_order=normalize_source_row_order(getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT)),
         )
 
@@ -60587,9 +60589,9 @@ class KrakenLayoutEditor(tk.Tk):
         """Allow the legacy finite cone only for non-sequential scene intent.
 
         `Pupil / field` is the ordered-surface sequential source model.  A
-        nonzero source cone is meaningful for legacy scene/non-sequential
-        layouts, but it must not hijack conventional finite-object lens
-        prescriptions that expect PupilCalc ray/field sampling.
+        nonzero source cone can still request extra non-sequential scene
+        coverage, but Open 3D maps that request to a reference aperture/pupil
+        launch rather than a physical point-emitter cone.
         """
         if self._current_source_model() != SOURCE_MODEL_DEFAULT:
             return False
@@ -60865,6 +60867,58 @@ class KrakenLayoutEditor(tk.Tk):
             )
         return bundles, ray_count
 
+    def _build_default_nonseq_reference_world_bundles(
+        self,
+        pupil_radius: float,
+    ) -> tuple[
+        list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+        int,
+    ]:
+        if self._current_source_model() != SOURCE_MODEL_DEFAULT:
+            return [], 0
+        ray_count = max(1, int(self._current_ray_count()))
+        radius = max(float(self._current_source_radius()), 0.0)
+        if radius <= 1e-9:
+            radius = float(pupil_radius) if np.isfinite(float(pupil_radius)) else 0.0
+        if radius <= 1e-9:
+            radius = 1.0
+        disk_pts = self._sample_reference_disk_points_3d(radius, ray_count)
+        bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+        if self._current_object_mode() == "Infinity" or self._current_field_type() == "Angle":
+            pairs = self._sample_field_grid_pairs(self._current_field_angle_deg())
+            for field_x, field_y in pairs:
+                tan_x = np.tan(np.deg2rad(float(field_x)))
+                tan_y = np.tan(np.deg2rad(float(field_y)))
+                direction = np.array([tan_x, tan_y, 1.0], dtype=float)
+                norm = float(np.linalg.norm(direction))
+                if norm <= 1e-12:
+                    continue
+                direction /= norm
+                bundles.append(
+                    self._orient_source_points_and_dirs(
+                        np.asarray(disk_pts[:, 0], dtype=float),
+                        np.asarray(disk_pts[:, 1], dtype=float),
+                        np.zeros(len(disk_pts), dtype=float),
+                        np.full(len(disk_pts), float(direction[0]), dtype=float),
+                        np.full(len(disk_pts), float(direction[1]), dtype=float),
+                        np.full(len(disk_pts), float(direction[2]), dtype=float),
+                    )
+                )
+        else:
+            pairs = self._sample_field_grid_pairs(self._current_field_height())
+            for field_x, field_y in pairs:
+                bundles.append(
+                    self._orient_source_points_and_dirs(
+                        np.asarray(disk_pts[:, 0], dtype=float) + float(field_x),
+                        np.asarray(disk_pts[:, 1], dtype=float) + float(field_y),
+                        np.zeros(len(disk_pts), dtype=float),
+                        np.zeros(len(disk_pts), dtype=float),
+                        np.zeros(len(disk_pts), dtype=float),
+                        np.ones(len(disk_pts), dtype=float),
+                    )
+                )
+        return bundles, int(len(disk_pts))
+
     def _entrance_radius(self, fallback_radius: float) -> float:
         object_radius = None
         if self.rows:
@@ -60958,15 +61012,20 @@ class KrakenLayoutEditor(tk.Tk):
             return
         use_legacy_default_cone = self._should_use_default_finite_cone_source(system=system)
         if mode == "world_envelope" and use_legacy_default_cone:
-            default_world_cone_bundles, default_world_cone_ray_count = self._build_default_finite_cone_world_bundles()
-            if default_world_cone_bundles:
+            self.append_debug(
+                "Pupil / field source cone is a 2D/analysis launch label in 3D scene mode; "
+                "Open 3D traces the real pupil envelope. Use Random point cone or a physical "
+                "scene source for a point-emitter cone."
+            )
+            reference_bundles, reference_ray_count = self._build_default_nonseq_reference_world_bundles(pupil_radius)
+            if reference_bundles:
                 rays.clean()
-                self._trace_preview_bundles(system, rays, wavelength, default_world_cone_bundles)
-                self._preview_field_ray_count = max(1, int(default_world_cone_ray_count))
-                self._preview_field_bundle_count = len(default_world_cone_bundles)
+                self._trace_preview_bundles(system, rays, wavelength, reference_bundles)
+                self._preview_field_ray_count = max(1, int(reference_ray_count))
+                self._preview_field_bundle_count = len(reference_bundles)
                 system.Vignetting(0)
                 return
-        if use_legacy_default_cone:
+        if use_legacy_default_cone and mode != "world_envelope":
             default_cone_bundles, default_cone_ray_count = self._build_default_finite_cone_preview_bundles()
             if default_cone_bundles:
                 rays.clean()
@@ -63129,6 +63188,20 @@ class KrakenLayoutEditor(tk.Tk):
             # exactly on the edge makes finite apertures clip one path but
             # not its sibling because of floating-point and tilted-surface
             # coordinate transforms.
+            r = radius * np.sqrt(index / float(count))
+            theta = index * golden_angle
+            points.append([r * np.cos(theta), r * np.sin(theta)])
+        return np.asarray(points, dtype=float)
+
+    @staticmethod
+    def _sample_reference_disk_points_3d(radius: float, ray_count: int) -> np.ndarray:
+        count = max(1, int(ray_count))
+        radius = max(float(radius), 0.0)
+        if count == 1 or radius <= 1e-12:
+            return np.asarray([[0.0, 0.0]], dtype=float)
+        points = [[0.0, 0.0]]
+        golden_angle = np.pi * (3.0 - np.sqrt(5.0))
+        for index in range(1, count):
             r = radius * np.sqrt(index / float(count))
             theta = index * golden_angle
             points.append([r * np.cos(theta), r * np.sin(theta)])

@@ -77,8 +77,10 @@ def finite_cone_direction_samples(
     """Return source-cone samples for a non-sequential 3D scene.
 
     The legacy Pupil pattern menu contains section-analysis controls such as
-    Meridional fan. Those are meaningful for 2D plots, but a non-sequential
-    scene source cone must sample an angular pupil in 3D.
+    Meridional fan. Those are meaningful for 2D plots. This helper remains for
+    explicit point-cone style sampling and legacy compatibility; live
+    non-sequential `Pupil / field` scene previews use a reference aperture
+    launch instead.
     """
     ray_total = max(1, int(ray_count))
     cone_rad = max(0.0, float(np.deg2rad(float(cone_deg))))
@@ -151,8 +153,9 @@ def finite_cone_direction_samples(
             np.cos(angle).astype(float),
         )
 
-    # Meridional fan, Fan X, and Fan Y are 2D section/analysis requests.  For a
-    # 3D scene source cone, interpret them as the default filled angular pupil.
+    # Meridional fan, Fan X, and Fan Y are 2D section/analysis requests.  When
+    # this legacy cone helper is used directly, interpret them as a filled 3D
+    # point-cone distribution instead of collapsing to a flat section.
     golden_angle = np.pi * (3.0 - np.sqrt(5.0))
     if ray_total == 1:
         radial = np.asarray([0.0], dtype=float)
@@ -550,6 +553,123 @@ def sample_source_disk_points(radius: float, ray_count: int) -> np.ndarray:
         theta = index * golden_angle
         points.append([r * np.cos(theta), r * np.sin(theta)])
     return np.asarray(points, dtype=float)
+
+
+def sample_reference_disk_points_3d(radius: float, ray_count: int) -> np.ndarray:
+    count = max(1, int(ray_count))
+    radius = max(float(radius), 0.0)
+    if count == 1 or radius <= 1e-12:
+        return np.asarray([[0.0, 0.0]], dtype=float)
+    points = [[0.0, 0.0]]
+    golden_angle = np.pi * (3.0 - np.sqrt(5.0))
+    for index in range(1, count):
+        r = radius * np.sqrt(index / float(count))
+        theta = index * golden_angle
+        points.append([r * np.cos(theta), r * np.sin(theta)])
+    return np.asarray(points, dtype=float)
+
+
+def _saved_reference_launch_radius(surfaces: list[dict[str, Any]], settings: dict[str, Any]) -> float:
+    radius = _settings_float(settings, "source_radius", 0.0, minimum=0.0)
+    if radius > 1e-12:
+        return float(radius)
+    candidates: list[float] = []
+    for spec in surfaces:
+        try:
+            diameter = abs(float(spec.get("diameter", spec.get("Diameter", 0.0)) or 0.0))
+        except Exception:
+            continue
+        if diameter > 1e-12:
+            candidates.append(diameter * 0.5)
+    return float(candidates[0] if candidates else 1.0)
+
+
+def _default_nonseq_reference_bundles_from_settings(
+    surfaces: list[dict[str, Any]],
+    settings: dict[str, Any],
+    *,
+    enabled: bool = False,
+) -> list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    if not bool(enabled):
+        return []
+    source_model = str(settings.get("source_model", SOURCE_MODEL_DEFAULT) or SOURCE_MODEL_DEFAULT).strip()
+    if source_model != SOURCE_MODEL_DEFAULT:
+        return []
+    if _settings_float(settings, "source_cone_angle", 0.0, minimum=0.0) <= 1e-12:
+        return []
+    ray_count = _settings_int(settings, "ray_count", 5)
+    radius = _saved_reference_launch_radius(surfaces, settings)
+    disk_points = sample_reference_disk_points_3d(radius, ray_count)
+    if disk_points.size == 0:
+        return []
+    display_orientation = normalize_projection_plane(str(settings.get("display_orientation", "YZ") or "YZ").strip())
+    axis_index = 0 if display_orientation == "XZ" else 1
+    object_mode = str(settings.get("object_mode", "Finite") or "Finite").strip()
+    field_type = str(settings.get("field_type", "Angle") or "Angle").strip()
+    field_values = _sample_field_values(settings, _saved_field_maximum(settings, surfaces))
+    if not field_values:
+        field_values = [0.0]
+    bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+    if object_mode == "Infinity" or field_type == "Angle":
+        for field_value in field_values:
+            angle_rad = np.deg2rad(float(field_value))
+            direction = np.zeros(3, dtype=float)
+            direction[axis_index] = np.tan(angle_rad)
+            direction[2] = 1.0
+            norm = float(np.linalg.norm(direction))
+            if norm <= 1e-12:
+                continue
+            direction /= norm
+            bundles.append(
+                orient_source_points_and_dirs(
+                    (
+                        _settings_float(settings, "source_x", 0.0),
+                        _settings_float(settings, "source_y", 0.0),
+                        _settings_float(settings, "source_z", 0.0),
+                    ),
+                    (
+                        _settings_float(settings, "source_l", 0.0),
+                        _settings_float(settings, "source_m", 0.0),
+                        _settings_float(settings, "source_n", 1.0),
+                    ),
+                    np.asarray(disk_points[:, 0], dtype=float),
+                    np.asarray(disk_points[:, 1], dtype=float),
+                    np.zeros(len(disk_points), dtype=float),
+                    np.full(len(disk_points), float(direction[0]), dtype=float),
+                    np.full(len(disk_points), float(direction[1]), dtype=float),
+                    np.full(len(disk_points), float(direction[2]), dtype=float),
+                )
+            )
+        return bundles
+
+    for field_value in field_values:
+        x_values = np.asarray(disk_points[:, 0], dtype=float)
+        y_values = np.asarray(disk_points[:, 1], dtype=float)
+        if axis_index == 0:
+            x_values = x_values + float(field_value)
+        else:
+            y_values = y_values + float(field_value)
+        bundles.append(
+            orient_source_points_and_dirs(
+                (
+                    _settings_float(settings, "source_x", 0.0),
+                    _settings_float(settings, "source_y", 0.0),
+                    _settings_float(settings, "source_z", 0.0),
+                ),
+                (
+                    _settings_float(settings, "source_l", 0.0),
+                    _settings_float(settings, "source_m", 0.0),
+                    _settings_float(settings, "source_n", 1.0),
+                ),
+                x_values,
+                y_values,
+                np.zeros(len(disk_points), dtype=float),
+                np.zeros(len(disk_points), dtype=float),
+                np.zeros(len(disk_points), dtype=float),
+                np.ones(len(disk_points), dtype=float),
+            )
+        )
+    return bundles
 
 
 def settings_panel_scene_source(settings: dict[str, Any], *, wavelength: float | None = None, sample_count: int | None = None) -> SceneSource3D | None:
@@ -988,7 +1108,6 @@ def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: di
             clean = 0
         return rays
 
-    default_finite_cone = _default_finite_cone_bundle_from_settings(settings, enabled=use_nonseq)
     default_source = SceneSource3D(
         source_id="source:pupil_field",
         name="Pupil / field",
@@ -998,25 +1117,33 @@ def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: di
         ray_count=_settings_int(settings, "ray_count", 5),
         wavelength=wavelength,
     )
-    if default_finite_cone is not None:
+    nonseq_reference_bundles = _default_nonseq_reference_bundles_from_settings(
+        surfaces,
+        settings,
+        enabled=use_nonseq,
+    )
+    if nonseq_reference_bundles:
         trace_loop = kos_module.NsTraceLoop if use_nonseq and hasattr(kos_module, "NsTraceLoop") else kos_module.TraceLoop
-        trace_bundle(
-            trace_loop,
-            default_finite_cone,
-            wavelength,
-            rays,
-            clean=1,
-            metadata=source_metadata_for_bundle(
-                default_finite_cone,
+        clean = 1
+        for bundle in nonseq_reference_bundles:
+            trace_bundle(
+                trace_loop,
+                bundle,
                 wavelength,
-                default_source,
-                terminal_policy=terminal_policy,
-                launch_metadata={
-                    **base_launch_metadata,
-                    "launch_sampling_mode": "saved_finite_cone",
-                },
-            ),
-        )
+                rays,
+                clean=clean,
+                metadata=source_metadata_for_bundle(
+                    bundle,
+                    wavelength,
+                    default_source,
+                    terminal_policy=terminal_policy,
+                    launch_metadata={
+                        **base_launch_metadata,
+                        "launch_sampling_mode": "saved_nonseq_reference_pupil",
+                    },
+                ),
+            )
+            clean = 0
         return rays
 
     pupil_field_bundles = build_saved_pupil_field_bundles(system, surfaces, settings, kos_module)

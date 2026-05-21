@@ -511,7 +511,7 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         )
     checks.append(
         SceneSourceCheck(
-            "default finite pupil/field source launches a cone from object center",
+            "legacy 2D finite pupil/field preview helper launches a cone from object center",
             finite_cone_bundle is not None
             and finite_cone_count == 5
             and finite_cone_origins.shape == (5, 3)
@@ -540,7 +540,7 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         finite_world_cone_lm_span = np.ptp(finite_world_cone_dirs[:, :2], axis=0)
     checks.append(
         SceneSourceCheck(
-            "Open 3D finite pupil/field source maps 2D fan to filled 3D angular pupil",
+            "legacy 3D point-cone helper maps 2D fan labels to a filled 3D cone",
             finite_world_cone_bundle is not None
             and finite_world_cone_count == 5
             and finite_world_cone_origins.shape == (5, 3)
@@ -578,7 +578,7 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         azimuthal_cone_lm_span = np.ptp(azimuthal_cone_dirs[:, :2], axis=0)
     checks.append(
         SceneSourceCheck(
-            "Open 3D finite pupil/field source keeps filled angular-pupil sampling for 3D patterns",
+            "legacy 3D point-cone helper keeps filled sampling for 3D patterns",
             azimuthal_cone_bundle is not None
             and azimuthal_cone_count == 5
             and np.isclose(float(np.max(azimuthal_cone_angles)), 7.0, atol=1e-9)
@@ -979,7 +979,7 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         saved_finite_cone_lm_span = np.ptp(saved_finite_cone_dirs[:, :2], axis=0)
     checks.append(
         SceneSourceCheck(
-            "saved layout pupil/field cone is gated to non-sequential intent and uses filled 3D angular pupil",
+            "legacy point-cone helper is gated to non-sequential intent and stays 3D when used directly",
             saved_finite_cone_bundle is None
             and saved_enabled_finite_cone_bundle is not None
             and len(np.asarray(saved_enabled_finite_cone_bundle[0])) == 5
@@ -1016,7 +1016,7 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         saved_infinity_cone_lm_span = np.ptp(saved_infinity_cone_dirs[:, :2], axis=0)
     checks.append(
         SceneSourceCheck(
-            "saved non-sequential infinity pupil/field cone launches from one 3D point",
+            "legacy infinity point-cone helper launches from one 3D point when used directly",
             saved_infinity_cone_bundle is not None
             and len(np.asarray(saved_infinity_cone_bundle[0])) == 9
             and np.allclose(saved_infinity_cone_origin_span, 0.0, atol=1e-12)
@@ -1040,6 +1040,37 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             "non-sequential pupil/field cone uses world-envelope sampling and does not auto-promote Image to detector",
             nonseq_cone_2d_mode == "world_envelope" and 2 not in nonseq_cone_detectors,
             f"mode={nonseq_cone_2d_mode}, detectors={sorted(nonseq_cone_detectors)}",
+        )
+    )
+    nonseq_cone_system = _build_system_from_specs(_row_specs(nonseq_cone_rows))
+    nonseq_cone_rays = Kos.raykeeper(nonseq_cone_system)
+    nonseq_cone_editor._trace_preview_rays(
+        nonseq_cone_system,
+        nonseq_cone_rays,
+        nonseq_cone_editor._current_wavelength(),
+        max(row.diameter / 2.0 for row in nonseq_cone_rows),
+        sampling_mode=nonseq_cone_2d_mode,
+    )
+    nonseq_cone_origins = [
+        np.asarray(path, dtype=float)[0, :3]
+        for path in getattr(nonseq_cone_rays, "CC", [])
+        if np.asarray(path, dtype=float).ndim == 2 and np.asarray(path, dtype=float).shape[0] >= 1
+    ]
+    nonseq_cone_origin_span = (
+        np.ptp(np.asarray(nonseq_cone_origins, dtype=float), axis=0)
+        if nonseq_cone_origins
+        else np.asarray((0.0, 0.0, 0.0), dtype=float)
+    )
+    checks.append(
+        SceneSourceCheck(
+            "non-sequential Pupil/field scene launch uses a 3D reference aperture, not a point cone",
+            len(getattr(nonseq_cone_rays, "CC", [])) >= 5
+            and float(nonseq_cone_origin_span[0]) > 1e-9
+            and float(nonseq_cone_origin_span[1]) > 1e-9,
+            (
+                f"rays={len(getattr(nonseq_cone_rays, 'CC', []))}, "
+                f"origin_span={np.round(nonseq_cone_origin_span, 6).tolist()}"
+            ),
         )
     )
     nonseq_lens_rows = [
@@ -1234,7 +1265,7 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             and target_csv_surface.get("launch_field_requested") == "1"
             and target_csv_surface.get("launch_field_effective") == "1"
             and target_csv_surface.get("launch_trace_intent") == "Non-Sequential Preview"
-            and target_csv_surface.get("launch_sampling_mode") == "saved_finite_cone"
+            and target_csv_surface.get("launch_sampling_mode") == "saved_nonseq_reference_pupil"
             and target_csv_surface.get("branch_id") == "0"
             and target_csv_surface.get("branch_path") == "primary"
             and target_csv_surface.get("branch_power", "") not in {"", "0", "0.0"}
@@ -1301,7 +1332,7 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
             and str(target_analysis_terminal.get("launch_field_requested", "")) == "1"
             and str(target_analysis_terminal.get("launch_field_effective", "")) == "1"
             and target_analysis_terminal.get("launch_trace_intent") == "Non-Sequential Preview"
-            and target_analysis_terminal.get("launch_sampling_mode") == "saved_finite_cone"
+            and target_analysis_terminal.get("launch_sampling_mode") == "saved_nonseq_reference_pupil"
             and target_analysis_terminal.get("terminal_policy_source") == "saved_nonseq_trace_request"
             and str(target_analysis_terminal.get("terminal_target_surface", "")) == "1"
             and target_analysis_terminal.get("terminal_detector_surfaces") == "1"

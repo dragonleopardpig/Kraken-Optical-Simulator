@@ -793,6 +793,7 @@ def build_scene_bundle(
     trace_mode_note: str = "",
     target_surface: int | None = None,
     detector_surface_indices: set[int] | None = None,
+    allow_target_plane_contact: bool = False,
     sources: list[SceneSource3D] | None = None,
     source_row_order: str = "after_object",
 ) -> SceneBundle:
@@ -898,6 +899,7 @@ def build_scene_bundle(
         colors,
         target_surface=target_surface,
         detector_surface_indices=detector_surface_indices,
+        allow_target_plane_contact=allow_target_plane_contact,
     )
     if folded_ray_display_paths is not None and elements:
         _sync_folded_terminal_events(
@@ -1319,6 +1321,7 @@ def _build_ray_paths(
     *,
     target_surface: int | None = None,
     detector_surface_indices: set[int] | None = None,
+    allow_target_plane_contact: bool = False,
 ) -> list[RayPath3D]:
     if rays is None:
         return []
@@ -1469,6 +1472,7 @@ def _build_ray_paths(
             path,
             path.events,
             detector_surface_indices,
+            allow_target_plane_contact=allow_target_plane_contact,
         )
         _sync_path_terminal_state_from_events(path)
         _sync_path_display_geometry_from_events(path)
@@ -2828,14 +2832,92 @@ def _detector_plane_miss_intersection(
     return best
 
 
+def _detector_plane_contact(
+    rows: list,
+    system: Any | None,
+    detector_surface_indices: set[int],
+    point: np.ndarray,
+) -> dict[str, object] | None:
+    try:
+        point = np.asarray(point, dtype=float).reshape(3)
+    except Exception:
+        return None
+    if not np.all(np.isfinite(point)):
+        return None
+    for detector_index in sorted(int(index) for index in detector_surface_indices):
+        frame = _detector_surface_frame(rows, system, detector_index)
+        if frame is None:
+            continue
+        center, normal, tangent = frame
+        tangent = np.asarray(tangent, dtype=float).reshape(3)
+        tangent = tangent - normal * float(np.dot(tangent, normal))
+        tangent_norm = float(np.linalg.norm(tangent))
+        if not np.isfinite(tangent_norm) or tangent_norm <= 1e-12:
+            fallback = np.asarray((1.0, 0.0, 0.0), dtype=float)
+            if abs(float(np.dot(fallback, normal))) > 0.95:
+                fallback = np.asarray((0.0, 1.0, 0.0), dtype=float)
+            tangent = fallback - normal * float(np.dot(fallback, normal))
+            tangent_norm = float(np.linalg.norm(tangent))
+        tangent = tangent / max(tangent_norm, 1e-12)
+        bitangent = np.cross(normal, tangent)
+        bitangent_norm = float(np.linalg.norm(bitangent))
+        if not np.isfinite(bitangent_norm) or bitangent_norm <= 1e-12:
+            continue
+        bitangent = bitangent / bitangent_norm
+        offset = point - center
+        normal_error = float(abs(np.dot(offset, normal)))
+        in_plane = offset - normal * float(np.dot(offset, normal))
+        radial = float(np.linalg.norm(in_plane))
+        row = rows[detector_index]
+        settings = _row_detector_settings(row)
+        try:
+            diameter = max(float(getattr(row, "diameter", 0.0) or 0.0), 0.0)
+        except Exception:
+            diameter = 0.0
+        active_width = float(settings.get("active_width_mm", 0.0) or 0.0)
+        active_height = float(settings.get("active_height_mm", 0.0) or 0.0)
+        if active_width <= 1e-12:
+            active_width = diameter
+        if active_height <= 1e-12:
+            active_height = diameter
+        half = 0.5 * max(active_width, active_height)
+        local_x = float(np.dot(offset, tangent))
+        local_y = float(np.dot(offset, bitangent))
+        if normal_error <= 1e-5 and radial <= half + 1e-6:
+            return {
+                "surface": int(detector_index),
+                "point": np.asarray(point, dtype=float),
+                "radial": float(radial),
+                "half": float(half),
+                "x": float(local_x),
+                "y": float(local_y),
+                "active_width": float(active_width),
+                "active_height": float(active_height),
+                "normal_error": float(normal_error),
+            }
+    return None
+
+
 def _sync_detector_miss_terminal_event(
     rows: list,
     system: Any | None,
     path: RayPath3D,
     events: list[RayEvent3D],
     detector_surface_indices: set[int],
+    *,
+    allow_target_plane_contact: bool = False,
 ) -> list[RayEvent3D]:
-    if not detector_surface_indices or not events:
+    if not events:
+        return events
+    contact_surface_indices = set(int(index) for index in detector_surface_indices)
+    try:
+        target_surface = int(getattr(path, "target_surface", -1))
+    except Exception:
+        target_surface = -1
+    if allow_target_plane_contact and 0 <= target_surface < len(rows):
+        if str(getattr(rows[target_surface], "surface", "") or "") == "Image":
+            contact_surface_indices.add(int(target_surface))
+    if not contact_surface_indices and not detector_surface_indices:
         return events
     terminal_index = None
     for index in range(len(events) - 1, -1, -1):
@@ -2864,6 +2946,48 @@ def _sync_detector_miss_terminal_event(
     direction = _terminal_direction_for_detector_miss(path, terminal)
     if direction is None:
         return events
+    terminal_point = _finite_vector_array(getattr(terminal, "point_world", None))
+    contact = _detector_plane_contact(
+        rows,
+        system,
+        contact_surface_indices,
+        terminal_point if terminal_point is not None else origin,
+    )
+    if contact is not None:
+        detector_surface = int(contact["surface"])
+        reaches_detector = detector_surface in detector_surface_indices
+        metadata.update(
+            {
+                "terminal_geometry_source": "detector_plane_contact",
+                "detector_miss_surface": detector_surface,
+                "detector_miss_status": "",
+                "detector_miss_distance_mm": 0.0,
+                "detector_miss_radial_mm": float(contact["radial"]),
+                "detector_miss_half_mm": float(contact["half"]),
+                "detector_miss_x_mm": float(contact["x"]),
+                "detector_miss_y_mm": float(contact["y"]),
+                "detector_miss_active_width_mm": float(contact["active_width"]),
+                "detector_miss_active_height_mm": float(contact["active_height"]),
+                "detector_miss_normal_error_mm": float(contact["normal_error"]),
+                "detector_miss_kernel_reason": reason or "no_next_intersection",
+                "terminal_detector_surfaces": sorted(int(index) for index in detector_surface_indices),
+                "terminal_trace_surface": detector_surface,
+                "terminal_surface_source": "detector_plane_contact",
+                "reaches_image": True,
+                "reaches_detector": bool(reaches_detector),
+                "reaches_target": True,
+            }
+        )
+        updated = replace(
+            terminal,
+            event_type="image",
+            surface_id=detector_surface,
+            termination_reason="image",
+            point_world=np.asarray(contact["point"], dtype=float),
+            diagnostic="",
+            metadata=metadata,
+        )
+        return [*events[:terminal_index], updated, *events[terminal_index + 1:]]
     intersection = _detector_plane_miss_intersection(rows, system, detector_surface_indices, origin, direction)
     if intersection is None:
         return events
@@ -2963,11 +3087,23 @@ def _sync_path_display_geometry_from_events(path: RayPath3D) -> None:
     if terminal_events:
         terminal_event = terminal_events[-1]
         terminal_point = _finite_vector_array(getattr(terminal_event, "point_world", None))
-        if terminal_point is not None and not _same_point(points[-1], terminal_point):
+        terminal_metadata = dict(getattr(terminal_event, "metadata", {}) or {})
+        terminal_reason = str(
+            getattr(terminal_event, "termination_reason", "")
+            or getattr(terminal_event, "event_type", "")
+            or ""
+        ).strip().lower()
+        terminal_surface_id = getattr(terminal_event, "surface_id", None)
+        terminal_is_detector_hit = bool(terminal_metadata.get("reaches_detector", False)) or terminal_reason == "image"
+        if terminal_point is not None and (
+            not _same_point(points[-1], terminal_point) or terminal_is_detector_hit
+        ):
             points.append(terminal_point)
             terminal_point_source = str(
-                (getattr(terminal_event, "metadata", {}) or {}).get("terminal_geometry_source", "") or ""
+                terminal_metadata.get("terminal_geometry_source", "") or ""
             )
+            if terminal_is_detector_hit and terminal_surface_id is not None:
+                surface_ids.append(int(terminal_surface_id))
     event_sources = sorted({
         str((getattr(event, "metadata", {}) or {}).get("event_source", "") or "")
         for event in events

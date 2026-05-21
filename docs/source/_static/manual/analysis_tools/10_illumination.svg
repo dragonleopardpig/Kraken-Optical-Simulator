@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 280" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <style>
+      .ttl   { fill:#111827; font-size:14px; font-weight:700; }
+      .sub   { fill:#374151; font-size:10.5px; }
+      .axis  { stroke:#9ca3af; stroke-width:1; }
+      .grid  { stroke:#cbd5e1; stroke-width:0.8; stroke-dasharray:2,2; }
+      .pt    { fill:#b91c1c; stroke:none; }
+      .pup   { fill:#eff6ff; stroke:#1e3a8a; stroke-width:1.4; }
+      .lblx  { fill:#374151; font-size:10px; }
+      .nm    { stroke:#1e3a8a; stroke-width:1.8; fill:none; }
+      .nm2   { stroke:#15803d; stroke-width:1.8; fill:none; }
+      .nm3   { stroke:#b45309; stroke-width:1.8; fill:none; }
+      .arr   { stroke:#374151; stroke-width:1; fill:none; }
+    </style>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#374151"/>
+    </marker>
+  </defs>
+  <text x="180" y="20" text-anchor="middle" class="ttl">Relative Illumination</text>
+  <text x="180" y="36" text-anchor="middle" class="sub">E(h) / E(0) vs field; cos⁴ law</text>
+  <line x1="60" y1="235" x2="310" y2="235" class="axis"/>
+  <line x1="60" y1="235" x2="60" y2="55" class="axis"/>
+  <text x="310" y="249" text-anchor="end" class="lblx">field angle θ (deg)</text>
+  <text x="56" y="51" text-anchor="end" class="lblx">E / E₀</text>
+  <polyline points="60.0,55.0 65.0,55.1 70.0,55.4 75.0,56.0 80.0,56.7 85.0,57.7 90.0,58.9 95.0,60.3 100.0,61.9 105.0,63.7 110.0,65.7 115.0,67.9 120.0,70.2 125.0,72.8 130.0,75.5 135.0,78.3 140.0,81.3 145.0,84.5 150.0,87.7 155.0,91.1 160.0,94.6 165.0,98.3 170.0,102.0 175.0,105.8 180.0,109.6 185.0,113.6 190.0,117.5 195.0,121.6 200.0,125.6 205.0,129.7 210.0,133.8 215.0,137.8 220.0,141.9 225.0,145.9 230.0,150.0 235.0,154.0 240.0,157.9 245.0,161.8 250.0,165.6 255.0,169.3 260.0,173.0 265.0,176.6 270.0,180.1 275.0,183.5 280.0,186.8 285.0,190.0 290.0,193.1 295.0,196.1 300.0,198.9 305.0,201.7 310.0,204.3" stroke="#374151" stroke-width="1.6" stroke-dasharray="4,3" fill="none"/>
+  <polyline points="60.0,55.0 65.0,55.8 70.0,56.7 75.0,57.9 80.0,59.3 85.0,60.9 90.0,62.7 95.0,64.7 100.0,66.9 105.0,69.3 110.0,71.8 115.0,74.5 120.0,77.3 125.0,80.3 130.0,83.5 135.0,86.8 140.0,90.2 145.0,93.7 150.0,97.3 155.0,101.0 160.0,104.8 165.0,108.6 170.0,112.5 175.0,116.5 180.0,120.5 185.0,124.5 190.0,128.5 195.0,132.6 200.0,136.6 205.0,140.7 210.0,144.7 215.0,148.7 220.0,152.6 225.0,156.5 230.0,160.4 235.0,164.2 240.0,167.9 245.0,171.5 250.0,175.1 255.0,178.6 260.0,181.9 265.0,185.2 270.0,188.4 275.0,191.5 280.0,194.4 285.0,197.3 290.0,200.0 295.0,202.6 300.0,205.2 305.0,207.5 310.0,209.8" stroke="#1e3a8a" stroke-width="2" fill="none"/>
+  <text x="310" y="64.0" text-anchor="end" class="lblx" fill="#374151">cos⁴θ ideal</text>
+  <text x="310" y="109.00000000000001" text-anchor="end" class="lblx" fill="#1e3a8a">with vignetting</text>
+</svg>

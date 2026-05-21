@@ -3314,27 +3314,78 @@ class system():
         self._collect_bulk_override = 1.0
         return None
 
-    def __NsTraceShouldNudgeAfterStlExit(self, surface_index, chooser_surface_index, prev_n, curr_n, sign, face_override):
-        if isinstance(face_override, dict) and bool(face_override.get("force_reflection")):
-            return False
+    def __NsTraceIsStlSolidHit(self, surface_index, chooser_surface_index):
         try:
-            if float(sign) < 0.0:
-                return False
-        except Exception:
-            return False
-        try:
-            is_stl_solid = (
+            return bool(
                 self.TypeTotal[int(chooser_surface_index)] == 1
                 and self.SDT[int(surface_index)].Solid_3d_stl != 'None'
             )
         except Exception:
-            is_stl_solid = False
-        if not is_stl_solid:
             return False
+
+    def __NsPhysicalDirection(self, direction, sign):
+        direction_vec = np.asarray(direction, dtype=float)
         try:
-            return float(prev_n) > float(curr_n) + 1e-9
+            direction_vec = direction_vec * float(sign)
         except Exception:
+            try:
+                direction_vec = direction_vec * np.asarray(sign, dtype=float)
+            except Exception:
+                pass
+        return direction_vec
+
+    def __NsTraceBoundaryContinuationMode(self, surface_index, chooser_surface_index, prev_n, curr_n, sign, face_override):
+        if not self.__NsTraceIsStlSolidHit(surface_index, chooser_surface_index):
+            return ""
+        reflected = bool(isinstance(face_override, dict) and bool(face_override.get("force_reflection")))
+        try:
+            reflected = reflected or float(sign) < 0.0
+        except Exception:
+            pass
+        if reflected:
+            return "reflection"
+        try:
+            if float(prev_n) > float(curr_n) + 1e-9:
+                return "exit"
+        except Exception:
+            pass
+        return ""
+
+    def __NsTraceShouldNudgeAfterStlExit(self, surface_index, chooser_surface_index, prev_n, curr_n, sign, face_override):
+        return self.__NsTraceBoundaryContinuationMode(
+            surface_index,
+            chooser_surface_index,
+            prev_n,
+            curr_n,
+            sign,
+            face_override,
+        ) == "exit"
+
+    def __NsTraceAllowsSameSurfaceContinuation(self, surface_index, chooser_surface_index, face_override):
+        if self.__NsTraceIsStlSolidHit(surface_index, chooser_surface_index):
+            return True
+        if isinstance(face_override, dict) and str(face_override.get("volume_id", "") or "").strip():
+            return True
+        return False
+
+    def __NsTraceIsRepeatedSurfaceStall(
+        self,
+        a,
+        b,
+        c,
+        pre_surf_hit,
+        surface_index,
+        chooser_surface_index,
+        face_override,
+        boundary_continuation_mode="",
+    ):
+        if isinstance(face_override, dict) and bool(face_override.get("force_reflection")):
             return False
+        if str(boundary_continuation_mode or ""):
+            return False
+        if self.__NsTraceAllowsSameSurfaceContinuation(surface_index, chooser_surface_index, face_override):
+            return False
+        return (a == b) and (b == c) and (c == pre_surf_hit)
 
     def __ReflectVector(self, incident, normal):
         incident_vec = np.asarray(incident, dtype=float)
@@ -3930,26 +3981,42 @@ class system():
                         break
                     ray_state = next_ray_state
                     PrevN = float(ray_state.current_index)
-                    stl_exit_continuation = self.__NsTraceShouldNudgeAfterStlExit(j, jj, N, CurrN, sign, face_override)
-                    if stl_exit_continuation:
-                        skip_surface_once = int(j)
-                        RayOrig = self.__NudgeNsBranchOrigin(pTarget, ResVec)
+                    stl_boundary_continuation = self.__NsTraceBoundaryContinuationMode(j, jj, N, CurrN, sign, face_override)
+                    stl_exit_continuation = stl_boundary_continuation == "exit"
+                    stl_solid_continuation = stl_boundary_continuation or self.__NsTraceIsStlSolidHit(j, jj)
+                    if stl_solid_continuation:
+                        skip_surface_once = int(j) if stl_exit_continuation else None
+                        if stl_exit_continuation:
+                            RayOrig = np.asarray(pTarget, dtype=float)
+                        else:
+                            RayOrig = self.__NudgeNsBranchOrigin(
+                                pTarget,
+                                self.__NsPhysicalDirection(ResVec, SIGN),
+                            )
                         self.RAY.append(np.asarray(pTarget, dtype=float))
                     elif (
                         isinstance(face_override, dict)
                         and bool(face_override.get("external_reflection"))
                     ):
                         skip_surface_once = None
-                        RayOrig = self.__NudgeNsBranchOrigin(pTarget, ResVec)
+                        RayOrig = self.__NudgeNsBranchOrigin(
+                            pTarget,
+                            self.__NsPhysicalDirection(ResVec, SIGN),
+                        )
                         self.RAY.append(np.asarray(pTarget, dtype=float))
                     else:
                         RayOrig = pTarget
                         self.RAY.append(RayOrig)
 
-                    if (
-                        not (isinstance(face_override, dict) and bool(face_override.get("force_reflection")))
-                        and not stl_exit_continuation
-                        and (a==b) and (b==c) and (c == PreSurfHit)
+                    if self.__NsTraceIsRepeatedSurfaceStall(
+                        a,
+                        b,
+                        c,
+                        PreSurfHit,
+                        j,
+                        jj,
+                        face_override,
+                        stl_boundary_continuation,
                     ):
                         termination_reason = "stalled_repeated_surface"
                         termination_diagnostic = self.__NsTraceTerminationDiagnostic(
@@ -4231,26 +4298,42 @@ class system():
                     break
                 ray_state = next_ray_state
                 PrevN = float(ray_state.current_index)
-                stl_exit_continuation = self.__NsTraceShouldNudgeAfterStlExit(j, jj, N, CurrN, sign, face_override)
-                if stl_exit_continuation:
-                    skip_surface_once = int(j)
-                    RayOrig = self.__NudgeNsBranchOrigin(pTarget, ResVec)
+                stl_boundary_continuation = self.__NsTraceBoundaryContinuationMode(j, jj, N, CurrN, sign, face_override)
+                stl_exit_continuation = stl_boundary_continuation == "exit"
+                stl_solid_continuation = stl_boundary_continuation or self.__NsTraceIsStlSolidHit(j, jj)
+                if stl_solid_continuation:
+                    skip_surface_once = int(j) if stl_exit_continuation else None
+                    if stl_exit_continuation:
+                        RayOrig = np.asarray(pTarget, dtype=float)
+                    else:
+                        RayOrig = self.__NudgeNsBranchOrigin(
+                            pTarget,
+                            self.__NsPhysicalDirection(ResVec, SIGN),
+                        )
                     self.RAY.append(np.asarray(pTarget, dtype=float))
                 elif (
                     isinstance(face_override, dict)
                     and bool(face_override.get("external_reflection"))
                 ):
                     skip_surface_once = None
-                    RayOrig = self.__NudgeNsBranchOrigin(pTarget, ResVec)
+                    RayOrig = self.__NudgeNsBranchOrigin(
+                        pTarget,
+                        self.__NsPhysicalDirection(ResVec, SIGN),
+                    )
                     self.RAY.append(np.asarray(pTarget, dtype=float))
                 else:
                     RayOrig = pTarget
                     self.RAY.append(RayOrig)
 
-                if (
-                    not (isinstance(face_override, dict) and bool(face_override.get("force_reflection")))
-                    and not stl_exit_continuation
-                    and (a==b) and (b==c) and (c == PreSurfHit)
+                if self.__NsTraceIsRepeatedSurfaceStall(
+                    a,
+                    b,
+                    c,
+                    PreSurfHit,
+                    j,
+                    jj,
+                    face_override,
+                    stl_boundary_continuation,
                 ):
                     break
 

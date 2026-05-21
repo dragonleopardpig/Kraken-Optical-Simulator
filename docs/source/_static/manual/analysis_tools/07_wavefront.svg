@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 280" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <style>
+      .ttl   { fill:#111827; font-size:14px; font-weight:700; }
+      .sub   { fill:#374151; font-size:10.5px; }
+      .axis  { stroke:#9ca3af; stroke-width:1; }
+      .grid  { stroke:#cbd5e1; stroke-width:0.8; stroke-dasharray:2,2; }
+      .pt    { fill:#b91c1c; stroke:none; }
+      .pup   { fill:#eff6ff; stroke:#1e3a8a; stroke-width:1.4; }
+      .lblx  { fill:#374151; font-size:10px; }
+      .nm    { stroke:#1e3a8a; stroke-width:1.8; fill:none; }
+      .nm2   { stroke:#15803d; stroke-width:1.8; fill:none; }
+      .nm3   { stroke:#b45309; stroke-width:1.8; fill:none; }
+      .arr   { stroke:#374151; stroke-width:1; fill:none; }
+    </style>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#374151"/>
+    </marker>
+  </defs>
+  <text x="180" y="20" text-anchor="middle" class="ttl">Wavefront Analysis</text>
+  <text x="180" y="36" text-anchor="middle" class="sub">OPD across a pupil diameter</text>
+  <line x1="50" y1="140.0" x2="320" y2="140.0" class="grid"/>
+  <line x1="50" y1="220" x2="320" y2="220" class="axis"/>
+  <line x1="50" y1="220" x2="50" y2="60" class="axis"/>
+  <text x="320" y="234" text-anchor="end" class="lblx">ρ (normalized pupil)</text>
+  <text x="46" y="56" text-anchor="end" class="lblx">W (λ)</text>
+  <polyline points="50.0,124.0 52.7,126.2 55.4,128.3 58.1,130.2 60.8,131.9 63.5,133.5 66.2,135.0 68.9,136.3 71.6,137.5 74.3,138.6 77.0,139.6 79.7,140.5 82.4,141.3 85.1,142.0 87.8,142.6 90.5,143.1 93.2,143.5 95.9,143.9 98.6,144.2 101.3,144.4 104.0,144.6 106.7,144.7 109.4,144.8 112.1,144.9 114.8,144.8 117.5,144.8 120.2,144.7 122.9,144.6 125.6,144.5 128.3,144.3 131.0,144.1 133.7,143.9 136.4,143.7 139.1,143.5 141.8,143.3 144.5,143.0 147.2,142.8 149.9,142.6 152.6,142.3 155.3,142.1 158.0,141.9 160.7,141.6 163.4,141.4 166.1,141.2 168.8,141.0 171.5,140.8 174.2,140.6 176.9,140.4 179.6,140.3 182.3,140.1 185.0,140.0 187.7,139.9 190.4,139.8 193.1,139.7 195.8,139.6 198.5,139.5 201.2,139.5 203.9,139.4 206.6,139.4 209.3,139.3 212.0,139.3 214.7,139.3 217.4,139.3 220.1,139.2 222.8,139.2 225.5,139.2 228.2,139.2 230.9,139.2 233.6,139.1 236.3,139.1 239.0,139.0 241.7,138.9 244.4,138.8 247.1,138.7 249.8,138.6 252.5,138.4 255.2,138.2 257.9,137.9 260.6,137.7 263.3,137.3 266.0,136.9 268.7,136.5 271.4,136.0 274.1,135.5 276.8,134.8 279.5,134.1 282.2,133.4 284.9,132.5 287.6,131.6 290.3,130.5 293.0,129.4 295.7,128.1 298.4,126.8 301.1,125.3 303.8,123.7 306.5,122.0 309.2,120.1 311.9,118.1 314.6,116.0 317.3,113.7 320.0,111.2" stroke="#1e3a8a" stroke-width="2" fill="none"/>
+  <text x="50" y="272" class="sub">PV = max(W) − min(W),    RMS = √⟨(W − ⟨W⟩)²⟩,    Strehl ≈ exp(−(2π·RMS)²)</text>
+</svg>

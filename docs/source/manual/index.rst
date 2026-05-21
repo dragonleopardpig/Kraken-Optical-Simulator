@@ -29,6 +29,7 @@ Focused UI screenshots in these pages are generated from the live Tk editor:
    parax_tool
    pupilcalc_tool
    pupil_patterns
+   analysis_tools
    editable_table
    nonsequential_first_design
    tracing_and_ray_data
