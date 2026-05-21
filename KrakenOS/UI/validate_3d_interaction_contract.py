@@ -30,6 +30,7 @@ def main() -> int:
     handler_rotate = inspect.getsource(Kraken3DInspector._rotate_step_from_handler)
     step_rotate_handles = inspect.getsource(Kraken3DInspector._add_step_rotation_handles)
     rotation_arc_mesh = inspect.getsource(Kraken3DInspector._scene_placement_rotation_arc_mesh)
+    rotation_arrowhead_mesh = inspect.getsource(Kraken3DInspector._scene_placement_rotation_arrowhead_mesh)
     rotation_toggle = inspect.getsource(Kraken3DInspector._toggle_rotation_handles)
     rotation_hover = inspect.getsource(Kraken3DInspector._set_rotation_handle_hover)
     debug_trace = inspect.getsource(Kraken3DInspector._debug_trace)
@@ -196,6 +197,7 @@ def main() -> int:
         ("STEP rotation handles hover-highlight before click", "_set_rotation_handle_hover(actor_key)" in mouse_move and "STEP rotation handle: click" in mouse_move and "SetColor(1.0, 0.78, 0.08)" in rotation_hover),
         ("STEP rotation handles can be hidden from the toolbar", "show_rotation_handles_var" in init and "_toggle_rotation_handles" in init and "_show_rotation_handles()" in step_rotate_handles and "_remove_step_rotation_handle_actors" in rotation_toggle),
         ("STEP rotation arcs show opposed start/end cone arrowheads", "pv.Cone" in rotation_arc_mesh and "point_array[0] - point_array[1]" in rotation_arc_mesh and "point_array[-1] - point_array[-2]" in rotation_arc_mesh),
+        ("STEP rotation end arrows are scaled for CAD-style visibility", "float(radius) * 0.24" in rotation_arrowhead_mesh and "float(arrow_scale) * 0.15" in rotation_arrowhead_mesh),
         ("STEP rotation handle rotates selected component around the visible world axis", "rotate_step_world_axis(label, axis" in step_rotate_pick),
         (
             "Open 3D interaction trace captures clicks, face assignment, and refresh counts",
@@ -550,11 +552,12 @@ def main() -> int:
         ("Open 3D missed detector lines use status styling", "missed_detector" in ray_terminal_style and "line_opacity" in ray_terminal_style),
         ("Open 3D escaped rays preserve source/wavelength line color", '"escaped" else 0.74' in ray_terminal_style and '{"absorbed", "stopped"}' in ray_terminal_style),
         (
-            "Open 3D refresh gates stopped/absorbed endpoint disks behind terminal diagnostics",
+            "Open 3D refresh gates terminal endpoint disks behind terminal diagnostics",
             "_should_draw_3d_terminal_endpoint(" in refresh
             and "show_terminal_diagnostics=bool(self.show_terminal_diagnostics_var.get())" in refresh
             and "ray_display_suppressed_diagnostic_endpoints" in refresh
             and 'status == "hit_detector"' in should_draw_endpoint
+            and "return bool(show_terminal_diagnostics)" in should_draw_endpoint
             and 'status in {"absorbed", "stopped"}' in should_draw_endpoint,
         ),
         (

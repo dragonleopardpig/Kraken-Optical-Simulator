@@ -9959,9 +9959,9 @@ class Kraken3DInspector(tk.Toplevel):
         if norm <= 1e-12 or not np.isfinite(norm):
             return None
         direction = tangent / norm
-        arrow_scale = max(float(radius) * 0.13, float(tube_radius) * 8.0, 0.42)
-        tip_height = max(float(arrow_scale) * 0.9, float(tube_radius) * 10.0)
-        tip_radius = max(float(tube_radius) * 1.55, float(arrow_scale) * 0.052)
+        arrow_scale = max(float(radius) * 0.24, float(tube_radius) * 14.0, 0.85)
+        tip_height = max(float(arrow_scale) * 1.12, float(tube_radius) * 16.0)
+        tip_radius = max(float(tube_radius) * 3.8, float(arrow_scale) * 0.15)
         center_point = tip_point - direction * (tip_height * 0.5)
         try:
             return pv.Cone(
@@ -27064,7 +27064,7 @@ class KrakenLayoutEditor(tk.Tk):
     ) -> bool:
         status = str(terminal_status or "").strip().lower()
         if status == "hit_detector":
-            return True
+            return bool(show_terminal_diagnostics)
         if status in {"absorbed", "stopped"}:
             return bool(show_terminal_diagnostics)
         return False
