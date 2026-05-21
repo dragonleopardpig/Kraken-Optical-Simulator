@@ -3,47 +3,166 @@
 from __future__ import annotations
 
 from collections import Counter
-import importlib.util
+import tempfile
 from pathlib import Path
 
 import numpy as np
+import KrakenOS as Kos
 
-from KrakenOS.UI.layout_editor import KrakenLayoutEditor
-from KrakenOS.UI.saved_layout_plot import _rows_from_surface_specs, _snapshot_editor
-from KrakenOS.UI.scene_geometry import ray_path_terminal_status_from_events
+import KrakenOS.UI.layout_editor as le
+from KrakenOS.UI.layout_editor import (
+    OPTICAL_SOLID_FACES_ADVANCED_ATTR,
+    KrakenLayoutEditor,
+    SurfaceRow,
+    cluster_optical_solid_planar_faces,
+    solve_optical_solid_left_input_pose,
+)
+from KrakenOS.UI.saved_layout_plot import _snapshot_editor
+from KrakenOS.UI.scene_geometry import SceneSource3D, ray_path_terminal_status_from_events
 from KrakenOS.UI.scene_projector import SceneProjector2D, scene_display_center_radius
+from KrakenOS.UI.source_trace_helpers import build_scene_source_bundle, source_metadata_for_bundle, trace_bundle
+from KrakenOS.UI.validate_vendor_prism_42779 import (
+    PRISM_42779_STEP,
+    _build_vendor_prism_trace_system,
+    _metadata_for_candidates,
+)
 
 
-def _load_python_module(path: Path):
-    spec = importlib.util.spec_from_file_location("_kraken_projection_sync_layout", path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not load {path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+def _penta_settings() -> dict[str, object]:
+    return {
+        "object_mode": "Finite",
+        "display_orientation": "YZ",
+        "wavelength": "0.55",
+        "ray_count": "31",
+        "ray_height_factor": "0.4",
+        "full_pupil": False,
+        "source_model": "Collimated disk source",
+        "pupil_pattern": "Meridional fan",
+        "source_radius": "5",
+        "source_cone_angle": "0",
+        "source_power": "1",
+        "source_seed": "1",
+        "source_x": "0",
+        "source_y": "0",
+        "source_z": "0",
+        "source_l": "0",
+        "source_m": "0",
+        "source_n": "1",
+        "source_angular_weight": "Uniform solid angle",
+        "scene_sources": [
+            {
+                "source_id": "source:0",
+                "name": "Source 1",
+                "enabled": True,
+                "physical": True,
+                "role": "illumination",
+                "model": "Collimated disk source",
+                "ray_count": 31,
+                "power": 1.0,
+                "wavelength": 0.55,
+                "radius": 5.0,
+                "cone_deg": 0.0,
+                "seed": 1,
+                "source_x": 0.0,
+                "source_y": 0.0,
+                "source_z": 0.0,
+                "source_l": 0.0,
+                "source_m": 0.0,
+                "source_n": 1.0,
+                "angular_weight": "Uniform solid angle",
+            }
+        ],
+        "scene_row_order": "after_object",
+        "analysis_surface": "Auto",
+        "analysis_branch_filter": "All paths",
+        "ray_display_mode": "All rays",
+        "detector_bins": "Auto",
+        "coherent_sum_mode": "By source ray",
+        "branch_field_propagation_mm": "0.0",
+        "aperture_type": "EPD",
+        "aperture_value": "4.0",
+        "trace_mode": "Auto",
+        "nonseq_target_surface": "Auto",
+        "nonseq_ns_limit": "200",
+        "image_diameter_mode": "Manual",
+    }
 
 
 def _penta_bundle():
-    repo_root = Path(__file__).resolve().parents[2]
-    layout_path = repo_root / "attachment" / "penta.py"
-    module = _load_python_module(layout_path)
-    system = module.build_runtime_system()
-    rays = module.build_rays(system)
-    rows = _rows_from_surface_specs(module.SURFACES)
-    editor = _snapshot_editor(rows, module.SETTINGS)
-    editor.current_layout_file = layout_path
+    original_cache = le.CAD_CACHE_DIR
+    temp_dir = tempfile.TemporaryDirectory(prefix="kraken-projection-sync-")
+    le.CAD_CACHE_DIR = Path(temp_dir.name)
+    try:
+        mesh_path, _source_path, _source_format = le._optical_solid_mesh_path_from_source(PRISM_42779_STEP)
+        candidates = cluster_optical_solid_planar_faces(mesh_path)
+        metadata = _metadata_for_candidates(candidates, mesh_path)
+        solution = solve_optical_solid_left_input_pose(metadata)
+        if solution is None:
+            raise RuntimeError("Could not solve 42779 penta prism left-input pose")
+        system = _build_vendor_prism_trace_system(mesh_path, metadata, solution, image_diameter=1.0)
+        source = SceneSource3D(
+            source_id="source:0",
+            name="Source 1",
+            role="illumination",
+            model="Collimated disk source",
+            enabled=True,
+            physical=True,
+            origin=np.zeros(3, dtype=float),
+            direction=np.asarray((0.0, 0.0, 1.0), dtype=float),
+            ray_count=31,
+            wavelength=0.55,
+            power=1.0,
+            weight_per_ray=1.0 / 31.0,
+            settings={"radius": 5.0, "cone_deg": 0.0, "seed": 1},
+        )
+        source_bundle = build_scene_source_bundle(source)
+        if source_bundle is None:
+            raise RuntimeError("Could not build penta collimated source bundle")
+        rays = Kos.raykeeper(system)
+        trace_bundle(
+            Kos.NsTraceLoop,
+            source_bundle,
+            0.55,
+            rays,
+            clean=1,
+            metadata=source_metadata_for_bundle(
+                source_bundle,
+                0.55,
+                source,
+                launch_metadata={"launch_sampling_mode": "validated_collimated_penta"},
+            ),
+        )
+        rows = [
+            SurfaceRow(surface="Object", name="Object", thickness=100.0, diameter=25.0, glass="AIR", drawing=0),
+            SurfaceRow(
+                surface="Solid 3D STL",
+                name="Edmund 42779 vendor prism",
+                glass="BK7",
+                thickness=40.0,
+                diameter=25.0,
+                axis_move=2.0,
+                tilt_x=float(solution["tilts"][0]),
+                tilt_y=float(solution["tilts"][1]),
+                tilt_z=float(solution["tilts"][2]),
+                desp_x=float(solution["desp"][0]),
+                desp_y=float(solution["desp"][1]),
+                desp_z=float(solution["desp"][2]),
+                advanced={OPTICAL_SOLID_FACES_ADVANCED_ATTR: metadata, "Solid_3d_stl": str(mesh_path)},
+            ),
+            SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=1.0, glass="AIR"),
+        ]
+    finally:
+        le.CAD_CACHE_DIR = original_cache
+    settings = _penta_settings()
+    editor = _snapshot_editor(rows, settings)
+    editor._projection_sync_temp_dir = temp_dir
+    editor.current_layout_file = PRISM_42779_STEP
     editor._normalize_special_rows()
     editor.last_system = system
     editor.last_rays = rays
     editor._last_preview_trace_signature = editor._preview_trace_signature()
-    try:
-        editor._preview_field_ray_count = max(1, int(module.SETTINGS.get("ray_count", len(getattr(rays, "CC", [])))))
-    except Exception:
-        editor._preview_field_ray_count = max(1, len(getattr(rays, "CC", [])))
-    try:
-        editor._preview_field_bundle_count = max(1, int(module.SETTINGS.get("field_count", 1)))
-    except Exception:
-        editor._preview_field_bundle_count = 1
+    editor._preview_field_ray_count = 31
+    editor._preview_field_bundle_count = 1
     max_radius = max((max(float(row.diameter) / 2.0, 0.5) for row in rows), default=1.0)
     bundle = editor._build_scene_bundle(system, rays, max_radius)
     editor._last_scene_bundle = bundle

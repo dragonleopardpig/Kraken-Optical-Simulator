@@ -132,9 +132,12 @@ kraken-vtk-tk-check
   overrides that are only appropriate for folded sequential previews.
 - 2D and Open 3D use the same SceneBundle scene envelope and bounded ray-point
   helper for escaped-tail capping and missed-detector display projection. The
-  `validate_2d_3d_projection_sync` regression loads the saved penta-prism case
+  `validate_2d_3d_projection_sync` regression builds the 42779 penta prism from
+  the tracked vendor STEP asset, launches a zero-cone collimated disk bundle,
   and verifies YZ/XZ/XY plots are exact projections of the Open 3D ray
-  polylines.
+  polylines. Local penta-prism attachments should use that same collimated
+  source intent; a nonzero `Pupil / field` source cone intentionally creates a
+  3D cone rather than a collimated verification bundle.
 - The Open 3D inspector shows traced scene geometry, STL/CAD placement,
   source-target picking, face anchors, and STEP overlay inspection.
 - Open 3D refresh uses the active traced 2D SceneBundle when one exists, and
