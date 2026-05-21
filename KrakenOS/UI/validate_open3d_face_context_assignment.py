@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
@@ -37,6 +38,93 @@ def _first_world_face(app: KrakenLayoutEditor, row_index: int) -> dict[str, obje
     return dict(faces[0])
 
 
+def _event_face_id(event: object) -> str:
+    metadata = getattr(event, "metadata", {}) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    return str(
+        getattr(event, "mesh_face_id", "")
+        or getattr(event, "face_id", "")
+        or metadata.get("mesh_face_id", "")
+        or metadata.get("face_id", "")
+        or ""
+    ).strip()
+
+
+def _surface_face_sequence(path: object) -> tuple[str, ...]:
+    return tuple(
+        face_id
+        for event in list(getattr(path, "events", []) or [])
+        if str(getattr(event, "event_kind", "") or "") == "surface"
+        for face_id in (_event_face_id(event),)
+        if face_id
+    )
+
+
+def _validate_promoted_reflecting_prism_image_plane_is_not_intrusive() -> None:
+    """Reproduce the Open 3D penta-prism workflow that exposed halfway stops."""
+
+    app = KrakenLayoutEditor(headless=True)
+    try:
+        app.imported_optical_step_path = PRISM_42779_STEP
+        app.optical_step_rotation_x_deg = 0.0
+        app.optical_step_rotation_y_deg = 90.0
+        app.optical_step_rotation_z_deg = 180.0
+        app.optical_step_placement_offset_xyz = (0.0, 5.338434219360337, 35.338052809592156)
+        app.select_step_component("optical")
+
+        promoted = app.promote_imported_step_to_optical_solid_row(
+            "optical",
+            insert_at=1,
+            open_face_editor=False,
+            clear_overlay=True,
+            refresh_open_3d=False,
+        )
+        if promoted is None:
+            raise AssertionError("Exact promoted reflecting-prism repro returned no promoted row.")
+        row_index = int(promoted["row_index"])
+        row = app.rows[row_index]
+        if abs(float(row.axis_move)) > 1e-12:
+            raise AssertionError("Exact promoted reflecting-prism repro must use AxisMove=0.")
+        for face_id in ("F004", "F003"):
+            assigned = app.assign_optical_solid_face_function(
+                row_index,
+                face_id,
+                "Full Reflecting",
+                direct_context=True,
+            )
+            if str(assigned.get("function", "") or "") != "Mirror":
+                raise AssertionError(f"Reflecting-prism repro did not assign {face_id} as Mirror: {assigned!r}")
+
+        system, _rays, scene_bundle = app._build_preview_system_rays_bundle(
+            sampling_mode="world_envelope",
+            update_state=False,
+        )
+        image_index = row_index + 1
+        if image_index < len(app.rows) and app.rows[image_index].surface == "Image":
+            image_transform = np.asarray(system.TRANS_2A[image_index], dtype=float).reshape(4, 4)
+            expected_center = np.asarray((0.0, 0.0, app._stl_row_z_station(image_index)), dtype=float)
+            actual_center = image_transform[:3, 3]
+            if not np.allclose(actual_center, expected_center, atol=1e-6):
+                raise AssertionError(
+                    "Exact promoted reflecting-prism repro moved the Image plane into the scene object: "
+                    f"actual={actual_center.tolist()}, expected={expected_center.tolist()}"
+                )
+
+        ray_paths = list(getattr(scene_bundle, "ray_paths", []) or [])
+        if len(ray_paths) < 10:
+            raise AssertionError(f"Reflecting-prism repro traced too few rays: {len(ray_paths)}")
+        sequences = [_surface_face_sequence(path) for path in ray_paths]
+        incomplete = [sequence for sequence in sequences if "F006" not in sequence]
+        if incomplete:
+            raise AssertionError(
+                "Exact promoted reflecting-prism repro left rays terminated before the exit face; "
+                f"sequence_counts={Counter(sequences)!r}"
+            )
+    finally:
+        app.destroy()
+
+
 def main() -> int:
     if not PRISM_42779_STEP.exists():
         raise RuntimeError(f"Expected STEP fixture: {PRISM_42779_STEP}")
@@ -60,6 +148,12 @@ def main() -> int:
         if promoted is None:
             raise AssertionError("STEP promotion returned no result.")
         row_index = int(promoted["row_index"])
+        row = app.rows[row_index]
+        if abs(float(row.axis_move)) > 1e-12:
+            raise AssertionError(
+                "Promoted optical STEP solids should be scene objects with AxisMove=0; "
+                "otherwise the downstream Image/detector row can be pulled into the prism."
+            )
         if app.imported_optical_step_path is not None:
             raise AssertionError("Promotion with clear_overlay=True left the display-only optical STEP overlay active.")
         if getattr(app, "_selected_step_label", None) is not None:
@@ -157,11 +251,24 @@ def main() -> int:
                 "Direct Open 3D interaction-surface assignments should not re-anchor downstream rows: "
                 f"{sorted(downstream_overrides)}"
             )
+        image_index = row_index + 1
+        if image_index < len(app.rows) and app.rows[image_index].surface == "Image":
+            image_transform = np.asarray(system.TRANS_2A[image_index], dtype=float).reshape(4, 4)
+            expected_center = np.asarray((0.0, 0.0, app._stl_row_z_station(image_index)), dtype=float)
+            actual_center = image_transform[:3, 3]
+            if not np.allclose(actual_center, expected_center, atol=1e-6):
+                raise AssertionError(
+                    "Direct Open 3D interaction-surface assignments should leave the downstream Image "
+                    "plane on its row station unless an explicit output port is authored: "
+                    f"actual={actual_center.tolist()}, expected={expected_center.tolist()}"
+                )
         mesh_items = app._scene_surface_meshes(system, scene_bundle, include_reference_surfaces=True)
         if not any(int(getattr(item, "row_index", -1)) == row_index for item in mesh_items):
             raise AssertionError("Promoted optical solid disappeared from the rebuilt 3D scene meshes.")
     finally:
         app.destroy()
+
+    _validate_promoted_reflecting_prism_image_plane_is_not_intrusive()
 
     print("Open 3D face context assignment validation passed.")
     return 0

@@ -14860,7 +14860,7 @@ class KrakenLayoutEditor(tk.Tk):
         note = (
             "Optical CAD/STL solid import. KrakenOS traces this through Solid_3d_stl in "
             "non-sequential scene mode; STEP/IGES sources are meshed to a cached STL. "
-            "Use Material, Thickness, AxisMove, Tilt, and Decenter to align the closed mesh "
+            "Use Material, Thickness, Tilt, and Decenter to align the closed mesh "
             f"in millimetres.{source_note}"
         )
         advanced = {
@@ -14880,7 +14880,7 @@ class KrakenLayoutEditor(tk.Tk):
             glass="BK7",
             thickness=40.0,
             diameter=25.0,
-            axis_move=2.0,
+            axis_move=0.0,
             advanced=advanced,
         )
 
@@ -19513,12 +19513,14 @@ class KrakenLayoutEditor(tk.Tk):
         row.desp_x = float(center_world[0])
         row.desp_y = float(center_world[1])
         row.desp_z = float(center_world[2] - z_station)
-        row.axis_move = 2.0
+        row.axis_move = 0.0
         row.advanced = dict(row.advanced or {})
         row.advanced["Note"] = (
             "Promoted from an Open 3D imported STEP overlay. The cached Solid_3d_stl mesh is saved "
             "in local coordinates around the overlay center, while row Desp stores the scene/world "
-            "center. Review material and CAD/STL optical face roles before relying on traced physics."
+            "center. AxisMove stays zero so the scene object's placement does not move downstream "
+            "Object/Image rows; explicit output ports provide the separate follower-row workflow. "
+            "Review material and CAD/STL optical face roles before relying on traced physics."
         )
         row.advanced["StepOverlayPromotion"] = {
             "step_label": label,
@@ -46596,6 +46598,15 @@ class KrakenLayoutEditor(tk.Tk):
         return False
 
     @staticmethod
+    def _is_open3d_promoted_optical_solid_row(row) -> bool:
+        advanced = row.get("advanced", {}) if isinstance(row, dict) else getattr(row, "advanced", {})
+        if not isinstance(advanced, dict):
+            return False
+        if not KrakenLayoutEditor._geometry_value_present(advanced.get("Solid_3d_stl")):
+            return False
+        return isinstance(advanced.get("StepOverlayPromotion"), dict)
+
+    @staticmethod
     def _geometry_value_present(value) -> bool:
         if value is None:
             return False
@@ -54586,7 +54597,11 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _serializable_specs_for_rows(self, rows: list[SurfaceRow]) -> list[dict]:
         metal_catalogs = _normalize_metal_catalog_specs(getattr(self, "metal_catalogs", []))
-        return surface_rows_to_specs(rows, metal_catalogs=metal_catalogs)
+        specs = surface_rows_to_specs(rows, metal_catalogs=metal_catalogs)
+        for row, spec in zip(rows, specs):
+            if KrakenLayoutEditor._is_open3d_promoted_optical_solid_row(row):
+                spec["axis_move"] = 0.0
+        return specs
 
     def _mtf_worker_count(self, ray_count: int) -> int:
         cpu_total = max(1, int(os.cpu_count() or 1))
@@ -65657,6 +65672,8 @@ class KrakenLayoutEditor(tk.Tk):
             self.rows[-1].name = "Image"
         self._clear_disabled_surface_type_fields(self.rows[-1])
         for index, row in enumerate(self.rows[1:-1], start=1):
+            if self._is_open3d_promoted_optical_solid_row(row):
+                row.axis_move = 0.0
             if row.surface == "Aperture":
                 if not row.name or row.name in {"Surface", "Standard"}:
                     row.name = "Aperture"

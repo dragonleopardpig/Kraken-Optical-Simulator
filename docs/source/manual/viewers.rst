@@ -548,7 +548,10 @@ KrakenOS placement semantics are important:
 * ``TiltX/Y/Z`` rotate the STL mesh about the STL file origin
 * ``DespX/Y/Z`` translate the rotated STL mesh
 * ``AxisMove`` affects transform propagation to later rows, not the local STL
-  orientation itself
+  orientation itself. Open 3D-promoted and newly imported optical CAD/STL solids
+  default to ``AxisMove = 0`` because they are scene objects; explicit output
+  ports are the workflow for moving downstream follower rows onto a traced
+  prism exit.
 
 STEP and CAD overlays
 ---------------------

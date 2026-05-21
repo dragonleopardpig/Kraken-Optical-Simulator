@@ -63,6 +63,8 @@ def main() -> int:
         mesh_path = Path(str(advanced.get("Solid_3d_stl", "")))
         if row.surface != "Standard" or not mesh_path.exists() or mesh_path.suffix.lower() != ".stl":
             raise AssertionError(f"Promoted row is not a file-backed optical solid row: {row!r}")
+        if abs(float(row.axis_move)) > 1e-12:
+            raise AssertionError("Promoted STEP optical solid must not propagate its row pose through AxisMove.")
         if float(row.thickness) <= 0.0:
             raise AssertionError("Promoted STEP optical solid must reserve positive axial thickness.")
         if str(advanced.get("OpticalSolidSourcePath", "")) != str(PRISM_42779_STEP.resolve()):
