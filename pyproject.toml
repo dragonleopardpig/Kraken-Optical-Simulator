@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "KrakenOS"
+version = "1.0.0.24"
+description = "Optical simulation and exact ray tracing library"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "GNU General Public License v3.0"}
+authors = [
+  {name = "Joel Herrera et al.", email = "joel@astro.unam.mx"}
+]
+keywords = ["optics", "ray tracing", "optical simulation", "KrakenOS"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering :: Physics"
+]
+dependencies = [
+  "pyvista",
+  "PyVTK",
+  "vtk",
+  "numpy",
+  "scipy",
+  "matplotlib",
+  "csv342",
+  "pandas"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest"
+]
+
+[project.urls]
+Homepage = "https://github.com/Garchupiter/Kraken-Optical-Simulator"
+Repository = "https://github.com/Garchupiter/Kraken-Optical-Simulator"
+Issues = "https://github.com/Garchupiter/Kraken-Optical-Simulator/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["KrakenOS*"]
+exclude = ["*.egg-info*", "build*", "dist*"]
+
+[tool.setuptools.package-data]
+KrakenOS = [
+  "Cat/*",
+  "Examples/*",
+  "LensCat/*",
+  "Docs/*",
+  "AstroAtmosphere/*.txt",
+  "AstroAtmosphere/data/*"
+]

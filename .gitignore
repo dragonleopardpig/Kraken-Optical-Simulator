@@ -92,6 +92,20 @@ docs/_build/
 /attachment/Lens/
 /attachment/68551/
 /attachment/machine_vision_150mm_measured_3d.step
+/attachment/prisms/**/*.png
+/attachment/prisms/**/*.PNG
+/attachment/prisms/**/*.eprt
+/attachment/prisms/**/*.EPRT
+/attachment/prisms/**/*.igs
+/attachment/prisms/**/*.IGS
+/attachment/prisms/**/*.iges
+/attachment/prisms/**/*.IGES
+/attachment/prisms/**/*.pdf
+/attachment/prisms/**/*.PDF
+/attachment/prisms/**/*.step
+/attachment/prisms/**/*.STEP
+!/attachment/prisms/32336/step_32336.step
+!/attachment/prisms/42779/step_42779.step
 
 # PyBuilder
 target/
