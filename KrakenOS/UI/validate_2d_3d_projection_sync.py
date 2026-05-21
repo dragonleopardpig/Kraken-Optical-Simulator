@@ -236,6 +236,28 @@ def _validate_penta_physics(bundle: object) -> list[str]:
     unexpected_statuses = set(statuses) - {"escaped", "hit_detector"}
     if unexpected_statuses:
         failures.append(f"unexpected penta terminal statuses={dict(statuses)}")
+    exit_directions: list[np.ndarray] = []
+    for path in paths:
+        points = np.asarray(getattr(path, "points_world", []), dtype=float)
+        if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+            failures.append(f"penta ray {getattr(path, 'ray_index', '?')} has no final 3D segment")
+            continue
+        segment = points[-1, :3] - points[-2, :3]
+        norm = float(np.linalg.norm(segment))
+        if not np.isfinite(norm) or norm <= 1.0e-12:
+            failures.append(f"penta ray {getattr(path, 'ray_index', '?')} has degenerate final 3D segment")
+            continue
+        exit_directions.append(segment / norm)
+    if exit_directions:
+        directions = np.asarray(exit_directions, dtype=float)
+        lateral = float(np.nanmax(np.linalg.norm(directions[:, [0, 2]], axis=1)))
+        y_min = float(np.nanmin(directions[:, 1]))
+        y_max = float(np.nanmax(directions[:, 1]))
+        if lateral > 1.0e-4 or y_max > -0.9999:
+            failures.append(
+                "penta final exit directions are not collimated along -Y: "
+                f"max_lateral={lateral:.3e}, y_range=({y_min:.6f}, {y_max:.6f})"
+            )
     return failures
 
 

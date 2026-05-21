@@ -135,9 +135,11 @@ kraken-vtk-tk-check
   `validate_2d_3d_projection_sync` regression builds the 42779 penta prism from
   the tracked vendor STEP asset, launches a zero-cone collimated disk bundle,
   and verifies YZ/XZ/XY plots are exact projections of the Open 3D ray
-  polylines. Local penta-prism attachments should use that same collimated
-  source intent; a nonzero `Pupil / field` source cone intentionally creates a
-  3D cone rather than a collimated verification bundle.
+  polylines. It also asserts that the final penta-prism exit segments remain
+  collimated along scene `-Y`, so a correct YZ 2D exit cannot hide a bent 3D
+  exit. Local penta-prism attachments should use that same collimated source
+  intent; a nonzero `Pupil / field` source cone intentionally creates a 3D cone
+  rather than a collimated verification bundle.
 - The Open 3D inspector shows traced scene geometry, STL/CAD placement,
   source-target picking, face anchors, and STEP overlay inspection.
 - Open 3D refresh uses the active traced 2D SceneBundle when one exists, and
