@@ -3943,6 +3943,26 @@ def _row_display_settings(row: Any) -> dict:
     return {}
 
 
+def _compact_key_optic_label_text(row_index: int, row: Any, curve_kind: str, label_text: str, display_settings: dict) -> str:
+    label = " ".join(str(label_text or "").split()).strip()
+    if not label:
+        return str(getattr(row, "surface", "") or "Surface")
+    if any(str(key) in display_settings for key in ("label", "label_text")):
+        return label
+    advanced = getattr(row, "advanced", {}) or {}
+    is_optical_solid = isinstance(advanced, dict) and advanced.get("Solid_3d_stl") not in (None, "", "None")
+    if str(curve_kind or "") == "stl_solid" or is_optical_solid:
+        if isinstance(advanced, dict) and isinstance(advanced.get("StepOverlayPromotion"), dict):
+            step_label = str(advanced.get("StepOverlayPromotion", {}).get("step_label", "") or "").strip()
+            step_names = {"optical": "Optical", "lens": "Lens", "camera": "Camera", "led": "LED"}
+            source_name = step_names.get(step_label.lower(), step_label.title()) if step_label else "Optical"
+            source = f"{source_name} STEP"
+            return f"S{int(row_index)} {source}"
+        if len(label) > 28:
+            return f"S{int(row_index)} CAD/STL solid"
+    return label
+
+
 def _build_key_optic_labels(rows: list, surface_curves: list[SurfaceCurve3D]) -> list[LabelSpec]:
     labels: list[LabelSpec] = []
     label_surfaces = {"Mirror", "Object Target", "Diffuse Object", "Beam Splitter"}
@@ -3996,6 +4016,7 @@ def _build_key_optic_labels(rows: list, surface_curves: list[SurfaceCurve3D]) ->
             display_settings.get("label", display_settings.get("label_text", row.name or row.surface))
             or row.surface
         ).strip()
+        label_text = _compact_key_optic_label_text(row_index, row, curve.kind, label_text, display_settings)
         label_x = float(center[0] + normal[0] * offset)
         label_y = float(center[1] + normal[1] * offset)
         label_kwargs: dict[str, object] = {}

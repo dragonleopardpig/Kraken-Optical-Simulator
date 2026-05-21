@@ -276,11 +276,16 @@ def ray_endpoint_markers_for_display(
 ) -> list[tuple[float, float, str, str]]:
     if not endpoints:
         return []
-    if ray_count_hint <= 16:
-        return list(endpoints)
-    return [
+    filtered = [
         endpoint
         for endpoint in endpoints
+        if str(endpoint[3] if len(endpoint) > 3 else "").strip().lower() != "escaped"
+    ]
+    if ray_count_hint <= 16:
+        return filtered
+    return [
+        endpoint
+        for endpoint in filtered
         if str(endpoint[3] if len(endpoint) > 3 else "").strip().lower() != "hit_detector"
     ]
 
@@ -330,15 +335,98 @@ def _draw_ray_direction_markers(
 
 
 def _draw_labels(labels: list[LabelSpec], ax: Any) -> None:
-    for label in labels:
+    if not labels:
+        return
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+    x_min, x_max = min(float(x0), float(x1)), max(float(x0), float(x1))
+    y_min, y_max = min(float(y0), float(y1)), max(float(y0), float(y1))
+    span_x = max(x_max - x_min, 1.0)
+    span_y = max(y_max - y_min, 1.0)
+    occupied: list[tuple[float, float, float, float]] = []
+    for index, label in enumerate(labels):
+        text = _compact_label_text(str(label.text or ""))
+        if not text:
+            continue
+        x, y = _label_position_without_overlap(
+            float(label.x),
+            float(label.y),
+            text,
+            index=index,
+            occupied=occupied,
+            x_min=x_min,
+            x_max=x_max,
+            y_min=y_min,
+            y_max=y_max,
+            span_x=span_x,
+            span_y=span_y,
+        )
         ax.text(
-            label.x, label.y, label.text,
+            x, y, text,
             ha=label.ha, va=label.va,
             fontsize=label.fontsize, color=label.color,
             clip_on=True,
             zorder=60.0,
             bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 0.2},
         )
+
+
+def _compact_label_text(text: str) -> str:
+    value = " ".join(str(text or "").split())
+    if len(value) <= 34:
+        return value
+    return value[:31].rstrip() + "..."
+
+
+def _label_position_without_overlap(
+    x: float,
+    y: float,
+    text: str,
+    *,
+    index: int,
+    occupied: list[tuple[float, float, float, float]],
+    x_min: float,
+    x_max: float,
+    y_min: float,
+    y_max: float,
+    span_x: float,
+    span_y: float,
+) -> tuple[float, float]:
+    width = min(max(0.0065 * span_x * max(len(text), 4), 0.08 * span_x), 0.46 * span_x)
+    height = 0.052 * span_y
+    pad_x = 0.008 * span_x
+    pad_y = 0.010 * span_y
+    candidates = [
+        (0.0, 0.0),
+        (0.0, (0.055 + 0.010 * (index % 3)) * span_y),
+        (0.0, -(0.055 + 0.010 * (index % 3)) * span_y),
+        (0.045 * span_x, 0.025 * span_y),
+        (-0.045 * span_x, 0.025 * span_y),
+        (0.045 * span_x, -0.025 * span_y),
+        (-0.045 * span_x, -0.025 * span_y),
+    ]
+    best_x, best_y = float(x), float(y)
+    best_box: tuple[float, float, float, float] | None = None
+    for dx, dy in candidates:
+        cx = min(max(float(x) + dx, x_min + 0.025 * span_x), x_max - 0.025 * span_x)
+        cy = min(max(float(y) + dy, y_min + 0.035 * span_y), y_max - 0.035 * span_y)
+        box = (
+            cx - 0.5 * width - pad_x,
+            cx + 0.5 * width + pad_x,
+            cy - 0.5 * height - pad_y,
+            cy + 0.5 * height + pad_y,
+        )
+        if not any(_boxes_overlap(box, existing) for existing in occupied):
+            occupied.append(box)
+            return cx, cy
+        best_x, best_y, best_box = cx, cy, box
+    if best_box is not None:
+        occupied.append(best_box)
+    return best_x, best_y
+
+
+def _boxes_overlap(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
+    return not (a[1] < b[0] or b[1] < a[0] or a[3] < b[2] or b[3] < a[2])
 
 
 def _set_limits_from_drawn_data(ax: Any, bounds: BoundsRect) -> None:

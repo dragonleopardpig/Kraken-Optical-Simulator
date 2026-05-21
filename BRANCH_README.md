@@ -256,11 +256,13 @@ kraken-vtk-tk-check
   explicit Input Port. Uncoated total-internal-reflection hits use the same
   same-solid continuation rule, so a valid TIR bounce does not terminate merely
   because multiple CAD faces are represented by one KrakenOS row.
-- Dense 2D plots keep non-hit terminal glyphs visible even when detector-hit
-  endpoint markers are suppressed; missed detector/Image terminals use a
-  distinct orange marker in 2D, while Open 3D uses plane-preserving crosshairs
-  and suppresses escaped/missed endpoint disks that would imply a physical
-  stop.
+- Dense 2D plots suppress detector-hit glyphs and ordinary escaped endpoint
+  glyphs; missed detector/Image terminals use a distinct orange marker, while
+  absorbed/stopped terminals remain visible diagnostics. Promoted STEP optical
+  solids use compact projected labels such as `S1 Optical STEP` so YZ/XZ/XY
+  views do not cover the prism or ray bundle. Open 3D uses plane-preserving
+  crosshairs and suppresses escaped/missed endpoint disks that would imply a
+  physical stop.
 - Hovering or selecting a ray in the 2D plot, embedded 3D viewer, or legacy 3D
   viewer reports the canonical terminal status. Selecting a ray now also labels
   the selected path with canonical face/action tags such as `F003 Reflect`,

@@ -83,9 +83,10 @@ Current UI coverage:
 * row selection highlighting for surfaces and elements
 * escaped non-sequential rays projected to the configured detector/Image plane
   as explicit missed-detector terminal markers
-* dense 2D views suppress redundant detector-hit endpoint glyphs but keep
-  missed detector, absorbed, escaped, and stopped terminal markers visible;
-  missed detector/Image endpoints use a distinct orange marker in 2D
+* dense 2D views suppress redundant detector-hit endpoint glyphs and ordinary
+  escaped-ray endpoint glyphs; missed detector, absorbed, and stopped terminal
+  markers stay visible because they are diagnostics. Missed detector/Image
+  endpoints use a distinct orange marker in 2D
 * 2D and Open 3D cap only display diagnostics: escaped tails are shortened to
   the current scene scale before 2D autoscale or 3D rendering, and
   missed-detector points are capped inside the detector plane so the view does

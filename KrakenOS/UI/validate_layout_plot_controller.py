@@ -437,6 +437,29 @@ def main() -> None:
     _require(world_key_labels and world_key_labels[0].coordinate_space == "world", "world key optic label did not keep world anchor")
     world_key_projected = SceneProjector2D("XZ").project_bundle(SceneBundle(labels=world_key_labels)).labels
     _require(world_key_projected and world_key_projected[0].coordinate_space == "world", "world key optic label was not projected into XZ")
+    promoted_step_row = SurfaceRow(
+        surface="Standard",
+        name="Promoted OPTICAL STEP optical solid",
+        advanced={
+            "Solid_3d_stl": "/tmp/promoted.stl",
+            "StepOverlayPromotion": {"step_label": "optical"},
+        },
+    )
+    promoted_step_labels = _build_key_optic_labels(
+        [mirror_row, promoted_step_row],
+        [
+            SurfaceCurve3D(
+                row_index=1,
+                kind="stl_solid",
+                points_world=np.asarray([[0.0, -10.0, 30.0], [0.0, 10.0, 60.0]], dtype=float),
+                coordinate_space="world",
+            )
+        ],
+    )
+    _require(
+        promoted_step_labels and promoted_step_labels[0].text == "S1 Optical STEP",
+        "promoted STEP labels should be compact in projected layouts",
+    )
     folded_key_labels = _build_key_optic_labels(
         [mirror_row],
         [
@@ -747,11 +770,12 @@ def main() -> None:
         (float(index), 0.0, "#39ff14", "hit_detector")
         for index in range(20)
     ]
+    dense_terminal_markers.append((20.5, 1.0, "#39ff14", "escaped"))
     dense_terminal_markers.append((21.0, 1.0, "#39ff14", "missed_detector"))
     visible_dense_markers = ray_endpoint_markers_for_display(dense_terminal_markers, ray_count_hint=31)
     _require(
         visible_dense_markers == [(21.0, 1.0, "#39ff14", "missed_detector")],
-        "dense ray plots should keep missed-detector terminal markers visible",
+        "dense ray plots should keep missed-detector terminal markers visible and hide ordinary escapes",
     )
 
     shared_targets = [
