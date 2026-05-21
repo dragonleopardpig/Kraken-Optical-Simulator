@@ -7554,10 +7554,15 @@ class Kraken3DInspector(tk.Toplevel):
                 base = {}
         if selected:
             try:
+                base_opacity = float(base.get("opacity", 1.0))
+                if base_opacity <= 0.38:
+                    selected_opacity = min(max(base_opacity, 0.30) + 0.08, 0.44)
+                else:
+                    selected_opacity = min(max(base_opacity, 0.35) + 0.12, 1.0)
                 prop.SetEdgeVisibility(1)
                 prop.SetEdgeColor(1.0, 0.55, 0.05)
                 prop.SetLineWidth(max(float(base.get("line_width", 1.0)), 3.0))
-                prop.SetOpacity(min(max(float(base.get("opacity", 1.0)), 0.35) + 0.12, 1.0))
+                prop.SetOpacity(selected_opacity)
                 prop.SetAmbient(max(float(base.get("ambient", 0.0)), 0.28))
             except Exception:
                 pass
@@ -10340,12 +10345,12 @@ class Kraken3DInspector(tk.Toplevel):
             if ray_visibility_requested and row_index >= 0:
                 if row_surface in {"Object", "Image"}:
                     mesh_opacity = min(mesh_opacity, 0.22)
+                elif row_index in file_backed_rows:
+                    mesh_opacity = min(max(mesh_opacity, 0.24), 0.36)
                 else:
                     mesh_opacity = max(mesh_opacity, 0.86)
-                    if row_index in file_backed_rows:
-                        mesh_opacity = max(mesh_opacity, 0.94)
-                    wire_color = (0.02, 0.03, 0.05) if row_index in file_backed_rows else tuple(mesh_item.color)
-                    wire_width = 1.9 if row_index in file_backed_rows else 1.35
+                    wire_color = tuple(mesh_item.color)
+                    wire_width = 1.35
                     ray_surface_wire_overlays.append((mesh, wire_color, wire_width, row_index))
             self._add_mesh_actor(
                 mesh,
@@ -10406,12 +10411,14 @@ class Kraken3DInspector(tk.Toplevel):
             for ray_index, color, ray_pts, terminal_status in self.editor._iter_3d_scene_ray_records(rays, scene_bundle):
                 ray_path = paths_by_ray_index.get(int(ray_index))
                 terminal_target = KrakenLayoutEditor._missed_detector_target_for_path(scene_bundle, ray_path)
+                terminal_direction = KrakenLayoutEditor._terminal_display_direction_for_path(ray_path)
                 display_ray_pts, was_bounded = KrakenLayoutEditor._bounded_3d_ray_points_for_display(
                     ray_pts,
                     center,
                     radius,
                     terminal_status=terminal_status,
                     terminal_target=terminal_target,
+                    terminal_direction=terminal_direction,
                 )
                 if was_bounded:
                     bounded_ray_count += 1
@@ -25685,6 +25692,9 @@ class KrakenLayoutEditor(tk.Tk):
                 continue
             mesh = KrakenLayoutEditor._reference_mesh_with_row_diameter(mesh, row)
             surface = surface_descriptors[index]
+            file_backed_optical_solid = self._scene_graph_value_present(advanced.get("Solid_3d_stl"))
+            mesh_color = (0.10, 0.62, 0.72) if file_backed_optical_solid else Kraken3DInspector._surface_color(surface)
+            mesh_opacity = 0.30 if file_backed_optical_solid else (0.88 if row.surface == "Mirror" else 0.68)
             mesh_items.append(
                 SurfaceMesh3D(
                     row_index=index,
@@ -25692,8 +25702,8 @@ class KrakenLayoutEditor(tk.Tk):
                     row=row,
                     surface=surface,
                     mesh=mesh,
-                    color=Kraken3DInspector._surface_color(surface),
-                    opacity=0.88 if row.surface == "Mirror" else 0.68,
+                    color=mesh_color,
+                    opacity=mesh_opacity,
                     is_stop=self._legacy_3d_is_stop_plane(row),
                 )
             )
@@ -26202,12 +26212,14 @@ class KrakenLayoutEditor(tk.Tk):
         for ray_index, color, ray_pts, terminal_status in self._iter_3d_scene_ray_records(rays, scene_bundle):
             ray_path = paths_by_ray_index.get(int(ray_index))
             terminal_target = self._missed_detector_target_for_path(scene_bundle, ray_path)
+            terminal_direction = self._terminal_display_direction_for_path(ray_path)
             display_ray_pts, _was_bounded = self._bounded_3d_ray_points_for_display(
                 ray_pts,
                 ray_center,
                 ray_scene_radius,
                 terminal_status=terminal_status,
                 terminal_target=terminal_target,
+                terminal_direction=terminal_direction,
             )
             try:
                 line = pv.lines_from_points(display_ray_pts)
@@ -26680,6 +26692,37 @@ class KrakenLayoutEditor(tk.Tk):
         return None
 
     @staticmethod
+    def _terminal_display_direction_for_path(path: object | None) -> np.ndarray | None:
+        if path is None:
+            return None
+        event = ray_path_terminal_event(path)
+        if event is not None:
+            for attribute in ("outgoing_direction", "incoming_direction"):
+                direction = KrakenLayoutEditor._unit_3d_vector_or_none(getattr(event, attribute, None))
+                if direction is not None:
+                    return direction
+        try:
+            points = np.asarray(getattr(path, "points_world", []), dtype=float)
+        except Exception:
+            return None
+        if points.ndim == 2 and points.shape[0] >= 2 and points.shape[1] >= 3:
+            return KrakenLayoutEditor._unit_3d_vector_or_none(points[-1, :3] - points[-2, :3])
+        return None
+
+    @staticmethod
+    def _unit_3d_vector_or_none(value) -> np.ndarray | None:
+        try:
+            vector = np.asarray(value, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if vector.size < 3 or not np.all(np.isfinite(vector[:3])):
+            return None
+        norm = float(np.linalg.norm(vector[:3]))
+        if not np.isfinite(norm) or norm <= 1.0e-12:
+            return None
+        return vector[:3] / norm
+
+    @staticmethod
     def _target_frame_axes_for_display(target: SceneTarget3D | None) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
         if target is None:
             return None
@@ -26833,6 +26876,7 @@ class KrakenLayoutEditor(tk.Tk):
         *,
         terminal_status: str = "",
         terminal_target: SceneTarget3D | None = None,
+        terminal_direction=None,
     ) -> tuple[np.ndarray, bool]:
         try:
             pts = np.asarray(points, dtype=float)
@@ -26876,8 +26920,16 @@ class KrakenLayoutEditor(tk.Tk):
             # output direction without letting one distant miss dominate the
             # renderer bounds.
             max_terminal_length = max(75.0, min(scene_radius * 1.25, 600.0))
-            if np.isfinite(terminal_length) and terminal_length > max_terminal_length > 0.0:
-                pts[-1] = pts[-2] + (terminal_segment / terminal_length) * max_terminal_length
+            direction = KrakenLayoutEditor._unit_3d_vector_or_none(terminal_direction)
+            if direction is None:
+                direction = KrakenLayoutEditor._unit_3d_vector_or_none(terminal_segment)
+            if direction is not None and np.isfinite(terminal_length) and max_terminal_length > 0.0:
+                if terminal_length > max_terminal_length:
+                    pts[-1] = pts[-2] + direction * max_terminal_length
+                else:
+                    remaining_length = max_terminal_length - terminal_length
+                    if remaining_length > 1.0e-9:
+                        pts = np.vstack((pts, pts[-1] + direction * remaining_length))
                 terminal_was_capped = True
         display_radius = max(scene_radius * 3.0, 250.0)
         offsets = pts - scene_center
@@ -28018,12 +28070,14 @@ class KrakenLayoutEditor(tk.Tk):
         for ray_index, color, ray_pts, terminal_status in self._iter_3d_scene_ray_records(rays, scene_bundle):
             ray_path = paths_by_ray_index.get(int(ray_index))
             terminal_target = self._missed_detector_target_for_path(scene_bundle, ray_path)
+            terminal_direction = self._terminal_display_direction_for_path(ray_path)
             display_ray_pts, _was_bounded = self._bounded_3d_ray_points_for_display(
                 ray_pts,
                 ray_center,
                 ray_scene_radius,
                 terminal_status=terminal_status,
                 terminal_target=terminal_target,
+                terminal_direction=terminal_direction,
             )
             try:
                 line = pv.lines_from_points(display_ray_pts)
@@ -50987,7 +51041,7 @@ class KrakenLayoutEditor(tk.Tk):
                 rays, max_radius,
                 system=system,
             )
-        if folded_ray_display_paths is None:
+        if folded_ray_display_paths is None and not bool(trace_state.get("use_nonseq")):
             folded_ray_display_paths = self._branch_output_display_path_overrides(rays)
 
         field_count = max(

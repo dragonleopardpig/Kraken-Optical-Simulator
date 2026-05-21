@@ -287,7 +287,9 @@ class SceneProjector2D:
 
     def _project_rays(self, bundle: SceneBundle) -> list[ProjectedRay2D]:
         projected: list[ProjectedRay2D] = []
-        folded_display = bundle.extra.get("folded_ray_display_paths")
+        folded_display = None
+        if not _bundle_uses_native_nonsequential_projection(bundle):
+            folded_display = bundle.extra.get("folded_ray_display_paths")
         scene_center, scene_radius = _scene_center_radius_for_projection(bundle)
         targets_by_surface = _targets_by_trace_surface(bundle)
         for path in bundle.ray_paths:
@@ -310,6 +312,7 @@ class SceneProjector2D:
                     scene_radius,
                     terminal_status=terminal_status,
                     terminal_target=terminal_target,
+                    terminal_direction=_terminal_display_direction_from_path(path),
                 )
                 if pts.shape[0] < 2:
                     continue
@@ -387,6 +390,37 @@ class SceneProjector2D:
             if r.points_2d.shape[0] >= 2:
                 all_points.append(r.points_2d)
         return BoundsRect.from_points(all_points)
+
+
+def _bundle_uses_native_nonsequential_projection(bundle: SceneBundle) -> bool:
+    extra = dict(getattr(bundle, "extra", {}) or {})
+    mode_text = " ".join(
+        str(extra.get(key, "") or "").strip().lower()
+        for key in ("trace_mode_requested", "trace_mode_active", "trace_mode_note")
+    )
+    if "non-sequential" in mode_text or "nonseq" in mode_text:
+        return True
+    if list(getattr(bundle, "optical_volumes", []) or []):
+        return True
+    if list(getattr(bundle, "boundary_faces", []) or []):
+        return True
+    return False
+
+
+def _terminal_display_direction_from_path(path: object) -> np.ndarray | None:
+    event = ray_path_terminal_event(path)
+    if event is not None:
+        for attribute in ("outgoing_direction", "incoming_direction"):
+            direction = _unit_vector_or_none(getattr(event, attribute, None))
+            if direction is not None:
+                return direction
+    try:
+        points = np.asarray(getattr(path, "points_world", []), dtype=float)
+    except Exception:
+        return None
+    if points.ndim == 2 and points.shape[0] >= 2 and points.shape[1] >= 3:
+        return _unit_vector_or_none(points[-1, :3] - points[-2, :3])
+    return None
 
 
 def _unit_vector_or_none(value: object) -> np.ndarray | None:
@@ -566,6 +600,7 @@ def _bounded_ray_points_for_projection(
     *,
     terminal_status: str = "",
     terminal_target: object | None = None,
+    terminal_direction: object | None = None,
 ) -> tuple[np.ndarray, bool]:
     try:
         pts = np.asarray(points, dtype=float)
@@ -605,8 +640,16 @@ def _bounded_ray_points_for_projection(
         # but draw a scene-envelope tail long enough to show the output
         # direction without letting one distant miss dominate autoscale.
         max_terminal_length = max(75.0, min(scene_radius * 1.25, 600.0))
-        if np.isfinite(terminal_length) and terminal_length > max_terminal_length > 0.0:
-            pts[-1] = pts[-2] + (terminal_segment / terminal_length) * max_terminal_length
+        direction = _unit_vector_or_none(terminal_direction)
+        if direction is None:
+            direction = _unit_vector_or_none(terminal_segment)
+        if direction is not None and np.isfinite(terminal_length) and max_terminal_length > 0.0:
+            if terminal_length > max_terminal_length:
+                pts[-1] = pts[-2] + direction * max_terminal_length
+            else:
+                remaining_length = max_terminal_length - terminal_length
+                if remaining_length > 1.0e-9:
+                    pts = np.vstack((pts, pts[-1] + direction * remaining_length))
             terminal_was_capped = True
     display_radius = max(scene_radius * 3.0, 250.0)
     offsets = pts - scene_center

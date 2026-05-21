@@ -156,6 +156,8 @@ def main() -> int:
     virtual_plane_overlays = inspect.getsource(Kraken3DInspector._add_optical_solid_virtual_plane_overlays)
     runtime_face_markers = inspect.getsource(Kraken3DInspector._face_role_markers_from_runtime_transform)
     editor_refresh_plot = inspect.getsource(KrakenLayoutEditor.refresh_plot)
+    editor_build_scene_bundle = inspect.getsource(KrakenLayoutEditor._build_scene_bundle)
+    editor_surface_meshes = inspect.getsource(KrakenLayoutEditor._iter_3d_optical_surface_meshes)
     refresh_3d_sync = inspect.getsource(KrakenLayoutEditor._refresh_3d_inspector_if_open)
     preview_sampling = inspect.getsource(KrakenLayoutEditor._preview_scene_sampling_mode)
     saved_layout_figure = inspect.getsource(build_saved_layout_figure)
@@ -542,6 +544,7 @@ def main() -> int:
         ),
         ("Open 3D sync receives the same SceneBundle as 2D", "scene_bundle=bundle" in editor_refresh_plot and "refresh_scene(" in refresh_3d_sync),
         ("shared scene sampling supports full-pupil and world-envelope modes", "full_pupil" in preview_sampling and "world_envelope" in preview_sampling),
+        ("non-sequential scene bundles do not install YZ-only branch display overrides", 'not bool(trace_state.get("use_nonseq"))' in editor_build_scene_bundle and "_branch_output_display_path_overrides(rays)" in editor_build_scene_bundle),
         ("Open 3D ray records preserve terminal status", "ray_path_terminal_status_from_events(path)" in scene_ray_records),
         ("Open 3D missed detector lines use status styling", "missed_detector" in ray_terminal_style and "line_opacity" in ray_terminal_style),
         ("Open 3D refresh suppresses non-physical escaped/missed endpoint disks", "_should_draw_3d_terminal_endpoint(terminal_status)" in refresh and "ray_display_suppressed_nonphysical_endpoints" in refresh),
@@ -668,6 +671,13 @@ def main() -> int:
             "ray_surface_wire_overlays" in refresh
             and "wireframe=True" in refresh
             and "pick_row_index=row_index" in refresh,
+        ),
+        (
+            "file-backed optical STEP solids remain transparent during ray-on refresh",
+            "file_backed_optical_solid" in editor_surface_meshes
+            and "mesh_opacity = 0.30 if file_backed_optical_solid" in editor_surface_meshes
+            and "mesh_opacity = min(max(mesh_opacity, 0.24), 0.36)" in refresh
+            and "elif row_index in file_backed_rows" in refresh,
         ),
     ]
     failed = [name for name, ok in checks if not ok]

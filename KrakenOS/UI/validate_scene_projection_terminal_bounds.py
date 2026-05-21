@@ -88,6 +88,43 @@ def validate_scene_projection_terminal_bounds() -> list[ProjectionBoundsCheck]:
         )
     )
 
+    short_escaped_path = RayPath3D(
+        ray_index=11,
+        points_world=np.asarray(
+            (
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 100.0),
+                (0.0, -10.0, 110.0),
+            ),
+            dtype=float,
+        ),
+        events=[
+            RayEvent3D(
+                event_kind="terminal",
+                event_type="no_next_intersection",
+                termination_reason="no_next_intersection",
+                ray_index=11,
+                point_world=np.asarray((0.0, -10.0, 110.0), dtype=float),
+                outgoing_direction=np.asarray((0.0, -1.0, 0.0), dtype=float),
+            )
+        ],
+    )
+    short_escaped_projected = SceneProjector2D("YZ").project_bundle(
+        SceneBundle(
+            surface_curves=[_layout_curve()],
+            ray_paths=[short_escaped_path],
+            max_half=20.0,
+        )
+    )
+    short_escaped_points = np.asarray(short_escaped_projected.rays[0].points_2d, dtype=float)
+    checks.append(
+        ProjectionBoundsCheck(
+            "short escaped terminals get a display continuation",
+            short_escaped_points.shape[0] >= 4 and float(short_escaped_points[-1, 1]) < -300.0,
+            f"points={short_escaped_points.tolist()}",
+        )
+    )
+
     detector = SceneTarget3D(
         target_id="detector:2",
         name="Image",

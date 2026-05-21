@@ -10,10 +10,12 @@ ideas but routes user interaction through shared scene data.
 
 The layout editor 2D view shows the optical layout, ray paths, folded previews,
 ray clipping, cardinal markers, physical-distance annotations, and plot-linked
-selection. The drawing path is unified around ``SceneBundle``: ``YZ`` and
-``XZ`` are section views of traced 3D data, while ``XY`` is the top-view
-footprint. The projection selector above the plot changes the view, not the
-underlying optical prescription.
+selection. The drawing path is unified around ``SceneBundle``. Conventional
+sequential lens layouts keep ``YZ`` and ``XZ`` as section views and ``XY`` as
+the top-view footprint; native non-sequential scenes, including imported
+CAD/STL optical solids, project the same traced 3D ray set into all three
+planes so 2D and Open 3D stay synchronized. The projection selector above the
+plot changes the view, not the underlying optical prescription.
 
 Lens drawing PDF export
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -572,7 +574,9 @@ hardware context:
   physics. Hovering a row-backed face shows a small badge with the current face
   function and port role. Manual assignments such as ``Full Reflecting`` or an
   explicitly confirmed ``Uncoated`` face are shown as non-pickable surface
-  tints, while automatic default faces keep the simple body look. Explicit
+  tints, while automatic default faces keep the simple body look. The
+  row-backed STEP body remains transparent after assignment and when rays are
+  visible, rather than switching to an opaque wireframe mesh. Explicit
   input/output ports remain available in the full face-role editor for
   port-chain workflows.
 * STEP promotion reserves positive axial table thickness from the placed STEP

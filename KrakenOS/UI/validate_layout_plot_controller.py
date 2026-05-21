@@ -267,6 +267,32 @@ def main() -> None:
     _require([ray.ray_index for ray in yz_section.rays] == [1], "YZ projection section did not filter to X=0 ray")
     _require([ray.ray_index for ray in xz_section.rays] == [2], "XZ projection section did not filter to Y=0 ray")
     _require([ray.ray_index for ray in xy_section.rays] == [1, 2, 3], "XY projection should keep full top-view footprint")
+    nonseq_projection_scene = SceneBundle(
+        ray_paths=list(section_scene.ray_paths),
+        extra={"trace_mode_active": "Non-Sequential Preview"},
+    )
+    nonseq_yz = project_scene_bundle(nonseq_projection_scene, "YZ", filter_projection_slice=True)
+    _require(
+        [ray.ray_index for ray in nonseq_yz.rays] == [1, 2, 3],
+        "non-sequential YZ projection should keep the full traced 3D ray set",
+    )
+    nonseq_folded_override = SceneBundle(
+        ray_paths=[
+            RayPath3D(
+                ray_index=4,
+                points_world=np.asarray([[2.0, 3.0, 4.0], [2.0, 8.0, 9.0]], dtype=float),
+            )
+        ],
+        extra={
+            "trace_mode_active": "Non-Sequential Preview",
+            "folded_ray_display_paths": [np.asarray([[100.0, 100.0], [200.0, 200.0]], dtype=float)],
+        },
+    )
+    nonseq_folded_projected = SceneProjector2D("YZ").project_bundle(nonseq_folded_override)
+    _require(
+        np.allclose(nonseq_folded_projected.rays[0].points_2d, [[4.0, 3.0], [9.0, 8.0]]),
+        "non-sequential YZ projection should ignore legacy folded display overrides",
+    )
     fallback_section = scene_bundle_for_projection_slice(
         SceneBundle(
             ray_paths=[

@@ -258,6 +258,8 @@ def scene_bundle_for_projection_slice(
     axis = _projection_slice_axis(orientation)
     if axis is None or not isinstance(bundle, SceneBundle):
         return bundle
+    if _bundle_uses_native_nonsequential_projection(bundle):
+        return bundle
     paths = list(getattr(bundle, "ray_paths", []) or [])
     if len(paths) <= 1:
         return bundle
@@ -276,6 +278,21 @@ def scene_bundle_for_projection_slice(
         if int(getattr(event, "ray_index", -1)) in selected_ray_indices
     ]
     return replace(bundle, ray_paths=selected, ray_events=ray_events)
+
+
+def _bundle_uses_native_nonsequential_projection(bundle: object) -> bool:
+    extra = dict(getattr(bundle, "extra", {}) or {})
+    mode_text = " ".join(
+        str(extra.get(key, "") or "").strip().lower()
+        for key in ("trace_mode_requested", "trace_mode_active", "trace_mode_note")
+    )
+    if "non-sequential" in mode_text or "nonseq" in mode_text:
+        return True
+    if list(getattr(bundle, "optical_volumes", []) or []):
+        return True
+    if list(getattr(bundle, "boundary_faces", []) or []):
+        return True
+    return False
 
 
 def projected_scene_for_layout_render(projected: ProjectedScene2D, *, suppress_scene_labels: bool = False) -> ProjectedScene2D:
