@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import inspect
 
+import numpy as np
+
 from KrakenOS.UI.layout_editor import (
     STEP_CARRY_GRID_CHOICES,
     STEP_CARRY_GRID_FREE,
@@ -11,6 +13,52 @@ from KrakenOS.UI.layout_editor import (
     KrakenLayoutEditor,
 )
 from KrakenOS.UI.saved_layout_plot import build_saved_layout_figure
+from KrakenOS.UI.scene_builder import _sync_path_display_geometry_from_events
+from KrakenOS.UI.scene_geometry import RayEvent3D, RayPath3D
+
+
+def _scene_path_preserves_raykeeper_terminal_continuation() -> tuple[bool, str]:
+    """Regression guard for prism exits that continue after the last surface event."""
+    raw_points = np.asarray(
+        [
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 10.0],
+            [0.0, 3.0, 15.0],
+            [0.0, -3.0, 20.0],
+            [0.0, 0.0, 25.0],
+            [0.0, 0.0, 55.0],
+        ],
+        dtype=float,
+    )
+    path = RayPath3D(
+        ray_index=0,
+        source_position=raw_points[0].copy(),
+        points_world=raw_points.copy(),
+        surface_ids=np.asarray([1, 1, 1, 1], dtype=int),
+        events=[
+            RayEvent3D(
+                event_kind="surface",
+                event_type=event_type,
+                surface_id=1,
+                point_world=raw_points[index].copy(),
+                metadata={"event_source": "raykeeper"},
+            )
+            for index, event_type in enumerate(
+                ["transmission", "reflection", "reflection", "transmission"],
+                start=1,
+            )
+        ],
+    )
+    _sync_path_display_geometry_from_events(path)
+    if path.points_world.shape != raw_points.shape:
+        return False, f"points={path.points_world.shape}, expected={raw_points.shape}"
+    if not np.allclose(path.points_world[-1], raw_points[-1], rtol=0.0, atol=1e-9):
+        return False, "last raw continuation point was dropped"
+    if path.surface_ids.shape != (4,):
+        return False, f"surface_ids={path.surface_ids.shape}, expected=(4,)"
+    if "raykeeper_terminal_continuation" not in path.display_geometry_diagnostic:
+        return False, path.display_geometry_diagnostic
+    return True, path.display_geometry_diagnostic
 
 
 def main() -> int:
@@ -169,7 +217,12 @@ def main() -> int:
     editor_detector_overlays = inspect.getsource(KrakenLayoutEditor._scene_detector_overlay_specs)
     legacy_open_3d = inspect.getsource(KrakenLayoutEditor._populate_legacy_3d_plotter_scene)
     legacy_replace_rays = inspect.getsource(KrakenLayoutEditor._legacy_3d_replace_rays)
+    continuation_sync_ok, continuation_sync_diag = _scene_path_preserves_raykeeper_terminal_continuation()
     checks = [
+        (
+            "Scene path event sync preserves raykeeper terminal continuation",
+            continuation_sync_ok,
+        ),
         ("left drag binding exists", '"<B1-Motion>"' in bindings),
         ("plain left press no longer performs immediate pick", "_on_left_button_press(None, None)" not in bindings.split("def left_motion", 1)[0]),
         ("release without drag performs selection", "should_pick" in bindings and "_on_left_button_press(None, None)" in bindings),
@@ -708,6 +761,8 @@ def main() -> int:
         print("Embedded 3D interaction contract failed:")
         for name in failed:
             print(f"- {name}")
+        if not continuation_sync_ok:
+            print(f"  continuation diagnostic: {continuation_sync_diag}")
         return 1
     print("Embedded 3D interaction contract validation passed.")
     return 0

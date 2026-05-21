@@ -3043,6 +3043,11 @@ def _last_surface_id(path: RayPath3D) -> int | None:
 
 def _sync_path_display_geometry_from_events(path: RayPath3D) -> None:
     """Make display path points follow the canonical event table when possible."""
+    raw_points = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
+    raw_surface_ids = np.asarray(
+        getattr(path, "surface_ids", np.empty(0, dtype=int)),
+        dtype=int,
+    ).reshape(-1)
     events = list(getattr(path, "events", []) or [])
     if not events:
         path.display_geometry_source = path.display_geometry_source or "raykeeper_path"
@@ -3059,7 +3064,6 @@ def _sync_path_display_geometry_from_events(path: RayPath3D) -> None:
         return
     launch = _finite_vector_array(getattr(path, "source_position", None))
     if launch is None:
-        raw_points = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
         if raw_points.ndim == 2 and raw_points.shape[0] > 0:
             launch = _finite_vector_array(raw_points[0, :3])
     if launch is None:
@@ -3104,6 +3108,11 @@ def _sync_path_display_geometry_from_events(path: RayPath3D) -> None:
             )
             if terminal_is_detector_hit and terminal_surface_id is not None:
                 surface_ids.append(int(terminal_surface_id))
+    elif _has_terminal_continuation(raw_points, raw_surface_ids):
+        continuation_point = _finite_vector_array(raw_points[-1, :3])
+        if continuation_point is not None and not _same_point(points[-1], continuation_point):
+            points.append(continuation_point)
+            terminal_point_source = "raykeeper_terminal_continuation"
     event_sources = sorted({
         str((getattr(event, "metadata", {}) or {}).get("event_source", "") or "")
         for event in events

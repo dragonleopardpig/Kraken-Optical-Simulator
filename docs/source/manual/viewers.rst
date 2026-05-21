@@ -97,6 +97,11 @@ Current UI coverage:
   diagnostics`` is enabled. Normal design views show the ray paths, detector
   planes, and selected-ray metadata without drawing hit/stopped/absorbed dots
   inside a prism or CAD solid
+* when canonical surface events exist but raykeeper continues the path after a
+  CAD/STL/prism exit without a terminal event, the 2D and Open 3D display paths
+  retain that raw continuation point. A physically continued ray should not
+  appear to stop at the last transmitted face merely because the event table has
+  no terminal row yet.
 * active detector/Image footprints are drawn from the scene target detector
   metadata in 2D, embedded 3D, and legacy 3D. A missed-detector terminal adds
   an orange crosshair at the projected detector-plane intercept, making the
