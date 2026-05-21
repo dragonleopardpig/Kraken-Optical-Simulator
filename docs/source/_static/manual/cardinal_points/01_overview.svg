@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#111827"/>
+    </marker>
+    <marker id="arr-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#b91c1c"/>
+    </marker>
+    <marker id="arr-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#1d4ed8"/>
+    </marker>
+    <marker id="arr-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#15803d"/>
+    </marker>
+    <style>
+      .ttl  { fill:#111827; font-size:16px; font-weight:700; }
+      .sub  { fill:#374151; font-size:11.5px; }
+      .axis { stroke:#6b7280; stroke-width:1; stroke-dasharray:5,4; }
+      .lbl  { fill:#111827; font-size:12px; }
+      .lblb { fill:#111827; font-size:12px; font-weight:700; }
+      .dash { stroke:#6b7280; stroke-width:1; stroke-dasharray:4,4; fill:none; }
+      .sys  { fill:#dbeafe; stroke:#1e3a8a; stroke-width:1.4; opacity:0.45; }
+      .pp   { stroke:#0f766e; stroke-width:1.4; stroke-dasharray:3,3; }
+      .pp-l { fill:#0f766e; font-size:12px; font-weight:700; }
+      .fp   { stroke:#111827; stroke-width:1.4; }
+      .stop { stroke:#111827; stroke-width:3; }
+      .ray-r { stroke:#b91c1c; stroke-width:2; fill:none; }
+      .ray-b { stroke:#1d4ed8; stroke-width:2; fill:none; }
+      .ray-g { stroke:#15803d; stroke-width:2; fill:none; }
+      .ray-o { stroke:#b45309; stroke-width:2; fill:none; }
+    </style>
+  </defs>
+  <text x="360" y="22" text-anchor="middle" class="ttl">Figure 1 — Cardinal points of a centred optical system</text>
+  <text x="360" y="40" text-anchor="middle" class="sub">Six axial points (F, P, N, N', P', F') summarise the system's first-order behaviour.</text>
+  <line x1="20" y1="200" x2="700" y2="200" class="axis"/>
+  <text x="702" y="196" class="sub">optical axis</text>
+  <rect x="230" y="100" width="240" height="200" rx="6" ry="6" class="sys"/>
+  <text x="350.0" y="94" text-anchor="middle" class="sub" font-style="italic">optical system</text>
+  <line x1="290" y1="110" x2="290" y2="290" stroke="#0f766e" stroke-width="1.4" stroke-dasharray="3,3"/>
+  <text x="290" y="102" text-anchor="middle" class="pp-l" fill="#0f766e">P</text>
+  <line x1="410" y1="110" x2="410" y2="290" stroke="#0f766e" stroke-width="1.4" stroke-dasharray="3,3"/>
+  <text x="410" y="102" text-anchor="middle" class="pp-l" fill="#0f766e">P'</text>
+  <circle cx="130" cy="200" r="4" fill="#b91c1c" stroke="white" stroke-width="1.5"/>
+  <text x="130" y="218" text-anchor="middle" class="lblb" fill="#b91c1c">F</text>
+  <circle cx="570" cy="200" r="4" fill="#1d4ed8" stroke="white" stroke-width="1.5"/>
+  <text x="570" y="218" text-anchor="middle" class="lblb" fill="#1d4ed8">F'</text>
+  <circle cx="290" cy="200" r="5" fill="white" stroke="#15803d" stroke-width="2"/>
+  <text x="276" y="226" text-anchor="middle" class="lblb" fill="#15803d">N</text>
+  <circle cx="410" cy="200" r="5" fill="white" stroke="#15803d" stroke-width="2"/>
+  <text x="424" y="226" text-anchor="middle" class="lblb" fill="#15803d">N'</text>
+  <line x1="290" y1="80" x2="130" y2="80" stroke="#111827" stroke-width="1" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <text x="210.0" y="74" text-anchor="middle" class="lbl">f (front focal length)</text>
+  <line x1="410" y1="80" x2="570" y2="80" stroke="#111827" stroke-width="1" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <text x="490.0" y="74" text-anchor="middle" class="lbl">f' (rear focal length)</text>
+  <text x="20" y="330" class="sub">F, F'  focal points  ·  P, P'  principal planes  ·  N, N'  nodal points</text>
+  <text x="20" y="346" class="sub">In air: N coincides with P and N' coincides with P'.</text>
+</svg>

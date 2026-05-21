@@ -679,6 +679,12 @@ def main() -> int:
             and "mesh_opacity = min(max(mesh_opacity, 0.24), 0.36)" in refresh
             and "elif row_index in file_backed_rows" in refresh,
         ),
+        (
+            "Open 3D shows the active Object launch aperture without enabling every reference plane",
+            "_should_show_open3d_launch_reference_surface" in refresh
+            and "include_reference_surfaces=show_reference_surfaces or show_launch_reference_surface" in refresh
+            and 'row_surface == "Object"' in refresh,
+        ),
     ]
     failed = [name for name, ok in checks if not ok]
     if failed:

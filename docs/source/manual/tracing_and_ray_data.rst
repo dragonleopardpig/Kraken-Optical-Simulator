@@ -52,10 +52,12 @@ The UI keeps ray generation 3D-first for scene/CAD workflows:
   filter it into the selected projection. If the active field span is zero,
   the UI disables ``Field Samples`` as ``NA`` and traces one effective on-axis
   field launch while preserving the requested field count in metadata.
-* Non-sequential ``Pupil / field`` source cones use a 3D angular-pupil launch
-  in Open 3D. ``Meridional fan``, ``Fan X``, and ``Fan Y`` are 2D plot/analysis
-  sampling labels; the scene trace maps them to a filled 3D angular pupil
-  instead of flattening the physical scene to a section fan.
+* Non-sequential ``Pupil / field`` source cones sample the Object/source
+  reference aperture in 3D and apply the cone angle around each sampled field
+  direction. ``Meridional fan``, ``Fan X``, and ``Fan Y`` are 2D plot/analysis
+  sampling labels; the scene trace maps them to a filled 3D angular spread
+  instead of flattening the physical scene to a section fan or silently
+  replacing the source with a hidden parallel bundle.
 * Ray hover/click diagnostics in the 2D plot and 3D viewers read the canonical
   terminal event. A missed detector/Image reports the detector surface, plane
   distance, radial miss, active half-aperture, local detector-plane X/Y, active

@@ -77,10 +77,10 @@ def finite_cone_direction_samples(
     """Return source-cone samples for a non-sequential 3D scene.
 
     The legacy Pupil pattern menu contains section-analysis controls such as
-    Meridional fan. Those are meaningful for 2D plots. This helper remains for
-    explicit point-cone style sampling and legacy compatibility; live
-    non-sequential `Pupil / field` scene previews use a reference aperture
-    launch instead.
+    Meridional fan. Those are meaningful for 2D plots. Live non-sequential
+    `Pupil / field` scene previews use these angular samples together with a
+    sampled reference aperture, so the result is an extended aperture cone
+    rather than a hidden parallel bundle or a one-point cone.
     """
     ray_total = max(1, int(ray_count))
     cone_rad = max(0.0, float(np.deg2rad(float(cone_deg))))
@@ -474,6 +474,28 @@ def source_frame_vectors_from_direction(direction: Any) -> tuple[np.ndarray, np.
     return u, v, w
 
 
+def cone_directions_about_base(
+    base_direction: Any,
+    l_values: Any,
+    m_values: Any,
+    n_values: Any,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    u, v, w = source_frame_vectors_from_direction(base_direction)
+    l_arr, m_arr, n_arr = (
+        np.asarray(values, dtype=float).reshape(-1)
+        for values in (l_values, m_values, n_values)
+    )
+    dirs = (
+        l_arr[:, None] * u[None, :]
+        + m_arr[:, None] * v[None, :]
+        + n_arr[:, None] * w[None, :]
+    )
+    norms = np.linalg.norm(dirs, axis=1)
+    norms = np.where(norms > 1e-12, norms, 1.0)
+    dirs = dirs / norms[:, None]
+    return dirs[:, 0], dirs[:, 1], dirs[:, 2]
+
+
 def orient_source_points_and_dirs(
     origin: Any,
     direction: Any,
@@ -598,6 +620,17 @@ def _default_nonseq_reference_bundles_from_settings(
     if _settings_float(settings, "source_cone_angle", 0.0, minimum=0.0) <= 1e-12:
         return []
     ray_count = _settings_int(settings, "ray_count", 5)
+    cone_deg = _settings_float(settings, "source_cone_angle", 0.0, minimum=0.0)
+    cone_l, cone_m, cone_n = finite_cone_direction_samples(
+        cone_deg,
+        ray_count,
+        pupil_pattern=str(settings.get("pupil_pattern", PUPIL_PATTERN_DEFAULT) or PUPIL_PATTERN_DEFAULT),
+        display_orientation=str(settings.get("display_orientation", "YZ") or "YZ"),
+        pupil_rad=_settings_float(settings, "pupil_rad", 0.0),
+        pupil_theta=_settings_float(settings, "pupil_theta", 0.0),
+        seed=_settings_int(settings, "source_seed", 1, minimum=0),
+    )
+    ray_count = max(1, int(len(cone_l)))
     radius = _saved_reference_launch_radius(surfaces, settings)
     disk_points = sample_reference_disk_points_3d(radius, ray_count)
     if disk_points.size == 0:
@@ -620,6 +653,12 @@ def _default_nonseq_reference_bundles_from_settings(
             if norm <= 1e-12:
                 continue
             direction /= norm
+            l_values, m_values, n_values = cone_directions_about_base(
+                direction,
+                cone_l,
+                cone_m,
+                cone_n,
+            )
             bundles.append(
                 orient_source_points_and_dirs(
                     (
@@ -635,9 +674,9 @@ def _default_nonseq_reference_bundles_from_settings(
                     np.asarray(disk_points[:, 0], dtype=float),
                     np.asarray(disk_points[:, 1], dtype=float),
                     np.zeros(len(disk_points), dtype=float),
-                    np.full(len(disk_points), float(direction[0]), dtype=float),
-                    np.full(len(disk_points), float(direction[1]), dtype=float),
-                    np.full(len(disk_points), float(direction[2]), dtype=float),
+                    l_values,
+                    m_values,
+                    n_values,
                 )
             )
         return bundles
@@ -664,9 +703,9 @@ def _default_nonseq_reference_bundles_from_settings(
                 x_values,
                 y_values,
                 np.zeros(len(disk_points), dtype=float),
-                np.zeros(len(disk_points), dtype=float),
-                np.zeros(len(disk_points), dtype=float),
-                np.ones(len(disk_points), dtype=float),
+                cone_l,
+                cone_m,
+                cone_n,
             )
         )
     return bundles

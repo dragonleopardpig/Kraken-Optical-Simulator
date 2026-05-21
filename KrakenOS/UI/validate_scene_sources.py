@@ -1056,20 +1056,39 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         for path in getattr(nonseq_cone_rays, "CC", [])
         if np.asarray(path, dtype=float).ndim == 2 and np.asarray(path, dtype=float).shape[0] >= 1
     ]
+    nonseq_cone_dirs = []
+    for path in getattr(nonseq_cone_rays, "CC", []):
+        points = np.asarray(path, dtype=float)
+        if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+            continue
+        direction = points[1, :3] - points[0, :3]
+        norm = float(np.linalg.norm(direction))
+        if norm > 1e-12:
+            nonseq_cone_dirs.append(direction / norm)
     nonseq_cone_origin_span = (
         np.ptp(np.asarray(nonseq_cone_origins, dtype=float), axis=0)
         if nonseq_cone_origins
         else np.asarray((0.0, 0.0, 0.0), dtype=float)
     )
+    nonseq_cone_direction_span = (
+        np.ptp(np.asarray(nonseq_cone_dirs, dtype=float), axis=0)
+        if nonseq_cone_dirs
+        else np.asarray((0.0, 0.0, 0.0), dtype=float)
+    )
     checks.append(
         SceneSourceCheck(
-            "non-sequential Pupil/field scene launch uses a 3D reference aperture, not a point cone",
+            "non-sequential Pupil/field scene launch uses a 3D aperture cone, not a hidden parallel bundle",
             len(getattr(nonseq_cone_rays, "CC", [])) >= 5
             and float(nonseq_cone_origin_span[0]) > 1e-9
-            and float(nonseq_cone_origin_span[1]) > 1e-9,
+            and float(nonseq_cone_origin_span[1]) > 1e-9
+            and (
+                float(nonseq_cone_direction_span[0]) > 1e-9
+                or float(nonseq_cone_direction_span[1]) > 1e-9
+            ),
             (
                 f"rays={len(getattr(nonseq_cone_rays, 'CC', []))}, "
-                f"origin_span={np.round(nonseq_cone_origin_span, 6).tolist()}"
+                f"origin_span={np.round(nonseq_cone_origin_span, 6).tolist()}, "
+                f"direction_span={np.round(nonseq_cone_direction_span, 6).tolist()}"
             ),
         )
     )

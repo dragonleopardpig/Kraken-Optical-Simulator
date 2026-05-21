@@ -28,6 +28,7 @@ Focused UI screenshots in these pages are generated from the live Tk editor:
    working_with_library
    parax_tool
    pupilcalc_tool
+   cardinal_points
    pupil_patterns
    analysis_tools
    editable_table

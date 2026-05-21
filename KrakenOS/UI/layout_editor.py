@@ -10180,13 +10180,26 @@ class Kraken3DInspector(tk.Toplevel):
         self._current_scene_bundle = scene_bundle
 
         show_reference_surfaces = bool(self.show_reference_surfaces_var.get())
+        show_launch_reference_surface = bool(
+            self.editor._should_show_open3d_launch_reference_surface(system=system)
+        )
         mesh_items = list(
             self.editor._scene_surface_meshes(
                 system,
                 scene_bundle,
-                include_reference_surfaces=show_reference_surfaces,
+                include_reference_surfaces=show_reference_surfaces or show_launch_reference_surface,
             )
         )
+        if show_launch_reference_surface and not show_reference_surfaces:
+            mesh_items = [
+                mesh_item
+                for mesh_item in mesh_items
+                if str(getattr(getattr(mesh_item, "row", None), "surface", "") or "") not in {"Object", "Image"}
+                or (
+                    int(getattr(mesh_item, "row_index", -1)) == 0
+                    and str(getattr(getattr(mesh_item, "row", None), "surface", "") or "") == "Object"
+                )
+            ]
         rows = list(getattr(self.editor, "rows", []) or [])
         expected_physical_rows = {
             index
@@ -10238,6 +10251,7 @@ class Kraken3DInspector(tk.Toplevel):
             suspicious_sparse_rebuild=suspicious_sparse_rebuild,
             show_rays=bool(self.show_rays_var.get()),
             show_reference_surfaces=show_reference_surfaces,
+            show_launch_reference_surface=show_launch_reference_surface,
             show_detector_overlays=bool(self.show_detector_overlays_var.get()),
             show_terminal_diagnostics=bool(self.show_terminal_diagnostics_var.get()),
             show_placement_handles=bool(self.show_placement_handles_var.get()),
@@ -10342,6 +10356,8 @@ class Kraken3DInspector(tk.Toplevel):
                 row_index = -1
             mesh_opacity = float(getattr(mesh_item, "opacity", 1.0))
             row_surface = str(getattr(getattr(mesh_item, "row", None), "surface", "") or "")
+            if show_launch_reference_surface and not show_reference_surfaces and row_surface == "Object":
+                mesh_opacity = min(mesh_opacity, 0.18)
             if ray_visibility_requested and row_index >= 0:
                 if row_surface in {"Object", "Image"}:
                     mesh_opacity = min(mesh_opacity, 0.22)
@@ -60586,13 +60602,24 @@ class KrakenLayoutEditor(tk.Tk):
         return pairs
 
     def _should_use_default_finite_cone_source(self, *, system=None) -> bool:
-        """Allow the legacy finite cone only for non-sequential scene intent.
+        """Allow the default source cone only for non-sequential scene intent.
 
         `Pupil / field` is the ordered-surface sequential source model.  A
         nonzero source cone can still request extra non-sequential scene
-        coverage, but Open 3D maps that request to a reference aperture/pupil
-        launch rather than a physical point-emitter cone.
+        coverage, but Open 3D maps that request to an extended reference
+        aperture cone rather than a physical point-emitter cone.
         """
+        if self._current_source_model() != SOURCE_MODEL_DEFAULT:
+            return False
+        if float(self._current_source_cone_angle()) <= 1e-12:
+            return False
+        try:
+            trace_state = self._resolved_trace_mode(system=system)
+        except Exception:
+            trace_state = {}
+        return bool(trace_state.get("use_nonseq"))
+
+    def _should_show_open3d_launch_reference_surface(self, *, system=None) -> bool:
         if self._current_source_model() != SOURCE_MODEL_DEFAULT:
             return False
         if float(self._current_source_cone_angle()) <= 1e-12:
@@ -60877,6 +60904,19 @@ class KrakenLayoutEditor(tk.Tk):
         if self._current_source_model() != SOURCE_MODEL_DEFAULT:
             return [], 0
         ray_count = max(1, int(self._current_ray_count()))
+        cone_deg = float(self._current_source_cone_angle())
+        from KrakenOS.UI.source_trace_helpers import finite_cone_direction_samples
+
+        cone_l, cone_m, cone_n = finite_cone_direction_samples(
+            cone_deg,
+            ray_count,
+            pupil_pattern=self._current_pupil_pattern_label(),
+            display_orientation=self._current_display_orientation(),
+            pupil_rad=self._current_pupil_rad(),
+            pupil_theta=self._current_pupil_theta(),
+            seed=self._current_source_seed(),
+        )
+        ray_count = max(1, int(len(cone_l)))
         radius = max(float(self._current_source_radius()), 0.0)
         if radius <= 1e-9:
             radius = float(pupil_radius) if np.isfinite(float(pupil_radius)) else 0.0
@@ -60894,14 +60934,20 @@ class KrakenLayoutEditor(tk.Tk):
                 if norm <= 1e-12:
                     continue
                 direction /= norm
+                l_values, m_values, n_values = self._cone_directions_about_local_base(
+                    direction,
+                    cone_l,
+                    cone_m,
+                    cone_n,
+                )
                 bundles.append(
                     self._orient_source_points_and_dirs(
                         np.asarray(disk_pts[:, 0], dtype=float),
                         np.asarray(disk_pts[:, 1], dtype=float),
                         np.zeros(len(disk_pts), dtype=float),
-                        np.full(len(disk_pts), float(direction[0]), dtype=float),
-                        np.full(len(disk_pts), float(direction[1]), dtype=float),
-                        np.full(len(disk_pts), float(direction[2]), dtype=float),
+                        l_values,
+                        m_values,
+                        n_values,
                     )
                 )
         else:
@@ -60912,9 +60958,9 @@ class KrakenLayoutEditor(tk.Tk):
                         np.asarray(disk_pts[:, 0], dtype=float) + float(field_x),
                         np.asarray(disk_pts[:, 1], dtype=float) + float(field_y),
                         np.zeros(len(disk_pts), dtype=float),
-                        np.zeros(len(disk_pts), dtype=float),
-                        np.zeros(len(disk_pts), dtype=float),
-                        np.ones(len(disk_pts), dtype=float),
+                        cone_l,
+                        cone_m,
+                        cone_n,
                     )
                 )
         return bundles, int(len(disk_pts))
@@ -61013,9 +61059,9 @@ class KrakenLayoutEditor(tk.Tk):
         use_legacy_default_cone = self._should_use_default_finite_cone_source(system=system)
         if mode == "world_envelope" and use_legacy_default_cone:
             self.append_debug(
-                "Pupil / field source cone is a 2D/analysis launch label in 3D scene mode; "
-                "Open 3D traces the real pupil envelope. Use Random point cone or a physical "
-                "scene source for a point-emitter cone."
+                "Pupil / field source cone in 3D scene mode launches an extended reference "
+                "aperture cone. Use Random point cone or a physical scene source for a "
+                "single-point emitter cone."
             )
             reference_bundles, reference_ray_count = self._build_default_nonseq_reference_world_bundles(pupil_radius)
             if reference_bundles:
@@ -62374,6 +62420,23 @@ class KrakenLayoutEditor(tk.Tk):
             v_norm = 1.0
         v = v / v_norm
         return u, v, w
+
+    @staticmethod
+    def _cone_directions_about_local_base(base_direction, l_values, m_values, n_values):
+        u, v, w = KrakenLayoutEditor._source_frame_vectors_from_direction(base_direction)
+        l_arr, m_arr, n_arr = (
+            np.asarray(values, dtype=float).reshape(-1)
+            for values in (l_values, m_values, n_values)
+        )
+        dirs = (
+            l_arr[:, None] * u[None, :]
+            + m_arr[:, None] * v[None, :]
+            + n_arr[:, None] * w[None, :]
+        )
+        norms = np.linalg.norm(dirs, axis=1)
+        norms = np.where(norms > 1e-12, norms, 1.0)
+        dirs = dirs / norms[:, None]
+        return dirs[:, 0], dirs[:, 1], dirs[:, 2]
 
     @staticmethod
     def _orient_source_points_and_dirs_for_source(

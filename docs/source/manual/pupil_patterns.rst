@@ -29,7 +29,10 @@ useful for a 2D plot or a tangential/sagittal aberration slice, but they are
 not a physical 3D launch distribution by themselves.
 
 When ``Pupil / field`` is used as a non-sequential source with a nonzero
-``Source cone`` in Open 3D, the UI therefore uses a 3D angular-pupil launch.
+``Source cone`` in Open 3D, the UI samples the Object/source reference aperture
+in 3D and applies the cone angle around each sampled field direction. This
+keeps the launch visible as a finite aperture-cone bundle instead of silently
+turning it into a hidden infinity/parallel source or a one-point emitter cone.
 If one of the section-only fan labels is selected, the 3D scene trace maps it
 to the default filled angular cone. This keeps Open 3D as a physical scene
 trace instead of flattening the prism or CAD workflow to a 2D section fan.
