@@ -24,7 +24,7 @@ Drawing conventions
 
 KrakenOS exposes all of these landmarks at runtime through
 ``KrakenOS.PupilCalc`` (``Pup.PosPupInp``, ``Pup.PosPupOut``,
-``Pup.PPP``, ``Pup.PPA``, ``Pup.EFFL``; see :doc:`pupilcalc_tool` and
+``Pup.PPP``, ``Pup.PPA``, ``Pup.EFFL``; see :doc:`../manual/pupilcalc_tool` and
 ``KrakenOS/PupilTool.py``), but the constructions below explain *why*
 those numbers are what they are.
 
@@ -43,7 +43,7 @@ planes** :math:`P, P'`, and two **nodal points** :math:`N, N'`. In air
 principal points (:math:`N \equiv P`, :math:`N' \equiv P'`), so it is
 common to see only four labels on a diagram.
 
-.. figure:: ../_static/manual/cardinal_points/01_overview.svg
+.. figure:: ../_static/knowledge_base/cardinal_points/01_overview.svg
    :alt: Optical system with F, P, N, N', P', F' marked
    :align: center
    :width: 100%
@@ -75,7 +75,7 @@ axis**, then look at what comes out. The exit point on the axis is the
 *rear focal point* :math:`F'`; the height at which the construction
 extensions cross is the *rear principal plane* :math:`P'`.
 
-.. figure:: ../_static/manual/cardinal_points/02_back_focal.svg
+.. figure:: ../_static/knowledge_base/cardinal_points/02_back_focal.svg
    :alt: Step-by-step construction of F' and P'
    :align: center
    :width: 100%
@@ -102,7 +102,7 @@ axis** and ask where it must have come from. By the time-reversal
 symmetry of geometric optics, any such ray must have entered at the
 front focal point :math:`F`.
 
-.. figure:: ../_static/manual/cardinal_points/03_front_focal.svg
+.. figure:: ../_static/knowledge_base/cardinal_points/03_front_focal.svg
    :alt: Step-by-step construction of F and P
    :align: center
    :width: 100%
@@ -130,7 +130,7 @@ is :math:`+1`. In air the nodal points coincide with the principal
 points; they only separate when the object- and image-space refractive
 indices differ (e.g. an object in air, image in water).
 
-.. figure:: ../_static/manual/cardinal_points/04_nodal.svg
+.. figure:: ../_static/knowledge_base/cardinal_points/04_nodal.svg
    :alt: Nodal-point construction
    :align: center
    :width: 100%
@@ -159,7 +159,7 @@ on-axis ray bundle. The **entrance pupil** EP and **exit pupil** XP
 are the images of that stop formed by the optics **in front of** the
 stop and **behind** the stop, respectively.
 
-.. figure:: ../_static/manual/cardinal_points/05_pupils.svg
+.. figure:: ../_static/knowledge_base/cardinal_points/05_pupils.svg
    :alt: Imaging the aperture stop to find EP and XP
    :align: center
    :width: 100%
@@ -180,7 +180,7 @@ The pupil magnifications
    m_{\mathrm{enter}} = \frac{\theta_{0}}{\theta_{\mathrm{stop}}}, \qquad
    m_{\mathrm{exit}}  = \frac{\theta_{0}}{\theta_{\mathrm{image}}},
 
-introduced in :doc:`pupilcalc_tool`, are exactly the lateral
+introduced in :doc:`../manual/pupilcalc_tool`, are exactly the lateral
 magnifications of the front-side and back-side stop-imaging steps
 above. KrakenOS computes them numerically by tracing the same fan of
 rays shown in ``PupilCalc.__init__`` and reading ``Pup.RadPupInp``,
@@ -203,7 +203,7 @@ conjugacy — also hit the centres of EP (on the object side) and XP
 (on the image side). Extend it both ways and read off the
 axis-crossings.
 
-.. figure:: ../_static/manual/cardinal_points/06_chief_marginal.svg
+.. figure:: ../_static/knowledge_base/cardinal_points/06_chief_marginal.svg
    :alt: Chief / marginal ray construction with EP and XP
    :align: center
    :width: 100%
@@ -230,7 +230,7 @@ space and :math:`D_{\mathrm{EP}}` the entrance-pupil diameter.
 7. Putting it all together
 --------------------------
 
-.. figure:: ../_static/manual/cardinal_points/07_summary.svg
+.. figure:: ../_static/knowledge_base/cardinal_points/07_summary.svg
    :alt: All cardinal points and pupils together
    :align: center
    :width: 100%
@@ -253,6 +253,6 @@ follows:
   of EP and XP returned by ``PupilCalc``; ``Pup.PPA``, ``Pup.PPP``
   hold the principal-plane positions; ``Pup.EFFL`` is :math:`f'`.
 
-See :doc:`pupilcalc_tool` for the numerical extraction, and
-:doc:`pupil_patterns` for how a chosen EP / chief-ray axis is then
+See :doc:`../manual/pupilcalc_tool` for the numerical extraction, and
+:doc:`../manual/pupil_patterns` for how a chosen EP / chief-ray axis is then
 populated with sample rays.

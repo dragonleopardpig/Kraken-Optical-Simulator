@@ -54,7 +54,7 @@ The hallmark is **near-symmetry around a central stop**, with a cemented
 doublet on each side of the aperture. The symmetry naturally cancels the odd
 aberrations (coma, distortion, lateral chromatic).
 
-.. figure:: ../_static/manual/lens_design/01_double_gauss.svg
+.. figure:: ../_static/knowledge_base/lens_design/01_double_gauss.svg
    :alt: Double Gauss schematic showing front and rear cemented doublets near-symmetric around the aperture stop
    :width: 100%
 
@@ -81,7 +81,7 @@ It is compact, sharp on-axis at moderate apertures (typically f/2.8 – f/4),
 and very cheap to manufacture, which is why countless "kit" and "pancake"
 lenses are Tessar derivatives.
 
-.. figure:: ../_static/manual/lens_design/02_tessar.svg
+.. figure:: ../_static/knowledge_base/lens_design/02_tessar.svg
    :alt: Tessar schematic with positive front, negative middle, stop, and rear cemented doublet
    :width: 100%
 
@@ -99,7 +99,7 @@ gave dramatically higher contrast, and it still produces a very specific
 "Sonnar look" used in fast portrait and short-tele lenses (the Zeiss 85 mm
 f/2 and many 50 mm rangefinder lenses).
 
-.. figure:: ../_static/manual/lens_design/03_sonnar.svg
+.. figure:: ../_static/knowledge_base/lens_design/03_sonnar.svg
    :alt: Sonnar schematic showing thick cemented groups with few air-glass surfaces
    :width: 100%
 
@@ -118,7 +118,7 @@ negative – positive sequence with the stop between the negative and rear
 positive elements. It appears in low-cost cameras, projector lenses, and as
 the conceptual ancestor of the Tessar.
 
-.. figure:: ../_static/manual/lens_design/04_cooke_triplet.svg
+.. figure:: ../_static/knowledge_base/lens_design/04_cooke_triplet.svg
    :alt: Cooke Triplet schematic with three air-spaced singlets in a positive negative positive sequence
    :width: 100%
 
@@ -137,7 +137,7 @@ length. This is what allows a 24 mm wide-angle lens to clear the swinging
 mirror of a 35 mm SLR. Most SLR wide-angles, and many short-focal-length
 machine-vision lenses on large sensors, are retrofocus.
 
-.. figure:: ../_static/manual/lens_design/05_retrofocus.svg
+.. figure:: ../_static/knowledge_base/lens_design/05_retrofocus.svg
    :alt: Retrofocus schematic showing negative front group and positive rear group with back focal distance longer than focal length
    :width: 100%
 
@@ -156,7 +156,7 @@ length**. Most lenses called "telephotos" in casual speech are simply
 long-focal-length lenses, but the optical telephoto layout is what keeps a
 600 mm sports lens from being 600 mm long.
 
-.. figure:: ../_static/manual/lens_design/06_telephoto.svg
+.. figure:: ../_static/knowledge_base/lens_design/06_telephoto.svg
    :alt: Telephoto schematic showing positive front group followed by negative rear group with physical length shorter than focal length
    :width: 100%
 
@@ -175,7 +175,7 @@ extremely fast for its era (around f/3.6) but has strong, uncorrected field
 curvature – which is exactly what gives it its famously swirly, vignetted
 bokeh. Several modern lenses revive the design for that look.
 
-.. figure:: ../_static/manual/lens_design/07_petzval.svg
+.. figure:: ../_static/knowledge_base/lens_design/07_petzval.svg
    :alt: Petzval schematic with two widely-spaced cemented doublets and a curved focal surface
    :width: 100%
 
@@ -305,7 +305,7 @@ consequence is that **magnification does not change with object distance**:
 a part that is slightly closer or farther than nominal still images at the
 same size. This is essential for non-contact dimensional measurement.
 
-.. figure:: ../_static/manual/lens_design/08_telecentric.svg
+.. figure:: ../_static/knowledge_base/lens_design/08_telecentric.svg
    :alt: Object-space telecentric schematic showing parallel chief rays in object space, large front element, and stop placed at the rear focal point of the front group
    :width: 100%
 

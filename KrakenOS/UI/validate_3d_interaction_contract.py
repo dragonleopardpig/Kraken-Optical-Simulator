@@ -179,6 +179,7 @@ def main() -> int:
     editor_rotate = inspect.getsource(KrakenLayoutEditor.rotate_scene_row_pose_world_axis)
     default_uncoated = inspect.getsource(KrakenLayoutEditor._default_uncoated_optical_solid_face_metadata)
     editor_step_translate = inspect.getsource(KrakenLayoutEditor.translate_step_overlay)
+    editor_row_translate_vector = inspect.getsource(KrakenLayoutEditor.translate_scene_row_pose_vector)
     editor_step_promote = inspect.getsource(KrakenLayoutEditor.promote_imported_step_to_optical_solid_row)
     editor_step_snap = inspect.getsource(KrakenLayoutEditor.snap_step_overlay_center_to_world_point)
     editor_step_snap_target = inspect.getsource(KrakenLayoutEditor.snap_step_overlay_center_to_scene_target)
@@ -200,6 +201,9 @@ def main() -> int:
     badge_update = inspect.getsource(Kraken3DInspector._update_mode_badge)
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
     stl_refresh = inspect.getsource(Kraken3DInspector._refresh_after_stl_pose_change)
+    row_carry_pick = inspect.getsource(Kraken3DInspector._row_carry_index_from_current_pick)
+    row_carry_apply = inspect.getsource(Kraken3DInspector._apply_row_carry_drag_motion)
+    row_carry_finish = inspect.getsource(Kraken3DInspector._finish_row_carry_drag)
     snapshot = inspect.getsource(Kraken3DInspector.save_snapshot)
     refresh_from_editor = inspect.getsource(Kraken3DInspector.refresh_from_editor)
     endpoint_actor = inspect.getsource(Kraken3DInspector._add_ray_endpoint_actor)
@@ -432,7 +436,7 @@ def main() -> int:
             "Open 3D STEP promotion refreshes and highlights the created row",
             "promote_imported_step_to_optical_solid_row" in step_promote_helper
             and "highlight_row(row_index)" in step_promote_helper
-            and "Assign optical faces/material" in step_promote,
+            and "Hold the promoted solid to move it" in step_promote,
         ),
         (
             "Open 3D STEP promotion and face assignment dirty the 2D refresh path",
@@ -629,6 +633,28 @@ def main() -> int:
         ),
         ("Open 3D sync receives the same SceneBundle as 2D", "scene_bundle=bundle" in editor_refresh_plot and "refresh_scene(" in refresh_3d_sync),
         ("shared scene sampling supports full-pupil and world-envelope modes", "full_pupil" in preview_sampling and "world_envelope" in preview_sampling),
+        (
+            "source cone sampling is preserved when a promoted scene becomes non-sequential",
+            "_should_use_default_finite_cone_source" in preview_sampling
+            and 'return "display_slice"' in preview_sampling,
+        ),
+        (
+            "promoted optical solid rows support direct hold-drag movement",
+            "_row_carry_index_from_current_pick" in bindings
+            and "_row_carry_drag_state" in bindings
+            and "_file_backed_stl_row_at" in row_carry_pick
+            and "translate_scene_row_pose_vector" in row_carry_apply
+            and "record_history=False" in row_carry_apply
+            and "_sync_table()" in row_carry_finish
+            and "last_translate_mode" in editor_row_translate_vector,
+        ),
+        (
+            "promoted optical solid display uses light body and strong edges",
+            "row_index in file_backed_rows" in refresh
+            and "mesh_opacity = min(max(mesh_opacity, 0.14), 0.28)" in refresh
+            and "line_width=2.0" in refresh
+            and "line_width=2.0 if index in file_backed_rows else 1.0" in legacy_open_3d,
+        ),
         ("non-sequential scene bundles do not install YZ-only branch display overrides", 'not bool(trace_state.get("use_nonseq"))' in editor_build_scene_bundle and "_branch_output_display_path_overrides(rays)" in editor_build_scene_bundle),
         ("Open 3D ray records preserve terminal status", "ray_path_terminal_status_from_events(path)" in scene_ray_records),
         ("Open 3D missed detector lines use status styling", "missed_detector" in ray_terminal_style and "line_opacity" in ray_terminal_style),
@@ -781,7 +807,8 @@ def main() -> int:
             "file-backed optical STEP solids remain transparent during ray-on refresh",
             "file_backed_optical_solid" in editor_surface_meshes
             and "mesh_opacity = 0.30 if file_backed_optical_solid" in editor_surface_meshes
-            and "mesh_opacity = min(max(mesh_opacity, 0.24), 0.36)" in refresh
+            and "mesh_opacity = min(max(mesh_opacity, 0.14), 0.28)" in refresh
+            and "mesh_opacity = min(max(mesh_opacity, 0.14), 0.24)" in refresh
             and "elif row_index in file_backed_rows" in refresh,
         ),
         (

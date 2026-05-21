@@ -1037,8 +1037,8 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
     nonseq_cone_detectors = nonseq_cone_editor._scene_detector_surface_indices({"use_nonseq": True})
     checks.append(
         SceneSourceCheck(
-            "non-sequential pupil/field cone uses world-envelope sampling and does not auto-promote Image to detector",
-            nonseq_cone_2d_mode == "world_envelope" and 2 not in nonseq_cone_detectors,
+            "non-sequential pupil/field source cone preserves point-cone sampling and does not auto-promote Image to detector",
+            nonseq_cone_2d_mode == "display_slice" and 2 not in nonseq_cone_detectors,
             f"mode={nonseq_cone_2d_mode}, detectors={sorted(nonseq_cone_detectors)}",
         )
     )
@@ -1077,10 +1077,9 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
     )
     checks.append(
         SceneSourceCheck(
-            "non-sequential Pupil/field scene launch uses a 3D aperture cone, not a hidden parallel bundle",
+            "non-sequential Pupil/field source cone stays a point-cone launch after scene promotion",
             len(getattr(nonseq_cone_rays, "CC", [])) >= 5
-            and float(nonseq_cone_origin_span[0]) > 1e-9
-            and float(nonseq_cone_origin_span[1]) > 1e-9
+            and np.allclose(nonseq_cone_origin_span, 0.0, atol=1e-9)
             and (
                 float(nonseq_cone_direction_span[0]) > 1e-9
                 or float(nonseq_cone_direction_span[1]) > 1e-9

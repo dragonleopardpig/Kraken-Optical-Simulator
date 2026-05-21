@@ -5196,6 +5196,11 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_hold_candidate_label: str | None = None
         self._step_carry_hold_press_xy: tuple[int, int] | None = None
         self._step_carry_hold_pick_world: tuple[float, float, float] | None = None
+        self._row_carry_hold_after_id: str | None = None
+        self._row_carry_hold_candidate_index: int | None = None
+        self._row_carry_hold_press_xy: tuple[int, int] | None = None
+        self._row_carry_hold_pick_world: tuple[float, float, float] | None = None
+        self._row_carry_drag_state: dict[str, object] | None = None
         self._step_carry_grip_actor = None
         self._selected_step_feature_label: str | None = None
         self._selected_step_feature_center_world: tuple[float, float, float] | None = None
@@ -5844,10 +5849,15 @@ class Kraken3DInspector(tk.Toplevel):
             else:
                 self._placement_drag_state = self._placement_drag_state_from_current_pick()
                 self._step_carry_drag_state = None
+                self._row_carry_drag_state = None
                 if self._placement_drag_state is None:
                     step_label = self._step_carry_label_from_current_pick()
                     if step_label is not None:
                         self._arm_step_carry_hold(step_label, (int(event.x), int(event.y)))
+                    else:
+                        row_index = self._row_carry_index_from_current_pick()
+                        if row_index is not None:
+                            self._arm_row_carry_hold(row_index, (int(event.x), int(event.y)))
             return "break"
 
         def left_motion(event):
@@ -5878,6 +5888,10 @@ class Kraken3DInspector(tk.Toplevel):
                     # it must update the drag baseline itself.
                     self._left_drag_last_xy = current
                     return "break"
+                elif self._row_carry_drag_state is not None:
+                    self._apply_row_carry_drag_motion(current_xy=current)
+                    self._left_drag_last_xy = current
+                    return "break"
                 elif self._step_carry_hold_candidate_label is not None:
                     after_id = self._step_carry_hold_after_id
                     self._step_carry_hold_after_id = None
@@ -5889,6 +5903,19 @@ class Kraken3DInspector(tk.Toplevel):
                     self._activate_step_carry_hold()
                     if self._step_carry_drag_state is not None:
                         self._apply_step_carry_drag_motion(dx, dy, current_xy=current)
+                        self._left_drag_last_xy = current
+                        return "break"
+                elif self._row_carry_hold_candidate_index is not None:
+                    after_id = self._row_carry_hold_after_id
+                    self._row_carry_hold_after_id = None
+                    if after_id is not None:
+                        try:
+                            self._vtk_widget.after_cancel(after_id)
+                        except Exception:
+                            pass
+                    self._activate_row_carry_hold()
+                    if self._row_carry_drag_state is not None:
+                        self._apply_row_carry_drag_motion(current_xy=current)
                         self._left_drag_last_xy = current
                         return "break"
                 else:
@@ -5903,13 +5930,16 @@ class Kraken3DInspector(tk.Toplevel):
             placement_drag_state = self._placement_drag_state
             step_carry_drag_state = self._step_carry_drag_state
             step_carry_follow_state = self._step_carry_follow_state
+            row_carry_drag_state = self._row_carry_drag_state
             self._cancel_step_carry_hold_timer()
+            self._cancel_row_carry_hold_timer()
             self._left_drag_active = False
             self._left_drag_start_xy = None
             self._left_drag_last_xy = None
             self._left_drag_moved = False
             self._placement_drag_state = None
             self._step_carry_drag_state = None
+            self._row_carry_drag_state = None
             self._ctrl_left_camera_active = False
             if step_carry_follow_state is not None:
                 if should_pick and not ctrl_active:
@@ -5919,6 +5949,8 @@ class Kraken3DInspector(tk.Toplevel):
                 return "break"
             if step_carry_drag_state is not None:
                 self._finish_step_carry_drag(step_carry_drag_state)
+            elif row_carry_drag_state is not None:
+                self._finish_row_carry_drag(row_carry_drag_state)
             elif should_pick and not ctrl_active:
                 self._on_left_button_press(None, None)
             elif should_pick and ctrl_active:
@@ -5930,6 +5962,7 @@ class Kraken3DInspector(tk.Toplevel):
         def middle_press(event):
             set_event_info(event)
             self._cancel_step_carry_hold_timer()
+            self._cancel_row_carry_hold_timer()
             self._middle_drag_active = True
             self._middle_drag_last_xy = (int(event.x), int(event.y))
             return "break"
@@ -6739,6 +6772,114 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             pass
 
+    def _cancel_row_carry_hold_timer(self) -> None:
+        after_id = self._row_carry_hold_after_id
+        self._row_carry_hold_after_id = None
+        self._row_carry_hold_candidate_index = None
+        self._row_carry_hold_press_xy = None
+        self._row_carry_hold_pick_world = None
+        if after_id is None or self._vtk_widget is None:
+            return
+        try:
+            self._vtk_widget.after_cancel(after_id)
+        except Exception:
+            pass
+
+    def _row_actor_center_world(self, row_index: int) -> np.ndarray | None:
+        bounds_min = np.asarray((np.inf, np.inf, np.inf), dtype=float)
+        bounds_max = np.asarray((-np.inf, -np.inf, -np.inf), dtype=float)
+        found = False
+        for actor_key in list(self._row_actor_map.get(int(row_index), []) or []):
+            actor = self._actor_by_key.get(actor_key)
+            if actor is None:
+                continue
+            try:
+                bounds = np.asarray(actor.GetBounds(), dtype=float).reshape(6)
+            except Exception:
+                continue
+            if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[0] > bounds[1]:
+                continue
+            bounds_min = np.minimum(bounds_min, (bounds[0], bounds[2], bounds[4]))
+            bounds_max = np.maximum(bounds_max, (bounds[1], bounds[3], bounds[5]))
+            found = True
+        if not found:
+            return None
+        return np.asarray(0.5 * (bounds_min + bounds_max), dtype=float)
+
+    def _row_carry_index_from_current_pick(self) -> int | None:
+        self._row_carry_hold_pick_world = None
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return None
+        if (
+            self._source_target_pick_mode
+            or self._center_row_to_ray_mode
+            or self._placement_target_pick_mode
+            or self._placement_orient_pick_mode
+            or self._placement_orient_ray_mode
+            or self._step_carry_snap_ray_mode
+            or self._step_carry_snap_target_mode
+            or self._step_normal_axis_pick_mode
+            or bool(getattr(self.editor, "_cad_axis_pick_any", False))
+        ):
+            return None
+        try:
+            if int(self._vtk_interactor.GetControlKey()):
+                return None
+        except Exception:
+            pass
+        try:
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor = self._picker.GetActor()
+            actor_key = self._actor_key(actor)
+            pick_world = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if actor_key is None:
+            return None
+        if (
+            actor_key in self._actor_step_map
+            or actor_key in self._actor_step_rotate_map
+            or actor_key in self._actor_placement_move_map
+            or actor_key in self._actor_placement_rotate_map
+            or actor_key in self._actor_optical_axis_map
+            or actor_key in self._actor_ray_map
+        ):
+            return None
+        row_index = self._actor_row_map.get(actor_key)
+        if row_index is None:
+            return None
+        try:
+            row_index = int(row_index)
+        except Exception:
+            return None
+        if self.editor._file_backed_stl_row_at(row_index) is None:
+            return None
+        if pick_world.size >= 3 and np.all(np.isfinite(pick_world[:3])):
+            self._row_carry_hold_pick_world = tuple(float(value) for value in pick_world[:3])
+        return row_index
+
+    def _arm_row_carry_hold(self, row_index: int, press_xy: tuple[int, int]) -> None:
+        if self._vtk_widget is None:
+            return
+        try:
+            row_index = int(row_index)
+        except Exception:
+            return
+        if self.editor._file_backed_stl_row_at(row_index) is None:
+            return
+        self._cancel_row_carry_hold_timer()
+        self._row_carry_hold_candidate_index = row_index
+        self._row_carry_hold_press_xy = (int(press_xy[0]), int(press_xy[1]))
+        self.status_var.set(f"Hold S{row_index} briefly to lift the promoted optical solid; drag freely; release to drop.")
+        try:
+            self._row_carry_hold_after_id = self._vtk_widget.after(
+                self._step_carry_hold_delay_ms(),
+                self._activate_row_carry_hold,
+            )
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D row carry hold timer failed: {exc}")
+
     def _step_carry_label_from_current_pick(self) -> str | None:
         self._step_carry_hold_pick_world = None
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
@@ -6956,6 +7097,203 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set(f"{label.upper()} STEP center gripped: drag in snapped {spacing:.6g} mm steps; release to drop.")
         else:
             self.status_var.set(f"{label.upper()} STEP center gripped: drag freely on the 3D plane; release to drop.")
+
+    def _new_row_carry_motion_state(self, row_index: int) -> dict[str, object] | None:
+        try:
+            row_index = int(row_index)
+        except Exception:
+            return None
+        if self.editor._file_backed_stl_row_at(row_index) is None:
+            return None
+        center_world = self._row_actor_center_world(row_index)
+        if center_world is None:
+            try:
+                row = self.editor.rows[row_index]
+                center_world = np.asarray((float(row.desp_x), float(row.desp_y), float(row.desp_z)), dtype=float)
+            except Exception:
+                center_world = None
+        plane_normal = self._camera_view_normal()
+        if center_world is None or plane_normal is None:
+            return None
+        center_world = np.asarray(center_world, dtype=float).reshape(-1)[:3]
+        plane_normal = np.asarray(plane_normal, dtype=float).reshape(-1)[:3]
+        if center_world.size < 3 or plane_normal.size < 3:
+            return None
+        if not (np.all(np.isfinite(center_world[:3])) and np.all(np.isfinite(plane_normal[:3]))):
+            return None
+        return {
+            "row_index": row_index,
+            "center_world": tuple(float(value) for value in center_world[:3]),
+            "start_center_world": tuple(float(value) for value in center_world[:3]),
+            "drag_plane_origin": tuple(float(value) for value in center_world[:3]),
+            "drag_plane_normal": tuple(float(value) for value in plane_normal[:3]),
+            "applied_steps": 0,
+            "history_started": False,
+        }
+
+    def _activate_row_carry_hold(self) -> None:
+        self._row_carry_hold_after_id = None
+        row_index = self._row_carry_hold_candidate_index
+        press_xy = self._row_carry_hold_press_xy
+        pick_world = self._row_carry_hold_pick_world
+        self._row_carry_hold_candidate_index = None
+        self._row_carry_hold_press_xy = None
+        self._row_carry_hold_pick_world = None
+        if not self._left_drag_active or row_index is None:
+            return
+        state = self._new_row_carry_motion_state(int(row_index))
+        if state is None:
+            self.status_var.set(f"Carry S{int(row_index)}: selected row is not a movable promoted optical solid.")
+            return
+        center_world = np.asarray(state["center_world"], dtype=float).reshape(3)
+        plane_normal = np.asarray(state["drag_plane_normal"], dtype=float).reshape(3)
+        anchor_xy = self._left_drag_last_xy or press_xy
+        anchor_world = None
+        if anchor_xy is not None:
+            anchor_world = self._cursor_plane_point(anchor_xy, center_world[:3], plane_normal[:3])
+        if anchor_world is None and pick_world is not None:
+            try:
+                anchor_world = np.asarray(pick_world, dtype=float).reshape(-1)[:3]
+            except Exception:
+                anchor_world = None
+        if anchor_world is None:
+            anchor_world = center_world[:3]
+        state["drag_anchor_world"] = tuple(float(value) for value in np.asarray(anchor_world, dtype=float).reshape(-1)[:3])
+        state["grip_world"] = tuple(float(value) for value in center_world[:3])
+        self._row_carry_drag_state = state
+        self._step_carry_drag_state = None
+        self._step_carry_follow_state = None
+        self._set_step_carry_cursor(True)
+        self._show_step_carry_grip_marker(center_world[:3])
+        self.editor._select_table_row(int(row_index))
+        self.highlight_row(int(row_index))
+        self._update_mode_badge()
+        self.status_var.set(f"S{int(row_index)} gripped: drag the promoted optical solid freely; release to drop.")
+
+    def _translate_row_actors(self, row_index: int, delta_xyz) -> int:
+        try:
+            delta = np.asarray(delta_xyz, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return 0
+        if delta.size < 3 or not np.all(np.isfinite(delta[:3])):
+            return 0
+        moved = 0
+        for actor_key in list(dict.fromkeys(self._row_actor_map.get(int(row_index), []) or [])):
+            actor = self._actor_by_key.get(actor_key)
+            if actor is None:
+                continue
+            try:
+                actor.AddPosition(float(delta[0]), float(delta[1]), float(delta[2]))
+                moved += 1
+            except Exception as exc:
+                self.editor.append_debug(f"3D row carry actor move failed for S{int(row_index)}: {exc}")
+        if moved:
+            try:
+                self._renderer.ResetCameraClippingRange()
+            except Exception:
+                pass
+            self.render()
+        return moved
+
+    def _apply_row_carry_drag_motion(self, *, current_xy: tuple[int, int] | None = None) -> None:
+        state = self._row_carry_drag_state
+        if state is None or current_xy is None:
+            return
+        try:
+            row_index = int(state.get("row_index", -1))
+            current_center = np.asarray(state.get("center_world"), dtype=float).reshape(-1)[:3]
+            start_center = np.asarray(state.get("start_center_world"), dtype=float).reshape(-1)[:3]
+            plane_origin = np.asarray(state.get("drag_plane_origin"), dtype=float).reshape(-1)[:3]
+            plane_normal = np.asarray(state.get("drag_plane_normal"), dtype=float).reshape(-1)[:3]
+            anchor_world = np.asarray(state.get("drag_anchor_world"), dtype=float).reshape(-1)[:3]
+        except Exception:
+            return
+        if (
+            row_index < 0
+            or current_center.size < 3
+            or start_center.size < 3
+            or plane_origin.size < 3
+            or plane_normal.size < 3
+            or anchor_world.size < 3
+            or not np.all(np.isfinite(current_center[:3]))
+            or not np.all(np.isfinite(start_center[:3]))
+            or not np.all(np.isfinite(plane_origin[:3]))
+            or not np.all(np.isfinite(plane_normal[:3]))
+            or not np.all(np.isfinite(anchor_world[:3]))
+        ):
+            return
+        cursor_world = self._cursor_plane_point(current_xy, plane_origin[:3], plane_normal[:3])
+        if cursor_world is None:
+            return
+        target_center = start_center[:3] + (np.asarray(cursor_world[:3], dtype=float) - anchor_world[:3])
+        delta = np.asarray(target_center[:3] - current_center[:3], dtype=float)
+        if not np.all(np.isfinite(delta[:3])) or not np.any(np.abs(delta[:3]) > 1e-12):
+            return
+        _scene_center, scene_span = self._scene_bounds()
+        max_delta = max(float(scene_span) * 4.0, 100.0)
+        delta_norm = float(np.linalg.norm(delta[:3]))
+        if not np.isfinite(delta_norm) or delta_norm > max_delta:
+            self.editor.append_debug(
+                f"Open 3D row carry ignored implausible drag-plane jump for S{row_index}: "
+                f"|delta|={delta_norm:.6g} mm, limit={max_delta:.6g} mm."
+            )
+            state["drag_anchor_world"] = tuple(float(value) for value in cursor_world[:3])
+            state["start_center_world"] = tuple(float(value) for value in current_center[:3])
+            return
+        if not bool(state.get("history_started", False)):
+            try:
+                self.editor._begin_history_capture()
+                state["history_started"] = True
+            except Exception:
+                pass
+        try:
+            self.editor.translate_scene_row_pose_vector(
+                row_index,
+                delta[:3],
+                record_history=False,
+                sync_table=False,
+            )
+        except Exception as exc:
+            self.status_var.set(f"Row carry failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D row carry failed: {exc}")
+            return
+        if self._translate_row_actors(row_index, delta[:3]) <= 0:
+            self.refresh_from_editor()
+        self._update_step_carry_grip_after_delta(state, delta[:3])
+        state["center_world"] = tuple(float(value) for value in target_center[:3])
+        state["applied_steps"] = int(state.get("applied_steps", 0)) + 1
+
+    def _finish_row_carry_drag(self, state: dict[str, object]) -> None:
+        try:
+            row_index = int(state.get("row_index", -1))
+            applied_steps = int(state.get("applied_steps", 0))
+        except Exception:
+            return
+        try:
+            self.editor._commit_history_capture()
+        except Exception:
+            pass
+        self._row_carry_drag_state = None
+        self._set_step_carry_cursor(False)
+        self._clear_step_carry_grip_marker(render=False)
+        self._update_mode_badge()
+        if row_index >= 0:
+            self._stl_placement_row_index = row_index
+            self._stl_placement_dirty = True
+            try:
+                self.editor._sync_table()
+                self.editor._select_table_row(row_index)
+            except Exception:
+                pass
+        if applied_steps <= 0:
+            self.status_var.set(f"S{row_index} dropped: no movement.")
+            return
+        try:
+            self.refresh_from_editor()
+            self.highlight_row(row_index)
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D row carry final refresh failed: {exc}")
+        self.status_var.set(f"S{row_index} dropped after free promoted-solid movement.")
 
     def _current_widget_pointer_xy(self) -> tuple[int, int] | None:
         if self._vtk_widget is not None:
@@ -8364,6 +8702,7 @@ class Kraken3DInspector(tk.Toplevel):
             or self._placement_orient_ray_mode
             or self._center_row_to_ray_mode
             or self._placement_drag_state is not None
+            or self._row_carry_drag_state is not None
         )
 
     def _toggle_rotation_handles(self) -> None:
@@ -8489,6 +8828,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._close_step_rotation_handler()
         self._step_carry_active_label = None
         self._step_carry_follow_state = None
+        self._row_carry_drag_state = None
+        self._cancel_row_carry_hold_timer()
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
         self._step_normal_axis_pick_mode = False
@@ -8580,7 +8921,7 @@ class Kraken3DInspector(tk.Toplevel):
         path = Path(str(result.get("mesh_path", "")))
         self.status_var.set(
             f"Accepted {label.upper()} STEP placement as optical solid row S{row_index}: {path.name}. "
-            "Use right-click face assignment or Faces before tracing final physics."
+            "Hold the promoted solid to move it; use right-click face assignment or Faces before tracing final physics."
         )
 
     def promote_selected_step_to_optical_solid_row(self) -> None:
@@ -8596,7 +8937,7 @@ class Kraken3DInspector(tk.Toplevel):
         path = Path(str(result.get("mesh_path", "")))
         self.status_var.set(
             f"Promoted {label.upper()} STEP to optical solid row S{row_index}: {path.name}. "
-            "Assign optical faces/material, then Update to trace it."
+            "Hold the promoted solid to move it; assign optical faces/material, then Update to trace it."
         )
 
     def start_selected_step_carry(self) -> None:
@@ -8857,6 +9198,7 @@ class Kraken3DInspector(tk.Toplevel):
     def stop_step_carry(self) -> None:
         label = self._step_carry_active_label
         self._cancel_step_carry_hold_timer()
+        self._cancel_row_carry_hold_timer()
         try:
             self.editor._commit_history_capture()
         except Exception:
@@ -8864,6 +9206,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_active_label = None
         self._step_carry_drag_state = None
         self._step_carry_follow_state = None
+        self._row_carry_drag_state = None
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
         self._step_carry_grid_label = None
@@ -8887,6 +9230,8 @@ class Kraken3DInspector(tk.Toplevel):
             labels.append("STEP normal axis pick")
         if self._step_carry_hold_after_id is not None:
             labels.append("STEP carry hold")
+        if self._row_carry_hold_after_id is not None:
+            labels.append("row carry hold")
         if self._source_target_pick_mode:
             labels.append("source target")
         if self._center_row_to_ray_mode:
@@ -8901,6 +9246,8 @@ class Kraken3DInspector(tk.Toplevel):
             labels.append("placement drag")
         if self._step_carry_drag_state is not None:
             labels.append("STEP carry drag")
+        if self._row_carry_drag_state is not None:
+            labels.append("row carry drag")
         if self._middle_drag_active:
             labels.append("view pan")
         if bool(getattr(self.editor, "_cad_axis_pick_any", False)) or getattr(self.editor, "_cad_axis_pick_label", None) is not None:
@@ -8918,12 +9265,13 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set("No active Open 3D operation to cancel.")
             return False
 
-        carry_states = [self._step_carry_follow_state, self._step_carry_drag_state]
+        carry_states = [self._step_carry_follow_state, self._step_carry_drag_state, self._row_carry_drag_state]
         restore_state = None
         if any(isinstance(state, dict) and bool(state.get("history_started", False)) for state in carry_states):
             restore_state = getattr(self.editor, "_history_pending_state", None)
 
         self._cancel_step_carry_hold_timer()
+        self._cancel_row_carry_hold_timer()
         self._source_target_pick_mode = False
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None
@@ -8941,6 +9289,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_active_label = None
         self._step_carry_drag_state = None
         self._step_carry_follow_state = None
+        self._row_carry_drag_state = None
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
         self._step_normal_axis_pick_mode = False
@@ -10929,13 +11278,15 @@ class Kraken3DInspector(tk.Toplevel):
                 row_index = -1
             mesh_opacity = float(getattr(mesh_item, "opacity", 1.0))
             row_surface = str(getattr(getattr(mesh_item, "row", None), "surface", "") or "")
+            if row_index in file_backed_rows:
+                mesh_opacity = min(max(mesh_opacity, 0.14), 0.28)
             if show_launch_reference_surface and not show_reference_surfaces and row_surface == "Object":
                 mesh_opacity = min(mesh_opacity, 0.18)
             if ray_visibility_requested and row_index >= 0:
                 if row_surface in {"Object", "Image"}:
                     mesh_opacity = min(mesh_opacity, 0.22)
                 elif row_index in file_backed_rows:
-                    mesh_opacity = min(max(mesh_opacity, 0.24), 0.36)
+                    mesh_opacity = min(max(mesh_opacity, 0.14), 0.24)
                 else:
                     mesh_opacity = max(mesh_opacity, 0.86)
                     wire_color = tuple(mesh_item.color)
@@ -10972,8 +11323,8 @@ class Kraken3DInspector(tk.Toplevel):
                     )
                     if int(getattr(edges, "n_points", 0)) > 0:
                         if ray_visibility_requested:
-                            ray_surface_edge_overlays.append((edges, (0.02, 0.03, 0.05), 2.4))
-                        self._add_mesh_actor(edges, color=(0.10, 0.12, 0.16), opacity=0.96, line_width=1.2)
+                            ray_surface_edge_overlays.append((edges, (0.01, 0.02, 0.04), 3.0))
+                        self._add_mesh_actor(edges, color=(0.04, 0.06, 0.10), opacity=1.0, line_width=2.0)
                 except Exception:
                     pass
             drew_surfaces += 1
@@ -17899,6 +18250,80 @@ class KrakenLayoutEditor(tk.Tk):
             "delta_mm": float(delta),
             "before_mm": before,
             "after_mm": float(getattr(row, attr)),
+            "scene_placement_settings": settings,
+        }
+
+    def translate_scene_row_pose_vector(
+        self,
+        row_index: int,
+        delta_xyz,
+        *,
+        record_history: bool = True,
+        sync_table: bool = True,
+    ) -> dict[str, object]:
+        try:
+            row_index = int(row_index)
+        except Exception as exc:
+            raise RuntimeError("Invalid row index for 3D placement translation") from exc
+        if not (0 <= row_index < len(self.rows)):
+            raise RuntimeError("3D placement translation row is outside the table")
+        try:
+            delta = np.asarray(delta_xyz, dtype=float).reshape(-1)[:3]
+        except Exception as exc:
+            raise RuntimeError("Invalid 3D placement translation vector") from exc
+        if delta.size < 3 or not np.all(np.isfinite(delta[:3])):
+            raise RuntimeError("3D placement translation vector is non-finite")
+        if not np.any(np.abs(delta[:3]) > 1e-12):
+            raise RuntimeError("3D placement translation vector is zero")
+        row = self.rows[row_index]
+        before = (float(row.desp_x), float(row.desp_y), float(row.desp_z))
+        history_started = False
+        if bool(record_history) and "_history_restoring" in self.__dict__ and "_history_pending_state" in self.__dict__:
+            try:
+                self._begin_history_capture()
+                history_started = True
+            except Exception:
+                history_started = False
+        row.desp_x = float(row.desp_x) + float(delta[0])
+        row.desp_y = float(row.desp_y) + float(delta[1])
+        row.desp_z = float(row.desp_z) + float(delta[2])
+        row.advanced = dict(row.advanced or {})
+        settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
+        settings["last_translate_axis"] = "xyz"
+        settings["last_translate_delta_mm"] = [float(value) for value in delta[:3]]
+        settings["last_translate_step_mm"] = float(np.linalg.norm(delta[:3]))
+        settings["last_translate_mode"] = "free_drag"
+        row.advanced[SCENE_PLACEMENT_ADVANCED_ATTR] = settings
+        if bool(sync_table) and "table" in self.__dict__:
+            try:
+                self._sync_table()
+                self._select_table_row(row_index)
+            except Exception:
+                pass
+        if history_started:
+            self._commit_history_capture()
+        try:
+            self._mark_plot_update_pending()
+        except Exception:
+            pass
+        self.append_debug(
+            "3D placement translate S{row}: vector=({dx:.6g},{dy:.6g},{dz:.6g}) mm "
+            "Desp=({x:.6g},{y:.6g},{z:.6g})".format(
+                row=row_index,
+                dx=float(delta[0]),
+                dy=float(delta[1]),
+                dz=float(delta[2]),
+                x=float(row.desp_x),
+                y=float(row.desp_y),
+                z=float(row.desp_z),
+            )
+        )
+        return {
+            "row_index": row_index,
+            "axis": "xyz",
+            "delta_mm": tuple(float(value) for value in delta[:3]),
+            "before_mm": before,
+            "after_mm": (float(row.desp_x), float(row.desp_y), float(row.desp_z)),
             "scene_placement_settings": settings,
         }
 
@@ -26594,6 +27019,11 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             trace_state = {}
         if bool(trace_state.get("use_nonseq")) or bool(trace_state.get("use_folded")):
+            try:
+                if self._should_use_default_finite_cone_source(system=self.__dict__.get("last_system")):
+                    return "display_slice"
+            except Exception:
+                pass
             return "world_envelope"
         return "display_slice"
 
@@ -26624,6 +27054,11 @@ class KrakenLayoutEditor(tk.Tk):
         """
         if self._is_full_pupil_mode():
             return "full_pupil"
+        try:
+            if self._should_use_default_finite_cone_source(system=self.__dict__.get("last_system")):
+                return "display_slice"
+        except Exception:
+            pass
         return "world_envelope"
 
     def _current_preview_scene_trace(self):
@@ -26933,6 +27368,11 @@ class KrakenLayoutEditor(tk.Tk):
         cad_step_actor_map: dict[str, str] = {}
         actor_row_map: dict[str, int] = {}
         row_actor_map: dict[int, list] = {}
+        file_backed_rows = {
+            index
+            for index, _row in enumerate(self.rows)
+            if self._file_backed_stl_row_at(int(index)) is not None
+        }
 
         def register_actor(actor, row_index: int | None = None, *, pickable: bool = False):
             if actor is None:
@@ -27025,7 +27465,9 @@ class KrakenLayoutEditor(tk.Tk):
                 plotter.add_mesh(
                     mesh,
                     color=mesh_item.color,
-                    opacity=float(mesh_item.opacity),
+                    opacity=min(max(float(mesh_item.opacity), 0.14), 0.28)
+                    if index in file_backed_rows
+                    else float(mesh_item.opacity),
                     smooth_shading=not bool(mesh_item.is_body),
                     show_edges=False,
                     pickable=True,
@@ -27047,7 +27489,12 @@ class KrakenLayoutEditor(tk.Tk):
                     )
                     if int(getattr(edges, "n_points", 0)) > 0:
                         edge_actor = register_actor(
-                            plotter.add_mesh(edges, color="#1f2937", line_width=1.0, pickable=False),
+                            plotter.add_mesh(
+                                edges,
+                                color="#050914" if index in file_backed_rows else "#1f2937",
+                                line_width=2.0 if index in file_backed_rows else 1.0,
+                                pickable=False,
+                            ),
                             index,
                             pickable=False,
                         )
@@ -45494,11 +45941,11 @@ class KrakenLayoutEditor(tk.Tk):
             self.append_debug(f"Help page open failed: {exc}")
             self.status_var.set(f"Help page failed: {_short_error_message(exc)}")
 
-    def _open_sphinx_docs_page(self, page: str, label: str | None = None) -> None:
+    def _open_sphinx_docs_page(self, page: str, label: str | None = None, section: str = "manual") -> None:
         """Open a built Sphinx HTML page; fall back to the source RST."""
         label = label or page
-        html_path = DOCS_HTML_DIR / "manual" / f"{page}.html"
-        rst_path = DOCS_SOURCE_DIR / "manual" / f"{page}.rst"
+        html_path = DOCS_HTML_DIR / section / f"{page}.html"
+        rst_path = DOCS_SOURCE_DIR / section / f"{page}.rst"
         target: Path | None = None
         if html_path.exists():
             target = html_path
@@ -45530,10 +45977,10 @@ class KrakenLayoutEditor(tk.Tk):
             self.status_var.set(f"Docs failed: {_short_error_message(exc)}")
 
     def show_rules_of_thumb(self) -> None:
-        self._open_sphinx_docs_page("rules_of_thumb", "Rules of Thumb")
+        self._open_sphinx_docs_page("rules_of_thumb", "Rules of Thumb", section="knowledge_base")
 
     def show_cardinal_points_docs(self) -> None:
-        self._open_sphinx_docs_page("cardinal_points", "Cardinal Points")
+        self._open_sphinx_docs_page("cardinal_points", "Cardinal Points", section="knowledge_base")
 
     def show_analysis_tools_docs(self) -> None:
         self._open_sphinx_docs_page("analysis_tools", "Analysis Tools")
@@ -46037,17 +46484,17 @@ class KrakenLayoutEditor(tk.Tk):
         field_type = html.escape(self._field_type_display_label(self._current_field_type()))
         field_value = self._current_field_value()
 
-        def _doc_link(page: str, label: str) -> str:
-            html_path = DOCS_HTML_DIR / "manual" / f"{page}.html"
-            rst_path = DOCS_SOURCE_DIR / "manual" / f"{page}.rst"
+        def _doc_link(page: str, label: str, section: str = "manual") -> str:
+            html_path = DOCS_HTML_DIR / section / f"{page}.html"
+            rst_path = DOCS_SOURCE_DIR / section / f"{page}.rst"
             target = html_path if html_path.exists() else rst_path
             if target.exists():
                 href = html.escape(target.as_uri())
                 return f'<a href="{href}">{html.escape(label)}</a>'
             return html.escape(label)
 
-        rules_link    = _doc_link("rules_of_thumb",  "Rules of Thumb — Optics · Imaging · Laser")
-        cardinal_link = _doc_link("cardinal_points", "Cardinal Points (EP, XP, PP) walkthrough")
+        rules_link    = _doc_link("rules_of_thumb",  "Rules of Thumb — Optics · Imaging · Laser", section="knowledge_base")
+        cardinal_link = _doc_link("cardinal_points", "Cardinal Points (EP, XP, PP) walkthrough",  section="knowledge_base")
         analysis_link = _doc_link("analysis_tools",  "Analysis Tools reference (Spot, PSF, MTF, Seidel, …)")
         gauss_link    = _doc_link("gaussian_beams",  "Gaussian beams and cavity eigenmodes")
         parax_link    = _doc_link("parax_tool",      "Paraxial matrix tool")
@@ -61653,12 +62100,12 @@ class KrakenLayoutEditor(tk.Tk):
         return pairs
 
     def _should_use_default_finite_cone_source(self, *, system=None) -> bool:
-        """Allow the default source cone only for non-sequential scene intent.
+        """Preserve the default source cone when the scene becomes non-sequential.
 
         `Pupil / field` is the ordered-surface sequential source model.  A
-        nonzero source cone can still request extra non-sequential scene
-        coverage, but Open 3D maps that request to an extended reference
-        aperture cone rather than a physical point-emitter cone.
+        nonzero Source cone is still an explicit launch request; promoting a
+        STEP body should not silently swap that point-cone preview for a
+        world-envelope aperture sampler.
         """
         if self._current_source_model() != SOURCE_MODEL_DEFAULT:
             return False

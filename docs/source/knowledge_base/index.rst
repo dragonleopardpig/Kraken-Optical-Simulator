@@ -9,4 +9,7 @@ real sensor.
 .. toctree::
    :maxdepth: 1
 
+   rules_of_thumb
+   cardinal_points
+   lens_design_intro
    ir_subpixel_detection

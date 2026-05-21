@@ -26,7 +26,7 @@ Each section uses the same structure:
   ground-truth substitute.
 
 The achromatic doublet system from
-:doc:`analysis_tools` is referenced in several code blocks as
+:doc:`../manual/analysis_tools` is referenced in several code blocks as
 ``Doublet``; rebuild it from that page's *Common Setup* block.
 
 Section 1 — Geometric / paraxial optics
@@ -35,7 +35,7 @@ Section 1 — Geometric / paraxial optics
 1.1 Thin-lens imaging equation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. figure:: ../_static/manual/rules_of_thumb/01_thin_lens.svg
+.. figure:: ../_static/knowledge_base/rules_of_thumb/01_thin_lens.svg
    :width: 100%
    :alt: Thin-lens imaging equation
 
@@ -69,7 +69,7 @@ where:
 1.2 f-number, aperture cone and diffraction limit
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. figure:: ../_static/manual/rules_of_thumb/02_fnumber_cone.svg
+.. figure:: ../_static/knowledge_base/rules_of_thumb/02_fnumber_cone.svg
    :width: 100%
    :alt: f-number cone
 
@@ -109,7 +109,7 @@ f/16          21.5 µm            207 cyc/mm
 1.3 Working f-number for finite conjugates
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. figure:: ../_static/manual/rules_of_thumb/14_working_fnumber.svg
+.. figure:: ../_static/knowledge_base/rules_of_thumb/14_working_fnumber.svg
    :width: 100%
    :alt: Working F-number for finite conjugates
 
@@ -137,7 +137,7 @@ diffraction-limited resolution halves.
 1.4 Two thin lenses in series
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. figure:: ../_static/manual/rules_of_thumb/09_two_lens_combined.svg
+.. figure:: ../_static/knowledge_base/rules_of_thumb/09_two_lens_combined.svg
    :width: 100%
    :alt: Two thin lenses combined
 
@@ -171,7 +171,7 @@ telescope with angular magnification :math:`M = -f_2/f_1`.
 1.5 Macro 2f rule (1:1 imaging)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. figure:: ../_static/manual/rules_of_thumb/10_macro_2f.svg
+.. figure:: ../_static/knowledge_base/rules_of_thumb/10_macro_2f.svg
    :width: 100%
    :alt: 1:1 macro 2f rule
 
@@ -192,7 +192,7 @@ and sensor 200 mm from the principal planes. Effective f-number doubles
 1.6 Snell's law and total internal reflection
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. figure:: ../_static/manual/rules_of_thumb/08_snell_tir.svg
+.. figure:: ../_static/knowledge_base/rules_of_thumb/08_snell_tir.svg
    :width: 100%
    :alt: Snell refraction and total internal reflection
 
@@ -218,7 +218,7 @@ Section 2 — Imaging system rules
 2.1 Angle of view and sensor format
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. figure:: ../_static/manual/rules_of_thumb/05_fov_sensor.svg
+.. figure:: ../_static/knowledge_base/rules_of_thumb/05_fov_sensor.svg
    :width: 100%
    :alt: Sensor format and angle of view
 
@@ -250,7 +250,7 @@ where:
 2.2 Depth of field
 ~~~~~~~~~~~~~~~~~~
 
-.. figure:: ../_static/manual/rules_of_thumb/03_depth_of_field.svg
+.. figure:: ../_static/knowledge_base/rules_of_thumb/03_depth_of_field.svg
    :width: 100%
    :alt: Depth of field
 
@@ -275,7 +275,7 @@ f/8, 50 mm at 2 m subject distance gives
 2.3 Hyperfocal distance
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-.. figure:: ../_static/manual/rules_of_thumb/04_hyperfocal.svg
+.. figure:: ../_static/knowledge_base/rules_of_thumb/04_hyperfocal.svg
    :width: 100%
    :alt: Hyperfocal distance
 
@@ -295,7 +295,7 @@ Set focus to 5 m, get everything from 2.5 m to infinity sharp.
 2.4 Diffraction & resolution
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. figure:: ../_static/manual/rules_of_thumb/06_airy_disk.svg
+.. figure:: ../_static/knowledge_base/rules_of_thumb/06_airy_disk.svg
    :width: 100%
    :alt: Airy disk and Rayleigh criterion
 
@@ -331,7 +331,7 @@ where:
 2.5 Pixel sampling and the Nyquist limit
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. figure:: ../_static/manual/rules_of_thumb/07_pixel_sampling.svg
+.. figure:: ../_static/knowledge_base/rules_of_thumb/07_pixel_sampling.svg
    :width: 100%
    :alt: Pixel sampling vs diffraction MTF
 
@@ -362,7 +362,7 @@ Section 3 — Lasers and Gaussian beams
 3.1 Waist, Rayleigh range, divergence
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. figure:: ../_static/manual/rules_of_thumb/11_laser_waist_divergence.svg
+.. figure:: ../_static/knowledge_base/rules_of_thumb/11_laser_waist_divergence.svg
    :width: 100%
    :alt: Gaussian beam waist and divergence
 
@@ -400,7 +400,7 @@ where:
 3.2 Focused spot of a Gaussian beam
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. figure:: ../_static/manual/rules_of_thumb/12_focused_spot.svg
+.. figure:: ../_static/knowledge_base/rules_of_thumb/12_focused_spot.svg
    :width: 100%
    :alt: Focused spot of a Gaussian beam
 
@@ -422,7 +422,7 @@ lens: :math:`N = 10` → :math:`2 w_f \approx (4/\pi)(1.064\,\mu)(10) \approx
 3.3 Two-mirror cavity stability
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. figure:: ../_static/manual/rules_of_thumb/13_cavity_stability.svg
+.. figure:: ../_static/knowledge_base/rules_of_thumb/13_cavity_stability.svg
    :width: 100%
    :alt: Cavity stability g-parameter diagram
 
@@ -508,13 +508,13 @@ shows up wherever the user is reading.
 Section 5 — Where to go next
 ----------------------------
 
-* :doc:`parax_tool` — the paraxial matrix layer the calculator uses.
-* :doc:`pupilcalc_tool` — entrance/exit pupil geometry, EFL, Airy
+* :doc:`../manual/parax_tool` — the paraxial matrix layer the calculator uses.
+* :doc:`../manual/pupilcalc_tool` — entrance/exit pupil geometry, EFL, Airy
   radius, chief-ray data.
 * :doc:`cardinal_points` — step-by-step ray construction for EP, XP,
   PP, PP', FFL, BFL.
-* :doc:`analysis_tools` — full formula, illustration, worked example
+* :doc:`../manual/analysis_tools` — full formula, illustration, worked example
   and KrakenOS source block for each Analysis tool: spot, OPD, Zernike,
   Seidel, MTF, PSF, encircled energy, atmospheric, etc.
-* :doc:`gaussian_beams` — Gaussian beam propagation, q-parameters,
+* :doc:`../manual/gaussian_beams` — Gaussian beam propagation, q-parameters,
   cavity eigenmodes, branch-field overlap, with worked examples.
