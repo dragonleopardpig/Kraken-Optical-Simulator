@@ -5129,6 +5129,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._actor_step_follow_map: dict[str, str] = {}
         self._step_follow_actor_map: dict[str, list[str]] = {}
         self._actor_step_rotate_map: dict[str, tuple[str, str, float]] = {}
+        self._actor_step_rotate_visual_keys: set[str] = set()
         self._actor_placement_move_map: dict[str, tuple[int, str, float]] = {}
         self._actor_placement_rotate_map: dict[str, tuple[int, str, float]] = {}
         self._step_feature_cache: dict[tuple[str, int], tuple[np.ndarray, object | None, np.ndarray | None] | None] = {}
@@ -7878,9 +7879,13 @@ class Kraken3DInspector(tk.Toplevel):
         if self._renderer is None:
             return False
         removed = False
-        for actor_key in list(self._actor_step_rotate_map):
+        actor_keys = set(self._actor_step_rotate_map)
+        actor_keys.update(self._actor_step_rotate_visual_keys)
+        for actor_key in list(actor_keys):
             actor = self._actor_by_key.pop(actor_key, None)
             self._actor_step_rotate_map.pop(actor_key, None)
+            self._actor_step_rotate_visual_keys.discard(actor_key)
+            self._actor_step_follow_map.pop(actor_key, None)
             for keys in list(self._step_follow_actor_map.values()):
                 try:
                     while actor_key in keys:
@@ -9851,6 +9856,7 @@ class Kraken3DInspector(tk.Toplevel):
         sign: float,
         radius: float,
         tube_radius: float,
+        include_arrowheads: bool = True,
     ):
         if pv is None:
             return None
@@ -9878,32 +9884,33 @@ class Kraken3DInspector(tk.Toplevel):
             parts = [poly.tube(radius=float(tube_radius), n_sides=10)]
         except Exception:
             parts = [poly]
-        try:
-            point_array = np.asarray(points, dtype=float)
-            arrow_scale = max(float(radius) * 0.11, float(tube_radius) * 6.0, 0.35)
-            for index, tangent in (
-                (0, point_array[0] - point_array[1]),
-                (-1, point_array[-1] - point_array[-2]),
-            ):
-                norm = float(np.linalg.norm(tangent))
-                if norm <= 1e-12 or not np.isfinite(norm):
-                    continue
-                direction = tangent / norm
-                tip_height = max(float(arrow_scale) * 0.78, float(tube_radius) * 8.0)
-                tip_radius = max(float(tube_radius) * 2.0, float(arrow_scale) * 0.075)
-                tip_point = point_array[index]
-                center_point = tip_point - direction * (tip_height * 0.5)
-                parts.append(
-                    pv.Cone(
-                        center=tuple(float(value) for value in center_point),
-                        direction=tuple(float(value) for value in direction),
-                        height=float(tip_height),
-                        radius=float(tip_radius),
-                        resolution=24,
+        if include_arrowheads:
+            try:
+                point_array = np.asarray(points, dtype=float)
+                arrow_scale = max(float(radius) * 0.11, float(tube_radius) * 6.0, 0.35)
+                for index, tangent in (
+                    (0, point_array[0] - point_array[1]),
+                    (-1, point_array[-1] - point_array[-2]),
+                ):
+                    norm = float(np.linalg.norm(tangent))
+                    if norm <= 1e-12 or not np.isfinite(norm):
+                        continue
+                    direction = tangent / norm
+                    tip_height = max(float(arrow_scale) * 0.78, float(tube_radius) * 8.0)
+                    tip_radius = max(float(tube_radius) * 2.0, float(arrow_scale) * 0.075)
+                    tip_point = point_array[index]
+                    center_point = tip_point - direction * (tip_height * 0.5)
+                    parts.append(
+                        pv.Cone(
+                            center=tuple(float(value) for value in center_point),
+                            direction=tuple(float(value) for value in direction),
+                            height=float(tip_height),
+                            radius=float(tip_radius),
+                            resolution=24,
+                        )
                     )
-                )
-        except Exception:
-            pass
+            except Exception:
+                pass
         merged = parts[0]
         for part in parts[1:]:
             try:
@@ -9911,6 +9918,61 @@ class Kraken3DInspector(tk.Toplevel):
             except Exception:
                 pass
         return merged
+
+    def _scene_placement_rotation_arrowhead_mesh(
+        self,
+        *,
+        center: np.ndarray,
+        axis: str,
+        sign: float,
+        delta_sign: float,
+        radius: float,
+        tube_radius: float,
+    ):
+        if pv is None:
+            return None
+        basis = self._scene_placement_rotation_basis(axis)
+        if basis is None:
+            return None
+        u_axis, v_axis = basis
+        if float(sign) >= 0.0:
+            angles = np.linspace(np.deg2rad(-90.0), np.deg2rad(90.0), 36)
+        else:
+            angles = np.linspace(np.deg2rad(90.0), np.deg2rad(270.0), 36)
+        center_vec = np.asarray(center, dtype=float).reshape(3)
+        point_array = np.asarray(
+            [
+                center_vec + float(radius) * (np.cos(theta) * u_axis + np.sin(theta) * v_axis)
+                for theta in angles
+            ],
+            dtype=float,
+        )
+        if point_array.shape[0] < 2:
+            return None
+        if float(delta_sign) >= 0.0:
+            tip_point = point_array[-1]
+            tangent = point_array[-1] - point_array[-2]
+        else:
+            tip_point = point_array[0]
+            tangent = point_array[0] - point_array[1]
+        norm = float(np.linalg.norm(tangent))
+        if norm <= 1e-12 or not np.isfinite(norm):
+            return None
+        direction = tangent / norm
+        arrow_scale = max(float(radius) * 0.13, float(tube_radius) * 8.0, 0.42)
+        tip_height = max(float(arrow_scale) * 0.9, float(tube_radius) * 10.0)
+        tip_radius = max(float(tube_radius) * 1.55, float(arrow_scale) * 0.052)
+        center_point = tip_point - direction * (tip_height * 0.5)
+        try:
+            return pv.Cone(
+                center=tuple(float(value) for value in center_point),
+                direction=tuple(float(value) for value in direction),
+                height=float(tip_height),
+                radius=float(tip_radius),
+                resolution=28,
+            )
+        except Exception:
+            return None
 
     def _add_scene_placement_rotate_handles(
         self,
@@ -9997,25 +10059,48 @@ class Kraken3DInspector(tk.Toplevel):
         )
         count = 0
         for axis, color in axes:
-            handle_mesh = self._scene_placement_rotation_arc_mesh(
+            arc_mesh = self._scene_placement_rotation_arc_mesh(
                 center=center,
                 axis=axis,
                 sign=1.0,
                 radius=radius,
                 tube_radius=tube_radius,
+                include_arrowheads=False,
             )
-            if handle_mesh is None:
-                continue
-            actor = self._add_mesh_actor(
-                handle_mesh,
-                color=color,
-                opacity=0.88,
-                pick_step_rotate=(label, axis, 90.0),
-                follow_step_label=label,
-                flat_shading=True,
-            )
-            if actor is not None:
-                count += 1
+            if arc_mesh is not None:
+                arc_actor = self._add_mesh_actor(
+                    arc_mesh,
+                    color=color,
+                    opacity=0.58,
+                    follow_step_label=label,
+                    flat_shading=True,
+                    backface_culling=False,
+                )
+                arc_key = self._actor_key(arc_actor)
+                if arc_key is not None and hasattr(self, "_actor_step_rotate_visual_keys"):
+                    self._actor_step_rotate_visual_keys.add(arc_key)
+            for delta_deg in (-90.0, 90.0):
+                arrow_mesh = self._scene_placement_rotation_arrowhead_mesh(
+                    center=center,
+                    axis=axis,
+                    sign=1.0,
+                    delta_sign=delta_deg,
+                    radius=radius,
+                    tube_radius=tube_radius,
+                )
+                if arrow_mesh is None:
+                    continue
+                actor = self._add_mesh_actor(
+                    arrow_mesh,
+                    color=color,
+                    opacity=0.96,
+                    pick_step_rotate=(label, axis, float(delta_deg)),
+                    follow_step_label=label,
+                    flat_shading=True,
+                    backface_culling=False,
+                )
+                if actor is not None:
+                    count += 1
         return count
 
     def _apply_step_rotation_handle(self, label: str, axis: str, delta_deg: float) -> None:
@@ -10326,6 +10411,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._actor_step_follow_map.clear()
         self._step_follow_actor_map.clear()
         self._actor_step_rotate_map.clear()
+        self._actor_step_rotate_visual_keys.clear()
         self._actor_placement_move_map.clear()
         self._actor_placement_rotate_map.clear()
         self._step_feature_cache.clear()

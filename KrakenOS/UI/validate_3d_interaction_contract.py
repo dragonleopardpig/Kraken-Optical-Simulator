@@ -190,7 +190,7 @@ def main() -> int:
         ("STEP click activates rotation handles", "show_step_rotation_handler(step_label)" in pick),
         ("STEP rotation handler is not a popup", "tk.Toplevel" not in handler and "_step_rotation_active_label" in handler),
         ("STEP rotation handles expose X/Y/Z axes", '("x",' in step_rotate_handles and '("y",' in step_rotate_handles and '("z",' in step_rotate_handles),
-        ("STEP rotation handles expose one +90 half-arc per axis", "sign=1.0" in step_rotate_handles and "90.0" in step_rotate_handles and "-1.0" not in step_rotate_handles),
+        ("STEP rotation handles expose signed +/-90 arrows per axis", "sign=1.0" in step_rotate_handles and "90.0" in step_rotate_handles and "-90.0" in step_rotate_handles),
         ("STEP rotation handles are pickable scene actors", "pick_step_rotate" in step_rotate_handles and "_actor_step_rotate_map" in pick),
         ("STEP rotation handles hover-highlight before click", "_set_rotation_handle_hover(actor_key)" in mouse_move and "STEP rotation handle: click" in mouse_move and "SetColor(1.0, 0.78, 0.08)" in rotation_hover),
         ("STEP rotation handles can be hidden from the toolbar", "show_rotation_handles_var" in init and "_toggle_rotation_handles" in init and "_show_rotation_handles()" in step_rotate_handles and "_remove_step_rotation_handle_actors" in rotation_toggle),

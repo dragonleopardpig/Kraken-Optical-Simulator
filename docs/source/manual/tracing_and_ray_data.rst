@@ -345,7 +345,9 @@ row along global ``X/Y/Z`` by ``ScenePlacement`` snap spacing when snap is
 enabled, or by the placement spacing when snap is off. Each move writes
 ``DespX/Y/Z`` plus placement metadata through the normal row history/table path.
 Arrowheaded rotation handles use one half-arc per global ``X/Y/Z`` axis with
-opposed end arrows. They apply a world-axis rotation matching the visible ring,
+opposed end arrows. For imported STEP overlays, the two end arrows are separate
+``+90`` and ``-90`` commands. Row placement handles apply a world-axis rotation
+matching the visible ring,
 by ``ScenePlacement.snap_deg`` when snap is enabled or by a coarse 15 degree
 step when snap is off, and write ``TiltX/Y/Z`` through the same row
 history/table path. Dragging a placement handle accumulates screen motion and

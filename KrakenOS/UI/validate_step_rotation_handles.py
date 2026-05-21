@@ -48,15 +48,23 @@ def main() -> int:
             raise AssertionError(f"Unexpected handle extent: {extent!r}")
 
         count = inspector._add_step_rotation_handles("lens", mesh)
-        if count != 3 or len(records) != 3:
-            raise AssertionError(f"Expected three STEP rotation handles, got count={count}, records={len(records)}.")
+        pick_records = [record for record in records if record[1].get("pick_step_rotate") is not None]
+        visual_records = [record for record in records if record[1].get("pick_step_rotate") is None]
+        if count != 6 or len(pick_records) != 6 or len(visual_records) != 3:
+            raise AssertionError(
+                "Expected three visual arcs plus six signed STEP rotation arrows, "
+                f"got count={count}, pick_records={len(pick_records)}, visual_records={len(visual_records)}."
+            )
         rotate_specs = sorted(
-            tuple(record[1].get("pick_step_rotate", ())) for record in records
+            tuple(record[1].get("pick_step_rotate", ())) for record in pick_records
         )
         expected_specs = sorted(
             (
+                ("lens", "x", -90.0),
                 ("lens", "x", 90.0),
+                ("lens", "y", -90.0),
                 ("lens", "y", 90.0),
+                ("lens", "z", -90.0),
                 ("lens", "z", 90.0),
             )
         )
@@ -64,24 +72,25 @@ def main() -> int:
             raise AssertionError(f"Unexpected STEP rotation pick specs: {rotate_specs!r}")
         if any(int(getattr(record[0], "n_points", 0)) <= 0 for record in records):
             raise AssertionError("A STEP rotation handle mesh was empty.")
-        if not any(int(getattr(record[0], "n_cells", 0)) > 32 for record in records):
+        if not all(int(getattr(record[0], "n_cells", 0)) >= 20 for record in pick_records):
             raise AssertionError("STEP rotation handles did not include arrowhead geometry.")
 
         for axis in ("x", "y", "z"):
-            app._set_step_rotation_deg_tuple("lens", (25.0, 40.0, 65.0))
-            before_matrix = app._step_rotation_matrix_from_angles(*app._step_rotation_deg_tuple("lens"))
-            expected_matrix = app._world_axis_rotation_matrix(axis, 90.0) @ before_matrix
-            center_before = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
-            inspector._apply_step_rotation_handle("lens", axis, 90.0)
-            center_after = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
-            after_matrix = app._step_rotation_matrix_from_angles(*app._step_rotation_deg_tuple("lens"))
-            if not le.np.allclose(after_matrix, expected_matrix, atol=1e-8):
-                raise AssertionError(f"STEP {axis.upper()} handle did not apply a world-axis rotation.")
-            if center_before != center_after:
-                raise AssertionError(
-                    "STEP rotation handles should rotate immediately around the component center, "
-                    f"got before={center_before}, after={center_after} for axis {axis!r}."
-                )
+            for delta_deg in (-90.0, 90.0):
+                app._set_step_rotation_deg_tuple("lens", (25.0, 40.0, 65.0))
+                before_matrix = app._step_rotation_matrix_from_angles(*app._step_rotation_deg_tuple("lens"))
+                expected_matrix = app._world_axis_rotation_matrix(axis, delta_deg) @ before_matrix
+                center_before = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
+                inspector._apply_step_rotation_handle("lens", axis, delta_deg)
+                center_after = tuple(round(float(value), 6) for value in app._transformed_imported_step_mesh_for_label("lens").center)
+                after_matrix = app._step_rotation_matrix_from_angles(*app._step_rotation_deg_tuple("lens"))
+                if not le.np.allclose(after_matrix, expected_matrix, atol=1e-8):
+                    raise AssertionError(f"STEP {axis.upper()}{delta_deg:+.0f} handle did not apply a world-axis rotation.")
+                if center_before != center_after:
+                    raise AssertionError(
+                        "STEP rotation handles should rotate immediately around the component center, "
+                        f"got before={center_before}, after={center_after} for axis {axis!r}."
+                    )
         if app._selected_step_label != "lens" or inspector._step_rotation_active_label != "lens":
             raise AssertionError("STEP rotation handle did not preserve the selected STEP component.")
 
