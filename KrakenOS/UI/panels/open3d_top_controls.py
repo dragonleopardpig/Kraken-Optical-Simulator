@@ -88,6 +88,7 @@ class Open3DTopControlsPanel:
         import_step_menu.add_command(label="Import Camera STEP...", command=lambda: self.inspector.import_step_overlay("camera"))
         import_step_menu.add_command(label="Import LED STEP...", command=lambda: self.inspector.import_step_overlay("led"))
         cad_target_menu.add_cascade(label="Import STEP", menu=import_step_menu)
+        cad_target_menu.add_command(label="Delete Selected STEP", command=self.inspector.delete_selected_step)
         cad_target_menu.add_command(label="Clear STEP Imports", command=self.inspector.clear_step_imports)
         cad_target_menu.add_separator()
         cad_target_menu.add_command(label="Arm Selected STEP Carry", command=self.inspector.start_selected_step_carry)

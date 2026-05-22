@@ -14,7 +14,10 @@ from KrakenOS.UI.scene_geometry import (
     SurfaceCurve3D,
     projected_ray_terminal_status,
 )
-from KrakenOS.UI.scene_projector import SceneProjector2D
+from KrakenOS.UI.scene_projector import (
+    SceneProjector2D,
+    bounded_ray_points_for_scene_display,
+)
 
 
 @dataclass(frozen=True)
@@ -122,6 +125,37 @@ def validate_scene_projection_terminal_bounds() -> list[ProjectionBoundsCheck]:
             "short escaped terminals get a display continuation",
             short_escaped_points.shape[0] >= 4 and float(short_escaped_points[-1, 1]) < -300.0,
             f"points={short_escaped_points.tolist()}",
+        )
+    )
+
+    # Regression: the trace event's outgoing_direction carries the raw
+    # KrakenOS ``ResVec`` (R_LMN) without the cumulative ``SIGN`` flip, so it
+    # points backwards after an odd number of reflections.  The traced
+    # polyline is built from ``ResVec * SIGN`` and is authoritative.  The
+    # escaped tail must follow the polyline, not the reversed event vector.
+    reversed_world_pts = np.asarray(
+        (
+            (0.0, 0.0, 0.0),
+            (0.0, 0.0, 100.0),
+            (0.0, 0.0, 110.0),
+        ),
+        dtype=float,
+    )
+    reversed_capped, _reversed_bounded = bounded_ray_points_for_scene_display(
+        reversed_world_pts,
+        np.zeros(3, dtype=float),
+        200.0,
+        terminal_status="escaped",
+        terminal_direction=np.asarray((0.0, 0.0, -1.0), dtype=float),
+    )
+    reversed_z = np.asarray(reversed_capped, dtype=float)[:, 2]
+    checks.append(
+        ProjectionBoundsCheck(
+            "escaped tail follows the traced polyline when the event direction is sign-reversed",
+            reversed_capped.shape[0] >= 3
+            and float(reversed_z[-1]) > float(reversed_world_pts[-1, 2])
+            and bool(np.all(np.diff(reversed_z) >= -1.0e-9)),
+            f"tail_z={reversed_z.tolist()}",
         )
     )
 

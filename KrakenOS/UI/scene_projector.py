@@ -645,9 +645,19 @@ def bounded_ray_points_for_scene_display(
         # but draw a scene-envelope tail long enough to show the output
         # direction without letting one distant miss dominate autoscale.
         max_terminal_length = max(75.0, min(scene_radius * 1.25, 600.0))
+        geometry_direction = _unit_vector_or_none(terminal_segment)
         direction = _unit_vector_or_none(terminal_direction)
         if direction is None:
-            direction = _unit_vector_or_none(terminal_segment)
+            direction = geometry_direction
+        elif geometry_direction is not None and float(np.dot(direction, geometry_direction)) < 0.0:
+            # ``terminal_direction`` is sourced from the trace event's R_LMN
+            # (and LMN) fields, which carry the raw KrakenOS ``ResVec`` without
+            # the cumulative ``SIGN`` flip.  After an odd number of reflections
+            # ``ResVec`` points backwards.  The traced polyline is built from
+            # ``ResVec * SIGN`` (see KrakenSys.__AppendNsTerminalSegment) and is
+            # the authoritative physical direction, so reconcile the tail
+            # against it instead of drawing the escaped ray 180 deg reversed.
+            direction = -direction
         if direction is not None and np.isfinite(terminal_length) and max_terminal_length > 0.0:
             if terminal_length > max_terminal_length:
                 pts[-1] = pts[-2] + direction * max_terminal_length

@@ -8803,6 +8803,7 @@ class Kraken3DInspector(tk.Toplevel):
         )
 
     def import_optical_step_overlay(self) -> None:
+        had_existing_overlay = self.editor._step_path_for_label("optical") is not None
         path = self.editor.import_optical_step(dialog_parent=self)
         if path is None:
             self.status_var.set(self.editor.status_var.get())
@@ -8823,8 +8824,13 @@ class Kraken3DInspector(tk.Toplevel):
         self.refresh_from_editor()
         self.show_step_rotation_handler(label)
         self._start_step_carry_follow(label)
+        kept_note = (
+            " The previous optical STEP was kept as a promoted optical-solid row."
+            if had_existing_overlay
+            else ""
+        )
         self.status_var.set(
-            f"Optical STEP imported: {path.name}. Move the cursor to carry it, click to drop. "
+            f"Optical STEP imported: {path.name}. Move the cursor to carry it, click to drop.{kept_note} "
             "Click a face and use Snap STEP Normal->Optical Axis for alignment."
         )
 
@@ -8847,6 +8853,52 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_step_carry_cursor(False)
         self.refresh_from_editor()
         self.status_var.set("Camera/lens/optical/LED STEP imports cleared.")
+
+    def delete_selected_step(self) -> None:
+        """Delete the currently selected imported STEP element.
+
+        Removes a single un-promoted STEP overlay (one of the four import
+        slots), or the selected promoted STEP optical-solid row(s), without
+        clearing the other STEP imports the way ``Clear STEP Imports`` does.
+        """
+        label = self._selected_imported_step_label()
+        if label:
+            display = self.editor._step_overlay_display_label(label).upper()
+            self.editor._begin_history_capture()
+            self.editor._clear_imported_step_overlay_state(label)
+            self.editor._commit_history_capture()
+            self._close_step_rotation_handler()
+            self._clear_step_overlay_interaction_state(label)
+            self._step_carry_active_label = None
+            self._step_carry_follow_state = None
+            self._row_carry_drag_state = None
+            self._cancel_row_carry_hold_timer()
+            self._step_carry_snap_ray_mode = False
+            self._step_carry_snap_target_mode = False
+            self._step_normal_axis_pick_mode = False
+            self._step_carry_grid_label = None
+            self._step_carry_grid_spacing_mm = None
+            self._selected_step_feature_label = None
+            self._selected_step_feature_center_world = None
+            self._selected_step_feature_normal_world = None
+            self._clear_step_carry_grip_marker(render=False)
+            self._set_step_carry_cursor(False)
+            self.editor._live_step_overlay_trace_plan_cache = {}
+            self.refresh_from_editor(force_retrace=True)
+            self.status_var.set(f"Deleted imported {display} STEP overlay.")
+            return
+        removed = self.editor.delete_optical_step_rows(self.editor._selected_table_indices())
+        if removed > 0:
+            self.refresh_from_editor(force_retrace=True)
+            self.status_var.set(
+                f"Deleted {removed} promoted STEP optical-solid "
+                f"row{'s' if removed != 1 else ''}."
+            )
+            return
+        self.status_var.set(
+            "Delete STEP: select an imported STEP overlay or a promoted "
+            "STEP optical-solid row first."
+        )
 
     def _selected_imported_step_label(self) -> str:
         for candidate in (
@@ -20547,10 +20599,43 @@ class KrakenLayoutEditor(tk.Tk):
             return (0.0, 0.0, 0.0)
         return (0.0, 0.0, 0.5 * (min(finite) + max(finite)))
 
+    def _preserve_unpromoted_step_overlay(self, label: str) -> dict[str, object] | None:
+        """Promote an un-promoted STEP overlay before its import slot is reused.
+
+        STEP overlays are stored in four fixed slots (lens/optical/led/camera),
+        so importing another STEP of the same kind would otherwise silently
+        discard the existing un-promoted overlay.  Promote it to a persistent
+        optical-solid row first, so repeated imports accumulate optical
+        elements instead of overwriting the previous one.
+        """
+        label = str(label).strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET:
+            return None
+        if self._step_path_for_label(label) is None:
+            return None
+        try:
+            result = self.promote_imported_step_to_optical_solid_row(
+                label,
+                open_face_editor=False,
+                clear_overlay=True,
+                refresh_open_3d=False,
+            )
+        except Exception as exc:
+            self.append_debug(f"Auto-keep of the existing {label} STEP overlay failed: {exc}")
+            return None
+        if result is not None:
+            row_index = int(result.get("row_index", -1))
+            self.append_debug(
+                f"Auto-promoted the existing {label.upper()} STEP overlay to optical "
+                f"solid row S{row_index} so the new import does not overwrite it."
+            )
+        return result
+
     def import_optical_step(self, dialog_parent: tk.Misc | None = None) -> Path | None:
         path = self._ask_step_file("Import optical STEP", DEFAULT_LENS_STEP_PATH.parent, parent=dialog_parent)
         if path is None:
             return None
+        self._preserve_unpromoted_step_overlay("optical")
         self._begin_history_capture()
         self.imported_optical_step_path = path
         self.optical_step_rotation_x_deg = 0.0
@@ -33941,6 +34026,34 @@ class KrakenLayoutEditor(tk.Tk):
         self._sync_table()
         self._commit_history_capture()
         self.refresh_plot()
+
+    def delete_optical_step_rows(self, indices) -> int:
+        """Delete the promoted optical-solid STEP rows among *indices*.
+
+        Only rows carrying ``StepOverlayPromotion`` metadata are removed, so a
+        plain prescription row that happens to be selected is never deleted.
+        Returns the number of rows removed.
+        """
+        targets = sorted(
+            {
+                int(index)
+                for index in indices
+                if 0 <= int(index) < len(self.rows)
+                and self._is_open3d_promoted_optical_solid_row(self.rows[int(index)])
+            },
+            reverse=True,
+        )
+        if not targets:
+            return 0
+        self._commit_pending_table_edit()
+        self._begin_history_capture()
+        for index in targets:
+            del self.rows[index]
+        self._normalize_special_rows()
+        self._sync_table()
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        return len(targets)
 
     def duplicate_selected(self) -> None:
         selected = self.table.selection()

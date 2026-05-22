@@ -235,6 +235,55 @@ class raykeeper():
         return [np.nan, np.nan, np.nan]
 
     @staticmethod
+    def _polyline_direction(points, from_index, to_index):
+        """Unit travel direction between two ray-polyline vertices, or ``None``.
+
+        The traced polyline is stored in physical world coordinates, so a
+        segment between consecutive vertices is the authoritative physical
+        propagation direction regardless of the interaction that produced it.
+        """
+        try:
+            arr = np.asarray(points, dtype=float)
+        except Exception:
+            return None
+        if getattr(arr, "ndim", 0) != 2 or arr.shape[0] < 2 or arr.shape[1] < 3:
+            return None
+        n = int(arr.shape[0])
+        if not (0 <= int(from_index) < n and 0 <= int(to_index) < n):
+            return None
+        segment = arr[int(to_index), :3] - arr[int(from_index), :3]
+        if not np.all(np.isfinite(segment)):
+            return None
+        norm = float(np.linalg.norm(segment))
+        if norm <= 1.0e-9:
+            return None
+        return segment / norm
+
+    @staticmethod
+    def _reconciled_direction(stored, reference):
+        """Sign-correct a stored R_LMN/LMN direction against traced geometry.
+
+        KrakenOS ``R_LMN``/``LMN`` store the raw ``ResVec`` and omit the
+        cumulative ``SIGN`` flip, so they point backwards after an odd number
+        of reflections.  The traced polyline (built from ``ResVec * SIGN``) is
+        authoritative; flip the stored vector when it is clearly anti-parallel
+        to the physical segment.  A near-orthogonal reference is treated as an
+        index mismatch and the stored vector is kept unchanged.
+        """
+        try:
+            stored_vec = np.asarray(stored, dtype=float).reshape(-1)[:3]
+        except Exception:
+            stored_vec = np.asarray([np.nan, np.nan, np.nan], dtype=float)
+        if reference is None:
+            return [float(v) for v in stored_vec]
+        reference_vec = np.asarray(reference, dtype=float).reshape(-1)[:3]
+        if stored_vec.size < 3 or not np.all(np.isfinite(stored_vec)):
+            return [float(v) for v in reference_vec]
+        if float(np.dot(stored_vec, reference_vec)) < -0.5:
+            stored_vec = -stored_vec
+        return [float(v) for v in stored_vec]
+
+    @staticmethod
     def _event_type_label(raw_type, glass, n0, n1):
         label = str(raw_type or "").strip().lower()
         if label.startswith("split_"):
@@ -275,6 +324,12 @@ class raykeeper():
         lmn_arr = self._event_array(self.LMN, ray_index, dtype=float)
         r_lmn_arr = self._event_array(self.R_LMN, ray_index, dtype=float)
         s_lmn_arr = self._event_array(self.S_LMN, ray_index, dtype=float)
+        cc_arr = self._event_array(self.CC, ray_index, dtype=float)
+        cc_len = (
+            int(cc_arr.shape[0])
+            if getattr(cc_arr, "ndim", 0) == 2 and cc_arr.shape[0] >= 2 and cc_arr.shape[1] >= 3
+            else 0
+        )
         n0_arr = self._event_array(self.N0, ray_index, dtype=float).reshape(-1)
         n1_arr = self._event_array(self.N1, ray_index, dtype=float).reshape(-1)
         distance_arr = self._event_array(self.DISTANCE, ray_index, dtype=float).reshape(-1)
@@ -360,6 +415,16 @@ class raykeeper():
             media_diag = self._event_text(media_state_diagnostic_arr, step)
             face_warning = self._event_text(mesh_face_warning_arr, step)
             diagnostic = "; ".join(value for value in (media_diag, face_warning) if str(value or "").strip())
+            incoming_reference = self._polyline_direction(xyz_arr, point_index - 1, point_index)
+            outgoing_reference = self._polyline_direction(xyz_arr, point_index, point_index + 1)
+            if outgoing_reference is None and step == hit_count - 1:
+                outgoing_reference = self._polyline_direction(cc_arr, cc_len - 2, cc_len - 1)
+            incoming_direction = self._reconciled_direction(
+                self._event_vector(lmn_arr, step), incoming_reference
+            )
+            outgoing_direction = self._reconciled_direction(
+                self._event_vector(r_lmn_arr, step), outgoing_reference
+            )
             records.append(
                 TraceEventRecord(
                     event_id=f"ray:{int(ray_index)}:hit:{int(step)}",
@@ -393,8 +458,8 @@ class raykeeper():
                     surface_name=self._event_text(name_arr, step),
                     material=glass,
                     point_world=self._event_vector(xyz_arr, point_index),
-                    incoming_direction=self._event_vector(lmn_arr, step),
-                    outgoing_direction=self._event_vector(r_lmn_arr, step),
+                    incoming_direction=incoming_direction,
+                    outgoing_direction=outgoing_direction,
                     surface_normal=self._event_vector(s_lmn_arr, step),
                     n0=n0,
                     n1=n1,
@@ -442,7 +507,6 @@ class raykeeper():
             and int(last_surface) == int(terminal_target_surface)
         )
         if not str(termination_reason or "").strip() and str(terminal_policy_source or "").strip():
-            cc_arr = self._event_array(self.CC, ray_index, dtype=float)
             try:
                 terminal_continuation = (
                     np.asarray(cc_arr, dtype=float).ndim == 2
@@ -491,9 +555,15 @@ class raykeeper():
                     branch_phase_deg=branch_phase,
                     step=int(hit_count),
                     surface_id=last_surface,
-                    point_world=self._event_vector(self._event_array(self.CC, ray_index, dtype=float), -1),
-                    incoming_direction=self._event_vector(lmn_arr, max(hit_count - 1, 0)),
-                    outgoing_direction=self._event_vector(r_lmn_arr, max(hit_count - 1, 0)),
+                    point_world=self._event_vector(cc_arr, -1),
+                    incoming_direction=self._reconciled_direction(
+                        self._event_vector(lmn_arr, max(hit_count - 1, 0)),
+                        self._polyline_direction(cc_arr, cc_len - 2, cc_len - 1),
+                    ),
+                    outgoing_direction=self._reconciled_direction(
+                        self._event_vector(r_lmn_arr, max(hit_count - 1, 0)),
+                        self._polyline_direction(cc_arr, cc_len - 2, cc_len - 1),
+                    ),
                     n1=branch_final_index,
                     media_in=branch_final_media,
                     media_out=branch_final_media,
