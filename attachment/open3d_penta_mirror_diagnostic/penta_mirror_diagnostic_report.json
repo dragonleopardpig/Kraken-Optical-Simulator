@@ -18,7 +18,7 @@
     "terminal_last_faces": {
       "F003 refraction": 12
     },
-    "trace_summary_text": "Ray terminals: 12 rays | escaped=12 | bounded=12, endpoint markers hidden=12, last hit F003 refraction=12"
+    "trace_summary_text": "Ray terminals: 12 rays | escaped=12 | bounded=12, endpoint markers hidden=12, last hit F003 refraction=12\nPath: F005 refract -> F004 reflect -> F003 refract=12"
   },
   {
     "image": "attachment/open3d_penta_mirror_diagnostic/f003_f004_mirrors.png",
@@ -40,6 +40,6 @@
     "terminal_last_faces": {
       "F006 refraction": 12
     },
-    "trace_summary_text": "Ray terminals: 12 rays | escaped=12 | bounded=12, endpoint markers hidden=12, last hit F006 refraction=12"
+    "trace_summary_text": "Ray terminals: 12 rays | escaped=12 | bounded=12, endpoint markers hidden=12, last hit F006 refraction=12\nPath: F005 refract -> F004 reflect -> F003 reflect -> F006 refract=12"
   }
 ]

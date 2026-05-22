@@ -14,6 +14,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from KrakenOS.UI.capture_vendor_prism_case_study_screenshots import (
     PRISM_42779_STEP,
     PROJECT_ROOT,
@@ -190,6 +192,94 @@ def _promote_current_optical_step(app: KrakenLayoutEditor) -> int:
     return row_index
 
 
+def _json_vector(value: object) -> list[float]:
+    try:
+        vector = np.asarray(value, dtype=float).reshape(-1)[:3]
+    except Exception:
+        return []
+    if vector.size < 3 or not np.all(np.isfinite(vector[:3])):
+        return []
+    return [round(float(component), 6) for component in vector[:3]]
+
+
+def _surface_event_record(event: object) -> dict[str, object]:
+    metadata = getattr(event, "metadata", {}) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    return {
+        "step": int(getattr(event, "step", 0) or 0),
+        "surface_id": getattr(event, "surface_id", None),
+        "face_id": str(
+            getattr(event, "mesh_face_id", "")
+            or metadata.get("mesh_face_id", "")
+            or metadata.get("face_id", "")
+            or ""
+        ),
+        "event_type": str(getattr(event, "event_type", "") or ""),
+        "interaction_model": str(getattr(event, "interaction_model", "") or ""),
+        "media_transition": str(getattr(event, "media_transition", "") or ""),
+        "inside_before": str(getattr(event, "inside_volumes_before", "") or ""),
+        "inside_after": str(getattr(event, "inside_volumes_after", "") or ""),
+        "point_world": _json_vector(getattr(event, "point_world", ())),
+        "incoming_direction": _json_vector(getattr(event, "incoming_direction", ())),
+        "outgoing_direction": _json_vector(getattr(event, "outgoing_direction", ())),
+        "surface_normal": _json_vector(getattr(event, "surface_normal", ())),
+    }
+
+
+def _dominant_path_records(ray_paths: list[object], *, limit: int = 3) -> list[dict[str, object]]:
+    def _score(path: object) -> tuple[float, float, float]:
+        try:
+            source_ray = float(getattr(path, "source_ray_index", getattr(path, "ray_index", 0)) or 0)
+        except Exception:
+            source_ray = 0.0
+        try:
+            power = float(getattr(path, "branch_power", 1.0) or 0.0)
+        except Exception:
+            power = 0.0
+        try:
+            ray_index = float(getattr(path, "ray_index", 0) or 0)
+        except Exception:
+            ray_index = 0.0
+        target = max((len(ray_paths) - 1) / 2.0, 0.0)
+        return (abs(source_ray - target), -power, abs(ray_index - target))
+
+    records: list[dict[str, object]] = []
+    for path in sorted(ray_paths, key=_score)[: max(1, int(limit))]:
+        events = [
+            _surface_event_record(event)
+            for event in list(getattr(path, "events", []) or [])
+            if str(getattr(event, "event_kind", "") or "") == "surface"
+        ]
+        records.append(
+            {
+                "ray_index": int(getattr(path, "ray_index", 0) or 0),
+                "source_ray_index": getattr(path, "source_ray_index", None),
+                "branch_path": str(getattr(path, "branch_path", "") or ""),
+                "branch_power": getattr(path, "branch_power", None),
+                "terminal_status": ray_path_terminal_status_from_events(path),
+                "surface_sequence": Kraken3DInspector._ray_path_surface_sequence_summary(path),
+                "events": events,
+            }
+        )
+    return records
+
+
+def _optical_axis_report(inspector: Kraken3DInspector) -> list[dict[str, object]]:
+    records = []
+    for record in list(getattr(inspector, "_optical_axis_pick_records", []) or []):
+        points = np.asarray(record.get("points", ()), dtype=float)
+        records.append(
+            {
+                "axis_id": str(record.get("axis_id", "") or ""),
+                "axis_label": str(record.get("axis_label", "") or ""),
+                "axis_kind": str(record.get("axis_kind", "") or ""),
+                "points": [_json_vector(point) for point in points[:2]] if points.ndim == 2 and points.shape[0] >= 2 else [],
+            }
+        )
+    return records
+
+
 def _scene_report(app: KrakenLayoutEditor, inspector: Kraken3DInspector, label: str) -> dict[str, Any]:
     scene_bundle = getattr(inspector, "_current_scene_bundle", None)
     ray_paths = list(getattr(scene_bundle, "ray_paths", []) or [])
@@ -208,9 +298,13 @@ def _scene_report(app: KrakenLayoutEditor, inspector: Kraken3DInspector, label: 
         if path is not None and Path(path).exists():
             render_file_backed_rows.append(index)
     terminal_counts: dict[str, int] = {}
+    sequence_counts: dict[str, int] = {}
     for path in ray_paths:
         status = str(ray_path_terminal_status_from_events(path) or "unknown").strip() or "unknown"
         terminal_counts[status or "unknown"] = int(terminal_counts.get(status or "unknown", 0)) + 1
+        sequence = Kraken3DInspector._ray_path_surface_sequence_summary(path)
+        if sequence:
+            sequence_counts[sequence] = int(sequence_counts.get(sequence, 0)) + 1
     return {
         "label": label,
         "rows": len(app.rows),
@@ -219,6 +313,9 @@ def _scene_report(app: KrakenLayoutEditor, inspector: Kraken3DInspector, label: 
         "has_optical_overlay": app.imported_optical_step_path is not None,
         "ray_paths": len(ray_paths),
         "terminal_counts": terminal_counts,
+        "sequence_counts": sequence_counts,
+        "dominant_paths": _dominant_path_records(ray_paths),
+        "optical_axis_records": _optical_axis_report(inspector),
         "actor_counts": inspector._debug_actor_counts(),
         "status": str(inspector.status_var.get()),
     }
@@ -265,6 +362,7 @@ def _assert_final_state(reports: list[dict[str, Any]]) -> None:
 
 
 def capture(output_dir: Path = DEFAULT_OUTPUT_DIR) -> list[Path]:
+    output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     app = KrakenLayoutEditor(headless=True)
     reports: list[dict[str, Any]] = []

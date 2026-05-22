@@ -5148,23 +5148,45 @@ def _optical_axis_z_span(bounds) -> tuple[float, float]:
     return float(z0), float(z1)
 
 
-def _dotted_optical_axis_mesh(bounds) -> object | None:
-    """Build a long dashed guide on the KrakenOS optical axis (X=Y=0)."""
+def _dotted_axis_mesh_from_points(points, *, dash_count: int = 96) -> object | None:
+    """Build a dashed pickable guide along one 3D polyline."""
     if pv is None:
         return None
-    z0, z1 = _optical_axis_z_span(bounds)
-    segment_count = 96
-    dz = (z1 - z0) / float(segment_count)
+    try:
+        pts = np.asarray(points, dtype=float)
+    except Exception:
+        return None
+    if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+        return None
+    pts = np.asarray(pts[:, :3], dtype=float)
+    if not np.all(np.isfinite(pts)):
+        return None
     parts = []
-    for index in range(segment_count):
-        if index % 2:
+    total_length = 0.0
+    lengths: list[float] = []
+    for start, end in zip(pts[:-1], pts[1:]):
+        length = float(np.linalg.norm(end - start))
+        if np.isfinite(length) and length > 1e-9:
+            total_length += length
+        lengths.append(length)
+    if total_length <= 1e-9:
+        return None
+    dash_count = max(8, int(dash_count))
+    for start, end, length in zip(pts[:-1], pts[1:], lengths):
+        if not np.isfinite(length) or length <= 1e-9:
             continue
-        start_z = z0 + index * dz
-        end_z = min(z0 + (index + 0.58) * dz, z1)
-        try:
-            parts.append(pv.Line((0.0, 0.0, start_z), (0.0, 0.0, end_z)))
-        except Exception:
-            pass
+        segment_count = max(2, int(round(dash_count * length / total_length)))
+        direction = (end - start) / length
+        step = length / float(segment_count)
+        for index in range(segment_count):
+            if index % 2:
+                continue
+            dash_start = start + direction * (index * step)
+            dash_end = start + direction * min((index + 0.58) * step, length)
+            try:
+                parts.append(pv.Line(tuple(dash_start), tuple(dash_end)))
+            except Exception:
+                pass
     if not parts:
         return None
     merged = parts[0]
@@ -5174,6 +5196,98 @@ def _dotted_optical_axis_mesh(bounds) -> object | None:
         except Exception:
             pass
     return merged
+
+
+def _dotted_optical_axis_mesh(bounds) -> object | None:
+    """Build a long dashed guide on the KrakenOS optical axis (X=Y=0)."""
+    z0, z1 = _optical_axis_z_span(bounds)
+    return _dotted_axis_mesh_from_points(np.asarray(((0.0, 0.0, z0), (0.0, 0.0, z1)), dtype=float))
+
+
+def _extended_axis_points(point, direction, bounds) -> np.ndarray | None:
+    try:
+        origin = np.asarray(point, dtype=float).reshape(-1)[:3]
+        vector = np.asarray(direction, dtype=float).reshape(-1)[:3]
+    except Exception:
+        return None
+    if origin.size < 3 or vector.size < 3 or not np.all(np.isfinite(origin[:3])) or not np.all(np.isfinite(vector[:3])):
+        return None
+    norm = float(np.linalg.norm(vector[:3]))
+    if not np.isfinite(norm) or norm <= 1e-12:
+        return None
+    vector = vector[:3] / norm
+    try:
+        b = np.asarray(bounds, dtype=float).reshape(-1)
+    except Exception:
+        b = np.asarray([], dtype=float)
+    if b.size != 6 or not np.all(np.isfinite(b)) or b[0] > b[1] or b[2] > b[3] or b[4] > b[5]:
+        b = np.asarray([-10.0, 10.0, -10.0, 10.0, 0.0, 100.0], dtype=float)
+    span = max(float(b[1] - b[0]), float(b[3] - b[2]), float(b[5] - b[4]), 20.0)
+    half = max(0.85 * span, 10.0)
+    return np.vstack((origin[:3] - vector * half, origin[:3] + vector * half))
+
+
+def _clean_polyline_points(points) -> np.ndarray:
+    try:
+        pts = np.asarray(points, dtype=float)
+    except Exception:
+        return np.empty((0, 3), dtype=float)
+    if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+        return np.empty((0, 3), dtype=float)
+    clean: list[np.ndarray] = []
+    for point in pts[:, :3]:
+        if not np.all(np.isfinite(point)):
+            continue
+        if clean and float(np.linalg.norm(point - clean[-1])) <= 1e-8:
+            continue
+        clean.append(np.asarray(point, dtype=float))
+    if len(clean) < 2:
+        return np.empty((0, 3), dtype=float)
+    return np.vstack(clean)
+
+
+def _dotted_axis_records_from_ray_path(path, bounds, *, max_segments: int = 6) -> list[dict[str, object]]:
+    points = _clean_polyline_points(getattr(path, "points_world", np.empty((0, 3))))
+    if points.shape[0] < 2:
+        return []
+    records: list[dict[str, object]] = []
+    seen: set[tuple[float, ...]] = set()
+    try:
+        ray_index = int(getattr(path, "ray_index", -1))
+    except Exception:
+        ray_index = -1
+    branch_path = str(getattr(path, "branch_path", "") or "")
+    source_id = str(getattr(path, "source_id", "") or "")
+    for index, (start, end) in enumerate(zip(points[:-1], points[1:]), start=1):
+        direction = end - start
+        length = float(np.linalg.norm(direction))
+        if not np.isfinite(length) or length <= 1e-6:
+            continue
+        direction = direction / length
+        if abs(float(direction[2])) > 0.998 and float(np.hypot(start[0], start[1])) < 1e-5 and float(np.hypot(end[0], end[1])) < 1e-5:
+            continue
+        axis_points = _extended_axis_points(0.5 * (start + end), direction, bounds)
+        if axis_points is None:
+            continue
+        key = tuple(np.round(np.concatenate((axis_points[0], axis_points[1])), 5))
+        reverse_key = tuple(np.round(np.concatenate((axis_points[1], axis_points[0])), 5))
+        if key in seen or reverse_key in seen:
+            continue
+        seen.add(key)
+        records.append(
+            {
+                "axis_id": f"axis:ray:{ray_index}:segment:{index}",
+                "axis_label": f"Optical Axis {len(records) + 2}",
+                "axis_kind": "traced_chief_ray_segment",
+                "branch_path": branch_path,
+                "source_id": source_id,
+                "ray_index": ray_index,
+                "points": axis_points,
+            }
+        )
+        if len(records) >= int(max_segments):
+            break
+    return records
 
 
 class Kraken3DInspector(tk.Toplevel):
@@ -9579,7 +9693,7 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             bounds = np.asarray([-10.0, 10.0, -10.0, 10.0, 0.0, 100.0], dtype=float)
         z0, z1 = _optical_axis_z_span(bounds)
-        return [
+        records = [
             {
                 "axis_id": "axis:global",
                 "axis_label": "Optical Axis",
@@ -9590,6 +9704,43 @@ class Kraken3DInspector(tk.Toplevel):
                 "points": np.asarray(((0.0, 0.0, z0), (0.0, 0.0, z1)), dtype=float),
             }
         ]
+        paths = [
+            path
+            for path in list(getattr(scene_bundle, "ray_paths", []) or [])
+            if _clean_polyline_points(getattr(path, "points_world", np.empty((0, 3)))).shape[0] >= 2
+        ]
+        if paths:
+            target_ray = (len(paths) - 1) / 2.0
+
+            def _path_score(path) -> tuple[float, float, float]:
+                try:
+                    source_ray = float(getattr(path, "source_ray_index", getattr(path, "ray_index", 0)) or 0)
+                except Exception:
+                    source_ray = 0.0
+                try:
+                    power = float(getattr(path, "branch_power", 1.0) or 0.0)
+                except Exception:
+                    power = 0.0
+                try:
+                    ray_index = float(getattr(path, "ray_index", 0) or 0)
+                except Exception:
+                    ray_index = 0.0
+                return (abs(source_ray - target_ray), -power, abs(ray_index - target_ray))
+
+            physical_paths = [
+                path
+                for path in paths
+                if any(
+                    str(getattr(event, "event_kind", "") or "") == "surface"
+                    and str(getattr(event, "event_type", "") or "").strip().lower()
+                    not in {"", "image", "detector", "target"}
+                    for event in list(getattr(path, "events", []) or [])
+                )
+            ]
+            if physical_paths:
+                chief = min(physical_paths, key=_path_score)
+                records.extend(_dotted_axis_records_from_ray_path(chief, bounds))
+        return records
 
     def _add_optical_axis_pick_overlays(self, scene_bundle: SceneBundle | None) -> int:
         if pv is None:
@@ -9602,9 +9753,8 @@ class Kraken3DInspector(tk.Toplevel):
             record = dict(record)
             record["points"] = points[:, :3].copy()
             self._optical_axis_pick_records.append(record)
-            try:
-                mesh = _dotted_optical_axis_mesh(self._renderer.ComputeVisiblePropBounds())
-            except Exception:
+            mesh = _dotted_axis_mesh_from_points(points[:, :3])
+            if mesh is None:
                 continue
             if int(getattr(mesh, "n_points", 0)) < 2:
                 continue
@@ -10351,6 +10501,7 @@ class Kraken3DInspector(tk.Toplevel):
         bounded_ray_count: int,
         suppressed_endpoint_count: int,
         terminal_face_counts: dict[str, int] | None = None,
+        terminal_sequence_counts: dict[str, int] | None = None,
     ) -> str:
         if int(ray_count) <= 0 and not terminal_counts:
             return ""
@@ -10398,6 +10549,16 @@ class Kraken3DInspector(tk.Toplevel):
         text = f"Ray terminals: {int(ray_count)} rays | " + ", ".join(parts)
         if suffix:
             text += " | " + ", ".join(suffix)
+        sequence_parts: list[str] = []
+        for label, count in sorted(
+            (dict(terminal_sequence_counts or {})).items(),
+            key=lambda item: (-int(item[1]), str(item[0])),
+        )[:2]:
+            text_label = str(label or "").strip()
+            if text_label and int(count) > 0:
+                sequence_parts.append(f"{text_label}={int(count)}")
+        if sequence_parts:
+            text += "\nPath: " + "; ".join(sequence_parts)
         return text
 
     @staticmethod
@@ -10430,6 +10591,54 @@ class Kraken3DInspector(tk.Toplevel):
             return f"{face_id} {event_type}"
         return face_id
 
+    @staticmethod
+    def _ray_path_surface_sequence_summary(ray_path, *, max_events: int = 6) -> str:
+        def _event_face_id(event) -> str:
+            metadata = getattr(event, "metadata", {}) or {}
+            if not isinstance(metadata, dict):
+                metadata = {}
+            face_id = str(
+                getattr(event, "mesh_face_id", "")
+                or metadata.get("mesh_face_id", "")
+                or metadata.get("face_id", "")
+                or ""
+            ).strip()
+            if face_id:
+                return face_id
+            try:
+                surface_id = int(getattr(event, "surface_id"))
+                return f"S{surface_id}"
+            except Exception:
+                return "surface"
+
+        def _event_action(event) -> str:
+            label = str(getattr(event, "event_type", "") or "").strip().lower()
+            if label == "reflect_tir":
+                return "TIR"
+            if label in {"reflect_mirror", "reflection", "reflect"}:
+                return "reflect"
+            if label in {"refraction", "refract"}:
+                return "refract"
+            if label in {"transmission", "transmit"}:
+                return "transmit"
+            if label in {"absorb", "absorption"}:
+                return "absorb"
+            return label.replace("_", " ") if label else "hit"
+
+        surface_events = [
+            event
+            for event in list(getattr(ray_path, "events", []) or [])
+            if str(getattr(event, "event_kind", "") or "") == "surface"
+        ]
+        if not surface_events:
+            return ""
+        parts: list[str] = []
+        for event in surface_events[: max(1, int(max_events))]:
+            parts.append(f"{_event_face_id(event)} {_event_action(event)}")
+        if len(surface_events) > len(parts):
+            parts.append("...")
+        return " -> ".join(parts)
+
     def _update_trace_summary(
         self,
         terminal_counts: dict[str, int] | None = None,
@@ -10438,6 +10647,7 @@ class Kraken3DInspector(tk.Toplevel):
         bounded_ray_count: int = 0,
         suppressed_endpoint_count: int = 0,
         terminal_face_counts: dict[str, int] | None = None,
+        terminal_sequence_counts: dict[str, int] | None = None,
         render: bool = True,
     ) -> None:
         if self._renderer is None:
@@ -10448,6 +10658,7 @@ class Kraken3DInspector(tk.Toplevel):
             bounded_ray_count=int(bounded_ray_count),
             suppressed_endpoint_count=int(suppressed_endpoint_count),
             terminal_face_counts=terminal_face_counts,
+            terminal_sequence_counts=terminal_sequence_counts,
         )
         actor = self._trace_summary_actor
         if not text:
@@ -11479,14 +11690,19 @@ class Kraken3DInspector(tk.Toplevel):
             suppressed_endpoint_count = 0
             terminal_counts: dict[str, int] = {}
             terminal_face_counts: dict[str, int] = {}
+            terminal_sequence_counts: dict[str, int] = {}
             for ray_index, color, ray_pts, terminal_status in self.editor._iter_3d_scene_ray_records(rays, scene_bundle):
                 terminal_key = str(terminal_status or "unknown").strip().lower() or "unknown"
                 terminal_counts[terminal_key] = int(terminal_counts.get(terminal_key, 0)) + 1
                 ray_path = paths_by_ray_index.get(int(ray_index))
-                if terminal_key in {"escaped", "stopped", "terminated", "unknown"} and ray_path is not None:
-                    face_summary = self._ray_path_terminal_face_summary(ray_path)
-                    if face_summary:
-                        terminal_face_counts[face_summary] = int(terminal_face_counts.get(face_summary, 0)) + 1
+                if ray_path is not None:
+                    sequence_summary = self._ray_path_surface_sequence_summary(ray_path)
+                    if sequence_summary:
+                        terminal_sequence_counts[sequence_summary] = int(terminal_sequence_counts.get(sequence_summary, 0)) + 1
+                    if terminal_key in {"escaped", "stopped", "terminated", "unknown"}:
+                        face_summary = self._ray_path_terminal_face_summary(ray_path)
+                        if face_summary:
+                            terminal_face_counts[face_summary] = int(terminal_face_counts.get(face_summary, 0)) + 1
                 terminal_target = KrakenLayoutEditor._missed_detector_target_for_path(scene_bundle, ray_path)
                 terminal_direction = KrakenLayoutEditor._terminal_display_direction_for_path(ray_path)
                 display_ray_pts, was_bounded = KrakenLayoutEditor._bounded_3d_ray_points_for_display(
@@ -11550,6 +11766,7 @@ class Kraken3DInspector(tk.Toplevel):
             suppressed_endpoint_count = 0
             terminal_counts = {}
             terminal_face_counts = {}
+            terminal_sequence_counts = {}
 
         optical_axis_overlays = 0
         if self._should_draw_optical_axis_overlays():
@@ -11679,6 +11896,7 @@ class Kraken3DInspector(tk.Toplevel):
             bounded_ray_count=bounded_ray_count,
             suppressed_endpoint_count=suppressed_endpoint_count,
             terminal_face_counts=terminal_face_counts,
+            terminal_sequence_counts=terminal_sequence_counts,
             render=False,
         )
         self.render()

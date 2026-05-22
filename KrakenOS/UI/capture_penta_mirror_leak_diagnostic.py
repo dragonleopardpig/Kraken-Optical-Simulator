@@ -174,6 +174,7 @@ def _assert_f004_reflects(report: dict[str, Any], *, expected_terminal: str | No
 
 
 def capture(output_dir: Path = DEFAULT_OUTPUT_DIR) -> list[Path]:
+    output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
     reports: list[dict[str, Any]] = []

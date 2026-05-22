@@ -16,13 +16,157 @@
       "step_rotate_handles": 0,
       "view_props": 14
     },
+    "dominant_paths": [
+      {
+        "branch_path": "primary",
+        "branch_power": 1.0,
+        "events": [
+          {
+            "event_type": "image",
+            "face_id": "",
+            "incoming_direction": [
+              -0.021743,
+              0.015156,
+              0.999649
+            ],
+            "inside_after": "",
+            "inside_before": "",
+            "interaction_model": "target_surface",
+            "media_transition": "target_termination",
+            "outgoing_direction": [
+              -0.021743,
+              0.015156,
+              0.999649
+            ],
+            "point_world": [
+              -2.175045,
+              1.516166,
+              100.0
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.0,
+              -1.0
+            ]
+          }
+        ],
+        "ray_index": 5,
+        "source_ray_index": 5,
+        "surface_sequence": "S1 image",
+        "terminal_status": "hit_detector"
+      },
+      {
+        "branch_path": "primary",
+        "branch_power": 1.0,
+        "events": [
+          {
+            "event_type": "image",
+            "face_id": "",
+            "incoming_direction": [
+              0.004177,
+              0.013873,
+              0.999895
+            ],
+            "inside_after": "",
+            "inside_before": "",
+            "interaction_model": "target_surface",
+            "media_transition": "target_termination",
+            "outgoing_direction": [
+              0.004177,
+              0.013873,
+              0.999895
+            ],
+            "point_world": [
+              0.417735,
+              1.387446,
+              100.0
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.0,
+              -1.0
+            ]
+          }
+        ],
+        "ray_index": 6,
+        "source_ray_index": 6,
+        "surface_sequence": "S1 image",
+        "terminal_status": "hit_detector"
+      },
+      {
+        "branch_path": "primary",
+        "branch_power": 1.0,
+        "events": [
+          {
+            "event_type": "image",
+            "face_id": "",
+            "incoming_direction": [
+              0.019277,
+              0.021602,
+              0.999581
+            ],
+            "inside_after": "",
+            "inside_before": "",
+            "interaction_model": "target_surface",
+            "media_transition": "target_termination",
+            "outgoing_direction": [
+              0.019277,
+              0.021602,
+              0.999581
+            ],
+            "point_world": [
+              1.928518,
+              2.161103,
+              100.0
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.0,
+              -1.0
+            ]
+          }
+        ],
+        "ray_index": 4,
+        "source_ray_index": 4,
+        "surface_sequence": "S1 image",
+        "terminal_status": "hit_detector"
+      }
+    ],
     "file_backed_rows": [],
     "has_optical_overlay": false,
     "image": "attachment/open3d_step_workflow_headless/STEP1.png",
     "label": "base Object/Image trace",
+    "optical_axis_records": [
+      {
+        "axis_id": "axis:global",
+        "axis_kind": "dotted_global_guide",
+        "axis_label": "Optical Axis",
+        "points": [
+          [
+            0.0,
+            0.0,
+            -64.902558
+          ],
+          [
+            0.0,
+            0.0,
+            164.752647
+          ]
+        ]
+      }
+    ],
     "ray_paths": 12,
     "render_file_backed_rows": [],
     "rows": 2,
+    "sequence_counts": {
+      "S1 image": 12
+    },
     "status": "3D scene ready | surfaces=0 | rays=12 | optical axes=1 | assigned face overlays=0 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
     "terminal_counts": {
       "hit_detector": 12
@@ -47,13 +191,157 @@
       "step_rotate_handles": 0,
       "view_props": 17
     },
+    "dominant_paths": [
+      {
+        "branch_path": "primary",
+        "branch_power": 1.0,
+        "events": [
+          {
+            "event_type": "image",
+            "face_id": "",
+            "incoming_direction": [
+              -0.021743,
+              0.015156,
+              0.999649
+            ],
+            "inside_after": "",
+            "inside_before": "",
+            "interaction_model": "target_surface",
+            "media_transition": "target_termination",
+            "outgoing_direction": [
+              -0.021743,
+              0.015156,
+              0.999649
+            ],
+            "point_world": [
+              -2.175045,
+              1.516166,
+              100.0
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.0,
+              -1.0
+            ]
+          }
+        ],
+        "ray_index": 5,
+        "source_ray_index": 5,
+        "surface_sequence": "S1 image",
+        "terminal_status": "hit_detector"
+      },
+      {
+        "branch_path": "primary",
+        "branch_power": 1.0,
+        "events": [
+          {
+            "event_type": "image",
+            "face_id": "",
+            "incoming_direction": [
+              0.004177,
+              0.013873,
+              0.999895
+            ],
+            "inside_after": "",
+            "inside_before": "",
+            "interaction_model": "target_surface",
+            "media_transition": "target_termination",
+            "outgoing_direction": [
+              0.004177,
+              0.013873,
+              0.999895
+            ],
+            "point_world": [
+              0.417735,
+              1.387446,
+              100.0
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.0,
+              -1.0
+            ]
+          }
+        ],
+        "ray_index": 6,
+        "source_ray_index": 6,
+        "surface_sequence": "S1 image",
+        "terminal_status": "hit_detector"
+      },
+      {
+        "branch_path": "primary",
+        "branch_power": 1.0,
+        "events": [
+          {
+            "event_type": "image",
+            "face_id": "",
+            "incoming_direction": [
+              0.019277,
+              0.021602,
+              0.999581
+            ],
+            "inside_after": "",
+            "inside_before": "",
+            "interaction_model": "target_surface",
+            "media_transition": "target_termination",
+            "outgoing_direction": [
+              0.019277,
+              0.021602,
+              0.999581
+            ],
+            "point_world": [
+              1.928518,
+              2.161103,
+              100.0
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.0,
+              -1.0
+            ]
+          }
+        ],
+        "ray_index": 4,
+        "source_ray_index": 4,
+        "surface_sequence": "S1 image",
+        "terminal_status": "hit_detector"
+      }
+    ],
     "file_backed_rows": [],
     "has_optical_overlay": true,
     "image": "attachment/open3d_step_workflow_headless/STEP2.png",
     "label": "imported penta STEP above ray",
+    "optical_axis_records": [
+      {
+        "axis_id": "axis:global",
+        "axis_kind": "dotted_global_guide",
+        "axis_label": "Optical Axis",
+        "points": [
+          [
+            0.0,
+            0.0,
+            -64.902558
+          ],
+          [
+            0.0,
+            0.0,
+            164.752647
+          ]
+        ]
+      }
+    ],
     "ray_paths": 12,
     "render_file_backed_rows": [],
     "rows": 2,
+    "sequence_counts": {
+      "S1 image": 12
+    },
     "status": "3D scene ready | surfaces=0 | rays=12 | optical axes=1 | assigned face overlays=0 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
     "terminal_counts": {
       "hit_detector": 12
@@ -78,13 +366,157 @@
       "step_rotate_handles": 0,
       "view_props": 17
     },
+    "dominant_paths": [
+      {
+        "branch_path": "primary",
+        "branch_power": 1.0,
+        "events": [
+          {
+            "event_type": "image",
+            "face_id": "",
+            "incoming_direction": [
+              -0.021743,
+              0.015156,
+              0.999649
+            ],
+            "inside_after": "",
+            "inside_before": "",
+            "interaction_model": "target_surface",
+            "media_transition": "target_termination",
+            "outgoing_direction": [
+              -0.021743,
+              0.015156,
+              0.999649
+            ],
+            "point_world": [
+              -2.175045,
+              1.516166,
+              100.0
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.0,
+              -1.0
+            ]
+          }
+        ],
+        "ray_index": 5,
+        "source_ray_index": 5,
+        "surface_sequence": "S1 image",
+        "terminal_status": "hit_detector"
+      },
+      {
+        "branch_path": "primary",
+        "branch_power": 1.0,
+        "events": [
+          {
+            "event_type": "image",
+            "face_id": "",
+            "incoming_direction": [
+              0.004177,
+              0.013873,
+              0.999895
+            ],
+            "inside_after": "",
+            "inside_before": "",
+            "interaction_model": "target_surface",
+            "media_transition": "target_termination",
+            "outgoing_direction": [
+              0.004177,
+              0.013873,
+              0.999895
+            ],
+            "point_world": [
+              0.417735,
+              1.387446,
+              100.0
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.0,
+              -1.0
+            ]
+          }
+        ],
+        "ray_index": 6,
+        "source_ray_index": 6,
+        "surface_sequence": "S1 image",
+        "terminal_status": "hit_detector"
+      },
+      {
+        "branch_path": "primary",
+        "branch_power": 1.0,
+        "events": [
+          {
+            "event_type": "image",
+            "face_id": "",
+            "incoming_direction": [
+              0.019277,
+              0.021602,
+              0.999581
+            ],
+            "inside_after": "",
+            "inside_before": "",
+            "interaction_model": "target_surface",
+            "media_transition": "target_termination",
+            "outgoing_direction": [
+              0.019277,
+              0.021602,
+              0.999581
+            ],
+            "point_world": [
+              1.928518,
+              2.161103,
+              100.0
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.0,
+              -1.0
+            ]
+          }
+        ],
+        "ray_index": 4,
+        "source_ray_index": 4,
+        "surface_sequence": "S1 image",
+        "terminal_status": "hit_detector"
+      }
+    ],
     "file_backed_rows": [],
     "has_optical_overlay": true,
     "image": "attachment/open3d_step_workflow_headless/STEP3.png",
     "label": "penta STEP carried onto ray",
+    "optical_axis_records": [
+      {
+        "axis_id": "axis:global",
+        "axis_kind": "dotted_global_guide",
+        "axis_label": "Optical Axis",
+        "points": [
+          [
+            0.0,
+            0.0,
+            -64.902558
+          ],
+          [
+            0.0,
+            0.0,
+            164.752647
+          ]
+        ]
+      }
+    ],
     "ray_paths": 12,
     "render_file_backed_rows": [],
     "rows": 2,
+    "sequence_counts": {
+      "S1 image": 12
+    },
     "status": "3D scene ready | surfaces=0 | rays=12 | optical axes=1 | assigned face overlays=0 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
     "terminal_counts": {
       "hit_detector": 12
@@ -92,8 +524,8 @@
   },
   {
     "actor_counts": {
-      "actors_by_key": 6,
-      "axis_actors": 1,
+      "actors_by_key": 9,
+      "axis_actors": 4,
       "picked_axis": null,
       "picked_row": 0,
       "placement_move_handles": 0,
@@ -107,26 +539,311 @@
       "show_rays": true,
       "step_actor_labels": {},
       "step_rotate_handles": 0,
-      "view_props": 19
+      "view_props": 22
     },
+    "dominant_paths": [
+      {
+        "branch_path": "primary",
+        "branch_power": 0.9089591980681035,
+        "events": [
+          {
+            "event_type": "refraction",
+            "face_id": "F005",
+            "incoming_direction": [
+              0.004177,
+              0.013873,
+              0.999895
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:1",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              0.002751,
+              0.009136,
+              0.999954
+            ],
+            "point_world": [
+              0.125319,
+              0.416229,
+              29.999619
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F004",
+            "incoming_direction": [
+              0.002751,
+              0.009136,
+              0.999954
+            ],
+            "inside_after": "",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:1",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              0.004177,
+              0.240817,
+              0.970561
+            ],
+            "point_world": [
+              0.209122,
+              0.694568,
+              60.464989
+            ],
+            "step": 1,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.382684,
+              0.923879
+            ]
+          }
+        ],
+        "ray_index": 6,
+        "source_ray_index": 6,
+        "surface_sequence": "F005 refract -> F004 refract",
+        "terminal_status": "hit_detector"
+      },
+      {
+        "branch_path": "primary",
+        "branch_power": 0.908905240315951,
+        "events": [
+          {
+            "event_type": "refraction",
+            "face_id": "F005",
+            "incoming_direction": [
+              -0.021743,
+              0.015156,
+              0.999649
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:1",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              -0.014318,
+              0.009981,
+              0.999848
+            ],
+            "point_world": [
+              -0.652505,
+              0.454844,
+              29.999619
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F004",
+            "incoming_direction": [
+              -0.014318,
+              0.009981,
+              0.999848
+            ],
+            "inside_after": "",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:1",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              -0.021743,
+              0.242282,
+              0.969962
+            ],
+            "point_world": [
+              -1.089171,
+              0.759232,
+              60.491772
+            ],
+            "step": 1,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.382684,
+              0.923879
+            ]
+          }
+        ],
+        "ray_index": 5,
+        "source_ray_index": 5,
+        "surface_sequence": "F005 refract -> F004 refract",
+        "terminal_status": "hit_detector"
+      },
+      {
+        "branch_path": "primary",
+        "branch_power": 0.9086867451496627,
+        "events": [
+          {
+            "event_type": "refraction",
+            "face_id": "F005",
+            "incoming_direction": [
+              0.019277,
+              0.021602,
+              0.999581
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:1",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              0.012695,
+              0.014226,
+              0.999818
+            ],
+            "point_world": [
+              0.578548,
+              0.648323,
+              29.999619
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F004",
+            "incoming_direction": [
+              0.012695,
+              0.014226,
+              0.999818
+            ],
+            "inside_after": "",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:1",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              0.019277,
+              0.249439,
+              0.968199
+            ],
+            "point_world": [
+              0.967414,
+              1.084087,
+              60.626335
+            ],
+            "step": 1,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              -0.382683,
+              0.92388
+            ]
+          }
+        ],
+        "ray_index": 4,
+        "source_ray_index": 4,
+        "surface_sequence": "F005 refract -> F004 refract",
+        "terminal_status": "hit_detector"
+      }
+    ],
     "file_backed_rows": [],
     "has_optical_overlay": true,
     "image": "attachment/open3d_step_workflow_headless/STEP4.png",
     "label": "Trace Ray with transient penta STEP",
+    "optical_axis_records": [
+      {
+        "axis_id": "axis:global",
+        "axis_kind": "dotted_global_guide",
+        "axis_label": "Optical Axis",
+        "points": [
+          [
+            0.0,
+            0.0,
+            -91.0
+          ],
+          [
+            0.0,
+            0.0,
+            231.0
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:6:segment:1",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 2",
+        "points": [
+          [
+            -0.434393,
+            -1.442773,
+            -103.987701
+          ],
+          [
+            0.559712,
+            1.859002,
+            133.987319
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:6:segment:2",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 3",
+        "points": [
+          [
+            -0.160106,
+            -0.531769,
+            -73.76228
+          ],
+          [
+            0.494547,
+            1.642566,
+            164.226887
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:6:segment:3",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 4",
+        "points": [
+          [
+            -0.116809,
+            -18.095525,
+            -15.264316
+          ],
+          [
+            0.877364,
+            39.219035,
+            215.729305
+          ]
+        ]
+      }
+    ],
     "ray_paths": 12,
     "render_file_backed_rows": [
       1
     ],
     "rows": 2,
-    "status": "3D scene ready | surfaces=1 | rays=12 | optical axes=1 | assigned face overlays=0 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
+    "sequence_counts": {
+      "F005 refract -> F004 refract": 12
+    },
+    "status": "3D scene ready | surfaces=1 | rays=12 | optical axes=4 | assigned face overlays=0 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
     "terminal_counts": {
       "hit_detector": 12
     }
   },
   {
     "actor_counts": {
-      "actors_by_key": 10,
-      "axis_actors": 1,
+      "actors_by_key": 15,
+      "axis_actors": 6,
       "picked_axis": null,
       "picked_row": 1,
       "placement_move_handles": 0,
@@ -140,20 +857,519 @@
       "show_rays": true,
       "step_actor_labels": {},
       "step_rotate_handles": 0,
-      "view_props": 23
+      "view_props": 28
     },
+    "dominant_paths": [
+      {
+        "branch_path": "primary",
+        "branch_power": 0.9170206538054554,
+        "events": [
+          {
+            "event_type": "refraction",
+            "face_id": "F005",
+            "incoming_direction": [
+              0.004177,
+              0.013873,
+              0.999895
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:1",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              0.002751,
+              0.009136,
+              0.999954
+            ],
+            "point_world": [
+              0.125319,
+              0.416229,
+              29.999619
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F004",
+            "incoming_direction": [
+              0.002751,
+              0.009136,
+              0.999954
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F004",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              -0.002751,
+              -0.713535,
+              0.700615
+            ],
+            "point_world": [
+              0.209122,
+              0.694568,
+              60.464989
+            ],
+            "step": 1,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.382684,
+              0.923879
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F003",
+            "incoming_direction": [
+              -0.002751,
+              -0.713535,
+              0.700615
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F003",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              0.002751,
+              -0.999954,
+              0.009136
+            ],
+            "point_world": [
+              0.276055,
+              18.057453,
+              43.416496
+            ],
+            "step": 2,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              0.92388,
+              -0.382683
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F006",
+            "incoming_direction": [
+              0.002751,
+              -0.999954,
+              0.009136
+            ],
+            "inside_after": "",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:1",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              0.004177,
+              -0.999895,
+              0.013873
+            ],
+            "point_world": [
+              0.360112,
+              -12.5,
+              43.695679
+            ],
+            "step": 3,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          }
+        ],
+        "ray_index": 6,
+        "source_ray_index": 6,
+        "surface_sequence": "F005 refract -> F004 reflect -> F003 reflect -> F006 refract",
+        "terminal_status": "escaped"
+      },
+      {
+        "branch_path": "primary",
+        "branch_power": 0.917020639368975,
+        "events": [
+          {
+            "event_type": "refraction",
+            "face_id": "F005",
+            "incoming_direction": [
+              -0.021743,
+              0.015156,
+              0.999649
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:1",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              -0.014318,
+              0.009981,
+              0.999848
+            ],
+            "point_world": [
+              -0.652505,
+              0.454844,
+              29.999619
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F004",
+            "incoming_direction": [
+              -0.014318,
+              0.009981,
+              0.999848
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F004",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              0.014318,
+              -0.714057,
+              0.699941
+            ],
+            "point_world": [
+              -1.089171,
+              0.759232,
+              60.491772
+            ],
+            "step": 1,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.382684,
+              0.923879
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F003",
+            "incoming_direction": [
+              0.014318,
+              -0.714057,
+              0.699941
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F003",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              -0.014318,
+              -0.999848,
+              0.009981
+            ],
+            "point_world": [
+              -1.436741,
+              18.09251,
+              43.501133
+            ],
+            "step": 2,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.92388,
+              -0.382683
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F006",
+            "incoming_direction": [
+              -0.014318,
+              -0.999848,
+              0.009981
+            ],
+            "inside_after": "",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:1",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              -0.021743,
+              -0.999649,
+              0.015156
+            ],
+            "point_world": [
+              -1.874844,
+              -12.5,
+              43.806526
+            ],
+            "step": 3,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          }
+        ],
+        "ray_index": 5,
+        "source_ray_index": 5,
+        "surface_sequence": "F005 refract -> F004 reflect -> F003 reflect -> F006 refract",
+        "terminal_status": "escaped"
+      },
+      {
+        "branch_path": "primary",
+        "branch_power": 0.9170206385825187,
+        "events": [
+          {
+            "event_type": "refraction",
+            "face_id": "F005",
+            "incoming_direction": [
+              -0.002073,
+              0.026746,
+              0.99964
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:1",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              -0.001365,
+              0.017613,
+              0.999844
+            ],
+            "point_world": [
+              -0.062224,
+              0.802671,
+              29.999619
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F004",
+            "incoming_direction": [
+              -0.001365,
+              0.017613,
+              0.999844
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F004",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              0.001365,
+              -0.719451,
+              0.694542
+            ],
+            "point_world": [
+              -0.104197,
+              1.344095,
+              60.734032
+            ],
+            "step": 1,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.382684,
+              0.923879
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F003",
+            "incoming_direction": [
+              0.001365,
+              -0.719451,
+              0.694542
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F003",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              -0.001365,
+              -0.999844,
+              0.017614
+            ],
+            "point_world": [
+              -0.136581,
+              18.407446,
+              44.261456
+            ],
+            "step": 2,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              0.923879,
+              -0.382684
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F006",
+            "incoming_direction": [
+              -0.001365,
+              -0.999844,
+              0.017614
+            ],
+            "inside_after": "",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:1",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              -0.002073,
+              -0.99964,
+              0.026747
+            ],
+            "point_world": [
+              -0.178789,
+              -12.5,
+              44.805931
+            ],
+            "step": 3,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          }
+        ],
+        "ray_index": 7,
+        "source_ray_index": 7,
+        "surface_sequence": "F005 refract -> F004 reflect -> F003 reflect -> F006 refract",
+        "terminal_status": "escaped"
+      }
+    ],
     "file_backed_rows": [
       1
     ],
     "has_optical_overlay": false,
     "image": "attachment/open3d_step_workflow_headless/STEP5.png",
     "label": "promoted penta STEP row S1",
+    "optical_axis_records": [
+      {
+        "axis_id": "axis:global",
+        "axis_kind": "dotted_global_guide",
+        "axis_label": "Optical Axis",
+        "points": [
+          [
+            0.0,
+            0.0,
+            -136.943023
+          ],
+          [
+            0.0,
+            0.0,
+            202.642582
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:6:segment:1",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 2",
+        "points": [
+          [
+            -0.68534,
+            -2.276254,
+            -164.060732
+          ],
+          [
+            0.810659,
+            2.692483,
+            194.06035
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:6:segment:2",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 3",
+        "points": [
+          [
+            -0.325363,
+            -1.080645,
+            -133.838883
+          ],
+          [
+            0.659804,
+            2.191442,
+            224.30349
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:6:segment:3",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 4",
+        "points": [
+          [
+            -0.249995,
+            -118.403299,
+            177.406333
+          ],
+          [
+            0.735172,
+            137.15532,
+            -73.524848
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:6:segment:4",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 5",
+        "points": [
+          [
+            -0.1745,
+            181.849913,
+            41.920037
+          ],
+          [
+            0.810667,
+            -176.29246,
+            45.192138
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:6:segment:5",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 6",
+        "points": [
+          [
+            -0.238868,
+            130.887417,
+            41.706242
+          ],
+          [
+            1.25713,
+            -227.233665,
+            46.675014
+          ]
+        ]
+      }
+    ],
     "ray_paths": 12,
     "render_file_backed_rows": [
       1
     ],
     "rows": 3,
-    "status": "3D scene ready | surfaces=1 | rays=12 | optical axes=1 | assigned face overlays=4 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
+    "sequence_counts": {
+      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract": 12
+    },
+    "status": "3D scene ready | surfaces=1 | rays=12 | optical axes=6 | assigned face overlays=4 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
     "terminal_counts": {
       "escaped": 10,
       "hit_detector": 2
@@ -161,8 +1377,8 @@
   },
   {
     "actor_counts": {
-      "actors_by_key": 10,
-      "axis_actors": 1,
+      "actors_by_key": 15,
+      "axis_actors": 6,
       "picked_axis": null,
       "picked_row": 1,
       "placement_move_handles": 0,
@@ -176,20 +1392,519 @@
       "show_rays": true,
       "step_actor_labels": {},
       "step_rotate_handles": 0,
-      "view_props": 42
+      "view_props": 47
     },
+    "dominant_paths": [
+      {
+        "branch_path": "primary",
+        "branch_power": 0.9170200979405632,
+        "events": [
+          {
+            "event_type": "refraction",
+            "face_id": "F005",
+            "incoming_direction": [
+              -0.064308,
+              -0.004407,
+              0.99792
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:1",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              -0.042349,
+              -0.002902,
+              0.999099
+            ],
+            "point_world": [
+              -1.933224,
+              -0.132472,
+              29.999619
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F004",
+            "incoming_direction": [
+              -0.042349,
+              -0.002902,
+              0.999099
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F004",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              0.042349,
+              -0.704418,
+              0.708521
+            ],
+            "point_world": [
+              -3.208505,
+              -0.219859,
+              60.08622
+            ],
+            "step": 1,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.382684,
+              0.923879
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F003",
+            "incoming_direction": [
+              0.042349,
+              -0.704418,
+              0.708521
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F003",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              -0.042349,
+              -0.999099,
+              -0.002902
+            ],
+            "point_world": [
+              -4.277186,
+              17.556269,
+              42.206532
+            ],
+            "step": 2,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              0.92388,
+              -0.382684
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F006",
+            "incoming_direction": [
+              -0.042349,
+              -0.999099,
+              -0.002902
+            ],
+            "inside_after": "",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:1",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              -0.064308,
+              -0.99792,
+              -0.004407
+            ],
+            "point_world": [
+              -5.551181,
+              -12.5,
+              42.119236
+            ],
+            "step": 3,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          }
+        ],
+        "ray_index": 15,
+        "source_ray_index": 15,
+        "surface_sequence": "F005 refract -> F004 reflect -> F003 reflect -> F006 refract",
+        "terminal_status": "escaped"
+      },
+      {
+        "branch_path": "primary",
+        "branch_power": 0.9170197482843947,
+        "events": [
+          {
+            "event_type": "refraction",
+            "face_id": "F005",
+            "incoming_direction": [
+              -0.072645,
+              -0.004339,
+              0.997348
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:1",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              -0.047839,
+              -0.002858,
+              0.998851
+            ],
+            "point_world": [
+              -2.185106,
+              -0.130528,
+              29.999619
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F004",
+            "incoming_direction": [
+              -0.047839,
+              -0.002858,
+              0.998851
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F004",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              0.047839,
+              -0.704274,
+              0.708315
+            ],
+            "point_world": [
+              -3.62614,
+              -0.216609,
+              60.087566
+            ],
+            "step": 1,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              -0.382683,
+              0.92388
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F003",
+            "incoming_direction": [
+              0.047839,
+              -0.704274,
+              0.708315
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F003",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              -0.047839,
+              -0.998851,
+              -0.002858
+            ],
+            "point_world": [
+              -4.833518,
+              17.558073,
+              42.210888
+            ],
+            "step": 2,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              0.923879,
+              -0.382684
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F006",
+            "incoming_direction": [
+              -0.047839,
+              -0.998851,
+              -0.002858
+            ],
+            "inside_after": "",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:1",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              -0.072645,
+              -0.997348,
+              -0.004339
+            ],
+            "point_world": [
+              -6.273121,
+              -12.5,
+              42.124893
+            ],
+            "step": 3,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          }
+        ],
+        "ray_index": 14,
+        "source_ray_index": 14,
+        "surface_sequence": "F005 refract -> F004 reflect -> F003 reflect -> F006 refract",
+        "terminal_status": "escaped"
+      },
+      {
+        "branch_path": "primary",
+        "branch_power": 0.9170192528277484,
+        "events": [
+          {
+            "event_type": "refraction",
+            "face_id": "F005",
+            "incoming_direction": [
+              0.001544,
+              -0.0811,
+              0.996705
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:1",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              0.001017,
+              -0.053407,
+              0.998572
+            ],
+            "point_world": [
+              0.046481,
+              -2.441015,
+              29.999619
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F004",
+            "incoming_direction": [
+              0.001017,
+              -0.053407,
+              0.998572
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F004",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              -0.001017,
+              -0.668333,
+              0.743862
+            ],
+            "point_world": [
+              0.075541,
+              -3.967139,
+              58.534046
+            ],
+            "step": 1,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.382683,
+              0.92388
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F003",
+            "incoming_direction": [
+              -0.001017,
+              -0.668333,
+              0.743862
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F003",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              0.001017,
+              -0.998572,
+              -0.053407
+            ],
+            "point_world": [
+              0.105001,
+              15.393581,
+              36.985344
+            ],
+            "step": 2,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.923879,
+              -0.382684
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F006",
+            "incoming_direction": [
+              0.001017,
+              -0.998572,
+              -0.053407
+            ],
+            "inside_after": "",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:1",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              0.001544,
+              -0.996705,
+              -0.0811
+            ],
+            "point_world": [
+              0.133408,
+              -12.5,
+              35.493496
+            ],
+            "step": 3,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          }
+        ],
+        "ray_index": 16,
+        "source_ray_index": 16,
+        "surface_sequence": "F005 refract -> F004 reflect -> F003 reflect -> F006 refract",
+        "terminal_status": "escaped"
+      }
+    ],
     "file_backed_rows": [
       1
     ],
     "has_optical_overlay": false,
     "image": "attachment/open3d_step_workflow_headless/STEP6.png",
     "label": "promoted penta with 31-ray cone",
+    "optical_axis_records": [
+      {
+        "axis_id": "axis:global",
+        "axis_kind": "dotted_global_guide",
+        "axis_label": "Optical Axis",
+        "points": [
+          [
+            0.0,
+            0.0,
+            -136.941944
+          ],
+          [
+            0.0,
+            0.0,
+            202.641504
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:15:segment:1",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 2",
+        "points": [
+          [
+            10.549461,
+            0.722889,
+            -163.705706
+          ],
+          [
+            -12.482685,
+            -0.855361,
+            193.705324
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:15:segment:2",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 3",
+        "points": [
+          [
+            5.012871,
+            0.343501,
+            -133.873599
+          ],
+          [
+            -10.1546,
+            -0.695832,
+            223.959438
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:15:segment:3",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 4",
+        "points": [
+          [
+            3.84089,
+            -117.477428,
+            178.02691
+          ],
+          [
+            -11.32658,
+            134.813838,
+            -75.734159
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:15:segment:4",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 5",
+        "points": [
+          [
+            2.669553,
+            181.444653,
+            42.68253
+          ],
+          [
+            -12.49792,
+            -176.388384,
+            41.643238
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:15:segment:5",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 6",
+        "points": [
+          [
+            3.670597,
+            130.60284,
+            42.751133
+          ],
+          [
+            -19.361548,
+            -226.80819,
+            41.172918
+          ]
+        ]
+      }
+    ],
     "ray_paths": 31,
     "render_file_backed_rows": [
       1
     ],
     "rows": 3,
-    "status": "3D scene ready | surfaces=1 | rays=31 | optical axes=1 | assigned face overlays=4 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
+    "sequence_counts": {
+      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract": 31
+    },
+    "status": "3D scene ready | surfaces=1 | rays=31 | optical axes=6 | assigned face overlays=4 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
     "terminal_counts": {
       "escaped": 30,
       "hit_detector": 1
@@ -197,8 +1912,8 @@
   },
   {
     "actor_counts": {
-      "actors_by_key": 13,
-      "axis_actors": 1,
+      "actors_by_key": 18,
+      "axis_actors": 6,
       "picked_axis": null,
       "picked_row": 1,
       "placement_move_handles": 0,
@@ -214,20 +1929,519 @@
         "optical": 1
       },
       "step_rotate_handles": 0,
-      "view_props": 45
+      "view_props": 50
     },
+    "dominant_paths": [
+      {
+        "branch_path": "primary",
+        "branch_power": 0.9170200979405632,
+        "events": [
+          {
+            "event_type": "refraction",
+            "face_id": "F005",
+            "incoming_direction": [
+              -0.064308,
+              -0.004407,
+              0.99792
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:1",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              -0.042349,
+              -0.002902,
+              0.999099
+            ],
+            "point_world": [
+              -1.933224,
+              -0.132472,
+              29.999619
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F004",
+            "incoming_direction": [
+              -0.042349,
+              -0.002902,
+              0.999099
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F004",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              0.042349,
+              -0.704418,
+              0.708521
+            ],
+            "point_world": [
+              -3.208505,
+              -0.219859,
+              60.08622
+            ],
+            "step": 1,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.382684,
+              0.923879
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F003",
+            "incoming_direction": [
+              0.042349,
+              -0.704418,
+              0.708521
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F003",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              -0.042349,
+              -0.999099,
+              -0.002902
+            ],
+            "point_world": [
+              -4.277186,
+              17.556269,
+              42.206532
+            ],
+            "step": 2,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              0.92388,
+              -0.382684
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F006",
+            "incoming_direction": [
+              -0.042349,
+              -0.999099,
+              -0.002902
+            ],
+            "inside_after": "",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:1",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              -0.064308,
+              -0.99792,
+              -0.004407
+            ],
+            "point_world": [
+              -5.551181,
+              -12.5,
+              42.119236
+            ],
+            "step": 3,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          }
+        ],
+        "ray_index": 15,
+        "source_ray_index": 15,
+        "surface_sequence": "F005 refract -> F004 reflect -> F003 reflect -> F006 refract",
+        "terminal_status": "escaped"
+      },
+      {
+        "branch_path": "primary",
+        "branch_power": 0.9170197482843947,
+        "events": [
+          {
+            "event_type": "refraction",
+            "face_id": "F005",
+            "incoming_direction": [
+              -0.072645,
+              -0.004339,
+              0.997348
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:1",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              -0.047839,
+              -0.002858,
+              0.998851
+            ],
+            "point_world": [
+              -2.185106,
+              -0.130528,
+              29.999619
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F004",
+            "incoming_direction": [
+              -0.047839,
+              -0.002858,
+              0.998851
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F004",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              0.047839,
+              -0.704274,
+              0.708315
+            ],
+            "point_world": [
+              -3.62614,
+              -0.216609,
+              60.087566
+            ],
+            "step": 1,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              -0.382683,
+              0.92388
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F003",
+            "incoming_direction": [
+              0.047839,
+              -0.704274,
+              0.708315
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F003",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              -0.047839,
+              -0.998851,
+              -0.002858
+            ],
+            "point_world": [
+              -4.833518,
+              17.558073,
+              42.210888
+            ],
+            "step": 2,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              0.923879,
+              -0.382684
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F006",
+            "incoming_direction": [
+              -0.047839,
+              -0.998851,
+              -0.002858
+            ],
+            "inside_after": "",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:1",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              -0.072645,
+              -0.997348,
+              -0.004339
+            ],
+            "point_world": [
+              -6.273121,
+              -12.5,
+              42.124893
+            ],
+            "step": 3,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          }
+        ],
+        "ray_index": 14,
+        "source_ray_index": 14,
+        "surface_sequence": "F005 refract -> F004 reflect -> F003 reflect -> F006 refract",
+        "terminal_status": "escaped"
+      },
+      {
+        "branch_path": "primary",
+        "branch_power": 0.9170192528277484,
+        "events": [
+          {
+            "event_type": "refraction",
+            "face_id": "F005",
+            "incoming_direction": [
+              0.001544,
+              -0.0811,
+              0.996705
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:1",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              0.001017,
+              -0.053407,
+              0.998572
+            ],
+            "point_world": [
+              0.046481,
+              -2.441015,
+              29.999619
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F004",
+            "incoming_direction": [
+              0.001017,
+              -0.053407,
+              0.998572
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F004",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              -0.001017,
+              -0.668333,
+              0.743862
+            ],
+            "point_world": [
+              0.075541,
+              -3.967139,
+              58.534046
+            ],
+            "step": 1,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.382683,
+              0.92388
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F003",
+            "incoming_direction": [
+              -0.001017,
+              -0.668333,
+              0.743862
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F003",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              0.001017,
+              -0.998572,
+              -0.053407
+            ],
+            "point_world": [
+              0.105001,
+              15.393581,
+              36.985344
+            ],
+            "step": 2,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.923879,
+              -0.382684
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F006",
+            "incoming_direction": [
+              0.001017,
+              -0.998572,
+              -0.053407
+            ],
+            "inside_after": "",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:1",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              0.001544,
+              -0.996705,
+              -0.0811
+            ],
+            "point_world": [
+              0.133408,
+              -12.5,
+              35.493496
+            ],
+            "step": 3,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          }
+        ],
+        "ray_index": 16,
+        "source_ray_index": 16,
+        "surface_sequence": "F005 refract -> F004 reflect -> F003 reflect -> F006 refract",
+        "terminal_status": "escaped"
+      }
+    ],
     "file_backed_rows": [
       1
     ],
     "has_optical_overlay": true,
     "image": "attachment/open3d_step_workflow_headless/STEP7.png",
     "label": "second right-angle STEP staged",
+    "optical_axis_records": [
+      {
+        "axis_id": "axis:global",
+        "axis_kind": "dotted_global_guide",
+        "axis_label": "Optical Axis",
+        "points": [
+          [
+            0.0,
+            0.0,
+            -136.941944
+          ],
+          [
+            0.0,
+            0.0,
+            202.641504
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:15:segment:1",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 2",
+        "points": [
+          [
+            10.549461,
+            0.722889,
+            -163.705706
+          ],
+          [
+            -12.482685,
+            -0.855361,
+            193.705324
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:15:segment:2",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 3",
+        "points": [
+          [
+            5.012871,
+            0.343501,
+            -133.873599
+          ],
+          [
+            -10.1546,
+            -0.695832,
+            223.959438
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:15:segment:3",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 4",
+        "points": [
+          [
+            3.84089,
+            -117.477428,
+            178.02691
+          ],
+          [
+            -11.32658,
+            134.813838,
+            -75.734159
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:15:segment:4",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 5",
+        "points": [
+          [
+            2.669553,
+            181.444653,
+            42.68253
+          ],
+          [
+            -12.49792,
+            -176.388384,
+            41.643238
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:15:segment:5",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 6",
+        "points": [
+          [
+            3.670597,
+            130.60284,
+            42.751133
+          ],
+          [
+            -19.361548,
+            -226.80819,
+            41.172918
+          ]
+        ]
+      }
+    ],
     "ray_paths": 31,
     "render_file_backed_rows": [
       1
     ],
     "rows": 3,
-    "status": "3D scene ready | surfaces=1 | rays=31 | optical axes=1 | assigned face overlays=4 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
+    "sequence_counts": {
+      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract": 31
+    },
+    "status": "3D scene ready | surfaces=1 | rays=31 | optical axes=6 | assigned face overlays=4 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
     "terminal_counts": {
       "escaped": 30,
       "hit_detector": 1
@@ -235,8 +2449,8 @@
   },
   {
     "actor_counts": {
-      "actors_by_key": 15,
-      "axis_actors": 1,
+      "actors_by_key": 21,
+      "axis_actors": 7,
       "picked_axis": null,
       "picked_row": 1,
       "placement_move_handles": 0,
@@ -251,21 +2465,721 @@
       "show_rays": true,
       "step_actor_labels": {},
       "step_rotate_handles": 0,
-      "view_props": 47
+      "view_props": 53
     },
+    "dominant_paths": [
+      {
+        "branch_path": "primary",
+        "branch_power": 0.7420174503014191,
+        "events": [
+          {
+            "event_type": "refraction",
+            "face_id": "F005",
+            "incoming_direction": [
+              -0.064308,
+              -0.004407,
+              0.99792
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:1",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              -0.042349,
+              -0.002902,
+              0.999099
+            ],
+            "point_world": [
+              -1.933224,
+              -0.132472,
+              29.999619
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F004",
+            "incoming_direction": [
+              -0.042349,
+              -0.002902,
+              0.999099
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F004",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              0.042349,
+              -0.704418,
+              0.708521
+            ],
+            "point_world": [
+              -3.208505,
+              -0.219859,
+              60.08622
+            ],
+            "step": 1,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.382684,
+              0.923879
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F003",
+            "incoming_direction": [
+              0.042349,
+              -0.704418,
+              0.708521
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F003",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              -0.042349,
+              -0.999099,
+              -0.002902
+            ],
+            "point_world": [
+              -4.277186,
+              17.556269,
+              42.206532
+            ],
+            "step": 2,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              0.92388,
+              -0.382684
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F006",
+            "incoming_direction": [
+              -0.042349,
+              -0.999099,
+              -0.002902
+            ],
+            "inside_after": "",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:1",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              -0.064308,
+              -0.99792,
+              -0.004407
+            ],
+            "point_world": [
+              -5.551181,
+              -12.5,
+              42.119236
+            ],
+            "step": 3,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F003",
+            "incoming_direction": [
+              -0.064308,
+              -0.99792,
+              -0.004407
+            ],
+            "inside_after": "volume:2",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:2",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              0.319633,
+              -0.913125,
+              0.253058
+            ],
+            "point_world": [
+              -7.206374,
+              -38.18515,
+              42.005817
+            ],
+            "step": 4,
+            "surface_id": 2,
+            "surface_normal": [
+              -0.707107,
+              0.5,
+              -0.5
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F001",
+            "incoming_direction": [
+              0.319633,
+              -0.913125,
+              0.253058
+            ],
+            "inside_after": "",
+            "inside_before": "volume:2",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:2",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              0.485369,
+              -0.863163,
+              -0.139164
+            ],
+            "point_world": [
+              -3.147549,
+              -49.780376,
+              45.219246
+            ],
+            "step": 5,
+            "surface_id": 2,
+            "surface_normal": [
+              1e-06,
+              -0.707106,
+              0.707107
+            ]
+          }
+        ],
+        "ray_index": 15,
+        "source_ray_index": 15,
+        "surface_sequence": "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F003 refract -> F001 refract",
+        "terminal_status": "escaped"
+      },
+      {
+        "branch_path": "primary",
+        "branch_power": 0.741366152595846,
+        "events": [
+          {
+            "event_type": "refraction",
+            "face_id": "F005",
+            "incoming_direction": [
+              -0.072645,
+              -0.004339,
+              0.997348
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:1",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              -0.047839,
+              -0.002858,
+              0.998851
+            ],
+            "point_world": [
+              -2.185106,
+              -0.130528,
+              29.999619
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F004",
+            "incoming_direction": [
+              -0.047839,
+              -0.002858,
+              0.998851
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F004",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              0.047839,
+              -0.704274,
+              0.708315
+            ],
+            "point_world": [
+              -3.62614,
+              -0.216609,
+              60.087566
+            ],
+            "step": 1,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              -0.382683,
+              0.92388
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F003",
+            "incoming_direction": [
+              0.047839,
+              -0.704274,
+              0.708315
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F003",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              -0.047839,
+              -0.998851,
+              -0.002858
+            ],
+            "point_world": [
+              -4.833518,
+              17.558073,
+              42.210888
+            ],
+            "step": 2,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              0.923879,
+              -0.382684
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F006",
+            "incoming_direction": [
+              -0.047839,
+              -0.998851,
+              -0.002858
+            ],
+            "inside_after": "",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:1",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              -0.072645,
+              -0.997348,
+              -0.004339
+            ],
+            "point_world": [
+              -6.273121,
+              -12.5,
+              42.124893
+            ],
+            "step": 3,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F003",
+            "incoming_direction": [
+              -0.072645,
+              -0.997348,
+              -0.004339
+            ],
+            "inside_after": "volume:2",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:2",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              0.31596,
+              -0.914033,
+              0.254387
+            ],
+            "point_world": [
+              -8.25157,
+              -39.662388,
+              42.006714
+            ],
+            "step": 4,
+            "surface_id": 2,
+            "surface_normal": [
+              -0.707107,
+              0.5,
+              -0.5
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F001",
+            "incoming_direction": [
+              0.31596,
+              -0.914033,
+              0.254387
+            ],
+            "inside_after": "",
+            "inside_before": "volume:2",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:2",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              0.479793,
+              -0.866979,
+              -0.134708
+            ],
+            "point_world": [
+              -4.64678,
+              -50.090603,
+              44.909016
+            ],
+            "step": 5,
+            "surface_id": 2,
+            "surface_normal": [
+              -1e-06,
+              -0.707107,
+              0.707106
+            ]
+          }
+        ],
+        "ray_index": 14,
+        "source_ray_index": 14,
+        "surface_sequence": "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F003 refract -> F001 refract",
+        "terminal_status": "escaped"
+      },
+      {
+        "branch_path": "primary",
+        "branch_power": 0.6766850071055343,
+        "events": [
+          {
+            "event_type": "refraction",
+            "face_id": "F005",
+            "incoming_direction": [
+              0.001544,
+              -0.0811,
+              0.996705
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:1",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              0.001017,
+              -0.053407,
+              0.998572
+            ],
+            "point_world": [
+              0.046481,
+              -2.441015,
+              29.999619
+            ],
+            "step": 0,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.0,
+              -1.0
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F004",
+            "incoming_direction": [
+              0.001017,
+              -0.053407,
+              0.998572
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F004",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              -0.001017,
+              -0.668333,
+              0.743862
+            ],
+            "point_world": [
+              0.075541,
+              -3.967139,
+              58.534046
+            ],
+            "step": 1,
+            "surface_id": 1,
+            "surface_normal": [
+              -0.0,
+              -0.382683,
+              0.92388
+            ]
+          },
+          {
+            "event_type": "reflection",
+            "face_id": "F003",
+            "incoming_direction": [
+              -0.001017,
+              -0.668333,
+              0.743862
+            ],
+            "inside_after": "volume:1",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_solid_face_mirror:F003",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              0.001017,
+              -0.998572,
+              -0.053407
+            ],
+            "point_world": [
+              0.105001,
+              15.393581,
+              36.985344
+            ],
+            "step": 2,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              0.923879,
+              -0.382684
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F006",
+            "incoming_direction": [
+              0.001017,
+              -0.998572,
+              -0.053407
+            ],
+            "inside_after": "",
+            "inside_before": "volume:1",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:1",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              0.001544,
+              -0.996705,
+              -0.0811
+            ],
+            "point_world": [
+              0.133408,
+              -12.5,
+              35.493496
+            ],
+            "step": 3,
+            "surface_id": 1,
+            "surface_normal": [
+              0.0,
+              -1.0,
+              0.0
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F002",
+            "incoming_direction": [
+              0.001544,
+              -0.996705,
+              -0.0811
+            ],
+            "inside_after": "volume:2",
+            "inside_before": "",
+            "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:2",
+            "media_transition": "entry",
+            "outgoing_direction": [
+              -0.359371,
+              -0.911197,
+              0.201425
+            ],
+            "point_world": [
+              0.170932,
+              -36.718464,
+              33.522884
+            ],
+            "step": 4,
+            "surface_id": 2,
+            "surface_normal": [
+              0.707107,
+              0.5,
+              -0.5
+            ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F001",
+            "incoming_direction": [
+              -0.359371,
+              -0.911197,
+              0.201425
+            ],
+            "inside_after": "",
+            "inside_before": "volume:2",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:2",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              -0.545712,
+              -0.785243,
+              -0.292561
+            ],
+            "point_world": [
+              -7.825848,
+              -56.994587,
+              38.005035
+            ],
+            "step": 5,
+            "surface_id": 2,
+            "surface_normal": [
+              -1e-06,
+              -0.707107,
+              0.707106
+            ]
+          }
+        ],
+        "ray_index": 16,
+        "source_ray_index": 16,
+        "surface_sequence": "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F002 refract -> F001 refract",
+        "terminal_status": "escaped"
+      }
+    ],
     "file_backed_rows": [
       1
     ],
     "has_optical_overlay": true,
     "image": "attachment/open3d_step_workflow_headless/STEP8.png",
     "label": "Trace Ray with promoted penta plus transient right-angle STEP",
+    "optical_axis_records": [
+      {
+        "axis_id": "axis:global",
+        "axis_kind": "dotted_global_guide",
+        "axis_label": "Optical Axis",
+        "points": [
+          [
+            0.0,
+            0.0,
+            -247.894683
+          ],
+          [
+            0.0,
+            0.0,
+            315.382421
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:15:segment:1",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 2",
+        "points": [
+          [
+            15.929612,
+            1.091558,
+            -247.194479
+          ],
+          [
+            -17.862836,
+            -1.22403,
+            277.194098
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:15:segment:2",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 3",
+        "points": [
+          [
+            8.555889,
+            0.586282,
+            -217.460951
+          ],
+          [
+            -13.697618,
+            -0.938613,
+            307.54679
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:15:segment:3",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 4",
+        "points": [
+          [
+            7.383907,
+            -176.410943,
+            237.303762
+          ],
+          [
+            -14.869598,
+            193.747353,
+            -135.01101
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:15:segment:4",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 5",
+        "points": [
+          [
+            6.212571,
+            265.032005,
+            42.925301
+          ],
+          [
+            -16.040938,
+            -259.975736,
+            41.400467
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:15:segment:5",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 6",
+        "points": [
+          [
+            10.517449,
+            236.851714,
+            43.220305
+          ],
+          [
+            -23.275004,
+            -287.536864,
+            40.904749
+          ]
+        ]
+      },
+      {
+        "axis_id": "axis:ray:15:segment:6",
+        "axis_kind": "traced_chief_ray_segment",
+        "axis_label": "Optical Axis 7",
+        "points": [
+          [
+            -89.157484,
+            195.932249,
+            -22.876014
+          ],
+          [
+            78.803561,
+            -283.897775,
+            110.101078
+          ]
+        ]
+      }
+    ],
     "ray_paths": 31,
     "render_file_backed_rows": [
       1,
       2
     ],
     "rows": 3,
-    "status": "3D scene ready | surfaces=2 | rays=31 | optical axes=1 | assigned face overlays=4 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
+    "sequence_counts": {
+      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F002 refract -> F001 refract": 12,
+      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F003 refract -> F001 refract": 4,
+      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F004 refract -> F001 TIR -> ...": 10,
+      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F004 refract -> F005 refract": 3,
+      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F006 refract -> F001 refract": 2
+    },
+    "status": "3D scene ready | surfaces=2 | rays=31 | optical axes=7 | assigned face overlays=4 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
     "terminal_counts": {
       "escaped": 31
     }

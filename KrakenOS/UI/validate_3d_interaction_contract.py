@@ -206,6 +206,8 @@ def main() -> int:
     trace_summary_text = inspect.getsource(Kraken3DInspector._trace_summary_text)
     trace_terminal_face_summary = inspect.getsource(Kraken3DInspector._ray_path_terminal_face_summary)
     trace_summary = inspect.getsource(Kraken3DInspector._update_trace_summary)
+    optical_axis_records = inspect.getsource(Kraken3DInspector._optical_axis_records_for_3d)
+    optical_axis_overlays = inspect.getsource(Kraken3DInspector._add_optical_axis_pick_overlays)
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
     stl_refresh = inspect.getsource(Kraken3DInspector._refresh_after_stl_pose_change)
     right_click_menu = inspect.getsource(Kraken3DInspector._show_surface_function_context_menu)
@@ -717,9 +719,18 @@ def main() -> int:
             "Open 3D terminal summary reports final CAD face and physics action",
             "terminal_face_counts" in trace_summary_text
             and "last hit " in trace_summary_text
+            and "terminal_sequence_counts" in trace_summary_text
+            and "Path: " in trace_summary_text
             and "_ray_path_terminal_face_summary(ray_path)" in refresh
+            and "_ray_path_surface_sequence_summary(ray_path)" in refresh
             and "mesh_face_id" in trace_terminal_face_summary
             and "event_type" in trace_terminal_face_summary,
+        ),
+        (
+            "Open 3D optical-axis guides include traced chief-ray bend segments",
+            "physical_paths" in optical_axis_records
+            and "_dotted_axis_records_from_ray_path(chief, bounds)" in optical_axis_records
+            and "_dotted_axis_mesh_from_points(points[:, :3])" in optical_axis_overlays
         ),
         ("Open 3D missed detector lines use status styling", "missed_detector" in ray_terminal_style and "line_opacity" in ray_terminal_style),
         ("Open 3D escaped rays preserve source/wavelength line color", '"escaped" else 0.74' in ray_terminal_style and '{"absorbed", "stopped"}' in ray_terminal_style),
@@ -797,7 +808,7 @@ def main() -> int:
             and "self._set_row_highlight(int(row_index))" in mouse_move
             and "return True" in center_row_axis_visibility
             and "dotted_global_guide" in optical_axis_records
-            and "_dotted_optical_axis_mesh" in optical_axis_overlays
+            and "_dotted_axis_mesh_from_points(points[:, :3])" in optical_axis_overlays
             and "_should_draw_optical_axis_overlays()" in refresh
             and "_mouse_move_due()" in mouse_move
             and "time.monotonic()" in mouse_move_due
