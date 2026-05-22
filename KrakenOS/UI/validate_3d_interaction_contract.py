@@ -560,9 +560,17 @@ def main() -> int:
         (
             "Open 3D row face assignment uses the picked face id directly",
             "face_id: str" in assign_row_face_context
+            and "optical_solid_face_record_for_mesh_cell" in right_click_menu
             and "assign_optical_solid_face_function(" in assign_row_face_context
             and "assign_optical_solid_face_function_at_world_point(" in assign_row_face_context
             and "picked_face_id=face_id" in right_click_menu,
+        ),
+        (
+            "Open 3D transient STEP face assignment carries picked face id through promotion",
+            "optical_solid_step_overlay_face_record_at_world_point" in right_click_menu
+            and "picked_face_id=face_id" in right_click_menu
+            and "face_id: str" in context_promote_assign
+            and "assign_optical_solid_face_function(" in context_promote_assign,
         ),
         (
             "Open 3D normal-axis snap keeps picked axis highlighted",

@@ -66,10 +66,14 @@ join/cap protruded past the event point. 2D rays are now drawn as physical
 segments with butt caps. Open 3D ray actors now use the same physical-segment
 contract, with a small interior-event inset so a VTK line join cannot visibly
 cross a reflected CAD face. The Open 3D right-click face-function path now also
-uses the picked CAD face ID directly instead of re-inferring the face from the
-same point/normal, so adjacent slanted prism faces do not silently leave the
-intended mirror face unassigned. The projection-sync and interaction validators
-check these renderer and assignment contracts.
+resolves the picked mesh cell to its triangle-backed CAD face before falling
+back to point/normal matching, then stores that face ID directly. Imported STEP
+overlays carry the same picked face ID through promotion before applying
+Uncoated, Full Reflecting, Splitter, Absorber, or Default physics. This closes
+the leak class where an adjacent slanted penta-prism face could remain
+unassigned even though the user clicked the intended mirror face. The
+projection-sync and interaction validators check these renderer and assignment
+contracts.
 
 ## Upstream Main Sync
 

@@ -6009,14 +6009,19 @@ class Kraken3DInspector(tk.Toplevel):
         menu = tk.Menu(self, tearoff=False)
         title = ""
         face_id = ""
+        cell_id = int(context.get("cell_id", -1))
         if row_index is not None and self.editor._file_backed_stl_row_at(int(row_index)) is not None:
             try:
-                face = self.editor.optical_solid_face_record_at_world_point(
-                    int(row_index),
-                    point[:3],
-                    normal_world=normal,
-                    assigned_only=False,
-                )
+                face = self.editor.optical_solid_face_record_for_mesh_cell(int(row_index), cell_id)
+                face_lookup_method = "mesh_cell_triangle"
+                if face is None:
+                    face = self.editor.optical_solid_face_record_at_world_point(
+                        int(row_index),
+                        point[:3],
+                        normal_world=normal,
+                        assigned_only=False,
+                    )
+                    face_lookup_method = "point_normal"
             except Exception as exc:
                 self.status_var.set(f"CAD/STL face lookup failed: {_short_error_message(exc)}")
                 self.editor.append_debug(f"Open 3D right-click face lookup failed: {exc}")
@@ -6027,6 +6032,8 @@ class Kraken3DInspector(tk.Toplevel):
                 "right_click_face_match",
                 row_index=int(row_index),
                 face_id=face_id or None,
+                lookup_method=face_lookup_method,
+                cell_id=cell_id,
                 face_function=_optical_solid_face_function_display(face.get("function"), legacy_role=face.get("role")) if face is not None else None,
                 face_role=face.get("role") if face is not None else None,
                 face_port_role=face.get("port_role") if face is not None else None,
@@ -6034,7 +6041,6 @@ class Kraken3DInspector(tk.Toplevel):
             try:
                 feature = context.get("feature")
                 actor_key = str(context.get("actor_key") or "")
-                cell_id = int(context.get("cell_id", -1))
                 if feature is not None and actor_key:
                     outline = self._hover_overlay_for_feature(feature[0], feature[1])
                     self._set_step_hover_outline(outline, ("row", actor_key, cell_id))
@@ -6056,17 +6062,40 @@ class Kraken3DInspector(tk.Toplevel):
             menu.add_separator()
             menu.add_command(label="Open Face Editor...", command=lambda idx=int(row_index): self.editor.open_optical_solid_face_role_editor(idx))
         elif step_label in STEP_OVERLAY_LABEL_SET:
+            try:
+                face = self.editor.optical_solid_step_overlay_face_record_at_world_point(
+                    step_label,
+                    point[:3],
+                    normal_world=normal,
+                    cell_id=cell_id,
+                )
+            except Exception as exc:
+                self.status_var.set(f"Imported STEP face lookup failed: {_short_error_message(exc)}")
+                self.editor.append_debug(f"Open 3D imported STEP face lookup failed: {exc}")
+                face = None
+            if face is not None:
+                face_id = str(face.get("face_id", "") or "").strip()
+            self._debug_trace(
+                "right_click_step_face_match",
+                label=step_label,
+                face_id=face_id or None,
+                cell_id=cell_id,
+                face_function=_optical_solid_face_function_display(face.get("function"), legacy_role=face.get("role")) if face is not None else None,
+                face_role=face.get("role") if face is not None else None,
+                face_port_role=face.get("port_role") if face is not None else None,
+            )
             display = self.editor._step_overlay_display_label(step_label).upper()
-            title = f"{display} STEP picked face"
+            title = f"{display} STEP {face_id or 'picked face'}"
             menu.add_command(label=title, state="disabled")
             for label in self._open3d_surface_function_menu_items():
                 menu.add_command(
                     label=f"Promote and set {label}",
-                    command=lambda value=label, picked_label=step_label, picked_point=point[:3].copy(), picked_normal=normal: self._promote_step_and_assign_face_function(
+                    command=lambda value=label, picked_label=step_label, picked_face_id=face_id, picked_point=point[:3].copy(), picked_normal=normal: self._promote_step_and_assign_face_function(
                         picked_label,
                         picked_point,
                         picked_normal,
                         value,
+                        face_id=picked_face_id,
                     ),
                 )
             menu.add_separator()
@@ -6168,14 +6197,18 @@ class Kraken3DInspector(tk.Toplevel):
         point_world,
         normal_world,
         function_label: str,
+        *,
+        face_id: str = "",
     ) -> None:
         label = str(label).strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET:
             return
         refresh_sampling_mode = self._active_refresh_sampling_mode()
+        face_id = str(face_id or "").strip()
         self._debug_trace(
             "promote_step_face_assignment_start",
             label=label,
+            face_id=face_id or None,
             function_label=function_label,
             point_world=self._debug_vector(point_world),
             normal_world=self._debug_vector(normal_world),
@@ -6203,20 +6236,29 @@ class Kraken3DInspector(tk.Toplevel):
             "promote_step_face_assignment_promoted",
             label=label,
             row_index=row_index,
+            face_id=face_id or None,
             result={key: str(value) for key, value in dict(result).items()},
         )
         try:
-            assigned = self.editor.assign_optical_solid_face_function_at_world_point(
-                row_index,
-                point_world,
-                function_label,
-                normal_world=normal_world,
-                direct_context=True,
-            )
+            if face_id:
+                assigned = self.editor.assign_optical_solid_face_function(
+                    row_index,
+                    face_id,
+                    function_label,
+                    direct_context=True,
+                )
+            else:
+                assigned = self.editor.assign_optical_solid_face_function_at_world_point(
+                    row_index,
+                    point_world,
+                    function_label,
+                    normal_world=normal_world,
+                    direct_context=True,
+                )
         except Exception as exc:
             self.status_var.set(f"Promoted STEP, but face assignment failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"Open 3D promoted STEP face assignment failed: {exc}")
-            self._debug_trace("promoted_step_face_assignment_failed", label=label, row_index=row_index, error=_short_error_message(exc))
+            self._debug_trace("promoted_step_face_assignment_failed", label=label, row_index=row_index, face_id=face_id or None, error=_short_error_message(exc))
             return
         self._debug_trace(
             "promoted_step_face_assignment_metadata_saved",
@@ -18187,6 +18229,91 @@ class KrakenLayoutEditor(tk.Tk):
             self._stl_row_z_station(int(row_index)),
             assigned_only=bool(assigned_only),
         )
+        return match_optical_solid_world_face(faces, point_world, normal_world)
+
+    @staticmethod
+    def _optical_solid_face_record_for_triangle_index(
+        faces: list[dict[str, object]],
+        triangle_index: int,
+    ) -> dict[str, object] | None:
+        try:
+            triangle_index = int(triangle_index)
+        except Exception:
+            return None
+        if triangle_index < 0:
+            return None
+        for face in list(faces or []):
+            if not isinstance(face, dict):
+                continue
+            try:
+                triangle_indices = optical_solid_metadata.nonnegative_int_list(
+                    face.get("triangle_indices", face.get("cell_indices"))
+                )
+            except Exception:
+                triangle_indices = []
+            if triangle_index in set(int(value) for value in triangle_indices):
+                return dict(face)
+        return None
+
+    def _optical_solid_face_records_for_temp_row(
+        self,
+        row: SurfaceRow,
+        row_index: int,
+        metadata: dict[str, object],
+    ) -> list[dict[str, object]]:
+        temp_row = SurfaceRow(**asdict(row))
+        temp_row.advanced = dict(temp_row.advanced or {})
+        temp_row.advanced[OPTICAL_SOLID_FACES_ADVANCED_ATTR] = metadata
+        z_station = float(
+            sum(
+                float(getattr(existing_row, "thickness", 0.0) or 0.0)
+                for existing_row in self.rows[: max(int(row_index), 0)]
+            )
+        )
+        return optical_solid_face_world_records(
+            temp_row,
+            z_station,
+            assigned_only=False,
+        )
+
+    def optical_solid_face_record_for_mesh_cell(
+        self,
+        row_index: int,
+        cell_id: int,
+    ) -> dict[str, object] | None:
+        row, _path, metadata = self._optical_solid_face_metadata_for_row(int(row_index))
+        faces = self._optical_solid_face_records_for_temp_row(row, int(row_index), metadata)
+        return self._optical_solid_face_record_for_triangle_index(faces, int(cell_id))
+
+    def optical_solid_step_overlay_face_record_at_world_point(
+        self,
+        label: str,
+        point_world,
+        *,
+        normal_world=None,
+        cell_id: int = -1,
+    ) -> dict[str, object] | None:
+        plan = self._step_overlay_optical_solid_row_plan(
+            label,
+            use_current_selection=False,
+            quiet=True,
+        )
+        if plan is None:
+            return None
+        row = plan.get("row")
+        if not isinstance(row, SurfaceRow):
+            return None
+        try:
+            row_index = int(plan.get("row_index", 0))
+        except Exception:
+            row_index = 0
+        metadata = normalize_optical_solid_face_metadata(
+            (row.advanced or {}).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+        )
+        faces = self._optical_solid_face_records_for_temp_row(row, row_index, metadata)
+        face = self._optical_solid_face_record_for_triangle_index(faces, int(cell_id))
+        if face is not None:
+            return face
         return match_optical_solid_world_face(faces, point_world, normal_world)
 
     def _default_port_role_for_face_function(self, function: str, existing: object = OPTICAL_SOLID_FACE_PORT_DEFAULT) -> str:

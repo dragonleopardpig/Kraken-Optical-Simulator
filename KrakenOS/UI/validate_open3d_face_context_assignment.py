@@ -78,6 +78,46 @@ def _first_world_face(app: KrakenLayoutEditor, row_index: int) -> dict[str, obje
     return dict(faces[0])
 
 
+def _first_world_face_with_triangle(faces: list[dict[str, object]]) -> dict[str, object]:
+    for face in list(faces or []):
+        if not isinstance(face, dict):
+            continue
+        if list(face.get("triangle_indices", []) or []):
+            return dict(face)
+    raise AssertionError("Expected optical solid metadata to expose triangle-backed face IDs.")
+
+
+def _validate_transient_step_face_id_carry_through(app: KrakenLayoutEditor) -> None:
+    plan = app._step_overlay_optical_solid_row_plan(
+        "optical",
+        insert_at=1,
+        use_current_selection=False,
+        quiet=True,
+    )
+    if plan is None:
+        raise AssertionError("Expected transient optical STEP row plan for face-ID validation.")
+    row = plan.get("row")
+    if not isinstance(row, SurfaceRow):
+        raise AssertionError("Transient optical STEP plan did not return a SurfaceRow.")
+    row_index = int(plan.get("row_index", 1))
+    z_station = float(sum(float(getattr(existing_row, "thickness", 0.0) or 0.0) for existing_row in app.rows[:row_index]))
+    faces = optical_solid_face_world_records(row, z_station, assigned_only=False)
+    picked = _first_world_face_with_triangle(faces)
+    face_id = str(picked.get("face_id", "") or "").strip()
+    triangle_index = int(list(picked.get("triangle_indices", []) or [])[0])
+    matched = app.optical_solid_step_overlay_face_record_at_world_point(
+        "optical",
+        np.asarray(picked.get("centroid_world"), dtype=float),
+        normal_world=np.asarray(picked.get("normal_world"), dtype=float),
+        cell_id=triangle_index,
+    )
+    if not isinstance(matched, dict) or str(matched.get("face_id", "") or "").strip() != face_id:
+        raise AssertionError(
+            "Transient STEP face assignment must carry the clicked mesh-cell face ID through promotion; "
+            f"expected={face_id}, matched={matched!r}"
+        )
+
+
 def _event_face_id(event: object) -> str:
     metadata = getattr(event, "metadata", {}) or {}
     if not isinstance(metadata, dict):
@@ -179,6 +219,7 @@ def main() -> int:
         app.optical_step_rotation_x_deg = 90.0
         app.optical_step_rotation_z_deg = 90.0
         app.select_step_component("optical")
+        _validate_transient_step_face_id_carry_through(app)
 
         promoted = app.promote_imported_step_to_optical_solid_row(
             "optical",
@@ -205,6 +246,14 @@ def main() -> int:
         picked = _first_world_face(app, row_index)
         point = np.asarray(picked.get("centroid_world"), dtype=float)
         normal = np.asarray(picked.get("normal_world"), dtype=float)
+        triangle_indices = list(picked.get("triangle_indices", []) or [])
+        if triangle_indices:
+            matched_by_cell = app.optical_solid_face_record_for_mesh_cell(row_index, int(triangle_indices[0]))
+            if not isinstance(matched_by_cell, dict) or str(matched_by_cell.get("face_id", "") or "") != str(picked.get("face_id", "") or ""):
+                raise AssertionError(
+                    "Row-backed Open 3D face assignment must resolve the picked mesh cell before point/normal fallback: "
+                    f"picked={picked!r}, matched_by_cell={matched_by_cell!r}"
+                )
         assigned = app.assign_optical_solid_face_function_at_world_point(
             row_index,
             point,
