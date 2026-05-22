@@ -5213,6 +5213,7 @@ class Kraken3DInspector(tk.Toplevel):
         self.orient_axis_var = tk.StringVar(value="+Z")
         self.normal_target_var = tk.StringVar(value=SCENE_NORMAL_TARGET_LABELS["detector"])
         self.step_carry_grid_var = tk.StringVar(value=STEP_CARRY_GRID_FREE)
+        self.rotation_step_deg_var = tk.StringVar(value="90")
         self.show_rays_var = tk.BooleanVar(value=True)
         self.show_rotation_handles_var = tk.BooleanVar(value=True)
         self.show_reference_surfaces_var = tk.BooleanVar(value=False)
@@ -5373,6 +5374,16 @@ class Kraken3DInspector(tk.Toplevel):
                 variable=self.show_rotation_handles_var,
                 command=self._toggle_rotation_handles,
             ).pack(side="left", padx=(12, 0))
+            ttk.Label(carry_toolbar, text="Rot").pack(side="left", padx=(8, 2))
+            rotation_step_box = ttk.Combobox(
+                carry_toolbar,
+                textvariable=self.rotation_step_deg_var,
+                state="readonly",
+                values=("15", "30", "45", "90", "180"),
+                width=4,
+            )
+            rotation_step_box.pack(side="left")
+            rotation_step_box.bind("<<ComboboxSelected>>", self._on_rotation_step_changed)
             ttk.Checkbutton(
                 carry_toolbar,
                 text="Placement handles",
@@ -8570,6 +8581,7 @@ class Kraken3DInspector(tk.Toplevel):
         pick_placement_move: tuple[int, str, float] | None = None,
         pick_placement_rotate: tuple[int, str, float] | None = None,
         follow_step_label: str | None = None,
+        track_row_index: int | None = None,
         line_width: float = 1.0,
         wireframe: bool = False,
         flat_shading: bool = False,
@@ -8612,6 +8624,12 @@ class Kraken3DInspector(tk.Toplevel):
                 if follow_label:
                     self._actor_step_follow_map[actor_key] = follow_label
                     self._step_follow_actor_map.setdefault(follow_label, []).append(actor_key)
+            tracked_row = pick_row_index if track_row_index is None else track_row_index
+            if tracked_row is not None:
+                try:
+                    self._row_actor_map.setdefault(int(tracked_row), []).append(actor_key)
+                except Exception:
+                    pass
         if (
             pick_row_index is None
             and pick_step_label is None
@@ -8624,7 +8642,6 @@ class Kraken3DInspector(tk.Toplevel):
         else:
             if actor_key is not None and pick_row_index is not None:
                 self._actor_row_map[actor_key] = pick_row_index
-                self._row_actor_map.setdefault(pick_row_index, []).append(actor_key)
             if actor_key is not None and pick_step_label is not None:
                 step_label = str(pick_step_label)
                 self._actor_step_map[actor_key] = step_label
@@ -8748,6 +8765,28 @@ class Kraken3DInspector(tk.Toplevel):
         self.status_var.set("Rotation handles hidden.")
         if removed:
             self.render()
+
+    def _rotation_handle_step_deg(self) -> float:
+        try:
+            value = float(str(self.rotation_step_deg_var.get()).strip())
+        except Exception:
+            value = 90.0
+        if not np.isfinite(value) or value <= 0.0:
+            value = 90.0
+        value = float(np.clip(abs(value), 1.0, 180.0))
+        normalized = f"{value:.0f}" if abs(value - round(value)) < 1e-9 else f"{value:.6g}"
+        try:
+            if str(self.rotation_step_deg_var.get()).strip() != normalized:
+                self.rotation_step_deg_var.set(normalized)
+        except Exception:
+            pass
+        return value
+
+    def _on_rotation_step_changed(self, *_args) -> None:
+        step = self._rotation_handle_step_deg()
+        if self._show_rotation_handles():
+            self.refresh_from_editor()
+        self.status_var.set(f"Rotation handles set to +/-{step:.6g} deg.")
 
     def _clear_open3d_selection(self, *, render: bool = True) -> bool:
         changed = False
@@ -9509,7 +9548,7 @@ class Kraken3DInspector(tk.Toplevel):
                 frame,
                 text=(
                     "What this does: Fit Axis chooses which CAD-local axis should become layout +Z. "
-                    "The +/-90 buttons rotate the solid into the expected orientation. "
+                    "The +/-Rot buttons use the toolbar rotation step to rotate the solid into the expected orientation. "
                     "Center X/Y moves the solid onto the optical axis; Front On Row places its minimum-Z face on the row station. "
                     "Done -> 2D refreshes the main layout with the edited Tilt/Decenter fields."
                 ),
@@ -9543,15 +9582,15 @@ class Kraken3DInspector(tk.Toplevel):
                 )
                 ttk.Button(
                     frame,
-                    text="-90",
+                    text="-Rot",
                     width=6,
-                    command=lambda a=axis: self._rotate_stl_from_handler(a, -90.0),
+                    command=lambda a=axis: self._rotate_stl_from_handler(a, -self._rotation_handle_step_deg()),
                 ).grid(row=row_number, column=1, sticky="ew", padx=(0, 4), pady=2)
                 ttk.Button(
                     frame,
-                    text="+90",
+                    text="+Rot",
                     width=6,
-                    command=lambda a=axis: self._rotate_stl_from_handler(a, 90.0),
+                    command=lambda a=axis: self._rotate_stl_from_handler(a, self._rotation_handle_step_deg()),
                 ).grid(row=row_number, column=2, sticky="ew", padx=(0, 4), pady=2)
             ttk.Button(frame, text="Center X/Y", command=self._center_stl_from_handler).grid(
                 row=7,
@@ -10125,9 +10164,10 @@ class Kraken3DInspector(tk.Toplevel):
                     self._add_mesh_actor(
                         mesh,
                         color=color,
-                        opacity=0.32 if function != OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT else 0.22,
+                        opacity=0.20 if function != OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT else 0.14,
                         flat_shading=True,
                         backface_culling=False,
+                        track_row_index=row_index,
                     )
                 except Exception:
                     pass
@@ -10586,7 +10626,10 @@ class Kraken3DInspector(tk.Toplevel):
             return
         try:
             actor.SetInput(text)
-            actor.SetDisplayPosition(16, 46)
+            height = 720
+            if self._vtk_widget is not None:
+                _width, height = self._vtk_widget.GetRenderWindow().GetSize()
+            actor.SetDisplayPosition(16, max(int(height) - 58, 16))
             actor.SetVisibility(True)
         except Exception as exc:
             self.editor.append_debug(f"3D ray terminal summary update failed: {exc}")
@@ -10985,7 +11028,7 @@ class Kraken3DInspector(tk.Toplevel):
             return 0
         if not (0 <= row_index < len(self.editor.rows)):
             return 0
-        step = self._scene_placement_rotate_step(placement)
+        step = self._rotation_handle_step_deg()
         radius = max(float(spacing) * 2.0, float(extent) * 0.28, 2.0)
         radius = min(radius, max(float(extent) * 0.48, 2.0))
         tube_radius = max(radius * 0.018, 0.045)
@@ -11008,12 +11051,33 @@ class Kraken3DInspector(tk.Toplevel):
             actor = self._add_mesh_actor(
                 mesh,
                 color=color,
-                opacity=0.82,
-                pick_placement_rotate=(row_index, axis, float(step)),
+                opacity=0.46,
                 flat_shading=True,
+                backface_culling=False,
             )
             if actor is not None:
                 count += 1
+            for delta_deg in (-float(step), float(step)):
+                arrow_mesh = self._scene_placement_rotation_arrowhead_mesh(
+                    center=center,
+                    axis=axis,
+                    sign=1.0,
+                    delta_sign=float(delta_deg),
+                    radius=radius,
+                    tube_radius=tube_radius,
+                )
+                if arrow_mesh is None:
+                    continue
+                arrow_actor = self._add_mesh_actor(
+                    arrow_mesh,
+                    color=color,
+                    opacity=0.96,
+                    pick_placement_rotate=(row_index, axis, float(delta_deg)),
+                    flat_shading=True,
+                    backface_culling=False,
+                )
+                if arrow_actor is not None:
+                    count += 1
         return count
 
     @staticmethod
@@ -11052,6 +11116,7 @@ class Kraken3DInspector(tk.Toplevel):
             ("y", (0.12, 0.62, 0.24)),
             ("z", (0.18, 0.35, 0.88)),
         )
+        step = self._rotation_handle_step_deg()
         count = 0
         for axis, color in axes:
             arc_mesh = self._scene_placement_rotation_arc_mesh(
@@ -11074,7 +11139,7 @@ class Kraken3DInspector(tk.Toplevel):
                 arc_key = self._actor_key(arc_actor)
                 if arc_key is not None and hasattr(self, "_actor_step_rotate_visual_keys"):
                     self._actor_step_rotate_visual_keys.add(arc_key)
-            for delta_deg in (-90.0, 90.0):
+            for delta_deg in (-float(step), float(step)):
                 arrow_mesh = self._scene_placement_rotation_arrowhead_mesh(
                     center=center,
                     axis=axis,
@@ -11428,7 +11493,7 @@ class Kraken3DInspector(tk.Toplevel):
         drew_surfaces = 0
         step_carry_label = self._step_carry_label()
         ray_visibility_requested = bool(self.show_rays_var.get())
-        ray_surface_edge_overlays: list[tuple[object, tuple[float, float, float], float]] = []
+        ray_surface_edge_overlays: list[tuple[object, tuple[float, float, float], float, int | None]] = []
         ray_surface_wire_overlays: list[tuple[object, tuple[float, float, float], float, int]] = []
         for mesh_item in mesh_items:
             mesh = mesh_item.mesh
@@ -11467,6 +11532,9 @@ class Kraken3DInspector(tk.Toplevel):
                 except Exception:
                     pass
             if not mesh_item.is_body:
+                if row_index in file_backed_rows:
+                    drew_surfaces += 1
+                    continue
                 try:
                     edges = mesh.extract_feature_edges(
                         feature_angle=10,
@@ -11478,14 +11546,15 @@ class Kraken3DInspector(tk.Toplevel):
                         edge_color = file_backed_edge_color if row_index in file_backed_rows else (0.15, 0.15, 0.15)
                         edge_width = 3.2 if row_index in file_backed_rows else 1.0
                         if row_index in file_backed_rows:
-                            self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0)
-                        self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width)
+                            self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0, track_row_index=row_index)
+                        self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width, track_row_index=row_index if row_index in file_backed_rows else None)
                         if ray_visibility_requested and row_index >= 0:
                             ray_surface_edge_overlays.append(
                                 (
                                     edges,
                                     file_backed_silhouette_color if row_index in file_backed_rows else (0.02, 0.03, 0.05),
                                     5.4 if row_index in file_backed_rows else 1.6,
+                                    row_index if row_index in file_backed_rows else None,
                                 )
                             )
                             if row_index in file_backed_rows:
@@ -11494,6 +11563,7 @@ class Kraken3DInspector(tk.Toplevel):
                                         edges,
                                         file_backed_edge_color,
                                         3.5,
+                                        row_index,
                                     )
                                 )
                 except Exception:
@@ -11508,10 +11578,10 @@ class Kraken3DInspector(tk.Toplevel):
                     )
                     if int(getattr(edges, "n_points", 0)) > 0:
                         if ray_visibility_requested:
-                            ray_surface_edge_overlays.append((edges, file_backed_silhouette_color, 5.8))
-                            ray_surface_edge_overlays.append((edges, file_backed_edge_color, 3.8))
-                        self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0)
-                        self._add_mesh_actor(edges, color=file_backed_edge_color, opacity=1.0, line_width=3.2)
+                            ray_surface_edge_overlays.append((edges, file_backed_silhouette_color, 5.8, row_index))
+                            ray_surface_edge_overlays.append((edges, file_backed_edge_color, 3.8, row_index))
+                        self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0, track_row_index=row_index)
+                        self._add_mesh_actor(edges, color=file_backed_edge_color, opacity=1.0, line_width=3.2, track_row_index=row_index)
                 except Exception:
                     pass
             drew_surfaces += 1
@@ -11587,8 +11657,8 @@ class Kraken3DInspector(tk.Toplevel):
                 self._debug_trace("ray_display_bounded", rays=bounded_ray_count, radius=float(radius))
             if suppressed_endpoint_count:
                 self._debug_trace("ray_display_suppressed_diagnostic_endpoints", rays=suppressed_endpoint_count)
-            for edges, edge_color, edge_width in ray_surface_edge_overlays:
-                self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width, backface_culling=False)
+            for edges, edge_color, edge_width, edge_row_index in ray_surface_edge_overlays:
+                self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width, backface_culling=False, track_row_index=edge_row_index)
             for mesh, wire_color, wire_width, row_index in ray_surface_wire_overlays:
                 self._add_mesh_actor(
                     mesh,
@@ -12356,7 +12426,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._center_row_to_ray_face_id = ""
         if row_index is not None and 0 <= int(row_index) < len(self.editor.rows):
             row = self.editor.rows[int(row_index)]
-            if row.surface not in {"Object", "Image"}:
+            if row.surface not in {"Object", "Image"} and self.editor._file_backed_stl_row_at(int(row_index)) is None:
                 self._center_row_to_ray_index = int(row_index)
         self._hide_regular_rays_for_center_axis_pick()
         if self._center_row_to_ray_index is not None:
@@ -12368,7 +12438,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._update_mode_badge()
             return
         self._set_row_highlight(None)
-        self.status_var.set("Center Row->Optical Axis: regular rays are hidden; click a surface/CAD row or imported STEP face first.")
+        self.status_var.set("Center Row->Optical Axis: regular rays are hidden; click the CAD/STL face or surface row first, then click the dotted Optical Axis guide.")
         self._update_mode_badge()
 
     def _apply_center_row_to_ray(self, ray_index: int) -> None:

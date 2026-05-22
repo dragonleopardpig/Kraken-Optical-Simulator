@@ -260,10 +260,11 @@ def main() -> int:
         ("STEP click activates rotation handles", "show_step_rotation_handler(step_label)" in pick),
         ("STEP rotation handler is not a popup", "tk.Toplevel" not in handler and "_step_rotation_active_label" in handler),
         ("STEP rotation handles expose X/Y/Z axes", '("x",' in step_rotate_handles and '("y",' in step_rotate_handles and '("z",' in step_rotate_handles),
-        ("STEP rotation handles expose signed +/-90 arrows per axis", "sign=1.0" in step_rotate_handles and "90.0" in step_rotate_handles and "-90.0" in step_rotate_handles),
+        ("STEP rotation handles expose signed user-selected arrows per axis", "sign=1.0" in step_rotate_handles and "_rotation_handle_step_deg()" in step_rotate_handles and "(-float(step), float(step))" in step_rotate_handles),
         ("STEP rotation handles are pickable scene actors", "pick_step_rotate" in step_rotate_handles and "_actor_step_rotate_map" in pick),
         ("STEP rotation handles hover-highlight before click", "_set_rotation_handle_hover(actor_key)" in mouse_move and "STEP rotation handle: click" in mouse_move and "SetColor(1.0, 0.78, 0.08)" in rotation_hover),
         ("STEP rotation handles can be hidden from the toolbar", "show_rotation_handles_var" in init and "_toggle_rotation_handles" in init and "_show_rotation_handles()" in step_rotate_handles and "_remove_step_rotation_handle_actors" in rotation_toggle),
+        ("Open 3D rotation handles expose selectable step size", "rotation_step_deg_var" in init and "15" in init and "45" in init and "180" in init and "_on_rotation_step_changed" in init),
         ("STEP rotation arcs show opposed start/end cone arrowheads", "pv.Cone" in rotation_arc_mesh and "point_array[0] - point_array[1]" in rotation_arc_mesh and "point_array[-1] - point_array[-2]" in rotation_arc_mesh),
         ("STEP rotation end arrows are scaled for CAD-style visibility", "float(radius) * 0.24" in rotation_arrowhead_mesh and "float(arrow_scale) * 0.15" in rotation_arrowhead_mesh),
         ("STEP rotation handle rotates selected component around the visible world axis", "rotate_step_world_axis(label, axis" in step_rotate_pick),
@@ -510,7 +511,7 @@ def main() -> int:
         ),
         ("CAD/STL handler is embedded side panel", "CAD/STL placement side panel" in stl_handler and "tk.Toplevel" not in stl_handler),
         ("CAD/STL handler exposes axis fit", "Fit local axis to +Z" in stl_handler and "Fit Axis" in stl_handler),
-        ("CAD/STL handler exposes repeated +/-90 rotations", "-90.0" in stl_handler and "90.0" in stl_handler),
+        ("CAD/STL handler exposes repeated user-selected rotations", "-Rot" in stl_handler and "+Rot" in stl_handler and "_rotation_handle_step_deg()" in stl_handler),
         ("CAD/STL handler exposes placement finalization", "Done -> 2D" in stl_handler and "Front On Row" in stl_handler),
         ("CAD/STL handler stays current after pose changes", "_update_stl_placement_handler_state" in stl_refresh),
         ("Open 3D toolbar exposes Snapshot", "Snapshot" in init and "save_snapshot" in init),
@@ -658,6 +659,7 @@ def main() -> int:
             and "_set_step_hover_outline(None, None, render=False)" in row_carry_activate
             and "_set_step_hover_outline(None, None, render=False)" in row_carry_apply
             and "_set_step_hover_outline(None, None, render=False)" in row_carry_finish
+            and "track_row_index" in refresh
             and "_sync_table()" in row_carry_finish
             and "last_translate_mode" in editor_row_translate_vector,
         ),
@@ -667,6 +669,8 @@ def main() -> int:
             and "mesh_opacity = min(max(mesh_opacity, 0.14), 0.28)" in refresh
             and "_solid_edge_color_from_body" in refresh
             and "_solid_silhouette_edge_color" in refresh
+            and "if row_index in file_backed_rows:" in refresh
+            and "continue" in refresh
             and "line_width=5.0" in refresh
             and "line_width=3.2" in refresh
             and "line_width=3.4" in legacy_open_3d,
@@ -680,7 +684,7 @@ def main() -> int:
             and "bounded_ray_count" in refresh
             and "suppressed_endpoint_count" in refresh
             and "Ray terminals:" in trace_summary_text
-            and "SetDisplayPosition(16, 46)" in trace_summary,
+            and "SetDisplayPosition(16, max(int(height) - 58, 16))" in trace_summary,
         ),
         ("Open 3D missed detector lines use status styling", "missed_detector" in ray_terminal_style and "line_opacity" in ray_terminal_style),
         ("Open 3D escaped rays preserve source/wavelength line color", '"escaped" else 0.74' in ray_terminal_style and '{"absorbed", "stopped"}' in ray_terminal_style),
@@ -744,6 +748,7 @@ def main() -> int:
             and "start_center_row_to_ray" in init
             and "_hide_regular_rays_for_center_axis_pick()" in center_row_axis_start
             and "show_rays_var.set(False)" in center_row_axis_hide
+            and "_file_backed_stl_row_at(int(row_index)) is None" in center_row_axis_start
             and "self._set_row_highlight(int(self._center_row_to_ray_index))" in center_row_axis_start
             and "_center_axis_source_pick_ignoring_axis_overlays(x, y)" in pick
             and "_actor_optical_axis_map" in center_axis_source_pick
@@ -819,8 +824,8 @@ def main() -> int:
         (
             "Ray-on refresh redraws retained CAD/STL edges after ray actors",
             "ray_surface_edge_overlays" in refresh
-            and "for edges, edge_color, edge_width in ray_surface_edge_overlays" in refresh
-            and "self._add_mesh_actor(edges, color=edge_color" in refresh,
+            and "for edges, edge_color, edge_width, edge_row_index in ray_surface_edge_overlays" in refresh
+            and "track_row_index=edge_row_index" in refresh,
         ),
         (
             "Ray-on refresh redraws retained CAD/STL wireframes after ray actors",
