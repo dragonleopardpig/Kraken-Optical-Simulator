@@ -204,6 +204,7 @@ def main() -> int:
     badge_text = inspect.getsource(Kraken3DInspector._active_mode_badge_text)
     badge_update = inspect.getsource(Kraken3DInspector._update_mode_badge)
     trace_summary_text = inspect.getsource(Kraken3DInspector._trace_summary_text)
+    trace_terminal_face_summary = inspect.getsource(Kraken3DInspector._ray_path_terminal_face_summary)
     trace_summary = inspect.getsource(Kraken3DInspector._update_trace_summary)
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
     stl_refresh = inspect.getsource(Kraken3DInspector._refresh_after_stl_pose_change)
@@ -711,6 +712,14 @@ def main() -> int:
             and "suppressed_endpoint_count" in refresh
             and "Ray terminals:" in trace_summary_text
             and "SetDisplayPosition(16, max(int(height) - 58, 16))" in trace_summary,
+        ),
+        (
+            "Open 3D terminal summary reports final CAD face and physics action",
+            "terminal_face_counts" in trace_summary_text
+            and "last hit " in trace_summary_text
+            and "_ray_path_terminal_face_summary(ray_path)" in refresh
+            and "mesh_face_id" in trace_terminal_face_summary
+            and "event_type" in trace_terminal_face_summary,
         ),
         ("Open 3D missed detector lines use status styling", "missed_detector" in ray_terminal_style and "line_opacity" in ray_terminal_style),
         ("Open 3D escaped rays preserve source/wavelength line color", '"escaped" else 0.74' in ray_terminal_style and '{"absorbed", "stopped"}' in ray_terminal_style),

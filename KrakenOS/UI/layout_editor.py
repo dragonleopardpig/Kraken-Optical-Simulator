@@ -10350,6 +10350,7 @@ class Kraken3DInspector(tk.Toplevel):
         ray_count: int,
         bounded_ray_count: int,
         suppressed_endpoint_count: int,
+        terminal_face_counts: dict[str, int] | None = None,
     ) -> str:
         if int(ray_count) <= 0 and not terminal_counts:
             return ""
@@ -10384,10 +10385,50 @@ class Kraken3DInspector(tk.Toplevel):
             suffix.append(f"bounded={int(bounded_ray_count)}")
         if int(suppressed_endpoint_count) > 0:
             suffix.append(f"endpoint markers hidden={int(suppressed_endpoint_count)}")
+        face_parts: list[str] = []
+        for label, count in sorted(
+            (dict(terminal_face_counts or {})).items(),
+            key=lambda item: (-int(item[1]), str(item[0])),
+        )[:3]:
+            text_label = str(label or "").strip()
+            if text_label and int(count) > 0:
+                face_parts.append(f"{text_label}={int(count)}")
+        if face_parts:
+            suffix.append("last hit " + ", ".join(face_parts))
         text = f"Ray terminals: {int(ray_count)} rays | " + ", ".join(parts)
         if suffix:
             text += " | " + ", ".join(suffix)
         return text
+
+    @staticmethod
+    def _ray_path_terminal_face_summary(ray_path) -> str:
+        surface_events = [
+            event
+            for event in list(getattr(ray_path, "events", []) or [])
+            if str(getattr(event, "event_kind", "") or "") == "surface"
+        ]
+        if not surface_events:
+            return ""
+        event = surface_events[-1]
+        metadata = getattr(event, "metadata", {}) or {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        face_id = str(
+            getattr(event, "mesh_face_id", "")
+            or metadata.get("mesh_face_id", "")
+            or metadata.get("face_id", "")
+            or ""
+        ).strip()
+        event_type = str(getattr(event, "event_type", "") or "").strip().lower()
+        if not face_id:
+            try:
+                surface_id = int(getattr(event, "surface_id"))
+                face_id = f"S{surface_id}"
+            except Exception:
+                face_id = "surface"
+        if event_type:
+            return f"{face_id} {event_type}"
+        return face_id
 
     def _update_trace_summary(
         self,
@@ -10396,6 +10437,7 @@ class Kraken3DInspector(tk.Toplevel):
         ray_count: int = 0,
         bounded_ray_count: int = 0,
         suppressed_endpoint_count: int = 0,
+        terminal_face_counts: dict[str, int] | None = None,
         render: bool = True,
     ) -> None:
         if self._renderer is None:
@@ -10405,6 +10447,7 @@ class Kraken3DInspector(tk.Toplevel):
             ray_count=int(ray_count),
             bounded_ray_count=int(bounded_ray_count),
             suppressed_endpoint_count=int(suppressed_endpoint_count),
+            terminal_face_counts=terminal_face_counts,
         )
         actor = self._trace_summary_actor
         if not text:
@@ -11435,10 +11478,15 @@ class Kraken3DInspector(tk.Toplevel):
             bounded_ray_count = 0
             suppressed_endpoint_count = 0
             terminal_counts: dict[str, int] = {}
+            terminal_face_counts: dict[str, int] = {}
             for ray_index, color, ray_pts, terminal_status in self.editor._iter_3d_scene_ray_records(rays, scene_bundle):
                 terminal_key = str(terminal_status or "unknown").strip().lower() or "unknown"
                 terminal_counts[terminal_key] = int(terminal_counts.get(terminal_key, 0)) + 1
                 ray_path = paths_by_ray_index.get(int(ray_index))
+                if terminal_key in {"escaped", "stopped", "terminated", "unknown"} and ray_path is not None:
+                    face_summary = self._ray_path_terminal_face_summary(ray_path)
+                    if face_summary:
+                        terminal_face_counts[face_summary] = int(terminal_face_counts.get(face_summary, 0)) + 1
                 terminal_target = KrakenLayoutEditor._missed_detector_target_for_path(scene_bundle, ray_path)
                 terminal_direction = KrakenLayoutEditor._terminal_display_direction_for_path(ray_path)
                 display_ray_pts, was_bounded = KrakenLayoutEditor._bounded_3d_ray_points_for_display(
@@ -11501,6 +11549,7 @@ class Kraken3DInspector(tk.Toplevel):
             bounded_ray_count = 0
             suppressed_endpoint_count = 0
             terminal_counts = {}
+            terminal_face_counts = {}
 
         optical_axis_overlays = 0
         if self._should_draw_optical_axis_overlays():
@@ -11629,6 +11678,7 @@ class Kraken3DInspector(tk.Toplevel):
             ray_count=ray_count if bool(self.show_rays_var.get()) else 0,
             bounded_ray_count=bounded_ray_count,
             suppressed_endpoint_count=suppressed_endpoint_count,
+            terminal_face_counts=terminal_face_counts,
             render=False,
         )
         self.render()

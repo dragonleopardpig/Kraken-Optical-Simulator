@@ -53,30 +53,23 @@ Estimated branch status:
 | Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, Open 3D placement handles with visible grid planes suppressed, snap-aware click/drag translate-rotate handles, imported STEP snap-to-target placement, row-to-target snap constraints, row-to-target normal-orientation constraints, row-to-optical-axis centering with regular rays hidden during target pick, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
 | Live 3D authoring | In progress | `█████████░ 86%` | Open 3D now has a left-docked Live Controls panel bound to the same Source, Field, and Trace / Display variables as the main left panel. Live Mode schedules debounced 3D retraces after source edits, main left-panel edits, and STEP carry/placement changes, using the same 3D preview sampling path. Imported arbitrary optical STEP overlays now enter live traces as transient file-backed optical solid rows, so rays can interact with the unpromoted overlay during placement without inserting a row into the editable table. The transient optical STEP row plan is cached when overlay pose and row context are unchanged, reducing repeated remeshing during source-only Live Mode refreshes. Open 3D now renders transient rows from the live render-row list, suppresses the duplicate display-only overlay during live trace, and displays the full CAD/STL body with strong cleaned feature edges. A headless STEP1-STEP8 workflow capture validates the import, carry, transient trace, promotion, second STEP staging, and final Trace Ray path. `Accept STEP Placement` commits the current overlay into a persistent row-backed optical solid and clears the display-only overlay. Promoted optical-solid rows can now be hold-dragged directly in Open 3D after promotion, stale face-hover outlines are cleared at drag start, row-owned edge/tint actors translate with the body during drag, file-backed rows require an explicit face click before Center Row->Optical Axis, and source-cone plus collimated-source launch patterns remain stable across the overlay-to-row and face-assignment transitions. The remaining architecture work is making continuous drag traces faster on large CAD meshes and moving STEP state transitions behind one service-owned state machine. |
 | Upstream main integration | Triaged | `████░░░░░░ 40%` | Local `main` is fast-forwarded to `origin/main` without checking out or dirtying the branch. The low-risk packaging metadata from upstream has been adopted through `pyproject.toml`, and local prism attachment byproducts are ignored so user screenshots/CAD side files do not block sync. Runtime changes around `BundleTrace`, `RayKeeper`, `Display`, `GeometryBackend`, `MeshBlock`, lazy PyVista, and new pytest coverage are useful but require selective integration because a full merge would overwrite or remove branch-specific UI, Sphinx, optimization, and scene-tracing work. |
-| Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, per-ray detector aperture status, detector aperture hit/miss reports, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, detector-plane contact classification for output-port-followed Image targets, folded-preview provenance, direct Open 3D mirror-face hits and TIR/reflection events that keep same-solid CAD/STL faces eligible until a real exit or terminal event, and CSV export. |
+| Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, per-ray detector aperture status, detector aperture hit/miss reports, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, detector-plane contact classification for output-port-followed Image targets, folded-preview provenance, direct Open 3D mirror-face hits and TIR/reflection events that keep same-solid CAD/STL faces eligible until a real exit or terminal event, Open 3D terminal summaries that report the last CAD face/action for escaped or stopped rays, and CSV export. |
 | Arbitrary prisms and CAD solids | Achieved | `██████████ 100%` | Face identity, orientation-invariant coplanar CAD-face grouping with same-plane assignment propagation, geometry-derived uncoated face-intent suggestions, direct picked-face assignment without Left/Right/Up/Down side labels or inferred output ports, display-only STEP overlay promotion into traceable row-backed optical solids with positive axial clearance and scene-object `AxisMove=0` isolation, same-row face continuation for CAD/STL reflection and total-internal-reflection events, imported right-angle STEP central-ray TIR on an uncoated BK7-air hypotenuse, cascaded row-scoped boundary/volume records, real multi-STL trace coverage, runtime output-port scene bounds, closed-solid media transitions, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
 
 Overall branch direction: keep moving toward one scene/event truth source while
 preserving exact sequential prescriptions as the ordered-path special case.
 
-Latest movement on 2026-05-22: the F003 red-circle penta check confirmed the
-raykeeper face events were reflective, while the 2D renderer could make a sharp
-mirror-hit vertex look like a tiny transmitted ray because a single polyline
-join/cap protruded past the event point. 2D rays are now drawn as physical
-segments with butt caps. Open 3D ray actors now use the same physical-segment
-contract, with a small interior-event inset so a VTK line join cannot visibly
-cross a reflected CAD face. The Open 3D right-click face-function path now also
-resolves the picked mesh cell to its triangle-backed CAD face before falling
-back to point/normal matching, then stores that face ID directly. Imported STEP
-overlays carry the same picked face ID through promotion before applying
-Uncoated, Full Reflecting, Splitter, Absorber, or Default physics. This closes
-the leak class where an adjacent slanted penta-prism face could remain
-unassigned even though the user clicked the intended mirror face. Row-backed
-CAD/STL hover feedback now draws the full saved physical face border from
-triangle membership instead of the picked display triangle island, so subsequent
-face selections visibly track the whole F003/F004-style prism face. The
-projection-sync and interaction validators check these renderer and assignment
-contracts.
+Latest movement on 2026-05-22: Open 3D now reports the final CAD face and
+physics action in the in-viewport ray terminal summary. This matters for the
+42779 penta-prism mirror workflow: a headless diagnostic with only F004 assigned
+`Full Reflecting` records `F004:reflection=12`, then the bundle exits at still
+default-Uncoated F003 (`last hit F003 refraction=12`). With both F003 and F004
+assigned `Full Reflecting`, the same diagnostic records
+`F005 refraction -> F004 reflection -> F003 reflection -> F006 refraction` for
+all 12 rays. The F004-only case is therefore not an F004 transmission leak; it
+is the physically expected exit through F003 when F003 remains Uncoated. The new
+`capture_penta_mirror_leak_diagnostic` module saves both Open 3D snapshots and
+asserts these face/action sequences so this cannot regress silently.
 
 ## Upstream Main Sync
 
@@ -348,7 +341,10 @@ kraken-vtk-tk-check
   ends appear at different positions, the summary distinguishes detector hits,
   detector misses, escaped/bounded display tails, stopped/absorbed paths, and
   hidden endpoint markers instead of requiring visual guessing from the ray
-  cluster positions alone.
+  cluster positions alone. Escaped, stopped, terminated, or otherwise unknown
+  paths also include the last CAD/STL face and event action, such as
+  `last hit F003 refraction=12`, so a ray that reflects from one face and exits
+  at another is not mistaken for leakage through the mirror face.
 - Imported and Open 3D-promoted optical CAD/STL solids default to `AxisMove=0`.
   They are physical scene objects, so their decenter/tilt does not drag the
   downstream Image/detector plane into the prism. Explicit input/output ports
@@ -729,6 +725,7 @@ python -m KrakenOS.UI.validate_step_carry_open3d_smoke
 python -m KrakenOS.UI.validate_open3d_ray_toggle_scene_retention
 python -m KrakenOS.UI.validate_step_carry_open3d_smoke --snapshot /tmp/kraken_step_carry.png
 python -m KrakenOS.UI.capture_open3d_step_workflow_screenshots
+python -m KrakenOS.UI.capture_penta_mirror_leak_diagnostic
 ```
 
 `capture_open3d_step_workflow_screenshots` saves `STEP1.png` through
@@ -738,6 +735,14 @@ equivalent of pressing Open 3D `Trace Ray` with one promoted penta prism and a
 second transient optical STEP overlay; the report asserts that the transient
 overlay is traced once as a live physics row instead of being drawn a second
 time as display-only geometry.
+
+`capture_penta_mirror_leak_diagnostic` saves
+`f004_only_mirror.png`, `f003_f004_mirrors.png`, and
+`penta_mirror_diagnostic_report.json` under
+`attachment/open3d_penta_mirror_diagnostic/`. The report asserts that assigning
+only F004 as `Full Reflecting` produces reflection at F004 and exit through
+default-Uncoated F003, while assigning both F003 and F004 as mirrors exits
+through F006 with no F004 transmission event.
 
 ## Known Risks
 
@@ -865,6 +870,9 @@ Acceptance criteria for this phase:
 
 Current STEP workflow observations from the STEP1-STEP8 screenshots:
 
+- The F004-only penta-prism case is diagnostically clear now: F004 is reflective
+  for all traced rays, and any visible outgoing bundle in that setup is the
+  subsequent F003 Uncoated exit unless F003 is also assigned as a mirror.
 - The F003 red-circle diagnostic was a rendering artifact, not a physics event:
   mirrored penta hits recorded `reflect` events, but the old 2D Line2D join/cap
   could visually overrun a sharp mirror vertex. Ray drawing now uses segmented
