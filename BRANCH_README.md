@@ -63,8 +63,10 @@ Latest movement on 2026-05-22: the F003 red-circle penta check confirmed the
 raykeeper face events were reflective, while the 2D renderer could make a sharp
 mirror-hit vertex look like a tiny transmitted ray because a single polyline
 join/cap protruded past the event point. 2D rays are now drawn as physical
-segments with butt caps, and the projection-sync validator checks that renderer
-contract.
+segments with butt caps. Open 3D ray actors now use the same physical-segment
+contract, with a small interior-event inset so a VTK line join cannot visibly
+cross a reflected CAD face. The projection-sync validator checks both renderer
+contracts.
 
 ## Upstream Main Sync
 

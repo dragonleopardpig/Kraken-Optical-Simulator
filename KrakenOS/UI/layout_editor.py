@@ -11388,9 +11388,11 @@ class Kraken3DInspector(tk.Toplevel):
                 )
                 if was_bounded:
                     bounded_ray_count += 1
-                try:
-                    ray_mesh = pv.lines_from_points(display_ray_pts)
-                except Exception:
+                ray_mesh = KrakenLayoutEditor._ray_segment_mesh_for_3d_display(
+                    display_ray_pts,
+                    vertex_inset=KrakenLayoutEditor._ray_vertex_display_inset(radius),
+                )
+                if ray_mesh is None:
                     continue
                 if int(getattr(ray_mesh, "n_points", 0)) < 2:
                     continue
@@ -27928,9 +27930,11 @@ class KrakenLayoutEditor(tk.Tk):
                 terminal_target=terminal_target,
                 terminal_direction=terminal_direction,
             )
-            try:
-                line = pv.lines_from_points(display_ray_pts)
-            except Exception:
+            line = self._ray_segment_mesh_for_3d_display(
+                display_ray_pts,
+                vertex_inset=self._ray_vertex_display_inset(ray_scene_radius),
+            )
+            if line is None:
                 continue
             if int(getattr(line, "n_points", 0)) < 2:
                 continue
@@ -28596,6 +28600,78 @@ class KrakenLayoutEditor(tk.Tk):
             terminal_target=terminal_target,
             terminal_direction=terminal_direction,
         )
+
+    @staticmethod
+    def _ray_vertex_display_inset(radius: float) -> float:
+        try:
+            scene_radius = float(radius)
+        except Exception:
+            scene_radius = 1.0
+        if not np.isfinite(scene_radius) or scene_radius <= 0.0:
+            scene_radius = 1.0
+        return float(max(min(scene_radius * 0.0015, 0.18), 0.035))
+
+    @staticmethod
+    def _ray_segment_mesh_for_3d_display(points, *, vertex_inset: float = 0.0):
+        """Build disconnected VTK line segments for physical ray events.
+
+        Rendering a reflected ray as one connected polyline can let the line
+        join/cap project through a mirror-hit vertex and mimic transmission.
+        Open 3D should draw each physical segment independently.
+        """
+        if pv is None:
+            try:
+                _load_3d_backends()
+            except Exception:
+                pass
+        if pv is None:
+            return None
+        try:
+            pts = np.asarray(points, dtype=float)
+        except Exception:
+            return None
+        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+            return None
+        finite = np.all(np.isfinite(pts[:, :3]), axis=1)
+        pts = pts[finite, :3]
+        if pts.shape[0] < 2:
+            return None
+        try:
+            inset = max(float(vertex_inset), 0.0)
+        except Exception:
+            inset = 0.0
+        out_points: list[np.ndarray] = []
+        lines: list[int] = []
+        last_segment_index = pts.shape[0] - 2
+        for segment_index, (start, end) in enumerate(zip(pts[:-1], pts[1:])):
+            start = np.asarray(start, dtype=float)
+            end = np.asarray(end, dtype=float)
+            delta = end - start
+            length = float(np.linalg.norm(delta))
+            if not np.isfinite(length) or length <= 1.0e-12:
+                continue
+            a = start.copy()
+            b = end.copy()
+            local_inset = min(inset, length * 0.20)
+            if local_inset > 0.0:
+                unit = delta / length
+                if segment_index > 0:
+                    a = a + unit * local_inset
+                if segment_index < last_segment_index:
+                    b = b - unit * local_inset
+            if float(np.linalg.norm(b - a)) <= 1.0e-12:
+                continue
+            base = len(out_points)
+            out_points.extend((a, b))
+            lines.extend((2, base, base + 1))
+        if not out_points:
+            return None
+        try:
+            mesh = pv.PolyData(np.asarray(out_points, dtype=float))
+            mesh.lines = np.asarray(lines, dtype=np.int64)
+            return mesh
+        except Exception:
+            return None
 
     @staticmethod
     def _should_draw_3d_terminal_endpoint(
@@ -29747,9 +29823,11 @@ class KrakenLayoutEditor(tk.Tk):
                 terminal_target=terminal_target,
                 terminal_direction=terminal_direction,
             )
-            try:
-                line = pv.lines_from_points(display_ray_pts)
-            except Exception:
+            line = self._ray_segment_mesh_for_3d_display(
+                display_ray_pts,
+                vertex_inset=self._ray_vertex_display_inset(ray_scene_radius),
+            )
+            if line is None:
                 continue
             if int(getattr(line, "n_points", 0)) < 2:
                 continue

@@ -317,12 +317,47 @@ def _validate_2d_ray_renderer_segments() -> list[str]:
     return failures
 
 
+def _validate_3d_ray_renderer_segments() -> list[str]:
+    """Ensure Open 3D rays are rendered as event-bounded segments."""
+    failures: list[str] = []
+    event_vertex = np.asarray((10.0, 0.0, 0.0), dtype=float)
+    mesh = KrakenLayoutEditor._ray_segment_mesh_for_3d_display(
+        np.asarray(
+            (
+                (0.0, 0.0, 0.0),
+                event_vertex,
+                (10.0, 5.0, 0.0),
+            ),
+            dtype=float,
+        ),
+        vertex_inset=0.5,
+    )
+    if mesh is None:
+        failures.append("3D ray renderer returned no segment mesh")
+        return failures
+    if int(getattr(mesh, "n_points", 0)) != 4:
+        failures.append(f"3D ray renderer points={int(getattr(mesh, 'n_points', 0))}, expected 4")
+    lines = np.asarray(getattr(mesh, "lines", []), dtype=int)
+    if lines.size != 6 or not np.array_equal(lines.reshape(-1, 3)[:, 0], np.asarray((2, 2), dtype=int)):
+        failures.append(f"3D ray renderer line encoding={lines.tolist()}, expected two disconnected segments")
+    points = np.asarray(getattr(mesh, "points", []), dtype=float)
+    if points.shape == (4, 3):
+        if not np.allclose(points[0], (0.0, 0.0, 0.0), rtol=0.0, atol=1.0e-12):
+            failures.append(f"3D ray first endpoint moved to {points[0].tolist()}")
+        if not np.allclose(points[-1], (10.0, 5.0, 0.0), rtol=0.0, atol=1.0e-12):
+            failures.append(f"3D ray final endpoint moved to {points[-1].tolist()}")
+        if np.any(np.all(np.isclose(points, event_vertex, rtol=0.0, atol=1.0e-12), axis=1)):
+            failures.append("3D ray segment mesh keeps an exact interior event vertex")
+    return failures
+
+
 def main() -> int:
     editor, rays, bundle = _penta_bundle()
     failures = []
     failures.extend(_validate_projection_sync(editor, rays, bundle))
     failures.extend(_validate_penta_physics(bundle))
     failures.extend(_validate_2d_ray_renderer_segments())
+    failures.extend(_validate_3d_ray_renderer_segments())
     if failures:
         for failure in failures:
             print(f"FAIL: {failure}")
