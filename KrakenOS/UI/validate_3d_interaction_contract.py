@@ -554,6 +554,8 @@ def main() -> int:
             "Open 3D CAD/STL faces hover before right-click assignment",
             "right-click to assign surface physics" in mouse_move
             and "_hover_overlay_for_feature" in mouse_move
+            and "_hover_overlay_for_row_face" in mouse_move
+            and "optical_solid_face_record_for_mesh_cell" in mouse_move
             and "optical_solid_face_record_at_world_point" in mouse_move
             and '("row", actor_key, cell_id)' in mouse_move,
         ),

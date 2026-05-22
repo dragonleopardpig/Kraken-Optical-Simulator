@@ -6042,7 +6042,9 @@ class Kraken3DInspector(tk.Toplevel):
                 feature = context.get("feature")
                 actor_key = str(context.get("actor_key") or "")
                 if feature is not None and actor_key:
-                    outline = self._hover_overlay_for_feature(feature[0], feature[1])
+                    outline = self._hover_overlay_for_row_face(int(row_index), face) if face is not None else None
+                    if outline is None:
+                        outline = self._hover_overlay_for_feature(feature[0], feature[1])
                     self._set_step_hover_outline(outline, ("row", actor_key, cell_id))
             except Exception:
                 pass
@@ -11140,6 +11142,7 @@ class Kraken3DInspector(tk.Toplevel):
         if self._renderer is None:
             raise RuntimeError(_VTK_TK_UNAVAILABLE_REASON or "Embedded VTK/Tk viewer unavailable")
         self._current_scene_bundle = scene_bundle
+        self._current_system = system
         self._remember_refresh_sampling_mode(getattr(self.editor, "_active_preview_sampling_mode", None))
 
         show_reference_surfaces = bool(self.show_reference_surfaces_var.get())
@@ -13199,22 +13202,31 @@ class Kraken3DInspector(tk.Toplevel):
                     hover_key = ("row", actor_key, cell_id)
                     outline = None
                     feature = None
+                    face = None
+                    try:
+                        face = self.editor.optical_solid_face_record_for_mesh_cell(int(row_index), cell_id)
+                    except Exception:
+                        face = None
                     if hover_key != self._hover_step_cell_key:
-                        feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
-                        outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
+                        if face is not None:
+                            outline = self._hover_overlay_for_row_face(int(row_index), face)
+                        if outline is None:
+                            feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
+                            outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
                     self._set_step_hover_outline(outline, hover_key)
                     face_text = "picked face"
                     try:
-                        point = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
-                        normal = None
-                        if feature is not None:
-                            normal = np.asarray(feature[2], dtype=float).reshape(-1)[:3]
-                        face = self.editor.optical_solid_face_record_at_world_point(
-                            int(row_index),
-                            point[:3],
-                            normal_world=normal,
-                            assigned_only=False,
-                        )
+                        if face is None:
+                            point = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+                            normal = None
+                            if feature is not None:
+                                normal = np.asarray(feature[2], dtype=float).reshape(-1)[:3]
+                            face = self.editor.optical_solid_face_record_at_world_point(
+                                int(row_index),
+                                point[:3],
+                                normal_world=normal,
+                                assigned_only=False,
+                            )
                         if face is not None:
                             function = _optical_solid_face_function_display(face.get("function"), legacy_role=face.get("role"))
                             face_text = f"{str(face.get('face_id', '') or 'face')} ({function})"
@@ -13606,6 +13618,44 @@ class Kraken3DInspector(tk.Toplevel):
             except Exception:
                 pass
         return merged
+
+    def _hover_overlay_for_row_face(self, row_index: int, face: dict[str, object] | None):
+        if pv is None or not isinstance(face, dict):
+            return None
+        item = self.editor._file_backed_stl_row_at(int(row_index))
+        if item is None:
+            return None
+        row, path = item
+        try:
+            _fmt, triangles = _read_stl_triangle_vertices(path)
+            triangles = np.asarray(triangles, dtype=float)
+        except Exception:
+            return None
+        if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or triangles.shape[0] == 0:
+            return None
+        try:
+            _center, scene_radius = self._scene_bounds()
+        except Exception:
+            scene_radius = 1.0
+        world_triangles = self._world_face_triangles_for_record(
+            row,
+            triangles,
+            face,
+            z_station=self.editor._stl_row_z_station(int(row_index)),
+            transform=self._runtime_transform_for_row(self.__dict__.get("_current_system"), int(row_index)),
+            scene_radius=float(scene_radius),
+        )
+        face_mesh = self._polydata_from_triangles(world_triangles)
+        if face_mesh is None:
+            return None
+        outline = self._display_feature_edges(face_mesh, feature_angle=8.0)
+        if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
+            try:
+                outline = face_mesh.extract_all_edges()
+            except Exception:
+                outline = None
+        center = face.get("centroid_world", face.get("centroid", ()))
+        return self._hover_overlay_for_feature(center, outline)
 
     @staticmethod
     def _set_step_actor_selected(actor, selected: bool) -> None:

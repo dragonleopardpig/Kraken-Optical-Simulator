@@ -71,7 +71,10 @@ back to point/normal matching, then stores that face ID directly. Imported STEP
 overlays carry the same picked face ID through promotion before applying
 Uncoated, Full Reflecting, Splitter, Absorber, or Default physics. This closes
 the leak class where an adjacent slanted penta-prism face could remain
-unassigned even though the user clicked the intended mirror face. The
+unassigned even though the user clicked the intended mirror face. Row-backed
+CAD/STL hover feedback now draws the full saved physical face border from
+triangle membership instead of the picked display triangle island, so subsequent
+face selections visibly track the whole F003/F004-style prism face. The
 projection-sync and interaction validators check these renderer and assignment
 contracts.
 
