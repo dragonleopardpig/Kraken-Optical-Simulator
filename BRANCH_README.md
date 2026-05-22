@@ -65,8 +65,11 @@ mirror-hit vertex look like a tiny transmitted ray because a single polyline
 join/cap protruded past the event point. 2D rays are now drawn as physical
 segments with butt caps. Open 3D ray actors now use the same physical-segment
 contract, with a small interior-event inset so a VTK line join cannot visibly
-cross a reflected CAD face. The projection-sync validator checks both renderer
-contracts.
+cross a reflected CAD face. The Open 3D right-click face-function path now also
+uses the picked CAD face ID directly instead of re-inferring the face from the
+same point/normal, so adjacent slanted prism faces do not silently leave the
+intended mirror face unassigned. The projection-sync and interaction validators
+check these renderer and assignment contracts.
 
 ## Upstream Main Sync
 

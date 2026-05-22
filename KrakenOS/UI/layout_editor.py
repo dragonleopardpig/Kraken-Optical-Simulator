@@ -6045,11 +6045,12 @@ class Kraken3DInspector(tk.Toplevel):
             for label in self._open3d_surface_function_menu_items():
                 menu.add_command(
                     label=f"Set {label}",
-                    command=lambda value=label, idx=int(row_index), picked_point=point[:3].copy(), picked_normal=normal: self._assign_row_face_function_from_context(
+                    command=lambda value=label, idx=int(row_index), picked_face_id=face_id, picked_point=point[:3].copy(), picked_normal=normal: self._assign_row_face_function_from_context(
                         idx,
                         picked_point,
                         picked_normal,
                         value,
+                        face_id=picked_face_id,
                     ),
                 )
             menu.add_separator()
@@ -6089,28 +6090,45 @@ class Kraken3DInspector(tk.Toplevel):
         point_world,
         normal_world,
         function_label: str,
+        *,
+        face_id: str = "",
     ) -> None:
         refresh_sampling_mode = self._active_refresh_sampling_mode()
+        face_id = str(face_id or "").strip()
         self._debug_trace(
             "face_assignment_start",
             row_index=int(row_index),
+            face_id=face_id or None,
             function_label=function_label,
             point_world=self._debug_vector(point_world),
             normal_world=self._debug_vector(normal_world),
             counts_before=self._debug_actor_counts(),
         )
         try:
-            result = self.editor.assign_optical_solid_face_function_at_world_point(
-                int(row_index),
-                point_world,
-                function_label,
-                normal_world=normal_world,
-                direct_context=True,
-            )
+            if face_id:
+                result = self.editor.assign_optical_solid_face_function(
+                    int(row_index),
+                    face_id,
+                    function_label,
+                    direct_context=True,
+                )
+            else:
+                result = self.editor.assign_optical_solid_face_function_at_world_point(
+                    int(row_index),
+                    point_world,
+                    function_label,
+                    normal_world=normal_world,
+                    direct_context=True,
+                )
         except Exception as exc:
             self.status_var.set(f"Face assignment failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"Open 3D face assignment failed: {exc}")
-            self._debug_trace("face_assignment_failed", row_index=int(row_index), error=_short_error_message(exc))
+            self._debug_trace(
+                "face_assignment_failed",
+                row_index=int(row_index),
+                face_id=face_id or None,
+                error=_short_error_message(exc),
+            )
             return
         face_id = str(result.get("face_id", "") or "picked face")
         display = str(result.get("function_display", function_label) or function_label)

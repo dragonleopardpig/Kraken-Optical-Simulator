@@ -207,6 +207,8 @@ def main() -> int:
     trace_summary = inspect.getsource(Kraken3DInspector._update_trace_summary)
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
     stl_refresh = inspect.getsource(Kraken3DInspector._refresh_after_stl_pose_change)
+    right_click_menu = inspect.getsource(Kraken3DInspector._show_surface_function_context_menu)
+    assign_row_face_context = inspect.getsource(Kraken3DInspector._assign_row_face_function_from_context)
     row_carry_pick = inspect.getsource(Kraken3DInspector._row_carry_index_from_current_pick)
     row_carry_activate = inspect.getsource(Kraken3DInspector._activate_row_carry_hold)
     row_carry_apply = inspect.getsource(Kraken3DInspector._apply_row_carry_drag_motion)
@@ -554,6 +556,13 @@ def main() -> int:
             and "_hover_overlay_for_feature" in mouse_move
             and "optical_solid_face_record_at_world_point" in mouse_move
             and '("row", actor_key, cell_id)' in mouse_move,
+        ),
+        (
+            "Open 3D row face assignment uses the picked face id directly",
+            "face_id: str" in assign_row_face_context
+            and "assign_optical_solid_face_function(" in assign_row_face_context
+            and "assign_optical_solid_face_function_at_world_point(" in assign_row_face_context
+            and "picked_face_id=face_id" in right_click_menu,
         ),
         (
             "Open 3D normal-axis snap keeps picked axis highlighted",
