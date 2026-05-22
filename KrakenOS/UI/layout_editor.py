@@ -265,6 +265,7 @@ from KrakenOS.UI.scene_projector import (
     scene_display_center_radius,
 )
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
+from KrakenOS.UI.panels.open3d_live_controls import Open3DLiveControlsPanel
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.scene_row_mapping import (
     SCENE_ROW_SOURCE,
@@ -5508,61 +5509,26 @@ class Kraken3DInspector(tk.Toplevel):
             except Exception:
                 pass
 
+    def _open3d_live_controls_panel(self) -> Open3DLiveControlsPanel:
+        panel = getattr(self, "_open3d_live_controls_panel_instance", None)
+        if panel is None:
+            panel = Open3DLiveControlsPanel(
+                self,
+                source_model_values=SOURCE_MODEL_VALUES,
+                pupil_pattern_values=PUPIL_PATTERN_VALUES,
+                field_type_values=FIELD_TYPE_CANONICAL_VALUES,
+                source_direction_preset_values=SOURCE_DIRECTION_PRESET_VALUES,
+                camera_none_label=CAMERA_NONE_LABEL,
+                camera_names=camera_names,
+            )
+            self._open3d_live_controls_panel_instance = panel
+        return panel
+
     def _build_live_left_panel(self, parent: tk.Widget) -> None:
-        header = ttk.Frame(parent)
-        header.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        header.columnconfigure(1, weight=1)
-        ttk.Checkbutton(
-            header,
-            text="Live Mode",
-            variable=self.live_mode_var,
-            command=self._on_live_mode_toggled,
-        ).grid(row=0, column=0, sticky="w")
-        ttk.Button(header, text="Trace now", command=self._trace_live_now).grid(
-            row=0,
-            column=2,
-            sticky="e",
-            padx=(6, 0),
-        )
-        ttk.Button(header, text="Update 2D", command=self.editor._manual_update_plot).grid(
-            row=0,
-            column=3,
-            sticky="e",
-            padx=(6, 0),
-        )
-
-        canvas = tk.Canvas(parent, highlightthickness=0, borderwidth=0, width=280)
-        canvas.grid(row=1, column=0, sticky="nsew")
-        scroll = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
-        scroll.grid(row=1, column=1, sticky="ns", padx=(6, 0))
-        canvas.configure(yscrollcommand=scroll.set)
-        stack = ttk.Frame(canvas)
-        stack.columnconfigure(0, weight=1)
-        window_id = canvas.create_window((0, 0), window=stack, anchor="nw")
-        stack.bind("<Configure>", lambda _event: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.bind("<Configure>", lambda event: canvas.itemconfigure(window_id, width=max(int(event.width), 1)))
-
-        source = ttk.LabelFrame(stack, text="Source", padding=8)
-        source.grid(row=0, column=0, sticky="ew")
-        self._build_live_source_controls(source)
-
-        field = ttk.LabelFrame(stack, text="Field", padding=8)
-        field.grid(row=1, column=0, sticky="ew", pady=(8, 0))
-        self._build_live_field_controls(field)
-
-        trace = ttk.LabelFrame(stack, text="Trace / Display", padding=8)
-        trace.grid(row=2, column=0, sticky="ew", pady=(8, 0))
-        self._build_live_trace_controls(trace)
-
-        step = ttk.LabelFrame(stack, text="STEP Placement", padding=8)
-        step.grid(row=3, column=0, sticky="ew", pady=(8, 0))
-        self._build_live_step_controls(step)
+        self._open3d_live_controls_panel().build(parent)
 
     def _editor_var(self, name: str, default: str = ""):
-        var = getattr(self.editor, name, None)
-        if var is None:
-            var = tk.StringVar(value=default)
-        return var
+        return self._open3d_live_controls_panel().editor_var(name, default)
 
     def _live_labeled_entry(
         self,
@@ -5575,14 +5541,15 @@ class Kraken3DInspector(tk.Toplevel):
         sync_fields: bool = False,
         width: int = 10,
     ) -> ttk.Entry:
-        ttk.Label(parent, text=label).grid(row=row, column=column, sticky="w", pady=(0, 2), padx=(8 if column else 0, 0))
-        entry = ttk.Entry(parent, textvariable=self._editor_var(var_name), width=width)
-        entry.grid(row=row + 1, column=column, sticky="ew", pady=(0, 8), padx=(8 if column else 0, 0))
-        entry.bind("<FocusIn>", self.editor._begin_history_capture, add="+")
-        entry.bind("<FocusOut>", lambda _event: self._commit_live_control_update(sync_fields=sync_fields), add="+")
-        entry.bind("<Return>", lambda _event: self._commit_live_control_update(sync_fields=sync_fields), add="+")
-        entry.bind("<KP_Enter>", lambda _event: self._commit_live_control_update(sync_fields=sync_fields), add="+")
-        return entry
+        return self._open3d_live_controls_panel().live_labeled_entry(
+            parent,
+            row,
+            column,
+            label,
+            var_name,
+            sync_fields=sync_fields,
+            width=width,
+        )
 
     def _live_labeled_combo(
         self,
@@ -5596,175 +5563,28 @@ class Kraken3DInspector(tk.Toplevel):
         handler=None,
         width: int = 12,
     ) -> ttk.Combobox:
-        ttk.Label(parent, text=label).grid(row=row, column=column, sticky="w", pady=(0, 2), padx=(8 if column else 0, 0))
-        combo = ttk.Combobox(
+        return self._open3d_live_controls_panel().live_labeled_combo(
             parent,
-            textvariable=self._editor_var(var_name),
-            state="readonly",
+            row,
+            column,
+            label,
+            var_name,
+            values,
+            handler=handler,
             width=width,
-            values=tuple(values),
         )
-        combo.grid(row=row + 1, column=column, sticky="ew", pady=(0, 8), padx=(8 if column else 0, 0))
-        combo.bind("<FocusIn>", self.editor._begin_history_capture, add="+")
-        combo.bind("<<ComboboxSelected>>", lambda _event: self._commit_live_control_update(handler=handler), add="+")
-        return combo
 
     def _build_live_source_controls(self, parent: tk.Widget) -> None:
-        for column in range(2):
-            parent.columnconfigure(column, weight=1, uniform="live_source")
-        self._live_labeled_combo(
-            parent,
-            0,
-            0,
-            "Source model",
-            "source_model_var",
-            SOURCE_MODEL_VALUES,
-            handler=self.editor._on_source_model_changed,
-            width=14,
-        )
-        self._live_labeled_combo(
-            parent,
-            0,
-            1,
-            "Pupil pattern",
-            "pupil_pattern_var",
-            PUPIL_PATTERN_VALUES,
-            handler=self.editor._on_source_model_changed,
-            width=14,
-        )
-        self._live_labeled_entry(parent, 2, 0, "Ray count", "ray_count_var", sync_fields=True)
-        self._live_labeled_entry(parent, 2, 1, "Cone [deg]", "source_cone_angle_var")
-        self._live_labeled_entry(parent, 4, 0, "Source radius", "source_radius_var")
-        self._live_labeled_entry(parent, 4, 1, "Power", "source_power_var")
-        self._live_labeled_entry(parent, 6, 0, "Source X", "source_x_var")
-        self._live_labeled_entry(parent, 6, 1, "Source Y", "source_y_var")
-        self._live_labeled_entry(parent, 8, 0, "Source Z", "source_z_var")
-        self._live_labeled_entry(parent, 8, 1, "Seed", "source_seed_var")
-        self._live_labeled_entry(parent, 10, 0, "Source L", "source_l_var")
-        self._live_labeled_entry(parent, 10, 1, "Source M", "source_m_var")
-        self._live_labeled_entry(parent, 12, 0, "Source N", "source_n_var")
-        self._live_labeled_combo(
-            parent,
-            12,
-            1,
-            "Direction",
-            "source_direction_preset_var",
-            SOURCE_DIRECTION_PRESET_VALUES,
-            handler=self.editor._on_source_direction_preset_changed,
-            width=14,
-        )
-        ttk.Button(parent, text="Scene Source Manager...", command=self.editor.open_scene_source_manager).grid(
-            row=14,
-            column=0,
-            columnspan=2,
-            sticky="ew",
-            pady=(2, 0),
-        )
+        self._open3d_live_controls_panel().build_source_controls(parent)
 
     def _build_live_field_controls(self, parent: tk.Widget) -> None:
-        for column in range(2):
-            parent.columnconfigure(column, weight=1, uniform="live_field")
-        self._live_labeled_combo(
-            parent,
-            0,
-            0,
-            "Field type",
-            "field_type_var",
-            [self.editor._field_type_display_label(value) for value in FIELD_TYPE_CANONICAL_VALUES],
-            handler=self.editor._on_field_type_changed,
-            width=13,
-        )
-        self._live_labeled_entry(parent, 0, 1, "Field value", "field_value_var", sync_fields=True)
-        self._live_labeled_entry(parent, 2, 0, "Field samples", "field_count_var", sync_fields=True)
-        self._live_labeled_combo(
-            parent,
-            2,
-            1,
-            "Image dia",
-            "image_diameter_mode_var",
-            ("Auto", "Manual"),
-            handler=self.editor._on_image_diameter_mode_changed,
-        )
-        self._live_labeled_combo(
-            parent,
-            4,
-            0,
-            "Camera",
-            "camera_model_var",
-            [CAMERA_NONE_LABEL, *camera_names()],
-            handler=self.editor._on_camera_model_changed,
-            width=22,
-        ).grid(columnspan=2)
+        self._open3d_live_controls_panel().build_field_controls(parent)
 
     def _build_live_trace_controls(self, parent: tk.Widget) -> None:
-        for column in range(2):
-            parent.columnconfigure(column, weight=1, uniform="live_trace")
-        self._live_labeled_combo(
-            parent,
-            0,
-            0,
-            "Object mode",
-            "object_mode_var",
-            ("Finite", "Infinity"),
-            handler=self.editor._on_object_mode_changed,
-        )
-        self._live_labeled_entry(parent, 0, 1, "Wavelength", "wavelength_var", sync_fields=True)
-        self._live_labeled_entry(parent, 2, 0, "Pupil factor", "ray_height_factor_var", sync_fields=True)
-        self._live_labeled_combo(
-            parent,
-            2,
-            1,
-            "Trace",
-            "trace_mode_var",
-            ("Auto", "Non-Sequential Preview", "Sequential", "Folded Preview"),
-            handler=self.editor._on_trace_mode_changed,
-            width=18,
-        )
-        self._live_labeled_combo(
-            parent,
-            4,
-            0,
-            "Aperture",
-            "aperture_type_var",
-            ("STOP", "EPD", "FNO"),
-        )
-        self._live_labeled_entry(parent, 4, 1, "Aperture value", "aperture_value_var", sync_fields=True)
-        self._live_labeled_combo(
-            parent,
-            6,
-            0,
-            "NS target",
-            "nonseq_target_surface_var",
-            getattr(self.editor, "nonseq_target_surface_menu", None).cget("values")
-            if getattr(self.editor, "nonseq_target_surface_menu", None) is not None
-            else ("Auto",),
-        )
-        self._live_labeled_entry(parent, 6, 1, "NS hit limit", "nonseq_ns_limit_var")
-        ttk.Checkbutton(
-            parent,
-            text="NS probabilistic coating split",
-            variable=self._editor_var("nonseq_energy_probability_var"),
-            command=self._commit_live_control_update,
-        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self._open3d_live_controls_panel().build_trace_controls(parent)
 
     def _build_live_step_controls(self, parent: tk.Widget) -> None:
-        for column in range(2):
-            parent.columnconfigure(column, weight=1, uniform="live_step")
-        ttk.Button(
-            parent,
-            text="Accept STEP Placement",
-            command=self.accept_selected_step_placement,
-        ).grid(row=0, column=0, columnspan=2, sticky="ew")
-        ttk.Button(
-            parent,
-            text="Promote STEP Row",
-            command=self.promote_selected_step_to_optical_solid_row,
-        ).grid(row=1, column=0, sticky="ew", pady=(6, 0), padx=(0, 3))
-        ttk.Button(
-            parent,
-            text="Clear STEP",
-            command=self.clear_step_imports,
-        ).grid(row=1, column=1, sticky="ew", pady=(6, 0), padx=(3, 0))
+        self._open3d_live_controls_panel().build_step_controls(parent)
 
     def _commit_live_control_update(self, *, sync_fields: bool = False, handler=None) -> None:
         try:

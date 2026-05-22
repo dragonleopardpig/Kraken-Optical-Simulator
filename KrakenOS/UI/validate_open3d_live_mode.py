@@ -6,6 +6,7 @@ import inspect
 from dataclasses import dataclass
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
+from KrakenOS.UI.panels.open3d_live_controls import Open3DLiveControlsPanel
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 
 
@@ -19,22 +20,23 @@ class Open3DLiveModeCheck:
 def validate_open3d_live_mode() -> list[Open3DLiveModeCheck]:
     inspector_source = inspect.getsource(Kraken3DInspector)
     editor_source = inspect.getsource(KrakenLayoutEditor)
+    open3d_live_controls_panel_source = inspect.getsource(Open3DLiveControlsPanel)
     open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)
     checks = [
         Open3DLiveModeCheck(
             "Open 3D exposes a docked Live Controls panel",
             "Live Controls" in inspector_source
             and "def _build_live_left_panel" in inspector_source
-            and "def _build_live_source_controls" in inspector_source
-            and "def _build_live_field_controls" in inspector_source
-            and "def _build_live_trace_controls" in inspector_source,
+            and "def build_source_controls" in open3d_live_controls_panel_source
+            and "def build_field_controls" in open3d_live_controls_panel_source
+            and "def build_trace_controls" in open3d_live_controls_panel_source,
             "Live Controls panel mirrors Source, Field, and Trace / Display controls.",
         ),
         Open3DLiveModeCheck(
             "Live Controls expose explicit STEP placement acceptance",
             "def _build_live_step_controls" in inspector_source
-            and "Accept STEP Placement" in inspector_source
-            and "accept_selected_step_placement" in inspector_source,
+            and "Accept STEP Placement" in open3d_live_controls_panel_source
+            and "accept_selected_step_placement" in open3d_live_controls_panel_source,
             "Transient STEP placement can be committed from the left Live Controls panel.",
         ),
         Open3DLiveModeCheck(
@@ -47,10 +49,10 @@ def validate_open3d_live_mode() -> list[Open3DLiveModeCheck]:
         ),
         Open3DLiveModeCheck(
             "Live controls are bound to the main editor state",
-            "textvariable=self._editor_var(" in inspector_source
-            and "self.editor._on_source_model_changed" in inspector_source
-            and "self.editor._on_field_type_changed" in inspector_source
-            and "self.editor._on_trace_mode_changed" in inspector_source,
+            "textvariable=self.editor_var(" in open3d_live_controls_panel_source
+            and "self.editor._on_source_model_changed" in open3d_live_controls_panel_source
+            and "self.editor._on_field_type_changed" in open3d_live_controls_panel_source
+            and "self.editor._on_trace_mode_changed" in open3d_live_controls_panel_source,
             "Open 3D widgets reuse editor Tk variables and existing commit handlers.",
         ),
         Open3DLiveModeCheck(

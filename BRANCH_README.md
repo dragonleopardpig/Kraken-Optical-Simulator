@@ -750,6 +750,17 @@ scene architecture is not disrupted.
 
 Refactor order:
 
+Production refactor progress:
+
+| Slice | Status | Progress | Notes |
+| --- | --- | --- | --- |
+| `services/` boundary for Open 3D trace refresh | Started | `██████░░░░ 60%` | `Open3DTraceRefreshService` owns sampling-mode normalization, Live Mode preview-bundle creation, and open-inspector synchronization. Remaining service work is stale-request cancellation, CAD mesh reuse, and throttling for heavy imported solids. |
+| `panels/` boundary for Open 3D Live Controls | Started | `████░░░░░░ 40%` | `Open3DLiveControlsPanel` now owns construction of the left-docked Live Controls UI while `Kraken3DInspector` keeps thin compatibility callbacks. Remaining panel work is extracting the larger Open 3D toolbar/carry/placement controls and then the main left Source/Field/Trace panels. |
+| `widgets/` reusable Tk controls | Pending | `░░░░░░░░░░ 0%` | Validated entries, combobox commit helpers, projection selectors, menus, and table cell widgets still live mostly in `layout_editor.py`. |
+| Live Mode performance service | Pending | `░░░░░░░░░░ 0%` | Debouncing exists; cancellation, mesh throttling, and row-plan reuse need a stronger service contract before enabling Live Mode by default on heavy CAD scenes. |
+| `sv-ttk` theme adapter | Pending | `░░░░░░░░░░ 0%` | Theme work waits until panels/widgets/services are split enough that styling is a thin layer instead of another responsibility inside `layout_editor.py`. |
+| Public `kraken-os[ui]` install path | Pending | `░░░░░░░░░░ 0%` | The intended branch install command is documented below; packaging metadata and clean-venv validation are still needed. |
+
 1. Split `KrakenOS/UI/layout_editor.py` into a package-style structure inspired
    by the organization of `optiland_gui/`, while keeping KrakenOS on Tk/ttk.
    The first target package layout should be:
@@ -766,11 +777,13 @@ Refactor order:
    - Keep shared scene/event dataclasses in their existing scene modules unless
      there is a clear ownership reason to move them.
 
-   First slice started: `KrakenOS/UI/services/open3d_trace_refresh.py` now owns
-   Open 3D sampling-mode normalization, inspector refresh trace selection, Live
-   Mode preview-bundle creation, and synchronization of an already-open 3D
-   inspector. `layout_editor.py` still owns rendering and interaction, but the
-   trace/refresh policy is now behind a reusable service boundary.
+   First slices started: `KrakenOS/UI/services/open3d_trace_refresh.py` now
+   owns Open 3D sampling-mode normalization, inspector refresh trace selection,
+   Live Mode preview-bundle creation, and synchronization of an already-open 3D
+   inspector. `KrakenOS/UI/panels/open3d_live_controls.py` now owns the
+   left-docked Live Controls panel construction. `layout_editor.py` still owns
+   rendering and interaction, but trace/refresh policy and the first Open 3D
+   side panel are now behind reusable module boundaries.
 
 2. Preserve behavior while splitting. Each extraction should move one ownership
    boundary with no UI feature redesign in the same commit. The validation bar
@@ -868,9 +881,9 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Continue the production-readiness refactor by extracting the Open 3D Live
-Controls panel into `KrakenOS/UI/panels/`, with only thin callbacks back into
-the editor and `Open3DTraceRefreshService`. Keep the UI behavior identical.
-After that panel boundary exists, move the Live Mode lag work into the service:
-stale-request cancellation, CAD row-plan cache reuse, and mesh/trace throttling
-should live outside widget code.
+Continue the production-readiness refactor by extracting the larger Open 3D
+toolbar/carry/placement controls into `KrakenOS/UI/panels/` or
+`KrakenOS/UI/widgets/`, keeping `Kraken3DInspector` as the coordinator. After
+that visible-control boundary exists, move the Live Mode lag work into the
+service: stale-request cancellation, CAD row-plan cache reuse, and mesh/trace
+throttling should live outside widget code.
