@@ -740,6 +740,80 @@ python -m KrakenOS.UI.validate_step_carry_open3d_smoke --snapshot /tmp/kraken_st
 - Keep broadening prism, CAD solid, coating, detector, and cascading-component
   regression coverage with real traced fixtures.
 
+### Production Readiness Refactor Plan
+
+The next UI phase is a maintainability and distribution pass, not a pixel-first
+redesign. `layout_editor.py` is carrying too many responsibilities for a
+production-maintained application. The priority is to split the file first,
+theme second, while staying on Tk/ttk so the current working non-sequential
+scene architecture is not disrupted.
+
+Refactor order:
+
+1. Split `KrakenOS/UI/layout_editor.py` into a package-style structure inspired
+   by the organization of `optiland_gui/`, while keeping KrakenOS on Tk/ttk.
+   The first target package layout should be:
+
+   - `KrakenOS/UI/panels/` for Source, Field, Trace/Display, analysis,
+     optimization, drawing, scene-source, and Open 3D side panels.
+   - `KrakenOS/UI/widgets/` for reusable table cells, validated entries,
+     toolbar/menu helpers, projection selectors, log panes, dialogs, and
+     small Tk/ttk controls.
+   - `KrakenOS/UI/services/` for trace orchestration, scene bundle refresh,
+     Open 3D commands, STEP/CAD import and promotion, face assignment,
+     packaging/install helpers, snapshot/export actions, and validator-facing
+     workflows.
+   - Keep shared scene/event dataclasses in their existing scene modules unless
+     there is a clear ownership reason to move them.
+
+2. Preserve behavior while splitting. Each extraction should move one ownership
+   boundary with no UI feature redesign in the same commit. The validation bar
+   is the current non-sequential validators plus focused smoke checks for
+   editable-table commits, Open 3D placement, face assignment, 2D/3D projection
+   sync, and saved layout rendering.
+
+3. Move Live Mode performance into service ownership. The lag observed when
+   enabling Live Mode should be handled by a trace/update service that can own
+   debouncing, CAD row-plan caching, mesh reuse, stale-request cancellation,
+   and UI-state synchronization. This keeps performance fixes out of panel and
+   widget code.
+
+4. Adopt `sv-ttk` only after the split. It is the closest Tk gets to a
+   Qt-grade visual layer without changing toolkits, but theming should not be
+   mixed with the structural extraction. Once panels/widgets/services exist,
+   introduce a small theme adapter that initializes `sv-ttk`, centralizes
+   spacing/font/style tokens, and leaves the physics/scene services untouched.
+
+5. Establish a public install story for the branch. The target is
+   `pip install kraken-os[ui]` from a normal Python environment. Before a
+   packaged release exists, the documented bridge can be:
+
+   ```bash
+   python -m pip install -e "git+https://github.com/Garchupiter/Kraken-Optical-Simulator.git@nonseq-display-refactor#egg=kraken-os[ui]"
+   ```
+
+   The packaging work should make Tk/VTK/PyVista/CAD extras explicit, keep CPU
+   tracing as the reliable default, and document optional CAD/STEP dependencies
+   separately from the core optical package.
+
+6. Leave Qt as a long-horizon option. A toolkit change is only justified if the
+   interaction model changes substantially, for example real dockable
+   multi-viewport workspaces, a command palette, an embedded scripting console,
+   or a richer scene-tree shell. If that point arrives, the pragmatic path is
+   to fork/adapt an Optiland-style GUI shell rather than rebuilding a Qt shell
+   from scratch.
+
+Acceptance criteria for this phase:
+
+- `layout_editor.py` becomes a coordinator instead of the owner of panels,
+  widgets, tracing services, Open 3D actions, dialogs, and export flows.
+- Extracted modules have clear imports and do not create circular dependencies
+  around `KrakenLayoutEditor`.
+- Existing North Star behavior remains covered by validators after each slice.
+- The public install command is documented and tested in a clean virtual
+  environment.
+- The visual theme pass is small, reversible, and independent of scene physics.
+
 ### Feasibility Notes
 
 White-beam prism dispersion is feasible as a native scene workflow, not as a
@@ -788,9 +862,9 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Broaden the same real-trace contract from axial multi-STL solids into a folded
-multi-prism path. The next slice should use file-backed prism/CAD solids with
-non-normal input and at least one reflected or TIR segment, then verify that
-runtime boundary records, optical-volume records, face identity, media state,
-2D/3D projections, and detector/Image termination remain synchronized across
-the folded assembly.
+Start the production-readiness refactor by extracting a low-risk service from
+`layout_editor.py` before changing the theme. The first sensible slice is the
+Open 3D trace/refresh service, because it directly affects Live Mode lag, STEP
+promotion, face assignment, `Done 2D` synchronization, and 2D/3D projection
+consistency. Keep behavior identical, run the existing validators, then move on
+to panel/widget extraction.
