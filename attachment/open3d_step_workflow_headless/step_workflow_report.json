@@ -1,0 +1,273 @@
+[
+  {
+    "actor_counts": {
+      "actors_by_key": 1,
+      "axis_actors": 1,
+      "picked_axis": null,
+      "picked_row": 0,
+      "placement_move_handles": 0,
+      "placement_rotate_handles": 0,
+      "ray_actors": 12,
+      "row_actor_count": 0,
+      "row_actor_rows": [],
+      "selected_step": null,
+      "show_rays": true,
+      "step_actor_labels": {},
+      "step_rotate_handles": 0,
+      "view_props": 14
+    },
+    "file_backed_rows": [],
+    "has_optical_overlay": false,
+    "image": "attachment/open3d_step_workflow_headless/STEP1.png",
+    "label": "base Object/Image trace",
+    "ray_paths": 12,
+    "render_file_backed_rows": [],
+    "rows": 2,
+    "status": "3D scene ready | surfaces=0 | rays=12 | optical axes=1 | assigned face overlays=0 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
+    "terminal_counts": {
+      "hit_detector": 12
+    }
+  },
+  {
+    "actor_counts": {
+      "actors_by_key": 4,
+      "axis_actors": 1,
+      "picked_axis": null,
+      "picked_row": 0,
+      "placement_move_handles": 0,
+      "placement_rotate_handles": 0,
+      "ray_actors": 12,
+      "row_actor_count": 0,
+      "row_actor_rows": [],
+      "selected_step": "optical",
+      "show_rays": true,
+      "step_actor_labels": {
+        "optical": 1
+      },
+      "step_rotate_handles": 0,
+      "view_props": 17
+    },
+    "file_backed_rows": [],
+    "has_optical_overlay": true,
+    "image": "attachment/open3d_step_workflow_headless/STEP2.png",
+    "label": "imported penta STEP above ray",
+    "ray_paths": 12,
+    "render_file_backed_rows": [],
+    "rows": 2,
+    "status": "3D scene ready | surfaces=0 | rays=12 | optical axes=1 | assigned face overlays=0 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
+    "terminal_counts": {
+      "hit_detector": 12
+    }
+  },
+  {
+    "actor_counts": {
+      "actors_by_key": 4,
+      "axis_actors": 1,
+      "picked_axis": null,
+      "picked_row": 0,
+      "placement_move_handles": 0,
+      "placement_rotate_handles": 0,
+      "ray_actors": 12,
+      "row_actor_count": 0,
+      "row_actor_rows": [],
+      "selected_step": "optical",
+      "show_rays": true,
+      "step_actor_labels": {
+        "optical": 1
+      },
+      "step_rotate_handles": 0,
+      "view_props": 17
+    },
+    "file_backed_rows": [],
+    "has_optical_overlay": true,
+    "image": "attachment/open3d_step_workflow_headless/STEP3.png",
+    "label": "penta STEP carried onto ray",
+    "ray_paths": 12,
+    "render_file_backed_rows": [],
+    "rows": 2,
+    "status": "3D scene ready | surfaces=0 | rays=12 | optical axes=1 | assigned face overlays=0 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
+    "terminal_counts": {
+      "hit_detector": 12
+    }
+  },
+  {
+    "actor_counts": {
+      "actors_by_key": 6,
+      "axis_actors": 1,
+      "picked_axis": null,
+      "picked_row": 0,
+      "placement_move_handles": 0,
+      "placement_rotate_handles": 0,
+      "ray_actors": 12,
+      "row_actor_count": 5,
+      "row_actor_rows": [
+        1
+      ],
+      "selected_step": "optical",
+      "show_rays": true,
+      "step_actor_labels": {},
+      "step_rotate_handles": 0,
+      "view_props": 19
+    },
+    "file_backed_rows": [],
+    "has_optical_overlay": true,
+    "image": "attachment/open3d_step_workflow_headless/STEP4.png",
+    "label": "Trace Ray with transient penta STEP",
+    "ray_paths": 12,
+    "render_file_backed_rows": [
+      1
+    ],
+    "rows": 2,
+    "status": "3D scene ready | surfaces=1 | rays=12 | optical axes=1 | assigned face overlays=0 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
+    "terminal_counts": {
+      "hit_detector": 12
+    }
+  },
+  {
+    "actor_counts": {
+      "actors_by_key": 10,
+      "axis_actors": 1,
+      "picked_axis": null,
+      "picked_row": 1,
+      "placement_move_handles": 0,
+      "placement_rotate_handles": 0,
+      "ray_actors": 12,
+      "row_actor_count": 9,
+      "row_actor_rows": [
+        1
+      ],
+      "selected_step": null,
+      "show_rays": true,
+      "step_actor_labels": {},
+      "step_rotate_handles": 0,
+      "view_props": 23
+    },
+    "file_backed_rows": [
+      1
+    ],
+    "has_optical_overlay": false,
+    "image": "attachment/open3d_step_workflow_headless/STEP5.png",
+    "label": "promoted penta STEP row S1",
+    "ray_paths": 12,
+    "render_file_backed_rows": [
+      1
+    ],
+    "rows": 3,
+    "status": "3D scene ready | surfaces=1 | rays=12 | optical axes=1 | assigned face overlays=4 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
+    "terminal_counts": {
+      "escaped": 10,
+      "hit_detector": 2
+    }
+  },
+  {
+    "actor_counts": {
+      "actors_by_key": 10,
+      "axis_actors": 1,
+      "picked_axis": null,
+      "picked_row": 1,
+      "placement_move_handles": 0,
+      "placement_rotate_handles": 0,
+      "ray_actors": 31,
+      "row_actor_count": 9,
+      "row_actor_rows": [
+        1
+      ],
+      "selected_step": null,
+      "show_rays": true,
+      "step_actor_labels": {},
+      "step_rotate_handles": 0,
+      "view_props": 42
+    },
+    "file_backed_rows": [
+      1
+    ],
+    "has_optical_overlay": false,
+    "image": "attachment/open3d_step_workflow_headless/STEP6.png",
+    "label": "promoted penta with 31-ray cone",
+    "ray_paths": 31,
+    "render_file_backed_rows": [
+      1
+    ],
+    "rows": 3,
+    "status": "3D scene ready | surfaces=1 | rays=31 | optical axes=1 | assigned face overlays=4 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
+    "terminal_counts": {
+      "escaped": 30,
+      "hit_detector": 1
+    }
+  },
+  {
+    "actor_counts": {
+      "actors_by_key": 13,
+      "axis_actors": 1,
+      "picked_axis": null,
+      "picked_row": 1,
+      "placement_move_handles": 0,
+      "placement_rotate_handles": 0,
+      "ray_actors": 31,
+      "row_actor_count": 9,
+      "row_actor_rows": [
+        1
+      ],
+      "selected_step": "optical",
+      "show_rays": true,
+      "step_actor_labels": {
+        "optical": 1
+      },
+      "step_rotate_handles": 0,
+      "view_props": 45
+    },
+    "file_backed_rows": [
+      1
+    ],
+    "has_optical_overlay": true,
+    "image": "attachment/open3d_step_workflow_headless/STEP7.png",
+    "label": "second right-angle STEP staged",
+    "ray_paths": 31,
+    "render_file_backed_rows": [
+      1
+    ],
+    "rows": 3,
+    "status": "3D scene ready | surfaces=1 | rays=31 | optical axes=1 | assigned face overlays=4 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
+    "terminal_counts": {
+      "escaped": 30,
+      "hit_detector": 1
+    }
+  },
+  {
+    "actor_counts": {
+      "actors_by_key": 15,
+      "axis_actors": 1,
+      "picked_axis": null,
+      "picked_row": 1,
+      "placement_move_handles": 0,
+      "placement_rotate_handles": 0,
+      "ray_actors": 31,
+      "row_actor_count": 14,
+      "row_actor_rows": [
+        1,
+        2
+      ],
+      "selected_step": "optical",
+      "show_rays": true,
+      "step_actor_labels": {},
+      "step_rotate_handles": 0,
+      "view_props": 47
+    },
+    "file_backed_rows": [
+      1
+    ],
+    "has_optical_overlay": true,
+    "image": "attachment/open3d_step_workflow_headless/STEP8.png",
+    "label": "Trace Ray with promoted penta plus transient right-angle STEP",
+    "ray_paths": 31,
+    "render_file_backed_rows": [
+      1,
+      2
+    ],
+    "rows": 3,
+    "status": "3D scene ready | surfaces=2 | rays=31 | optical axes=1 | assigned face overlays=4 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
+    "terminal_counts": {
+      "escaped": 31
+    }
+  }
+]

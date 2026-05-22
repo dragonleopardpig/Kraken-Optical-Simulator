@@ -59,6 +59,29 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             "Surface mesh accounting uses the transient trace rows for the live bundle.",
         ),
         Open3DLiveTransientStepCheck(
+            "Transient file-backed rows keep CAD display styling",
+            "def _render_row_file_backed" in inspector_source
+            and "self._render_row_file_backed(rows, int(index))" in inspector_source
+            and "solid_mesh = self._stl_mesh_with_world_transform(row, row_transform)" in editor_source
+            and "file_backed_optical_solid and row_transform is not None" in editor_source,
+            "Live trace rows are classified from the render row list and displayed with the full CAD/STL body.",
+        ),
+        Open3DLiveTransientStepCheck(
+            "CAD body edges are cleaned before display",
+            "def _display_feature_edges" in inspector_source
+            and ".clean(tolerance=1e-6" in inspector_source
+            and "ray_surface_edge_overlays.append((edges, file_backed_silhouette_color" in inspector_source,
+            "Imported solids use strong outline edges without relying on raw triangulation boundaries.",
+        ),
+        Open3DLiveTransientStepCheck(
+            "Transient STEP overlays are not drawn twice during live tracing",
+            "def _live_trace_step_overlay_labels" in inspector_source
+            and "live_trace_step_overlay_labels = self._live_trace_step_overlay_labels()" in inspector_source
+            and "if label in live_trace_step_overlay_labels:" in inspector_source
+            and "continue" in inspector_source,
+            "When Live Mode turns an imported optical STEP into a transient row, the display-only overlay is suppressed.",
+        ),
+        Open3DLiveTransientStepCheck(
             "Live STEP row plans are cached across source-only refreshes",
             "_live_step_overlay_trace_plan_cache" in editor_source
             and "def _live_step_overlay_trace_cache_key" in editor_source

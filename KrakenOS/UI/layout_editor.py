@@ -11118,7 +11118,7 @@ class Kraken3DInspector(tk.Toplevel):
         file_backed_rows = {
             index
             for index in expected_physical_rows
-            if self.editor._file_backed_stl_row_at(int(index)) is not None
+            if self._render_row_file_backed(rows, int(index))
         }
         previous_mesh_items = list(getattr(self, "_last_valid_surface_mesh_items", []) or [])
         previous_row_count = int(getattr(self, "_last_valid_surface_mesh_row_count", 0) or 0)
@@ -11291,6 +11291,16 @@ class Kraken3DInspector(tk.Toplevel):
                     pass
             if not mesh_item.is_body:
                 if row_index in file_backed_rows:
+                    try:
+                        edges = self._display_feature_edges(mesh, feature_angle=24)
+                        if edges is not None and int(getattr(edges, "n_points", 0)) > 0:
+                            self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0, track_row_index=row_index)
+                            self._add_mesh_actor(edges, color=file_backed_edge_color, opacity=1.0, line_width=3.2, track_row_index=row_index)
+                            if ray_visibility_requested:
+                                ray_surface_edge_overlays.append((edges, file_backed_silhouette_color, 5.8, row_index))
+                                ray_surface_edge_overlays.append((edges, file_backed_edge_color, 3.8, row_index))
+                    except Exception:
+                        pass
                     drew_surfaces += 1
                     continue
                 try:
@@ -11328,12 +11338,7 @@ class Kraken3DInspector(tk.Toplevel):
                     pass
             elif row_index in file_backed_rows:
                 try:
-                    edges = mesh.extract_feature_edges(
-                        feature_angle=20,
-                        boundary_edges=True,
-                        feature_edges=True,
-                        manifold_edges=False,
-                    )
+                    edges = self._display_feature_edges(mesh, feature_angle=24)
                     if int(getattr(edges, "n_points", 0)) > 0:
                         if ray_visibility_requested:
                             ray_surface_edge_overlays.append((edges, file_backed_silhouette_color, 5.8, row_index))
@@ -11442,12 +11447,15 @@ class Kraken3DInspector(tk.Toplevel):
         step_rotation_handles = 0
         step_carry_active = 0
         step_carry_grid_summary = ""
+        live_trace_step_overlay_labels = self._live_trace_step_overlay_labels()
         for label, builder, color, opacity in (
             ("lens", self.editor._transformed_imported_lens_step_mesh, (0.25, 0.31, 0.39), 0.22),
             ("optical", self.editor._transformed_imported_optical_step_mesh, (0.10, 0.62, 0.72), 0.30),
             ("led", self.editor._transformed_imported_led_step_mesh, (0.95, 0.62, 0.16), 0.35),
             ("camera", self.editor._transformed_imported_camera_step_mesh, (0.36, 0.39, 0.44), 0.32),
         ):
+            if label in live_trace_step_overlay_labels:
+                continue
             try:
                 cad_mesh = builder()
             except Exception as exc:
@@ -11467,12 +11475,7 @@ class Kraken3DInspector(tk.Toplevel):
                     flat_shading=True,
                 )
                 try:
-                    cad_edges = cad_mesh.extract_feature_edges(
-                        feature_angle=20,
-                        boundary_edges=True,
-                        feature_edges=True,
-                        manifold_edges=False,
-                    )
+                    cad_edges = self._display_feature_edges(cad_mesh, feature_angle=24)
                     if int(getattr(cad_edges, "n_points", 0)) > 0:
                         self._add_mesh_actor(
                             cad_edges,
@@ -11564,6 +11567,65 @@ class Kraken3DInspector(tk.Toplevel):
             render=False,
         )
         self.render()
+
+    def _live_trace_step_overlay_labels(self) -> set[str]:
+        labels: set[str] = set()
+        for record in list(getattr(self.editor, "_last_live_step_overlay_trace_records", []) or []):
+            if not isinstance(record, dict):
+                continue
+            if not bool(record.get("transient_live_trace", False)):
+                continue
+            label = str(record.get("label", "") or "").strip().lower()
+            if label in STEP_OVERLAY_LABEL_SET:
+                labels.add(label)
+        return labels
+
+    def _render_row_file_backed(self, rows: list[SurfaceRow], row_index: int) -> bool:
+        try:
+            row = rows[int(row_index)]
+        except Exception:
+            return False
+        try:
+            path = self.editor._stl_path_from_row(row)
+        except Exception:
+            return False
+        return path is not None and Path(path).exists()
+
+    @staticmethod
+    def _display_feature_edges(mesh, *, feature_angle: float = 24.0):
+        if pv is None or mesh is None:
+            return None
+        try:
+            surface = pv.wrap(mesh).extract_surface(algorithm="dataset_surface").copy(deep=True)
+        except Exception:
+            try:
+                surface = pv.wrap(mesh).copy(deep=True)
+            except Exception:
+                return None
+        try:
+            surface = surface.clean(tolerance=1e-6, absolute=True)
+        except TypeError:
+            try:
+                surface = surface.clean(tolerance=1e-6)
+            except Exception:
+                pass
+        except Exception:
+            pass
+        try:
+            edges = surface.extract_feature_edges(
+                feature_angle=float(feature_angle),
+                boundary_edges=True,
+                feature_edges=True,
+                manifold_edges=False,
+            )
+        except Exception:
+            return None
+        try:
+            if int(getattr(edges, "n_points", 0)) > 0:
+                return edges
+        except Exception:
+            return None
+        return None
 
     def _normalize_sampling_mode_label(self, sampling_mode: object) -> str | None:
         return Open3DTraceRefreshService.normalize_sampling_mode_label(sampling_mode)
@@ -27284,10 +27346,15 @@ class KrakenLayoutEditor(tk.Tk):
             row_transform = optical_solid_output_port_runtime_transform_override(system, self.rows, index)
             mesh = None
             advanced = row.advanced if isinstance(row.advanced, dict) else {}
-            if self._scene_graph_value_present(advanced.get("Solid_3d_stl")) or index in pose_overrides:
+            file_backed_optical_solid = self._scene_graph_value_present(advanced.get("Solid_3d_stl"))
+            if file_backed_optical_solid or index in pose_overrides:
                 mesh = KrakenLayoutEditor._runtime_trace_surface_mesh(system, index)
             if row_transform is None:
                 row_transform = transforms[index]
+            if file_backed_optical_solid and row_transform is not None:
+                solid_mesh = self._stl_mesh_with_world_transform(row, row_transform)
+                if solid_mesh is not None and int(getattr(solid_mesh, "n_points", 0)) > 0:
+                    mesh = solid_mesh
             if mesh is None:
                 mesh = Kraken3DInspector._mesh_with_transform(surfaces[index], row_transform)
             if mesh is None and row_transform is not None:
@@ -27296,7 +27363,6 @@ class KrakenLayoutEditor(tk.Tk):
                 continue
             mesh = KrakenLayoutEditor._reference_mesh_with_row_diameter(mesh, row)
             surface = surface_descriptors[index]
-            file_backed_optical_solid = self._scene_graph_value_present(advanced.get("Solid_3d_stl"))
             mesh_color = (0.10, 0.62, 0.72) if file_backed_optical_solid else Kraken3DInspector._surface_color(surface)
             mesh_opacity = 0.30 if file_backed_optical_solid else (0.88 if row.surface == "Mirror" else 0.68)
             mesh_items.append(
