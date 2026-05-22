@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from matplotlib.collections import LineCollection
 
 from .scene_geometry import (
     BoundsRect,
@@ -202,16 +203,21 @@ def _draw_rays(
         terminal_marker = projected_ray_terminal_marker(ray)
         if terminal_marker is not None:
             endpoint_points.append(terminal_marker)
-        ax.plot(
-            pts[:, 0],
-            pts[:, 1],
-            color=ray.color,
-            linewidth=linewidth,
+        segments = np.stack((pts[:-1, :2], pts[1:, :2]), axis=1)
+        collection = LineCollection(
+            segments,
+            colors=[ray.color],
+            linewidths=[linewidth],
             alpha=alpha,
+            capstyle="butt",
+            joinstyle="round",
             # Keep rays above CAD/prism outlines so exits do not look broken
-            # where a surface edge crosses the traced polyline.
+            # where a surface edge crosses the traced polyline.  Segment-wise
+            # drawing with butt caps avoids miter/cap overhang at mirror hits,
+            # which can otherwise look like a false transmitted ray.
             zorder=42.0 + (10.0 * draw_order / total_rays),
         )
+        ax.add_collection(collection)
         if show_direction_markers:
             _draw_ray_direction_markers(
                 pts,

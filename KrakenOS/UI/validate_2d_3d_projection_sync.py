@@ -261,11 +261,68 @@ def _validate_penta_physics(bundle: object) -> list[str]:
     return failures
 
 
+def _validate_2d_ray_renderer_segments() -> list[str]:
+    """Ensure event vertices are rendered as true segment stops.
+
+    A single polyline can draw a projecting cap or miter join through a sharp
+    mirror-hit vertex, which looks like a false transmitted ray in prism plots.
+    The 2-D renderer should instead draw the ray as physical path segments with
+    butt caps.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg", force=True)
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import LineCollection
+
+    from KrakenOS.UI.scene_geometry import ProjectedRay2D, ProjectedScene2D
+    from KrakenOS.UI.scene_renderer_2d import render_scene_2d
+
+    failures: list[str] = []
+    ray = ProjectedRay2D(
+        ray_index=0,
+        color="#39FF14",
+        points_2d=np.asarray(
+            (
+                (0.0, 0.0),
+                (1.0, 0.0),
+                (0.2, 0.8),
+            ),
+            dtype=float,
+        ),
+    )
+    fig, ax = plt.subplots()
+    try:
+        render_scene_2d(ProjectedScene2D(rays=[ray]), ax, ray_count_hint=3)
+        ray_collections = [
+            collection
+            for collection in list(ax.collections)
+            if isinstance(collection, LineCollection)
+        ]
+        if len(ray_collections) != 1:
+            failures.append(f"ray renderer collection count={len(ray_collections)}, expected 1")
+            return failures
+        collection = ray_collections[0]
+        segment_count = len(collection.get_segments())
+        if segment_count != 2:
+            failures.append(f"ray renderer segment count={segment_count}, expected 2")
+        if collection.get_capstyle() != "butt":
+            failures.append(f"ray renderer capstyle={collection.get_capstyle()!r}, expected 'butt'")
+        if collection.get_joinstyle() != "round":
+            failures.append(f"ray renderer joinstyle={collection.get_joinstyle()!r}, expected 'round'")
+        if ax.lines:
+            failures.append(f"ray renderer left {len(ax.lines)} Line2D ray artifacts; expected segment collection only")
+    finally:
+        plt.close(fig)
+    return failures
+
+
 def main() -> int:
     editor, rays, bundle = _penta_bundle()
     failures = []
     failures.extend(_validate_projection_sync(editor, rays, bundle))
     failures.extend(_validate_penta_physics(bundle))
+    failures.extend(_validate_2d_ray_renderer_segments())
     if failures:
         for failure in failures:
             print(f"FAIL: {failure}")

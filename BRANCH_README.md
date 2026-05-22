@@ -59,6 +59,13 @@ Estimated branch status:
 Overall branch direction: keep moving toward one scene/event truth source while
 preserving exact sequential prescriptions as the ordered-path special case.
 
+Latest movement on 2026-05-22: the F003 red-circle penta check confirmed the
+raykeeper face events were reflective, while the 2D renderer could make a sharp
+mirror-hit vertex look like a tiny transmitted ray because a single polyline
+join/cap protruded past the event point. 2D rays are now drawn as physical
+segments with butt caps, and the projection-sync validator checks that renderer
+contract.
+
 ## Upstream Main Sync
 
 `main` was fast-forwarded to `origin/main` at commit `470c847` on 2026-05-21
@@ -846,6 +853,10 @@ Acceptance criteria for this phase:
 
 Current STEP workflow observations from the STEP1-STEP8 screenshots:
 
+- The F003 red-circle diagnostic was a rendering artifact, not a physics event:
+  mirrored penta hits recorded `reflect` events, but the old 2D Line2D join/cap
+  could visually overrun a sharp mirror vertex. Ray drawing now uses segmented
+  `LineCollection` strokes with butt caps so event vertices stop at the hit.
 - Imported STEP solids can still pass through a display-only phase where rays
   continue to the detector without interacting with the solid.
 - Face assignment and promotion can still change visual state too strongly,
