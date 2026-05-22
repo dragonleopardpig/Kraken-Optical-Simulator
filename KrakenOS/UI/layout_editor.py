@@ -5151,6 +5151,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._hover_step_outline_actor = None
         self._hover_step_cell_key = None
         self._mode_badge_actor = None
+        self._trace_summary_actor = None
         self._placement_grid_status_actor = None
         self._hover_status_actor = None
         self._step_rotation_active_label: str | None = None
@@ -7163,7 +7164,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._row_carry_drag_state = state
         self._step_carry_drag_state = None
         self._step_carry_follow_state = None
-        self._set_step_hover_outline(None, None)
+        self._set_step_hover_outline(None, None, render=False)
         self._update_hover_status("", render=False)
         self._set_step_carry_cursor(True)
         self._show_step_carry_grip_marker(center_world[:3])
@@ -7227,6 +7228,9 @@ class Kraken3DInspector(tk.Toplevel):
         cursor_world = self._cursor_plane_point(current_xy, plane_origin[:3], plane_normal[:3])
         if cursor_world is None:
             return
+        if self._hover_step_outline_actor is not None or self._hover_step_cell_key is not None:
+            self._set_step_hover_outline(None, None, render=False)
+            self._update_hover_status("", render=False)
         target_center = start_center[:3] + (np.asarray(cursor_world[:3], dtype=float) - anchor_world[:3])
         delta = np.asarray(target_center[:3] - current_center[:3], dtype=float)
         if not np.all(np.isfinite(delta[:3])) or not np.any(np.abs(delta[:3]) > 1e-12):
@@ -7277,6 +7281,8 @@ class Kraken3DInspector(tk.Toplevel):
             pass
         self._row_carry_drag_state = None
         self._set_step_carry_cursor(False)
+        self._set_step_hover_outline(None, None, render=False)
+        self._update_hover_status("", render=False)
         self._clear_step_carry_grip_marker(render=False)
         self._update_mode_badge()
         if row_index >= 0:
@@ -8275,9 +8281,13 @@ class Kraken3DInspector(tk.Toplevel):
             values = np.asarray((0.04, 0.06, 0.10), dtype=float)
         if values.size < 3 or not np.all(np.isfinite(values[:3])):
             values = np.asarray((0.04, 0.06, 0.10), dtype=float)
-        darkened = np.clip(values[:3] * 0.30, 0.0, 1.0)
-        floor = np.asarray((0.012, 0.016, 0.026), dtype=float)
+        darkened = np.clip(values[:3] * 0.16, 0.0, 1.0)
+        floor = np.asarray((0.004, 0.006, 0.012), dtype=float)
         return tuple(float(value) for value in np.maximum(darkened, floor))
+
+    @staticmethod
+    def _solid_silhouette_edge_color() -> tuple[float, float, float]:
+        return (0.005, 0.007, 0.014)
 
     def _set_row_highlight(self, row_index: int | None) -> None:
         if row_index == self._picked_row_index:
@@ -10459,6 +10469,132 @@ class Kraken3DInspector(tk.Toplevel):
             self.render()
 
     @staticmethod
+    def _trace_terminal_label(status: str) -> str:
+        status = str(status or "").strip().lower()
+        labels = {
+            "hit_detector": "detector hit",
+            "detector": "detector hit",
+            "missed_detector": "detector miss",
+            "miss_detector": "detector miss",
+            "absorbed": "absorbed",
+            "stopped": "stopped",
+            "escaped": "escaped",
+            "terminated": "terminated",
+            "unknown": "unknown",
+        }
+        return labels.get(status, status.replace("_", " ") or "unknown")
+
+    def _trace_summary_text(
+        self,
+        terminal_counts: dict[str, int],
+        *,
+        ray_count: int,
+        bounded_ray_count: int,
+        suppressed_endpoint_count: int,
+    ) -> str:
+        if int(ray_count) <= 0 and not terminal_counts:
+            return ""
+        ordered = [
+            "hit_detector",
+            "detector",
+            "missed_detector",
+            "absorbed",
+            "stopped",
+            "escaped",
+            "terminated",
+            "unknown",
+        ]
+        parts: list[str] = []
+        seen: set[str] = set()
+        for status in ordered:
+            count = int(terminal_counts.get(status, 0) or 0)
+            if count <= 0:
+                continue
+            seen.add(status)
+            parts.append(f"{self._trace_terminal_label(status)}={count}")
+        for status in sorted(str(key) for key in terminal_counts):
+            if status in seen:
+                continue
+            count = int(terminal_counts.get(status, 0) or 0)
+            if count > 0:
+                parts.append(f"{self._trace_terminal_label(status)}={count}")
+        if not parts:
+            parts.append("no terminal events")
+        suffix: list[str] = []
+        if int(bounded_ray_count) > 0:
+            suffix.append(f"bounded={int(bounded_ray_count)}")
+        if int(suppressed_endpoint_count) > 0:
+            suffix.append(f"endpoint markers hidden={int(suppressed_endpoint_count)}")
+        text = f"Ray terminals: {int(ray_count)} rays | " + ", ".join(parts)
+        if suffix:
+            text += " | " + ", ".join(suffix)
+        return text
+
+    def _update_trace_summary(
+        self,
+        terminal_counts: dict[str, int] | None = None,
+        *,
+        ray_count: int = 0,
+        bounded_ray_count: int = 0,
+        suppressed_endpoint_count: int = 0,
+        render: bool = True,
+    ) -> None:
+        if self._renderer is None:
+            return
+        text = self._trace_summary_text(
+            terminal_counts or {},
+            ray_count=int(ray_count),
+            bounded_ray_count=int(bounded_ray_count),
+            suppressed_endpoint_count=int(suppressed_endpoint_count),
+        )
+        actor = self._trace_summary_actor
+        if not text:
+            if actor is not None:
+                try:
+                    self._renderer.RemoveActor2D(actor)
+                except Exception:
+                    try:
+                        self._renderer.RemoveActor(actor)
+                    except Exception:
+                        pass
+                self._trace_summary_actor = None
+                if render:
+                    self.render()
+            return
+        if actor is None and vtkTextActor is not None:
+            try:
+                actor = vtkTextActor()
+                prop = actor.GetTextProperty()
+                prop.SetFontSize(13)
+                prop.SetBold(True)
+                prop.SetColor(0.04, 0.06, 0.10)
+                try:
+                    prop.SetBackgroundColor(1.0, 1.0, 1.0)
+                    prop.SetBackgroundOpacity(0.86)
+                    prop.SetFrame(1)
+                    prop.SetFrameColor(0.34, 0.40, 0.48)
+                except Exception:
+                    pass
+                actor.SetPickable(False)
+                self._renderer.AddActor2D(actor)
+                self._trace_summary_actor = actor
+            except Exception as exc:
+                self.editor.append_debug(f"3D ray terminal summary unavailable: {exc}")
+                self._trace_summary_actor = None
+                return
+        if actor is None:
+            return
+        try:
+            actor.SetInput(text)
+            actor.SetDisplayPosition(16, 46)
+            actor.SetVisibility(True)
+        except Exception as exc:
+            self.editor.append_debug(f"3D ray terminal summary update failed: {exc}")
+            return
+        if render:
+            self.render()
+
+    @staticmethod
     def _scene_placement_point(values: object) -> np.ndarray | None:
         try:
             point = np.asarray(values, dtype=float).reshape(-1)
@@ -11283,6 +11419,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._hover_step_cell_key = None
         self._ray_event_label_actors = []
         self._mode_badge_actor = None
+        self._trace_summary_actor = None
         self._placement_grid_status_actor = None
         self._hover_status_actor = None
         self._step_carry_grip_actor = None
@@ -11304,6 +11441,7 @@ class Kraken3DInspector(tk.Toplevel):
             if row_index in file_backed_rows:
                 mesh_opacity = min(max(mesh_opacity, 0.14), 0.28)
             file_backed_edge_color = self._solid_edge_color_from_body(getattr(mesh_item, "color", (0.04, 0.06, 0.10)))
+            file_backed_silhouette_color = self._solid_silhouette_edge_color()
             if show_launch_reference_surface and not show_reference_surfaces and row_surface == "Object":
                 mesh_opacity = min(mesh_opacity, 0.18)
             if ray_visibility_requested and row_index >= 0:
@@ -11338,16 +11476,26 @@ class Kraken3DInspector(tk.Toplevel):
                     )
                     if int(getattr(edges, "n_points", 0)) > 0:
                         edge_color = file_backed_edge_color if row_index in file_backed_rows else (0.15, 0.15, 0.15)
-                        edge_width = 2.8 if row_index in file_backed_rows else 1.0
+                        edge_width = 3.2 if row_index in file_backed_rows else 1.0
+                        if row_index in file_backed_rows:
+                            self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0)
                         self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width)
                         if ray_visibility_requested and row_index >= 0:
                             ray_surface_edge_overlays.append(
                                 (
                                     edges,
-                                    file_backed_edge_color if row_index in file_backed_rows else (0.02, 0.03, 0.05),
-                                    3.6 if row_index in file_backed_rows else 1.6,
+                                    file_backed_silhouette_color if row_index in file_backed_rows else (0.02, 0.03, 0.05),
+                                    5.4 if row_index in file_backed_rows else 1.6,
                                 )
                             )
+                            if row_index in file_backed_rows:
+                                ray_surface_edge_overlays.append(
+                                    (
+                                        edges,
+                                        file_backed_edge_color,
+                                        3.5,
+                                    )
+                                )
                 except Exception:
                     pass
             elif row_index in file_backed_rows:
@@ -11360,8 +11508,10 @@ class Kraken3DInspector(tk.Toplevel):
                     )
                     if int(getattr(edges, "n_points", 0)) > 0:
                         if ray_visibility_requested:
-                            ray_surface_edge_overlays.append((edges, file_backed_edge_color, 4.2))
-                        self._add_mesh_actor(edges, color=file_backed_edge_color, opacity=1.0, line_width=3.0)
+                            ray_surface_edge_overlays.append((edges, file_backed_silhouette_color, 5.8))
+                            ray_surface_edge_overlays.append((edges, file_backed_edge_color, 3.8))
+                        self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0)
+                        self._add_mesh_actor(edges, color=file_backed_edge_color, opacity=1.0, line_width=3.2)
                 except Exception:
                     pass
             drew_surfaces += 1
@@ -11388,7 +11538,10 @@ class Kraken3DInspector(tk.Toplevel):
             ray_radius = max(radius * 0.0015, 0.08)
             bounded_ray_count = 0
             suppressed_endpoint_count = 0
+            terminal_counts: dict[str, int] = {}
             for ray_index, color, ray_pts, terminal_status in self.editor._iter_3d_scene_ray_records(rays, scene_bundle):
+                terminal_key = str(terminal_status or "unknown").strip().lower() or "unknown"
+                terminal_counts[terminal_key] = int(terminal_counts.get(terminal_key, 0)) + 1
                 ray_path = paths_by_ray_index.get(int(ray_index))
                 terminal_target = KrakenLayoutEditor._missed_detector_target_for_path(scene_bundle, ray_path)
                 terminal_direction = KrakenLayoutEditor._terminal_display_direction_for_path(ray_path)
@@ -11446,6 +11599,10 @@ class Kraken3DInspector(tk.Toplevel):
                     wireframe=True,
                     backface_culling=False,
                 )
+        else:
+            bounded_ray_count = 0
+            suppressed_endpoint_count = 0
+            terminal_counts = {}
 
         optical_axis_overlays = 0
         if self._should_draw_optical_axis_overlays():
@@ -11491,9 +11648,17 @@ class Kraken3DInspector(tk.Toplevel):
                     if int(getattr(cad_edges, "n_points", 0)) > 0:
                         self._add_mesh_actor(
                             cad_edges,
-                            color=(0.08, 0.10, 0.14),
+                            color=self._solid_silhouette_edge_color(),
+                            opacity=0.98,
+                            line_width=4.2 if ray_visibility_requested else 2.2,
+                            follow_step_label=label,
+                            backface_culling=False,
+                        )
+                        self._add_mesh_actor(
+                            cad_edges,
+                            color=self._solid_edge_color_from_body(color),
                             opacity=0.96,
-                            line_width=2.6 if ray_visibility_requested else 1.2,
+                            line_width=2.6 if ray_visibility_requested else 1.4,
                             follow_step_label=label,
                             backface_culling=False,
                         )
@@ -11563,6 +11728,13 @@ class Kraken3DInspector(tk.Toplevel):
         grid_summary = " | ".join(part for part in (placement_grid_summary, step_carry_grid_summary) if part)
         self._update_placement_grid_status(grid_summary, render=False)
         self._update_mode_badge(render=False)
+        self._update_trace_summary(
+            terminal_counts,
+            ray_count=ray_count if bool(self.show_rays_var.get()) else 0,
+            bounded_ray_count=bounded_ray_count,
+            suppressed_endpoint_count=suppressed_endpoint_count,
+            render=False,
+        )
         self.render()
 
     def refresh_from_editor(self, *, sampling_mode: str | None = None) -> None:
@@ -13225,7 +13397,7 @@ class Kraken3DInspector(tk.Toplevel):
                     pass
         self.render()
 
-    def _set_step_hover_outline(self, outline_mesh, hover_key) -> None:
+    def _set_step_hover_outline(self, outline_mesh, hover_key, *, render: bool = True) -> None:
         if hover_key is not None and hover_key == self._hover_step_cell_key:
             return
         if self._renderer is None:
@@ -13258,7 +13430,8 @@ class Kraken3DInspector(tk.Toplevel):
                 self._hover_step_outline_actor = actor
             except Exception:
                 self._hover_step_outline_actor = None
-        self.render()
+        if render:
+            self.render()
 
     @staticmethod
     def _picked_feature_info(actor, picker) -> tuple[np.ndarray, object | None, np.ndarray | None] | None:

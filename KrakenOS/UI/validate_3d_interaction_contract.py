@@ -199,6 +199,8 @@ def main() -> int:
     placement_detail = inspect.getsource(KrakenLayoutEditor._scene_placement_detail)
     badge_text = inspect.getsource(Kraken3DInspector._active_mode_badge_text)
     badge_update = inspect.getsource(Kraken3DInspector._update_mode_badge)
+    trace_summary_text = inspect.getsource(Kraken3DInspector._trace_summary_text)
+    trace_summary = inspect.getsource(Kraken3DInspector._update_trace_summary)
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
     stl_refresh = inspect.getsource(Kraken3DInspector._refresh_after_stl_pose_change)
     row_carry_pick = inspect.getsource(Kraken3DInspector._row_carry_index_from_current_pick)
@@ -653,7 +655,9 @@ def main() -> int:
             and "_file_backed_stl_row_at" in row_carry_pick
             and "translate_scene_row_pose_vector" in row_carry_apply
             and "record_history=False" in row_carry_apply
-            and "_set_step_hover_outline(None, None)" in row_carry_activate
+            and "_set_step_hover_outline(None, None, render=False)" in row_carry_activate
+            and "_set_step_hover_outline(None, None, render=False)" in row_carry_apply
+            and "_set_step_hover_outline(None, None, render=False)" in row_carry_finish
             and "_sync_table()" in row_carry_finish
             and "last_translate_mode" in editor_row_translate_vector,
         ),
@@ -662,11 +666,22 @@ def main() -> int:
             "row_index in file_backed_rows" in refresh
             and "mesh_opacity = min(max(mesh_opacity, 0.14), 0.28)" in refresh
             and "_solid_edge_color_from_body" in refresh
-            and "line_width=3.0" in refresh
+            and "_solid_silhouette_edge_color" in refresh
+            and "line_width=5.0" in refresh
+            and "line_width=3.2" in refresh
             and "line_width=3.4" in legacy_open_3d,
         ),
         ("non-sequential scene bundles do not install YZ-only branch display overrides", 'not bool(trace_state.get("use_nonseq"))' in editor_build_scene_bundle and "_branch_output_display_path_overrides(rays)" in editor_build_scene_bundle),
         ("Open 3D ray records preserve terminal status", "ray_path_terminal_status_from_events(path)" in scene_ray_records),
+        (
+            "Open 3D viewport reports ray terminal status groups",
+            "_trace_summary_actor" in init
+            and "terminal_counts" in refresh
+            and "bounded_ray_count" in refresh
+            and "suppressed_endpoint_count" in refresh
+            and "Ray terminals:" in trace_summary_text
+            and "SetDisplayPosition(16, 46)" in trace_summary,
+        ),
         ("Open 3D missed detector lines use status styling", "missed_detector" in ray_terminal_style and "line_opacity" in ray_terminal_style),
         ("Open 3D escaped rays preserve source/wavelength line color", '"escaped" else 0.74' in ray_terminal_style and '{"absorbed", "stopped"}' in ray_terminal_style),
         (
