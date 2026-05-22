@@ -54,10 +54,11 @@ The UI keeps ray generation 3D-first for scene/CAD workflows:
   field launch while preserving the requested field count in metadata.
 * ``Pupil / field`` source cones keep their source intent when a STEP overlay is
   promoted into a non-sequential scene. A nonzero source cone remains a
-  point-cone launch, and a collimated source remains a collimated bundle,
-  rather than silently switching to an aperture-envelope sampler. Explicit
-  world-envelope sampling is still available for diagnostic/export workflows
-  that need an object or pupil boundary envelope.
+  filled 3D point-cone launch, and a collimated source remains a collimated
+  bundle, rather than silently switching to an aperture-envelope sampler or a
+  meridional fan slice after face assignment. Explicit world-envelope sampling
+  is still available for diagnostic/export workflows that need an object or
+  pupil boundary envelope.
 * Ray hover/click diagnostics in the 2D plot and 3D viewers read the canonical
   terminal event. A missed detector/Image reports the detector surface, plane
   distance, radial miss, active half-aperture, local detector-plane X/Y, active

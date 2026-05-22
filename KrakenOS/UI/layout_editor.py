@@ -7163,6 +7163,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._row_carry_drag_state = state
         self._step_carry_drag_state = None
         self._step_carry_follow_state = None
+        self._set_step_hover_outline(None, None)
+        self._update_hover_status("", render=False)
         self._set_step_carry_cursor(True)
         self._show_step_carry_grip_marker(center_world[:3])
         self.editor._select_table_row(int(row_index))
@@ -8265,6 +8267,18 @@ class Kraken3DInspector(tk.Toplevel):
         # imported STEP hardware.
         return mesh
 
+    @staticmethod
+    def _solid_edge_color_from_body(color) -> tuple[float, float, float]:
+        try:
+            values = np.asarray(color, dtype=float).reshape(-1)[:3]
+        except Exception:
+            values = np.asarray((0.04, 0.06, 0.10), dtype=float)
+        if values.size < 3 or not np.all(np.isfinite(values[:3])):
+            values = np.asarray((0.04, 0.06, 0.10), dtype=float)
+        darkened = np.clip(values[:3] * 0.30, 0.0, 1.0)
+        floor = np.asarray((0.012, 0.016, 0.026), dtype=float)
+        return tuple(float(value) for value in np.maximum(darkened, floor))
+
     def _set_row_highlight(self, row_index: int | None) -> None:
         if row_index == self._picked_row_index:
             return
@@ -8310,6 +8324,7 @@ class Kraken3DInspector(tk.Toplevel):
                 actor._kraken_row_select_style = base
             except Exception:
                 base = {}
+        is_file_backed_body = bool(getattr(actor, "_kraken_file_backed_row_body", False))
         if selected:
             try:
                 base_opacity = float(base.get("opacity", 1.0))
@@ -8317,9 +8332,17 @@ class Kraken3DInspector(tk.Toplevel):
                     selected_opacity = min(max(base_opacity, 0.30) + 0.08, 0.44)
                 else:
                     selected_opacity = min(max(base_opacity, 0.35) + 0.12, 1.0)
-                prop.SetEdgeVisibility(1)
-                prop.SetEdgeColor(1.0, 0.55, 0.05)
-                prop.SetLineWidth(max(float(base.get("line_width", 1.0)), 3.0))
+                if is_file_backed_body:
+                    # File-backed optical solids already receive explicit
+                    # feature-edge actors. Actor triangle edges make the
+                    # promoted STEP body look like a mesh instead of a
+                    # transparent solid.
+                    prop.SetEdgeVisibility(0)
+                    prop.SetLineWidth(float(base.get("line_width", 1.0)))
+                else:
+                    prop.SetEdgeVisibility(1)
+                    prop.SetEdgeColor(1.0, 0.55, 0.05)
+                    prop.SetLineWidth(max(float(base.get("line_width", 1.0)), 3.0))
                 prop.SetOpacity(selected_opacity)
                 prop.SetAmbient(max(float(base.get("ambient", 0.0)), 0.28))
             except Exception:
@@ -11280,6 +11303,7 @@ class Kraken3DInspector(tk.Toplevel):
             row_surface = str(getattr(getattr(mesh_item, "row", None), "surface", "") or "")
             if row_index in file_backed_rows:
                 mesh_opacity = min(max(mesh_opacity, 0.14), 0.28)
+            file_backed_edge_color = self._solid_edge_color_from_body(getattr(mesh_item, "color", (0.04, 0.06, 0.10)))
             if show_launch_reference_surface and not show_reference_surfaces and row_surface == "Object":
                 mesh_opacity = min(mesh_opacity, 0.18)
             if ray_visibility_requested and row_index >= 0:
@@ -11292,13 +11316,18 @@ class Kraken3DInspector(tk.Toplevel):
                     wire_color = tuple(mesh_item.color)
                     wire_width = 1.35
                     ray_surface_wire_overlays.append((mesh, wire_color, wire_width, row_index))
-            self._add_mesh_actor(
+            body_actor = self._add_mesh_actor(
                 mesh,
                 color=mesh_item.color,
                 opacity=mesh_opacity,
                 pick_row_index=mesh_item.row_index,
                 backface_culling=False,
             )
+            if body_actor is not None and row_index in file_backed_rows:
+                try:
+                    body_actor._kraken_file_backed_row_body = bool(mesh_item.is_body)
+                except Exception:
+                    pass
             if not mesh_item.is_body:
                 try:
                     edges = mesh.extract_feature_edges(
@@ -11308,9 +11337,17 @@ class Kraken3DInspector(tk.Toplevel):
                         manifold_edges=False,
                     )
                     if int(getattr(edges, "n_points", 0)) > 0:
-                        self._add_mesh_actor(edges, color=(0.15, 0.15, 0.15), opacity=1.0, line_width=1.0)
+                        edge_color = file_backed_edge_color if row_index in file_backed_rows else (0.15, 0.15, 0.15)
+                        edge_width = 2.8 if row_index in file_backed_rows else 1.0
+                        self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width)
                         if ray_visibility_requested and row_index >= 0:
-                            ray_surface_edge_overlays.append((edges, (0.02, 0.03, 0.05), 2.2 if row_index in file_backed_rows else 1.6))
+                            ray_surface_edge_overlays.append(
+                                (
+                                    edges,
+                                    file_backed_edge_color if row_index in file_backed_rows else (0.02, 0.03, 0.05),
+                                    3.6 if row_index in file_backed_rows else 1.6,
+                                )
+                            )
                 except Exception:
                     pass
             elif row_index in file_backed_rows:
@@ -11323,8 +11360,8 @@ class Kraken3DInspector(tk.Toplevel):
                     )
                     if int(getattr(edges, "n_points", 0)) > 0:
                         if ray_visibility_requested:
-                            ray_surface_edge_overlays.append((edges, (0.01, 0.02, 0.04), 3.0))
-                        self._add_mesh_actor(edges, color=(0.04, 0.06, 0.10), opacity=1.0, line_width=2.0)
+                            ray_surface_edge_overlays.append((edges, file_backed_edge_color, 4.2))
+                        self._add_mesh_actor(edges, color=file_backed_edge_color, opacity=1.0, line_width=3.0)
                 except Exception:
                     pass
             drew_surfaces += 1
@@ -11535,7 +11572,7 @@ class Kraken3DInspector(tk.Toplevel):
                 system, rays, scene_bundle = current
             else:
                 system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
-                    sampling_mode=sampling_mode or self.editor._preview_2d_sampling_mode(),
+                    sampling_mode=sampling_mode or self.editor._preview_3d_sampling_mode(),
                     update_state=True,
                 )
             row_names = self.editor._preview_render_row_names(scene_bundle)
@@ -15579,16 +15616,59 @@ class KrakenLayoutEditor(tk.Tk):
         help_menu.add_command(label="Paraxial Calculator", command=self.open_paraxial_calculator)
         help_menu.add_command(label="Optics Formula Sheet", command=self.show_formula_help)
         help_menu.add_separator()
-        help_menu.add_command(
-            label="Rules of Thumb  (Optics · Imaging · Laser)",
-            command=self.show_rules_of_thumb,
-        )
-        help_menu.add_command(label="Cardinal Points  (EP / XP / PP)", command=self.show_cardinal_points_docs)
-        help_menu.add_command(label="Analysis Tools Reference", command=self.show_analysis_tools_docs)
-        help_menu.add_command(label="Gaussian Beams", command=self.show_gaussian_beams_docs)
-        help_menu.add_command(label="Pupil Patterns", command=self.show_pupil_patterns_docs)
+
+        def _add_doc_group(parent: tk.Menu, label: str, entries: list[tuple[str, str]], section: str) -> None:
+            submenu = tk.Menu(parent, tearoff=0)
+            for entry_label, page in entries:
+                submenu.add_command(
+                    label=entry_label,
+                    command=lambda p=page, l=entry_label, s=section: self._open_sphinx_docs_page(p, l, section=s),
+                )
+            parent.add_cascade(label=label, menu=submenu)
+
+        _add_doc_group(help_menu, "Knowledge Base  (Theory)", [
+            ("Rules of Thumb  (Optics · Imaging · Laser)", "rules_of_thumb"),
+            ("Cardinal Points  (EP / XP / PP)",            "cardinal_points"),
+            ("Lens Design Families  (Photo / Machine Vision)", "lens_design_intro"),
+            ("IR Sub-pixel Hot-Spot Detection",            "ir_subpixel_detection"),
+        ], section="knowledge_base")
+
+        _add_doc_group(help_menu, "Tools & Analysis", [
+            ("Analysis Tools Reference  (Spot, PSF, MTF, Seidel, …)", "analysis_tools"),
+            ("Paraxial Matrix Tool",                         "parax_tool"),
+            ("PupilCalc Tool",                               "pupilcalc_tool"),
+            ("Pupil Patterns",                               "pupil_patterns"),
+            ("Pupil / Paraxial Analysis",                    "pupil_paraxial_analysis"),
+            ("Gaussian Beams",                               "gaussian_beams"),
+        ], section="manual")
+
+        _add_doc_group(help_menu, "Model & Workflow", [
+            ("Core Model",                       "core_model"),
+            ("Classes and Attributes",           "classes_and_attributes"),
+            ("Working with the Library",         "working_with_library"),
+            ("Editable Table",                   "editable_table"),
+            ("Tracing and Ray Data",             "tracing_and_ray_data"),
+            ("Non-Sequential First Design",      "nonsequential_first_design"),
+            ("Zemax Rayfile Sources",            "zemax_rayfile_sources"),
+            ("Beam Splitters",                   "beam_splitters"),
+            ("Diffuse Scattering",               "diffuse_scattering"),
+            ("Lens Fabrication Drawings",        "lens_fabrication_drawings"),
+            ("2D Viewers",                       "viewers"),
+            ("3D Viewer",                        "viewer_3d"),
+        ], section="manual")
+
+        _add_doc_group(help_menu, "Examples & References", [
+            ("Examples",                "examples"),
+            ("References",              "references"),
+            ("Installation Notes",      "installation"),
+        ], section="manual")
+
         help_menu.add_separator()
         help_menu.add_command(label="Open Manual Index…", command=self.show_manual_index)
+        help_menu.add_command(
+            label="Open Knowledge Base Index…",
+            command=lambda: self._open_sphinx_docs_page("index", "Knowledge Base Index", section="knowledge_base"),
+        )
         menubar.add_cascade(label="Help", menu=help_menu)
 
         self._menubar = menubar
@@ -27021,7 +27101,7 @@ class KrakenLayoutEditor(tk.Tk):
         if bool(trace_state.get("use_nonseq")) or bool(trace_state.get("use_folded")):
             try:
                 if self._should_use_default_finite_cone_source(system=self.__dict__.get("last_system")):
-                    return "display_slice"
+                    return "source_cone_world"
             except Exception:
                 pass
             return "world_envelope"
@@ -27048,15 +27128,16 @@ class KrakenLayoutEditor(tk.Tk):
     def _preview_3d_sampling_mode(self) -> str:
         """Sampling mode for Open 3D.
 
-        The 2D editor may keep a display slice for readability, but Open 3D
-        should show the physical launch envelope whenever the user has not
-        explicitly requested a filled full-pupil trace.
+        Open 3D should show the physical 3D launch whenever the user has not
+        explicitly requested a filled full-pupil trace. A non-sequential
+        default source cone therefore remains a point cone, not a meridional
+        fan slice.
         """
         if self._is_full_pupil_mode():
             return "full_pupil"
         try:
             if self._should_use_default_finite_cone_source(system=self.__dict__.get("last_system")):
-                return "display_slice"
+                return "source_cone_world"
         except Exception:
             pass
         return "world_envelope"
@@ -27491,8 +27572,8 @@ class KrakenLayoutEditor(tk.Tk):
                         edge_actor = register_actor(
                             plotter.add_mesh(
                                 edges,
-                                color="#050914" if index in file_backed_rows else "#1f2937",
-                                line_width=2.0 if index in file_backed_rows else 1.0,
+                                color="#030712" if index in file_backed_rows else "#1f2937",
+                                line_width=3.0 if index in file_backed_rows else 1.0,
                                 pickable=False,
                             ),
                             index,
@@ -27509,6 +27590,28 @@ class KrakenLayoutEditor(tk.Tk):
                 except Exception:
                     pass
             else:
+                if index in file_backed_rows:
+                    try:
+                        edges = mesh.extract_feature_edges(
+                            feature_angle=20,
+                            boundary_edges=True,
+                            feature_edges=True,
+                            manifold_edges=False,
+                        )
+                        if int(getattr(edges, "n_points", 0)) > 0:
+                            edge_actor = register_actor(
+                                plotter.add_mesh(
+                                    edges,
+                                    color="#030712",
+                                    line_width=3.4,
+                                    pickable=False,
+                                ),
+                                index,
+                                pickable=False,
+                            )
+                            lens_actors.append(edge_actor)
+                    except Exception:
+                        pass
                 try:
                     merged_bodies = mesh.copy(deep=True) if merged_bodies is None else merged_bodies.merge(mesh)
                 except Exception:
@@ -29682,7 +29785,7 @@ class KrakenLayoutEditor(tk.Tk):
                     system, rays, scene_bundle = current
                 else:
                     system, rays, scene_bundle = self._build_preview_system_rays_bundle(
-                        sampling_mode=self._preview_2d_sampling_mode(),
+                        sampling_mode=self._preview_3d_sampling_mode(),
                         update_state=False,
                     )
             row_names = [row.name for row in self.rows]
@@ -46493,12 +46596,47 @@ class KrakenLayoutEditor(tk.Tk):
                 return f'<a href="{href}">{html.escape(label)}</a>'
             return html.escape(label)
 
-        rules_link    = _doc_link("rules_of_thumb",  "Rules of Thumb — Optics · Imaging · Laser", section="knowledge_base")
-        cardinal_link = _doc_link("cardinal_points", "Cardinal Points (EP, XP, PP) walkthrough",  section="knowledge_base")
-        analysis_link = _doc_link("analysis_tools",  "Analysis Tools reference (Spot, PSF, MTF, Seidel, …)")
-        gauss_link    = _doc_link("gaussian_beams",  "Gaussian beams and cavity eigenmodes")
-        parax_link    = _doc_link("parax_tool",      "Paraxial matrix tool")
-        pupil_link    = _doc_link("pupilcalc_tool",  "PupilCalc reference")
+        def _doc_list(items: list[tuple[str, str, str]]) -> str:
+            return "\n        ".join(
+                f"<li>{_doc_link(page, label, section=section)}</li>"
+                for label, page, section in items
+            )
+
+        kb_links_html = _doc_list([
+            ("Rules of Thumb — Optics · Imaging · Laser",          "rules_of_thumb",       "knowledge_base"),
+            ("Cardinal Points (EP, XP, PP) walkthrough",           "cardinal_points",      "knowledge_base"),
+            ("Lens Design Families — Photographic & Machine Vision", "lens_design_intro",  "knowledge_base"),
+            ("IR Sub-pixel Hot-Spot Detection",                    "ir_subpixel_detection", "knowledge_base"),
+        ])
+        tools_links_html = _doc_list([
+            ("Analysis Tools reference (Spot, PSF, MTF, Seidel, encircled energy, atmospheric)", "analysis_tools", "manual"),
+            ("Paraxial Matrix Tool",                  "parax_tool",            "manual"),
+            ("PupilCalc Tool",                        "pupilcalc_tool",        "manual"),
+            ("Pupil Patterns",                        "pupil_patterns",        "manual"),
+            ("Pupil / Paraxial Analysis",             "pupil_paraxial_analysis", "manual"),
+            ("Gaussian Beams & cavity eigenmodes",    "gaussian_beams",        "manual"),
+        ])
+        workflow_links_html = _doc_list([
+            ("Core Model",                       "core_model",                "manual"),
+            ("Classes and Attributes",           "classes_and_attributes",    "manual"),
+            ("Working with the Library",         "working_with_library",      "manual"),
+            ("Editable Table",                   "editable_table",            "manual"),
+            ("Tracing and Ray Data",             "tracing_and_ray_data",      "manual"),
+            ("Non-Sequential First Design",      "nonsequential_first_design", "manual"),
+            ("Zemax Rayfile Sources",            "zemax_rayfile_sources",     "manual"),
+            ("Beam Splitters",                   "beam_splitters",            "manual"),
+            ("Diffuse Scattering",               "diffuse_scattering",        "manual"),
+            ("Lens Fabrication Drawings",        "lens_fabrication_drawings", "manual"),
+            ("2D Viewers",                       "viewers",                   "manual"),
+            ("3D Viewer",                        "viewer_3d",                 "manual"),
+        ])
+        extras_links_html = _doc_list([
+            ("Examples",                "examples",       "manual"),
+            ("References",              "references",     "manual"),
+            ("Installation Notes",      "installation",   "manual"),
+            ("Manual Index",            "index",          "manual"),
+            ("Knowledge Base Index",    "index",          "knowledge_base"),
+        ])
         effl_text = "Unavailable"
         ppa_text = "Unavailable"
         ppp_text = "Unavailable"
@@ -46672,14 +46810,27 @@ class KrakenLayoutEditor(tk.Tk):
       <p class="note">These pages go further than this popup: SVG ray-construction figures, worked numerical examples,
         Strehl/Maréchal, diffraction-limited MTF, Gaussian-beam q-parameters, cavity stability, and the matching
         KrakenOS code for every formula.</p>
+
+      <p><strong>Knowledge Base — theory &amp; rules of thumb</strong></p>
       <ul>
-        <li>{rules_link}</li>
-        <li>{cardinal_link}</li>
-        <li>{analysis_link}</li>
-        <li>{gauss_link}</li>
-        <li>{parax_link}</li>
-        <li>{pupil_link}</li>
+        {kb_links_html}
       </ul>
+
+      <p><strong>Tools &amp; Analysis</strong></p>
+      <ul>
+        {tools_links_html}
+      </ul>
+
+      <p><strong>Model &amp; Workflow</strong></p>
+      <ul>
+        {workflow_links_html}
+      </ul>
+
+      <p><strong>Examples &amp; References</strong></p>
+      <ul>
+        {extras_links_html}
+      </ul>
+
       <p class="note">Not built yet?  Run
         <code>cd docs &amp;&amp; sphinx-build -E -b html source build/html</code>
         once, then re-open this page.</p>
@@ -62555,6 +62706,15 @@ class KrakenLayoutEditor(tk.Tk):
             system.Vignetting(0)
             return
         use_legacy_default_cone = self._should_use_default_finite_cone_source(system=system)
+        if use_legacy_default_cone and mode in {"source_cone_world", "world_source_cone", "point_cone_world"}:
+            default_cone_bundles, default_cone_ray_count = self._build_default_finite_cone_world_bundles()
+            if default_cone_bundles:
+                rays.clean()
+                self._trace_preview_bundles(system, rays, wavelength, default_cone_bundles)
+                self._preview_field_ray_count = max(1, int(default_cone_ray_count))
+                self._preview_field_bundle_count = len(default_cone_bundles)
+                system.Vignetting(0)
+                return
         if mode == "world_envelope" and use_legacy_default_cone:
             self.append_debug(
                 "Pupil / field source cone in 3D scene mode launches an extended reference "

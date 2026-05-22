@@ -202,6 +202,7 @@ def main() -> int:
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
     stl_refresh = inspect.getsource(Kraken3DInspector._refresh_after_stl_pose_change)
     row_carry_pick = inspect.getsource(Kraken3DInspector._row_carry_index_from_current_pick)
+    row_carry_activate = inspect.getsource(Kraken3DInspector._activate_row_carry_hold)
     row_carry_apply = inspect.getsource(Kraken3DInspector._apply_row_carry_drag_motion)
     row_carry_finish = inspect.getsource(Kraken3DInspector._finish_row_carry_drag)
     snapshot = inspect.getsource(Kraken3DInspector.save_snapshot)
@@ -218,6 +219,7 @@ def main() -> int:
     editor_surface_meshes = inspect.getsource(KrakenLayoutEditor._iter_3d_optical_surface_meshes)
     refresh_3d_sync = inspect.getsource(KrakenLayoutEditor._refresh_3d_inspector_if_open)
     preview_sampling = inspect.getsource(KrakenLayoutEditor._preview_scene_sampling_mode)
+    trace_preview_rays = inspect.getsource(KrakenLayoutEditor._trace_preview_rays)
     saved_layout_figure = inspect.getsource(build_saved_layout_figure)
     scene_ray_records = inspect.getsource(KrakenLayoutEditor._iter_3d_scene_ray_records)
     ray_terminal_style = inspect.getsource(KrakenLayoutEditor._ray_terminal_3d_style)
@@ -612,10 +614,10 @@ def main() -> int:
         ("Open 3D Snapshot uses VTK PNG capture", "vtkWindowToImageFilter" in snapshot and "vtkPNGWriter" in snapshot),
         ("Open 3D refresh reuses current SceneBundle when valid", "_current_preview_scene_trace" in refresh_from_editor),
         (
-            "Open 3D fallback traces the same layout sampling used by 2D",
-            "_preview_2d_sampling_mode()" in refresh_from_editor
-            and "_preview_2d_sampling_mode()" in refresh_3d_sync
-            and "_preview_3d_sampling_mode()" not in refresh_3d_sync,
+            "Open 3D fallback traces the 3D sampling mode when it rebuilds locally",
+            "_preview_3d_sampling_mode()" in refresh_from_editor
+            and "_preview_3d_sampling_mode()" in refresh_3d_sync
+            and "_preview_2d_sampling_mode()" not in refresh_3d_sync,
         ),
         (
             "Open 3D sync keeps supplied 2D SceneBundle instead of rebuilding",
@@ -632,11 +634,17 @@ def main() -> int:
             and "_preview_2d_sampling_mode()" in saved_layout_figure,
         ),
         ("Open 3D sync receives the same SceneBundle as 2D", "scene_bundle=bundle" in editor_refresh_plot and "refresh_scene(" in refresh_3d_sync),
-        ("shared scene sampling supports full-pupil and world-envelope modes", "full_pupil" in preview_sampling and "world_envelope" in preview_sampling),
+        ("shared scene sampling supports full-pupil, world-envelope, and source-cone-world modes", "full_pupil" in preview_sampling and "world_envelope" in preview_sampling and "source_cone_world" in preview_sampling),
         (
-            "source cone sampling is preserved when a promoted scene becomes non-sequential",
+            "source cone sampling is preserved as a filled 3D cone when a promoted scene becomes non-sequential",
             "_should_use_default_finite_cone_source" in preview_sampling
-            and 'return "display_slice"' in preview_sampling,
+            and 'return "source_cone_world"' in preview_sampling
+            and "_build_default_finite_cone_world_bundles" in trace_preview_rays,
+        ),
+        (
+            "Open 3D forced refresh uses 3D sampling instead of the 2D display slice",
+            "_preview_3d_sampling_mode()" in refresh_3d_sync
+            and "_preview_2d_sampling_mode()" not in refresh_3d_sync,
         ),
         (
             "promoted optical solid rows support direct hold-drag movement",
@@ -645,6 +653,7 @@ def main() -> int:
             and "_file_backed_stl_row_at" in row_carry_pick
             and "translate_scene_row_pose_vector" in row_carry_apply
             and "record_history=False" in row_carry_apply
+            and "_set_step_hover_outline(None, None)" in row_carry_activate
             and "_sync_table()" in row_carry_finish
             and "last_translate_mode" in editor_row_translate_vector,
         ),
@@ -652,8 +661,9 @@ def main() -> int:
             "promoted optical solid display uses light body and strong edges",
             "row_index in file_backed_rows" in refresh
             and "mesh_opacity = min(max(mesh_opacity, 0.14), 0.28)" in refresh
-            and "line_width=2.0" in refresh
-            and "line_width=2.0 if index in file_backed_rows else 1.0" in legacy_open_3d,
+            and "_solid_edge_color_from_body" in refresh
+            and "line_width=3.0" in refresh
+            and "line_width=3.4" in legacy_open_3d,
         ),
         ("non-sequential scene bundles do not install YZ-only branch display overrides", 'not bool(trace_state.get("use_nonseq"))' in editor_build_scene_bundle and "_branch_output_display_path_overrides(rays)" in editor_build_scene_bundle),
         ("Open 3D ray records preserve terminal status", "ray_path_terminal_status_from_events(path)" in scene_ray_records),
