@@ -5212,6 +5212,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._picked_step_label: str | None = None
         self._picked_ray_index: int | None = None
         self._current_scene_bundle: SceneBundle | None = None
+        self._last_refresh_sampling_mode: str | None = None
         self._ray_event_label_actors: list[object] = []
         self._picked_optical_axis_id: str | None = None
         self._hover_rotation_handle_key: str | None = None
@@ -5861,11 +5862,13 @@ class Kraken3DInspector(tk.Toplevel):
                 self.schedule_live_refresh("pending scene change", delay_ms=40)
 
     def _refresh_live_preview_scene(self, reason: str) -> None:
+        sampling_mode = self.editor._preview_3d_sampling_mode()
         system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
-            sampling_mode=self.editor._preview_3d_sampling_mode(),
+            sampling_mode=sampling_mode,
             update_state=False,
             include_live_step_overlays=True,
         )
+        self._remember_refresh_sampling_mode(sampling_mode)
         row_names = self.editor._preview_render_row_names(scene_bundle)
         self.refresh_scene(system, rays, row_names, scene_bundle=scene_bundle, reset_camera=False)
         live_records = list(getattr(self.editor, "_last_live_step_overlay_trace_records", []) or [])
@@ -6403,6 +6406,7 @@ class Kraken3DInspector(tk.Toplevel):
         normal_world,
         function_label: str,
     ) -> None:
+        refresh_sampling_mode = self._active_refresh_sampling_mode()
         self._debug_trace(
             "face_assignment_start",
             row_index=int(row_index),
@@ -6437,7 +6441,7 @@ class Kraken3DInspector(tk.Toplevel):
         )
         message = f"S{int(row_index)} {face_id}: set {display}. Rebuilt trace with assigned-face overlay."
         try:
-            self.refresh_from_editor(force_retrace=True)
+            self.refresh_from_editor(sampling_mode=refresh_sampling_mode, force_retrace=True)
             self.highlight_row(int(row_index))
         except Exception as exc:
             self.editor.append_debug(f"Open 3D refresh after face assignment failed: {exc}")
@@ -6466,6 +6470,7 @@ class Kraken3DInspector(tk.Toplevel):
         label = str(label).strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET:
             return
+        refresh_sampling_mode = self._active_refresh_sampling_mode()
         self._debug_trace(
             "promote_step_face_assignment_start",
             label=label,
@@ -6522,7 +6527,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._clear_step_overlay_interaction_state(label)
         self.editor._select_table_row(row_index)
         try:
-            self.refresh_from_editor(force_retrace=True)
+            self.refresh_from_editor(sampling_mode=refresh_sampling_mode, force_retrace=True)
             self.highlight_row(row_index)
         except Exception as exc:
             self.editor.append_debug(f"Open 3D refresh after promoted STEP face assignment failed: {exc}")
@@ -11391,6 +11396,7 @@ class Kraken3DInspector(tk.Toplevel):
         if self._renderer is None:
             raise RuntimeError(_VTK_TK_UNAVAILABLE_REASON or "Embedded VTK/Tk viewer unavailable")
         self._current_scene_bundle = scene_bundle
+        self._remember_refresh_sampling_mode(getattr(self.editor, "_active_preview_sampling_mode", None))
 
         show_reference_surfaces = bool(self.show_reference_surfaces_var.get())
         show_launch_reference_surface = bool(
@@ -11875,16 +11881,40 @@ class Kraken3DInspector(tk.Toplevel):
         )
         self.render()
 
+    def _normalize_sampling_mode_label(self, sampling_mode: object) -> str | None:
+        mode = str(sampling_mode or "").strip().lower()
+        return mode or None
+
+    def _remember_refresh_sampling_mode(self, sampling_mode: object) -> None:
+        mode = self._normalize_sampling_mode_label(sampling_mode)
+        if mode is not None:
+            self._last_refresh_sampling_mode = mode
+
+    def _active_refresh_sampling_mode(self) -> str | None:
+        mode = self._normalize_sampling_mode_label(getattr(self, "_last_refresh_sampling_mode", None))
+        if mode is not None:
+            return mode
+        return self._normalize_sampling_mode_label(getattr(self.editor, "_active_preview_sampling_mode", None))
+
     def refresh_from_editor(self, *, sampling_mode: str | None = None, force_retrace: bool = False) -> None:
         try:
-            current = None if force_retrace or sampling_mode is not None else self.editor._current_preview_scene_trace()
+            resolved_sampling_mode = self._normalize_sampling_mode_label(sampling_mode)
+            current = None if force_retrace or resolved_sampling_mode is not None else self.editor._current_preview_scene_trace()
             if current is not None:
                 system, rays, scene_bundle = current
+                resolved_sampling_mode = self._normalize_sampling_mode_label(
+                    getattr(self.editor, "_active_preview_sampling_mode", None)
+                )
             else:
+                if resolved_sampling_mode is None and force_retrace:
+                    resolved_sampling_mode = self._active_refresh_sampling_mode()
+                if resolved_sampling_mode is None:
+                    resolved_sampling_mode = self.editor._preview_3d_sampling_mode()
                 system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
-                    sampling_mode=sampling_mode or self.editor._preview_3d_sampling_mode(),
+                    sampling_mode=resolved_sampling_mode,
                     update_state=True,
                 )
+            self._remember_refresh_sampling_mode(resolved_sampling_mode)
             row_names = self.editor._preview_render_row_names(scene_bundle)
             self.refresh_scene(system, rays, row_names, scene_bundle=scene_bundle, reset_camera=False)
             self.editor.status_var.set("3D inspector updated")
