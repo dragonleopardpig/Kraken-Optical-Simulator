@@ -59,21 +59,21 @@ Estimated branch status:
 Overall branch direction: keep moving toward one scene/event truth source while
 preserving exact sequential prescriptions as the ordered-path special case.
 
-Latest movement on 2026-05-22: Open 3D now reports the final CAD face/action and
-the dominant full face/action path sequence in the in-viewport ray terminal
-summary. A headless diagnostic with only F004 assigned `Full Reflecting` records
+Latest movement on 2026-05-22: RayKeeper now sign-reconciles canonical
+incoming/outgoing event directions against the traced physical polyline, and the
+shared 2D/Open 3D escaped-ray capper also rejects terminal vectors that point
+opposite the traced terminal segment. This fixes the false post-reflection tail
+that looked like F004 leakage or a both-directions hypotenuse ray after an odd
+number of reflections. Open 3D also keeps same-slot optical STEP imports
+non-destructive by auto-promoting the previous unpromoted overlay before loading
+the next one, and adds a targeted `Delete Selected STEP` command. A headless
+diagnostic with only F004 assigned `Full Reflecting` records
 `F004:reflection=12`, then the bundle exits at still default-Uncoated F003
 (`last hit F003 refraction=12`). With both F003 and F004 assigned
 `Full Reflecting`, the same diagnostic records
 `F005 refract -> F004 reflect -> F003 reflect -> F006 refract` for all 12 rays.
-The STEP1-STEP8 headless workflow now saves the event sequence, event direction
-vectors, and pickable optical-axis records for every capture. It confirms that
-the standalone right-angle prism validator still derives `reflect_tir` from
-Uncoated BK7-air physics, while the current scripted two-prism STEP8 placement
-is not yet a valid TIR proof because the second prism is not automatically
-snapped/oriented to the generated penta exit-axis guide. The next pipeline item
-is to make cascade placement consume those generated exit-axis guides instead of
-using a hard-coded second-prism pose.
+The next pipeline item is cascade placement: consume the generated penta
+exit-axis guides for the second prism instead of using a hard-coded pose.
 
 ## Upstream Main Sync
 
