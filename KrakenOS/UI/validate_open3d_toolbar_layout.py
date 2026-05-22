@@ -11,6 +11,7 @@ import inspect
 import re
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector
+from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
 
 
 _MAX_DIRECT_VIEW_CONTROLS = 9
@@ -77,30 +78,33 @@ def _contains_menu_label(source: str, label: str) -> bool:
 
 def main() -> int:
     init_source = inspect.getsource(Kraken3DInspector.__init__)
+    top_controls_source = inspect.getsource(Open3DTopControlsPanel)
+    normalized_top_controls_source = top_controls_source.replace("self.inspector.", "self.")
+    toolbar_source = init_source + "\n" + normalized_top_controls_source
     import_step_source = inspect.getsource(Kraken3DInspector.import_step_overlay)
     import_optical_source = inspect.getsource(Kraken3DInspector.import_optical_step_overlay)
-    view_direct = _direct_widget_count(init_source, "view_toolbar")
-    scene_direct = _direct_widget_count(init_source, "scene_toolbar")
-    carry_direct = _direct_widget_count(init_source, "carry_toolbar")
+    view_direct = _direct_widget_count(toolbar_source, "view_toolbar")
+    scene_direct = _direct_widget_count(toolbar_source, "scene_toolbar")
+    carry_direct = _direct_widget_count(toolbar_source, "carry_toolbar")
     checks: list[tuple[str, bool, str]] = [
         (
             "Open 3D toolbar has a top-level container",
-            "toolbar_container.grid(row=0" in init_source,
+            "toolbar_container.grid(row=0" in toolbar_source,
             "toolbar_container must own the top controls",
         ),
         (
             "Open 3D toolbar has a View row",
-            "view_toolbar.grid(row=0" in init_source,
+            "view_toolbar.grid(row=0" in toolbar_source,
             "view_toolbar should be row 0",
         ),
         (
             "Open 3D toolbar has a Scene row",
-            "scene_toolbar.grid(row=1" in init_source,
+            "scene_toolbar.grid(row=1" in toolbar_source,
             "scene_toolbar should be row 1",
         ),
         (
             "Open 3D toolbar has a Carry row",
-            "carry_toolbar.grid(row=2" in init_source,
+            "carry_toolbar.grid(row=2" in toolbar_source,
             "carry_toolbar should be row 2",
         ),
         (
@@ -120,12 +124,12 @@ def main() -> int:
         ),
         (
             "Open 3D toolbar no longer spends width on help text",
-            "Click a surface or ray in 3D to inspect it" not in init_source,
+            "Click a surface or ray in 3D to inspect it" not in toolbar_source,
             "the bottom status row already carries interaction feedback",
         ),
         (
             "Open 3D CAD/target menu has an Import STEP submenu",
-            'add_cascade(label="Import STEP"' in init_source,
+            'add_cascade(label="Import STEP"' in toolbar_source,
             "STEP imports should be reachable from the embedded 3D scene toolbar",
         ),
         (
@@ -147,20 +151,20 @@ def main() -> int:
         ),
         (
             "Open 3D carry row uses free movement guidance",
-            "Hold-drag STEP to move freely" in init_source and "Snap step" not in init_source,
+            "Hold-drag STEP to move freely" in toolbar_source and "Snap step" not in toolbar_source,
             "STEP carry should be free movement, with optical-axis alignment handled by a separate command",
         ),
         (
             "Open 3D carry row avoids explicit Lift/Drop buttons",
-            'ttk.Button(carry_toolbar, text="Lift"' not in init_source
-            and 'ttk.Button(carry_toolbar, text="Drop"' not in init_source
+            'ttk.Button(carry_toolbar, text="Lift"' not in toolbar_source
+            and 'ttk.Button(carry_toolbar, text="Drop"' not in toolbar_source
             and "_arm_step_carry_hold" in inspect.getsource(Kraken3DInspector._install_pick_only_left_click_bindings),
             "STEP carry should use press-hold lift and release drop instead of toolbar Lift/Drop buttons",
         ),
         (
             "Open 3D carry row removes old snap buttons",
-            'ttk.Button(carry_toolbar, text="Snap ray"' not in init_source
-            and 'ttk.Button(carry_toolbar, text="Snap target"' not in init_source,
+            'ttk.Button(carry_toolbar, text="Snap ray"' not in toolbar_source
+            and 'ttk.Button(carry_toolbar, text="Snap target"' not in toolbar_source,
             "STEP carry should not expose the old ray/target center snap buttons",
         ),
     ]
@@ -169,7 +173,7 @@ def main() -> int:
         checks.append(
             (
                 f"Open 3D scene toolbar exposes {menu_label} menu",
-                f'text="{menu_label}"' in init_source,
+                f'text="{menu_label}"' in toolbar_source,
                 f"missing {menu_label} Menubutton",
             )
         )
@@ -177,18 +181,18 @@ def main() -> int:
             checks.append(
                 (
                     f"{action_label} is reachable from a category menu",
-                    _contains_menu_label(init_source, action_label),
+                    _contains_menu_label(toolbar_source, action_label),
                     f"missing menu item {action_label!r}",
                 )
             )
 
     for label in _DENSE_ACTION_LABELS:
         direct_button = _contains_widget_text(
-            init_source,
+            toolbar_source,
             "Button",
             "view_toolbar",
             label,
-        ) or _contains_widget_text(init_source, "Button", "scene_toolbar", label)
+        ) or _contains_widget_text(toolbar_source, "Button", "scene_toolbar", label)
         checks.append(
             (
                 f"{label} is not a direct narrow-toolbar button",

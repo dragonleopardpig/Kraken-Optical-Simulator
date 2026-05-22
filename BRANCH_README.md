@@ -755,7 +755,7 @@ Production refactor progress:
 | Slice | Status | Progress | Notes |
 | --- | --- | --- | --- |
 | `services/` boundary for Open 3D trace refresh | Started | `██████░░░░ 60%` | `Open3DTraceRefreshService` owns sampling-mode normalization, Live Mode preview-bundle creation, and open-inspector synchronization. Remaining service work is stale-request cancellation, CAD mesh reuse, and throttling for heavy imported solids. |
-| `panels/` boundary for Open 3D Live Controls | Started | `████░░░░░░ 40%` | `Open3DLiveControlsPanel` now owns construction of the left-docked Live Controls UI while `Kraken3DInspector` keeps thin compatibility callbacks. Remaining panel work is extracting the larger Open 3D toolbar/carry/placement controls and then the main left Source/Field/Trace panels. |
+| `panels/` boundary for Open 3D controls | Started | `██████░░░░ 60%` | `Open3DLiveControlsPanel` owns the left-docked Live Controls UI, and `Open3DTopControlsPanel` now owns the View, Scene, and Carry toolbar rows. `Kraken3DInspector` keeps thin compatibility callbacks. Remaining panel work is extracting the main left Source/Field/Trace panels and smaller dialogs. |
 | `widgets/` reusable Tk controls | Pending | `░░░░░░░░░░ 0%` | Validated entries, combobox commit helpers, projection selectors, menus, and table cell widgets still live mostly in `layout_editor.py`. |
 | Live Mode performance service | Pending | `░░░░░░░░░░ 0%` | Debouncing exists; cancellation, mesh throttling, and row-plan reuse need a stronger service contract before enabling Live Mode by default on heavy CAD scenes. |
 | `sv-ttk` theme adapter | Pending | `░░░░░░░░░░ 0%` | Theme work waits until panels/widgets/services are split enough that styling is a thin layer instead of another responsibility inside `layout_editor.py`. |
@@ -781,9 +781,11 @@ Production refactor progress:
    owns Open 3D sampling-mode normalization, inspector refresh trace selection,
    Live Mode preview-bundle creation, and synchronization of an already-open 3D
    inspector. `KrakenOS/UI/panels/open3d_live_controls.py` now owns the
-   left-docked Live Controls panel construction. `layout_editor.py` still owns
-   rendering and interaction, but trace/refresh policy and the first Open 3D
-   side panel are now behind reusable module boundaries.
+   left-docked Live Controls panel construction, and
+   `KrakenOS/UI/panels/open3d_top_controls.py` owns the top View, Scene, and
+   Carry toolbar rows. `layout_editor.py` still owns rendering and
+   interaction, but trace/refresh policy and the first Open 3D panel surfaces
+   are now behind reusable module boundaries.
 
 2. Preserve behavior while splitting. Each extraction should move one ownership
    boundary with no UI feature redesign in the same commit. The validation bar
@@ -833,6 +835,22 @@ Acceptance criteria for this phase:
   environment.
 - The visual theme pass is small, reversible, and independent of scene physics.
 
+Current STEP workflow observations from the STEP1-STEP8 screenshots:
+
+- Imported STEP solids can still pass through a display-only phase where rays
+  continue to the detector without interacting with the solid.
+- Face assignment and promotion can still change visual state too strongly,
+  including mesh-like body rendering and stale/duplicate solid actors in later
+  views.
+- Trace state can change after assignment or placement, producing escaped-ray
+  groups, apparent duplicate output bundles, or solids that remain visible but
+  are no longer the active physics object.
+- These are not prism-specific failures. They point to the remaining
+  architecture work: transient overlay state, promoted row state, face-role
+  metadata, and Live Mode refresh policy must converge through one service
+  boundary before the UI can guarantee that every visible STEP object is the
+  same object being traced.
+
 ### Feasibility Notes
 
 White-beam prism dispersion is feasible as a native scene workflow, not as a
@@ -881,9 +899,8 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Continue the production-readiness refactor by extracting the larger Open 3D
-toolbar/carry/placement controls into `KrakenOS/UI/panels/` or
-`KrakenOS/UI/widgets/`, keeping `Kraken3DInspector` as the coordinator. After
-that visible-control boundary exists, move the Live Mode lag work into the
-service: stale-request cancellation, CAD row-plan cache reuse, and mesh/trace
-throttling should live outside widget code.
+Continue the production-readiness refactor by moving the Open 3D STEP overlay,
+promotion, and face-assignment orchestration into a service boundary. The
+target is one state machine for transient STEP overlays and promoted optical
+solid rows, so stale actors, duplicate visible solids, and display-only solids
+cannot diverge from the traced physics state.

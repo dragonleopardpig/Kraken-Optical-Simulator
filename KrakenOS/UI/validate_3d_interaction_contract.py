@@ -12,6 +12,7 @@ from KrakenOS.UI.layout_editor import (
     Kraken3DInspector,
     KrakenLayoutEditor,
 )
+from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
 from KrakenOS.UI.saved_layout_plot import build_saved_layout_figure
 from KrakenOS.UI.scene_builder import _sync_path_display_geometry_from_events
 from KrakenOS.UI.scene_geometry import RayEvent3D, RayPath3D
@@ -140,6 +141,8 @@ def main() -> int:
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
     row_scene_bounds = inspect.getsource(Kraken3DInspector._row_scene_bounds)
     init = inspect.getsource(Kraken3DInspector.__init__)
+    top_controls_source = inspect.getsource(Open3DTopControlsPanel).replace("self.inspector.", "self.")
+    init_with_top_controls = init + "\n" + top_controls_source
     open3d_display_camera = inspect.getsource(Kraken3DInspector._camera_preset_from_display_orientation)
     legacy_configure = inspect.getsource(KrakenLayoutEditor._configure_legacy_3d_plotter)
     legacy_display_camera = inspect.getsource(KrakenLayoutEditor._legacy_3d_camera_preset_from_display_orientation)
@@ -265,8 +268,8 @@ def main() -> int:
         ("STEP rotation handles expose signed user-selected arrows per axis", "sign=1.0" in step_rotate_handles and "_rotation_handle_step_deg()" in step_rotate_handles and "(-float(step), float(step))" in step_rotate_handles),
         ("STEP rotation handles are pickable scene actors", "pick_step_rotate" in step_rotate_handles and "_actor_step_rotate_map" in pick),
         ("STEP rotation handles hover-highlight before click", "_set_rotation_handle_hover(actor_key)" in mouse_move and "STEP rotation handle: click" in mouse_move and "SetColor(1.0, 0.78, 0.08)" in rotation_hover),
-        ("STEP rotation handles can be hidden from the toolbar", "show_rotation_handles_var" in init and "_toggle_rotation_handles" in init and "_show_rotation_handles()" in step_rotate_handles and "_remove_step_rotation_handle_actors" in rotation_toggle),
-        ("Open 3D rotation handles expose selectable step size", "rotation_step_deg_var" in init and "15" in init and "45" in init and "180" in init and "_on_rotation_step_changed" in init),
+        ("STEP rotation handles can be hidden from the toolbar", "show_rotation_handles_var" in init and "_toggle_rotation_handles" in init_with_top_controls and "_show_rotation_handles()" in step_rotate_handles and "_remove_step_rotation_handle_actors" in rotation_toggle),
+        ("Open 3D rotation handles expose selectable step size", "rotation_step_deg_var" in init and "15" in init_with_top_controls and "45" in init_with_top_controls and "180" in init_with_top_controls and "_on_rotation_step_changed" in init_with_top_controls),
         ("STEP rotation arcs show opposed start/end cone arrowheads", "pv.Cone" in rotation_arc_mesh and "point_array[0] - point_array[1]" in rotation_arc_mesh and "point_array[-1] - point_array[-2]" in rotation_arc_mesh),
         ("STEP rotation end arrows are scaled for CAD-style visibility", "float(radius) * 0.24" in rotation_arrowhead_mesh and "float(arrow_scale) * 0.15" in rotation_arrowhead_mesh),
         ("STEP rotation handle rotates selected component around the visible world axis", "rotate_step_world_axis(label, axis" in step_rotate_pick),
@@ -312,7 +315,7 @@ def main() -> int:
         ),
         (
             "Open 3D STEP normal snap is face-normal based",
-            "Snap STEP Normal->Optical Axis" in init
+            "Snap STEP Normal->Optical Axis" in init_with_top_controls
             and "_remember_selected_step_feature" in pick
             and "start_step_normal_axis_pick(step_label)" in pick
             and "feature[2]" in remember_step_feature
@@ -416,20 +419,20 @@ def main() -> int:
         ),
         (
             "Open 3D exposes STEP promotion to optical solid rows",
-            "Promote STEP to Optical Solid Row" in init and "promote_selected_step_to_optical_solid_row" in init,
+            "Promote STEP to Optical Solid Row" in init_with_top_controls and "promote_selected_step_to_optical_solid_row" in init_with_top_controls,
         ),
         (
             "Open 3D exposes explicit STEP placement acceptance",
-            "Accept STEP Placement" in init
-            and "accept_selected_step_placement" in init
+            "Accept STEP Placement" in init_with_top_controls
+            and "accept_selected_step_placement" in init_with_top_controls
             and "def accept_selected_step_placement" in inspect.getsource(Kraken3DInspector.accept_selected_step_placement),
         ),
         (
             "Open 3D exposes top-level Done 2D and Close actions",
-            "Done 2D" in init
-            and "finish_stl_placement" in init
-            and "Close" in init
-            and "command=self._on_close" in init,
+            "Done 2D" in init_with_top_controls
+            and "finish_stl_placement" in init_with_top_controls
+            and "Close" in init_with_top_controls
+            and "command=self._on_close" in init_with_top_controls,
         ),
         (
             "Open 3D visual diagnostics are opt-in toggles",
@@ -516,7 +519,7 @@ def main() -> int:
         ("CAD/STL handler exposes repeated user-selected rotations", "-Rot" in stl_handler and "+Rot" in stl_handler and "_rotation_handle_step_deg()" in stl_handler),
         ("CAD/STL handler exposes placement finalization", "Done -> 2D" in stl_handler and "Front On Row" in stl_handler),
         ("CAD/STL handler stays current after pose changes", "_update_stl_placement_handler_state" in stl_refresh),
-        ("Open 3D toolbar exposes Snapshot", "Snapshot" in init and "save_snapshot" in init),
+        ("Open 3D toolbar exposes Snapshot", "Snapshot" in init_with_top_controls and "save_snapshot" in init_with_top_controls),
         (
             "Open 3D face assignment has persistent non-pickable face tints",
             "_add_optical_solid_assigned_face_overlays" in refresh
@@ -591,13 +594,13 @@ def main() -> int:
         ),
         (
             "Open 3D toolbar uses categorized rows",
-            "toolbar_container" in init and "view_toolbar" in init and "scene_toolbar" in init,
+            "toolbar_container" in init_with_top_controls and "view_toolbar" in init_with_top_controls and "scene_toolbar" in init_with_top_controls,
         ),
         (
             "Open 3D starts in the active 2D projection camera",
             "_camera_preset_for_display_orientation()" in init
-            and '("YZ", "zy")' in init
-            and 'ttk.Menubutton(view_toolbar, text="Camera")' in init
+            and '("YZ", "zy")' in init_with_top_controls
+            and 'ttk.Menubutton(view_toolbar, text="Camera")' in init_with_top_controls
             and '"zy"' in open3d_display_camera
             and '"xz"' in open3d_display_camera
             and '"xy"' in open3d_display_camera,
@@ -611,7 +614,10 @@ def main() -> int:
         ),
         (
             "Open 3D scene toolbar groups dense commands",
-            '"CAD / target"' in init and 'text="Place"' in init and 'text="Orient"' in init and "ttk.Menubutton" in init,
+            '"CAD / target"' in init_with_top_controls
+            and 'text="Place"' in init_with_top_controls
+            and 'text="Orient"' in init_with_top_controls
+            and "ttk.Menubutton" in init_with_top_controls,
         ),
         ("Open 3D Snapshot uses Save As dialog", "filedialog.asksaveasfilename" in snapshot),
         ("Open 3D Snapshot defaults to attachment directory", "initialdir=str(ATTACHMENT_DIR)" in snapshot),
@@ -745,8 +751,8 @@ def main() -> int:
         ("Open 3D placement drag writes through row pose services", "translate_scene_row_pose" not in placement_drag and "_apply_scene_placement_translate_handle" in placement_drag and "_apply_scene_placement_rotate_handle" in placement_drag),
         (
             "Open 3D toolbar exposes Center Row->Optical Axis",
-            "Center Row->Optical Axis" in init
-            and "start_center_row_to_ray" in init
+            "Center Row->Optical Axis" in init_with_top_controls
+            and "start_center_row_to_ray" in init_with_top_controls
             and "_hide_regular_rays_for_center_axis_pick()" in center_row_axis_start
             and "show_rays_var.set(False)" in center_row_axis_hide
             and "_file_backed_stl_row_at(int(row_index)) is None" in center_row_axis_start
@@ -776,34 +782,34 @@ def main() -> int:
             and "center_surface_row_on_optical_axis" in center_row_axis_apply
             and "_ray_point_and_direction_on_surface_plane" in editor_center_row_axis,
         ),
-        ("Open 3D toolbar exposes Snap Row->Target", "Snap Row->Target" in init and "start_placement_target_pick" in init),
+        ("Open 3D toolbar exposes Snap Row->Target", "Snap Row->Target" in init_with_top_controls and "start_placement_target_pick" in init_with_top_controls),
         ("Snap Row->Target clears conflicting pick modes", "_source_target_pick_mode = False" in placement_target_start and "_center_row_to_ray_mode = False" in placement_target_start),
         ("Snap Row->Target suppresses placement-handle drag", "_placement_target_pick_mode" in placement_drag_start),
         ("Snap Row->Target writes through row pose service", "snap_scene_row_anchor_to_target" in placement_target_apply),
         ("target snap service writes Desp and ScenePlacement metadata", "desp_x" in editor_snap_target and "last_constraint_kind" in editor_snap_target and "SCENE_PLACEMENT_ADVANCED_ATTR" in editor_snap_target),
-        ("Open 3D toolbar exposes Orient Row->Target", "Orient Row->Target" in init and "start_placement_orient_pick" in init),
+        ("Open 3D toolbar exposes Orient Row->Target", "Orient Row->Target" in init_with_top_controls and "start_placement_orient_pick" in init_with_top_controls),
         ("Orient Row->Target clears conflicting pick modes", "_source_target_pick_mode = False" in placement_orient_start and "_placement_target_pick_mode = False" in placement_orient_start),
         ("Orient Row->Target suppresses placement-handle drag", "_placement_orient_pick_mode" in placement_drag_start),
         ("Orient Row->Target writes through row pose service", "orient_scene_row_anchor_to_target" in placement_orient_apply),
         ("target orient service delegates to vector row pose service", "orient_scene_row_anchor_to_vector" in editor_orient_target and "target_normal" in editor_orient_target),
-        ("Open 3D toolbar exposes Orient Row->Ray", "Orient Row->Ray" in init and "start_placement_orient_ray_pick" in init),
+        ("Open 3D toolbar exposes Orient Row->Ray", "Orient Row->Ray" in init_with_top_controls and "start_placement_orient_ray_pick" in init_with_top_controls),
         ("Orient Row->Ray clears conflicting pick modes", "_source_target_pick_mode = False" in placement_orient_ray_start and "_placement_orient_pick_mode = False" in placement_orient_ray_start),
         ("Orient Row->Ray suppresses placement-handle drag", "_placement_orient_ray_mode" in placement_drag_start),
         ("Orient Row->Ray writes through vector row pose service", "orient_scene_row_anchor_to_vector" in placement_orient_ray_apply and "_ray_frame_near_point" in placement_orient_ray_apply),
         ("vector orient service writes Tilt and ScenePlacement metadata", "tilt_x" in editor_orient_vector and "target_vector" in editor_orient_vector and "SCENE_PLACEMENT_ADVANCED_ATTR" in editor_orient_vector),
-        ("Open 3D toolbar exposes Orient Row->Source", "Orient Row->Source" in init and "orient_selected_row_to_source_direction" in init),
+        ("Open 3D toolbar exposes Orient Row->Source", "Orient Row->Source" in init_with_top_controls and "orient_selected_row_to_source_direction" in init_with_top_controls),
         ("Orient Row->Source writes through current source vector service", "orient_scene_row_anchor_to_current_source" in placement_orient_source and "_clear_immediate_orientation_modes" in placement_orient_source),
         ("source orient service writes source-vector metadata", "_current_source_direction" in editor_orient_source and "source_vector" in editor_orient_source and "last_constraint_source_origin" in editor_orient_source),
-        ("Open 3D toolbar exposes Orient Row->Path", "Orient Row->Path" in init and "orient_selected_row_to_path_frame" in init),
+        ("Open 3D toolbar exposes Orient Row->Path", "Orient Row->Path" in init_with_top_controls and "orient_selected_row_to_path_frame" in init_with_top_controls),
         ("Orient Row->Path writes through current Path-view service", "orient_scene_row_anchor_to_current_path_frame" in placement_orient_path and "_clear_immediate_orientation_modes" in placement_orient_path),
         ("Path orient service writes Path-frame metadata", "_current_path_view_frame_near_point" in editor_orient_path and "path_frame" in editor_orient_path and "last_constraint_path_branch_path" in editor_orient_path),
-        ("Open 3D toolbar exposes Orient Row->CAD Axis", "Orient Row->CAD Axis" in init and "orient_selected_row_to_local_axis" in init and "orient_axis_var" in init),
+        ("Open 3D toolbar exposes Orient Row->CAD Axis", "Orient Row->CAD Axis" in init_with_top_controls and "orient_selected_row_to_local_axis" in init_with_top_controls and "orient_axis_var" in init),
         ("Orient Row->CAD Axis writes through local-axis service", "orient_scene_row_anchor_to_local_axis" in placement_orient_axis and "_clear_immediate_orientation_modes" in placement_orient_axis),
         ("local-axis orient service writes CAD/local axis metadata", "_row_local_axis_world_vector" in editor_orient_axis and "local_axis" in editor_orient_axis and "last_constraint_axis_vector" in editor_orient_axis),
-        ("Open 3D toolbar exposes Orient Row->Scene Source", "Orient Row->Scene Source" in init and "orient_selected_row_to_scene_source" in init),
+        ("Open 3D toolbar exposes Orient Row->Scene Source", "Orient Row->Scene Source" in init_with_top_controls and "orient_selected_row_to_scene_source" in init_with_top_controls),
         ("Orient Row->Scene Source writes through scene-source service", "orient_scene_row_anchor_to_scene_source" in placement_orient_scene_source and "_current_or_first_scene_source_id" in placement_orient_scene_source),
         ("scene-source orient service writes explicit source metadata", "_collect_scene_sources" in editor_orient_scene_source and "scene_source_vector" in editor_orient_scene_source and "last_constraint_source_id" in editor_orient_scene_source),
-        ("Open 3D toolbar exposes named normal target preview/apply", "normal_target_var" in init and "Preview Normal" in init and "Orient Row->Normal" in init),
+        ("Open 3D toolbar exposes named normal target preview/apply", "normal_target_var" in init and "Preview Normal" in init_with_top_controls and "Orient Row->Normal" in init_with_top_controls),
         ("named normal preview reads target without applying row pose", "preview_scene_row_anchor_to_named_normal_target" in placement_preview_named_normal and "orient_scene_row_anchor_to_named_normal_target" not in placement_preview_named_normal),
         ("named normal apply writes through row pose service", "orient_scene_row_anchor_to_named_normal_target" in placement_orient_named_normal and "_clear_immediate_orientation_modes" in placement_orient_named_normal),
         ("named normal preview resolves scene target diagnostics", "_scene_named_normal_target" in editor_preview_named_normal and "angle_error_deg" in editor_preview_named_normal),
