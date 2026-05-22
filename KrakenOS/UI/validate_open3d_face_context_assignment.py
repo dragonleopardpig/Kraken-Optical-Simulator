@@ -16,6 +16,9 @@ from KrakenOS.UI.layout_editor import (
     OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
     OPTICAL_SOLID_FACE_PORT_INTERACTION,
     SurfaceRow,
+    _optical_solid_face_metadata_extent,
+    _optical_solid_face_records_share_plane,
+    cluster_optical_solid_planar_faces,
     optical_solid_face_world_records,
 )
 from KrakenOS.UI.optical_solid_metadata import normalize_optical_solid_face_metadata
@@ -24,6 +27,43 @@ from KrakenOS.UI.optical_solid_metadata import normalize_optical_solid_face_meta
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PRISM_42779_STEP = PROJECT_ROOT / "attachment" / "prisms" / "42779" / "step_42779.step"
 VALIDATION_CACHE_DIR = Path("/tmp/kraken-open3d-face-context-cache")
+
+
+def _write_mixed_winding_plane_stl(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        """solid mixed_winding_plane
+facet normal 0 0 1
+  outer loop
+    vertex 0 0 0
+    vertex 1 0 0
+    vertex 0 1 0
+  endloop
+endfacet
+facet normal 0 0 -1
+  outer loop
+    vertex 1 1 0
+    vertex 0 1 0
+    vertex 1 0 0
+  endloop
+endfacet
+endsolid mixed_winding_plane
+""",
+        encoding="utf-8",
+    )
+
+
+def _validate_mixed_winding_faces_share_physics_assignment() -> None:
+    mesh_path = VALIDATION_CACHE_DIR / "mixed_winding_plane.stl"
+    _write_mixed_winding_plane_stl(mesh_path)
+    candidates = cluster_optical_solid_planar_faces(mesh_path)
+    if len(candidates) != 1:
+        raise AssertionError(
+            "Mixed-winding coplanar STL triangles should form one physical face candidate, "
+            f"got {len(candidates)} candidates."
+        )
+    if int(candidates[0].triangle_count) != 2:
+        raise AssertionError(f"Expected both triangles in the same physical face, got {candidates[0].triangle_count}.")
 
 
 def _first_world_face(app: KrakenLayoutEditor, row_index: int) -> dict[str, object]:
@@ -131,6 +171,7 @@ def main() -> int:
 
     le.CAD_CACHE_DIR = VALIDATION_CACHE_DIR / "cad"
     le.CAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    _validate_mixed_winding_faces_share_physics_assignment()
 
     app = KrakenLayoutEditor(headless=True)
     try:
@@ -185,6 +226,39 @@ def main() -> int:
             raise AssertionError(f"Uncoated context assignment did not map to transmit physics: {reassigned!r}")
         if reassigned.get("port_role") != OPTICAL_SOLID_FACE_PORT_INTERACTION:
             raise AssertionError(f"Uncoated direct assignment should become a physical interaction surface, not an output port: {reassigned!r}")
+
+        coplanar_metadata = normalize_optical_solid_face_metadata(
+            app.rows[row_index].advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+        )
+        coplanar_faces = list(coplanar_metadata.get("faces", []) or [])
+        coplanar_extent = _optical_solid_face_metadata_extent(coplanar_faces, app.rows[row_index])
+        coplanar_pair = None
+        for first_index, first_face in enumerate(coplanar_faces):
+            for second_face in coplanar_faces[first_index + 1 :]:
+                if _optical_solid_face_records_share_plane(first_face, second_face, extent_mm=coplanar_extent):
+                    coplanar_pair = (first_face, second_face)
+                    break
+            if coplanar_pair is not None:
+                break
+        if coplanar_pair is None:
+            raise AssertionError("Expected promoted prism metadata to include a split coplanar face pair.")
+        first_face, second_face = coplanar_pair
+        first_face_id = str(first_face.get("face_id", "") or "")
+        second_face_id = str(second_face.get("face_id", "") or "")
+        coplanar_assigned = app.assign_optical_solid_face_function(
+            row_index,
+            first_face_id,
+            "Full Reflecting",
+            direct_context=True,
+        )
+        if second_face_id not in tuple(coplanar_assigned.get("related_face_ids", ()) or ()):
+            raise AssertionError(f"Coplanar sibling face was not reported as updated: {coplanar_assigned!r}")
+        mirror_metadata = normalize_optical_solid_face_metadata(
+            app.rows[row_index].advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+        )
+        sibling_saved = next((face for face in mirror_metadata.get("faces", []) if str(face.get("face_id", "")) == second_face_id), None)
+        if sibling_saved is None or sibling_saved.get("function") != "Mirror":
+            raise AssertionError("Coplanar sibling face did not inherit the Full Reflecting assignment.")
 
         metadata = normalize_optical_solid_face_metadata(
             app.rows[row_index].advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})

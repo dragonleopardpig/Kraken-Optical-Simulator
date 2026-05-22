@@ -1,6 +1,6 @@
 # KrakenOS Non-Sequential UI Branch
 
-Last updated: 2026-05-21
+Last updated: 2026-05-22
 
 This document summarizes the `nonseq-display-refactor` branch. The upstream
 `README.md` is intentionally left unchanged; this branch README is the public
@@ -54,7 +54,7 @@ Estimated branch status:
 | Live 3D authoring | In progress | `████████░░ 80%` | Open 3D now has a left-docked Live Controls panel bound to the same Source, Field, and Trace / Display variables as the main left panel. Live Mode schedules debounced 3D retraces after source edits, main left-panel edits, and STEP carry/placement changes, using the same 3D preview sampling path. Imported arbitrary optical STEP overlays now enter live traces as transient file-backed optical solid rows, so rays can interact with the unpromoted overlay during placement without inserting a row into the editable table. The transient optical STEP row plan is cached when overlay pose and row context are unchanged, reducing repeated remeshing during source-only Live Mode refreshes. `Accept STEP Placement` commits the current overlay into a persistent row-backed optical solid and clears the display-only overlay. Promoted optical-solid rows can now be hold-dragged directly in Open 3D after promotion, stale face-hover outlines are cleared at drag start, row-owned edge/tint actors translate with the body during drag, file-backed rows require an explicit face click before Center Row->Optical Axis, and source-cone plus collimated-source launch patterns remain stable across the overlay-to-row and face-assignment transitions. The remaining architecture work is making continuous drag traces faster on large CAD meshes. |
 | Upstream main integration | Triaged | `████░░░░░░ 40%` | Local `main` is fast-forwarded to `origin/main` without checking out or dirtying the branch. The low-risk packaging metadata from upstream has been adopted through `pyproject.toml`, and local prism attachment byproducts are ignored so user screenshots/CAD side files do not block sync. Runtime changes around `BundleTrace`, `RayKeeper`, `Display`, `GeometryBackend`, `MeshBlock`, lazy PyVista, and new pytest coverage are useful but require selective integration because a full merge would overwrite or remove branch-specific UI, Sphinx, optimization, and scene-tracing work. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, per-ray detector aperture status, detector aperture hit/miss reports, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, detector-plane contact classification for output-port-followed Image targets, folded-preview provenance, direct Open 3D mirror-face hits and TIR/reflection events that keep same-solid CAD/STL faces eligible until a real exit or terminal event, and CSV export. |
-| Arbitrary prisms and CAD solids | Achieved | `██████████ 100%` | Face identity, geometry-derived uncoated face-intent suggestions, direct picked-face assignment without Left/Right/Up/Down side labels or inferred output ports, display-only STEP overlay promotion into traceable row-backed optical solids with positive axial clearance and scene-object `AxisMove=0` isolation, same-row face continuation for CAD/STL reflection and total-internal-reflection events, imported right-angle STEP central-ray TIR on an uncoated BK7-air hypotenuse, cascaded row-scoped boundary/volume records, real multi-STL trace coverage, runtime output-port scene bounds, closed-solid media transitions, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
+| Arbitrary prisms and CAD solids | Achieved | `██████████ 100%` | Face identity, orientation-invariant coplanar CAD-face grouping with same-plane assignment propagation, geometry-derived uncoated face-intent suggestions, direct picked-face assignment without Left/Right/Up/Down side labels or inferred output ports, display-only STEP overlay promotion into traceable row-backed optical solids with positive axial clearance and scene-object `AxisMove=0` isolation, same-row face continuation for CAD/STL reflection and total-internal-reflection events, imported right-angle STEP central-ray TIR on an uncoated BK7-air hypotenuse, cascaded row-scoped boundary/volume records, real multi-STL trace coverage, runtime output-port scene bounds, closed-solid media transitions, Image-as-detector terminal policy, detector-miss plane projection, and prism/CAD diagnostics are covered by regression validators. |
 
 Overall branch direction: keep moving toward one scene/event truth source while
 preserving exact sequential prescriptions as the ordered-path special case.
@@ -213,6 +213,10 @@ kraken-vtk-tk-check
   `Placement handles` are explicit opt-in diagnostics, while `Done 2D` and
   `Close` on the top row refresh the 2D layout whenever 3D placement,
   promotion, or direct face assignment changed row metadata.
+- Preview traces are explicitly invalidated after STEP import, clear, pose,
+  snap, rotation, promotion, and direct face-role assignment changes. Open 3D
+  face assignments force a retrace instead of reusing a stale scene bundle, so
+  the displayed rays are rebuilt from the current row pose and role metadata.
 - Arbitrary optical STEP, lens, camera, and LED STEP overlays can now be
   imported directly from the Open 3D `CAD / target -> Import STEP` submenu. The
   generic optical STEP entry now uses a separate `optical` overlay slot, so it
@@ -300,6 +304,12 @@ kraken-vtk-tk-check
   the row so they translate with hold-drag movement instead of leaving a ghost.
   The prism or imported optical STEP remains readable without switching back to
   a mesh-heavy display.
+- STEP/STL face clustering now treats opposite triangle winding on the same
+  plane as one physical face while preserving the representative face-normal
+  orientation used by placement and projection sync. Direct Open 3D face
+  assignment updates all equivalent coplanar face records, preventing one
+  physical CAD surface from acting partly reflective and partly uncoated when a
+  vendor STEP splits that surface into multiple records.
 - Open 3D rotation handles use the toolbar `Rot` selector for 15, 30, 45, 90,
   or 180 degree increments; the embedded CAD/STL side-panel `+/-Rot` buttons
   use the same value.

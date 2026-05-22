@@ -1518,6 +1518,67 @@ def _point3_tuple(value) -> tuple[float, float, float]:
     return optical_solid_metadata.point3_tuple(value)
 
 
+def _canonical_optical_solid_plane(normal, plane_offset: float) -> tuple[np.ndarray, float]:
+    """Return a sign-stable plane normal/offset pair for face grouping."""
+    plane_normal = np.asarray(_unit_vector_tuple(normal), dtype=float).reshape(3)
+    offset = _float_or_default(plane_offset, 0.0)
+    pivot = int(np.argmax(np.abs(plane_normal)))
+    if float(plane_normal[pivot]) < 0.0:
+        plane_normal = -plane_normal
+        offset = -offset
+    return plane_normal, float(offset)
+
+
+def _optical_solid_face_records_share_plane(
+    face: dict[str, object],
+    target: dict[str, object],
+    *,
+    extent_mm: float,
+) -> bool:
+    face_normal, face_offset = _canonical_optical_solid_plane(
+        face.get("normal", (0.0, 0.0, 1.0)),
+        _float_or_default(face.get("plane_offset_mm"), 0.0),
+    )
+    target_normal, target_offset = _canonical_optical_solid_plane(
+        target.get("normal", (0.0, 0.0, 1.0)),
+        _float_or_default(target.get("plane_offset_mm"), 0.0),
+    )
+    normal_alignment = abs(float(np.dot(face_normal, target_normal)))
+    plane_tolerance = max(abs(float(extent_mm)) * 2.0e-4, 0.02)
+    return normal_alignment >= 0.999 and abs(float(face_offset - target_offset)) <= plane_tolerance
+
+
+def _optical_solid_face_metadata_extent(faces: list[dict[str, object]], row: SurfaceRow | None = None) -> float:
+    extents: list[float] = [1.0]
+    centroids: list[np.ndarray] = []
+    for face in faces:
+        try:
+            centroid = np.asarray(face.get("centroid", (0.0, 0.0, 0.0)), dtype=float).reshape(-1)[:3]
+        except Exception:
+            continue
+        if centroid.size == 3 and np.all(np.isfinite(centroid)):
+            centroids.append(centroid)
+        area = _float_or_default(face.get("area_mm2"), 0.0)
+        if area > 0.0:
+            extents.append(float(np.sqrt(area)))
+    if centroids:
+        points = np.asarray(centroids, dtype=float)
+        extents.append(float(np.max(np.ptp(points, axis=0))))
+    if row is not None:
+        for value in (
+            getattr(row, "diameter", 0.0),
+            getattr(row, "thickness", 0.0),
+            getattr(row, "desp_x", 0.0),
+            getattr(row, "desp_y", 0.0),
+            getattr(row, "desp_z", 0.0),
+        ):
+            parsed = abs(_float_or_default(value, 0.0))
+            if parsed > 0.0:
+                extents.append(parsed)
+    finite = [value for value in extents if np.isfinite(float(value)) and float(value) > 0.0]
+    return max(finite, default=1.0)
+
+
 def cluster_optical_solid_planar_faces(path: Path, *, max_faces: int = 160) -> list[OpticalSolidFaceCandidate]:
     """Cluster STL triangles into approximate planar face candidates."""
     _file_format, triangles = _read_stl_triangle_vertices(Path(path).expanduser())
@@ -1539,9 +1600,10 @@ def cluster_optical_solid_planar_faces(path: Path, *, max_faces: int = 160) -> l
         normal = cross / max(float(np.linalg.norm(cross)), 1e-12)
         centroid = (v0 + v1 + v2) / 3.0
         plane_offset = float(np.dot(normal, centroid))
+        canonical_normal, canonical_plane_offset = _canonical_optical_solid_plane(normal, plane_offset)
         key = (
-            tuple(float(v) for v in np.round(normal, normal_decimals)),
-            float(np.round(plane_offset, plane_decimals)),
+            tuple(float(v) for v in np.round(canonical_normal, normal_decimals)),
+            float(np.round(canonical_plane_offset, plane_decimals)),
         )
         entry = groups.setdefault(
             key,
@@ -1552,13 +1614,19 @@ def cluster_optical_solid_planar_faces(path: Path, *, max_faces: int = 160) -> l
                 "triangles": 0,
                 "plane_offset_weighted": 0.0,
                 "triangle_indices": [],
+                "reference_normal": np.asarray(normal, dtype=float),
             },
         )
-        entry["normal_weighted"] = np.asarray(entry["normal_weighted"], dtype=float) + normal * area
+        reference_normal = np.asarray(entry.get("reference_normal", normal), dtype=float).reshape(3)
+        oriented_normal = np.asarray(normal, dtype=float)
+        if float(np.dot(oriented_normal, reference_normal)) < 0.0:
+            oriented_normal = -oriented_normal
+        oriented_plane_offset = float(np.dot(oriented_normal, centroid))
+        entry["normal_weighted"] = np.asarray(entry["normal_weighted"], dtype=float) + oriented_normal * area
         entry["centroid_weighted"] = np.asarray(entry["centroid_weighted"], dtype=float) + centroid * area
         entry["area"] = float(entry["area"]) + area
         entry["triangles"] = int(entry["triangles"]) + 1
-        entry["plane_offset_weighted"] = float(entry["plane_offset_weighted"]) + plane_offset * area
+        entry["plane_offset_weighted"] = float(entry["plane_offset_weighted"]) + oriented_plane_offset * area
         entry["triangle_indices"].append(int(triangle_index))
 
     candidates: list[OpticalSolidFaceCandidate] = []
@@ -6369,7 +6437,7 @@ class Kraken3DInspector(tk.Toplevel):
         )
         message = f"S{int(row_index)} {face_id}: set {display}. Rebuilt trace with assigned-face overlay."
         try:
-            self.refresh_from_editor()
+            self.refresh_from_editor(force_retrace=True)
             self.highlight_row(int(row_index))
         except Exception as exc:
             self.editor.append_debug(f"Open 3D refresh after face assignment failed: {exc}")
@@ -6454,7 +6522,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._clear_step_overlay_interaction_state(label)
         self.editor._select_table_row(row_index)
         try:
-            self.refresh_from_editor()
+            self.refresh_from_editor(force_retrace=True)
             self.highlight_row(row_index)
         except Exception as exc:
             self.editor.append_debug(f"Open 3D refresh after promoted STEP face assignment failed: {exc}")
@@ -8052,7 +8120,7 @@ class Kraken3DInspector(tk.Toplevel):
         state["raw_drag_delta_world"] = tuple(float(value) for value in raw_delta[:3])
         self.editor.translate_step_overlay(label, delta, grid_spacing_mm=None, refresh=False, record_history=False)
         if self._translate_step_overlay_actors(label, delta) <= 0:
-            self.refresh_from_editor()
+            self.refresh_from_editor(force_retrace=True)
         self._update_step_carry_grip_after_delta(state, delta)
         self.schedule_live_refresh(f"{label} STEP carry moved")
         return max(applied_steps, 1)
@@ -8090,7 +8158,7 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set(f"{label} STEP dropped: no movement.")
         else:
             try:
-                self.refresh_from_editor()
+                self.refresh_from_editor(force_retrace=True)
             except Exception as exc:
                 self.editor.append_debug(f"STEP carry final refresh failed: {exc}")
             self.schedule_live_refresh(f"{label} STEP carry dropped", delay_ms=0)
@@ -8966,7 +9034,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._clear_step_overlay_interaction_state(label)
         row_index = int(result.get("row_index", -1))
         try:
-            self.refresh_from_editor()
+            self.refresh_from_editor(force_retrace=True)
             if row_index >= 0:
                 self.highlight_row(row_index)
         except Exception as exc:
@@ -11807,9 +11875,9 @@ class Kraken3DInspector(tk.Toplevel):
         )
         self.render()
 
-    def refresh_from_editor(self, *, sampling_mode: str | None = None) -> None:
+    def refresh_from_editor(self, *, sampling_mode: str | None = None, force_retrace: bool = False) -> None:
         try:
-            current = None if sampling_mode is not None else self.editor._current_preview_scene_trace()
+            current = None if force_retrace or sampling_mode is not None else self.editor._current_preview_scene_trace()
             if current is not None:
                 system, rays, scene_bundle = current
             else:
@@ -15578,6 +15646,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._optimization_stop_event = None
         self._last_optics_info: dict | None = None
         self._last_scene_bundle: SceneBundle | None = None
+        self._preview_scene_trace_dirty = False
         self._last_auto_leg_entries: list[dict[str, object]] = []
         self._cardinal_marker_artists: list = []
         self._physical_distance_artists: list = []
@@ -18350,13 +18419,35 @@ class KrakenLayoutEditor(tk.Tk):
         row, path, metadata = self._optical_solid_face_metadata_for_row(row_index)
         function = _optical_solid_face_function_from_ui_value(function_label)
         role = _legacy_role_from_optical_solid_face_function(function)
+        normalized_faces = [
+            normalize_optical_solid_face_record(face)
+            for face in list(metadata.get("faces", []) or [])
+            if isinstance(face, dict)
+        ]
+        target_record = next(
+            (
+                record
+                for record in normalized_faces
+                if str(record.get("face_id", "") or "").strip() == face_id
+            ),
+            None,
+        )
+        if target_record is None:
+            raise RuntimeError(f"CAD/STL face {face_id} is not available on S{row_index}.")
+        extent_mm = _optical_solid_face_metadata_extent(normalized_faces, row)
         updated_faces: list[dict[str, object]] = []
         matched: dict[str, object] | None = None
+        related_face_ids: list[str] = []
         for face in list(metadata.get("faces", []) or []):
             if not isinstance(face, dict):
                 continue
             record = normalize_optical_solid_face_record(face)
-            if str(record.get("face_id", "") or "").strip() == face_id:
+            record_face_id = str(record.get("face_id", "") or "").strip()
+            same_physical_face = (
+                record_face_id == face_id
+                or _optical_solid_face_records_share_plane(record, target_record, extent_mm=extent_mm)
+            )
+            if same_physical_face:
                 record["function"] = function
                 record["role"] = role
                 record["port_role"] = (
@@ -18369,11 +18460,13 @@ class KrakenLayoutEditor(tk.Tk):
                     )
                 )
                 record["assignment_source"] = OPTICAL_SOLID_FACE_ASSIGNMENT_MANUAL
-                matched = normalize_optical_solid_face_record(record)
-                record = matched
+                updated = normalize_optical_solid_face_record(record)
+                if record_face_id == face_id:
+                    matched = updated
+                elif record_face_id:
+                    related_face_ids.append(record_face_id)
+                record = updated
             updated_faces.append(record)
-        if matched is None:
-            raise RuntimeError(f"CAD/STL face {face_id} is not available on S{row_index}.")
         metadata_to_save = normalize_optical_solid_face_metadata(
             {"faces": updated_faces, "virtual_planes": metadata.get("virtual_planes", []), "source_stl": str(path)},
             source_stl=str(path),
@@ -18387,14 +18480,21 @@ class KrakenLayoutEditor(tk.Tk):
         self._mark_plot_update_pending()
         display = _optical_solid_face_function_display(function)
         summary = self._optical_solid_faces_summary(row_index, target)
+        if related_face_ids:
+            summary += "\n" + (
+                f"Direct Open 3D assignment also updated coplanar face records: "
+                f"{', '.join(related_face_ids)}"
+            )
         self.append_debug(summary)
-        self.status_var.set(f"S{row_index} {face_id}: set CAD/STL face function to {display}.")
+        related_suffix = f" (+{len(related_face_ids)} coplanar)" if related_face_ids else ""
+        self.status_var.set(f"S{row_index} {face_id}: set CAD/STL face function to {display}{related_suffix}.")
         return {
             "row_index": row_index,
             "face_id": face_id,
             "function": function,
             "function_display": display,
             "port_role": matched.get("port_role", OPTICAL_SOLID_FACE_PORT_DEFAULT),
+            "related_face_ids": tuple(related_face_ids),
             "metadata": metadata_to_save,
         }
 
@@ -20168,6 +20268,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._selected_step_label = "lens"
         self._cad_axis_pick_any = False
         self._commit_history_capture()
+        self._live_step_overlay_trace_plan_cache = {}
+        self._invalidate_preview_scene_trace()
         self.status_var.set(f"{display_label} imported: {path.name}. Open or refresh 3D view.")
         self._refresh_open_3d_views()
         return path
@@ -20200,6 +20302,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._selected_step_label = "optical"
         self._cad_axis_pick_any = False
         self._commit_history_capture()
+        self._live_step_overlay_trace_plan_cache = {}
+        self._invalidate_preview_scene_trace()
         self.status_var.set(f"Optical STEP imported: {path.name}. Carry and place it in Open 3D.")
         self._refresh_open_3d_views(step_label="optical")
         return path
@@ -20218,6 +20322,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._selected_step_label = "camera"
         self._cad_axis_pick_any = False
         self._commit_history_capture()
+        self._live_step_overlay_trace_plan_cache = {}
+        self._invalidate_preview_scene_trace()
         self.status_var.set(f"Camera STEP imported: {path.name}. Open or refresh 3D view.")
         self._refresh_open_3d_views(camera_only=True)
         return path
@@ -20250,6 +20356,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._cad_led_object_edge_pick = False
         self.led_object_edge_distance_mm = float(edge_distance)
         self._commit_history_capture()
+        self._live_step_overlay_trace_plan_cache = {}
+        self._invalidate_preview_scene_trace()
         self.status_var.set(
             f"LED STEP imported: {path.name}; edge distance={self.led_object_edge_distance_mm:.3g} mm."
         )
@@ -20419,6 +20527,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.lens_step_largest_component_only = True
         if self._selected_step_label == label:
             self._selected_step_label = None
+        self._invalidate_preview_scene_trace()
 
     def rotate_step_axis(self, label: str, axis: str, delta_deg: float) -> None:
         label = str(label).strip().lower()
@@ -20588,6 +20697,8 @@ class KrakenLayoutEditor(tk.Tk):
         if label not in STEP_OVERLAY_LABEL_SET:
             return
         setattr(self, f"{label}_step_axis_offset_xy", (float(offset_xy[0]), float(offset_xy[1])))
+        self._live_step_overlay_trace_plan_cache = {}
+        self._invalidate_preview_scene_trace()
 
     def _step_placement_offset_xyz(self, label: str) -> tuple[float, float, float]:
         value = getattr(self, f"{label}_step_placement_offset_xyz", (0.0, 0.0, 0.0))
@@ -20603,6 +20714,8 @@ class KrakenLayoutEditor(tk.Tk):
         if values.size < 3 or not np.all(np.isfinite(values[:3])):
             return
         setattr(self, f"{label}_step_placement_offset_xyz", (float(values[0]), float(values[1]), float(values[2])))
+        self._live_step_overlay_trace_plan_cache = {}
+        self._invalidate_preview_scene_trace()
 
     def translate_step_overlay(
         self,
@@ -21355,6 +21468,8 @@ class KrakenLayoutEditor(tk.Tk):
         setattr(self, f"{label}_step_rotation_x_deg", x_deg)
         setattr(self, f"{label}_step_rotation_y_deg", y_deg)
         setattr(self, f"{label}_step_rotation_z_deg", z_deg)
+        self._live_step_overlay_trace_plan_cache = {}
+        self._invalidate_preview_scene_trace()
 
     def _step_optical_axis_frame_near_point(self, reference_point) -> dict[str, object]:
         reference = np.asarray(reference_point, dtype=float).reshape(-1)[:3]
@@ -21555,6 +21670,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
         self._commit_history_capture()
+        self._invalidate_preview_scene_trace()
         self.status_var.set("CAD STEP optical-axis offsets cleared.")
         self._refresh_open_3d_views()
 
@@ -21592,6 +21708,8 @@ class KrakenLayoutEditor(tk.Tk):
         self._cad_led_object_edge_pick = False
         self._selected_step_label = None
         self._commit_history_capture()
+        self._live_step_overlay_trace_plan_cache = {}
+        self._invalidate_preview_scene_trace()
         self.status_var.set("Camera/lens/optical/LED STEP imports cleared.")
         self._refresh_open_3d_views()
 
@@ -24273,8 +24391,18 @@ class KrakenLayoutEditor(tk.Tk):
         widget.bind("<Return>", _on_commit, add="+")
         widget.bind("<KP_Enter>", _on_commit, add="+")
 
+    def _invalidate_preview_scene_trace(self, reason: str = "") -> None:
+        self._preview_scene_trace_dirty = True
+        self._last_preview_trace_signature = None
+        if reason:
+            try:
+                self.append_debug(f"Preview trace invalidated: {reason}")
+            except Exception:
+                pass
+
     def _mark_plot_update_pending(self, _event=None) -> None:
         self._commit_history_capture()
+        self._invalidate_preview_scene_trace()
         self._sync_trace_state_badge()
         if hasattr(self, "status_var"):
             self.status_var.set("Display settings changed. Click Update.")
@@ -27221,6 +27349,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.last_rays = rays
             self._last_preview_trace_signature = self._preview_trace_signature()
             self._last_scene_bundle = scene_bundle
+            self._preview_scene_trace_dirty = False
         return system, rays, scene_bundle
 
     def _live_step_overlay_trace_rows(self) -> tuple[list[SurfaceRow], list[dict[str, object]]]:
@@ -27386,6 +27515,8 @@ class KrakenLayoutEditor(tk.Tk):
         return "world_envelope"
 
     def _current_preview_scene_trace(self):
+        if bool(getattr(self, "_preview_scene_trace_dirty", False)):
+            return None
         if self.last_system is None or self.last_rays is None or self._last_scene_bundle is None:
             return None
         if not preview_trace_signature_matches(self._last_preview_trace_signature, self._preview_trace_signature()):
@@ -48662,6 +48793,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.last_system = system
             self.last_rays = rays
             self._last_preview_trace_signature = self._preview_trace_signature()
+            self._preview_scene_trace_dirty = False
             if self._apply_image_diameter_mode():
                 self._sync_image_row_table_value()
 
