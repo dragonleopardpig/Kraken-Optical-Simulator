@@ -21522,7 +21522,7 @@ class KrakenLayoutEditor(tk.Tk):
         frame = dict(axis_frame) if isinstance(axis_frame, dict) else self._step_optical_axis_frame_near_point(feature_center[:3])
         target_point = np.asarray(frame["target_point"], dtype=float).reshape(3)
         axis_direction = self._normalized_vector(frame["direction"])
-        target_normal = axis_direction if float(np.dot(feature_normal, axis_direction)) >= 0.0 else -axis_direction
+        target_normal = -axis_direction
 
         current_mesh = self._transformed_imported_step_mesh_for_label(label)
         if current_mesh is None or int(getattr(current_mesh, "n_points", 0)) <= 0:
@@ -21569,7 +21569,7 @@ class KrakenLayoutEditor(tk.Tk):
         angle_error = float(np.rad2deg(np.arccos(np.clip(float(np.dot(rotated_normal, target_normal)), -1.0, 1.0))))
         axis_label = str(frame.get("axis_label", "optical axis"))
         self.status_var.set(
-            f"{label.upper()} STEP face normal aligned to {axis_label}; "
+            f"{label.upper()} STEP entrance normal aligned opposite {axis_label}; "
             f"face center moved to ({target_point[0]:.6g}, {target_point[1]:.6g}, {target_point[2]:.6g}) mm."
         )
         self._refresh_open_3d_views(step_label=label)
