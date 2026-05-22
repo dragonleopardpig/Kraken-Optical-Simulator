@@ -766,6 +766,12 @@ Refactor order:
    - Keep shared scene/event dataclasses in their existing scene modules unless
      there is a clear ownership reason to move them.
 
+   First slice started: `KrakenOS/UI/services/open3d_trace_refresh.py` now owns
+   Open 3D sampling-mode normalization, inspector refresh trace selection, Live
+   Mode preview-bundle creation, and synchronization of an already-open 3D
+   inspector. `layout_editor.py` still owns rendering and interaction, but the
+   trace/refresh policy is now behind a reusable service boundary.
+
 2. Preserve behavior while splitting. Each extraction should move one ownership
    boundary with no UI feature redesign in the same commit. The validation bar
    is the current non-sequential validators plus focused smoke checks for
@@ -862,9 +868,9 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Start the production-readiness refactor by extracting a low-risk service from
-`layout_editor.py` before changing the theme. The first sensible slice is the
-Open 3D trace/refresh service, because it directly affects Live Mode lag, STEP
-promotion, face assignment, `Done 2D` synchronization, and 2D/3D projection
-consistency. Keep behavior identical, run the existing validators, then move on
-to panel/widget extraction.
+Continue the production-readiness refactor by extracting the Open 3D Live
+Controls panel into `KrakenOS/UI/panels/`, with only thin callbacks back into
+the editor and `Open3DTraceRefreshService`. Keep the UI behavior identical.
+After that panel boundary exists, move the Live Mode lag work into the service:
+stale-request cancellation, CAD row-plan cache reuse, and mesh/trace throttling
+should live outside widget code.

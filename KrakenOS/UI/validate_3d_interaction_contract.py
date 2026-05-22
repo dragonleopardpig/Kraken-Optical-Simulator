@@ -16,6 +16,7 @@ from KrakenOS.UI.saved_layout_plot import build_saved_layout_figure
 from KrakenOS.UI.scene_builder import _sync_path_display_geometry_from_events
 from KrakenOS.UI.scene_geometry import RayEvent3D, RayPath3D
 from KrakenOS.UI.scene_projector import bounded_ray_points_for_scene_display, scene_display_center_radius
+from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 
 
 def _scene_path_preserves_raykeeper_terminal_continuation() -> tuple[bool, str]:
@@ -220,6 +221,7 @@ def main() -> int:
     editor_build_scene_bundle = inspect.getsource(KrakenLayoutEditor._build_scene_bundle)
     editor_surface_meshes = inspect.getsource(KrakenLayoutEditor._iter_3d_optical_surface_meshes)
     refresh_3d_sync = inspect.getsource(KrakenLayoutEditor._refresh_3d_inspector_if_open)
+    open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)
     preview_sampling = inspect.getsource(KrakenLayoutEditor._preview_scene_sampling_mode)
     trace_preview_rays = inspect.getsource(KrakenLayoutEditor._trace_preview_rays)
     saved_layout_figure = inspect.getsource(build_saved_layout_figure)
@@ -615,17 +617,16 @@ def main() -> int:
         ("Open 3D Snapshot defaults to attachment directory", "initialdir=str(ATTACHMENT_DIR)" in snapshot),
         ("Open 3D Snapshot has a short default filename", 'initialfile="3D.png"' in snapshot),
         ("Open 3D Snapshot uses VTK PNG capture", "vtkWindowToImageFilter" in snapshot and "vtkPNGWriter" in snapshot),
-        ("Open 3D refresh reuses current SceneBundle when valid", "_current_preview_scene_trace" in refresh_from_editor),
+        ("Open 3D refresh reuses current SceneBundle when valid", "_current_preview_scene_trace" in open3d_refresh_service),
         (
             "Open 3D fallback traces the 3D sampling mode when it rebuilds locally",
-            "_preview_3d_sampling_mode()" in refresh_from_editor
-            and "_preview_3d_sampling_mode()" in refresh_3d_sync
-            and "_preview_2d_sampling_mode()" not in refresh_3d_sync,
+            "_preview_3d_sampling_mode()" in open3d_refresh_service
+            and "_preview_2d_sampling_mode()" not in open3d_refresh_service,
         ),
         (
             "Open 3D sync keeps supplied 2D SceneBundle instead of rebuilding",
-            "if system is None or rays is None or scene_bundle is None" in refresh_3d_sync
-            and "_build_preview_system_rays_bundle" in refresh_3d_sync,
+            "if system is None or rays is None or scene_bundle is None" in open3d_refresh_service
+            and "_build_preview_system_rays_bundle" in open3d_refresh_service,
         ),
         ("Open 3D ray-on leaves Object/Image reference disks translucent", 'row_surface in {"Object", "Image"}' in refresh and "mesh_opacity = min(mesh_opacity, 0.22)" in refresh),
         ("2D refresh uses shared 3D scene sampling", "_preview_scene_sampling_mode()" in editor_refresh_plot),
@@ -636,7 +637,7 @@ def main() -> int:
             and "if not has_traced_rays" in saved_layout_figure
             and "_preview_2d_sampling_mode()" in saved_layout_figure,
         ),
-        ("Open 3D sync receives the same SceneBundle as 2D", "scene_bundle=bundle" in editor_refresh_plot and "refresh_scene(" in refresh_3d_sync),
+        ("Open 3D sync receives the same SceneBundle as 2D", "scene_bundle=bundle" in editor_refresh_plot and "refresh_scene(" in open3d_refresh_service),
         ("shared scene sampling supports full-pupil, world-envelope, and source-cone-world modes", "full_pupil" in preview_sampling and "world_envelope" in preview_sampling and "source_cone_world" in preview_sampling),
         (
             "source cone sampling is preserved as a filled 3D cone when a promoted scene becomes non-sequential",
@@ -646,8 +647,8 @@ def main() -> int:
         ),
         (
             "Open 3D forced refresh uses 3D sampling instead of the 2D display slice",
-            "_preview_3d_sampling_mode()" in refresh_3d_sync
-            and "_preview_2d_sampling_mode()" not in refresh_3d_sync,
+            "_preview_3d_sampling_mode()" in open3d_refresh_service
+            and "_preview_2d_sampling_mode()" not in open3d_refresh_service,
         ),
         (
             "promoted optical solid rows support direct hold-drag movement",

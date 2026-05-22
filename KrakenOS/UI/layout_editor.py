@@ -265,6 +265,7 @@ from KrakenOS.UI.scene_projector import (
     scene_display_center_radius,
 )
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
+from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.scene_row_mapping import (
     SCENE_ROW_SOURCE,
     SCENE_ROW_SURFACE,
@@ -5862,15 +5863,14 @@ class Kraken3DInspector(tk.Toplevel):
                 self.schedule_live_refresh("pending scene change", delay_ms=40)
 
     def _refresh_live_preview_scene(self, reason: str) -> None:
-        sampling_mode = self.editor._preview_3d_sampling_mode()
-        system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
-            sampling_mode=sampling_mode,
-            update_state=False,
-            include_live_step_overlays=True,
+        result = self.editor._open3d_trace_refresh_service().build_live_preview(self)
+        self.refresh_scene(
+            result.system,
+            result.rays,
+            result.row_names,
+            scene_bundle=result.scene_bundle,
+            reset_camera=False,
         )
-        self._remember_refresh_sampling_mode(sampling_mode)
-        row_names = self.editor._preview_render_row_names(scene_bundle)
-        self.refresh_scene(system, rays, row_names, scene_bundle=scene_bundle, reset_camera=False)
         live_records = list(getattr(self.editor, "_last_live_step_overlay_trace_records", []) or [])
         suffix = " with transient optical STEP" if live_records else ""
         self.editor.status_var.set(f"Live Mode trace updated{suffix} ({reason}).")
@@ -11882,41 +11882,29 @@ class Kraken3DInspector(tk.Toplevel):
         self.render()
 
     def _normalize_sampling_mode_label(self, sampling_mode: object) -> str | None:
-        mode = str(sampling_mode or "").strip().lower()
-        return mode or None
+        return Open3DTraceRefreshService.normalize_sampling_mode_label(sampling_mode)
 
     def _remember_refresh_sampling_mode(self, sampling_mode: object) -> None:
-        mode = self._normalize_sampling_mode_label(sampling_mode)
-        if mode is not None:
-            self._last_refresh_sampling_mode = mode
+        self.editor._open3d_trace_refresh_service().remember_inspector_sampling_mode(self, sampling_mode)
 
     def _active_refresh_sampling_mode(self) -> str | None:
-        mode = self._normalize_sampling_mode_label(getattr(self, "_last_refresh_sampling_mode", None))
-        if mode is not None:
-            return mode
-        return self._normalize_sampling_mode_label(getattr(self.editor, "_active_preview_sampling_mode", None))
+        return self.editor._open3d_trace_refresh_service().inspector_active_sampling_mode(self)
 
     def refresh_from_editor(self, *, sampling_mode: str | None = None, force_retrace: bool = False) -> None:
         try:
-            resolved_sampling_mode = self._normalize_sampling_mode_label(sampling_mode)
-            current = None if force_retrace or resolved_sampling_mode is not None else self.editor._current_preview_scene_trace()
-            if current is not None:
-                system, rays, scene_bundle = current
-                resolved_sampling_mode = self._normalize_sampling_mode_label(
-                    getattr(self.editor, "_active_preview_sampling_mode", None)
-                )
-            else:
-                if resolved_sampling_mode is None and force_retrace:
-                    resolved_sampling_mode = self._active_refresh_sampling_mode()
-                if resolved_sampling_mode is None:
-                    resolved_sampling_mode = self.editor._preview_3d_sampling_mode()
-                system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
-                    sampling_mode=resolved_sampling_mode,
-                    update_state=True,
-                )
-            self._remember_refresh_sampling_mode(resolved_sampling_mode)
-            row_names = self.editor._preview_render_row_names(scene_bundle)
-            self.refresh_scene(system, rays, row_names, scene_bundle=scene_bundle, reset_camera=False)
+            result = self.editor._open3d_trace_refresh_service().build_inspector_refresh(
+                self,
+                sampling_mode=sampling_mode,
+                force_retrace=force_retrace,
+                update_state=True,
+            )
+            self.refresh_scene(
+                result.system,
+                result.rays,
+                result.row_names,
+                scene_bundle=result.scene_bundle,
+                reset_camera=False,
+            )
             self.editor.status_var.set("3D inspector updated")
         except Exception as exc:
             self.status_var.set(f"3D refresh failed: {_short_error_message(exc)}")
@@ -30202,31 +30190,18 @@ class KrakenLayoutEditor(tk.Tk):
         plotter.set_background("white", top="white")
         plotter.render()
 
+    def _open3d_trace_refresh_service(self) -> Open3DTraceRefreshService:
+        service = getattr(self, "_open3d_trace_refresh_service_instance", None)
+        if service is None:
+            service = Open3DTraceRefreshService(self)
+            self._open3d_trace_refresh_service_instance = service
+        return service
+
     def _refresh_3d_inspector_if_open(self, *, system=None, rays=None, scene_bundle: SceneBundle | None = None) -> None:
-        if self._three_d_inspector is None:
-            return
         try:
-            if not self._three_d_inspector.winfo_exists():
-                self._three_d_inspector = None
-                return
-        except Exception:
-            self._three_d_inspector = None
-            return
-        try:
-            if system is None or rays is None or scene_bundle is None:
-                current = self._current_preview_scene_trace()
-                if current is not None:
-                    system, rays, scene_bundle = current
-                else:
-                    system, rays, scene_bundle = self._build_preview_system_rays_bundle(
-                        sampling_mode=self._preview_3d_sampling_mode(),
-                        update_state=False,
-                    )
-            row_names = [row.name for row in self.rows]
-            self._three_d_inspector.refresh_scene(
-                system,
-                rays,
-                row_names,
+            self._open3d_trace_refresh_service().sync_open_inspector(
+                system=system,
+                rays=rays,
                 scene_bundle=scene_bundle,
                 reset_camera=False,
             )

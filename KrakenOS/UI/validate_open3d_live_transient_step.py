@@ -6,6 +6,7 @@ import inspect
 from dataclasses import dataclass
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
+from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 
 
 @dataclass
@@ -18,12 +19,13 @@ class Open3DLiveTransientStepCheck:
 def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
     inspector_source = inspect.getsource(Kraken3DInspector)
     editor_source = inspect.getsource(KrakenLayoutEditor)
+    open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)
     checks = [
         Open3DLiveTransientStepCheck(
             "Live refresh requests transient STEP overlays",
-            "def _refresh_live_preview_scene" in inspector_source
-            and "include_live_step_overlays=True" in inspector_source
-            and "update_state=False" in inspector_source,
+            "def build_live_preview" in open3d_refresh_service
+            and "include_live_step_overlays=True" in open3d_refresh_service
+            and "update_state=False" in open3d_refresh_service,
             "Live Mode builds a render-only trace bundle without overwriting the persistent 2D preview state.",
         ),
         Open3DLiveTransientStepCheck(
@@ -53,7 +55,7 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             "def _preview_render_rows" in editor_source
             and "def _preview_render_row_names" in editor_source
             and "_last_live_step_overlay_scene_bundle" in editor_source
-            and "self.editor._preview_render_rows(scene_bundle)" in inspector_source,
+            and "self.editor._preview_render_row_names(scene_bundle)" in open3d_refresh_service,
             "Surface mesh accounting uses the transient trace rows for the live bundle.",
         ),
         Open3DLiveTransientStepCheck(

@@ -6,6 +6,7 @@ import inspect
 from dataclasses import dataclass
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
+from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 
 
 @dataclass
@@ -18,6 +19,7 @@ class Open3DLiveModeCheck:
 def validate_open3d_live_mode() -> list[Open3DLiveModeCheck]:
     inspector_source = inspect.getsource(Kraken3DInspector)
     editor_source = inspect.getsource(KrakenLayoutEditor)
+    open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)
     checks = [
         Open3DLiveModeCheck(
             "Open 3D exposes a docked Live Controls panel",
@@ -55,7 +57,8 @@ def validate_open3d_live_mode() -> list[Open3DLiveModeCheck]:
             "Live Mode uses a debounced 3D retrace scheduler",
             "def schedule_live_refresh" in inspector_source
             and "def _run_live_refresh" in inspector_source
-            and "self.editor._preview_3d_sampling_mode()" in inspector_source
+            and "def build_live_preview" in open3d_refresh_service
+            and "self.editor._preview_3d_sampling_mode()" in open3d_refresh_service
             and "self.after(delay, self._run_live_refresh)" in inspector_source,
             "Live refresh builds the same 3D preview scene instead of a display-only branch.",
         ),

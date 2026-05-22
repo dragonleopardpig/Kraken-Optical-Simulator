@@ -9,6 +9,7 @@ from types import MethodType
 import numpy as np
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
+from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -34,6 +35,10 @@ class _FakeEditor:
         self.preview_3d_calls = 0
         self.debug_messages: list[str] = []
         self.current_trace = None
+        self._open3d_trace_refresh_service_instance = Open3DTraceRefreshService(self)
+
+    def _open3d_trace_refresh_service(self) -> Open3DTraceRefreshService:
+        return self._open3d_trace_refresh_service_instance
 
     def _current_preview_scene_trace(self):
         return self.current_trace
