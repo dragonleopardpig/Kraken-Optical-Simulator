@@ -218,8 +218,9 @@ kraken-vtk-tk-check
   face assignments force a retrace instead of reusing a stale scene bundle, so
   the displayed rays are rebuilt from the current row pose and role metadata.
   That edit-triggered retrace preserves the sampling mode already displayed in
-  Open 3D, so assigning a face function changes only surface physics metadata
-  and overlays; it does not silently swap an envelope/section bundle into a new
+  Open 3D, and `Done 2D` carries the same sampling choice back to the 2D plot,
+  so assigning a face function changes only surface physics metadata and
+  overlays; it does not silently swap an envelope/section bundle into a new
   point-cone launch.
 - `Snap STEP Normal->Optical Axis` now uses an entrance-face convention: the
   selected face center lands on the optical axis, and the selected face's

@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 from types import MethodType
 
-from KrakenOS.UI.layout_editor import Kraken3DInspector
+import numpy as np
+
+from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PRISM_42779_STEP = PROJECT_ROOT / "attachment" / "prisms" / "42779" / "step_42779.step"
 
 
 class _StatusVar:
@@ -135,12 +142,101 @@ def _validate_face_assignment_handlers_capture_mode_before_mutation() -> None:
             raise AssertionError(f"{name} does not pass the captured sampling mode into the forced retrace.")
 
 
+def _validate_done_2d_and_close_preserve_open3d_sampling() -> None:
+    finish_source = inspect.getsource(Kraken3DInspector.finish_stl_placement)
+    close_source = inspect.getsource(Kraken3DInspector._on_close)
+    refresh_source = inspect.getsource(KrakenLayoutEditor.refresh_plot)
+    if "sampling_mode: str | None = None" not in refresh_source:
+        raise AssertionError("refresh_plot does not accept a caller-preserved sampling mode.")
+    if "sampling_mode=self._active_refresh_sampling_mode()" not in finish_source:
+        raise AssertionError("Done 2D does not pass the active Open 3D sampling mode into refresh_plot.")
+    if "refresh_sampling_mode = self._active_refresh_sampling_mode()" not in close_source:
+        raise AssertionError("Open 3D close does not capture the active sampling mode before destroying the inspector.")
+    if "sampling_mode=refresh_sampling_mode" not in close_source:
+        raise AssertionError("Open 3D close does not pass the captured sampling mode into deferred refresh_plot.")
+
+
+def _validate_focus_and_vtk_teardown_are_guarded() -> None:
+    editor_source = inspect.getsource(KrakenLayoutEditor)
+    close_source = inspect.getsource(Kraken3DInspector._on_close)
+    destroy_source = inspect.getsource(Kraken3DInspector._destroy_vtk_render_window)
+    if "def _safe_focus_get" not in editor_source or "except (KeyError, tk.TclError)" not in editor_source:
+        raise AssertionError("Global copy/paste focus lookup is not guarded against transient Tk dialog widgets.")
+    if "_destroy_vtk_render_window()" not in close_source:
+        raise AssertionError("Open 3D close does not finalize the VTK render window before Tk destroys the widget.")
+    if "render_window.Finalize()" not in destroy_source:
+        raise AssertionError("VTK teardown helper does not finalize the render window.")
+
+
+def _launch_signature(scene_bundle) -> tuple[tuple[float, ...], ...]:
+    signature: list[tuple[float, ...]] = []
+    for path in list(getattr(scene_bundle, "ray_paths", []) or []):
+        points = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
+        if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+            continue
+        origin = points[0, :3]
+        direction = points[1, :3] - points[0, :3]
+        norm = float(np.linalg.norm(direction))
+        if not np.isfinite(norm) or norm <= 1e-12:
+            continue
+        direction = direction / norm
+        signature.append(tuple(float(value) for value in np.round(np.concatenate((origin, direction)), 8)))
+    return tuple(signature)
+
+
+def _validate_world_envelope_survives_off_axis_step_promotion() -> None:
+    if not PRISM_42779_STEP.exists():
+        raise RuntimeError(f"Expected STEP fixture: {PRISM_42779_STEP}")
+    app = KrakenLayoutEditor(headless=True)
+    try:
+        _system, _rays, before_bundle = app._build_preview_system_rays_bundle(
+            sampling_mode="world_envelope",
+            update_state=False,
+        )
+        before_signature = _launch_signature(before_bundle)
+        if len(before_signature) < 2:
+            raise AssertionError(f"Expected a multi-ray world envelope before promotion, got {len(before_signature)}.")
+
+        app.imported_optical_step_path = PRISM_42779_STEP
+        app.optical_step_rotation_x_deg = 0.0
+        app.optical_step_rotation_y_deg = 90.0
+        app.optical_step_rotation_z_deg = 180.0
+        app.optical_step_placement_offset_xyz = (0.0, 42.217029364814806, 37.30257804865933)
+        app.select_step_component("optical")
+        promoted = app.promote_imported_step_to_optical_solid_row(
+            "optical",
+            insert_at=1,
+            open_face_editor=False,
+            clear_overlay=True,
+            refresh_open_3d=False,
+        )
+        if promoted is None:
+            raise AssertionError("Off-axis STEP promotion returned no row.")
+        _system, _rays, after_bundle = app._build_preview_system_rays_bundle(
+            sampling_mode="world_envelope",
+            update_state=False,
+        )
+        after_signature = _launch_signature(after_bundle)
+        if len(after_signature) != len(before_signature):
+            raise AssertionError(
+                "World-envelope launch count changed after off-axis STEP promotion: "
+                f"before={len(before_signature)}, after={len(after_signature)}."
+            )
+        if after_signature != before_signature:
+            raise AssertionError("World-envelope launch origins/directions changed after off-axis STEP promotion.")
+    finally:
+        app.destroy()
+
+
 def main() -> int:
     _validate_forced_refresh_preserves_active_mode()
     _validate_explicit_mode_still_wins()
     _validate_missing_mode_falls_back_to_3d_default()
     _validate_current_trace_records_active_mode()
     _validate_face_assignment_handlers_capture_mode_before_mutation()
+    _validate_done_2d_and_close_preserve_open3d_sampling()
+    _validate_focus_and_vtk_teardown_are_guarded()
+    _validate_world_envelope_survives_off_axis_step_promotion()
     print("Open 3D face assignment sampling stability validation passed.")
     return 0
 

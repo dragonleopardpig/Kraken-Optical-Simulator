@@ -13997,7 +13997,10 @@ class Kraken3DInspector(tk.Toplevel):
     def finish_stl_placement(self) -> None:
         if self._stl_placement_dirty:
             try:
-                self.editor.refresh_plot(suppress_analysis=True)
+                self.editor.refresh_plot(
+                    suppress_analysis=True,
+                    sampling_mode=self._active_refresh_sampling_mode(),
+                )
                 self._stl_placement_dirty = False
                 self.editor.status_var.set("Applied CAD/STL placement to the 2D layout.")
             except Exception as exc:
@@ -14007,11 +14010,13 @@ class Kraken3DInspector(tk.Toplevel):
 
     def _on_close(self) -> None:
         dirty = bool(getattr(self, "_stl_placement_dirty", False))
+        refresh_sampling_mode = self._active_refresh_sampling_mode()
         self._stl_placement_dirty = False
         self.editor._three_d_inspector = None
         self._cancel_live_refresh()
         self._close_step_rotation_handler()
         self._close_stl_placement_handler()
+        self._destroy_vtk_render_window()
         try:
             self.destroy()
         except Exception:
@@ -14019,7 +14024,10 @@ class Kraken3DInspector(tk.Toplevel):
         if dirty:
             def refresh_2d_after_close() -> None:
                 try:
-                    self.editor.refresh_plot(suppress_analysis=True)
+                    self.editor.refresh_plot(
+                        suppress_analysis=True,
+                        sampling_mode=refresh_sampling_mode,
+                    )
                 except Exception as exc:
                     self.editor.status_var.set(f"CAD/STL placement saved; 2D refresh failed: {_short_error_message(exc)}")
                     self.editor.append_debug(f"CAD/STL placement close refresh failed: {exc}")
@@ -14029,6 +14037,28 @@ class Kraken3DInspector(tk.Toplevel):
                 self.editor.status_var.set("3D CAD/STL placement closed; refreshing 2D layout.")
             except Exception as exc:
                 self.editor.append_debug(f"CAD/STL placement close refresh failed: {exc}")
+
+    def _destroy_vtk_render_window(self) -> None:
+        try:
+            if self._orientation_widget is not None:
+                self._orientation_widget.EnabledOff()
+        except Exception:
+            pass
+        try:
+            if self._vtk_interactor is not None:
+                self._vtk_interactor.TerminateApp()
+        except Exception:
+            pass
+        try:
+            if self._vtk_widget is not None:
+                render_window = self._vtk_widget.GetRenderWindow()
+                if render_window is not None:
+                    render_window.Finalize()
+        except Exception:
+            pass
+        self._orientation_widget = None
+        self._vtk_interactor = None
+        self._renderer = None
 
 
 class OpticalStlPlacementDialog(tk.Toplevel):
@@ -48715,7 +48745,7 @@ class KrakenLayoutEditor(tk.Tk):
             axis.tick_params(axis="both", which="major", labelsize=8)
             axis.grid(True, alpha=0.2)
 
-    def refresh_plot(self, *, suppress_analysis: bool = False) -> None:
+    def refresh_plot(self, *, suppress_analysis: bool = False, sampling_mode: str | None = None) -> None:
         active_modes = active_plot_modes(self.selected_analysis_modes, suppress_analysis=suppress_analysis)
         status_label = plot_status_label(active_modes, self.layout_preview_mode or "none")
         self._set_analysis_parallel_status(status_label, 1, False)
@@ -48800,7 +48830,7 @@ class KrakenLayoutEditor(tk.Tk):
         try:
             wavelength = self._current_wavelength()
             scene_sampling_mode = self._preview_scene_sampling_mode()
-            preview_sampling_mode = self._preview_2d_sampling_mode()
+            preview_sampling_mode = str(sampling_mode or "").strip() or self._preview_2d_sampling_mode()
             if preview_sampling_mode == "display_slice":
                 preview_sampling_mode = scene_sampling_mode
             capture = io.StringIO()
@@ -56115,9 +56145,15 @@ class KrakenLayoutEditor(tk.Tk):
         self._text_popup_menu.tk_popup(event.x_root, event.y_root)
         return "break"
 
+    def _safe_focus_get(self):
+        try:
+            return self.focus_get()
+        except (KeyError, tk.TclError):
+            return None
+
     def _copy_selection_from_focus(self, _event=None):
         candidates = []
-        focused = self.focus_get()
+        focused = self._safe_focus_get()
         if focused is getattr(self, "table", None):
             return self.copy_selected_rows_to_clipboard(_event)
         if isinstance(focused, tk.Text):
@@ -56145,7 +56181,7 @@ class KrakenLayoutEditor(tk.Tk):
         return None
 
     def _paste_rows_from_focus(self, _event=None):
-        focused = self.focus_get()
+        focused = self._safe_focus_get()
         if focused is getattr(self, "table", None):
             return self.paste_rows_from_clipboard(_event)
         return None
@@ -63120,18 +63156,8 @@ class KrakenLayoutEditor(tk.Tk):
                 self._preview_field_bundle_count = len(default_cone_bundles)
                 system.Vignetting(0)
                 return
-        if mode == "world_envelope" and use_legacy_default_cone:
-            self.append_debug(
-                "Pupil / field source cone in 3D scene mode launches an extended reference "
-                "aperture cone. Use Random point cone or a physical scene source for a "
-                "single-point emitter cone."
-            )
-            reference_bundles, reference_ray_count = self._build_default_nonseq_reference_world_bundles(pupil_radius)
-            if reference_bundles:
-                rays.clean()
-                self._trace_preview_bundles(system, rays, wavelength, reference_bundles)
-                self._preview_field_ray_count = max(1, int(reference_ray_count))
-                self._preview_field_bundle_count = len(reference_bundles)
+        if mode == "world_envelope":
+            if self._trace_world_envelope_rays(system, rays, wavelength, pupil_radius):
                 system.Vignetting(0)
                 return
         if use_legacy_default_cone and mode != "world_envelope":
@@ -63141,10 +63167,6 @@ class KrakenLayoutEditor(tk.Tk):
                 self._trace_preview_bundles(system, rays, wavelength, default_cone_bundles)
                 self._preview_field_ray_count = max(1, int(default_cone_ray_count))
                 self._preview_field_bundle_count = len(default_cone_bundles)
-                system.Vignetting(0)
-                return
-        if mode == "world_envelope":
-            if self._trace_world_envelope_rays(system, rays, wavelength, pupil_radius):
                 system.Vignetting(0)
                 return
         if mode == "world_sections":
