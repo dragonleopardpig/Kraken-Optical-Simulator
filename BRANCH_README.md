@@ -51,7 +51,7 @@ Estimated branch status:
 | Sequential ordered-path special case | Achieved | `██████████ 100%` | Conventional lens prescriptions, paraxial/wavefront workflows, and zero-field launch semantics remain reproducible as ordered paths. |
 | 3D scene with 2D projections | Achieved | `██████████ 100%` | YZ, XZ, and XY views are generated from traced 3D scene data; native non-sequential scenes project the same traced 3D ray set in all three 2D planes instead of applying legacy YZ-only folded/branch overrides or center-section filtering, Open 3D reuses the active SceneBundle when one is current and otherwise retraces with the 3D sampling mode, promoted non-sequential scenes preserve explicit source-cone or collimated-source sampling instead of silently switching to an aperture-envelope sampler, edit-triggered Open 3D retraces preserve the displayed sampling mode so right-click face assignment cannot turn a current envelope/section bundle into a new point-cone launch, default non-sequential source cones are traced as filled 3D point cones rather than meridional fan slices after STEP promotion or face assignment, the main Source panel exposes the cone half-angle used by point-cone and source-cone launches, saved 2D layout scripts preserve source intent, categorized view/scene/carry control rows with a toolbar layout validator, direct optical/lens/camera/LED STEP import, a distinct arbitrary-optical STEP overlay slot that does not replace the lens overlay, immediate cursor-attached carry placement for new optical STEP imports, free STEP carry placement, press-hold or drag-to-lift STEP movement with an in-scene center grip, release-to-drop, no OS pointer warping, Esc cancellation with selection clearing, blank-click deselection, middle-drag CAD-style view pan, Ctrl-drag camera pause, default STEP-face hover outlines plus row-backed CAD/STL face hover previews with in-scene assignment badges, stale face-hover outlines are cleared when a promoted row enters or moves through hold-drag carry, row-owned edge and assigned-face tint actors move with the promoted body during drag instead of leaving ghosts, a persistent pickable dotted Optical Axis guide independent of ray visibility with pre-click hover highlight and a solid selected-axis overlay after normal snap, traced chief-ray bend segments become additional pickable dotted `Optical Axis 2+` guides only after real physical surface events, two-click STEP-face-normal-to-optical-axis snapping that treats the picked face as the entrance face and points its outward normal upstream, face-specific row-to-optical-axis anchoring, promotion of positioned STEP overlays to file-backed optical solid rows with default Uncoated interaction face metadata, direct hold-drag movement for promoted row-backed optical solids, lighter transparent promoted-solid bodies with two-layer dark silhouette/body-colored feature edges, suppressed file-backed face triangulation edges, and no selected-body triangle mesh, Open 3D right-click face-function assignment with physics-only interaction-surface semantics and non-pickable assigned-face surface tints, transparent row-backed STEP bodies after face assignment and ray-on refresh, structured Open3DTrace click/assignment/refresh diagnostics, double-sided scene surface actors plus transactional scene refresh that keeps prior valid surface meshes if a trace rebuild returns no or suspiciously incomplete surface meshes, shared SceneBundle-envelope 2D/Open 3D ray display with escaped-tail capping and a penta-prism YZ/XZ/XY projection-sync validator, event-synced ray paths preserving raykeeper continuation after CAD/prism exits that do not emit a terminal event while avoiding duplicate detector terminal endpoints, detector-miss diagnostics capped within the detector plane, selected-ray face/action labels in 2D and embedded Open 3D, diagnostic line coloring for stopped/absorbed rays while ordinary escaped rays preserve source/wavelength color, an in-viewport Open 3D ray-terminal summary that separates detector hits, misses, escaped, stopped, absorbed, and bounded display rays, all Open 3D terminal endpoint disks gated behind the Terminal diagnostics toggle, explicit CAD/STL placement side-panel entry instead of selection-triggered popups, and Sphinx coverage, hover-highlighted optional single-half-arc in-scene STEP/row rotation handles with a toolbar `Rot` selector for 15/30/45/90/180 degree steps and separately pickable larger positive/negative cone end arrows, opt-in reference-plane, detector-footprint, terminal-miss, and placement-handle diagnostic toggles plus an always-visible active Object launch aperture in Open 3D when that aperture is the selected source, hover/click terminal diagnostics, and top-level Done 2D/Close refresh controls. |
 | Separate sources, objects, detectors | Achieved | `██████████ 100%` | Scene sources, scene targets, and row-backed 3D placement records are first-class scene data; target role, detector metadata, active target selection, snap/grid intent, placement anchors, Open 3D placement handles with visible grid planes suppressed, snap-aware click/drag translate-rotate handles, imported STEP snap-to-target placement, row-to-target snap constraints, row-to-target normal-orientation constraints, row-to-optical-axis centering with regular rays hidden during target pick, named detector/object/active-target normal previews, row-to-ray vector-orientation constraints, source-vector constraints, Path-view frame constraints, local CAD-axis constraints, and explicit Scene Source Manager constraints are preserved from KrakenOS row metadata and scene graph export. |
-| Live 3D authoring | In progress | `█████████░ 94%` | Open 3D now has a left-docked Live Controls panel bound to the same Source, Field, and Trace / Display variables as the main left panel. Live Mode schedules debounced 3D retraces after source edits, main left-panel edits, and STEP carry/placement changes, using the same 3D preview sampling path. Imported arbitrary optical STEP overlays now enter live traces as transient file-backed optical solid rows, so rays can interact with the unpromoted overlay during placement without inserting a row into the editable table. The transient optical STEP row plan is cached when overlay pose and row context are unchanged, reducing repeated remeshing during source-only Live Mode refreshes. Open 3D now renders transient rows from the live render-row list, suppresses the duplicate display-only overlay during live trace, and displays the full CAD/STL body with strong cleaned feature edges. A headless STEP1-STEP8 workflow capture validates the import, carry, transient trace, promotion, generated bend/exit-axis records, traced-axis cascade placement of a second STEP prism, final Trace Ray path, and event face/action sequences. `Accept STEP Placement` commits the current overlay into a persistent row-backed optical solid and clears the display-only overlay. Promoted optical-solid rows can now be hold-dragged directly in Open 3D after promotion, stale face-hover outlines are cleared at drag start, row-owned edge/tint actors translate with the body during drag, file-backed rows require an explicit face click before Center Row->Optical Axis, Delete/Backspace removes the selected imported STEP overlay or selected promoted STEP optical-solid row, and source-cone plus collimated-source launch patterns remain stable across the overlay-to-row and face-assignment transitions. Open 3D now has a right-docked STEP element browser that lists imported overlays and promoted STEP optical-solid rows under Optical Element, Imaging Lens, and Camera / Detector; clicking a browser item selects and highlights it in the viewport, syncs promoted rows back to the editable table, and exposes selected-element property/actions. STEP face hover badges now report both the live pick coordinate and the detected surface center, while `Snap STEP Normal->Optical Axis` remains pick-point anchored for through-body/internal faces and the new `Center Surface->Axis` action moves the selected face centroid to the chosen optical-axis point without changing orientation. Delete/Backspace target resolution and selected STEP face records have started moving behind the toolkit-light `Open3DStepStateService`, which chooses between the active imported overlay and selected promoted STEP rows and normalizes picked-point/surface-center/normal state outside the Tk/VTK widget layer. The remaining architecture work is making continuous drag traces faster on large CAD meshes and moving import, carry, promote, snap, rotate, and delete transitions into that same service-owned state machine. |
+| Live 3D authoring | In progress | `█████████░ 94%` | Open 3D now has a left-docked Live Controls panel bound to the same Source, Field, and Trace / Display variables as the main left panel. Live Mode schedules debounced 3D retraces after source edits, main left-panel edits, and STEP carry/placement changes, using the same 3D preview sampling path. Imported arbitrary optical STEP overlays now enter live traces as transient file-backed optical solid rows, so rays can interact with the unpromoted overlay during placement without inserting a row into the editable table. The transient optical STEP row plan is cached when overlay pose and row context are unchanged, reducing repeated remeshing during source-only Live Mode refreshes. Open 3D now renders transient rows from the live render-row list, suppresses the duplicate display-only overlay during live trace, and displays the full CAD/STL body with strong cleaned feature edges. A headless STEP1-STEP8 workflow capture validates the import, carry, transient trace, promotion, generated bend/exit-axis records, traced-axis cascade placement of a second STEP prism, final Trace Ray path, and event face/action sequences. `Accept STEP Placement` commits the current overlay into a persistent row-backed optical solid and clears the display-only overlay. Promoted optical-solid rows can now be hold-dragged directly in Open 3D after promotion, stale face-hover outlines are cleared at drag start, row-owned edge/tint actors translate with the body during drag, file-backed rows require an explicit face click before Center Row->Optical Axis, Delete/Backspace removes the selected imported STEP overlay or selected promoted STEP optical-solid row, and source-cone plus collimated-source launch patterns remain stable across the overlay-to-row and face-assignment transitions. Open 3D now has a right-docked STEP element browser that lists imported overlays and promoted STEP optical-solid rows under Optical Element, Imaging Lens, and Camera / Detector; clicking a browser item selects and highlights it in the viewport, syncs promoted rows back to the editable table, and exposes selected-element property/actions. STEP face hover badges now report both the live pick coordinate and the detected surface center, while `Snap STEP Normal->Optical Axis` now anchors on the surface center by default and a separate pick-point normal snap remains available for intentional decentered beam-splitter or offset placement. Delete/Backspace target resolution and selected STEP face records have started moving behind the toolkit-light `Open3DStepStateService`, which chooses between the active imported overlay and selected promoted STEP rows and normalizes picked-point/surface-center/normal state outside the Tk/VTK widget layer. The remaining architecture work is making continuous drag traces faster on large CAD meshes and moving import, carry, promote, snap, rotate, and delete transitions into that same service-owned state machine. |
 | Upstream main integration | Triaged | `████░░░░░░ 40%` | Local `main` is fast-forwarded to `origin/main` without checking out or dirtying the branch. The low-risk packaging metadata from upstream has been adopted through `pyproject.toml`, and local prism attachment byproducts are ignored so user screenshots/CAD side files do not block sync. Runtime changes around `BundleTrace`, `RayKeeper`, `Display`, `GeometryBackend`, `MeshBlock`, lazy PyVista, and new pytest coverage are useful but require selective integration because a full merge would overwrite or remove branch-specific UI, Sphinx, optimization, and scene-tracing work. |
 | Event-law physics and diagnostics | Achieved | `██████████ 100%` | Canonical ray events own detector reach by default and feed inspectors, per-ray detector aperture status, detector aperture hit/miss reports, source illumination, detector maps, path PSF/MTF, coherent/diffraction analyses, Gaussian-q, throughput, trace-path reports, detector-miss local geometry, detector-plane contact classification for output-port-followed Image targets, folded-preview provenance, direct Open 3D mirror-face hits and TIR/reflection events that keep same-solid CAD/STL faces eligible until a real exit or terminal event, scalar Snell finite-vector hardening at critical/grazing incidence, scene-scaled non-sequential near-hit tolerances instead of the old fixed 0.05 mm skip window, Open 3D terminal summaries that report the last CAD face/action plus the dominant face/action path sequence for escaped or stopped rays, and CSV export. |
 | Arbitrary prisms and CAD solids | Achieved | `██████████ 100%` | Face identity, orientation-invariant coplanar CAD-face grouping with same-plane assignment propagation, geometry-derived uncoated face-intent suggestions, direct picked-face assignment without Left/Right/Up/Down side labels or inferred output ports, display-only STEP overlay promotion into traceable row-backed optical solids with positive axial clearance and scene-object `AxisMove=0` isolation, same-row face continuation for CAD/STL reflection and total-internal-reflection events, imported right-angle STEP central-ray TIR on an uncoated BK7-air hypotenuse, cascaded row-scoped boundary/volume records, real multi-STL trace coverage, runtime output-port scene bounds, closed-solid media transitions, Image-as-detector terminal policy, detector-miss plane projection, through-body transparent CAD picking for internal faces such as cube beam-splitter diagonal planes, and prism/CAD diagnostics are covered by regression validators. |
@@ -59,20 +59,25 @@ Estimated branch status:
 Overall branch direction: keep moving toward one scene/event truth source while
 preserving exact sequential prescriptions as the ordered-path special case.
 
-Latest movement on 2026-05-23: `Open3DStepStateService` now owns the normalized
+Latest movement on 2026-05-23: Open 3D normal-to-axis placement now uses the
+selected surface center as the default anchor, so most imported optical
+components land with the optical axis through the face centroid while the face
+normal is aligned to the axis. A separate `Snap STEP Pick-Point
+Normal->Optical Axis` command keeps the older decentered anchor available when
+that is intentional, for example an off-center beam-splitter pick or another
+deliberate offset.
+
+Earlier movement on 2026-05-23: `Open3DStepStateService` now owns the normalized
 selected STEP face record used by axis-alignment actions. The inspector still
 renders hover outlines and handles mouse events, but picked-point,
 surface-center, normal-vector, and active imported-overlay validation now pass
 through a service contract shared by normal snap and surface-center snap.
 
-Earlier movement on 2026-05-23: Open 3D now separates two STEP-to-axis
-alignment intents. `Snap STEP Normal->Optical Axis` keeps the clicked surface
-point as the anchor, which is intentional for through-body picking of internal
-faces; STEP hover badges now show the live pick coordinate plus the detected
-surface center so the anchor is visible before clicking. A new
-`Center STEP Surface->Optical Axis` menu command and `Center Surface->Axis`
-browser action translate the selected face centroid to the clicked optical-axis
-guide point without changing the current orientation.
+Earlier movement on 2026-05-23: Open 3D separated two STEP-to-axis alignment
+intents and added hover badges for both the live pick coordinate and detected
+surface center. `Center STEP Surface->Optical Axis` in the menu and `Center
+Surface->Axis` in the browser translate the selected face centroid to the
+clicked optical-axis guide point without changing the current orientation.
 
 Earlier movement on 2026-05-23: The Open 3D STEP browser now treats
 programmatic tree selections as passive state sync. Browser refresh can select
@@ -298,17 +303,19 @@ kraken-vtk-tk-check
   overlays; it does not silently swap an envelope/section bundle into a new
   point-cone launch.
 - `Snap STEP Normal->Optical Axis` now uses an entrance-face convention: the
-  clicked point on the selected face lands on the optical axis, and the
-  selected face's outward normal is aligned opposite the axis propagation
-  direction. This picked-point anchor is intentional for through-body/internal
-  face selection. The hover badge reports both `Pick=(x,y,z)` and
-  `Center=(x,y,z)`, and `Center STEP Surface->Optical Axis` / `Center
-  Surface->Axis` is available when the desired action is to translate the
-  detected face centroid to the axis without rotating the STEP component. This
-  keeps the imported solid upstream-facing after snap, so a subsequent Uncoated
-  entrance assignment followed by a Full Reflecting internal face assignment
-  traces the intended closed-solid path instead of a backward single-boundary
-  hit.
+  selected face center lands on the optical axis, and the selected face's
+  outward normal is aligned opposite the axis propagation direction. The hover
+  badge reports both `Pick=(x,y,z)` and `Center=(x,y,z)`. The default centered
+  snap is the right choice for most optical components; `Snap STEP Pick-Point
+  Normal->Optical Axis` is the explicit decentered variant for intentional
+  offsets, including beam-splitter placement where the user wants the clicked
+  point rather than the face centroid on the axis. `Center STEP
+  Surface->Optical Axis` / `Center Surface->Axis` remains a translation-only
+  command for moving the detected face centroid to the axis without rotating
+  the STEP component. This keeps the imported solid upstream-facing after snap,
+  so a subsequent Uncoated entrance assignment followed by a Full Reflecting
+  internal face assignment traces the intended closed-solid path instead of a
+  backward single-boundary hit.
 - Arbitrary optical STEP, lens, camera, and LED STEP overlays can now be
   imported directly from the Open 3D `CAD / target -> Import STEP` submenu. The
   generic optical STEP entry now uses a separate `optical` overlay slot, so it
@@ -330,8 +337,9 @@ kraken-vtk-tk-check
   Lens, and Camera / Detector, and a browser click drives the same 3D highlight
   and table selection state as clicking the component in the viewport. The
   selected-item property area reports file, pose, and face-assignment count,
-  with Carry, Accept, Promote, Delete, Faces, Center Axis, Normal->Axis, and
-  Center Surface->Axis actions scoped to the browser selection.
+  with Carry, Accept, Promote, Delete, Faces, Center Axis, Center Normal->Axis,
+  Pick Normal->Axis, and Center Surface->Axis actions scoped to the browser
+  selection.
 - Open 3D imported STEP overlays are carried with free movement. Imported STEP
   carry now uses a press-hold or drag-to-lift gesture on an existing STEP body:
   hold briefly, or start
@@ -352,12 +360,12 @@ kraken-vtk-tk-check
   Axis selection uses a screen-space nearest-line test against the same guide
   record that is drawn in the viewport, so it does not depend on VTK hitting a
   second actor and it still works when regular ray drawing is
-  hidden. The picked face point moves onto the clicked guide point, and the
-  picked face normal is rotated parallel to the layout optical axis. If the sign
-  is not the intended one, use the colored rotation handles to flip the STEP
-  before assigning Uncoated, Reflective, or other optical face functions. When
-  the face centroid rather than the clicked point should land on the axis, use
-  `Center Surface->Axis` after selecting the face. Plain
+  hidden. By default the picked face center moves onto the clicked guide point,
+  and the picked face normal is rotated parallel to the layout optical axis. If
+  the sign is not the intended one, use the colored rotation handles to flip the
+  STEP before assigning Uncoated, Reflective, or other optical face functions.
+  When the clicked point rather than the face centroid should land on the axis,
+  use `Pick Normal->Axis` after selecting the face. Plain
   CAD/STL row selection no longer opens the placement panel by itself; pose
   controls open from explicit placement commands, while right-click face
   assignment remains available on the selected row. Hovering row-backed CAD/STL

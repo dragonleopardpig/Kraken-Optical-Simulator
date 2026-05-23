@@ -174,6 +174,7 @@ def main() -> int:
     step_carry_snap_target_apply = inspect.getsource(Kraken3DInspector._apply_step_carry_snap_target)
     step_feature_action_selection = inspect.getsource(Kraken3DInspector._step_feature_action_selection)
     step_normal_snap = inspect.getsource(Kraken3DInspector.snap_selected_step_normal_to_optical_axis)
+    step_pick_normal_snap = inspect.getsource(Kraken3DInspector.snap_selected_step_pick_point_normal_to_optical_axis)
     step_normal_axis_start = inspect.getsource(Kraken3DInspector.start_step_normal_axis_pick)
     step_normal_axis_apply = inspect.getsource(Kraken3DInspector._apply_step_normal_axis_pick)
     step_surface_center_action = inspect.getsource(Kraken3DInspector.center_selected_step_surface_to_optical_axis)
@@ -388,14 +389,21 @@ def main() -> int:
             and "_step_carry_ray_target(state" not in step_carry_plane_motion,
         ),
         (
-            "Open 3D STEP normal snap is face-normal based",
-            "Snap STEP Normal->Optical Axis" in init_with_top_controls
+            "Open 3D STEP normal snap defaults to surface-center anchoring",
+            "Snap STEP Surface-Center Normal->Optical Axis" in init_with_top_controls
+            and "Snap STEP Pick-Point Normal->Optical Axis" in init_with_top_controls
+            and "Center Normal->Axis" in step_admin_source
+            and "Pick Normal->Axis" in step_admin_source
             and "_remember_selected_step_feature" in pick
             and "start_step_normal_axis_pick(step_label)" in pick
             and "step_feature_selection(" in remember_step_feature
             and "selected_feature_action(" in step_feature_action_selection
             and "normal_world" in open3d_step_state_service
-            and "start_step_normal_axis_pick(label)" in step_normal_snap
+            and 'anchor_mode="surface_center"' in step_normal_snap
+            and 'anchor_mode="pick_point"' in step_pick_normal_snap
+            and "selection.surface_center_world" in step_normal_axis_apply
+            and "selection.pick_point_world if anchor_mode == \"pick_point\" else selection.surface_center_world" in step_normal_axis_apply
+            and "_step_normal_axis_anchor_mode = anchor_mode" in step_normal_axis_start
             and "_step_normal_axis_pick_mode = True" in step_normal_axis_start
             and "_actor_optical_axis_map" in pick
             and "_apply_step_normal_axis_pick(axis_info)" in pick

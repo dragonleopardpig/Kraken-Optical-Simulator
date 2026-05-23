@@ -83,10 +83,18 @@ class Open3DStepAdminPanel:
         self._selection_buttons["delete"] = self._grid_button(action_frame, 1, 1, "Delete", self._delete_selected)
         self._selection_buttons["faces"] = self._grid_button(action_frame, 2, 0, "Faces", self._faces_selected)
         self._selection_buttons["center"] = self._grid_button(action_frame, 2, 1, "Center Axis", self._center_selected)
-        self._selection_buttons["normal"] = self._grid_button(action_frame, 3, 0, "Normal->Axis", self._normal_axis_selected, columnspan=2)
-        self._selection_buttons["surface_center"] = self._grid_button(
+        self._selection_buttons["normal"] = self._grid_button(action_frame, 3, 0, "Center Normal->Axis", self._normal_axis_selected, columnspan=2)
+        self._selection_buttons["pick_normal"] = self._grid_button(
             action_frame,
             4,
+            0,
+            "Pick Normal->Axis",
+            self._pick_normal_axis_selected,
+            columnspan=2,
+        )
+        self._selection_buttons["surface_center"] = self._grid_button(
+            action_frame,
+            5,
             0,
             "Center Surface->Axis",
             self._surface_center_selected,
@@ -324,6 +332,7 @@ class Open3DStepAdminPanel:
             "faces": row_selected,
             "center": overlay_selected or row_selected,
             "normal": overlay_selected,
+            "pick_normal": overlay_selected,
             "surface_center": overlay_selected,
         }
         for key, button in self._selection_buttons.items():
@@ -393,6 +402,11 @@ class Open3DStepAdminPanel:
     def _normal_axis_selected(self) -> None:
         if self._select_current_for_action():
             self.inspector.snap_selected_step_normal_to_optical_axis()
+            self.refresh()
+
+    def _pick_normal_axis_selected(self) -> None:
+        if self._select_current_for_action():
+            self.inspector.snap_selected_step_pick_point_normal_to_optical_axis()
             self.refresh()
 
     def _surface_center_selected(self) -> None:

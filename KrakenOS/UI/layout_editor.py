@@ -5411,6 +5411,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
         self._step_normal_axis_pick_mode = False
+        self._step_normal_axis_anchor_mode = "surface_center"
         self._step_surface_center_axis_pick_mode = False
         self._step_carry_grid_label: str | None = None
         self._step_carry_grid_spacing_mm: float | None = None
@@ -9259,10 +9260,28 @@ class Kraken3DInspector(tk.Toplevel):
         if not label:
             self.status_var.set("Snap STEP Normal->Optical Axis: select or import a STEP component first.")
             return
-        if self._step_feature_action_selection(label=label, require_pick_point=True, require_normal=True) is None:
+        if self._step_feature_action_selection(label=label, require_surface_center=True, require_normal=True) is None:
             self.status_var.set("Snap STEP Normal->Optical Axis: click a planar STEP face first.")
             return
-        self.start_step_normal_axis_pick(label)
+        self.start_step_normal_axis_pick(label, anchor_mode="surface_center")
+
+    def snap_selected_step_pick_point_normal_to_optical_axis(self) -> None:
+        service = self.editor._open3d_step_state_service()
+        label = service.selected_import_label(
+            (
+                self._selected_step_feature_label,
+                self.editor._selected_step_label,
+                self._step_rotation_active_label,
+                self._step_carry_active_label,
+            )
+        )
+        if not label:
+            self.status_var.set("Snap Pick Point Normal->Optical Axis: select or import a STEP component first.")
+            return
+        if self._step_feature_action_selection(label=label, require_pick_point=True, require_normal=True) is None:
+            self.status_var.set("Snap Pick Point Normal->Optical Axis: click a planar STEP face first.")
+            return
+        self.start_step_normal_axis_pick(label, anchor_mode="pick_point")
 
     def center_selected_step_surface_to_optical_axis(self) -> None:
         service = self.editor._open3d_step_state_service()
@@ -9282,16 +9301,24 @@ class Kraken3DInspector(tk.Toplevel):
             return
         self.start_step_surface_center_axis_pick(label)
 
-    def start_step_normal_axis_pick(self, label: str | None = None) -> None:
+    def start_step_normal_axis_pick(self, label: str | None = None, *, anchor_mode: str = "surface_center") -> None:
         service = self.editor._open3d_step_state_service()
         label = service.selected_import_label((label, self._selected_step_feature_label))
         if not label:
             self.status_var.set("Snap STEP Normal->Optical Axis: select or import a STEP component first.")
             return
-        if self._step_feature_action_selection(label=label, require_pick_point=True, require_normal=True) is None:
+        anchor_mode = "pick_point" if str(anchor_mode).strip().lower() == "pick_point" else "surface_center"
+        selection = self._step_feature_action_selection(
+            label=label,
+            require_pick_point=True,
+            require_surface_center=(anchor_mode == "surface_center"),
+            require_normal=True,
+        )
+        if selection is None:
             self.status_var.set("Snap STEP Normal->Optical Axis: click a planar STEP face first.")
             return
         self._step_normal_axis_pick_mode = True
+        self._step_normal_axis_anchor_mode = anchor_mode
         self._step_surface_center_axis_pick_mode = False
         self._step_carry_follow_state = None
         self._step_carry_drag_state = None
@@ -9307,8 +9334,11 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_axis_pick_cursor(True)
         self._update_mode_badge()
         self.refresh_from_editor()
+        anchor_text = "surface center" if anchor_mode == "surface_center" else "picked point"
+        coordinate = selection.surface_center_world if anchor_mode == "surface_center" else selection.pick_point_world
         self.status_var.set(
-            f"Snap {label.upper()} STEP normal: click the dotted Optical Axis guide."
+            f"Snap {label.upper()} STEP normal using {anchor_text}: click the dotted Optical Axis guide. "
+            f"Anchor={self._world_xyz_text(coordinate)}."
         )
 
     def start_step_surface_center_axis_pick(self, label: str | None = None) -> None:
@@ -9343,12 +9373,17 @@ class Kraken3DInspector(tk.Toplevel):
         )
 
     def _apply_step_normal_axis_pick(self, axis_info: dict[str, object]) -> None:
-        selection = self._step_feature_action_selection(require_pick_point=True, require_normal=True)
+        anchor_mode = "pick_point" if str(getattr(self, "_step_normal_axis_anchor_mode", "surface_center")).strip().lower() == "pick_point" else "surface_center"
+        selection = self._step_feature_action_selection(
+            require_pick_point=True,
+            require_surface_center=(anchor_mode == "surface_center"),
+            require_normal=True,
+        )
         if selection is None:
             self.status_var.set("Snap STEP Normal->Optical Axis: click a planar STEP face first.")
             return
         label = selection.label
-        center = selection.pick_point_world
+        center = selection.pick_point_world if anchor_mode == "pick_point" else selection.surface_center_world
         normal = selection.normal_world
         axis_frame = self._optical_axis_frame_from_pick(axis_info, self._picker)
         if axis_frame is None:
@@ -9366,6 +9401,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_active_label = label
         self._step_carry_follow_state = None
         self._step_normal_axis_pick_mode = False
+        self._step_normal_axis_anchor_mode = "surface_center"
         self._step_surface_center_axis_pick_mode = False
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
@@ -9382,8 +9418,9 @@ class Kraken3DInspector(tk.Toplevel):
             self.editor.append_debug(f"3D STEP normal-axis snap refresh failed: {exc}")
         axis_label = str(result.get("axis_label", "optical axis"))
         angle_error = float(result.get("angle_error_deg", float("nan")))
+        anchor_text = "picked point" if anchor_mode == "pick_point" else "surface center"
         self.status_var.set(
-            f"{label.upper()} STEP face normal snapped to {axis_label} "
+            f"{label.upper()} STEP face normal snapped to {axis_label} using {anchor_text} "
             f"(error {angle_error:.6g} deg). Use rotation handles to flip if needed."
         )
 
@@ -10852,7 +10889,8 @@ class Kraken3DInspector(tk.Toplevel):
             return f"SNAP {snap_text} STEP -> TARGET\nClick detector/object/target row or face."
         if self._step_normal_axis_pick_mode:
             label = str(self._selected_step_feature_label or self.editor._selected_step_label or "STEP").upper()
-            return f"SNAP {label} NORMAL -> AXIS\nClick the dotted Optical Axis guide."
+            anchor = "PICK POINT" if str(getattr(self, "_step_normal_axis_anchor_mode", "surface_center")).strip().lower() == "pick_point" else "SURFACE CENTER"
+            return f"SNAP {label} {anchor} NORMAL -> AXIS\nClick the dotted Optical Axis guide."
         if self._step_surface_center_axis_pick_mode:
             label = str(self._selected_step_feature_label or self.editor._selected_step_label or "STEP").upper()
             return f"CENTER {label} SURFACE -> AXIS\nClick the dotted Optical Axis guide."
@@ -13879,8 +13917,9 @@ class Kraken3DInspector(tk.Toplevel):
                     axis_id = str(axis_info.get("axis_id", "") or "").strip()
                     axis_label = str(axis_info.get("axis_label", "Optical Axis") or "Optical Axis")
                     self._set_optical_axis_highlight(axis_id)
-                    self._update_hover_status(f"{axis_label}\nClick to align selected STEP face.", display_xy=(x, y), render=True)
-                    self.status_var.set(f"Click {axis_label} to align the selected STEP face normal.")
+                    anchor_text = "picked point" if str(getattr(self, "_step_normal_axis_anchor_mode", "surface_center")).strip().lower() == "pick_point" else "surface center"
+                    self._update_hover_status(f"{axis_label}\nClick to align selected STEP face\nAnchor={anchor_text}", display_xy=(x, y), render=True)
+                    self.status_var.set(f"Click {axis_label} to align the selected STEP face normal using its {anchor_text}.")
                     return
             self._set_optical_axis_highlight(None)
             self._update_hover_status("", render=False)
