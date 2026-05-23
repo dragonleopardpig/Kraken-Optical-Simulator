@@ -267,6 +267,7 @@ from KrakenOS.UI.scene_projector import (
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
 from KrakenOS.UI.panels.open3d_live_controls import Open3DLiveControlsPanel
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
+from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.scene_row_mapping import (
     SCENE_ROW_SOURCE,
@@ -8896,7 +8897,24 @@ class Kraken3DInspector(tk.Toplevel):
         slots), or the selected promoted STEP optical-solid row(s), without
         clearing the other STEP imports the way ``Clear STEP Imports`` does.
         """
-        label = self._selected_imported_step_label()
+        service = self.editor._open3d_step_state_service()
+        candidate_indices = set(int(index) for index in self.editor._selected_table_indices())
+        for candidate in (
+            self._picked_row_index,
+            self._stl_placement_row_index,
+            self._row_carry_hold_candidate_index,
+        ):
+            if candidate is None:
+                continue
+            try:
+                candidate_indices.add(int(candidate))
+            except Exception:
+                pass
+        selection = service.resolve_delete_selection(
+            import_label_candidates=self._selected_imported_step_label_candidates(),
+            row_index_candidates=sorted(candidate_indices),
+        )
+        label = selection.import_label
         if label:
             display = self.editor._step_overlay_display_label(label).upper()
             self.editor._begin_history_capture()
@@ -8922,19 +8940,7 @@ class Kraken3DInspector(tk.Toplevel):
             self.refresh_from_editor(force_retrace=True)
             self.status_var.set(f"Deleted imported {display} STEP overlay.")
             return
-        candidate_indices = set(int(index) for index in self.editor._selected_table_indices())
-        for candidate in (
-            self._picked_row_index,
-            self._stl_placement_row_index,
-            self._row_carry_hold_candidate_index,
-        ):
-            if candidate is None:
-                continue
-            try:
-                candidate_indices.add(int(candidate))
-            except Exception:
-                pass
-        removed = self.editor.delete_optical_step_rows(sorted(candidate_indices))
+        removed = self.editor.delete_optical_step_rows(selection.row_indices)
         if removed > 0:
             self._picked_row_index = None
             self._stl_placement_row_index = None
@@ -8956,17 +8962,18 @@ class Kraken3DInspector(tk.Toplevel):
         self.delete_selected_step()
         return "break"
 
-    def _selected_imported_step_label(self) -> str:
-        for candidate in (
+    def _selected_imported_step_label_candidates(self) -> tuple[object, ...]:
+        return (
             self.editor._selected_step_label,
             self._step_rotation_active_label,
             self._step_carry_active_label,
             "optical",
-        ):
-            label = str(candidate or "").strip().lower()
-            if label in STEP_OVERLAY_LABEL_SET and self.editor._step_path_for_label(label) is not None:
-                return label
-        return ""
+        )
+
+    def _selected_imported_step_label(self) -> str:
+        return self.editor._open3d_step_state_service().selected_import_label(
+            self._selected_imported_step_label_candidates()
+        )
 
     def _promote_step_overlay_to_optical_solid_row(
         self,
@@ -30775,6 +30782,13 @@ class KrakenLayoutEditor(tk.Tk):
         if service is None:
             service = Open3DTraceRefreshService(self)
             self._open3d_trace_refresh_service_instance = service
+        return service
+
+    def _open3d_step_state_service(self) -> Open3DStepStateService:
+        service = getattr(self, "_open3d_step_state_service_instance", None)
+        if service is None:
+            service = Open3DStepStateService(self, valid_labels=STEP_OVERLAY_LABEL_SET)
+            self._open3d_step_state_service_instance = service
         return service
 
     def _refresh_3d_inspector_if_open(self, *, system=None, rays=None, scene_bundle: SceneBundle | None = None) -> None:

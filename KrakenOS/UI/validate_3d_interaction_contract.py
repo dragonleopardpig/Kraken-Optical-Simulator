@@ -18,6 +18,7 @@ from KrakenOS.UI.saved_layout_plot import build_saved_layout_figure
 from KrakenOS.UI.scene_builder import _sync_path_display_geometry_from_events
 from KrakenOS.UI.scene_geometry import RayEvent3D, RayPath3D
 from KrakenOS.UI.scene_projector import bounded_ray_points_for_scene_display, scene_display_center_radius
+from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 
 
@@ -278,6 +279,7 @@ def main() -> int:
     editor_surface_meshes = inspect.getsource(KrakenLayoutEditor._iter_3d_optical_surface_meshes)
     refresh_3d_sync = inspect.getsource(KrakenLayoutEditor._refresh_3d_inspector_if_open)
     open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)
+    open3d_step_state_service = inspect.getsource(Open3DStepStateService)
     preview_sampling = inspect.getsource(KrakenLayoutEditor._preview_scene_sampling_mode)
     trace_preview_rays = inspect.getsource(KrakenLayoutEditor._trace_preview_rays)
     saved_layout_figure = inspect.getsource(build_saved_layout_figure)
@@ -543,8 +545,11 @@ def main() -> int:
             and "delete_selected_step()" in key_press
             and "KP_Delete" in key_press
             and "delete_selected_step()" in delete_step_event
+            and "_open3d_step_state_service()" in delete_step
+            and "resolve_delete_selection(" in delete_step
             and "_picked_row_index" in delete_step
-            and "delete_optical_step_rows(sorted(candidate_indices))" in delete_step,
+            and "delete_optical_step_rows(selection.row_indices)" in delete_step
+            and "promoted_step_row_indices" in open3d_step_state_service,
         ),
         (
             "Open 3D Esc and blank clicks clear selected components",
