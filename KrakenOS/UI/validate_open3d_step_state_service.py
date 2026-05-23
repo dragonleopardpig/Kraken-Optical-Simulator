@@ -57,6 +57,56 @@ def main() -> int:
                 row_index_candidates=(0, 2, 999),
             ).has_target,
         ),
+        (
+            "feature selections normalize picked point, surface center, and normal",
+            (
+                lambda selection: (
+                    selection is not None
+                    and selection.label == "optical"
+                    and selection.pick_point_world == (1.0, 2.0, 3.0)
+                    and selection.surface_center_world == (4.0, 5.0, 6.0)
+                    and selection.normal_world == (0.0, 0.0, 1.0)
+                )
+            )(
+                service.step_feature_selection(
+                    "optical",
+                    ((1.0, 2.0, 3.0), object(), (0.0, 0.0, 2.0)),
+                    surface_center_world=(4.0, 5.0, 6.0),
+                )
+            ),
+        ),
+        (
+            "feature action requires matching active imported overlay",
+            (
+                lambda selection: (
+                    service.selected_feature_action(
+                        selection,
+                        label_candidates=("lens", "camera"),
+                        require_surface_center=True,
+                        require_normal=True,
+                    )
+                    is None
+                    and service.selected_feature_action(
+                        selection,
+                        label_candidates=("optical",),
+                        require_surface_center=True,
+                        require_normal=True,
+                    )
+                    == selection
+                )
+            )(
+                service.step_feature_selection(
+                    "optical",
+                    ((1.0, 2.0, 3.0), object(), (0.0, 0.0, 2.0)),
+                    surface_center_world=(4.0, 5.0, 6.0),
+                )
+            ),
+        ),
+        (
+            "invalid feature selections are rejected",
+            service.step_feature_selection("optical", ((1.0, 2.0, 3.0), object(), (0.0, 0.0, 0.0))) is None
+            and service.step_feature_selection("camera", ((1.0, 2.0, 3.0), object(), (0.0, 0.0, 1.0))) is None,
+        ),
     ]
     failed = [name for name, ok in checks if not ok]
     if failed:

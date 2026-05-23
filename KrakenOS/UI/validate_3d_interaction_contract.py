@@ -172,6 +172,7 @@ def main() -> int:
     step_carry_snap_apply = inspect.getsource(Kraken3DInspector._apply_step_carry_snap_ray)
     step_carry_snap_target_start = inspect.getsource(Kraken3DInspector.start_step_carry_snap_target)
     step_carry_snap_target_apply = inspect.getsource(Kraken3DInspector._apply_step_carry_snap_target)
+    step_feature_action_selection = inspect.getsource(Kraken3DInspector._step_feature_action_selection)
     step_normal_snap = inspect.getsource(Kraken3DInspector.snap_selected_step_normal_to_optical_axis)
     step_normal_axis_start = inspect.getsource(Kraken3DInspector.start_step_normal_axis_pick)
     step_normal_axis_apply = inspect.getsource(Kraken3DInspector._apply_step_normal_axis_pick)
@@ -391,7 +392,9 @@ def main() -> int:
             "Snap STEP Normal->Optical Axis" in init_with_top_controls
             and "_remember_selected_step_feature" in pick
             and "start_step_normal_axis_pick(step_label)" in pick
-            and "feature[2]" in remember_step_feature
+            and "step_feature_selection(" in remember_step_feature
+            and "selected_feature_action(" in step_feature_action_selection
+            and "normal_world" in open3d_step_state_service
             and "start_step_normal_axis_pick(label)" in step_normal_snap
             and "_step_normal_axis_pick_mode = True" in step_normal_axis_start
             and "_actor_optical_axis_map" in pick
@@ -421,7 +424,10 @@ def main() -> int:
             "Center STEP Surface->Optical Axis" in top_controls_source
             and "Center Surface->Axis" in step_admin_source
             and "center_selected_step_surface_to_optical_axis" in step_admin_source
+            and "_selected_step_feature: StepFeatureSelection | None" in init
             and "_selected_step_feature_surface_center_world" in init
+            and "step_feature_selection(" in open3d_step_state_service
+            and "selected_feature_action(" in open3d_step_state_service
             and "surface_center_world" in remember_step_feature
             and "start_step_surface_center_axis_pick(label)" in step_surface_center_action
             and "_step_surface_center_axis_pick_mode = True" in step_surface_center_axis_start

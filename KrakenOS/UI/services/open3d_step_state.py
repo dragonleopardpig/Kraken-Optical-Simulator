@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+import numpy as np
+
 
 @dataclass(frozen=True, slots=True)
 class StepDeleteSelection:
@@ -21,6 +23,28 @@ class StepDeleteSelection:
     @property
     def has_target(self) -> bool:
         return bool(self.import_label or self.row_indices)
+
+
+@dataclass(frozen=True, slots=True)
+class StepFeatureSelection:
+    """Selected imported STEP face/feature used by axis-alignment actions."""
+
+    label: str = ""
+    pick_point_world: tuple[float, float, float] = ()
+    surface_center_world: tuple[float, float, float] = ()
+    normal_world: tuple[float, float, float] = ()
+
+    @property
+    def has_pick_point(self) -> bool:
+        return len(self.pick_point_world) == 3
+
+    @property
+    def has_surface_center(self) -> bool:
+        return len(self.surface_center_world) == 3
+
+    @property
+    def has_normal(self) -> bool:
+        return len(self.normal_world) == 3
 
 
 class Open3DStepStateService:
@@ -42,6 +66,75 @@ class Open3DStepStateService:
             except Exception:
                 continue
         return ""
+
+    def is_loaded_import_label(self, label: object) -> bool:
+        """Return true when label names a currently loaded imported STEP overlay."""
+        return bool(self.selected_import_label((label,)))
+
+    @staticmethod
+    def _finite_xyz(values: object) -> np.ndarray | None:
+        try:
+            array = np.asarray(values, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if array.size < 3 or not np.all(np.isfinite(array[:3])):
+            return None
+        return np.asarray(array[:3], dtype=float)
+
+    def step_feature_selection(
+        self,
+        label: object,
+        feature: object,
+        *,
+        surface_center_world: object = None,
+    ) -> StepFeatureSelection | None:
+        """Normalize a picked imported STEP face/feature into service-owned state."""
+        label_text = self.selected_import_label((label,))
+        if not label_text or feature is None:
+            return None
+        try:
+            pick_point = self._finite_xyz(feature[0])
+            normal = self._finite_xyz(feature[2])
+        except Exception:
+            return None
+        if pick_point is None or normal is None:
+            return None
+        norm = float(np.linalg.norm(normal[:3]))
+        if not np.isfinite(norm) or norm <= 1e-12:
+            return None
+        normal = normal[:3] / norm
+        surface_center = self._finite_xyz(surface_center_world)
+        if surface_center is None:
+            surface_center = pick_point
+        return StepFeatureSelection(
+            label=label_text,
+            pick_point_world=tuple(float(value) for value in pick_point[:3]),
+            surface_center_world=tuple(float(value) for value in surface_center[:3]),
+            normal_world=tuple(float(value) for value in normal[:3]),
+        )
+
+    def selected_feature_action(
+        self,
+        selection: StepFeatureSelection | None,
+        *,
+        label_candidates: Iterable[object],
+        require_pick_point: bool = True,
+        require_surface_center: bool = False,
+        require_normal: bool = False,
+    ) -> StepFeatureSelection | None:
+        """Return the selected feature if it matches the active imported STEP label."""
+        if selection is None or not selection.label:
+            return None
+        label = self.selected_import_label(label_candidates)
+        if not label or label != selection.label:
+            return None
+        if require_pick_point and not selection.has_pick_point:
+            return None
+        if require_surface_center and not selection.has_surface_center:
+            return None
+        if require_normal and not selection.has_normal:
+            return None
+        return selection
 
     def promoted_step_row_indices(self, candidates: Iterable[object]) -> tuple[int, ...]:
         """Return unique promoted STEP optical-solid rows from candidate indices."""

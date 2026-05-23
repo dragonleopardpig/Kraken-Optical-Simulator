@@ -269,7 +269,7 @@ from KrakenOS.UI.panels.open3d_live_controls import Open3DLiveControlsPanel
 from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
 from KrakenOS.UI.services.open3d_face_pick import FaceRayPick, pick_face_from_ray
-from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
+from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService, StepFeatureSelection
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.scene_row_mapping import (
     SCENE_ROW_SOURCE,
@@ -5424,6 +5424,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._row_carry_hold_pick_world: tuple[float, float, float] | None = None
         self._row_carry_drag_state: dict[str, object] | None = None
         self._step_carry_grip_actor = None
+        self._selected_step_feature: StepFeatureSelection | None = None
         self._selected_step_feature_label: str | None = None
         self._selected_step_feature_center_world: tuple[float, float, float] | None = None
         self._selected_step_feature_surface_center_world: tuple[float, float, float] | None = None
@@ -8837,6 +8838,7 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             pass
         for attr_name in (
+            "_selected_step_feature",
             "_selected_step_feature_label",
             "_selected_step_feature_center_world",
             "_selected_step_feature_surface_center_world",
@@ -8950,6 +8952,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_surface_center_axis_pick_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
+        self._selected_step_feature = None
         self._selected_step_feature_label = None
         self._selected_step_feature_center_world = None
         self._selected_step_feature_surface_center_world = None
@@ -8979,6 +8982,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_surface_center_axis_pick_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
+        self._selected_step_feature = None
         self._selected_step_feature_label = None
         self._selected_step_feature_center_world = None
         self._selected_step_feature_surface_center_world = None
@@ -9010,6 +9014,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_surface_center_axis_pick_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
+        self._selected_step_feature = None
         self._selected_step_feature_label = None
         self._selected_step_feature_center_world = None
         self._selected_step_feature_surface_center_world = None
@@ -9062,6 +9067,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._step_surface_center_axis_pick_mode = False
             self._step_carry_grid_label = None
             self._step_carry_grid_spacing_mm = None
+            self._selected_step_feature = None
             self._selected_step_feature_label = None
             self._selected_step_feature_center_world = None
             self._selected_step_feature_surface_center_world = None
@@ -9210,49 +9216,79 @@ class Kraken3DInspector(tk.Toplevel):
         self.show_step_rotation_handler(label)
         self.status_var.set(f"{label.upper()} STEP armed: hold on the STEP to lift; drag freely; release to drop.")
 
+    def _step_feature_action_selection(
+        self,
+        *,
+        label: str | None = None,
+        require_pick_point: bool = True,
+        require_surface_center: bool = False,
+        require_normal: bool = False,
+    ) -> StepFeatureSelection | None:
+        service = self.editor._open3d_step_state_service()
+        return service.selected_feature_action(
+            self._selected_step_feature,
+            label_candidates=(
+                label,
+                self._selected_step_feature_label,
+                self.editor._selected_step_label,
+                self._step_rotation_active_label,
+                self._step_carry_active_label,
+            ),
+            require_pick_point=require_pick_point,
+            require_surface_center=require_surface_center,
+            require_normal=require_normal,
+        )
+
+    def _clear_selected_step_feature_state(self) -> None:
+        self._selected_step_feature = None
+        self._selected_step_feature_label = None
+        self._selected_step_feature_center_world = None
+        self._selected_step_feature_surface_center_world = None
+        self._selected_step_feature_normal_world = None
+
     def snap_selected_step_normal_to_optical_axis(self) -> None:
-        label = str(
-            self._selected_step_feature_label
-            or self.editor._selected_step_label
-            or self._step_rotation_active_label
-            or self._step_carry_active_label
-            or ""
-        ).strip().lower()
-        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
+        service = self.editor._open3d_step_state_service()
+        label = service.selected_import_label(
+            (
+                self._selected_step_feature_label,
+                self.editor._selected_step_label,
+                self._step_rotation_active_label,
+                self._step_carry_active_label,
+            )
+        )
+        if not label:
             self.status_var.set("Snap STEP Normal->Optical Axis: select or import a STEP component first.")
             return
-        if self._selected_step_feature_label != label:
-            self.status_var.set("Snap STEP Normal->Optical Axis: click a planar STEP face first.")
-            return
-        center = self._selected_step_feature_center_world
-        normal = self._selected_step_feature_normal_world
-        if center is None or normal is None:
+        if self._step_feature_action_selection(label=label, require_pick_point=True, require_normal=True) is None:
             self.status_var.set("Snap STEP Normal->Optical Axis: click a planar STEP face first.")
             return
         self.start_step_normal_axis_pick(label)
 
     def center_selected_step_surface_to_optical_axis(self) -> None:
-        label = str(
-            self._selected_step_feature_label
-            or self.editor._selected_step_label
-            or self._step_rotation_active_label
-            or self._step_carry_active_label
-            or ""
-        ).strip().lower()
-        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
+        service = self.editor._open3d_step_state_service()
+        label = service.selected_import_label(
+            (
+                self._selected_step_feature_label,
+                self.editor._selected_step_label,
+                self._step_rotation_active_label,
+                self._step_carry_active_label,
+            )
+        )
+        if not label:
             self.status_var.set("Center Surface->Optical Axis: select or import a STEP component first.")
             return
-        if self._selected_step_feature_label != label or self._selected_step_feature_surface_center_world is None:
+        if self._step_feature_action_selection(label=label, require_surface_center=True) is None:
             self.status_var.set("Center Surface->Optical Axis: click a planar STEP face first.")
             return
         self.start_step_surface_center_axis_pick(label)
 
     def start_step_normal_axis_pick(self, label: str | None = None) -> None:
-        label = str(label or self._selected_step_feature_label or "").strip().lower()
-        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
+        service = self.editor._open3d_step_state_service()
+        label = service.selected_import_label((label, self._selected_step_feature_label))
+        if not label:
             self.status_var.set("Snap STEP Normal->Optical Axis: select or import a STEP component first.")
             return
-        if self._selected_step_feature_label != label or self._selected_step_feature_center_world is None or self._selected_step_feature_normal_world is None:
+        if self._step_feature_action_selection(label=label, require_pick_point=True, require_normal=True) is None:
             self.status_var.set("Snap STEP Normal->Optical Axis: click a planar STEP face first.")
             return
         self._step_normal_axis_pick_mode = True
@@ -9276,11 +9312,13 @@ class Kraken3DInspector(tk.Toplevel):
         )
 
     def start_step_surface_center_axis_pick(self, label: str | None = None) -> None:
-        label = str(label or self._selected_step_feature_label or "").strip().lower()
-        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
+        service = self.editor._open3d_step_state_service()
+        label = service.selected_import_label((label, self._selected_step_feature_label))
+        if not label:
             self.status_var.set("Center Surface->Optical Axis: select or import a STEP component first.")
             return
-        if self._selected_step_feature_label != label or self._selected_step_feature_surface_center_world is None:
+        selection = self._step_feature_action_selection(label=label, require_surface_center=True)
+        if selection is None:
             self.status_var.set("Center Surface->Optical Axis: click a planar STEP face first.")
             return
         self._step_surface_center_axis_pick_mode = True
@@ -9299,18 +9337,19 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_axis_pick_cursor(True)
         self._update_mode_badge()
         self.refresh_from_editor()
-        center_text = self._world_xyz_text(self._selected_step_feature_surface_center_world)
+        center_text = self._world_xyz_text(selection.surface_center_world)
         self.status_var.set(
             f"Center {label.upper()} STEP surface: click the dotted Optical Axis guide. Surface center={center_text}."
         )
 
     def _apply_step_normal_axis_pick(self, axis_info: dict[str, object]) -> None:
-        label = str(self._selected_step_feature_label or "").strip().lower()
-        center = self._selected_step_feature_center_world
-        normal = self._selected_step_feature_normal_world
-        if label not in STEP_OVERLAY_LABEL_SET or center is None or normal is None:
+        selection = self._step_feature_action_selection(require_pick_point=True, require_normal=True)
+        if selection is None:
             self.status_var.set("Snap STEP Normal->Optical Axis: click a planar STEP face first.")
             return
+        label = selection.label
+        center = selection.pick_point_world
+        normal = selection.normal_world
         axis_frame = self._optical_axis_frame_from_pick(axis_info, self._picker)
         if axis_frame is None:
             self.status_var.set("Snap STEP Normal->Optical Axis: could not resolve the clicked optical axis.")
@@ -9330,6 +9369,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_surface_center_axis_pick_mode = False
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
+        self._clear_selected_step_feature_state()
         self._set_axis_pick_cursor(False)
         self._set_optical_axis_highlight(None)
         try:
@@ -9348,11 +9388,12 @@ class Kraken3DInspector(tk.Toplevel):
         )
 
     def _apply_step_surface_center_axis_pick(self, axis_info: dict[str, object]) -> None:
-        label = str(self._selected_step_feature_label or "").strip().lower()
-        surface_center = self._selected_step_feature_surface_center_world
-        if label not in STEP_OVERLAY_LABEL_SET or surface_center is None:
+        selection = self._step_feature_action_selection(require_surface_center=True)
+        if selection is None:
             self.status_var.set("Center Surface->Optical Axis: click a planar STEP face first.")
             return
+        label = selection.label
+        surface_center = selection.surface_center_world
         axis_frame = self._optical_axis_frame_from_pick(axis_info, self._picker)
         if axis_frame is None:
             self.status_var.set("Center Surface->Optical Axis: could not resolve the clicked optical axis.")
@@ -9379,6 +9420,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_normal_axis_pick_mode = False
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
+        self._clear_selected_step_feature_state()
         self._set_axis_pick_cursor(False)
         self._set_optical_axis_highlight(None)
         try:
@@ -9766,6 +9808,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_surface_center_axis_pick_mode = False
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
+        self._selected_step_feature = None
         self._selected_step_feature_label = None
         self._selected_step_feature_center_world = None
         self._selected_step_feature_surface_center_world = None
@@ -14355,28 +14398,18 @@ class Kraken3DInspector(tk.Toplevel):
         return feature[0] if feature is not None else None
 
     def _remember_selected_step_feature(self, label: str, feature, *, surface_center_world=None) -> bool:
-        label = str(label).strip().lower()
-        if label not in STEP_OVERLAY_LABEL_SET or feature is None:
+        selection = self.editor._open3d_step_state_service().step_feature_selection(
+            label,
+            feature,
+            surface_center_world=surface_center_world,
+        )
+        if selection is None:
             return False
-        try:
-            center = np.asarray(feature[0], dtype=float).reshape(-1)[:3]
-            normal = np.asarray(feature[2], dtype=float).reshape(-1)[:3]
-        except Exception:
-            return False
-        try:
-            surface_center = np.asarray(surface_center_world, dtype=float).reshape(-1)[:3]
-        except Exception:
-            surface_center = center
-        if surface_center.size < 3 or not np.all(np.isfinite(surface_center[:3])):
-            surface_center = center
-        norm = float(np.linalg.norm(normal[:3])) if normal.size >= 3 else 0.0
-        if center.size < 3 or normal.size < 3 or not np.all(np.isfinite(center[:3])) or not np.isfinite(norm) or norm <= 1e-12:
-            return False
-        normal = normal[:3] / norm
-        self._selected_step_feature_label = label
-        self._selected_step_feature_center_world = tuple(float(value) for value in center[:3])
-        self._selected_step_feature_surface_center_world = tuple(float(value) for value in surface_center[:3])
-        self._selected_step_feature_normal_world = tuple(float(value) for value in normal[:3])
+        self._selected_step_feature = selection
+        self._selected_step_feature_label = selection.label
+        self._selected_step_feature_center_world = selection.pick_point_world
+        self._selected_step_feature_surface_center_world = selection.surface_center_world
+        self._selected_step_feature_normal_world = selection.normal_world
         return True
 
     @staticmethod
