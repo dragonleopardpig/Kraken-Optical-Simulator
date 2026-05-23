@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from KrakenOS.UI.layout_editor import (
+    Kraken3DInspector,
     KrakenLayoutEditor,
     OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
     optical_solid_face_world_records,
@@ -39,7 +40,70 @@ def _central_path(scene_bundle) -> object:
     paths = list(getattr(scene_bundle, "ray_paths", []) or [])
     if not paths:
         raise AssertionError("No ray paths were traced.")
-    return paths[len(paths) // 2]
+
+    def _score(path: object) -> tuple[float, int]:
+        try:
+            points = np.asarray(getattr(path, "points_world", ()), dtype=float)
+            if points.ndim == 2 and points.shape[0] >= 1 and points.shape[1] >= 2:
+                radius = float(np.hypot(points[0, 0], points[0, 1]))
+            else:
+                radius = float("inf")
+        except Exception:
+            radius = float("inf")
+        try:
+            ray_index = int(getattr(path, "ray_index", 0) or 0)
+        except Exception:
+            ray_index = 0
+        return radius, ray_index
+
+    return min(paths, key=_score)
+
+
+class _FakeRenderer:
+    def ComputeVisiblePropBounds(self):
+        return (-15.0, 15.0, -15.0, 45.0, -10.0, 70.0)
+
+
+def _axis_records(scene_bundle) -> list[dict[str, object]]:
+    inspector = object.__new__(Kraken3DInspector)
+    inspector._renderer = _FakeRenderer()
+    return Kraken3DInspector._optical_axis_records_for_3d(inspector, scene_bundle)
+
+
+def _assert_single_exit_axis(scene_bundle) -> None:
+    axis_records = _axis_records(scene_bundle)
+    traced = [record for record in axis_records if str(record.get("axis_kind", "") or "") == "traced_chief_ray_segment"]
+    if len(traced) != 1:
+        raise AssertionError(f"Expected exactly one traced exit optical axis, got {axis_records!r}")
+    traced_axis = traced[0]
+    if str(traced_axis.get("axis_role", "") or "") != "post_surface":
+        raise AssertionError(f"Traced axis should describe only the post-surface exit segment: {traced_axis!r}")
+    path = _central_path(scene_bundle)
+    points = np.asarray(getattr(path, "points_world", ()), dtype=float)
+    if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+        raise AssertionError("Central path has no usable terminal segment.")
+    terminal_direction = points[-1, :3] - points[-2, :3]
+    terminal_norm = float(np.linalg.norm(terminal_direction))
+    if terminal_norm <= 1e-12:
+        raise AssertionError("Central path terminal segment has zero length.")
+    terminal_direction /= terminal_norm
+    axis_direction = np.asarray(traced_axis.get("segment_direction", ()), dtype=float).reshape(-1)[:3]
+    if axis_direction.size < 3:
+        raise AssertionError(f"Traced axis has no direction: {traced_axis!r}")
+    axis_norm = float(np.linalg.norm(axis_direction))
+    if axis_norm <= 1e-12:
+        raise AssertionError(f"Traced axis has zero direction: {traced_axis!r}")
+    axis_direction /= axis_norm
+    if float(np.dot(axis_direction, terminal_direction)) < 0.999:
+        raise AssertionError(
+            f"Traced exit axis does not follow the central ray exit segment: axis={axis_direction}, ray={terminal_direction}"
+        )
+    events = _surface_events(path)
+    if not events:
+        raise AssertionError("Central path has no surface events.")
+    last_face = _event_face_id(events[-1])
+    if str(traced_axis.get("from_mesh_face_id", "") or "") != last_face:
+        raise AssertionError(f"Exit axis starts from the wrong face: axis={traced_axis!r}, last_face={last_face}")
 
 
 def _trace(app: KrakenLayoutEditor):
@@ -152,6 +216,7 @@ def _validate_snap_face_sequence(snap_face_id: str) -> None:
                 f"Assigned second face did not reflect for {snap_face_id}: "
                 f"faces={after_faces}, interactions={after_interactions}, counts={Counter(after_faces)!r}"
             )
+        _assert_single_exit_axis(scene_bundle)
     finally:
         app.destroy()
 

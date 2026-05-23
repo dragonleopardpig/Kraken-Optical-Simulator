@@ -59,7 +59,20 @@ Estimated branch status:
 Overall branch direction: keep moving toward one scene/event truth source while
 preserving exact sequential prescriptions as the ordered-path special case.
 
-Latest movement on 2026-05-23: imported STEP promote-and-assign now remaps the
+Current pipeline checkpoint:
+
+| Item | Status | Progress | Notes |
+| --- | --- | --- | --- |
+| Open 3D world-envelope axes | Achieved | `██████████ 100%` | The default `Pupil / field` Open 3D launch keeps a real center reference ray alongside the aperture-envelope rim, selected through-going envelope traces retain that center ray, and traced `Optical Axis 2+` overlays are now limited to the final post-surface exit segment. This prevents off-axis rim rays and internal prism legs from creating multiple input-axis guides or an output guide offset from the physical exit bundle. |
+
+Latest movement on 2026-05-23: Open 3D world-envelope tracing now includes a
+center reference ray with the rim samples and keeps that center ray when
+reducing a through-going bundle to its visible envelope. Traced optical-axis
+records are generated only for the chief ray's final post-surface exit segment,
+so `Optical Axis 2+` represents the usable downstream axis after a real
+reflection/refraction path instead of every launch or internal prism segment.
+
+Earlier movement on 2026-05-23: imported STEP promote-and-assign now remaps the
 picked face by world point and normal after promotion instead of trusting the
 temporary overlay face ID. This fixes the penta-prism case where the live STEP
 overlay called the clicked fold face `F006`, but the promoted row-backed solid

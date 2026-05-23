@@ -5267,6 +5267,16 @@ def _dotted_axis_records_from_ray_path(path, bounds, *, max_segments: int = 6) -
     branch_path = str(getattr(path, "branch_path", "") or "")
     source_id = str(getattr(path, "source_id", "") or "")
     for index, (start, end) in enumerate(zip(points[:-1], points[1:]), start=1):
+        event_before = surface_events[index - 2] if 0 <= index - 2 < len(surface_events) else None
+        event_after = surface_events[index - 1] if 0 <= index - 1 < len(surface_events) else None
+        if event_before is None:
+            axis_role = "launch_segment"
+        elif event_after is None:
+            axis_role = "post_surface"
+        else:
+            axis_role = "between_surfaces"
+        if axis_role != "post_surface":
+            continue
         direction = end - start
         length = float(np.linalg.norm(direction))
         if not np.isfinite(length) or length <= 1e-6:
@@ -5282,20 +5292,12 @@ def _dotted_axis_records_from_ray_path(path, bounds, *, max_segments: int = 6) -
         if key in seen or reverse_key in seen:
             continue
         seen.add(key)
-        event_before = surface_events[index - 2] if 0 <= index - 2 < len(surface_events) else None
-        event_after = surface_events[index - 1] if 0 <= index - 1 < len(surface_events) else None
         from_surface = getattr(event_before, "surface_id", None) if event_before is not None else None
         to_surface = getattr(event_after, "surface_id", None) if event_after is not None else None
         from_face = str(getattr(event_before, "mesh_face_id", "") or "") if event_before is not None else ""
         to_face = str(getattr(event_after, "mesh_face_id", "") or "") if event_after is not None else ""
         from_action = str(getattr(event_before, "event_type", "") or "") if event_before is not None else ""
         to_action = str(getattr(event_after, "event_type", "") or "") if event_after is not None else ""
-        if event_before is None:
-            axis_role = "launch_segment"
-        elif event_after is None:
-            axis_role = "post_surface"
-        else:
-            axis_role = "between_surfaces"
         records.append(
             {
                 "axis_id": f"axis:ray:{ray_index}:segment:{index}",
@@ -10261,9 +10263,20 @@ class Kraken3DInspector(tk.Toplevel):
             if _clean_polyline_points(getattr(path, "points_world", np.empty((0, 3)))).shape[0] >= 2
         ]
         if paths:
-            target_ray = (len(paths) - 1) / 2.0
-
-            def _path_score(path) -> tuple[float, float, float]:
+            def _path_score(path) -> tuple[float, float, float, float, float]:
+                points = _clean_polyline_points(getattr(path, "points_world", np.empty((0, 3))))
+                if points.shape[0] >= 2:
+                    launch_radius = float(np.hypot(points[0, 0], points[0, 1]))
+                    launch_direction = points[1, :3] - points[0, :3]
+                    launch_norm = float(np.linalg.norm(launch_direction))
+                    if np.isfinite(launch_norm) and launch_norm > 1e-12:
+                        launch_direction = launch_direction / launch_norm
+                        launch_tilt = float(np.hypot(launch_direction[0], launch_direction[1]))
+                    else:
+                        launch_tilt = float("inf")
+                else:
+                    launch_radius = float("inf")
+                    launch_tilt = float("inf")
                 try:
                     source_ray = float(getattr(path, "source_ray_index", getattr(path, "ray_index", 0)) or 0)
                 except Exception:
@@ -10276,7 +10289,7 @@ class Kraken3DInspector(tk.Toplevel):
                     ray_index = float(getattr(path, "ray_index", 0) or 0)
                 except Exception:
                     ray_index = 0.0
-                return (abs(source_ray - target_ray), -power, abs(ray_index - target_ray))
+                return (launch_radius, launch_tilt, -power, abs(source_ray), abs(ray_index))
 
             physical_paths = [
                 path
@@ -65068,7 +65081,7 @@ class KrakenLayoutEditor(tk.Tk):
         return np.array(pts, dtype=float)
 
     def _sample_pupil_rim(self, max_radius: float, samples: int | None = None) -> np.ndarray:
-        """Generate boundary pupil samples for source-driven 3D envelope views."""
+        """Generate center plus boundary pupil samples for source-driven 3D envelope views."""
         radius = float(max_radius) if np.isfinite(float(max_radius)) else 0.0
         if radius <= 1e-9:
             return np.array([[0.0, 0.0]], dtype=float)
@@ -65076,7 +65089,8 @@ class KrakenLayoutEditor(tk.Tk):
             samples = max(8, min(12, self._current_ray_count()))
         samples = max(4, int(samples))
         angles = np.linspace(0.0, 2.0 * np.pi, samples, endpoint=False)
-        return np.column_stack((radius * np.cos(angles), radius * np.sin(angles))).astype(float)
+        rim = np.column_stack((radius * np.cos(angles), radius * np.sin(angles))).astype(float)
+        return np.vstack((np.asarray([[0.0, 0.0]], dtype=float), rim))
 
     def _sample_sparse_pupil_disk(self, max_radius: float) -> np.ndarray:
         """Sparse filled pupil used only to discover the through-going 3D envelope."""
@@ -65093,11 +65107,13 @@ class KrakenLayoutEditor(tk.Tk):
         return np.asarray(unique, dtype=float)
 
     def _build_world_envelope_bundles(self, pupil_radius: float):
-        """Build source-driven 3D boundary bundles for 3D/CAD preview.
+        """Build source-driven 3D center/boundary bundles for 3D/CAD preview.
 
         The 2D layout uses meridional fans for readability, but 3D and STEP
         exports must not be generated by revolving that display slice. They use
-        this boundary ring around the entrance pupil/object cone instead.
+        a real center ray plus the boundary ring around the entrance
+        pupil/object cone instead, so optical-axis overlays are not inferred
+        from an off-axis rim ray.
         """
         radius = float(pupil_radius) if np.isfinite(float(pupil_radius)) else 0.0
         if radius <= 1e-9 and self.rows:
@@ -65290,6 +65306,25 @@ class KrakenLayoutEditor(tk.Tk):
                 selected_local = [through_local[index] for index in envelope_local if 0 <= index < len(through_local)]
                 if not selected_local:
                     selected_local = through_local[: min(4, len(through_local))]
+                through_origins = np.asarray(
+                    [[arrays[0][index], arrays[1][index]] for index in through_local],
+                    dtype=float,
+                )
+                through_dirs = np.asarray(
+                    [[arrays[3][index], arrays[4][index]] for index in through_local],
+                    dtype=float,
+                )
+                origin_center = np.median(through_origins, axis=0) if through_origins.size else np.zeros(2, dtype=float)
+                direction_center = np.median(through_dirs, axis=0) if through_dirs.size else np.zeros(2, dtype=float)
+                center_local = min(
+                    through_local,
+                    key=lambda index: (
+                        float(np.linalg.norm(np.asarray([arrays[0][index], arrays[1][index]], dtype=float) - origin_center)),
+                        float(np.linalg.norm(np.asarray([arrays[3][index], arrays[4][index]], dtype=float) - direction_center)),
+                        int(index),
+                    ),
+                )
+                selected_local.append(int(center_local))
                 selected_local = sorted(set(selected_local))
                 selected_bundles.append(tuple(values[selected_local] for values in arrays))
                 max_selected = max(max_selected, len(selected_local))

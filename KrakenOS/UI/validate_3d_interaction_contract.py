@@ -97,7 +97,7 @@ def _traced_axis_records_mark_exit_segment() -> tuple[bool, str]:
     )
     records = _dotted_axis_records_from_ray_path(path, np.asarray([-10.0, 10.0, -10.0, 40.0, -5.0, 35.0]))
     exit_records = [record for record in records if str(record.get("axis_role", "") or "") == "post_surface"]
-    if not exit_records:
+    if len(records) != 1 or len(exit_records) != 1:
         return False, f"records={records}"
     exit_record = max(exit_records, key=lambda record: int(record.get("segment_index", -1) or -1))
     midpoint = np.asarray(exit_record.get("segment_midpoint", ()), dtype=float).reshape(-1)
@@ -913,7 +913,7 @@ def main() -> int:
             and "event_type" in trace_terminal_face_summary,
         ),
         (
-            "Open 3D optical-axis guides include traced chief-ray bend segments",
+            "Open 3D optical-axis guides include only traced chief-ray exit segments",
             "physical_paths" in optical_axis_records
             and "_dotted_axis_records_from_ray_path(chief, bounds)" in optical_axis_records
             and "_dotted_axis_mesh_from_points(points[:, :3])" in optical_axis_overlays
