@@ -18,7 +18,7 @@ class Open3DTopControlsPanel:
 
     def build(self, parent: tk.Widget) -> ttk.Frame:
         toolbar_container = ttk.Frame(parent, padding=(8, 8, 8, 0))
-        toolbar_container.grid(row=0, column=0, columnspan=2, sticky="ew")
+        toolbar_container.grid(row=0, column=0, columnspan=3, sticky="ew")
         toolbar_container.columnconfigure(0, weight=1)
 
         self.build_view_toolbar(toolbar_container)

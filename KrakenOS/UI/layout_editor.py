@@ -266,6 +266,7 @@ from KrakenOS.UI.scene_projector import (
 )
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
 from KrakenOS.UI.panels.open3d_live_controls import Open3DLiveControlsPanel
+from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
 from KrakenOS.UI.services.open3d_face_pick import FaceRayPick, pick_face_from_ray
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
@@ -5448,6 +5449,7 @@ class Kraken3DInspector(tk.Toplevel):
 
         self.columnconfigure(0, weight=0)
         self.columnconfigure(1, weight=1)
+        self.columnconfigure(2, weight=0)
         self.rowconfigure(1, weight=1)
 
         host = ttk.Frame(self, padding=8)
@@ -5468,6 +5470,12 @@ class Kraken3DInspector(tk.Toplevel):
             live_panel.columnconfigure(0, weight=1)
             live_panel.rowconfigure(1, weight=1)
             self._build_live_left_panel(live_panel)
+
+            step_admin_panel = ttk.LabelFrame(self, text="STEP Elements", padding=8)
+            step_admin_panel.grid(row=1, column=2, sticky="nsew", padx=(0, 8), pady=8)
+            step_admin_panel.columnconfigure(0, weight=1)
+            step_admin_panel.rowconfigure(0, weight=1)
+            self._build_step_admin_right_panel(step_admin_panel)
 
             _prepare_vtk_tk_widget(host)
             self._vtk_widget = vtkTkRenderWindowInteractor(host, width=1100, height=720)
@@ -5504,7 +5512,7 @@ class Kraken3DInspector(tk.Toplevel):
             self.bind("<BackSpace>", self._delete_selected_step_event)
             self._vtk_widget.bind("<Delete>", self._delete_selected_step_event, add="+")
             self._vtk_widget.bind("<BackSpace>", self._delete_selected_step_event, add="+")
-            ttk.Label(self, textvariable=self.status_var, padding=(8, 0, 8, 8)).grid(row=2, column=0, columnspan=2, sticky="ew")
+            ttk.Label(self, textvariable=self.status_var, padding=(8, 0, 8, 8)).grid(row=2, column=0, columnspan=3, sticky="ew")
             self.available = True
         except Exception as exc:
             self.unavailable_reason = _short_error_message(exc)
@@ -5541,6 +5549,25 @@ class Kraken3DInspector(tk.Toplevel):
 
     def _build_live_left_panel(self, parent: tk.Widget) -> None:
         self._open3d_live_controls_panel().build(parent)
+
+    def _open3d_step_admin_panel(self) -> Open3DStepAdminPanel:
+        panel = getattr(self, "_open3d_step_admin_panel_instance", None)
+        if panel is None:
+            panel = Open3DStepAdminPanel(self)
+            self._open3d_step_admin_panel_instance = panel
+        return panel
+
+    def _build_step_admin_right_panel(self, parent: tk.Widget) -> ttk.Frame:
+        return self._open3d_step_admin_panel().build(parent)
+
+    def refresh_step_admin_panel(self) -> None:
+        panel = getattr(self, "_open3d_step_admin_panel_instance", None)
+        if panel is None:
+            return
+        try:
+            panel.refresh()
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D STEP admin refresh failed: {exc}")
 
     def _editor_var(self, name: str, default: str = ""):
         return self._open3d_live_controls_panel().editor_var(name, default)
@@ -8842,6 +8869,55 @@ class Kraken3DInspector(tk.Toplevel):
             f"Z={self.editor._step_roll_deg(label):.0f} deg"
         )
 
+    def select_step_overlay_from_admin(self, label: str) -> bool:
+        label = str(label).strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
+            display = self.editor._step_overlay_display_label(label) if label else "STEP"
+            self.status_var.set(f"No imported {display} STEP is available.")
+            self.refresh_step_admin_panel()
+            return False
+        self.editor.select_step_component(label)
+        self._step_rotation_active_label = label
+        self._step_carry_active_label = label
+        self._set_step_highlight(label)
+        self.show_step_rotation_handler(label)
+        self.refresh_step_admin_panel()
+        path = self.editor._step_path_for_label(label)
+        name = Path(path).name if path is not None else label.upper()
+        display = self.editor._step_overlay_display_label(label).upper()
+        self.status_var.set(f"Selected {display} STEP: {name}.")
+        return True
+
+    def select_promoted_step_row_from_admin(self, row_index: int) -> bool:
+        try:
+            row_index = int(row_index)
+        except Exception:
+            row_index = -1
+        rows = list(getattr(self.editor, "rows", []) or [])
+        if row_index < 0 or row_index >= len(rows):
+            self.status_var.set("No promoted STEP row is available.")
+            self.refresh_step_admin_panel()
+            return False
+        row = rows[row_index]
+        if not self.editor._is_open3d_promoted_optical_solid_row(row):
+            self.status_var.set(f"S{row_index} is not a promoted STEP optical-solid row.")
+            self.refresh_step_admin_panel()
+            return False
+        self.editor._selected_step_label = None
+        self._step_carry_active_label = None
+        self._step_carry_follow_state = None
+        self._step_normal_axis_pick_mode = False
+        self._step_rotation_active_label = None
+        self._close_step_rotation_handler()
+        self._set_step_highlight(None)
+        self.editor._select_table_indices([row_index], focus_index=row_index)
+        self.editor._sync_surface_selection(row_index)
+        self._stl_placement_row_index = row_index
+        self.highlight_row(row_index)
+        self.refresh_step_admin_panel()
+        self.status_var.set(f"Selected promoted STEP row S{row_index}: {getattr(row, 'name', '') or 'optical solid'}.")
+        return True
+
     def import_step_overlay(self, label: str) -> None:
         label = str(label).strip().lower()
         importers = {
@@ -8874,6 +8950,7 @@ class Kraken3DInspector(tk.Toplevel):
             f"{label.upper()} STEP imported: {path.name}. Hold the STEP briefly to lift; "
             "drag freely, release to drop. Click a face and use Snap STEP Normal->Optical Axis for alignment."
         )
+        self.refresh_step_admin_panel()
 
     def import_optical_step_overlay(self) -> None:
         had_existing_overlay = self.editor._step_path_for_label("optical") is not None
@@ -8906,6 +8983,7 @@ class Kraken3DInspector(tk.Toplevel):
             f"Optical STEP imported: {path.name}. Move the cursor to carry it, click to drop.{kept_note} "
             "Click a face and use Snap STEP Normal->Optical Axis for alignment."
         )
+        self.refresh_step_admin_panel()
 
     def clear_step_imports(self) -> None:
         self.editor.clear_step_imports()
@@ -8926,6 +9004,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_step_carry_cursor(False)
         self.refresh_from_editor()
         self.status_var.set("Camera/lens/optical/LED STEP imports cleared.")
+        self.refresh_step_admin_panel()
 
     def delete_selected_step(self) -> None:
         """Delete the currently selected imported STEP element.
@@ -12064,6 +12143,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._close_step_rotation_handler()
         self._update_step_rotation_handler_state()
         self._update_stl_placement_handler_state()
+        self.refresh_step_admin_panel()
         ray_count = len(getattr(scene_bundle, "ray_paths", []) or []) if scene_bundle is not None else len(getattr(rays, "CC", []))
         self.status_var.set(
             f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | optical axes={optical_axis_overlays} | assigned face overlays={assigned_face_overlays} | face roles={face_role_markers} | virtual planes={virtual_plane_markers} | detector overlays={detector_overlay_lines} | placement grid={placement_grid_lines} | STEP carry active={step_carry_active} | STEP rotation handles={step_rotation_handles}"

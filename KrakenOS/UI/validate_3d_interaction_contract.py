@@ -13,6 +13,7 @@ from KrakenOS.UI.layout_editor import (
     KrakenLayoutEditor,
     _dotted_axis_records_from_ray_path,
 )
+from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
 from KrakenOS.UI.saved_layout_plot import build_saved_layout_figure
 from KrakenOS.UI.scene_builder import _sync_path_display_geometry_from_events
@@ -191,6 +192,9 @@ def main() -> int:
     remove_step_handles = inspect.getsource(Kraken3DInspector._remove_step_rotation_handle_actors)
     key_press = inspect.getsource(Kraken3DInspector._on_key_press)
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
+    step_admin_source = inspect.getsource(Open3DStepAdminPanel).replace("self.inspector.", "self.")
+    step_admin_overlay_select = inspect.getsource(Kraken3DInspector.select_step_overlay_from_admin)
+    step_admin_promoted_select = inspect.getsource(Kraken3DInspector.select_promoted_step_row_from_admin)
     row_scene_bounds = inspect.getsource(Kraken3DInspector._row_scene_bounds)
     init = inspect.getsource(Kraken3DInspector.__init__)
     top_controls_source = inspect.getsource(Open3DTopControlsPanel).replace("self.inspector.", "self.")
@@ -728,6 +732,43 @@ def main() -> int:
             and 'text="Place"' in init_with_top_controls
             and 'text="Orient"' in init_with_top_controls
             and "ttk.Menubutton" in init_with_top_controls,
+        ),
+        (
+            "Open 3D has a right-docked STEP element browser",
+            "_build_step_admin_right_panel" in init
+            and '"STEP Elements"' in init
+            and "columnconfigure(2, weight=0)" in init
+            and "columnspan=3" in init_with_top_controls
+            and "refresh_step_admin_panel" in refresh,
+        ),
+        (
+            "STEP browser groups elements by CAD role",
+            "ttk.Treeview" in step_admin_source
+            and '"Optical Element"' in step_admin_source
+            and '"Imaging Lens"' in step_admin_source
+            and '"Camera / Detector"' in step_admin_source
+            and '"overlay:"' in step_admin_source
+            and '"row:"' in step_admin_source,
+        ),
+        (
+            "STEP browser selection drives Open 3D highlight and table selection",
+            "select_step_overlay_from_admin" in step_admin_source
+            and "select_promoted_step_row_from_admin" in step_admin_source
+            and "_set_step_highlight(label)" in step_admin_overlay_select
+            and "show_step_rotation_handler(label)" in step_admin_overlay_select
+            and "_select_table_indices([row_index]" in step_admin_promoted_select
+            and "_sync_surface_selection(row_index)" in step_admin_promoted_select
+            and "highlight_row(row_index)" in step_admin_promoted_select,
+        ),
+        (
+            "STEP browser exposes selected-element property actions",
+            '"Properties"' in step_admin_source
+            and '"Selected Element"' in step_admin_source
+            and "start_selected_step_carry" in step_admin_source
+            and "accept_selected_step_placement" in step_admin_source
+            and "promote_selected_step_to_optical_solid_row" in step_admin_source
+            and "delete_selected_step" in step_admin_source
+            and "open_selected_optical_faces" in step_admin_source,
         ),
         ("Open 3D Snapshot uses Save As dialog", "filedialog.asksaveasfilename" in snapshot),
         ("Open 3D Snapshot defaults to attachment directory", "initialdir=str(ATTACHMENT_DIR)" in snapshot),
