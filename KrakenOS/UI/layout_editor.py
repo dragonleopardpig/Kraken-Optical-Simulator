@@ -17536,14 +17536,19 @@ class KrakenLayoutEditor(tk.Tk):
         phase_entry = ttk.Entry(editor, textvariable=phase_var, width=12)
         phase_entry.grid(row=7, column=1, sticky="ew", pady=(0, 6))
         ttk.Label(editor, text="Clear aperture [mm]").grid(row=8, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=aperture_var, width=12).grid(row=8, column=1, sticky="ew", pady=(0, 6))
+        aperture_entry = ttk.Entry(editor, textvariable=aperture_var, width=12)
+        aperture_entry.grid(row=8, column=1, sticky="ew", pady=(0, 6))
         ttk.Label(editor, text="Material override").grid(row=9, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=material_var, width=18).grid(row=9, column=1, sticky="ew", pady=(0, 6))
+        material_entry = ttk.Entry(editor, textvariable=material_var, width=18)
+        material_entry.grid(row=9, column=1, sticky="ew", pady=(0, 6))
         ttk.Label(editor, text="Coating").grid(row=10, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=coating_var, width=18).grid(row=10, column=1, sticky="ew", pady=(0, 6))
-        ttk.Checkbutton(editor, text="Flip normal for UI intent", variable=flip_var).grid(row=11, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        coating_entry = ttk.Entry(editor, textvariable=coating_var, width=18)
+        coating_entry.grid(row=10, column=1, sticky="ew", pady=(0, 6))
+        flip_check = ttk.Checkbutton(editor, text="Flip normal for UI intent", variable=flip_var)
+        flip_check.grid(row=11, column=0, columnspan=2, sticky="w", pady=(0, 8))
         ttk.Label(editor, text="Notes").grid(row=12, column=0, sticky="w", pady=(0, 2))
-        ttk.Entry(editor, textvariable=notes_var, width=28).grid(row=12, column=1, sticky="ew", pady=(0, 6))
+        notes_entry = ttk.Entry(editor, textvariable=notes_var, width=28)
+        notes_entry.grid(row=12, column=1, sticky="ew", pady=(0, 6))
         ttk.Label(editor, textvariable=validation_var, foreground="#475569", wraplength=330).grid(row=13, column=0, columnspan=2, sticky="ew", pady=(4, 8))
         ttk.Label(
             editor,
@@ -18786,8 +18791,36 @@ class KrakenLayoutEditor(tk.Tk):
                 )
             return True
 
+        def persist_face_editor_metadata(reason: str = "Face Editor") -> None:
+            metadata_to_save = normalize_optical_solid_face_metadata(
+                {"faces": records, "virtual_planes": virtual_planes, "source_stl": str(path)},
+                source_stl=str(path),
+            )
+            self._begin_history_capture()
+            target = self.rows[row_index]
+            target.advanced = dict(target.advanced or {})
+            target.advanced[OPTICAL_SOLID_FACES_ADVANCED_ATTR] = metadata_to_save
+            self._sync_table()
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            reason_text = str(reason or "Face Editor")
+            self._invalidate_optical_solid_face_assignment_trace(row_index, reason_text)
+            self._refresh_open_3d_views(force_retrace=True)
+            assigned_count = sum(
+                1
+                for record in records
+                if _normalize_optical_solid_face_function(record.get("function"), legacy_role=record.get("role"))
+                != OPTICAL_SOLID_FACE_FUNCTION_DEFAULT
+            )
+            self.append_debug(
+                f"CAD/STL face editor saved S{row_index}: {reason_text}; "
+                f"{assigned_count} non-default face functions."
+            )
+
         def apply_selected() -> None:
-            apply_current_form_to_selection()
+            if apply_current_form_to_selection():
+                persist_face_editor_metadata("Apply Form to Selected")
+                self.status_var.set(f"Saved CAD/STL optical face changes for S{row_index}.")
 
         def auto_apply_selected_face_identity(_event=None) -> None:
             if form_loading:
@@ -18795,11 +18828,15 @@ class KrakenLayoutEditor(tk.Tk):
             if apply_current_form_to_selection(quiet=True):
                 index = selected_record_index()
                 record = records[index] if index is not None and 0 <= index < len(records) else {}
+                face_id = str(record.get("face_id", "selected face") or "selected face")
+                function_display = _optical_solid_face_function_display(record.get("function"), legacy_role=record.get("role"))
+                persist_face_editor_metadata(f"{face_id} {function_display}")
                 validation_var.set(
-                    f"Updated {record.get('face_id', 'selected face')}: "
+                    f"Saved {face_id}: "
                     f"{_normalize_optical_solid_face_side(record.get('side_2d'))} / "
-                    f"{_optical_solid_face_function_display(record.get('function'), legacy_role=record.get('role'))}."
+                    f"{function_display}."
                 )
+                self.status_var.set(f"Saved CAD/STL optical face changes for S{row_index}.")
 
         def apply_current_form_to_selection_for_save() -> bool:
             return True if not selected_record_indices() else apply_current_form_to_selection(quiet=True)
@@ -19212,6 +19249,20 @@ class KrakenLayoutEditor(tk.Tk):
         function_menu.bind("<<ComboboxSelected>>", auto_apply_selected_face_identity, add="+")
         port_menu.bind("<<ComboboxSelected>>", auto_apply_selected_face_identity, add="+")
         fit_reference_menu.bind("<<ComboboxSelected>>", auto_apply_selected_face_identity, add="+")
+        for entry_widget in (
+            input_offset_u_entry,
+            input_offset_v_entry,
+            split_entry,
+            loss_entry,
+            phase_entry,
+            aperture_entry,
+            material_entry,
+            coating_entry,
+            notes_entry,
+        ):
+            entry_widget.bind("<FocusOut>", auto_apply_selected_face_identity, add="+")
+            entry_widget.bind("<Return>", auto_apply_selected_face_identity, add="+")
+        flip_check.configure(command=auto_apply_selected_face_identity)
         function_var.trace_add("write", update_face_property_field_states)
         _set_virtual_status()
         refresh_tree("face_0")

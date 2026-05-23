@@ -181,6 +181,12 @@ def _validate_face_role_save_forces_stale_trace_rebuild() -> None:
         raise AssertionError("CAD/STL face-role Save Roles does not force an open Open 3D inspector to retrace.")
     if "_invalidate_optical_solid_face_assignment_trace(row_index, \"Save Roles\")" not in face_editor_source:
         raise AssertionError("CAD/STL face-role Save Roles does not clear stale traced scene state.")
+    if "def persist_face_editor_metadata" not in face_editor_source:
+        raise AssertionError("CAD/STL face-role editor has no immediate row-metadata persistence helper.")
+    if "persist_face_editor_metadata(f\"{face_id} {function_display}\")" not in face_editor_source:
+        raise AssertionError("CAD/STL face-role combobox edits are not saved immediately to row metadata.")
+    if "entry_widget.bind(\"<FocusOut>\", auto_apply_selected_face_identity" not in face_editor_source:
+        raise AssertionError("CAD/STL face-role text fields do not save on focus-out.")
     if "_invalidate_optical_solid_face_assignment_trace(row_index, face_id, function)" not in assign_source:
         raise AssertionError("Direct CAD/STL face assignment does not clear stale traced scene state.")
     if "force_retrace: bool = False" not in refresh_source or "refresh_from_editor(force_retrace=force_retrace)" not in refresh_source:
