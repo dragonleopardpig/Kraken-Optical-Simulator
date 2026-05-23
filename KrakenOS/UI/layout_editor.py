@@ -8924,6 +8924,37 @@ class Kraken3DInspector(tk.Toplevel):
                 pass
         return removed
 
+    def _step_rotation_handle_count_for_label(self, label: str) -> int:
+        label = str(label or "").strip().lower()
+        if not label:
+            return 0
+        count = 0
+        for step_label, _axis, _delta_deg in list(self._actor_step_rotate_map.values()):
+            if str(step_label).strip().lower() == label:
+                count += 1
+        return count
+
+    def _ensure_step_rotation_handles_for_label(self, label: str) -> int:
+        label = str(label or "").strip().lower()
+        if (
+            self._renderer is None
+            or label not in STEP_OVERLAY_LABEL_SET
+            or self.editor._step_path_for_label(label) is None
+            or not self._show_rotation_handles()
+        ):
+            return 0
+        current_count = self._step_rotation_handle_count_for_label(label)
+        if current_count > 0:
+            return current_count
+        try:
+            mesh = self.editor._transformed_imported_step_mesh_for_label(label)
+        except Exception as exc:
+            self.editor.append_debug(f"STEP rotation handle rebuild failed for {label}: {exc}")
+            return 0
+        if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+            return 0
+        return self._add_step_rotation_handles(label, mesh)
+
     def _remove_placement_rotation_handle_actors(self) -> bool:
         if self._renderer is None:
             return False
@@ -9981,10 +10012,15 @@ class Kraken3DInspector(tk.Toplevel):
             self._step_carry_grid_spacing_mm = None
         self.editor.select_step_component(label)
         self._set_step_highlight(label)
+        handle_count = self._ensure_step_rotation_handles_for_label(label)
         handle_text = "Use the colored STEP rotation handles, or Center STEP Axis."
         if not self._show_rotation_handles():
             handle_text = "Rotation handles are hidden; enable the toolbar checkbox or use Center STEP Axis."
+        elif handle_count <= 0:
+            handle_text = "Rotation handles could not be rebuilt for this STEP mesh; use Center STEP Axis or re-open Open 3D."
         self.status_var.set(f"{self._step_rotation_status_text(label)}. {handle_text}")
+        if handle_count > 0:
+            self.render()
 
     def _update_step_rotation_handler_state(self) -> None:
         label = self._step_rotation_active_label
@@ -9993,6 +10029,8 @@ class Kraken3DInspector(tk.Toplevel):
             return
         if not self._show_rotation_handles():
             self._remove_step_rotation_handle_actors()
+        else:
+            self._ensure_step_rotation_handles_for_label(str(label))
 
     def _rotate_step_from_handler(self, axis: str, delta_deg: float) -> None:
         label = self._step_rotation_active_label or self.editor._selected_step_label
@@ -13725,7 +13763,10 @@ class Kraken3DInspector(tk.Toplevel):
                 self._set_step_highlight(step_label)
                 self.show_step_rotation_handler(step_label)
                 if remembered:
-                    self.start_step_normal_axis_pick(step_label)
+                    self.status_var.set(
+                        f"Selected {step_label.upper()} STEP face. Rotation handles remain active; "
+                        "use Snap STEP Normal->Optical Axis or Center Surface->Optical Axis when ready."
+                    )
                 else:
                     self.status_var.set(f"Selected {step_label.upper()} STEP. Use the colored rotation handles or Center STEP Axis.")
                 return

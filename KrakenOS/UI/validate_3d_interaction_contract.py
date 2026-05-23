@@ -126,6 +126,7 @@ def main() -> int:
     mouse_move = inspect.getsource(Kraken3DInspector._on_mouse_move)
     handler = inspect.getsource(Kraken3DInspector.show_step_rotation_handler)
     handler_rotate = inspect.getsource(Kraken3DInspector._rotate_step_from_handler)
+    ensure_step_handles = inspect.getsource(Kraken3DInspector._ensure_step_rotation_handles_for_label)
     step_rotate_handles = inspect.getsource(Kraken3DInspector._add_step_rotation_handles)
     rotation_arc_mesh = inspect.getsource(Kraken3DInspector._scene_placement_rotation_arc_mesh)
     rotation_arrowhead_mesh = inspect.getsource(Kraken3DInspector._scene_placement_rotation_arrowhead_mesh)
@@ -205,6 +206,13 @@ def main() -> int:
     init = inspect.getsource(Kraken3DInspector.__init__)
     top_controls_source = inspect.getsource(Open3DTopControlsPanel).replace("self.inspector.", "self.")
     init_with_top_controls = init + "\n" + top_controls_source
+    try:
+        plain_step_select_block = pick.split("if requested_label is None and not axis_pick_any:", 1)[1].split(
+            "if requested_label is not None and requested_label != step_label:",
+            1,
+        )[0]
+    except Exception:
+        plain_step_select_block = ""
     open3d_display_camera = inspect.getsource(Kraken3DInspector._camera_preset_from_display_orientation)
     legacy_configure = inspect.getsource(KrakenLayoutEditor._configure_legacy_3d_plotter)
     legacy_display_camera = inspect.getsource(KrakenLayoutEditor._legacy_3d_camera_preset_from_display_orientation)
@@ -342,6 +350,17 @@ def main() -> int:
         ),
         ("VTK left-button trackball forwarding removed", "LeftButtonPressEvent(event" not in bindings),
         ("STEP click activates rotation handles", "show_step_rotation_handler(step_label)" in pick),
+        (
+            "STEP reselect rebuilds rotation handles after blank deselect",
+            "_ensure_step_rotation_handles_for_label(label)" in handler
+            and "_add_step_rotation_handles(label, mesh)" in ensure_step_handles
+            and "_step_rotation_handle_count_for_label(label)" in ensure_step_handles,
+        ),
+        (
+            "plain STEP face click keeps rotation handles usable",
+            "start_step_normal_axis_pick(step_label)" not in plain_step_select_block
+            and "Rotation handles remain active" in plain_step_select_block,
+        ),
         ("STEP rotation handler is not a popup", "tk.Toplevel" not in handler and "_step_rotation_active_label" in handler),
         ("STEP rotation handles expose X/Y/Z axes", '("x",' in step_rotate_handles and '("y",' in step_rotate_handles and '("z",' in step_rotate_handles),
         ("STEP rotation handles expose signed user-selected arrows per axis", "sign=1.0" in step_rotate_handles and "_rotation_handle_step_deg()" in step_rotate_handles and "(-float(step), float(step))" in step_rotate_handles),

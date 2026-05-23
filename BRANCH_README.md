@@ -63,6 +63,7 @@ Current pipeline checkpoint:
 
 | Item | Status | Progress | Notes |
 | --- | --- | --- | --- |
+| Open 3D STEP reselect rotation handles | Achieved | `██████████ 100%` | Blank-click deselection still clears selected STEP state and removes rotation-handle actors, but a later STEP body/face click now rebuilds the in-scene rotation handles immediately. Plain STEP face selection records the face for later normal/surface-center actions without automatically arming `Snap STEP Normal->Optical Axis`, so rotation-handle hover and click remain available until the user explicitly starts a snap command. |
 | Open 3D splitter branch bundle display | Achieved | `██████████ 100%` | The Open 3D `world_envelope` sampler now detects splitter/branched raykeeper paths before applying through-going envelope reduction. When a beam splitter expands one launch ray into reflected/transmitted child paths, the sampler keeps the full boundary launch bundle so the displayed cube/prism splitter shows the whole beam split instead of only the center ray pair. |
 | VTK 9.5 overlay API cleanup | Achieved | `██████████ 100%` | Open 3D text overlays now use `AddViewProp` / `RemoveViewProp` through a renderer helper, with deprecated `AddActor2D` / `RemoveActor2D` retained only as older-VTK fallbacks. This removes VTK 9.5 deprecation warnings from the mode badge, ray-terminal summary, placement-grid status, hover status, and ray-event label overlays. |
 | Internal cube beam-splitter continuation | Achieved | `██████████ 100%` | Internal optical-solid beam-splitter faces now preserve the current glass volume instead of toggling to glass-air at the diagonal plane, and reflected/transmitted child branches keep the same solid eligible for the next exit-face hit. Open 3D face hover/selection outlines now use the full planar face boundary, so cube internal splitter faces highlight as one enclosed diagonal face instead of small triangulation patches. |
@@ -70,7 +71,12 @@ Current pipeline checkpoint:
 | Blank starter launch default | Achieved | `██████████ 100%` | Reset/new blank Object+Image layouts now start in `Object mode = Infinity` with angle-field sampling, so Open 3D `Pupil / field` displays a parallel aperture-envelope launch by default. Explicit finite-object presets and saved layout settings still preserve their finite-object cone semantics. |
 | Open 3D world-envelope axes | Achieved | `██████████ 100%` | The default `Pupil / field` Open 3D launch keeps a real center reference ray alongside the aperture-envelope rim, selected through-going envelope traces retain that center ray, and traced `Optical Axis 2+` overlays are now limited to the final post-surface exit segment. This prevents off-axis rim rays and internal prism legs from creating multiple input-axis guides or an output guide offset from the physical exit bundle. |
 
-Latest movement on 2026-05-23: Open 3D `world_envelope` tracing is now
+Latest movement on 2026-05-23: Open 3D STEP reselection now restores rotation
+handles after blank-click deselection. Plain STEP face clicks keep rotation
+handles live and only record the face for later Snap/Center actions; they no
+longer auto-enter normal-to-axis snap mode and block handle hover/click.
+
+Earlier movement on 2026-05-23: Open 3D `world_envelope` tracing is now
 branch-aware. The through-going-envelope reducer detects non-primary splitter
 paths or branch-expanded ray counts and keeps the full boundary launch bundle,
 so a cube beam-splitter face assigned `Partial Reflecting / Transmitting`
