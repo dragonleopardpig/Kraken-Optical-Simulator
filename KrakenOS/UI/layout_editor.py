@@ -3782,7 +3782,7 @@ def _load_zemax_zmx_data(path: Path) -> dict:
         "source_model": SOURCE_MODEL_DEFAULT,
         "pupil_pattern": PUPIL_PATTERN_DEFAULT,
         "source_radius": "5.0",
-        "source_cone_angle": "5.0",
+        "source_cone_angle": "0.0",
         "gaussian_input_mode": GAUSSIAN_INPUT_MODE_DEFAULT,
         "gaussian_waist_radius": "0.5",
         "gaussian_waist_offset": "0.0",
@@ -6004,6 +6004,93 @@ class Kraken3DInspector(tk.Toplevel):
         }
 
     @staticmethod
+    def _ray_event_mesh_face_id(event: object) -> str:
+        metadata = getattr(event, "metadata", {}) or {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        return str(
+            getattr(event, "mesh_face_id", "")
+            or getattr(event, "face_id", "")
+            or metadata.get("mesh_face_id", "")
+            or metadata.get("face_id", "")
+            or ""
+        ).strip()
+
+    def _row_face_record_for_context(self, row_index: int, face_id: str) -> dict[str, object] | None:
+        face_id = str(face_id or "").strip()
+        if not face_id:
+            return None
+        try:
+            row, _path, metadata = self.editor._optical_solid_face_metadata_for_row(int(row_index))
+        except Exception:
+            return None
+        transform = self._runtime_transform_for_row(self.__dict__.get("_current_system"), int(row_index))
+        if transform is not None:
+            faces = self._runtime_world_face_records_for_pick(row, metadata, transform)
+        else:
+            faces = self.editor._optical_solid_face_records_for_temp_row(row, int(row_index), metadata)
+        for record in list(faces or []):
+            if str(record.get("face_id", "") or "").strip() == face_id:
+                return dict(record)
+        return None
+
+    def _traced_row_face_hit_near_display_xy(
+        self,
+        row_index: int,
+        display_xy,
+        *,
+        tolerance_px: float = 42.0,
+    ) -> dict[str, object] | None:
+        scene_bundle = getattr(self, "_current_scene_bundle", None)
+        if scene_bundle is None:
+            return None
+        try:
+            event_xy = np.asarray(display_xy, dtype=float).reshape(-1)[:2]
+        except Exception:
+            return None
+        if event_xy.size < 2 or not np.all(np.isfinite(event_xy[:2])):
+            return None
+        best: tuple[float, dict[str, object]] | None = None
+        for path in list(getattr(scene_bundle, "ray_paths", []) or []):
+            for event in list(getattr(path, "events", []) or []):
+                if str(getattr(event, "event_kind", "") or "") != "surface":
+                    continue
+                try:
+                    surface_id = int(getattr(event, "surface_id", -1))
+                except Exception:
+                    continue
+                if surface_id != int(row_index):
+                    continue
+                face_id = self._ray_event_mesh_face_id(event)
+                if not face_id:
+                    continue
+                point = np.asarray(getattr(event, "point_world", ()), dtype=float).reshape(-1)[:3]
+                if point.size < 3 or not np.all(np.isfinite(point[:3])):
+                    continue
+                display = self._world_to_display_2d(point[:3])
+                if display is None or display.size < 2 or not np.all(np.isfinite(display[:2])):
+                    continue
+                distance_px = float(np.linalg.norm(display[:2] - event_xy[:2]))
+                if not np.isfinite(distance_px) or distance_px > float(tolerance_px):
+                    continue
+                normal = np.asarray(getattr(event, "surface_normal", ()), dtype=float).reshape(-1)[:3]
+                if normal.size < 3 or not np.all(np.isfinite(normal[:3])):
+                    normal = np.asarray([], dtype=float)
+                candidate = {
+                    "face_id": face_id,
+                    "point_world": np.asarray(point[:3], dtype=float),
+                    "normal_world": np.asarray(normal[:3], dtype=float) if normal.size >= 3 else None,
+                    "event_type": str(getattr(event, "event_type", "") or ""),
+                    "distance_px": distance_px,
+                    "ray_index": int(getattr(path, "ray_index", -1) or -1),
+                    "step": int(getattr(event, "step", 0) or 0),
+                    "face": self._row_face_record_for_context(int(row_index), face_id),
+                }
+                if best is None or distance_px < best[0]:
+                    best = (distance_px, candidate)
+        return None if best is None else best[1]
+
+    @staticmethod
     def _open3d_surface_function_menu_items() -> tuple[str, ...]:
         return (
             optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_UNCOATED,
@@ -6217,7 +6304,24 @@ class Kraken3DInspector(tk.Toplevel):
                 self.status_var.set(f"CAD/STL face lookup failed: {_short_error_message(exc)}")
                 self.editor.append_debug(f"Open 3D right-click face lookup failed: {exc}")
                 return "break"
-            if face is not None:
+            trace_hit = self._traced_row_face_hit_near_display_xy(int(row_index), context.get("display_xy"))
+            trace_face_id = str((trace_hit or {}).get("face_id", "") or "").strip()
+            if trace_face_id:
+                traced_face = trace_hit.get("face") if isinstance(trace_hit, dict) else None
+                if isinstance(traced_face, dict):
+                    face = traced_face
+                face_id = trace_face_id
+                point = np.asarray(trace_hit.get("point_world", point[:3]), dtype=float).reshape(3)
+                trace_normal = trace_hit.get("normal_world")
+                if trace_normal is not None:
+                    try:
+                        normal_candidate = np.asarray(trace_normal, dtype=float).reshape(-1)[:3]
+                        if normal_candidate.size >= 3 and np.all(np.isfinite(normal_candidate[:3])):
+                            normal = normal_candidate[:3]
+                    except Exception:
+                        pass
+                face_lookup_method = f"{face_lookup_method}+trace_event"
+            if face is not None and not trace_face_id:
                 face_id = str(face.get("face_id", "") or "").strip()
             self._debug_trace(
                 "right_click_face_match",
@@ -6226,6 +6330,8 @@ class Kraken3DInspector(tk.Toplevel):
                 lookup_method=face_lookup_method,
                 cell_id=cell_id,
                 through_body=face_lookup_method.startswith("display_ray"),
+                trace_face_id=trace_face_id or None,
+                trace_distance_px=round(float(trace_hit.get("distance_px", 0.0)), 3) if isinstance(trace_hit, dict) else None,
                 face_function=_optical_solid_face_function_display(face.get("function"), legacy_role=face.get("role")) if face is not None else None,
                 face_role=face.get("role") if face is not None else None,
                 face_port_role=face.get("port_role") if face is not None else None,
@@ -24424,7 +24530,7 @@ class KrakenLayoutEditor(tk.Tk):
         source_radius_entry.grid(row=3, column=0, sticky="ew", pady=(0, 8))
 
         ttk.Label(parent, text="Cone half-angle [deg]").grid(row=2, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
-        self.source_cone_angle_var = tk.StringVar(value="5.0")
+        self.source_cone_angle_var = tk.StringVar(value="0.0")
         source_cone_angle_entry = ttk.Entry(parent, textvariable=self.source_cone_angle_var, width=12)
         source_cone_angle_entry.grid(row=3, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
         self._add_widget_tooltip(
@@ -31808,7 +31914,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._set_optional_var("source_model_var", SOURCE_MODEL_DEFAULT)
         self._set_optional_var("pupil_pattern_var", PUPIL_PATTERN_DEFAULT)
         self._set_optional_var("source_radius_var", "5.0")
-        self._set_optional_var("source_cone_angle_var", "5.0")
+        self._set_optional_var("source_cone_angle_var", "0.0")
         self._set_optional_var("gaussian_input_mode_var", GAUSSIAN_INPUT_MODE_DEFAULT)
         self._set_optional_var("gaussian_waist_radius_var", "0.5")
         self._set_optional_var("gaussian_waist_offset_var", "0.0")
@@ -32195,7 +32301,7 @@ class KrakenLayoutEditor(tk.Tk):
             "source_model": self._current_source_model(),
             "pupil_pattern": self._left_mode_text("pupil_pattern_var", PUPIL_PATTERN_DEFAULT),
             "source_radius": self._left_mode_text("source_radius_var", "5.0"),
-            "source_cone_angle": self._left_mode_text("source_cone_angle_var", "5.0"),
+            "source_cone_angle": self._left_mode_text("source_cone_angle_var", "0.0"),
             "gaussian_input_mode": self._left_mode_text("gaussian_input_mode_var", GAUSSIAN_INPUT_MODE_DEFAULT),
             "gaussian_waist_radius": self._left_mode_text("gaussian_waist_radius_var", "0.5"),
             "gaussian_waist_offset": self._left_mode_text("gaussian_waist_offset_var", "0.0"),
@@ -65580,9 +65686,9 @@ class KrakenLayoutEditor(tk.Tk):
     def _current_source_cone_angle(self) -> float:
         source_cone_angle_var = self.__dict__.get("source_cone_angle_var")
         try:
-            value = float(source_cone_angle_var.get()) if source_cone_angle_var is not None else 5.0
+            value = float(source_cone_angle_var.get()) if source_cone_angle_var is not None else 0.0
         except Exception:
-            value = 5.0
+            value = 0.0
         return max(min(float(value), 89.9), 0.0)
 
     def _current_gaussian_input_mode(self) -> str:

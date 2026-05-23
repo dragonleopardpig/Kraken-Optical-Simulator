@@ -272,6 +272,7 @@ def main() -> int:
     trace_summary = inspect.getsource(Kraken3DInspector._update_trace_summary)
     optical_axis_records = inspect.getsource(Kraken3DInspector._optical_axis_records_for_3d)
     optical_axis_overlays = inspect.getsource(Kraken3DInspector._add_optical_axis_pick_overlays)
+    traced_face_context_pick = inspect.getsource(Kraken3DInspector._traced_row_face_hit_near_display_xy)
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
     stl_refresh = inspect.getsource(Kraken3DInspector._refresh_after_stl_pose_change)
     right_click_menu = inspect.getsource(Kraken3DInspector._show_surface_function_context_menu)
@@ -297,6 +298,9 @@ def main() -> int:
     open3d_step_state_service = inspect.getsource(Open3DStepStateService)
     preview_sampling = inspect.getsource(KrakenLayoutEditor._preview_scene_sampling_mode)
     trace_preview_rays = inspect.getsource(KrakenLayoutEditor._trace_preview_rays)
+    build_source_panel = inspect.getsource(KrakenLayoutEditor._build_source_panel)
+    reset_runtime_state = inspect.getsource(KrakenLayoutEditor._reset_complete_layout_runtime_state)
+    current_source_cone = inspect.getsource(KrakenLayoutEditor._current_source_cone_angle)
     saved_layout_figure = inspect.getsource(build_saved_layout_figure)
     scene_ray_records = inspect.getsource(KrakenLayoutEditor._iter_3d_scene_ray_records)
     ray_terminal_style = inspect.getsource(KrakenLayoutEditor._ray_terminal_3d_style)
@@ -697,9 +701,18 @@ def main() -> int:
             "face_id: str" in assign_row_face_context
             and "optical_solid_face_record_for_mesh_cell" in right_click_menu
             and "_row_face_ray_pick_for_display_xy" in right_click_menu
+            and "_traced_row_face_hit_near_display_xy" in right_click_menu
+            and "_ray_event_mesh_face_id" in traced_face_context_pick
+            and "distance_px" in traced_face_context_pick
             and "assign_optical_solid_face_function(" in assign_row_face_context
             and "assign_optical_solid_face_function_at_world_point(" in assign_row_face_context
             and "picked_face_id=face_id" in right_click_menu,
+        ),
+        (
+            "Open 3D default source launch is collimated unless a cone is requested",
+            'source_cone_angle_var = tk.StringVar(value="0.0")' in build_source_panel
+            and '_set_optional_var("source_cone_angle_var", "0.0")' in reset_runtime_state
+            and "else 0.0" in current_source_cone,
         ),
         (
             "Open 3D transient STEP face assignment carries picked face id through promotion",
