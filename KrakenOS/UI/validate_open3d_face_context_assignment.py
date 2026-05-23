@@ -270,6 +270,61 @@ def _validate_face_assignment_drops_stale_trace_cache() -> None:
         app.destroy()
 
 
+def _validate_promote_step_assignment_remaps_overlay_face_id_by_world_pick() -> None:
+    app = KrakenLayoutEditor(headless=True)
+    try:
+        app.imported_optical_step_path = PRISM_42779_STEP
+        app.optical_step_rotation_x_deg = 0.0
+        app.optical_step_rotation_y_deg = 90.0
+        app.optical_step_rotation_z_deg = 180.0
+        app.optical_step_placement_offset_xyz = (0.0, 5.338434311662937, 49.581543467386936)
+        app.select_step_component("optical")
+
+        inspector = object.__new__(Kraken3DInspector)
+        inspector.editor = app
+        inspector.status_var = app.status_var
+        inspector._stl_placement_dirty = False
+        inspector._active_refresh_sampling_mode = lambda: "world_envelope"
+        inspector._debug_trace = lambda *args, **kwargs: None
+        inspector._debug_actor_counts = lambda: {}
+        inspector._clear_step_overlay_interaction_state = lambda label=None: None
+        inspector.refresh_from_editor = lambda **kwargs: None
+        inspector.highlight_row = lambda row_index: None
+
+        picked_point = np.asarray((2.294262, 6.130541, 76.960132), dtype=float)
+        picked_normal = np.asarray((0.0, -0.382684, 0.923879), dtype=float)
+        Kraken3DInspector._promote_step_and_assign_face_function(
+            inspector,
+            "optical",
+            picked_point,
+            picked_normal,
+            "Full Reflecting",
+            face_id="F006",
+        )
+        if len(app.rows) < 3:
+            raise AssertionError("Promote-and-assign did not insert the optical STEP row.")
+        row_index = 1
+        metadata = normalize_optical_solid_face_metadata(
+            app.rows[row_index].advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+        )
+        functions = {
+            str(face.get("face_id", "") or ""): str(face.get("function", "") or "")
+            for face in list(metadata.get("faces", []) or [])
+            if isinstance(face, dict)
+        }
+        if functions.get("F004") != "Mirror":
+            raise AssertionError(
+                "Imported STEP promote-and-assign must remap the temporary overlay face label by "
+                f"picked world point/normal; functions={functions!r}."
+            )
+        if functions.get("F006") == "Mirror":
+            raise AssertionError(
+                "Temporary overlay face F006 was trusted after promotion and mirrored the wrong row face."
+            )
+    finally:
+        app.destroy()
+
+
 def main() -> int:
     if not PRISM_42779_STEP.exists():
         raise RuntimeError(f"Expected STEP fixture: {PRISM_42779_STEP}")
@@ -458,6 +513,7 @@ def main() -> int:
 
     _validate_promoted_reflecting_prism_image_plane_is_not_intrusive()
     _validate_face_assignment_drops_stale_trace_cache()
+    _validate_promote_step_assignment_remaps_overlay_face_id_by_world_pick()
 
     print("Open 3D face context assignment validation passed.")
     return 0

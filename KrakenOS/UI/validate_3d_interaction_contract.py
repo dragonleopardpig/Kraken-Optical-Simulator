@@ -852,11 +852,11 @@ def main() -> int:
             and "_preview_2d_sampling_mode()" in saved_layout_figure,
         ),
         ("Open 3D sync receives the same SceneBundle as 2D", "scene_bundle=bundle" in editor_refresh_plot and "refresh_scene(" in open3d_refresh_service),
-        ("shared scene sampling supports full-pupil, world-envelope, and source-cone-world modes", "full_pupil" in preview_sampling and "world_envelope" in preview_sampling and "source_cone_world" in preview_sampling),
+        ("shared scene sampling supports full-pupil, world-envelope, and explicit source-cone-world modes", "full_pupil" in preview_sampling and "world_envelope" in preview_sampling and "source_cone_world" in trace_preview_rays),
         (
-            "source cone sampling is preserved as a filled 3D cone when a promoted scene becomes non-sequential",
-            "_should_use_default_finite_cone_source" in preview_sampling
-            and 'return "source_cone_world"' in preview_sampling
+            "Pupil/field source cone is not auto-promoted into a physical point cone",
+            'return "world_envelope"' in preview_sampling
+            and 'return "source_cone_world"' not in preview_sampling
             and "_build_default_finite_cone_world_bundles" in trace_preview_rays,
         ),
         (

@@ -6553,23 +6553,32 @@ class Kraken3DInspector(tk.Toplevel):
             "promote_step_face_assignment_promoted",
             label=label,
             row_index=row_index,
-            face_id=face_id or None,
+            overlay_face_id=face_id or None,
             result={key: str(value) for key, value in dict(result).items()},
         )
+        assigned_by = "world_point"
         try:
-            if face_id:
-                assigned = self.editor.assign_optical_solid_face_function(
-                    row_index,
-                    face_id,
-                    function_label,
-                    direct_context=True,
-                )
-            else:
+            # Imported STEP overlays and promoted row-backed STL solids are
+            # generated as different cached meshes. Their planar face labels can
+            # differ even when they describe the same physical surface, so the
+            # first promote-and-assign action must rematch by picked world
+            # geometry instead of trusting the temporary overlay face ID.
+            try:
                 assigned = self.editor.assign_optical_solid_face_function_at_world_point(
                     row_index,
                     point_world,
                     function_label,
                     normal_world=normal_world,
+                    direct_context=True,
+                )
+            except Exception:
+                if not face_id:
+                    raise
+                assigned_by = "overlay_face_id_fallback"
+                assigned = self.editor.assign_optical_solid_face_function(
+                    row_index,
+                    face_id,
+                    function_label,
                     direct_context=True,
                 )
         except Exception as exc:
@@ -6582,6 +6591,8 @@ class Kraken3DInspector(tk.Toplevel):
             label=label,
             row_index=row_index,
             face_id=str(assigned.get("face_id", "") or ""),
+            overlay_face_id=face_id or None,
+            assigned_by=assigned_by,
             function_display=str(assigned.get("function_display", function_label) or function_label),
             metadata=self._debug_face_metadata_summary(assigned.get("metadata")),
         )
@@ -28853,11 +28864,6 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             trace_state = {}
         if bool(trace_state.get("use_nonseq")) or bool(trace_state.get("use_folded")):
-            try:
-                if self._should_use_default_finite_cone_source(system=self.__dict__.get("last_system")):
-                    return "source_cone_world"
-            except Exception:
-                pass
             return "world_envelope"
         return "display_slice"
 
@@ -28883,17 +28889,12 @@ class KrakenLayoutEditor(tk.Tk):
         """Sampling mode for Open 3D.
 
         Open 3D should show the physical 3D launch whenever the user has not
-        explicitly requested a filled full-pupil trace. A non-sequential
-        default source cone therefore remains a point cone, not a meridional
-        fan slice.
+        explicitly requested a filled full-pupil trace. The default Pupil/field
+        sampler remains a prescription reference; use a physical source model
+        for point-cone illumination.
         """
         if self._is_full_pupil_mode():
             return "full_pupil"
-        try:
-            if self._should_use_default_finite_cone_source(system=self.__dict__.get("last_system")):
-                return "source_cone_world"
-        except Exception:
-            pass
         return "world_envelope"
 
     def _current_preview_scene_trace(self):
@@ -64116,33 +64117,18 @@ class KrakenLayoutEditor(tk.Tk):
         return pairs
 
     def _should_use_default_finite_cone_source(self, *, system=None) -> bool:
-        """Preserve the default source cone when the scene becomes non-sequential.
+        """Return whether Pupil/field should become a physical point source.
 
-        `Pupil / field` is the ordered-surface sequential source model.  A
-        nonzero Source cone is still an explicit launch request; promoting a
-        STEP body should not silently swap that point-cone preview for a
-        world-envelope aperture sampler.
+        It should not. Under the North Star architecture, Pupil/field remains
+        the conventional prescription-analysis sampler. Non-sequential scenes
+        use a 3D aperture/envelope reference by default, while physical point
+        cones are launched only by explicit source models such as Random point
+        cone or authored scene sources.
         """
-        if self._current_source_model() != SOURCE_MODEL_DEFAULT:
-            return False
-        if float(self._current_source_cone_angle()) <= 1e-12:
-            return False
-        try:
-            trace_state = self._resolved_trace_mode(system=system)
-        except Exception:
-            trace_state = {}
-        return bool(trace_state.get("use_nonseq"))
+        return False
 
     def _should_show_open3d_launch_reference_surface(self, *, system=None) -> bool:
-        if self._current_source_model() != SOURCE_MODEL_DEFAULT:
-            return False
-        if float(self._current_source_cone_angle()) <= 1e-12:
-            return False
-        try:
-            trace_state = self._resolved_trace_mode(system=system)
-        except Exception:
-            trace_state = {}
-        return bool(trace_state.get("use_nonseq"))
+        return False
 
     def _current_image_diameter_mode(self) -> str:
         if not hasattr(self, "image_diameter_mode_var"):
