@@ -63,10 +63,19 @@ Current pipeline checkpoint:
 
 | Item | Status | Progress | Notes |
 | --- | --- | --- | --- |
+| STEP face-level partial reflectors | Achieved | `██████████ 100%` | Optical-solid face metadata saved from Open 3D `Partial Reflecting / Transmitting` now feeds the deterministic non-sequential branch tracer directly. Face-level `Beam Splitter` records carry split ratio, loss, and phase into reflected/transmitted child paths instead of being treated as a one-way mirror or a plain uncoated face. |
 | Blank starter launch default | Achieved | `██████████ 100%` | Reset/new blank Object+Image layouts now start in `Object mode = Infinity` with angle-field sampling, so Open 3D `Pupil / field` displays a parallel aperture-envelope launch by default. Explicit finite-object presets and saved layout settings still preserve their finite-object cone semantics. |
 | Open 3D world-envelope axes | Achieved | `██████████ 100%` | The default `Pupil / field` Open 3D launch keeps a real center reference ray alongside the aperture-envelope rim, selected through-going envelope traces retain that center ray, and traced `Optical Axis 2+` overlays are now limited to the final post-surface exit segment. This prevents off-axis rim rays and internal prism legs from creating multiple input-axis guides or an output guide offset from the physical exit bundle. |
 
-Latest movement on 2026-05-23: blank reset/new Object+Image layouts now default
+Latest movement on 2026-05-23: STEP/CAD optical-solid faces assigned
+`Partial Reflecting / Transmitting` now participate in deterministic
+non-sequential branching. The kernel scans row-backed `OpticalSolidFaces`
+metadata for face-level `Beam Splitter` records, copies split ratio/loss/phase
+from the hit face into the interaction override, and spawns both transmitted
+and reflected child paths through the same event-accounting path used by
+row-level beam-splitter surfaces.
+
+Earlier movement on 2026-05-23: blank reset/new Object+Image layouts now default
 to `Object mode = Infinity` and angle-field sampling, so Open 3D `Pupil /
 field` starts as a parallel aperture-envelope reference instead of a finite
 object point-to-pupil cone. Saved presets and explicit finite-object workflows

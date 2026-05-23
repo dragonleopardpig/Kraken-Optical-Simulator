@@ -932,11 +932,32 @@ class system():
         if not isinstance(matched, dict):
             return None
         function = normalize_optical_solid_face_function(matched.get("function"), legacy_role=matched.get("role"))
+        try:
+            split_ratio = float(matched.get("split_ratio", 0.5))
+        except Exception:
+            split_ratio = 0.5
+        if not np.isfinite(split_ratio):
+            split_ratio = 0.5
+        try:
+            loss = float(matched.get("loss", 0.0))
+        except Exception:
+            loss = 0.0
+        if not np.isfinite(loss):
+            loss = 0.0
+        try:
+            phase_deg = float(matched.get("phase_deg", 180.0))
+        except Exception:
+            phase_deg = 180.0
+        if not np.isfinite(phase_deg):
+            phase_deg = 180.0
         override = {
             "face_id": str(matched.get("face_id", "") or "").strip(),
             "side_2d": str(matched.get("side_2d", "") or "").strip(),
             "function": function,
-            "loss": float(np.clip(float(matched.get("loss", 0.0) or 0.0), 0.0, 1.0)),
+            "split_ratio": float(np.clip(split_ratio, 0.0, 1.0)),
+            "loss": float(np.clip(loss, 0.0, 1.0)),
+            "phase_deg": phase_deg,
+            "coating": str(matched.get("coating", "") or "").strip(),
             "normal_world": tuple(float(value) for value in np.asarray(matched.get("normal_world", normal_world), dtype=float).reshape(3)),
             "boundary_source": str(matched.get("boundary_source", "") or "").strip(),
         }
@@ -2125,7 +2146,49 @@ class system():
         self.Hit_z = AT[2]
         self.ExectTime=[]
 
-    def __BeamSplitterSettings(self, j):
+    def __BeamSplitterSettingsFromFace(self, face_override):
+        face = dict(face_override or {}) if isinstance(face_override, dict) else {}
+        function = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+        if function != "Beam Splitter":
+            return None
+        try:
+            reflectance = float(face.get("split_ratio", face.get("reflectance", 0.5)))
+        except Exception:
+            reflectance = 0.5
+        try:
+            absorption = float(face.get("loss", face.get("absorption", 0.0)))
+        except Exception:
+            absorption = 0.0
+        reflectance = min(max(reflectance, 0.0), 1.0)
+        absorption = min(max(absorption, 0.0), 1.0 - reflectance)
+        try:
+            phase_deg = float(face.get("phase_deg", face.get("reflect_phase_deg", 180.0)))
+        except Exception:
+            phase_deg = 180.0
+        if not np.isfinite(phase_deg):
+            phase_deg = 180.0
+        return {
+            "deterministic": True,
+            "use_coating_table": False,
+            "use_fresnel_polarization": False,
+            "reflectance": reflectance,
+            "transmittance": max(1.0 - reflectance - absorption, 0.0),
+            "absorption": absorption,
+            "polarization_p_fraction": 0.5,
+            "polarization_s_phase_deg": 0.0,
+            "min_branch_power": 1e-4,
+            "max_branch_depth": 8,
+            "transmit_phase_deg": 0.0,
+            "reflect_phase_deg": phase_deg,
+            "transmit_s_phase_deg": 0.0,
+            "reflect_s_phase_deg": 0.0,
+            "split_mode": "Deterministic face split",
+        }
+
+    def __BeamSplitterSettings(self, j, face_override=None):
+        face_settings = self.__BeamSplitterSettingsFromFace(face_override)
+        if face_settings is not None:
+            return face_settings
         settings = getattr(self.SDT[j], "BeamSplitter", None)
         if not isinstance(settings, dict):
             return None
@@ -2234,6 +2297,7 @@ class system():
             "reflect_phase_deg": reflect_phase,
             "transmit_s_phase_deg": transmit_s_phase,
             "reflect_s_phase_deg": reflect_s_phase,
+            "split_mode": str(settings.get("split_mode", settings.get("mode", "Deterministic paths"))),
         }
 
     def __DiffuseScatterSettings(self, j):
@@ -2949,6 +3013,13 @@ class system():
             settings = self.__BeamSplitterSettings(j)
             if settings is not None and settings["deterministic"]:
                 return True
+            try:
+                metadata = normalize_optical_solid_face_metadata(getattr(self.SDT[int(j)], "OpticalSolidFaces", {}))
+            except Exception:
+                metadata = {"faces": []}
+            for face in list(metadata.get("faces", []) or []):
+                if self.__BeamSplitterSettingsFromFace(face) is not None:
+                    return True
         return False
 
     def __NsTraceSnapshot(
@@ -3628,7 +3699,7 @@ class system():
                         and diffuse_settings["reflectance"] > 0.0
                         and branch_depth < int(diffuse_settings["max_branch_depth"])
                     )
-                    splitter_settings = self.__BeamSplitterSettings(j)
+                    splitter_settings = self.__BeamSplitterSettings(j, face_override=face_override)
                     can_split = (
                         splitter_settings is not None
                         and splitter_settings["deterministic"]
