@@ -175,6 +175,10 @@ def main() -> int:
     step_normal_snap = inspect.getsource(Kraken3DInspector.snap_selected_step_normal_to_optical_axis)
     step_normal_axis_start = inspect.getsource(Kraken3DInspector.start_step_normal_axis_pick)
     step_normal_axis_apply = inspect.getsource(Kraken3DInspector._apply_step_normal_axis_pick)
+    step_surface_center_action = inspect.getsource(Kraken3DInspector.center_selected_step_surface_to_optical_axis)
+    step_surface_center_axis_start = inspect.getsource(Kraken3DInspector.start_step_surface_center_axis_pick)
+    step_surface_center_axis_apply = inspect.getsource(Kraken3DInspector._apply_step_surface_center_axis_pick)
+    step_surface_center_pick = inspect.getsource(Kraken3DInspector._surface_center_from_face_ray_pick)
     optical_axis_records = inspect.getsource(Kraken3DInspector._optical_axis_records_for_3d)
     optical_axis_overlays = inspect.getsource(Kraken3DInspector._add_optical_axis_pick_overlays)
     optical_axis_highlight = inspect.getsource(Kraken3DInspector._set_optical_axis_highlight)
@@ -403,6 +407,29 @@ def main() -> int:
             and "_nearest_traced_ray_frame_near_point" in editor_step_axis_frame
             and "_rotation_matrix_between_vectors" in editor_step_normal_snap
             and "_affine_from_point_sets" in editor_step_normal_snap,
+        ),
+        (
+            "Open 3D STEP hover reports pick and surface-center coordinates",
+            "_world_xyz_text" in mouse_move
+            and "Pick=" in mouse_move
+            and "Center=" in mouse_move
+            and "_surface_center_from_face_ray_pick" in mouse_move
+            and "centroid_world" in step_surface_center_pick,
+        ),
+        (
+            "Open 3D can center a selected STEP surface on the optical axis separately from normal snap",
+            "Center STEP Surface->Optical Axis" in top_controls_source
+            and "Center Surface->Axis" in step_admin_source
+            and "center_selected_step_surface_to_optical_axis" in step_admin_source
+            and "_selected_step_feature_surface_center_world" in init
+            and "surface_center_world" in remember_step_feature
+            and "start_step_surface_center_axis_pick(label)" in step_surface_center_action
+            and "_step_surface_center_axis_pick_mode = True" in step_surface_center_axis_start
+            and "_step_normal_axis_pick_mode = False" in step_surface_center_axis_start
+            and "_apply_step_surface_center_axis_pick(axis_info)" in pick
+            and "translate_step_overlay(label, delta[:3], refresh=False)" in step_surface_center_axis_apply
+            and "Surface center=" in step_surface_center_axis_start
+            and "_step_surface_center_axis_pick_mode = False" in operation_cancel,
         ),
         ("Open 3D STEP carry mode is free-only", "STEP carry uses free drag movement" in step_carry_mode),
         (

@@ -84,6 +84,14 @@ class Open3DStepAdminPanel:
         self._selection_buttons["faces"] = self._grid_button(action_frame, 2, 0, "Faces", self._faces_selected)
         self._selection_buttons["center"] = self._grid_button(action_frame, 2, 1, "Center Axis", self._center_selected)
         self._selection_buttons["normal"] = self._grid_button(action_frame, 3, 0, "Normal->Axis", self._normal_axis_selected, columnspan=2)
+        self._selection_buttons["surface_center"] = self._grid_button(
+            action_frame,
+            4,
+            0,
+            "Center Surface->Axis",
+            self._surface_center_selected,
+            columnspan=2,
+        )
 
         self.refresh()
         return stack
@@ -316,6 +324,7 @@ class Open3DStepAdminPanel:
             "faces": row_selected,
             "center": overlay_selected or row_selected,
             "normal": overlay_selected,
+            "surface_center": overlay_selected,
         }
         for key, button in self._selection_buttons.items():
             try:
@@ -384,4 +393,9 @@ class Open3DStepAdminPanel:
     def _normal_axis_selected(self) -> None:
         if self._select_current_for_action():
             self.inspector.snap_selected_step_normal_to_optical_axis()
+            self.refresh()
+
+    def _surface_center_selected(self) -> None:
+        if self._select_current_for_action():
+            self.inspector.center_selected_step_surface_to_optical_axis()
             self.refresh()

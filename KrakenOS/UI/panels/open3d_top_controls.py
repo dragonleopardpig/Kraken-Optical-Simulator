@@ -98,6 +98,7 @@ class Open3DTopControlsPanel:
         cad_target_menu.add_separator()
         cad_target_menu.add_command(label="Center STEP Axis", command=self.editor.start_any_step_axis_pick)
         cad_target_menu.add_command(label="Snap STEP Normal->Optical Axis", command=self.inspector.snap_selected_step_normal_to_optical_axis)
+        cad_target_menu.add_command(label="Center STEP Surface->Optical Axis", command=self.inspector.center_selected_step_surface_to_optical_axis)
         cad_target_menu.add_command(label="Obj->LED", command=self.editor.start_led_object_edge_pick)
         cad_target_menu.add_command(label="Export STEP", command=self.editor.export_3d_step)
         cad_target_menu.add_separator()
