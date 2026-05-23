@@ -141,6 +141,19 @@ def _surface_face_sequence(path: object) -> tuple[str, ...]:
     )
 
 
+def _surface_event_counts(scene_bundle: object) -> Counter[str]:
+    counts: Counter[str] = Counter()
+    for path in list(getattr(scene_bundle, "ray_paths", []) or []):
+        for event in list(getattr(path, "events", []) or []):
+            if str(getattr(event, "event_kind", "") or "") != "surface":
+                continue
+            face_id = _event_face_id(event)
+            interaction = str(getattr(event, "event_type", "") or getattr(event, "interaction", "") or "hit").strip().lower()
+            if face_id:
+                counts[f"{face_id}:{interaction}"] += 1
+    return counts
+
+
 def _validate_promoted_reflecting_prism_image_plane_is_not_intrusive() -> None:
     """Reproduce the Open 3D penta-prism workflow that exposed halfway stops."""
 
@@ -201,6 +214,58 @@ def _validate_promoted_reflecting_prism_image_plane_is_not_intrusive() -> None:
                 "Exact promoted reflecting-prism repro left rays terminated before the exit face; "
                 f"sequence_counts={Counter(sequences)!r}"
             )
+    finally:
+        app.destroy()
+
+
+def _validate_face_assignment_drops_stale_trace_cache() -> None:
+    app = KrakenLayoutEditor(headless=True)
+    try:
+        app.imported_optical_step_path = PRISM_42779_STEP
+        app.optical_step_rotation_x_deg = 0.0
+        app.optical_step_rotation_y_deg = 90.0
+        app.optical_step_rotation_z_deg = 180.0
+        app.optical_step_placement_offset_xyz = (0.0, 5.338434219360337, 35.338052809592156)
+        app.select_step_component("optical")
+        promoted = app.promote_imported_step_to_optical_solid_row(
+            "optical",
+            insert_at=1,
+            open_face_editor=False,
+            clear_overlay=True,
+            refresh_open_3d=False,
+        )
+        if promoted is None:
+            raise AssertionError("Stale-cache validation could not promote the STEP prism.")
+        row_index = int(promoted["row_index"])
+        _system, _rays, before_bundle = app._build_preview_system_rays_bundle(
+            sampling_mode="world_envelope",
+            update_state=True,
+        )
+        if app._current_preview_scene_trace() is None:
+            raise AssertionError("Expected a cached preview trace before assigning the mirror face.")
+        before_counts = _surface_event_counts(before_bundle)
+        if not before_counts.get("F004:refraction", 0):
+            raise AssertionError(f"Expected the unassigned prism to refract at F004 first; counts={before_counts!r}.")
+
+        app.assign_optical_solid_face_function(row_index, "F004", "Full Reflecting", direct_context=True)
+        if app._current_preview_scene_trace() is not None:
+            raise AssertionError("CAD/STL face assignment left a stale current preview trace available.")
+        if app.last_system is not None or app.last_rays is not None or app._last_scene_bundle is not None:
+            raise AssertionError("CAD/STL face assignment did not clear stale traced system/ray/bundle state.")
+
+        _system, _rays, after_bundle = app._build_preview_system_rays_bundle(
+            sampling_mode="world_envelope",
+            update_state=False,
+        )
+        ray_paths = list(getattr(after_bundle, "ray_paths", []) or [])
+        after_counts = _surface_event_counts(after_bundle)
+        if len(ray_paths) <= 0 or after_counts.get("F004:reflection", 0) != len(ray_paths):
+            raise AssertionError(
+                "Rebuilt trace after F004 Full Reflecting assignment did not reflect every ray: "
+                f"rays={len(ray_paths)}, counts={after_counts!r}."
+            )
+        if after_counts.get("F004:refraction", 0):
+            raise AssertionError(f"Stale F004 refraction survived mirror assignment: counts={after_counts!r}.")
     finally:
         app.destroy()
 
@@ -392,6 +457,7 @@ def main() -> int:
         app.destroy()
 
     _validate_promoted_reflecting_prism_image_plane_is_not_intrusive()
+    _validate_face_assignment_drops_stale_trace_cache()
 
     print("Open 3D face context assignment validation passed.")
     return 0

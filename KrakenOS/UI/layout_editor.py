@@ -18980,6 +18980,8 @@ class KrakenLayoutEditor(tk.Tk):
             self._sync_table()
             self._commit_history_capture()
             self._mark_plot_update_pending()
+            self._invalidate_optical_solid_face_assignment_trace(row_index, "Save Roles")
+            self._refresh_open_3d_views(force_retrace=True)
             summary = self._optical_solid_faces_summary(row_index, target)
             self.append_debug(summary)
             if auto_orient_solution is not None:
@@ -19494,6 +19496,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._sync_table()
         self._commit_history_capture()
         self._mark_plot_update_pending()
+        self._invalidate_optical_solid_face_assignment_trace(row_index, face_id, function)
         display = _optical_solid_face_function_display(function)
         summary = self._optical_solid_faces_summary(row_index, target)
         if related_face_ids:
@@ -23220,13 +23223,19 @@ class KrakenLayoutEditor(tk.Tk):
             return None
         return selected
 
-    def _refresh_open_3d_views(self, *, camera_only: bool = False, step_label: str | None = None) -> None:
+    def _refresh_open_3d_views(
+        self,
+        *,
+        camera_only: bool = False,
+        step_label: str | None = None,
+        force_retrace: bool = False,
+    ) -> None:
         if camera_only:
             step_label = "camera"
         if self._three_d_inspector is not None:
             try:
                 if self._three_d_inspector.winfo_exists():
-                    self._three_d_inspector.refresh_from_editor()
+                    self._three_d_inspector.refresh_from_editor(force_retrace=force_retrace)
             except Exception:
                 pass
         if self._legacy_3d_plotter is not None:
@@ -25588,6 +25597,33 @@ class KrakenLayoutEditor(tk.Tk):
                 self.append_debug(f"Preview trace invalidated: {reason}")
             except Exception:
                 pass
+
+    def _invalidate_optical_solid_face_assignment_trace(
+        self,
+        row_index: int | None = None,
+        face_id: str = "",
+        function: str = "",
+    ) -> None:
+        reason_bits = ["CAD/STL face assignment"]
+        if row_index is not None:
+            try:
+                reason_bits.append(f"S{int(row_index)}")
+            except Exception:
+                pass
+        face_text = str(face_id or "").strip()
+        if face_text:
+            reason_bits.append(face_text)
+        function_text = _optical_solid_face_function_display(function) if function else ""
+        if function_text:
+            reason_bits.append(function_text)
+        self._invalidate_preview_scene_trace(" ".join(reason_bits))
+        self.last_system = None
+        self.last_rays = None
+        self._last_scene_bundle = None
+        self._last_live_step_overlay_trace_rows = None
+        self._last_live_step_overlay_trace_records = []
+        self._last_live_step_overlay_scene_bundle = None
+        self._live_step_overlay_trace_plan_cache = {}
 
     def _mark_plot_update_pending(self, _event=None) -> None:
         self._commit_history_capture()

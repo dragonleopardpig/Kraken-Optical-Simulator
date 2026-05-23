@@ -173,6 +173,20 @@ def _validate_focus_and_vtk_teardown_are_guarded() -> None:
         raise AssertionError("VTK teardown helper does not finalize the render window.")
 
 
+def _validate_face_role_save_forces_stale_trace_rebuild() -> None:
+    face_editor_source = inspect.getsource(KrakenLayoutEditor._open_optical_solid_faces_for_row)
+    refresh_source = inspect.getsource(KrakenLayoutEditor._refresh_open_3d_views)
+    assign_source = inspect.getsource(KrakenLayoutEditor.assign_optical_solid_face_function)
+    if "_refresh_open_3d_views(force_retrace=True)" not in face_editor_source:
+        raise AssertionError("CAD/STL face-role Save Roles does not force an open Open 3D inspector to retrace.")
+    if "_invalidate_optical_solid_face_assignment_trace(row_index, \"Save Roles\")" not in face_editor_source:
+        raise AssertionError("CAD/STL face-role Save Roles does not clear stale traced scene state.")
+    if "_invalidate_optical_solid_face_assignment_trace(row_index, face_id, function)" not in assign_source:
+        raise AssertionError("Direct CAD/STL face assignment does not clear stale traced scene state.")
+    if "force_retrace: bool = False" not in refresh_source or "refresh_from_editor(force_retrace=force_retrace)" not in refresh_source:
+        raise AssertionError("Open 3D view refresh helper cannot propagate forced retrace requests.")
+
+
 def _launch_signature(scene_bundle) -> tuple[tuple[float, ...], ...]:
     signature: list[tuple[float, ...]] = []
     for path in list(getattr(scene_bundle, "ray_paths", []) or []):
@@ -241,6 +255,7 @@ def main() -> int:
     _validate_face_assignment_handlers_capture_mode_before_mutation()
     _validate_done_2d_and_close_preserve_open3d_sampling()
     _validate_focus_and_vtk_teardown_are_guarded()
+    _validate_face_role_save_forces_stale_trace_rebuild()
     _validate_world_envelope_survives_off_axis_step_promotion()
     print("Open 3D face assignment sampling stability validation passed.")
     return 0
