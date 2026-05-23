@@ -45,6 +45,19 @@ class InterNormalCalc():
         self.P_z1 = 10000000.0
         self.last_mesh_hit = None
 
+    def __RaySelfHitTolerance(self):
+        scales = []
+        for surf in list(getattr(self, "SDT", []) or []):
+            for attr_name in ("Diameter", "InDiameter", "Thickness"):
+                try:
+                    value = abs(float(getattr(surf, attr_name, 0.0) or 0.0))
+                except Exception:
+                    value = 0.0
+                if np.isfinite(value) and value > 0.0:
+                    scales.append(value)
+        scale = max(scales) if scales else 1.0
+        return max(1.0e-6, float(scale) * 1.0e-6)
+
     def __SigmaHitTransfSpace(self, PP_start, PP_stop, j):
         """__SigmaHitTransfSpace.
 
@@ -360,6 +373,7 @@ class InterNormalCalc():
         Pgn = np.asarray([0, 1, 0])
         PTO_exit = [0, 0, 0]
         norm = [0, 0, 1]
+        self.last_mesh_hit = None
         mesh, (inter, ind) = trace_mesh_ray(
             self.EEE[jj],
             PP_start,
@@ -375,14 +389,18 @@ class InterNormalCalc():
         if (SurfHit != 0):
             s = 0
             h = []
+            near_hit_tolerance = self.__RaySelfHitTolerance()
             for f in ind:
                 PD = (np.asarray(inter[s]) - np.asarray(PP_start))
                 distance = np.linalg.norm(PD)
-                if (np.abs(distance) < 0.05):
+                if (np.abs(distance) <= near_hit_tolerance):
                     distance = 99999999999999.9
                 h.append(distance)
                 s = (s + 1)
-            index = np.argmin(np.asarray(h))
+            distances = np.asarray(h, dtype=float)
+            if distances.size == 0 or float(np.min(distances)) >= 9999999999999.0:
+                return (0, norm, np.asarray(PTO_exit), Pgn)
+            index = np.argmin(distances)
             PTO_exit = inter[index]
             hit_cell_id = int(ind[index])
             NOR = mesh.cell_normals

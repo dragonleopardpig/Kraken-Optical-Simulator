@@ -1015,6 +1015,19 @@ class system():
             self.__ReplaceSceneMesh(mesh_index, mesh)
         return points, hits
 
+    def __NonSequentialNearHitTolerance(self):
+        scales = []
+        for surf in list(getattr(self, "SDT", []) or []):
+            for attr_name in ("Diameter", "InDiameter", "Thickness"):
+                try:
+                    value = abs(float(getattr(surf, attr_name, 0.0) or 0.0))
+                except Exception:
+                    value = 0.0
+                if np.isfinite(value) and value > 0.0:
+                    scales.append(value)
+        scale = max(scales) if scales else 1.0
+        return max(1.0e-6, float(scale) * 1.0e-6)
+
 
     def __NonSequentialChooserToot(self, A_RayOrig, A_Proto_pTarget, k):
         """__NonSequentialChooserToot.
@@ -1044,10 +1057,11 @@ class system():
             else:
                 s = 0
                 h = []
+                near_hit_tolerance = self.__NonSequentialNearHitTolerance()
                 for f in A_SurfHit:
                     PD = (np.asarray(A_pTarget[s]) - np.asarray(A_RayOrig))
                     distance = np.linalg.norm(PD)
-                    if (np.abs(distance) < 0.05):
+                    if (np.abs(distance) <= near_hit_tolerance):
                         distance = 99999999999999.9
                     h.append(distance)
                     s = (s + 1)

@@ -3099,9 +3099,7 @@ def _sync_path_display_geometry_from_events(path: RayPath3D) -> None:
         ).strip().lower()
         terminal_surface_id = getattr(terminal_event, "surface_id", None)
         terminal_is_detector_hit = bool(terminal_metadata.get("reaches_detector", False)) or terminal_reason == "image"
-        if terminal_point is not None and (
-            not _same_point(points[-1], terminal_point) or terminal_is_detector_hit
-        ):
+        if terminal_point is not None and not _same_point(points[-1], terminal_point):
             points.append(terminal_point)
             terminal_point_source = str(
                 terminal_metadata.get("terminal_geometry_source", "") or ""

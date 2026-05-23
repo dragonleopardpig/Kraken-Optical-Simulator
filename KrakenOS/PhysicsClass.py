@@ -115,7 +115,7 @@ class snell_refraction_vector_physics():
             c1 = np.dot(-Nv,Iv)
         IP = ((NN**2)*(1-(c1**2.0)))
 
-        c2 = np.sqrt(1.0-IP)
+        c2 = np.sqrt(max(0.0, 1.0-IP))
         T = NN * Iv + ((( NN * c1 ) - c2)) * Nv
 
         return T, np.abs(n2), SIGN, ang
