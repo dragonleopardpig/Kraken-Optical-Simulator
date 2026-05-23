@@ -8545,18 +8545,37 @@ class Kraken3DInspector(tk.Toplevel):
     def _clear_ray_event_label_actors(self, *, render: bool = False) -> None:
         if self._renderer is not None:
             for actor in list(self._ray_event_label_actors):
-                try:
-                    self._renderer.RemoveActor(actor)
-                    continue
-                except Exception:
-                    pass
-                try:
-                    self._renderer.RemoveActor2D(actor)
-                except Exception:
-                    pass
+                self._remove_renderer_view_prop(actor)
         self._ray_event_label_actors = []
         if render:
             self.render()
+
+    def _add_renderer_view_prop(self, actor) -> None:
+        if self._renderer is None or actor is None:
+            return
+        add_view_prop = getattr(self._renderer, "AddViewProp", None)
+        if callable(add_view_prop):
+            add_view_prop(actor)
+            return
+        try:
+            self._renderer.AddActor(actor)
+        except Exception:
+            self._renderer.AddActor2D(actor)
+
+    def _remove_renderer_view_prop(self, actor) -> None:
+        if self._renderer is None or actor is None:
+            return
+        remove_view_prop = getattr(self._renderer, "RemoveViewProp", None)
+        if callable(remove_view_prop):
+            remove_view_prop(actor)
+            return
+        try:
+            self._renderer.RemoveActor(actor)
+        except Exception:
+            try:
+                self._renderer.RemoveActor2D(actor)
+            except Exception:
+                pass
 
     @staticmethod
     def _ray_event_world_point(event: object) -> np.ndarray | None:
@@ -11041,13 +11060,7 @@ class Kraken3DInspector(tk.Toplevel):
         actor = self._mode_badge_actor
         if not text:
             if actor is not None:
-                try:
-                    self._renderer.RemoveActor2D(actor)
-                except Exception:
-                    try:
-                        self._renderer.RemoveActor(actor)
-                    except Exception:
-                        pass
+                self._remove_renderer_view_prop(actor)
                 self._mode_badge_actor = None
                 if render:
                     self.render()
@@ -11067,7 +11080,7 @@ class Kraken3DInspector(tk.Toplevel):
                 except Exception:
                     pass
                 actor.SetPickable(False)
-                self._renderer.AddActor2D(actor)
+                self._add_renderer_view_prop(actor)
                 self._mode_badge_actor = actor
             except Exception as exc:
                 self.editor.append_debug(f"3D mode badge unavailable: {exc}")
@@ -11275,13 +11288,7 @@ class Kraken3DInspector(tk.Toplevel):
         actor = self._trace_summary_actor
         if not text:
             if actor is not None:
-                try:
-                    self._renderer.RemoveActor2D(actor)
-                except Exception:
-                    try:
-                        self._renderer.RemoveActor(actor)
-                    except Exception:
-                        pass
+                self._remove_renderer_view_prop(actor)
                 self._trace_summary_actor = None
                 if render:
                     self.render()
@@ -11301,7 +11308,7 @@ class Kraken3DInspector(tk.Toplevel):
                 except Exception:
                     pass
                 actor.SetPickable(False)
-                self._renderer.AddActor2D(actor)
+                self._add_renderer_view_prop(actor)
                 self._trace_summary_actor = actor
             except Exception as exc:
                 self.editor.append_debug(f"3D ray terminal summary unavailable: {exc}")
@@ -11876,13 +11883,7 @@ class Kraken3DInspector(tk.Toplevel):
         actor = self._placement_grid_status_actor
         if not text:
             if actor is not None:
-                try:
-                    self._renderer.RemoveActor2D(actor)
-                except Exception:
-                    try:
-                        self._renderer.RemoveActor(actor)
-                    except Exception:
-                        pass
+                self._remove_renderer_view_prop(actor)
                 self._placement_grid_status_actor = None
                 if render:
                     self.render()
@@ -11901,7 +11902,7 @@ class Kraken3DInspector(tk.Toplevel):
                 except Exception:
                     pass
                 actor.SetPickable(False)
-                self._renderer.AddActor2D(actor)
+                self._add_renderer_view_prop(actor)
                 self._placement_grid_status_actor = actor
             except Exception as exc:
                 self.editor.append_debug(f"3D placement grid status unavailable: {exc}")
@@ -11926,13 +11927,7 @@ class Kraken3DInspector(tk.Toplevel):
         actor = self._hover_status_actor
         if not text:
             if actor is not None:
-                try:
-                    self._renderer.RemoveActor2D(actor)
-                except Exception:
-                    try:
-                        self._renderer.RemoveActor(actor)
-                    except Exception:
-                        pass
+                self._remove_renderer_view_prop(actor)
                 self._hover_status_actor = None
                 if render:
                     self.render()
@@ -11951,7 +11946,7 @@ class Kraken3DInspector(tk.Toplevel):
                 except Exception:
                     pass
                 actor.SetPickable(False)
-                self._renderer.AddActor2D(actor)
+                self._add_renderer_view_prop(actor)
                 self._hover_status_actor = actor
             except Exception as exc:
                 self.editor.append_debug(f"3D hover status unavailable: {exc}")

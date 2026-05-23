@@ -632,7 +632,7 @@ def main() -> int:
         ("active mode badge covers Orient Row->Target", "ORIENT ROW -> TARGET" in badge_text),
         ("active mode badge covers Orient Row->Ray", "ORIENT ROW -> RAY" in badge_text),
         ("active mode badge covers Source Target", "SOURCE TARGET" in badge_text),
-        ("active mode badge is a VTK overlay", "AddActor2D" in badge_update and "vtkTextActor" in badge_update),
+        ("active mode badge is a VTK overlay", "_add_renderer_view_prop(actor)" in badge_update and "vtkTextActor" in badge_update),
         ("active mode badge survives 3D refresh", "_update_mode_badge" in refresh),
         ("embedded STL placement toolbar removed", "stl_toolbar" not in init and "placement toolbar" not in init),
         (
