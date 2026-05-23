@@ -162,6 +162,8 @@ def main() -> int:
     step_carry_grip_clear = inspect.getsource(Kraken3DInspector._clear_step_carry_grip_marker)
     step_promote = inspect.getsource(Kraken3DInspector.promote_selected_step_to_optical_solid_row)
     step_promote_helper = inspect.getsource(Kraken3DInspector._promote_step_overlay_to_optical_solid_row)
+    delete_step = inspect.getsource(Kraken3DInspector.delete_selected_step)
+    delete_step_event = inspect.getsource(Kraken3DInspector._delete_selected_step_event)
     step_carry_start = inspect.getsource(Kraken3DInspector.start_selected_step_carry)
     step_carry_snap_start = inspect.getsource(Kraken3DInspector.start_step_carry_snap_ray)
     step_carry_snap_apply = inspect.getsource(Kraken3DInspector._apply_step_carry_snap_ray)
@@ -533,6 +535,16 @@ def main() -> int:
             and "_step_carry_follow_state = None" in operation_cancel
             and "_placement_target_pick_mode = False" in operation_cancel
             and "_cad_axis_pick_any = False" in operation_cancel,
+        ),
+        (
+            "Open 3D Delete/Backspace deletes selected STEP elements",
+            '"<Delete>"' in init
+            and '"<BackSpace>"' in init
+            and "delete_selected_step()" in key_press
+            and "KP_Delete" in key_press
+            and "delete_selected_step()" in delete_step_event
+            and "_picked_row_index" in delete_step
+            and "delete_optical_step_rows(sorted(candidate_indices))" in delete_step,
         ),
         (
             "Open 3D Esc and blank clicks clear selected components",

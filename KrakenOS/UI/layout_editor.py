@@ -5498,6 +5498,10 @@ class Kraken3DInspector(tk.Toplevel):
             self._install_pick_only_left_click_bindings()
             self.bind("<Escape>", self._cancel_active_3d_operation_event)
             self._vtk_widget.bind("<Escape>", self._cancel_active_3d_operation_event, add="+")
+            self.bind("<Delete>", self._delete_selected_step_event)
+            self.bind("<BackSpace>", self._delete_selected_step_event)
+            self._vtk_widget.bind("<Delete>", self._delete_selected_step_event, add="+")
+            self._vtk_widget.bind("<BackSpace>", self._delete_selected_step_event, add="+")
             ttk.Label(self, textvariable=self.status_var, padding=(8, 0, 8, 8)).grid(row=2, column=0, columnspan=2, sticky="ew")
             self.available = True
         except Exception as exc:
@@ -8918,8 +8922,25 @@ class Kraken3DInspector(tk.Toplevel):
             self.refresh_from_editor(force_retrace=True)
             self.status_var.set(f"Deleted imported {display} STEP overlay.")
             return
-        removed = self.editor.delete_optical_step_rows(self.editor._selected_table_indices())
+        candidate_indices = set(int(index) for index in self.editor._selected_table_indices())
+        for candidate in (
+            self._picked_row_index,
+            self._stl_placement_row_index,
+            self._row_carry_hold_candidate_index,
+        ):
+            if candidate is None:
+                continue
+            try:
+                candidate_indices.add(int(candidate))
+            except Exception:
+                pass
+        removed = self.editor.delete_optical_step_rows(sorted(candidate_indices))
         if removed > 0:
+            self._picked_row_index = None
+            self._stl_placement_row_index = None
+            self._row_carry_drag_state = None
+            self._row_carry_hold_candidate_index = None
+            self._cancel_row_carry_hold_timer()
             self.refresh_from_editor(force_retrace=True)
             self.status_var.set(
                 f"Deleted {removed} promoted STEP optical-solid "
@@ -8930,6 +8951,10 @@ class Kraken3DInspector(tk.Toplevel):
             "Delete STEP: select an imported STEP overlay or a promoted "
             "STEP optical-solid row first."
         )
+
+    def _delete_selected_step_event(self, _event=None) -> str:
+        self.delete_selected_step()
+        return "break"
 
     def _selected_imported_step_label(self) -> str:
         for candidate in (
@@ -9442,6 +9467,8 @@ class Kraken3DInspector(tk.Toplevel):
             key = ""
         if key in {"Escape", "Esc"}:
             self.cancel_active_3d_operation()
+        elif key in {"Delete", "BackSpace", "Backspace", "KP_Delete"}:
+            self.delete_selected_step()
 
     def show_step_rotation_handler(self, label: str) -> None:
         label = str(label).strip().lower()
