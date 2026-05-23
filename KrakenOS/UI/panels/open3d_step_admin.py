@@ -224,6 +224,9 @@ class Open3DStepAdminPanel:
             self._selected_item_id = ""
             self._update_properties("")
             return
+        if iid == self._selected_item_id and iid == self._current_browser_selection_iid():
+            self._update_properties(iid)
+            return
         self._selected_item_id = iid
         if iid.startswith("overlay:"):
             label = iid.split(":", 1)[1]

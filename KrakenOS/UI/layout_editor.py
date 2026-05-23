@@ -8878,7 +8878,6 @@ class Kraken3DInspector(tk.Toplevel):
             return False
         self.editor.select_step_component(label)
         self._step_rotation_active_label = label
-        self._step_carry_active_label = label
         self._set_step_highlight(label)
         self.show_step_rotation_handler(label)
         self.refresh_step_admin_panel()

@@ -59,7 +59,13 @@ Estimated branch status:
 Overall branch direction: keep moving toward one scene/event truth source while
 preserving exact sequential prescriptions as the ordered-path special case.
 
-Latest movement on 2026-05-23: Open 3D now includes a right-docked STEP
+Latest movement on 2026-05-23: The Open 3D STEP browser now treats
+programmatic tree selections as passive state sync. Browser refresh can select
+the imported item after a file dialog without re-entering the selection handler,
+and selecting a browser row no longer arms STEP carry or cancels optical
+cursor-carry placement unless the user explicitly presses `Carry`.
+
+Earlier movement on 2026-05-23: Open 3D now includes a right-docked STEP
 element browser, organized by Optical Element, Imaging Lens, and Camera /
 Detector. The browser lists both display-only imported overlays and promoted
 row-backed STEP optical solids; clicking an item highlights the matching 3D
