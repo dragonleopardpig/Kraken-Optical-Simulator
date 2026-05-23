@@ -34940,6 +34940,14 @@ class KrakenLayoutEditor(tk.Tk):
             self._field_type_defaults["Object Height"] = "0.0"
             self.field_value_var.set("0.0")
             self._sync_field_mode_ui()
+        elif name == "Reset":
+            self.display_orientation_var.set("YZ")
+            self.object_mode_var.set("Infinity")
+            self.field_type_var.set(self._field_type_display_label("Angle"))
+            self._last_field_type = "Angle"
+            self._field_type_defaults["Angle"] = "0.0"
+            self.field_value_var.set("0.0")
+            self._sync_field_mode_ui()
         elif name == "Doublet Lens":
             self.display_orientation_var.set("YZ")
             self.object_mode_var.set("Infinity")

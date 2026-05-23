@@ -296,6 +296,49 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
         ),
     ]
 
+    reset_mode = ""
+    reset_field_type = ""
+    reset_envelope_count = 0
+    reset_origin_span = np.zeros(3, dtype=float)
+    reset_direction_span = np.zeros(3, dtype=float)
+    reset_editor = KrakenLayoutEditor(headless=True)
+    try:
+        reset_mode = reset_editor._current_object_mode()
+        reset_field_type = reset_editor._current_field_type()
+        reset_bundles, reset_envelope_count = reset_editor._build_world_envelope_bundles(10.0)
+        reset_origins: list[np.ndarray] = []
+        reset_directions: list[np.ndarray] = []
+        for bundle_item in reset_bundles:
+            arrays = tuple(np.asarray(values, dtype=float).reshape(-1) for values in bundle_item)
+            if len(arrays) != 6 or len(arrays[0]) == 0:
+                continue
+            origins = np.column_stack((arrays[0], arrays[1], arrays[2]))
+            directions = np.column_stack((arrays[3], arrays[4], arrays[5]))
+            reset_origins.extend(np.asarray(origin, dtype=float) for origin in origins)
+            reset_directions.extend(np.asarray(direction, dtype=float) for direction in directions)
+        if reset_origins:
+            reset_origin_span = np.ptp(np.asarray(reset_origins, dtype=float), axis=0)
+        if reset_directions:
+            reset_direction_span = np.ptp(np.asarray(reset_directions, dtype=float), axis=0)
+    finally:
+        reset_editor.destroy()
+    checks.append(
+        SceneSourceCheck(
+            "blank reset Open 3D Pupil/field launch is parallel by default",
+            reset_mode == "Infinity"
+            and reset_field_type == "Angle"
+            and reset_envelope_count >= 5
+            and float(reset_origin_span[0]) > 1e-9
+            and float(reset_origin_span[1]) > 1e-9
+            and np.allclose(reset_direction_span, 0.0, atol=1e-12),
+            (
+                f"mode={reset_mode}, field_type={reset_field_type}, samples={reset_envelope_count}, "
+                f"origin_span={np.round(reset_origin_span, 6).tolist()}, "
+                f"direction_span={np.round(reset_direction_span, 6).tolist()}"
+            ),
+        )
+    )
+
     system = _build_system_from_specs(_row_specs(rows))
     rays = Kos.raykeeper(system)
     source_bundle = editor._build_random_source_bundle(sample_count=5)
