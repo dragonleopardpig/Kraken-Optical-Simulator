@@ -8,7 +8,11 @@ from types import MethodType
 
 import numpy as np
 
-from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
+from KrakenOS.UI.layout_editor import (
+    Kraken3DInspector,
+    KrakenLayoutEditor,
+    _raykeeper_has_non_primary_branch_paths,
+)
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 
 
@@ -253,6 +257,34 @@ def _validate_world_envelope_survives_off_axis_step_promotion() -> None:
         app.destroy()
 
 
+def _validate_world_envelope_keeps_splitter_branch_bundles() -> None:
+    class FakeRays:
+        CC = [object(), object(), object()]
+        BRANCH_PATH = [
+            np.asarray("primary"),
+            np.asarray("S1 split reflect"),
+            np.asarray("S1 split transmit"),
+        ]
+
+    if not _raykeeper_has_non_primary_branch_paths(FakeRays(), expected_launch_count=1):
+        raise AssertionError("World-envelope branch detection missed non-primary splitter branch paths.")
+
+    class ExpandedRays:
+        CC = [object(), object(), object()]
+        BRANCH_PATH: list[object] = []
+
+    if not _raykeeper_has_non_primary_branch_paths(ExpandedRays(), expected_launch_count=1):
+        raise AssertionError("World-envelope branch detection missed expanded branch ray count.")
+    if _raykeeper_has_non_primary_branch_paths(ExpandedRays(), expected_launch_count=3):
+        raise AssertionError("World-envelope branch detection should not flag one output per launch.")
+
+    trace_source = inspect.getsource(KrakenLayoutEditor._trace_selected_through_envelope)
+    if "_raykeeper_has_non_primary_branch_paths(candidate_rays" not in trace_source:
+        raise AssertionError("World-envelope through-ray selector is not branch-aware.")
+    if "kept full" not in trace_source or "launch bundle" not in trace_source:
+        raise AssertionError("World-envelope branch path does not preserve the full launch bundle.")
+
+
 def main() -> int:
     _validate_forced_refresh_preserves_active_mode()
     _validate_explicit_mode_still_wins()
@@ -263,6 +295,7 @@ def main() -> int:
     _validate_focus_and_vtk_teardown_are_guarded()
     _validate_face_role_save_forces_stale_trace_rebuild()
     _validate_world_envelope_survives_off_axis_step_promotion()
+    _validate_world_envelope_keeps_splitter_branch_bundles()
     print("Open 3D face assignment sampling stability validation passed.")
     return 0
 

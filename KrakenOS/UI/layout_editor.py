@@ -5136,6 +5136,42 @@ def _ray_bundle_envelope_polylines(polylines: list[np.ndarray], rays_per_group: 
     return envelope
 
 
+def _raykeeper_branch_path_strings(rays) -> list[str]:
+    branch_paths: list[str] = []
+    raw_paths = getattr(rays, "BRANCH_PATH", [])
+    if raw_paths is None:
+        raw_paths = []
+    for value in list(raw_paths):
+        try:
+            array = np.asarray(value, dtype=object).reshape(-1)
+        except Exception:
+            array = np.asarray([], dtype=object)
+        if array.size:
+            branch_paths.append(str(array[-1] or "").strip())
+        else:
+            branch_paths.append(str(value or "").strip())
+    return branch_paths
+
+
+def _raykeeper_has_non_primary_branch_paths(rays, *, expected_launch_count: int | None = None) -> bool:
+    branch_paths = _raykeeper_branch_path_strings(rays)
+    if any(path and path != "primary" for path in branch_paths):
+        return True
+    if expected_launch_count is not None:
+        try:
+            raw_paths = getattr(rays, "CC", [])
+            traced_count = len(raw_paths) if raw_paths is not None else 0
+        except Exception:
+            traced_count = 0
+        try:
+            launch_count = int(expected_launch_count)
+        except Exception:
+            launch_count = 0
+        if launch_count > 0 and traced_count > launch_count:
+            return True
+    return False
+
+
 def _optical_axis_z_span(bounds) -> tuple[float, float]:
     try:
         b = np.asarray(bounds, dtype=float).reshape(-1)
@@ -65358,6 +65394,30 @@ class KrakenLayoutEditor(tk.Tk):
     def _trace_selected_through_envelope(self, system, rays, wavelength: float, bundles: list[tuple[np.ndarray, ...]]) -> bool:
         candidate_rays = Kos.raykeeper(system)
         self._trace_preview_bundles(system, candidate_rays, wavelength, bundles)
+        total_launches = 0
+        max_group_count = 0
+        for bundle in bundles:
+            try:
+                group_count = len(np.asarray(bundle[0], dtype=float).reshape(-1))
+            except Exception:
+                group_count = 0
+            total_launches += int(max(group_count, 0))
+            max_group_count = max(max_group_count, int(max(group_count, 0)))
+        if _raykeeper_has_non_primary_branch_paths(candidate_rays, expected_launch_count=total_launches):
+            rays.clean()
+            self._trace_preview_bundles(system, rays, wavelength, bundles)
+            self._preview_field_ray_count = max(1, int(max_group_count))
+            self._preview_field_bundle_count = int(len(bundles))
+            try:
+                raw_paths = getattr(rays, "CC", [])
+                traced_count = len(raw_paths) if raw_paths is not None else 0
+            except Exception:
+                traced_count = 0
+            self.append_debug(
+                "3D source envelope: splitter/branch paths detected; "
+                f"kept full {total_launches}-ray launch bundle ({traced_count} displayed branch paths)."
+            )
+            return True
         final_surface = max(0, len(self.rows) - 1)
         polylines: list[np.ndarray] = []
         for ray in getattr(candidate_rays, "CC", ()):
