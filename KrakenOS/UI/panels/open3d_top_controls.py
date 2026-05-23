@@ -32,8 +32,7 @@ class Open3DTopControlsPanel:
         ttk.Label(view_toolbar, text="View").pack(side="left", padx=(0, 6))
         ttk.Button(view_toolbar, text="Refresh", command=self.inspector.refresh_from_editor).pack(side="left")
         ttk.Button(view_toolbar, text="Snapshot", command=self.inspector.save_snapshot).pack(side="left", padx=(8, 0))
-        camera_button = ttk.Menubutton(view_toolbar, text="Camera")
-        camera_menu = tk.Menu(camera_button, tearoff=False)
+        ttk.Label(view_toolbar, text="Camera").pack(side="left", padx=(10, 4))
         for label, preset in (
             ("Iso", "iso"),
             ("YZ", "zy"),
@@ -41,10 +40,12 @@ class Open3DTopControlsPanel:
             ("XZ", "xz"),
             ("Bottom", "bottom"),
         ):
-            camera_menu.add_command(label=label, command=lambda value=preset: self.inspector.set_camera_preset(value))
-        camera_button["menu"] = camera_menu
-        camera_button.pack(side="left", padx=(8, 0))
-        self.inspector._open3d_camera_menu = camera_menu
+            ttk.Button(
+                view_toolbar,
+                text=label,
+                width=max(4, len(label)),
+                command=lambda value=preset: self.inspector.set_camera_preset(value),
+            ).pack(side="left", padx=(2, 0))
         ttk.Checkbutton(
             view_toolbar,
             text="Show rays",

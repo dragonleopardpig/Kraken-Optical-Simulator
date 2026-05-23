@@ -82,8 +82,10 @@ STEP deletion action as `Delete Selected STEP`, including the currently picked
 promoted row-backed STEP optical solid. The first STEP state-service extraction
 is now in place: `Open3DStepStateService` resolves imported-overlay versus
 promoted-row delete targets outside the Tk/VTK widget layer and is covered by a
-focused headless validation. A headless diagnostic with only F004 assigned
-`Full Reflecting` records
+focused headless validation. The Open 3D View toolbar now exposes the camera
+presets as direct `Iso`, `YZ`, `XY`, `XZ`, and `Bottom` buttons instead of
+hiding frequent view switches in a drop-down menu. A headless diagnostic with
+only F004 assigned `Full Reflecting` records
 `F004:reflection=12`, then the bundle exits at still default-Uncoated F003
 (`last hit F003 refraction=12`). With both F003 and F004 assigned
 `Full Reflecting`, the same diagnostic records
@@ -202,9 +204,11 @@ kraken-vtk-tk-check
   an orthographic YZ view, XZ as XZ, and XY as the top view. `Iso` remains
   available when the user wants a perspective 3D inspection view, but it is no
   longer the default comparison view for a 2D plot.
-- Open 3D camera presets are grouped under `Camera`, and optional reference,
-  detector, and miss diagnostics are grouped under `Overlays` so the top row
-  remains usable on narrower windows.
+- Open 3D camera presets are exposed as direct `Iso`, `YZ`, `XY`, `XZ`, and
+  `Bottom` toolbar buttons because users switch views frequently during STEP
+  placement and face assignment. Optional reference, detector, and miss
+  diagnostics remain grouped under `Overlays` so the top row stays usable on
+  narrower windows.
 - Non-sequential `Pupil / field` layouts with a nonzero Source cone launch from
   a 3D Object/source reference aperture and apply the cone angle as a real
   angular spread around each sampled field direction. This keeps Open 3D and
@@ -808,7 +812,7 @@ Production refactor progress:
 | Slice | Status | Progress | Notes |
 | --- | --- | --- | --- |
 | `services/` boundary for Open 3D trace refresh | Started | `███████░░░ 70%` | `Open3DTraceRefreshService` owns sampling-mode normalization, Live Mode preview-bundle creation, open-inspector synchronization, and transient STEP live-trace row creation through the editor trace contract. Remaining service work is stale-request cancellation, CAD mesh reuse/throttling, and moving STEP overlay/promotion/face-assignment transitions behind one service-owned state machine. |
-| `panels/` boundary for Open 3D controls | Started | `███████░░░ 70%` | `Open3DLiveControlsPanel` owns the left-docked Live Controls UI, and `Open3DTopControlsPanel` now owns the View, Scene, and Carry toolbar rows. `Kraken3DInspector` keeps thin compatibility callbacks. Remaining panel work is extracting the main left Source/Field/Trace panels and smaller dialogs. |
+| `panels/` boundary for Open 3D controls | Started | `███████░░░ 71%` | `Open3DLiveControlsPanel` owns the left-docked Live Controls UI, and `Open3DTopControlsPanel` now owns the View, Scene, and Carry toolbar rows, including direct camera preset buttons for frequent Open 3D view switching. `Kraken3DInspector` keeps thin compatibility callbacks. Remaining panel work is extracting the main left Source/Field/Trace panels and smaller dialogs. |
 | `widgets/` reusable Tk controls | Pending | `░░░░░░░░░░ 0%` | Validated entries, combobox commit helpers, projection selectors, menus, and table cell widgets still live mostly in `layout_editor.py`. |
 | Live Mode performance service | Pending | `░░░░░░░░░░ 0%` | Debouncing exists; cancellation, mesh throttling, and row-plan reuse need a stronger service contract before enabling Live Mode by default on heavy CAD scenes. |
 | `sv-ttk` theme adapter | Pending | `░░░░░░░░░░ 0%` | Theme work waits until panels/widgets/services are split enough that styling is a thin layer instead of another responsibility inside `layout_editor.py`. |

@@ -690,7 +690,8 @@ def main() -> int:
             "Open 3D starts in the active 2D projection camera",
             "_camera_preset_for_display_orientation()" in init
             and '("YZ", "zy")' in init_with_top_controls
-            and 'ttk.Menubutton(view_toolbar, text="Camera")' in init_with_top_controls
+            and 'ttk.Label(view_toolbar, text="Camera")' in init_with_top_controls
+            and "self.set_camera_preset(value)" in init_with_top_controls
             and '"zy"' in open3d_display_camera
             and '"xz"' in open3d_display_camera
             and '"xy"' in open3d_display_camera,
