@@ -11,6 +11,7 @@ from KrakenOS.UI.layout_editor import (
     STEP_CARRY_GRID_FREE,
     Kraken3DInspector,
     KrakenLayoutEditor,
+    _dotted_axis_records_from_ray_path,
 )
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
 from KrakenOS.UI.saved_layout_plot import build_saved_layout_figure
@@ -62,6 +63,49 @@ def _scene_path_preserves_raykeeper_terminal_continuation() -> tuple[bool, str]:
     if "raykeeper_terminal_continuation" not in path.display_geometry_diagnostic:
         return False, path.display_geometry_diagnostic
     return True, path.display_geometry_diagnostic
+
+
+def _traced_axis_records_mark_exit_segment() -> tuple[bool, str]:
+    points = np.asarray(
+        [
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 12.0],
+            [0.0, 8.0, 20.0],
+            [0.0, 16.0, 18.0],
+            [0.0, 18.0, 10.0],
+            [0.0, 34.0, 8.0],
+        ],
+        dtype=float,
+    )
+    events = [
+        RayEvent3D(event_kind="surface", event_type="refract", surface_id=1, mesh_face_id="F005"),
+        RayEvent3D(event_kind="surface", event_type="reflect", surface_id=1, mesh_face_id="F004"),
+        RayEvent3D(event_kind="surface", event_type="reflect", surface_id=1, mesh_face_id="F003"),
+        RayEvent3D(event_kind="surface", event_type="refract", surface_id=1, mesh_face_id="F006"),
+    ]
+    path = RayPath3D(
+        ray_index=15,
+        source_position=points[0].copy(),
+        points_world=points.copy(),
+        surface_ids=np.asarray([1, 1, 1, 1], dtype=int),
+        events=events,
+        branch_path="primary",
+        source_id="source:0",
+    )
+    records = _dotted_axis_records_from_ray_path(path, np.asarray([-10.0, 10.0, -10.0, 40.0, -5.0, 35.0]))
+    exit_records = [record for record in records if str(record.get("axis_role", "") or "") == "post_surface"]
+    if not exit_records:
+        return False, f"records={records}"
+    exit_record = max(exit_records, key=lambda record: int(record.get("segment_index", -1) or -1))
+    midpoint = np.asarray(exit_record.get("segment_midpoint", ()), dtype=float).reshape(-1)
+    ok = (
+        str(exit_record.get("from_mesh_face_id", "") or "") == "F006"
+        and str(exit_record.get("from_event_type", "") or "") == "refract"
+        and int(exit_record.get("segment_index", -1) or -1) == 5
+        and midpoint.size >= 3
+        and np.all(np.isfinite(midpoint[:3]))
+    )
+    return ok, f"exit_record={exit_record}"
 
 
 def main() -> int:
@@ -189,6 +233,8 @@ def main() -> int:
     editor_step_snap_target = inspect.getsource(KrakenLayoutEditor.snap_step_overlay_center_to_scene_target)
     editor_step_normal_snap = inspect.getsource(KrakenLayoutEditor.snap_step_feature_normal_to_optical_axis)
     editor_step_axis_frame = inspect.getsource(KrakenLayoutEditor._step_optical_axis_frame_near_point)
+    editor_axis_record_frame = inspect.getsource(KrakenLayoutEditor._optical_axis_frame_from_record)
+    editor_step_overlay_axis_snap = inspect.getsource(KrakenLayoutEditor.snap_step_overlay_face_to_optical_axis)
     editor_step_transform = inspect.getsource(KrakenLayoutEditor._cad_mesh_aligned_to_optical_axis)
     editor_snap_target = inspect.getsource(KrakenLayoutEditor.snap_scene_row_anchor_to_target)
     editor_orient_target = inspect.getsource(KrakenLayoutEditor.orient_scene_row_anchor_to_target)
@@ -243,10 +289,15 @@ def main() -> int:
     legacy_open_3d = inspect.getsource(KrakenLayoutEditor._populate_legacy_3d_plotter_scene)
     legacy_replace_rays = inspect.getsource(KrakenLayoutEditor._legacy_3d_replace_rays)
     continuation_sync_ok, continuation_sync_diag = _scene_path_preserves_raykeeper_terminal_continuation()
+    exit_axis_ok, exit_axis_diag = _traced_axis_records_mark_exit_segment()
     checks = [
         (
             "Scene path event sync preserves raykeeper terminal continuation",
             continuation_sync_ok,
+        ),
+        (
+            "Traced optical-axis records identify post-surface exit segments for cascade placement",
+            exit_axis_ok,
         ),
         ("left drag binding exists", '"<B1-Motion>"' in bindings),
         ("plain left press no longer performs immediate pick", "_on_left_button_press(None, None)" not in bindings.split("def left_motion", 1)[0]),
@@ -732,6 +783,14 @@ def main() -> int:
             and "_dotted_axis_records_from_ray_path(chief, bounds)" in optical_axis_records
             and "_dotted_axis_mesh_from_points(points[:, :3])" in optical_axis_overlays
         ),
+        (
+            "Generated traced axes can drive STEP face-normal cascade placement",
+            "segment_midpoint" in editor_axis_record_frame
+            and "segment_direction" in editor_axis_record_frame
+            and "_step_overlay_face_metadata" in editor_step_overlay_axis_snap
+            and "snap_step_feature_normal_to_optical_axis" in editor_step_overlay_axis_snap
+            and '"axis_role"' in editor_step_overlay_axis_snap,
+        ),
         ("Open 3D missed detector lines use status styling", "missed_detector" in ray_terminal_style and "line_opacity" in ray_terminal_style),
         ("Open 3D escaped rays preserve source/wavelength line color", '"escaped" else 0.74' in ray_terminal_style and '{"absorbed", "stopped"}' in ray_terminal_style),
         (
@@ -901,6 +960,8 @@ def main() -> int:
             print(f"- {name}")
         if not continuation_sync_ok:
             print(f"  continuation diagnostic: {continuation_sync_diag}")
+        if not exit_axis_ok:
+            print(f"  exit-axis diagnostic: {exit_axis_diag}")
         return 1
     print("Embedded 3D interaction contract validation passed.")
     return 0

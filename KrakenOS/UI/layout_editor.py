@@ -5250,6 +5250,11 @@ def _dotted_axis_records_from_ray_path(path, bounds, *, max_segments: int = 6) -
     points = _clean_polyline_points(getattr(path, "points_world", np.empty((0, 3))))
     if points.shape[0] < 2:
         return []
+    surface_events = [
+        event
+        for event in list(getattr(path, "events", []) or [])
+        if str(getattr(event, "event_kind", "") or "") == "surface"
+    ]
     records: list[dict[str, object]] = []
     seen: set[tuple[float, ...]] = set()
     try:
@@ -5274,14 +5279,40 @@ def _dotted_axis_records_from_ray_path(path, bounds, *, max_segments: int = 6) -
         if key in seen or reverse_key in seen:
             continue
         seen.add(key)
+        event_before = surface_events[index - 2] if 0 <= index - 2 < len(surface_events) else None
+        event_after = surface_events[index - 1] if 0 <= index - 1 < len(surface_events) else None
+        from_surface = getattr(event_before, "surface_id", None) if event_before is not None else None
+        to_surface = getattr(event_after, "surface_id", None) if event_after is not None else None
+        from_face = str(getattr(event_before, "mesh_face_id", "") or "") if event_before is not None else ""
+        to_face = str(getattr(event_after, "mesh_face_id", "") or "") if event_after is not None else ""
+        from_action = str(getattr(event_before, "event_type", "") or "") if event_before is not None else ""
+        to_action = str(getattr(event_after, "event_type", "") or "") if event_after is not None else ""
+        if event_before is None:
+            axis_role = "launch_segment"
+        elif event_after is None:
+            axis_role = "post_surface"
+        else:
+            axis_role = "between_surfaces"
         records.append(
             {
                 "axis_id": f"axis:ray:{ray_index}:segment:{index}",
                 "axis_label": f"Optical Axis {len(records) + 2}",
                 "axis_kind": "traced_chief_ray_segment",
+                "axis_role": axis_role,
                 "branch_path": branch_path,
                 "source_id": source_id,
                 "ray_index": ray_index,
+                "segment_index": int(index),
+                "segment_start": tuple(float(value) for value in start[:3]),
+                "segment_end": tuple(float(value) for value in end[:3]),
+                "segment_midpoint": tuple(float(value) for value in (0.5 * (start + end))[:3]),
+                "segment_direction": tuple(float(value) for value in direction[:3]),
+                "from_surface_id": None if from_surface is None else int(from_surface),
+                "to_surface_id": None if to_surface is None else int(to_surface),
+                "from_mesh_face_id": from_face,
+                "to_mesh_face_id": to_face,
+                "from_event_type": from_action,
+                "to_event_type": to_action,
                 "points": axis_points,
             }
         )
@@ -9843,14 +9874,20 @@ class Kraken3DInspector(tk.Toplevel):
                 return None
             target_point = picked[:3]
             direction = segment / norm
-        return {
-            "target_point": np.asarray(target_point, dtype=float).reshape(3),
-            "direction": np.asarray(direction, dtype=float).reshape(3),
-            "axis_label": str(axis_info.get("axis_label", "Optical Axis") or "Optical Axis"),
-            "branch_path": str(axis_info.get("branch_path", "") or ""),
-            "ray_index": int(axis_info.get("ray_index", -1)),
-            "source_id": str(axis_info.get("source_id", "") or ""),
-        }
+        payload = dict(axis_info)
+        payload["picked_world"] = np.asarray(target_point, dtype=float).reshape(3)
+        payload["direction"] = np.asarray(direction, dtype=float).reshape(3)
+        try:
+            return self.editor._optical_axis_frame_from_record(payload, reference_point=target_point)
+        except Exception:
+            return {
+                "target_point": np.asarray(target_point, dtype=float).reshape(3),
+                "direction": np.asarray(direction, dtype=float).reshape(3),
+                "axis_label": str(axis_info.get("axis_label", "Optical Axis") or "Optical Axis"),
+                "branch_path": str(axis_info.get("branch_path", "") or ""),
+                "ray_index": int(axis_info.get("ray_index", -1)),
+                "source_id": str(axis_info.get("source_id", "") or ""),
+            }
 
     @staticmethod
     def _face_role_marker_scale(marker: OpticalSolidFaceMarker, scene_radius: float) -> float:
@@ -21837,6 +21874,146 @@ class KrakenLayoutEditor(tk.Tk):
                 "ray_index": -1,
                 "branch_path": "",
             }
+
+    def _optical_axis_frame_from_record(
+        self,
+        axis_info: dict[str, object],
+        *,
+        reference_point=None,
+    ) -> dict[str, object]:
+        if not isinstance(axis_info, dict):
+            raise RuntimeError("Optical-axis record is not available.")
+        points = np.asarray(axis_info.get("points", ()), dtype=float)
+        reference = np.asarray([], dtype=float)
+        for key in ("target_point", "segment_midpoint", "picked_world"):
+            try:
+                candidate = np.asarray(axis_info.get(key, ()), dtype=float).reshape(-1)[:3]
+            except Exception:
+                candidate = np.asarray([], dtype=float)
+            if candidate.size >= 3 and np.all(np.isfinite(candidate[:3])):
+                reference = candidate[:3]
+                break
+        if reference.size < 3 and reference_point is not None:
+            try:
+                candidate = np.asarray(reference_point, dtype=float).reshape(-1)[:3]
+            except Exception:
+                candidate = np.asarray([], dtype=float)
+            if candidate.size >= 3 and np.all(np.isfinite(candidate[:3])):
+                reference = candidate[:3]
+        if points.ndim == 2 and points.shape[0] >= 2 and points.shape[1] >= 3:
+            points = np.asarray(points[:, :3], dtype=float)
+            if reference.size < 3:
+                reference = 0.5 * (points[0] + points[-1])
+            target_point, direction = self._closest_polyline_point_and_direction(points, reference)
+        else:
+            target_point = reference
+            direction = np.asarray(axis_info.get("direction", axis_info.get("segment_direction", ())), dtype=float).reshape(-1)[:3]
+        if target_point.size < 3 or direction.size < 3:
+            raise RuntimeError("Optical-axis record does not contain a valid 3D frame.")
+        direction = self._normalized_vector(direction[:3])
+        return {
+            "target_point": np.asarray(target_point, dtype=float).reshape(3),
+            "direction": np.asarray(direction, dtype=float).reshape(3),
+            "axis_id": str(axis_info.get("axis_id", "") or ""),
+            "axis_label": str(axis_info.get("axis_label", "Optical Axis") or "Optical Axis"),
+            "axis_kind": str(axis_info.get("axis_kind", "") or ""),
+            "axis_role": str(axis_info.get("axis_role", "") or ""),
+            "branch_path": str(axis_info.get("branch_path", "") or ""),
+            "ray_index": int(axis_info.get("ray_index", -1)),
+            "source_id": str(axis_info.get("source_id", "") or ""),
+            "segment_index": int(axis_info.get("segment_index", -1)),
+        }
+
+    def _step_overlay_face_metadata(self, label: str) -> dict[str, object]:
+        label = str(label).strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET or self._step_path_for_label(label) is None:
+            return normalize_optical_solid_face_metadata({})
+        mesh = self._transformed_imported_step_mesh_for_label(label)
+        if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+            return normalize_optical_solid_face_metadata({})
+        try:
+            mesh = mesh.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
+        except Exception:
+            try:
+                mesh = mesh.extract_surface(algorithm="dataset_surface").copy(deep=True)
+            except Exception:
+                mesh = mesh.copy(deep=True)
+        points = np.asarray(getattr(mesh, "points", np.empty((0, 3))), dtype=float)
+        if points.ndim != 2 or points.shape[0] < 3 or points.shape[1] < 3 or not np.all(np.isfinite(points[:, :3])):
+            return normalize_optical_solid_face_metadata({})
+        digest = hashlib.sha1()
+        digest.update(str(label).encode("utf-8"))
+        source_path = self._step_path_for_label(label)
+        if source_path is not None:
+            digest.update(str(source_path.resolve()).encode("utf-8", errors="ignore"))
+        digest.update(np.ascontiguousarray(points[:, :3], dtype=np.float64).tobytes())
+        mesh_path = CAD_CACHE_DIR / "step_overlay_face_snap" / f"{label}_{digest.hexdigest()[:16]}.stl"
+        if not mesh_path.exists() or mesh_path.stat().st_size <= 0:
+            mesh_path.parent.mkdir(parents=True, exist_ok=True)
+            mesh.save(str(mesh_path))
+        candidates = cluster_optical_solid_planar_faces(mesh_path)
+        records = auto_assign_optical_solid_face_roles(
+            [optical_solid_face_record_from_candidate(candidate) for candidate in candidates]
+        )
+        return normalize_optical_solid_face_metadata(
+            {"source_stl": str(mesh_path), "faces": records},
+            candidates,
+            source_stl=str(mesh_path),
+        )
+
+    def snap_step_overlay_face_to_optical_axis(
+        self,
+        label: str,
+        axis_info: dict[str, object],
+        *,
+        face_id: str = "",
+    ) -> dict[str, object] | None:
+        label = str(label).strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET or self._step_path_for_label(label) is None:
+            self.status_var.set(f"No {label} STEP is imported.")
+            return None
+        metadata = self._step_overlay_face_metadata(label)
+        requested_face = str(face_id or "").strip()
+        face = None
+        faces = [face for face in list(metadata.get("faces", []) or []) if isinstance(face, dict)]
+        if requested_face:
+            for candidate in faces:
+                if str(candidate.get("face_id", "") or "").strip() == requested_face:
+                    face = normalize_optical_solid_face_record(candidate)
+                    break
+            if face is None:
+                self.status_var.set(f"{label.upper()} STEP face {requested_face} is not available for optical-axis snap.")
+                return None
+        else:
+            face = optical_solid_metadata.optical_solid_input_anchor_face(metadata) or select_optical_solid_anchor_face(metadata)
+        if face is None:
+            self.status_var.set(f"{label.upper()} STEP has no planar face available for optical-axis snap.")
+            return None
+        feature_center = np.asarray(face.get("centroid", ()), dtype=float).reshape(-1)[:3]
+        feature_normal = np.asarray(face.get("normal", ()), dtype=float).reshape(-1)[:3]
+        if feature_center.size < 3 or feature_normal.size < 3:
+            self.status_var.set(f"{label.upper()} STEP face geometry is incomplete for optical-axis snap.")
+            return None
+        axis_frame = self._optical_axis_frame_from_record(axis_info, reference_point=feature_center[:3])
+        result = self.snap_step_feature_normal_to_optical_axis(
+            label,
+            feature_center[:3],
+            feature_normal[:3],
+            axis_frame=axis_frame,
+        )
+        if result is None:
+            return None
+        result.update(
+            {
+                "face_id": str(face.get("face_id", "") or "").strip(),
+                "face_label": _optical_solid_face_marker_label(face),
+                "axis_id": str(axis_frame.get("axis_id", "") or ""),
+                "axis_kind": str(axis_frame.get("axis_kind", "") or ""),
+                "axis_role": str(axis_frame.get("axis_role", "") or ""),
+                "segment_index": int(axis_frame.get("segment_index", -1)),
+            }
+        )
+        return result
 
     def snap_step_feature_normal_to_optical_axis(
         self,

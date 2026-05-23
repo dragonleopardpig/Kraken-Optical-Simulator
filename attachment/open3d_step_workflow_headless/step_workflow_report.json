@@ -147,18 +147,28 @@
         "axis_id": "axis:global",
         "axis_kind": "dotted_global_guide",
         "axis_label": "Optical Axis",
+        "axis_role": "",
+        "from_event_type": "",
+        "from_mesh_face_id": "",
         "points": [
           [
             0.0,
             0.0,
-            -64.902558
+            -65.0
           ],
           [
             0.0,
             0.0,
-            164.752647
+            165.0
           ]
-        ]
+        ],
+        "segment_direction": [],
+        "segment_end": [],
+        "segment_index": -1,
+        "segment_midpoint": [],
+        "segment_start": [],
+        "to_event_type": "",
+        "to_mesh_face_id": ""
       }
     ],
     "ray_paths": 12,
@@ -322,18 +332,28 @@
         "axis_id": "axis:global",
         "axis_kind": "dotted_global_guide",
         "axis_label": "Optical Axis",
+        "axis_role": "",
+        "from_event_type": "",
+        "from_mesh_face_id": "",
         "points": [
           [
             0.0,
             0.0,
-            -64.902558
+            -65.0
           ],
           [
             0.0,
             0.0,
-            164.752647
+            165.0
           ]
-        ]
+        ],
+        "segment_direction": [],
+        "segment_end": [],
+        "segment_index": -1,
+        "segment_midpoint": [],
+        "segment_start": [],
+        "to_event_type": "",
+        "to_mesh_face_id": ""
       }
     ],
     "ray_paths": 12,
@@ -497,18 +517,28 @@
         "axis_id": "axis:global",
         "axis_kind": "dotted_global_guide",
         "axis_label": "Optical Axis",
+        "axis_role": "",
+        "from_event_type": "",
+        "from_mesh_face_id": "",
         "points": [
           [
             0.0,
             0.0,
-            -64.902558
+            -65.0
           ],
           [
             0.0,
             0.0,
-            164.752647
+            165.0
           ]
-        ]
+        ],
+        "segment_direction": [],
+        "segment_end": [],
+        "segment_index": -1,
+        "segment_midpoint": [],
+        "segment_start": [],
+        "to_event_type": "",
+        "to_mesh_face_id": ""
       }
     ],
     "ray_paths": 12,
@@ -762,6 +792,9 @@
         "axis_id": "axis:global",
         "axis_kind": "dotted_global_guide",
         "axis_label": "Optical Axis",
+        "axis_role": "",
+        "from_event_type": "",
+        "from_mesh_face_id": "",
         "points": [
           [
             0.0,
@@ -773,12 +806,22 @@
             0.0,
             231.0
           ]
-        ]
+        ],
+        "segment_direction": [],
+        "segment_end": [],
+        "segment_index": -1,
+        "segment_midpoint": [],
+        "segment_start": [],
+        "to_event_type": "",
+        "to_mesh_face_id": ""
       },
       {
         "axis_id": "axis:ray:6:segment:1",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 2",
+        "axis_role": "launch_segment",
+        "from_event_type": "",
+        "from_mesh_face_id": "",
         "points": [
           [
             -0.434393,
@@ -790,12 +833,38 @@
             1.859002,
             133.987319
           ]
-        ]
+        ],
+        "segment_direction": [
+          0.004177,
+          0.013873,
+          0.999895
+        ],
+        "segment_end": [
+          0.125319,
+          0.416229,
+          29.999619
+        ],
+        "segment_index": 1,
+        "segment_midpoint": [
+          0.062659,
+          0.208114,
+          14.999809
+        ],
+        "segment_start": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "to_event_type": "refraction",
+        "to_mesh_face_id": "F005"
       },
       {
         "axis_id": "axis:ray:6:segment:2",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 3",
+        "axis_role": "between_surfaces",
+        "from_event_type": "refraction",
+        "from_mesh_face_id": "F005",
         "points": [
           [
             -0.160106,
@@ -807,12 +876,38 @@
             1.642566,
             164.226887
           ]
-        ]
+        ],
+        "segment_direction": [
+          0.002751,
+          0.009136,
+          0.999954
+        ],
+        "segment_end": [
+          0.209122,
+          0.694568,
+          60.464989
+        ],
+        "segment_index": 2,
+        "segment_midpoint": [
+          0.167221,
+          0.555398,
+          45.232304
+        ],
+        "segment_start": [
+          0.125319,
+          0.416229,
+          29.999619
+        ],
+        "to_event_type": "refraction",
+        "to_mesh_face_id": "F004"
       },
       {
         "axis_id": "axis:ray:6:segment:3",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 4",
+        "axis_role": "post_surface",
+        "from_event_type": "refraction",
+        "from_mesh_face_id": "F004",
         "points": [
           [
             -0.116809,
@@ -824,7 +919,30 @@
             39.219035,
             215.729305
           ]
-        ]
+        ],
+        "segment_direction": [
+          0.004177,
+          0.240817,
+          0.970561
+        ],
+        "segment_end": [
+          0.551433,
+          20.428941,
+          140.0
+        ],
+        "segment_index": 3,
+        "segment_midpoint": [
+          0.380277,
+          10.561755,
+          100.232494
+        ],
+        "segment_start": [
+          0.209122,
+          0.694568,
+          60.464989
+        ],
+        "to_event_type": "",
+        "to_mesh_face_id": ""
       }
     ],
     "ray_paths": 12,
@@ -907,9 +1025,9 @@
             "interaction_model": "optical_solid_face_mirror:F004",
             "media_transition": "reflection",
             "outgoing_direction": [
-              -0.002751,
-              -0.713535,
-              0.700615
+              0.002751,
+              0.713535,
+              -0.700615
             ],
             "point_world": [
               0.209122,
@@ -928,9 +1046,9 @@
             "event_type": "reflection",
             "face_id": "F003",
             "incoming_direction": [
-              -0.002751,
-              -0.713535,
-              0.700615
+              0.002751,
+              0.713535,
+              -0.700615
             ],
             "inside_after": "volume:1",
             "inside_before": "volume:1",
@@ -1037,9 +1155,9 @@
             "interaction_model": "optical_solid_face_mirror:F004",
             "media_transition": "reflection",
             "outgoing_direction": [
-              0.014318,
-              -0.714057,
-              0.699941
+              -0.014318,
+              0.714057,
+              -0.699941
             ],
             "point_world": [
               -1.089171,
@@ -1058,9 +1176,9 @@
             "event_type": "reflection",
             "face_id": "F003",
             "incoming_direction": [
-              0.014318,
-              -0.714057,
-              0.699941
+              -0.014318,
+              0.714057,
+              -0.699941
             ],
             "inside_after": "volume:1",
             "inside_before": "volume:1",
@@ -1167,9 +1285,9 @@
             "interaction_model": "optical_solid_face_mirror:F004",
             "media_transition": "reflection",
             "outgoing_direction": [
-              0.001365,
-              -0.719451,
-              0.694542
+              -0.001365,
+              0.719451,
+              -0.694542
             ],
             "point_world": [
               -0.104197,
@@ -1188,9 +1306,9 @@
             "event_type": "reflection",
             "face_id": "F003",
             "incoming_direction": [
-              0.001365,
-              -0.719451,
-              0.694542
+              -0.001365,
+              0.719451,
+              -0.694542
             ],
             "inside_after": "volume:1",
             "inside_before": "volume:1",
@@ -1262,6 +1380,9 @@
         "axis_id": "axis:global",
         "axis_kind": "dotted_global_guide",
         "axis_label": "Optical Axis",
+        "axis_role": "",
+        "from_event_type": "",
+        "from_mesh_face_id": "",
         "points": [
           [
             0.0,
@@ -1273,12 +1394,22 @@
             0.0,
             202.642582
           ]
-        ]
+        ],
+        "segment_direction": [],
+        "segment_end": [],
+        "segment_index": -1,
+        "segment_midpoint": [],
+        "segment_start": [],
+        "to_event_type": "",
+        "to_mesh_face_id": ""
       },
       {
         "axis_id": "axis:ray:6:segment:1",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 2",
+        "axis_role": "launch_segment",
+        "from_event_type": "",
+        "from_mesh_face_id": "",
         "points": [
           [
             -0.68534,
@@ -1290,12 +1421,38 @@
             2.692483,
             194.06035
           ]
-        ]
+        ],
+        "segment_direction": [
+          0.004177,
+          0.013873,
+          0.999895
+        ],
+        "segment_end": [
+          0.125319,
+          0.416229,
+          29.999619
+        ],
+        "segment_index": 1,
+        "segment_midpoint": [
+          0.062659,
+          0.208114,
+          14.999809
+        ],
+        "segment_start": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "to_event_type": "refraction",
+        "to_mesh_face_id": "F005"
       },
       {
         "axis_id": "axis:ray:6:segment:2",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 3",
+        "axis_role": "between_surfaces",
+        "from_event_type": "refraction",
+        "from_mesh_face_id": "F005",
         "points": [
           [
             -0.325363,
@@ -1307,12 +1464,38 @@
             2.191442,
             224.30349
           ]
-        ]
+        ],
+        "segment_direction": [
+          0.002751,
+          0.009136,
+          0.999954
+        ],
+        "segment_end": [
+          0.209122,
+          0.694568,
+          60.464989
+        ],
+        "segment_index": 2,
+        "segment_midpoint": [
+          0.167221,
+          0.555398,
+          45.232304
+        ],
+        "segment_start": [
+          0.125319,
+          0.416229,
+          29.999619
+        ],
+        "to_event_type": "reflection",
+        "to_mesh_face_id": "F004"
       },
       {
         "axis_id": "axis:ray:6:segment:3",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 4",
+        "axis_role": "between_surfaces",
+        "from_event_type": "reflection",
+        "from_mesh_face_id": "F004",
         "points": [
           [
             -0.249995,
@@ -1324,12 +1507,38 @@
             137.15532,
             -73.524848
           ]
-        ]
+        ],
+        "segment_direction": [
+          0.002751,
+          0.713535,
+          -0.700615
+        ],
+        "segment_end": [
+          0.276055,
+          18.057453,
+          43.416496
+        ],
+        "segment_index": 3,
+        "segment_midpoint": [
+          0.242589,
+          9.376011,
+          51.940742
+        ],
+        "segment_start": [
+          0.209122,
+          0.694568,
+          60.464989
+        ],
+        "to_event_type": "reflection",
+        "to_mesh_face_id": "F003"
       },
       {
         "axis_id": "axis:ray:6:segment:4",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 5",
+        "axis_role": "between_surfaces",
+        "from_event_type": "reflection",
+        "from_mesh_face_id": "F003",
         "points": [
           [
             -0.1745,
@@ -1341,12 +1550,38 @@
             -176.29246,
             45.192138
           ]
-        ]
+        ],
+        "segment_direction": [
+          0.002751,
+          -0.999954,
+          0.009136
+        ],
+        "segment_end": [
+          0.360112,
+          -12.5,
+          43.695679
+        ],
+        "segment_index": 4,
+        "segment_midpoint": [
+          0.318084,
+          2.778727,
+          43.556087
+        ],
+        "segment_start": [
+          0.276055,
+          18.057453,
+          43.416496
+        ],
+        "to_event_type": "refraction",
+        "to_mesh_face_id": "F006"
       },
       {
         "axis_id": "axis:ray:6:segment:5",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 6",
+        "axis_role": "post_surface",
+        "from_event_type": "refraction",
+        "from_mesh_face_id": "F006",
         "points": [
           [
             -0.238868,
@@ -1358,7 +1593,30 @@
             -227.233665,
             46.675014
           ]
-        ]
+        ],
+        "segment_direction": [
+          0.004177,
+          -0.999895,
+          0.013873
+        ],
+        "segment_end": [
+          0.65815,
+          -83.846248,
+          44.685576
+        ],
+        "segment_index": 5,
+        "segment_midpoint": [
+          0.509131,
+          -48.173124,
+          44.190628
+        ],
+        "segment_start": [
+          0.360112,
+          -12.5,
+          43.695679
+        ],
+        "to_event_type": "",
+        "to_mesh_face_id": ""
       }
     ],
     "ray_paths": 12,
@@ -1442,9 +1700,9 @@
             "interaction_model": "optical_solid_face_mirror:F004",
             "media_transition": "reflection",
             "outgoing_direction": [
-              0.042349,
-              -0.704418,
-              0.708521
+              -0.042349,
+              0.704418,
+              -0.708521
             ],
             "point_world": [
               -3.208505,
@@ -1463,9 +1721,9 @@
             "event_type": "reflection",
             "face_id": "F003",
             "incoming_direction": [
-              0.042349,
-              -0.704418,
-              0.708521
+              -0.042349,
+              0.704418,
+              -0.708521
             ],
             "inside_after": "volume:1",
             "inside_before": "volume:1",
@@ -1572,9 +1830,9 @@
             "interaction_model": "optical_solid_face_mirror:F004",
             "media_transition": "reflection",
             "outgoing_direction": [
-              0.047839,
-              -0.704274,
-              0.708315
+              -0.047839,
+              0.704274,
+              -0.708315
             ],
             "point_world": [
               -3.62614,
@@ -1593,9 +1851,9 @@
             "event_type": "reflection",
             "face_id": "F003",
             "incoming_direction": [
-              0.047839,
-              -0.704274,
-              0.708315
+              -0.047839,
+              0.704274,
+              -0.708315
             ],
             "inside_after": "volume:1",
             "inside_before": "volume:1",
@@ -1702,9 +1960,9 @@
             "interaction_model": "optical_solid_face_mirror:F004",
             "media_transition": "reflection",
             "outgoing_direction": [
-              -0.001017,
-              -0.668333,
-              0.743862
+              0.001017,
+              0.668333,
+              -0.743862
             ],
             "point_world": [
               0.075541,
@@ -1723,9 +1981,9 @@
             "event_type": "reflection",
             "face_id": "F003",
             "incoming_direction": [
-              -0.001017,
-              -0.668333,
-              0.743862
+              0.001017,
+              0.668333,
+              -0.743862
             ],
             "inside_after": "volume:1",
             "inside_before": "volume:1",
@@ -1797,6 +2055,9 @@
         "axis_id": "axis:global",
         "axis_kind": "dotted_global_guide",
         "axis_label": "Optical Axis",
+        "axis_role": "",
+        "from_event_type": "",
+        "from_mesh_face_id": "",
         "points": [
           [
             0.0,
@@ -1808,12 +2069,22 @@
             0.0,
             202.641504
           ]
-        ]
+        ],
+        "segment_direction": [],
+        "segment_end": [],
+        "segment_index": -1,
+        "segment_midpoint": [],
+        "segment_start": [],
+        "to_event_type": "",
+        "to_mesh_face_id": ""
       },
       {
         "axis_id": "axis:ray:15:segment:1",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 2",
+        "axis_role": "launch_segment",
+        "from_event_type": "",
+        "from_mesh_face_id": "",
         "points": [
           [
             10.549461,
@@ -1825,12 +2096,38 @@
             -0.855361,
             193.705324
           ]
-        ]
+        ],
+        "segment_direction": [
+          -0.064308,
+          -0.004407,
+          0.99792
+        ],
+        "segment_end": [
+          -1.933224,
+          -0.132472,
+          29.999619
+        ],
+        "segment_index": 1,
+        "segment_midpoint": [
+          -0.966612,
+          -0.066236,
+          14.999809
+        ],
+        "segment_start": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "to_event_type": "refraction",
+        "to_mesh_face_id": "F005"
       },
       {
         "axis_id": "axis:ray:15:segment:2",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 3",
+        "axis_role": "between_surfaces",
+        "from_event_type": "refraction",
+        "from_mesh_face_id": "F005",
         "points": [
           [
             5.012871,
@@ -1842,12 +2139,38 @@
             -0.695832,
             223.959438
           ]
-        ]
+        ],
+        "segment_direction": [
+          -0.042349,
+          -0.002902,
+          0.999099
+        ],
+        "segment_end": [
+          -3.208505,
+          -0.219859,
+          60.08622
+        ],
+        "segment_index": 2,
+        "segment_midpoint": [
+          -2.570864,
+          -0.176165,
+          45.042919
+        ],
+        "segment_start": [
+          -1.933224,
+          -0.132472,
+          29.999619
+        ],
+        "to_event_type": "reflection",
+        "to_mesh_face_id": "F004"
       },
       {
         "axis_id": "axis:ray:15:segment:3",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 4",
+        "axis_role": "between_surfaces",
+        "from_event_type": "reflection",
+        "from_mesh_face_id": "F004",
         "points": [
           [
             3.84089,
@@ -1859,12 +2182,38 @@
             134.813838,
             -75.734159
           ]
-        ]
+        ],
+        "segment_direction": [
+          -0.042349,
+          0.704418,
+          -0.708521
+        ],
+        "segment_end": [
+          -4.277186,
+          17.556269,
+          42.206532
+        ],
+        "segment_index": 3,
+        "segment_midpoint": [
+          -3.742845,
+          8.668205,
+          51.146376
+        ],
+        "segment_start": [
+          -3.208505,
+          -0.219859,
+          60.08622
+        ],
+        "to_event_type": "reflection",
+        "to_mesh_face_id": "F003"
       },
       {
         "axis_id": "axis:ray:15:segment:4",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 5",
+        "axis_role": "between_surfaces",
+        "from_event_type": "reflection",
+        "from_mesh_face_id": "F003",
         "points": [
           [
             2.669553,
@@ -1876,12 +2225,38 @@
             -176.388384,
             41.643238
           ]
-        ]
+        ],
+        "segment_direction": [
+          -0.042349,
+          -0.999099,
+          -0.002902
+        ],
+        "segment_end": [
+          -5.551181,
+          -12.5,
+          42.119236
+        ],
+        "segment_index": 4,
+        "segment_midpoint": [
+          -4.914184,
+          2.528134,
+          42.162884
+        ],
+        "segment_start": [
+          -4.277186,
+          17.556269,
+          42.206532
+        ],
+        "to_event_type": "refraction",
+        "to_mesh_face_id": "F006"
       },
       {
         "axis_id": "axis:ray:15:segment:5",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 6",
+        "axis_role": "post_surface",
+        "from_event_type": "refraction",
+        "from_mesh_face_id": "F006",
         "points": [
           [
             3.670597,
@@ -1893,7 +2268,30 @@
             -226.80819,
             41.172918
           ]
-        ]
+        ],
+        "segment_direction": [
+          -0.064308,
+          -0.99792,
+          -0.004407
+        ],
+        "segment_end": [
+          -10.139769,
+          -83.705349,
+          41.804815
+        ],
+        "segment_index": 5,
+        "segment_midpoint": [
+          -7.845475,
+          -48.102675,
+          41.962026
+        ],
+        "segment_start": [
+          -5.551181,
+          -12.5,
+          42.119236
+        ],
+        "to_event_type": "",
+        "to_mesh_face_id": ""
       }
     ],
     "ray_paths": 31,
@@ -1930,6 +2328,80 @@
       },
       "step_rotate_handles": 0,
       "view_props": 50
+    },
+    "cascade_axis": {
+      "axis_id": "axis:ray:15:segment:5",
+      "axis_kind": "traced_chief_ray_segment",
+      "axis_label": "Optical Axis 6",
+      "axis_role": "post_surface",
+      "from_event_type": "refraction",
+      "from_mesh_face_id": "F006",
+      "points": [
+        [
+          3.670597,
+          130.60284,
+          42.751133
+        ],
+        [
+          -19.361548,
+          -226.80819,
+          41.172918
+        ]
+      ],
+      "segment_direction": [
+        -0.064308,
+        -0.99792,
+        -0.004407
+      ],
+      "segment_end": [
+        -10.139769,
+        -83.705349,
+        41.804815
+      ],
+      "segment_index": 5,
+      "segment_midpoint": [
+        -7.845475,
+        -48.102675,
+        41.962026
+      ],
+      "segment_start": [
+        -5.551181,
+        -12.5,
+        42.119236
+      ],
+      "to_event_type": "",
+      "to_mesh_face_id": ""
+    },
+    "cascade_snap": {
+      "angle_error_deg": 0.0,
+      "axis_id": "axis:ray:15:segment:5",
+      "axis_kind": "traced_chief_ray_segment",
+      "axis_label": "Optical Axis 6",
+      "axis_role": "post_surface",
+      "face_id": "F005",
+      "face_label": "Left",
+      "label": "optical",
+      "placement_offset_xyz": [
+        -8.839231,
+        -60.577424,
+        32.347096
+      ],
+      "rotation_deg": [
+        90.252999,
+        356.312901,
+        356.296596
+      ],
+      "segment_index": 5,
+      "target_direction": [
+        0.064308,
+        0.99792,
+        0.004407
+      ],
+      "target_point": [
+        -7.845475,
+        -48.102675,
+        41.962026
+      ]
     },
     "dominant_paths": [
       {
@@ -1979,9 +2451,9 @@
             "interaction_model": "optical_solid_face_mirror:F004",
             "media_transition": "reflection",
             "outgoing_direction": [
-              0.042349,
-              -0.704418,
-              0.708521
+              -0.042349,
+              0.704418,
+              -0.708521
             ],
             "point_world": [
               -3.208505,
@@ -2000,9 +2472,9 @@
             "event_type": "reflection",
             "face_id": "F003",
             "incoming_direction": [
-              0.042349,
-              -0.704418,
-              0.708521
+              -0.042349,
+              0.704418,
+              -0.708521
             ],
             "inside_after": "volume:1",
             "inside_before": "volume:1",
@@ -2109,9 +2581,9 @@
             "interaction_model": "optical_solid_face_mirror:F004",
             "media_transition": "reflection",
             "outgoing_direction": [
-              0.047839,
-              -0.704274,
-              0.708315
+              -0.047839,
+              0.704274,
+              -0.708315
             ],
             "point_world": [
               -3.62614,
@@ -2130,9 +2602,9 @@
             "event_type": "reflection",
             "face_id": "F003",
             "incoming_direction": [
-              0.047839,
-              -0.704274,
-              0.708315
+              -0.047839,
+              0.704274,
+              -0.708315
             ],
             "inside_after": "volume:1",
             "inside_before": "volume:1",
@@ -2239,9 +2711,9 @@
             "interaction_model": "optical_solid_face_mirror:F004",
             "media_transition": "reflection",
             "outgoing_direction": [
-              -0.001017,
-              -0.668333,
-              0.743862
+              0.001017,
+              0.668333,
+              -0.743862
             ],
             "point_world": [
               0.075541,
@@ -2260,9 +2732,9 @@
             "event_type": "reflection",
             "face_id": "F003",
             "incoming_direction": [
-              -0.001017,
-              -0.668333,
-              0.743862
+              0.001017,
+              0.668333,
+              -0.743862
             ],
             "inside_after": "volume:1",
             "inside_before": "volume:1",
@@ -2328,12 +2800,15 @@
     ],
     "has_optical_overlay": true,
     "image": "attachment/open3d_step_workflow_headless/STEP7.png",
-    "label": "second right-angle STEP staged",
+    "label": "second right-angle STEP snapped to traced penta exit axis",
     "optical_axis_records": [
       {
         "axis_id": "axis:global",
         "axis_kind": "dotted_global_guide",
         "axis_label": "Optical Axis",
+        "axis_role": "",
+        "from_event_type": "",
+        "from_mesh_face_id": "",
         "points": [
           [
             0.0,
@@ -2345,12 +2820,22 @@
             0.0,
             202.641504
           ]
-        ]
+        ],
+        "segment_direction": [],
+        "segment_end": [],
+        "segment_index": -1,
+        "segment_midpoint": [],
+        "segment_start": [],
+        "to_event_type": "",
+        "to_mesh_face_id": ""
       },
       {
         "axis_id": "axis:ray:15:segment:1",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 2",
+        "axis_role": "launch_segment",
+        "from_event_type": "",
+        "from_mesh_face_id": "",
         "points": [
           [
             10.549461,
@@ -2362,12 +2847,38 @@
             -0.855361,
             193.705324
           ]
-        ]
+        ],
+        "segment_direction": [
+          -0.064308,
+          -0.004407,
+          0.99792
+        ],
+        "segment_end": [
+          -1.933224,
+          -0.132472,
+          29.999619
+        ],
+        "segment_index": 1,
+        "segment_midpoint": [
+          -0.966612,
+          -0.066236,
+          14.999809
+        ],
+        "segment_start": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "to_event_type": "refraction",
+        "to_mesh_face_id": "F005"
       },
       {
         "axis_id": "axis:ray:15:segment:2",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 3",
+        "axis_role": "between_surfaces",
+        "from_event_type": "refraction",
+        "from_mesh_face_id": "F005",
         "points": [
           [
             5.012871,
@@ -2379,12 +2890,38 @@
             -0.695832,
             223.959438
           ]
-        ]
+        ],
+        "segment_direction": [
+          -0.042349,
+          -0.002902,
+          0.999099
+        ],
+        "segment_end": [
+          -3.208505,
+          -0.219859,
+          60.08622
+        ],
+        "segment_index": 2,
+        "segment_midpoint": [
+          -2.570864,
+          -0.176165,
+          45.042919
+        ],
+        "segment_start": [
+          -1.933224,
+          -0.132472,
+          29.999619
+        ],
+        "to_event_type": "reflection",
+        "to_mesh_face_id": "F004"
       },
       {
         "axis_id": "axis:ray:15:segment:3",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 4",
+        "axis_role": "between_surfaces",
+        "from_event_type": "reflection",
+        "from_mesh_face_id": "F004",
         "points": [
           [
             3.84089,
@@ -2396,12 +2933,38 @@
             134.813838,
             -75.734159
           ]
-        ]
+        ],
+        "segment_direction": [
+          -0.042349,
+          0.704418,
+          -0.708521
+        ],
+        "segment_end": [
+          -4.277186,
+          17.556269,
+          42.206532
+        ],
+        "segment_index": 3,
+        "segment_midpoint": [
+          -3.742845,
+          8.668205,
+          51.146376
+        ],
+        "segment_start": [
+          -3.208505,
+          -0.219859,
+          60.08622
+        ],
+        "to_event_type": "reflection",
+        "to_mesh_face_id": "F003"
       },
       {
         "axis_id": "axis:ray:15:segment:4",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 5",
+        "axis_role": "between_surfaces",
+        "from_event_type": "reflection",
+        "from_mesh_face_id": "F003",
         "points": [
           [
             2.669553,
@@ -2413,12 +2976,38 @@
             -176.388384,
             41.643238
           ]
-        ]
+        ],
+        "segment_direction": [
+          -0.042349,
+          -0.999099,
+          -0.002902
+        ],
+        "segment_end": [
+          -5.551181,
+          -12.5,
+          42.119236
+        ],
+        "segment_index": 4,
+        "segment_midpoint": [
+          -4.914184,
+          2.528134,
+          42.162884
+        ],
+        "segment_start": [
+          -4.277186,
+          17.556269,
+          42.206532
+        ],
+        "to_event_type": "refraction",
+        "to_mesh_face_id": "F006"
       },
       {
         "axis_id": "axis:ray:15:segment:5",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 6",
+        "axis_role": "post_surface",
+        "from_event_type": "refraction",
+        "from_mesh_face_id": "F006",
         "points": [
           [
             3.670597,
@@ -2430,7 +3019,30 @@
             -226.80819,
             41.172918
           ]
-        ]
+        ],
+        "segment_direction": [
+          -0.064308,
+          -0.99792,
+          -0.004407
+        ],
+        "segment_end": [
+          -10.139769,
+          -83.705349,
+          41.804815
+        ],
+        "segment_index": 5,
+        "segment_midpoint": [
+          -7.845475,
+          -48.102675,
+          41.962026
+        ],
+        "segment_start": [
+          -5.551181,
+          -12.5,
+          42.119236
+        ],
+        "to_event_type": "",
+        "to_mesh_face_id": ""
       }
     ],
     "ray_paths": 31,
@@ -2470,7 +3082,7 @@
     "dominant_paths": [
       {
         "branch_path": "primary",
-        "branch_power": 0.7420174503014191,
+        "branch_power": 0.8173402093350473,
         "events": [
           {
             "event_type": "refraction",
@@ -2515,9 +3127,9 @@
             "interaction_model": "optical_solid_face_mirror:F004",
             "media_transition": "reflection",
             "outgoing_direction": [
-              0.042349,
-              -0.704418,
-              0.708521
+              -0.042349,
+              0.704418,
+              -0.708521
             ],
             "point_world": [
               -3.208505,
@@ -2536,9 +3148,9 @@
             "event_type": "reflection",
             "face_id": "F003",
             "incoming_direction": [
-              0.042349,
-              -0.704418,
-              0.708521
+              -0.042349,
+              0.704418,
+              -0.708521
             ],
             "inside_after": "volume:1",
             "inside_before": "volume:1",
@@ -2594,7 +3206,7 @@
           },
           {
             "event_type": "refraction",
-            "face_id": "F003",
+            "face_id": "F005",
             "incoming_direction": [
               -0.064308,
               -0.99792,
@@ -2605,62 +3217,92 @@
             "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:2",
             "media_transition": "entry",
             "outgoing_direction": [
-              0.319633,
-              -0.913125,
-              0.253058
+              0.051201,
+              -0.952971,
+              -0.298706
             ],
             "point_world": [
-              -7.206374,
-              -38.18515,
-              42.005817
+              -7.07447,
+              -36.138271,
+              42.014858
             ],
             "step": 4,
             "surface_id": 2,
             "surface_normal": [
+              -0.218235,
+              0.690063,
+              0.690062
+            ]
+          },
+          {
+            "event_type": "reflect_tir",
+            "face_id": "F001",
+            "incoming_direction": [
+              0.051201,
+              -0.952971,
+              -0.298706
+            ],
+            "inside_after": "volume:2",
+            "inside_before": "volume:2",
+            "interaction_model": "snell_total_internal_reflection",
+            "media_transition": "reflection",
+            "outgoing_direction": [
+              0.0512,
+              -0.298704,
+              -0.952971
+            ],
+            "point_world": [
+              -5.756112,
+              -60.676086,
+              34.323536
+            ],
+            "step": 5,
+            "surface_id": 2,
+            "surface_normal": [
+              1e-06,
               -0.707107,
-              0.5,
-              -0.5
+              0.707106
             ]
           },
           {
             "event_type": "refraction",
-            "face_id": "F001",
+            "face_id": "F004",
             "incoming_direction": [
-              0.319633,
-              -0.913125,
-              0.253058
+              0.0512,
+              -0.298704,
+              -0.952971
             ],
             "inside_after": "",
             "inside_before": "volume:2",
             "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:2",
             "media_transition": "exit",
             "outgoing_direction": [
-              0.485369,
-              -0.863163,
-              -0.139164
+              -0.064309,
+              -0.004401,
+              -0.99792
             ],
             "point_world": [
-              -3.147549,
-              -49.780376,
-              45.219246
+              -5.611441,
+              -61.520111,
+              31.630804
             ],
-            "step": 5,
+            "step": 6,
             "surface_id": 2,
             "surface_normal": [
-              1e-06,
-              -0.707106,
-              0.707107
+              0.218235,
+              -0.690063,
+              -0.690063
             ]
           }
         ],
         "ray_index": 15,
         "source_ray_index": 15,
-        "surface_sequence": "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F003 refract -> F001 refract",
+        "surface_sequence": "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F005 refract -> F001 TIR -> ...",
         "terminal_status": "escaped"
       },
       {
         "branch_path": "primary",
-        "branch_power": 0.741366152595846,
+        "branch_power": 0.8168884636448988,
         "events": [
           {
             "event_type": "refraction",
@@ -2705,9 +3347,9 @@
             "interaction_model": "optical_solid_face_mirror:F004",
             "media_transition": "reflection",
             "outgoing_direction": [
-              0.047839,
-              -0.704274,
-              0.708315
+              -0.047839,
+              0.704274,
+              -0.708315
             ],
             "point_world": [
               -3.62614,
@@ -2726,9 +3368,9 @@
             "event_type": "reflection",
             "face_id": "F003",
             "incoming_direction": [
-              0.047839,
-              -0.704274,
-              0.708315
+              -0.047839,
+              0.704274,
+              -0.708315
             ],
             "inside_after": "volume:1",
             "inside_before": "volume:1",
@@ -2784,7 +3426,7 @@
           },
           {
             "event_type": "refraction",
-            "face_id": "F003",
+            "face_id": "F005",
             "incoming_direction": [
               -0.072645,
               -0.997348,
@@ -2795,44 +3437,44 @@
             "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:2",
             "media_transition": "entry",
             "outgoing_direction": [
-              0.31596,
-              -0.914033,
-              0.254387
+              0.045869,
+              -0.953098,
+              -0.299166
             ],
             "point_world": [
-              -8.25157,
-              -39.662388,
-              42.006714
+              -8.01702,
+              -36.442223,
+              42.020721
             ],
             "step": 4,
             "surface_id": 2,
             "surface_normal": [
-              -0.707107,
-              0.5,
-              -0.5
+              -0.218234,
+              0.690064,
+              0.690062
             ]
           },
           {
-            "event_type": "refraction",
+            "event_type": "reflect_tir",
             "face_id": "F001",
             "incoming_direction": [
-              0.31596,
-              -0.914033,
-              0.254387
+              0.045869,
+              -0.953098,
+              -0.299166
             ],
-            "inside_after": "",
+            "inside_after": "volume:2",
             "inside_before": "volume:2",
-            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:2",
-            "media_transition": "exit",
+            "interaction_model": "snell_total_internal_reflection",
+            "media_transition": "reflection",
             "outgoing_direction": [
-              0.479793,
-              -0.866979,
-              -0.134708
+              0.04587,
+              -0.299165,
+              -0.953098
             ],
             "point_world": [
-              -4.64678,
-              -50.090603,
-              44.909016
+              -6.857072,
+              -60.544231,
+              34.455391
             ],
             "step": 5,
             "surface_id": 2,
@@ -2841,16 +3483,46 @@
               -0.707107,
               0.707106
             ]
+          },
+          {
+            "event_type": "refraction",
+            "face_id": "F004",
+            "incoming_direction": [
+              0.04587,
+              -0.299165,
+              -0.953098
+            ],
+            "inside_after": "",
+            "inside_before": "volume:2",
+            "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:2",
+            "media_transition": "exit",
+            "outgoing_direction": [
+              -0.072645,
+              -0.004336,
+              -0.997348
+            ],
+            "point_world": [
+              -6.705193,
+              -61.534798,
+              31.299587
+            ],
+            "step": 6,
+            "surface_id": 2,
+            "surface_normal": [
+              0.218235,
+              -0.690063,
+              -0.690063
+            ]
           }
         ],
         "ray_index": 14,
         "source_ray_index": 14,
-        "surface_sequence": "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F003 refract -> F001 refract",
+        "surface_sequence": "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F005 refract -> F001 TIR -> ...",
         "terminal_status": "escaped"
       },
       {
         "branch_path": "primary",
-        "branch_power": 0.6766850071055343,
+        "branch_power": 0.3108569216444638,
         "events": [
           {
             "event_type": "refraction",
@@ -2895,9 +3567,9 @@
             "interaction_model": "optical_solid_face_mirror:F004",
             "media_transition": "reflection",
             "outgoing_direction": [
-              -0.001017,
-              -0.668333,
-              0.743862
+              0.001017,
+              0.668333,
+              -0.743862
             ],
             "point_world": [
               0.075541,
@@ -2916,9 +3588,9 @@
             "event_type": "reflection",
             "face_id": "F003",
             "incoming_direction": [
-              -0.001017,
-              -0.668333,
-              0.743862
+              0.001017,
+              0.668333,
+              -0.743862
             ],
             "inside_after": "volume:1",
             "inside_before": "volume:1",
@@ -2985,51 +3657,51 @@
             "interaction_model": "optical_volume_entry_ray_state_inside_volumes:volume:2",
             "media_transition": "entry",
             "outgoing_direction": [
-              -0.359371,
-              -0.911197,
-              0.201425
+              -0.319189,
+              -0.939011,
+              0.127972
             ],
             "point_world": [
-              0.170932,
-              -36.718464,
-              33.522884
+              0.172921,
+              -38.001968,
+              33.418449
             ],
             "step": 4,
             "surface_id": 2,
             "surface_normal": [
-              0.707107,
-              0.5,
-              -0.5
+              0.690063,
+              0.609118,
+              -0.390882
             ]
           },
           {
             "event_type": "refraction",
             "face_id": "F001",
             "incoming_direction": [
-              -0.359371,
-              -0.911197,
-              0.201425
+              -0.319189,
+              -0.939011,
+              0.127972
             ],
             "inside_after": "",
             "inside_before": "volume:2",
             "interaction_model": "optical_volume_exit_ray_state_inside_volumes:volume:2",
             "media_transition": "exit",
             "outgoing_direction": [
-              -0.545712,
-              -0.785243,
-              -0.292561
+              -0.484698,
+              -0.673549,
+              -0.558032
             ],
             "point_world": [
-              -7.825848,
-              -56.994587,
-              38.005035
+              -6.880833,
+              -58.753128,
+              36.246498
             ],
             "step": 5,
             "surface_id": 2,
             "surface_normal": [
-              -1e-06,
+              1e-06,
               -0.707107,
-              0.707106
+              0.707107
             ]
           }
         ],
@@ -3050,120 +3722,286 @@
         "axis_id": "axis:global",
         "axis_kind": "dotted_global_guide",
         "axis_label": "Optical Axis",
+        "axis_role": "",
+        "from_event_type": "",
+        "from_mesh_face_id": "",
         "points": [
           [
             0.0,
             0.0,
-            -247.894683
+            -400.825073
           ],
           [
             0.0,
             0.0,
-            315.382421
+            266.366597
           ]
-        ]
+        ],
+        "segment_direction": [],
+        "segment_end": [],
+        "segment_index": -1,
+        "segment_midpoint": [],
+        "segment_start": [],
+        "to_event_type": "",
+        "to_mesh_face_id": ""
       },
       {
         "axis_id": "axis:ray:15:segment:1",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 2",
+        "axis_role": "launch_segment",
+        "from_event_type": "",
+        "from_mesh_face_id": "",
         "points": [
           [
-            15.929612,
-            1.091558,
-            -247.194479
+            15.905601,
+            1.089913,
+            -246.821882
           ],
           [
-            -17.862836,
-            -1.22403,
-            277.194098
+            -17.838825,
+            -1.222385,
+            276.8215
           ]
-        ]
+        ],
+        "segment_direction": [
+          -0.064308,
+          -0.004407,
+          0.99792
+        ],
+        "segment_end": [
+          -1.933224,
+          -0.132472,
+          29.999619
+        ],
+        "segment_index": 1,
+        "segment_midpoint": [
+          -0.966612,
+          -0.066236,
+          14.999809
+        ],
+        "segment_start": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "to_event_type": "refraction",
+        "to_mesh_face_id": "F005"
       },
       {
         "axis_id": "axis:ray:15:segment:2",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 3",
+        "axis_role": "between_surfaces",
+        "from_event_type": "refraction",
+        "from_mesh_face_id": "F005",
         "points": [
           [
-            8.555889,
-            0.586282,
-            -217.460951
+            8.540077,
+            0.585199,
+            -217.087913
           ],
           [
-            -13.697618,
-            -0.938613,
-            307.54679
+            -13.681806,
+            -0.93753,
+            307.173752
           ]
-        ]
+        ],
+        "segment_direction": [
+          -0.042349,
+          -0.002902,
+          0.999099
+        ],
+        "segment_end": [
+          -3.208505,
+          -0.219859,
+          60.08622
+        ],
+        "segment_index": 2,
+        "segment_midpoint": [
+          -2.570864,
+          -0.176165,
+          45.042919
+        ],
+        "segment_start": [
+          -1.933224,
+          -0.132472,
+          29.999619
+        ],
+        "to_event_type": "reflection",
+        "to_mesh_face_id": "F004"
       },
       {
         "axis_id": "axis:ray:15:segment:3",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 4",
+        "axis_role": "between_surfaces",
+        "from_event_type": "reflection",
+        "from_mesh_face_id": "F004",
         "points": [
           [
-            7.383907,
-            -176.410943,
-            237.303762
+            7.368095,
+            -176.147932,
+            237.039218
           ],
           [
-            -14.869598,
-            193.747353,
-            -135.01101
+            -14.853786,
+            193.484341,
+            -134.746466
           ]
-        ]
+        ],
+        "segment_direction": [
+          -0.042349,
+          0.704418,
+          -0.708521
+        ],
+        "segment_end": [
+          -4.277186,
+          17.556269,
+          42.206532
+        ],
+        "segment_index": 3,
+        "segment_midpoint": [
+          -3.742845,
+          8.668205,
+          51.146376
+        ],
+        "segment_start": [
+          -3.208505,
+          -0.219859,
+          60.08622
+        ],
+        "to_event_type": "reflection",
+        "to_mesh_face_id": "F003"
       },
       {
         "axis_id": "axis:ray:15:segment:4",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 5",
+        "axis_role": "between_surfaces",
+        "from_event_type": "reflection",
+        "from_mesh_face_id": "F003",
         "points": [
           [
-            6.212571,
-            265.032005,
-            42.925301
+            6.196759,
+            264.658967,
+            42.924217
           ],
           [
-            -16.040938,
-            -259.975736,
-            41.400467
+            -16.025126,
+            -259.602698,
+            41.40155
           ]
-        ]
+        ],
+        "segment_direction": [
+          -0.042349,
+          -0.999099,
+          -0.002902
+        ],
+        "segment_end": [
+          -5.551181,
+          -12.5,
+          42.119236
+        ],
+        "segment_index": 4,
+        "segment_midpoint": [
+          -4.914184,
+          2.528134,
+          42.162884
+        ],
+        "segment_start": [
+          -4.277186,
+          17.556269,
+          42.206532
+        ],
+        "to_event_type": "refraction",
+        "to_mesh_face_id": "F006"
       },
       {
         "axis_id": "axis:ray:15:segment:5",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 6",
+        "axis_role": "between_surfaces",
+        "from_event_type": "refraction",
+        "from_mesh_face_id": "F006",
         "points": [
           [
-            10.517449,
-            236.851714,
-            43.220305
+            10.559386,
+            237.502555,
+            43.223154
           ],
           [
-            -23.275004,
-            -287.536864,
-            40.904749
+            -23.185037,
+            -286.140827,
+            40.910941
           ]
-        ]
+        ],
+        "segment_direction": [
+          -0.064308,
+          -0.99792,
+          -0.004406
+        ],
+        "segment_end": [
+          -7.07447,
+          -36.138271,
+          42.014858
+        ],
+        "segment_index": 5,
+        "segment_midpoint": [
+          -6.312825,
+          -24.319136,
+          42.067047
+        ],
+        "segment_start": [
+          -5.551181,
+          -12.5,
+          42.119236
+        ],
+        "to_event_type": "refraction",
+        "to_mesh_face_id": "F005"
       },
       {
         "axis_id": "axis:ray:15:segment:6",
         "axis_kind": "traced_chief_ray_segment",
         "axis_label": "Optical Axis 7",
+        "axis_role": "between_surfaces",
+        "from_event_type": "refraction",
+        "from_mesh_face_id": "F005",
         "points": [
           [
-            -89.157484,
-            195.932249,
-            -22.876014
+            -19.848708,
+            201.62115,
+            116.540008
           ],
           [
-            78.803561,
-            -283.897775,
-            110.101078
+            7.018127,
+            -298.435508,
+            -40.201614
           ]
-        ]
+        ],
+        "segment_direction": [
+          0.051201,
+          -0.952971,
+          -0.298706
+        ],
+        "segment_end": [
+          -5.756112,
+          -60.676086,
+          34.323536
+        ],
+        "segment_index": 6,
+        "segment_midpoint": [
+          -6.415291,
+          -48.407179,
+          38.169197
+        ],
+        "segment_start": [
+          -7.07447,
+          -36.138271,
+          42.014858
+        ],
+        "to_event_type": "reflect_tir",
+        "to_mesh_face_id": "F001"
       }
     ],
     "ray_paths": 31,
@@ -3173,11 +4011,10 @@
     ],
     "rows": 3,
     "sequence_counts": {
-      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F002 refract -> F001 refract": 12,
-      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F003 refract -> F001 refract": 4,
-      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F004 refract -> F001 TIR -> ...": 10,
-      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F004 refract -> F005 refract": 3,
-      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F006 refract -> F001 refract": 2
+      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F002 refract -> F001 refract": 14,
+      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F003 refract -> F001 refract": 3,
+      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F005 refract -> F001 TIR -> ...": 12,
+      "F005 refract -> F004 reflect -> F003 reflect -> F006 refract -> F005 refract -> F004 refract": 2
     },
     "status": "3D scene ready | surfaces=2 | rays=31 | optical axes=7 | assigned face overlays=4 | face roles=0 | virtual planes=0 | detector overlays=0 | placement grid=0 | STEP carry active=0 | STEP rotation handles=0",
     "terminal_counts": {

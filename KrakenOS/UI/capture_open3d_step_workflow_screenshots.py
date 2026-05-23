@@ -274,10 +274,73 @@ def _optical_axis_report(inspector: Kraken3DInspector) -> list[dict[str, object]
                 "axis_id": str(record.get("axis_id", "") or ""),
                 "axis_label": str(record.get("axis_label", "") or ""),
                 "axis_kind": str(record.get("axis_kind", "") or ""),
+                "axis_role": str(record.get("axis_role", "") or ""),
+                "segment_index": int(record.get("segment_index", -1) or -1),
+                "from_mesh_face_id": str(record.get("from_mesh_face_id", "") or ""),
+                "to_mesh_face_id": str(record.get("to_mesh_face_id", "") or ""),
+                "from_event_type": str(record.get("from_event_type", "") or ""),
+                "to_event_type": str(record.get("to_event_type", "") or ""),
+                "segment_start": _json_vector(record.get("segment_start", ())),
+                "segment_end": _json_vector(record.get("segment_end", ())),
+                "segment_midpoint": _json_vector(record.get("segment_midpoint", ())),
+                "segment_direction": _json_vector(record.get("segment_direction", ())),
                 "points": [_json_vector(point) for point in points[:2]] if points.ndim == 2 and points.shape[0] >= 2 else [],
             }
         )
     return records
+
+
+def _axis_summary(record: dict[str, object]) -> dict[str, object]:
+    points = np.asarray(record.get("points", ()), dtype=float)
+    return {
+        "axis_id": str(record.get("axis_id", "") or ""),
+        "axis_label": str(record.get("axis_label", "") or ""),
+        "axis_kind": str(record.get("axis_kind", "") or ""),
+        "axis_role": str(record.get("axis_role", "") or ""),
+        "segment_index": int(record.get("segment_index", -1) or -1),
+        "from_mesh_face_id": str(record.get("from_mesh_face_id", "") or ""),
+        "to_mesh_face_id": str(record.get("to_mesh_face_id", "") or ""),
+        "from_event_type": str(record.get("from_event_type", "") or ""),
+        "to_event_type": str(record.get("to_event_type", "") or ""),
+        "segment_start": _json_vector(record.get("segment_start", ())),
+        "segment_end": _json_vector(record.get("segment_end", ())),
+        "segment_midpoint": _json_vector(record.get("segment_midpoint", ())),
+        "segment_direction": _json_vector(record.get("segment_direction", ())),
+        "points": [_json_vector(point) for point in points[:2]] if points.ndim == 2 and points.shape[0] >= 2 else [],
+    }
+
+
+def _select_cascade_exit_axis(inspector: Kraken3DInspector) -> dict[str, object]:
+    records = [
+        dict(record)
+        for record in list(getattr(inspector, "_optical_axis_pick_records", []) or [])
+        if str(record.get("axis_kind", "") or "") == "traced_chief_ray_segment"
+    ]
+    if not records:
+        raise RuntimeError("No traced optical-axis guide is available for cascade placement.")
+    exit_records = [record for record in records if str(record.get("axis_role", "") or "") == "post_surface"]
+    pool = exit_records or records
+    return max(pool, key=lambda record: int(record.get("segment_index", -1) or -1))
+
+
+def _snap_result_summary(result: dict[str, object] | None) -> dict[str, object]:
+    if result is None:
+        return {}
+    return {
+        "label": str(result.get("label", "") or ""),
+        "face_id": str(result.get("face_id", "") or ""),
+        "face_label": str(result.get("face_label", "") or ""),
+        "axis_id": str(result.get("axis_id", "") or ""),
+        "axis_label": str(result.get("axis_label", "") or ""),
+        "axis_kind": str(result.get("axis_kind", "") or ""),
+        "axis_role": str(result.get("axis_role", "") or ""),
+        "segment_index": int(result.get("segment_index", -1) or -1),
+        "target_point": _json_vector(result.get("target_point", ())),
+        "target_direction": _json_vector(result.get("target_direction", ())),
+        "rotation_deg": [round(float(value), 6) for value in result.get("rotation_deg", ())],
+        "placement_offset_xyz": _json_vector(result.get("placement_offset_xyz", ())),
+        "angle_error_deg": round(float(result.get("angle_error_deg", 0.0) or 0.0), 9),
+    }
 
 
 def _scene_report(app: KrakenLayoutEditor, inspector: Kraken3DInspector, label: str) -> dict[str, Any]:
@@ -359,6 +422,15 @@ def _assert_final_state(reports: list[dict[str, Any]]) -> None:
             "Final live trace should render the promoted penta row and one transient trace row only; "
             f"row actors={row_actor_rows}, counts={actor_counts}."
         )
+    cascade_reports = [report for report in reports if dict(report).get("cascade_axis")]
+    if not cascade_reports:
+        raise RuntimeError("STEP workflow did not record a traced-axis cascade placement.")
+    cascade_axis = dict(cascade_reports[-1].get("cascade_axis", {}) or {})
+    cascade_snap = dict(cascade_reports[-1].get("cascade_snap", {}) or {})
+    if cascade_axis.get("axis_kind") != "traced_chief_ray_segment" or cascade_axis.get("axis_role") != "post_surface":
+        raise RuntimeError(f"Cascade placement did not use the traced post-surface exit axis: {cascade_axis}.")
+    if cascade_snap.get("axis_id") != cascade_axis.get("axis_id") or cascade_snap.get("face_id") != "F005":
+        raise RuntimeError(f"Cascade snap did not use the intended right-angle input face on the selected axis: {cascade_snap}.")
 
 
 def capture(output_dir: Path = DEFAULT_OUTPUT_DIR) -> list[Path]:
@@ -403,11 +475,22 @@ def capture(output_dir: Path = DEFAULT_OUTPUT_DIR) -> list[Path]:
         _set_optical_step_overlay(
             app,
             PRISM_32336_STEP,
-            offset_xyz=(0.0, -58.0, 48.0),
+            offset_xyz=(0.0, 0.0, 0.0),
             rotation_xyz=(0.0, 0.0, 0.0),
         )
+        cascade_axis = _select_cascade_exit_axis(inspector)
+        cascade_snap = app.snap_step_overlay_face_to_optical_axis(
+            "optical",
+            cascade_axis,
+            face_id="F005",
+        )
+        if cascade_snap is None:
+            raise RuntimeError(f"Second STEP cascade snap failed: {app.status_var.get()}")
         _refresh(inspector)
         outputs.append(_save_step(output_dir, inspector, reports, app, 7, "second right-angle STEP staged"))
+        reports[-1]["label"] = "second right-angle STEP snapped to traced penta exit axis"
+        reports[-1]["cascade_axis"] = _axis_summary(cascade_axis)
+        reports[-1]["cascade_snap"] = _snap_result_summary(cascade_snap)
 
         _refresh(inspector, live=True)
         outputs.append(_save_step(output_dir, inspector, reports, app, 8, "Trace Ray with promoted penta plus transient right-angle STEP"))
