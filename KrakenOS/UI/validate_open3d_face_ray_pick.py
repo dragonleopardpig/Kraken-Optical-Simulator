@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from KrakenOS.UI.layout_editor import Kraken3DInspector
 from KrakenOS.UI.services.open3d_face_pick import pick_face_from_ray
 
 
@@ -68,6 +69,23 @@ def main() -> int:
     expected = np.asarray((12.5, 12.5, 12.5), dtype=float)
     if float(np.linalg.norm(point - expected)) > 1e-9:
         raise AssertionError(f"Unexpected splitter hit point {point}, expected {expected}")
+    splitter = next(face for face in faces if face.get("face_id") == "SPLITTER")
+    splitter_triangles = triangles[np.asarray(splitter["triangle_indices"], dtype=int)]
+    outline = Kraken3DInspector._planar_outline_from_triangles(
+        splitter_triangles,
+        normal_world=splitter.get("normal"),
+    )
+    if outline is None:
+        raise AssertionError("Expected a full planar splitter outline, got None")
+    if int(getattr(outline, "n_cells", 0)) != 4:
+        raise AssertionError(f"Expected four enclosed splitter outline segments, got {getattr(outline, 'n_cells', 0)}")
+    outline_points = np.asarray(getattr(outline, "points", np.empty((0, 3))), dtype=float)
+    if outline_points.shape[0] != 4:
+        raise AssertionError(f"Expected four splitter outline corner points, got {outline_points.shape[0]}")
+    expected_extent = np.asarray((25.0, 25.0, 25.0), dtype=float)
+    actual_extent = np.ptp(outline_points[:, :3], axis=0)
+    if not np.allclose(actual_extent, expected_extent, atol=1e-9):
+        raise AssertionError(f"Unexpected splitter outline extent {actual_extent}, expected {expected_extent}")
     print("Open 3D face ray-pick validation passed.")
     return 0
 

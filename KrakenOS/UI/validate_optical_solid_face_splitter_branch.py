@@ -129,6 +129,22 @@ def validate_optical_solid_face_splitter_branch() -> list[FaceSplitterBranchChec
             ),
         )
     )
+
+    internal_face = dict(splitter_face)
+    internal_face["media_transition"] = "internal"
+    internal_face["volume_id"] = "volume:1"
+    external_face = dict(splitter_face)
+    external_face["media_transition"] = "entry"
+    external_face["volume_id"] = "volume:1"
+    skip_for_internal = getattr(system, "_system__NsTraceSplitChildSkipSurface")(1, internal_face)
+    skip_for_external = getattr(system, "_system__NsTraceSplitChildSkipSurface")(1, external_face)
+    checks.append(
+        FaceSplitterBranchCheck(
+            "internal optical-solid splitter branches keep the same solid eligible for exit hits",
+            skip_for_internal is None and skip_for_external == 1,
+            f"internal_skip={skip_for_internal}, external_skip={skip_for_external}",
+        )
+    )
     return checks
 
 

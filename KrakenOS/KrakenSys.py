@@ -912,6 +912,70 @@ class system():
                 return face
         return None
 
+    def __OpticalSolidScenePoints(self, surface_index):
+        points: list[np.ndarray] = []
+        try:
+            target_surface = int(surface_index)
+        except Exception:
+            return np.empty((0, 3), dtype=float)
+        for mesh_index in range(1, len(getattr(self, "EEE", []) or [])):
+            try:
+                if int(self.GlassOnSide[int(mesh_index)]) != target_surface:
+                    continue
+                mesh_points = np.asarray(getattr(self.EEE[int(mesh_index)], "points", np.empty((0, 3))), dtype=float)
+            except Exception:
+                continue
+            if mesh_points.ndim == 2 and mesh_points.shape[0] > 0 and mesh_points.shape[1] >= 3:
+                finite = mesh_points[np.all(np.isfinite(mesh_points[:, :3]), axis=1), :3]
+                if finite.size:
+                    points.append(np.asarray(finite, dtype=float))
+        if not points:
+            return np.empty((0, 3), dtype=float)
+        return np.vstack(points)
+
+    def __OpticalSolidFaceIsInternal(self, surface_index, face_override, hit_point=None):
+        face = dict(face_override or {}) if isinstance(face_override, dict) else {}
+        normal = face.get("normal_world", face.get("normal"))
+        try:
+            normal = np.asarray(normal, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return False
+        norm = float(np.linalg.norm(normal))
+        if normal.size < 3 or not np.all(np.isfinite(normal[:3])) or norm <= 1e-12:
+            return False
+        normal = normal[:3] / norm
+        point = None
+        for key in ("centroid_world", "point_world", "centroid"):
+            try:
+                candidate = np.asarray(face.get(key), dtype=float).reshape(-1)[:3]
+            except Exception:
+                candidate = np.asarray([], dtype=float)
+            if candidate.size >= 3 and np.all(np.isfinite(candidate[:3])):
+                point = candidate[:3]
+                break
+        if point is None:
+            try:
+                candidate = np.asarray(hit_point, dtype=float).reshape(-1)[:3]
+            except Exception:
+                candidate = np.asarray([], dtype=float)
+            if candidate.size >= 3 and np.all(np.isfinite(candidate[:3])):
+                point = candidate[:3]
+        if point is None:
+            return False
+        points = self.__OpticalSolidScenePoints(surface_index)
+        if points.ndim != 2 or points.shape[0] < 4:
+            return False
+        projections = points[:, :3] @ normal
+        finite = projections[np.isfinite(projections)]
+        if finite.size < 4:
+            return False
+        span = float(np.max(finite) - np.min(finite))
+        if not np.isfinite(span) or span <= 1e-9:
+            return False
+        margin = max(span * 2.0e-4, 0.02)
+        face_projection = float(np.dot(point[:3], normal))
+        return bool(face_projection > float(np.min(finite)) + margin and face_projection < float(np.max(finite)) - margin)
+
     def __OpticalSolidFaceInteraction(self, surface_index, point_world, normal_world, mesh_hit=None):
         world_faces = self.__OpticalSolidWorldFaces(surface_index)
         mesh_face_id = str(mesh_hit.get("face_id", "") or "").strip() if isinstance(mesh_hit, dict) else ""
@@ -958,6 +1022,8 @@ class system():
             "loss": float(np.clip(loss, 0.0, 1.0)),
             "phase_deg": phase_deg,
             "coating": str(matched.get("coating", "") or "").strip(),
+            "centroid_world": tuple(float(value) for value in np.asarray(matched.get("centroid_world", matched.get("centroid", point_world)), dtype=float).reshape(3)),
+            "point_world": tuple(float(value) for value in np.asarray(point_world, dtype=float).reshape(3)),
             "normal_world": tuple(float(value) for value in np.asarray(matched.get("normal_world", normal_world), dtype=float).reshape(3)),
             "boundary_source": str(matched.get("boundary_source", "") or "").strip(),
         }
@@ -3335,16 +3401,24 @@ class system():
                 "face_match_warning": mesh_hit.get("face_match_warning", ""),
             }
             if isinstance(face_override, dict):
+                if self.__OpticalSolidFaceIsInternal(j, face_override, hit_point=hit_point):
+                    N = solid_n
+                    Np = solid_n
+                    CurrN = solid_n
+                    alpha = solid_alpha
+                    face_override["media_transition"] = "internal"
+                    face_override["media_state_method"] = "internal_optical_solid_face"
                 face_override["volume_id"] = volume_id
                 face_override["volume_material"] = solid_glass
                 face_override["ambient_material"] = str(volume_record.get("ambient_material", "AIR") or "AIR")
-                face_override["media_transition"] = media_transition
-                face_override["media_state_method"] = media_state_method
+                face_override.setdefault("media_transition", media_transition)
+                face_override.setdefault("media_state_method", media_state_method)
                 if bool(face_override.get("force_reflection")) and volume_id:
                     inside_before = volume_id in tuple(state.inside_volumes)
-                    if inside_before or media_transition == "exit":
+                    active_transition = str(face_override.get("media_transition", media_transition) or "").strip()
+                    if inside_before or active_transition in {"exit", "internal"}:
                         face_override.pop("external_reflection", None)
-                    elif media_transition == "entry":
+                    elif active_transition == "entry":
                         face_override["external_reflection"] = True
                 face_id = str(face_override.get("face_id", "") or "").strip()
                 if face_id:
@@ -3452,6 +3526,18 @@ class system():
         if isinstance(face_override, dict) and str(face_override.get("volume_id", "") or "").strip():
             return True
         return False
+
+    def __NsTraceSplitChildSkipSurface(self, surface_index, face_override):
+        if isinstance(face_override, dict):
+            transition = str(face_override.get("media_transition", "") or "").strip().lower()
+            if transition == "internal":
+                return None
+            if self.__BeamSplitterSettingsFromFace(face_override) is not None and self.__OpticalSolidFaceIsInternal(surface_index, face_override):
+                return None
+        try:
+            return int(surface_index)
+        except Exception:
+            return None
 
     def __NsTraceIsRepeatedSurfaceStall(
         self,
@@ -3901,6 +3987,7 @@ class system():
                             incident_jones[1],
                             incident_polarization,
                         )
+                        child_skip_surface_once = self.__NsTraceSplitChildSkipSurface(j, face_override)
                         for child_label, child_vec, child_n, child_sign, child_ang, child_coeff, child_phase in children:
                             if child_coeff <= 0.0:
                                 continue
@@ -3994,7 +4081,7 @@ class system():
                                 "branch_jones_p": child_jones_p,
                                 "branch_jones_s": child_jones_s,
                                 "branch_polarization_xyz": child_polarization,
-                                "skip_surface_once": int(j),
+                                "skip_surface_once": child_skip_surface_once,
                             }
                             queue.append(child_state)
                             if len(queue) + len(results) >= branch_result_limit:

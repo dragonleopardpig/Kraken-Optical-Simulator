@@ -14603,6 +14603,82 @@ class Kraken3DInspector(tk.Toplevel):
         return None
 
     @staticmethod
+    def _planar_outline_from_points(points, normal_world=None):
+        if pv is None:
+            _load_3d_backends()
+        if pv is None:
+            return None
+        try:
+            point_array = np.asarray(points, dtype=float).reshape((-1, 3))
+        except Exception:
+            return None
+        if point_array.ndim != 2 or point_array.shape[0] < 3 or not np.all(np.isfinite(point_array[:, :3])):
+            return None
+        try:
+            normal = np.asarray(normal_world, dtype=float).reshape(-1)[:3]
+        except Exception:
+            normal = np.asarray([], dtype=float)
+        if normal.size < 3 or not np.all(np.isfinite(normal[:3])) or float(np.linalg.norm(normal[:3])) <= 1e-12:
+            centered = point_array[:, :3] - np.mean(point_array[:, :3], axis=0)
+            try:
+                _u, _s, vh = np.linalg.svd(centered, full_matrices=False)
+                normal = np.asarray(vh[-1], dtype=float)
+            except Exception:
+                normal = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        norm = float(np.linalg.norm(normal[:3]))
+        if norm <= 1e-12 or not np.isfinite(norm):
+            return None
+        normal = np.asarray(normal[:3] / norm, dtype=float)
+        ref = np.asarray((0.0, 0.0, 1.0), dtype=float) if abs(float(normal[2])) < 0.9 else np.asarray((0.0, 1.0, 0.0), dtype=float)
+        u_axis = np.cross(normal, ref)
+        u_norm = float(np.linalg.norm(u_axis))
+        if u_norm <= 1e-12:
+            ref = np.asarray((1.0, 0.0, 0.0), dtype=float)
+            u_axis = np.cross(normal, ref)
+            u_norm = float(np.linalg.norm(u_axis))
+        if u_norm <= 1e-12:
+            return None
+        u_axis = u_axis / u_norm
+        v_axis = np.cross(normal, u_axis)
+        v_norm = float(np.linalg.norm(v_axis))
+        if v_norm <= 1e-12:
+            return None
+        v_axis = v_axis / v_norm
+        origin = np.mean(point_array[:, :3], axis=0)
+        local = np.column_stack(((point_array[:, :3] - origin) @ u_axis, (point_array[:, :3] - origin) @ v_axis))
+        try:
+            local = np.unique(np.round(local, decimals=9), axis=0)
+        except Exception:
+            pass
+        if local.shape[0] < 3:
+            return None
+        hull = convex_hull_2d(local)
+        if hull.ndim != 2 or hull.shape[0] < 3 or hull.shape[1] < 2:
+            return None
+        if hull.shape[0] > 3 and float(np.linalg.norm(hull[0, :2] - hull[-1, :2])) <= 1e-8:
+            hull = hull[:-1, :]
+        hull_world = origin + hull[:, 0:1] * u_axis.reshape(1, 3) + hull[:, 1:2] * v_axis.reshape(1, 3)
+        if not np.all(np.isfinite(hull_world[:, :3])):
+            return None
+        lines: list[int] = []
+        for index in range(int(hull_world.shape[0])):
+            lines.extend((2, int(index), int((index + 1) % hull_world.shape[0])))
+        try:
+            return pv.PolyData(np.asarray(hull_world[:, :3], dtype=float), lines=np.asarray(lines, dtype=np.int64))
+        except Exception:
+            return None
+
+    @staticmethod
+    def _planar_outline_from_triangles(triangles, normal_world=None):
+        try:
+            triangle_array = np.asarray(triangles, dtype=float)
+        except Exception:
+            return None
+        if triangle_array.ndim != 3 or triangle_array.shape[1:] != (3, 3) or triangle_array.shape[0] <= 0:
+            return None
+        return Kraken3DInspector._planar_outline_from_points(triangle_array.reshape((-1, 3)), normal_world=normal_world)
+
+    @staticmethod
     def _hover_overlay_for_feature(center, outline_mesh):
         if pv is None:
             return outline_mesh
@@ -14666,7 +14742,9 @@ class Kraken3DInspector(tk.Toplevel):
         face_mesh = self._polydata_from_triangles(world_triangles)
         if face_mesh is None:
             return None
-        outline = self._display_feature_edges(face_mesh, feature_angle=8.0)
+        outline = self._planar_outline_from_triangles(world_triangles, normal_world=face.get("normal_world", face.get("normal")))
+        if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
+            outline = self._display_feature_edges(face_mesh, feature_angle=8.0)
         if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
             try:
                 outline = face_mesh.extract_all_edges()
@@ -14700,7 +14778,10 @@ class Kraken3DInspector(tk.Toplevel):
         face_mesh = self._polydata_from_triangles(np.asarray(triangles[np.asarray(indices, dtype=int)], dtype=float))
         if face_mesh is None:
             return None
-        outline = self._display_feature_edges(face_mesh, feature_angle=8.0)
+        selected_triangles = np.asarray(triangles[np.asarray(indices, dtype=int)], dtype=float)
+        outline = self._planar_outline_from_triangles(selected_triangles, normal_world=face.get("normal_world", face.get("normal")))
+        if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
+            outline = self._display_feature_edges(face_mesh, feature_angle=8.0)
         if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
             try:
                 outline = face_mesh.extract_all_edges()
