@@ -18,6 +18,7 @@ from KrakenOS.UI.saved_layout_plot import build_saved_layout_figure
 from KrakenOS.UI.scene_builder import _sync_path_display_geometry_from_events
 from KrakenOS.UI.scene_geometry import RayEvent3D, RayPath3D
 from KrakenOS.UI.scene_projector import bounded_ray_points_for_scene_display, scene_display_center_radius
+from KrakenOS.UI.services.open3d_face_pick import pick_face_from_ray
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 
@@ -179,6 +180,10 @@ def main() -> int:
     optical_axis_frame = inspect.getsource(Kraken3DInspector._optical_axis_frame_from_pick)
     optical_axis_screen_pick = inspect.getsource(Kraken3DInspector._optical_axis_info_near_display_xy)
     picked_step_feature = inspect.getsource(Kraken3DInspector._picked_feature_info)
+    display_pick_ray = inspect.getsource(Kraken3DInspector._display_pick_ray)
+    row_face_ray_pick = inspect.getsource(Kraken3DInspector._row_face_ray_pick_for_display_xy)
+    step_face_ray_pick = inspect.getsource(Kraken3DInspector._step_face_ray_pick_for_display_xy)
+    face_ray_pick_service = inspect.getsource(pick_face_from_ray)
     remember_step_feature = inspect.getsource(Kraken3DInspector._remember_selected_step_feature)
     step_carry_drop = inspect.getsource(Kraken3DInspector.stop_step_carry)
     operation_cancel = inspect.getsource(Kraken3DInspector.cancel_active_3d_operation)
@@ -626,14 +631,27 @@ def main() -> int:
             "right-click to assign surface physics" in mouse_move
             and "_hover_overlay_for_feature" in mouse_move
             and "_hover_overlay_for_row_face" in mouse_move
+            and "_row_face_ray_pick_for_display_xy" in mouse_move
             and "optical_solid_face_record_for_mesh_cell" in mouse_move
             and "optical_solid_face_record_at_world_point" in mouse_move
-            and '("row", actor_key, cell_id)' in mouse_move,
+            and '("row", actor_key, "ray", through_face_id)' in mouse_move,
+        ),
+        (
+            "Open 3D transparent CAD solids support through-body internal face picking",
+            "_display_to_world_3d(display_xy, 0.0)" in display_pick_ray
+            and "_display_to_world_3d(display_xy, 1.0)" in display_pick_ray
+            and "pick_face_from_ray(" in row_face_ray_pick
+            and "pick_face_from_ray(" in step_face_ray_pick
+            and "prefer_internal=True" in row_face_ray_pick
+            and "prefer_internal=True" in step_face_ray_pick
+            and "Toolkit pickers" in face_ray_pick_service
+            and "internal" in face_ray_pick_service,
         ),
         (
             "Open 3D row face assignment uses the picked face id directly",
             "face_id: str" in assign_row_face_context
             and "optical_solid_face_record_for_mesh_cell" in right_click_menu
+            and "_row_face_ray_pick_for_display_xy" in right_click_menu
             and "assign_optical_solid_face_function(" in assign_row_face_context
             and "assign_optical_solid_face_function_at_world_point(" in assign_row_face_context
             and "picked_face_id=face_id" in right_click_menu,
@@ -641,6 +659,7 @@ def main() -> int:
         (
             "Open 3D transient STEP face assignment carries picked face id through promotion",
             "optical_solid_step_overlay_face_record_at_world_point" in right_click_menu
+            and "_step_face_ray_pick_for_display_xy" in right_click_menu
             and "picked_face_id=face_id" in right_click_menu
             and "face_id: str" in context_promote_assign
             and "assign_optical_solid_face_function(" in context_promote_assign,

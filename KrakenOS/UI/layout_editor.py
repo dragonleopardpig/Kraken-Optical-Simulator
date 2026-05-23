@@ -267,6 +267,7 @@ from KrakenOS.UI.scene_projector import (
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
 from KrakenOS.UI.panels.open3d_live_controls import Open3DLiveControlsPanel
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
+from KrakenOS.UI.services.open3d_face_pick import FaceRayPick, pick_face_from_ray
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.scene_row_mapping import (
@@ -5967,6 +5968,7 @@ class Kraken3DInspector(tk.Toplevel):
             "step_label": self._actor_step_map.get(actor_key),
             "point_world": target_point,
             "normal_world": normal,
+            "display_xy": (float(x), float(y)),
             "event": event,
         }
 
@@ -6162,8 +6164,15 @@ class Kraken3DInspector(tk.Toplevel):
         cell_id = int(context.get("cell_id", -1))
         if row_index is not None and self.editor._file_backed_stl_row_at(int(row_index)) is not None:
             try:
-                face = self.editor.optical_solid_face_record_for_mesh_cell(int(row_index), cell_id)
-                face_lookup_method = "mesh_cell_triangle"
+                through_pick = self._row_face_ray_pick_for_display_xy(int(row_index), context.get("display_xy"))
+                if through_pick is not None:
+                    face = through_pick.face
+                    point = np.asarray(through_pick.point_world, dtype=float).reshape(3)
+                    normal = np.asarray(through_pick.normal_world, dtype=float).reshape(3)
+                    face_lookup_method = "display_ray_internal" if through_pick.internal else "display_ray_face"
+                else:
+                    face = self.editor.optical_solid_face_record_for_mesh_cell(int(row_index), cell_id)
+                    face_lookup_method = "mesh_cell_triangle"
                 if face is None:
                     face = self.editor.optical_solid_face_record_at_world_point(
                         int(row_index),
@@ -6184,6 +6193,7 @@ class Kraken3DInspector(tk.Toplevel):
                 face_id=face_id or None,
                 lookup_method=face_lookup_method,
                 cell_id=cell_id,
+                through_body=face_lookup_method.startswith("display_ray"),
                 face_function=_optical_solid_face_function_display(face.get("function"), legacy_role=face.get("role")) if face is not None else None,
                 face_role=face.get("role") if face is not None else None,
                 face_port_role=face.get("port_role") if face is not None else None,
@@ -6215,16 +6225,25 @@ class Kraken3DInspector(tk.Toplevel):
             menu.add_command(label="Open Face Editor...", command=lambda idx=int(row_index): self.editor.open_optical_solid_face_role_editor(idx))
         elif step_label in STEP_OVERLAY_LABEL_SET:
             try:
-                face = self.editor.optical_solid_step_overlay_face_record_at_world_point(
-                    step_label,
-                    point[:3],
-                    normal_world=normal,
-                    cell_id=cell_id,
-                )
+                through_pick = self._step_face_ray_pick_for_display_xy(step_label, context.get("display_xy"))
+                if through_pick is not None:
+                    face = through_pick.face
+                    point = np.asarray(through_pick.point_world, dtype=float).reshape(3)
+                    normal = np.asarray(through_pick.normal_world, dtype=float).reshape(3)
+                    face_lookup_method = "display_ray_internal" if through_pick.internal else "display_ray_face"
+                else:
+                    face = self.editor.optical_solid_step_overlay_face_record_at_world_point(
+                        step_label,
+                        point[:3],
+                        normal_world=normal,
+                        cell_id=cell_id,
+                    )
+                    face_lookup_method = "mesh_cell_or_point"
             except Exception as exc:
                 self.status_var.set(f"Imported STEP face lookup failed: {_short_error_message(exc)}")
                 self.editor.append_debug(f"Open 3D imported STEP face lookup failed: {exc}")
                 face = None
+                face_lookup_method = "failed"
             if face is not None:
                 face_id = str(face.get("face_id", "") or "").strip()
             self._debug_trace(
@@ -6232,10 +6251,18 @@ class Kraken3DInspector(tk.Toplevel):
                 label=step_label,
                 face_id=face_id or None,
                 cell_id=cell_id,
+                lookup_method=face_lookup_method,
+                through_body=face_lookup_method.startswith("display_ray"),
                 face_function=_optical_solid_face_function_display(face.get("function"), legacy_role=face.get("role")) if face is not None else None,
                 face_role=face.get("role") if face is not None else None,
                 face_port_role=face.get("port_role") if face is not None else None,
             )
+            try:
+                if face is not None:
+                    outline = self._hover_overlay_for_step_face(step_label, face)
+                    self._set_step_hover_outline(outline, ("step", step_label, face_id or cell_id))
+            except Exception:
+                pass
             display = self.editor._step_overlay_display_label(step_label).upper()
             title = f"{display} STEP {face_id or 'picked face'}"
             menu.add_command(label=title, state="disabled")
@@ -6632,6 +6659,16 @@ class Kraken3DInspector(tk.Toplevel):
             return np.asarray(world[:3] / float(world[3]), dtype=float)
         except Exception:
             return None
+
+    def _display_pick_ray(self, display_xy) -> tuple[np.ndarray, np.ndarray] | None:
+        near = self._display_to_world_3d(display_xy, 0.0)
+        far = self._display_to_world_3d(display_xy, 1.0)
+        if near is None or far is None:
+            return None
+        direction = self._normalized_vector(far[:3] - near[:3])
+        if direction is None:
+            return None
+        return np.asarray(near[:3], dtype=float), np.asarray(direction[:3], dtype=float)
 
     @staticmethod
     def _normalized_vector(values) -> np.ndarray | None:
@@ -10154,20 +10191,57 @@ class Kraken3DInspector(tk.Toplevel):
         selected = np.asarray(triangles[np.asarray(indices, dtype=int)], dtype=float)
         if selected.ndim != 3 or selected.shape[1:] != (3, 3) or selected.shape[0] == 0:
             return np.empty((0, 3, 3), dtype=float)
-        points = selected.reshape((-1, 3))
         normal_local = np.asarray(_unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))), dtype=float)
         if bool(face.get("flip_normal", False)):
             normal_local = -normal_local
+        world = Kraken3DInspector._world_triangles_for_row_pick(
+            row,
+            selected,
+            z_station=z_station,
+            transform=transform,
+        )
+        if world.size == 0:
+            return np.empty((0, 3, 3), dtype=float)
+        if transform is not None:
+            try:
+                matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+                normal = np.asarray(matrix[:3, :3], dtype=float) @ normal_local[:3]
+                normal_norm = float(np.linalg.norm(normal))
+                if normal_norm > 1e-12 and np.isfinite(normal_norm):
+                    world = world.reshape((-1, 3)) + (normal[:3] / normal_norm) * max(float(scene_radius) * 0.0007, 0.02)
+                return world.reshape(selected.shape)
+            except Exception:
+                return np.empty((0, 3, 3), dtype=float)
+        rotation = _rotation_matrix_from_kraken_tilts(
+            float(getattr(row, "tilt_x", 0.0)),
+            float(getattr(row, "tilt_y", 0.0)),
+            float(getattr(row, "tilt_z", 0.0)),
+        )
+        normal = normal_local @ rotation.T
+        normal_norm = float(np.linalg.norm(normal))
+        if normal_norm > 1e-12 and np.isfinite(normal_norm):
+            world = world.reshape((-1, 3)) + (normal[:3] / normal_norm) * max(float(scene_radius) * 0.0007, 0.02)
+        return world.reshape(selected.shape)
+
+    @staticmethod
+    def _world_triangles_for_row_pick(
+        row,
+        triangles: np.ndarray,
+        *,
+        z_station: float,
+        transform=None,
+    ) -> np.ndarray:
+        selected = np.asarray(triangles, dtype=float)
+        if selected.ndim != 3 or selected.shape[1:] != (3, 3) or selected.shape[0] == 0:
+            return np.empty((0, 3, 3), dtype=float)
+        points = selected.reshape((-1, 3))
         if transform is not None:
             try:
                 matrix = np.asarray(transform, dtype=float).reshape(4, 4)
                 local_h = np.column_stack((points[:, 0], points[:, 1], points[:, 2], np.ones(points.shape[0], dtype=float)))
                 world = (matrix @ local_h.T).T[:, :3]
-                normal = np.asarray(matrix[:3, :3], dtype=float) @ normal_local[:3]
-                normal_norm = float(np.linalg.norm(normal))
-                if normal_norm > 1e-12 and np.isfinite(normal_norm):
-                    world = world + (normal[:3] / normal_norm) * max(float(scene_radius) * 0.0007, 0.02)
-                return world.reshape(selected.shape)
+                if np.all(np.isfinite(world[:, :3])):
+                    return world.reshape(selected.shape)
             except Exception:
                 return np.empty((0, 3, 3), dtype=float)
         rotation = _rotation_matrix_from_kraken_tilts(
@@ -10184,10 +10258,8 @@ class Kraken3DInspector(tk.Toplevel):
             dtype=float,
         )
         world = points @ rotation.T + offset
-        normal = normal_local @ rotation.T
-        normal_norm = float(np.linalg.norm(normal))
-        if normal_norm > 1e-12 and np.isfinite(normal_norm):
-            world = world + (normal[:3] / normal_norm) * max(float(scene_radius) * 0.0007, 0.02)
+        if not np.all(np.isfinite(world[:, :3])):
+            return np.empty((0, 3, 3), dtype=float)
         return world.reshape(selected.shape)
 
     @staticmethod
@@ -13048,7 +13120,14 @@ class Kraken3DInspector(tk.Toplevel):
                 except Exception:
                     cell_id = -1
                 step_label = str(step_label)
-                feature = self._picked_feature_info_cached(actor, self._picker, actor_key=str(source_actor_key) if source_actor_key else None, cell_id=cell_id)
+                through_pick = self._step_face_ray_pick_for_display_xy(step_label, (x, y))
+                if through_pick is not None:
+                    feature = self._feature_from_face_ray_pick(
+                        through_pick,
+                        self._hover_overlay_for_step_face(step_label, through_pick.face),
+                    )
+                else:
+                    feature = self._picked_feature_info_cached(actor, self._picker, actor_key=str(source_actor_key) if source_actor_key else None, cell_id=cell_id)
                 if not self._remember_selected_step_feature(step_label, feature):
                     self.status_var.set("Center Row->Optical Axis: click a planar imported STEP face or a KrakenOS surface row.")
                     self.render()
@@ -13151,7 +13230,14 @@ class Kraken3DInspector(tk.Toplevel):
                 return
             requested_label = self.editor._cad_axis_pick_label
             if requested_label is None and not axis_pick_any:
-                feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=step_cell_id)
+                through_pick = self._step_face_ray_pick_for_display_xy(str(step_label), (x, y))
+                if through_pick is not None:
+                    feature = self._feature_from_face_ray_pick(
+                        through_pick,
+                        self._hover_overlay_for_step_face(str(step_label), through_pick.face),
+                    )
+                else:
+                    feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=step_cell_id)
                 remembered = self._remember_selected_step_feature(step_label, feature)
                 self.editor.select_step_component(step_label)
                 self._set_step_highlight(step_label)
@@ -13164,7 +13250,14 @@ class Kraken3DInspector(tk.Toplevel):
             if requested_label is not None and requested_label != step_label:
                 self.status_var.set(f"CAD STEP picked: {step_label}. Center mode is armed for {str(requested_label).upper()}.")
                 return
-            feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=step_cell_id)
+            through_pick = self._step_face_ray_pick_for_display_xy(str(step_label), (x, y))
+            if through_pick is not None:
+                feature = self._feature_from_face_ray_pick(
+                    through_pick,
+                    self._hover_overlay_for_step_face(str(step_label), through_pick.face),
+                )
+            else:
+                feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=step_cell_id)
             if feature is None:
                 try:
                     center = np.asarray(self._picker.GetPickPosition(), dtype=float)
@@ -13570,19 +13663,29 @@ class Kraken3DInspector(tk.Toplevel):
                         cell_id = int(self._picker.GetCellId())
                     except Exception:
                         cell_id = -1
-                    hover_key = (actor_key, cell_id)
+                    through_pick = self._step_face_ray_pick_for_display_xy(str(step_label), (x, y))
                     outline = None
-                    if hover_key != self._hover_step_cell_key:
-                        feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
-                        outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
+                    face_text = "face"
+                    if through_pick is not None:
+                        face = through_pick.face
+                        face_id = str(face.get("face_id", "") or "").strip() or "face"
+                        face_text = f"{face_id} internal face" if through_pick.internal else f"{face_id} face"
+                        hover_key = (actor_key, "ray", face_id)
+                        if hover_key != self._hover_step_cell_key:
+                            outline = self._hover_overlay_for_step_face(str(step_label), face)
+                    else:
+                        hover_key = (actor_key, cell_id)
+                        if hover_key != self._hover_step_cell_key:
+                            feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
+                            outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
                     self._set_step_hover_outline(outline, hover_key)
                     display = self.editor._step_overlay_display_label(str(step_label)).upper()
                     self._update_hover_status(
-                        f"{display} STEP face\nDefault after promotion: Uncoated",
+                        f"{display} STEP {face_text}\nDefault after promotion: Uncoated",
                         display_xy=(x, y),
                         render=True,
                     )
-                    self.status_var.set(f"{display} STEP face: click to select its normal for optical-axis snapping.")
+                    self.status_var.set(f"{display} STEP {face_text}: click to select its normal for optical-axis snapping.")
                     return
                 row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
                 if row_index is not None and self.editor._file_backed_stl_row_at(int(row_index)) is not None:
@@ -13590,12 +13693,17 @@ class Kraken3DInspector(tk.Toplevel):
                         cell_id = int(self._picker.GetCellId())
                     except Exception:
                         cell_id = -1
-                    hover_key = ("row", actor_key, cell_id)
+                    through_pick = self._row_face_ray_pick_for_display_xy(int(row_index), (x, y))
+                    through_face_id = ""
+                    if through_pick is not None:
+                        through_face_id = str(through_pick.face.get("face_id", "") or "").strip()
+                    hover_key = ("row", actor_key, "ray", through_face_id) if through_face_id else ("row", actor_key, cell_id)
                     outline = None
                     feature = None
-                    face = None
+                    face = through_pick.face if through_pick is not None else None
                     try:
-                        face = self.editor.optical_solid_face_record_for_mesh_cell(int(row_index), cell_id)
+                        if face is None:
+                            face = self.editor.optical_solid_face_record_for_mesh_cell(int(row_index), cell_id)
                     except Exception:
                         face = None
                     if hover_key != self._hover_step_cell_key:
@@ -13621,6 +13729,8 @@ class Kraken3DInspector(tk.Toplevel):
                         if face is not None:
                             function = _optical_solid_face_function_display(face.get("function"), legacy_role=face.get("role"))
                             face_text = f"{str(face.get('face_id', '') or 'face')} ({function})"
+                            if through_pick is not None and through_pick.internal:
+                                face_text += " internal"
                             self._update_hover_status(self._face_hover_status_text(int(row_index), face), display_xy=(x, y), render=True)
                     except Exception:
                         pass
@@ -13667,14 +13777,26 @@ class Kraken3DInspector(tk.Toplevel):
                 cell_id = int(self._picker.GetCellId())
             except Exception:
                 cell_id = -1
-            hover_key = (actor_key, cell_id)
+            through_pick = self._step_face_ray_pick_for_display_xy(str(step_label), (x, y))
             outline = None
-            if hover_key != self._hover_step_cell_key:
-                feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
-                outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
+            if through_pick is not None:
+                face = through_pick.face
+                face_id = str(face.get("face_id", "") or "").strip() or "face"
+                hover_key = (actor_key, "ray", face_id)
+                if hover_key != self._hover_step_cell_key:
+                    outline = self._hover_overlay_for_step_face(str(step_label), face)
+            else:
+                hover_key = (actor_key, cell_id)
+                if hover_key != self._hover_step_cell_key:
+                    feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
+                    outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
             self._set_step_hover_outline(outline, hover_key)
             self._set_axis_pick_cursor(True)
-            self._update_hover_status(f"{str(step_label).upper()} STEP feature", display_xy=(x, y), render=True)
+            face_note = ""
+            if through_pick is not None:
+                face_id = str(through_pick.face.get("face_id", "") or "").strip() or "face"
+                face_note = f" {face_id} internal face" if through_pick.internal else f" {face_id} face"
+            self._update_hover_status(f"{str(step_label).upper()} STEP{face_note or ' feature'}", display_xy=(x, y), render=True)
             if led_edge_pick:
                 self.status_var.set("Click orange LED edge used for Object-to-LED distance.")
             elif axis_pick_any:
@@ -14047,6 +14169,131 @@ class Kraken3DInspector(tk.Toplevel):
                 outline = None
         center = face.get("centroid_world", face.get("centroid", ()))
         return self._hover_overlay_for_feature(center, outline)
+
+    def _hover_overlay_for_step_face(self, label: str, face: dict[str, object] | None):
+        if pv is None or not isinstance(face, dict):
+            return None
+        try:
+            metadata = self.editor._step_overlay_face_metadata(str(label).strip().lower())
+            source_stl = Path(str(metadata.get("source_stl", "") or "")).expanduser()
+            _fmt, triangles = _read_stl_triangle_vertices(source_stl)
+            triangles = np.asarray(triangles, dtype=float)
+        except Exception:
+            return None
+        if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or triangles.shape[0] == 0:
+            return None
+        indices: list[int] = []
+        for value in list(face.get("triangle_indices", face.get("cell_indices", [])) or []):
+            try:
+                index = int(value)
+            except Exception:
+                continue
+            if 0 <= index < int(triangles.shape[0]):
+                indices.append(index)
+        if not indices:
+            return None
+        face_mesh = self._polydata_from_triangles(np.asarray(triangles[np.asarray(indices, dtype=int)], dtype=float))
+        if face_mesh is None:
+            return None
+        outline = self._display_feature_edges(face_mesh, feature_angle=8.0)
+        if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
+            try:
+                outline = face_mesh.extract_all_edges()
+            except Exception:
+                outline = None
+        center = face.get("centroid_world", face.get("centroid", ()))
+        return self._hover_overlay_for_feature(center, outline)
+
+    def _feature_from_face_ray_pick(self, pick: FaceRayPick, outline_mesh=None):
+        return (
+            np.asarray(pick.point_world, dtype=float).reshape(3),
+            outline_mesh,
+            np.asarray(pick.normal_world, dtype=float).reshape(3),
+        )
+
+    @staticmethod
+    def _runtime_world_face_records_for_pick(row, metadata: dict[str, object], transform) -> list[dict[str, object]]:
+        faces: list[dict[str, object]] = []
+        try:
+            matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+        except Exception:
+            return faces
+        for face in list(metadata.get("faces", []) or []):
+            if not isinstance(face, dict):
+                continue
+            record = normalize_optical_solid_face_record(face)
+            normal = np.asarray(_unit_vector_tuple(record.get("normal", (0.0, 0.0, 1.0))), dtype=float)
+            if bool(record.get("flip_normal", False)):
+                normal = -normal
+            transformed = Kraken3DInspector._transform_local_point_and_normal(
+                matrix,
+                record.get("centroid", (0.0, 0.0, 0.0)),
+                normal,
+            )
+            if transformed is None:
+                continue
+            centroid_world, normal_world = transformed
+            record["centroid_world"] = tuple(float(value) for value in centroid_world[:3])
+            record["normal_world"] = tuple(float(value) for value in normal_world[:3])
+            faces.append(record)
+        return faces
+
+    def _step_face_ray_pick_for_display_xy(self, label: str, display_xy) -> FaceRayPick | None:
+        ray = self._display_pick_ray(display_xy)
+        if ray is None:
+            return None
+        origin, direction = ray
+        try:
+            metadata = self.editor._step_overlay_face_metadata(str(label).strip().lower())
+            source_stl = Path(str(metadata.get("source_stl", "") or "")).expanduser()
+            _fmt, triangles = _read_stl_triangle_vertices(source_stl)
+            triangles = np.asarray(triangles, dtype=float)
+        except Exception:
+            return None
+        faces = [face for face in list(metadata.get("faces", []) or []) if isinstance(face, dict)]
+        return pick_face_from_ray(
+            faces,
+            triangles,
+            origin,
+            direction,
+            all_points=triangles.reshape((-1, 3)) if triangles.ndim == 3 else None,
+            prefer_internal=True,
+        )
+
+    def _row_face_ray_pick_for_display_xy(self, row_index: int, display_xy) -> FaceRayPick | None:
+        ray = self._display_pick_ray(display_xy)
+        if ray is None:
+            return None
+        origin, direction = ray
+        try:
+            row, path, metadata = self.editor._optical_solid_face_metadata_for_row(int(row_index))
+            _fmt, triangles = _read_stl_triangle_vertices(path)
+            triangles = np.asarray(triangles, dtype=float)
+        except Exception:
+            return None
+        if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or triangles.shape[0] == 0:
+            return None
+        transform = self._runtime_transform_for_row(self.__dict__.get("_current_system"), int(row_index))
+        world_triangles = self._world_triangles_for_row_pick(
+            row,
+            triangles,
+            z_station=self.editor._stl_row_z_station(int(row_index)),
+            transform=transform,
+        )
+        if world_triangles.size == 0:
+            return None
+        if transform is not None:
+            faces = self._runtime_world_face_records_for_pick(row, metadata, transform)
+        else:
+            faces = self.editor._optical_solid_face_records_for_temp_row(row, int(row_index), metadata)
+        return pick_face_from_ray(
+            faces,
+            world_triangles,
+            origin,
+            direction,
+            all_points=world_triangles.reshape((-1, 3)),
+            prefer_internal=True,
+        )
 
     @staticmethod
     def _set_step_actor_selected(actor, selected: bool) -> None:
