@@ -58,6 +58,7 @@ from KrakenOS.UI.services.layout_file_writer import LayoutFileWriterService
 from KrakenOS.UI.services.layout_settings import LayoutSettingsService
 from KrakenOS.UI.services.nonseq_scene_graph_records import NonSequentialSceneGraphRecordService
 from KrakenOS.UI.services.open3d_face_pick import pick_face_from_ray
+from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
@@ -208,8 +209,9 @@ def main() -> int:
         step_carry_drag_branch = ""
     rotation = inspect.getsource(Kraken3DInspector._rotate_camera_fixed_drag)
     camera_pan = inspect.getsource(Kraken3DInspector._pan_camera_fixed_drag)
-    pick = inspect.getsource(Kraken3DInspector._on_left_button_press)
-    mouse_move = inspect.getsource(Kraken3DInspector._on_mouse_move)
+    pick = inspect.getsource(Open3DInteractionService._on_left_button_press)
+    mouse_move = inspect.getsource(Open3DInteractionService._on_mouse_move)
+    interaction_factory = inspect.getsource(Kraken3DInspector._interaction_service)
     handler = inspect.getsource(Kraken3DInspector.show_step_rotation_handler)
     handler_rotate = inspect.getsource(Kraken3DInspector._rotate_step_from_handler)
     ensure_step_handles = inspect.getsource(Kraken3DInspector._ensure_step_rotation_handles_for_label)
@@ -624,6 +626,7 @@ def main() -> int:
             "Open 3D interaction trace captures clicks, face assignment, and refresh counts",
             "_open3d_debug_seq" in init
             and "Open3DTrace" in debug_trace
+            and "Open3DInteractionService(self)" in interaction_factory
             and "left_click_pick" in pick
             and "right_click_context" in surface_menu
             and "face_assignment_start" in context_assign
