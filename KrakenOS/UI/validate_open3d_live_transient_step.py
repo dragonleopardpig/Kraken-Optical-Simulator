@@ -6,6 +6,7 @@ import inspect
 from dataclasses import dataclass
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
+from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.step_overlay_promotion import StepOverlayPromotionService
 
@@ -20,6 +21,7 @@ class Open3DLiveTransientStepCheck:
 def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
     inspector_source = inspect.getsource(Kraken3DInspector)
     editor_source = inspect.getsource(KrakenLayoutEditor)
+    open3d_scene_refresh_service = inspect.getsource(Open3DSceneRefreshService)
     open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)
     step_promotion_service = inspect.getsource(StepOverlayPromotionService)
     checks = [
@@ -64,7 +66,7 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
         Open3DLiveTransientStepCheck(
             "Transient file-backed rows keep CAD display styling",
             "def _render_row_file_backed" in inspector_source
-            and "self._render_row_file_backed(rows, int(index))" in inspector_source
+            and "self._render_row_file_backed(rows, int(index))" in open3d_scene_refresh_service
             and "solid_mesh = self._stl_mesh_with_world_transform(row, row_transform)" in editor_source
             and "file_backed_optical_solid and row_transform is not None" in editor_source,
             "Live trace rows are classified from the render row list and displayed with the full CAD/STL body.",
@@ -73,15 +75,15 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             "CAD body edges are cleaned before display",
             "def _display_feature_edges" in inspector_source
             and ".clean(tolerance=1e-6" in inspector_source
-            and "ray_surface_edge_overlays.append((edges, file_backed_silhouette_color" in inspector_source,
+            and "ray_surface_edge_overlays.append((edges, file_backed_silhouette_color" in open3d_scene_refresh_service,
             "Imported solids use strong outline edges without relying on raw triangulation boundaries.",
         ),
         Open3DLiveTransientStepCheck(
             "Transient STEP overlays are not drawn twice during live tracing",
             "def _live_trace_step_overlay_labels" in inspector_source
-            and "live_trace_step_overlay_labels = self._live_trace_step_overlay_labels()" in inspector_source
-            and "if label in live_trace_step_overlay_labels:" in inspector_source
-            and "continue" in inspector_source,
+            and "live_trace_step_overlay_labels = self._live_trace_step_overlay_labels()" in open3d_scene_refresh_service
+            and "if label in live_trace_step_overlay_labels:" in open3d_scene_refresh_service
+            and "continue" in open3d_scene_refresh_service,
             "When Live Mode turns an imported optical STEP into a transient row, the display-only overlay is suppressed.",
         ),
         Open3DLiveTransientStepCheck(

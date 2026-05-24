@@ -58,6 +58,7 @@ from KrakenOS.UI.services.layout_file_writer import LayoutFileWriterService
 from KrakenOS.UI.services.layout_settings import LayoutSettingsService
 from KrakenOS.UI.services.nonseq_scene_graph_records import NonSequentialSceneGraphRecordService
 from KrakenOS.UI.services.open3d_face_pick import pick_face_from_ray
+from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
@@ -285,7 +286,8 @@ def main() -> int:
     clear_selection = inspect.getsource(Kraken3DInspector._clear_open3d_selection)
     remove_step_handles = inspect.getsource(Kraken3DInspector._remove_step_rotation_handle_actors)
     key_press = inspect.getsource(Kraken3DInspector._on_key_press)
-    refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
+    refresh = inspect.getsource(Open3DSceneRefreshService.refresh_scene)
+    refresh_factory = inspect.getsource(Kraken3DInspector._scene_refresh_service)
     add_mesh_actor = inspect.getsource(Kraken3DInspector._add_mesh_actor)
     build_ui = inspect.getsource(MainWindowBuilder._build_ui)
     main_window_builder_factory = inspect.getsource(KrakenLayoutEditor._main_window_builder)
@@ -627,6 +629,7 @@ def main() -> int:
             and "face_assignment_start" in context_assign
             and "face_assignment_metadata_saved" in context_assign
             and "promote_step_face_assignment_start" in context_promote_assign
+            and "Open3DSceneRefreshService(self)" in refresh_factory
             and "refresh_scene_start" in refresh
             and "refresh_scene_done" in refresh
             and "show_rays_toggled" in show_rays_changed,
