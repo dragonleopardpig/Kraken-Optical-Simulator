@@ -8,6 +8,7 @@ import numpy as np
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
 from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
+from KrakenOS.UI.services.step_face_direction import StepFaceDirectionService
 
 
 def _close(a, b) -> bool:
@@ -19,6 +20,8 @@ def main() -> int:
     inspector_source = inspect.getsource(Kraken3DInspector.orient_selected_step_face_to_direction)
     editor_source = inspect.getsource(KrakenLayoutEditor.orient_step_feature_normal_to_direction)
     direction_source = inspect.getsource(KrakenLayoutEditor._step_orientation_direction_vector)
+    service_class_source = inspect.getsource(StepFaceDirectionService)
+    service_source = inspect.getsource(StepFaceDirectionService.plan_overlay_face_direction)
     checks = [
         (
             "right-panel exposes all STEP face-direction labels",
@@ -34,12 +37,18 @@ def main() -> int:
             and "step_feature_selection(" in inspector_source,
         ),
         (
-            "editor live-updates imported STEP pose while anchoring selected face",
-            "_rotation_matrix_between_vectors(feature_normal, target_normal)" in editor_source
-            and "placement_delta = feature_center[:3] - np.asarray(rotated_feature_center" in editor_source
-            and "_set_step_rotation_deg_tuple(label, next_angles)" in editor_source
-            and "_set_step_placement_offset_xyz(label, next_offset)" in editor_source
-            and "_refresh_open_3d_views(step_label=label)" in editor_source,
+            "service plans imported STEP pose while anchoring selected face",
+            "_rotation_matrix_between_vectors(feature_normal, target_normal)" in service_source
+            and "placement_delta = feature_center[:3] - np.asarray(rotated_feature_center" in service_source
+            and "_set_step_rotation_deg_tuple(label, next_angles)" in service_source
+            and "_set_step_rotation_deg_tuple(label, current_angles)" in service_source,
+        ),
+        (
+            "editor applies service plan and refreshes Open 3D",
+            "_step_face_direction_service().plan_overlay_face_direction" in editor_source
+            and "_set_step_rotation_deg_tuple(plan.label, plan.rotation_deg)" in editor_source
+            and "_set_step_placement_offset_xyz(plan.label, plan.placement_offset_xyz)" in editor_source
+            and "_refresh_open_3d_views(step_label=plan.label)" in editor_source,
         ),
         (
             "face-direction vectors match Open 3D YZ convention",
@@ -53,7 +62,8 @@ def main() -> int:
         ),
         (
             "direction helper keeps explicit labels documented in source",
-            all(label.lower() in direction_source for label in ("Left", "Right", "Up", "Down", "Front", "Back")),
+            "StepFaceDirectionService.direction_vector" in direction_source
+            and all(label.lower() in service_class_source for label in ("Left", "Right", "Up", "Down", "Front", "Back")),
         ),
     ]
     failed = [name for name, ok in checks if not ok]

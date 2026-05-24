@@ -293,6 +293,7 @@ from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.plot_refresh import PlotRefreshService
 from KrakenOS.UI.services.ray_inspector_records import RayInspectorRecordService
 from KrakenOS.UI.services.results_display import ResultsDisplayService
+from KrakenOS.UI.services.step_face_direction import StepFaceDirectionService
 from KrakenOS.UI.services.step_overlay_import import StepOverlayImportService
 from KrakenOS.UI.services.step_overlay_promotion import StepOverlayPromotionService
 from KrakenOS.UI.services.tolerance_analysis import ToleranceAnalysisService
@@ -17258,6 +17259,13 @@ class KrakenLayoutEditor(tk.Tk):
             self._step_overlay_promotion_service_instance = service
         return service
 
+    def _step_face_direction_service(self) -> StepFaceDirectionService:
+        service = self.__dict__.get("_step_face_direction_service_instance")
+        if service is None:
+            service = StepFaceDirectionService(self, valid_labels=STEP_OVERLAY_LABEL_SET)
+            self._step_face_direction_service_instance = service
+        return service
+
     def _step_overlay_optical_solid_row_plan(
         self,
         label: str,
@@ -18043,17 +18051,7 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _step_orientation_direction_vector(direction_label: object) -> np.ndarray | None:
-        text = str(direction_label or "").strip().lower().replace("_", " ").replace("-", " ")
-        mapping = {
-            "left": (0.0, 0.0, -1.0),
-            "right": (0.0, 0.0, 1.0),
-            "up": (0.0, 1.0, 0.0),
-            "down": (0.0, -1.0, 0.0),
-            "front": (1.0, 0.0, 0.0),
-            "back": (-1.0, 0.0, 0.0),
-        }
-        value = mapping.get(text)
-        return None if value is None else np.asarray(value, dtype=float)
+        return StepFaceDirectionService.direction_vector(direction_label)
 
     def orient_step_feature_normal_to_direction(
         self,
@@ -18064,87 +18062,32 @@ class KrakenLayoutEditor(tk.Tk):
         *,
         face_id: str = "",
     ) -> dict[str, object] | None:
-        label = str(label).strip().lower()
-        if label not in STEP_OVERLAY_LABEL_SET:
-            return None
-        if self._step_path_for_label(label) is None:
-            self.status_var.set(f"No {label} STEP is imported.")
-            return None
-        target_normal = self._step_orientation_direction_vector(direction_label)
-        if target_normal is None:
-            self.status_var.set("STEP Face Direction must be Left, Right, Up, Down, Front, or Back.")
-            return None
-        feature_center = np.asarray(feature_center_xyz, dtype=float).reshape(-1)[:3]
-        feature_normal = np.asarray(feature_normal_xyz, dtype=float).reshape(-1)[:3]
-        if (
-            feature_center.size < 3
-            or feature_normal.size < 3
-            or not np.all(np.isfinite(feature_center[:3]))
-            or not np.all(np.isfinite(feature_normal[:3]))
-        ):
-            self.status_var.set("STEP Face Direction needs a finite picked STEP face center and normal.")
-            return None
-        feature_normal = self._normalized_vector(feature_normal[:3])
-        target_normal = self._normalized_vector(target_normal[:3])
-
-        current_mesh = self._transformed_imported_step_mesh_for_label(label)
-        if current_mesh is None or int(getattr(current_mesh, "n_points", 0)) <= 0:
-            self.status_var.set(f"{label.upper()} STEP mesh unavailable for face-direction alignment.")
-            return None
-        current_points = np.asarray(getattr(current_mesh, "points", np.empty((0, 3))), dtype=float)
-        if current_points.ndim != 2 or current_points.shape[0] < 4 or current_points.shape[1] < 3:
-            self.status_var.set(f"{label.upper()} STEP mesh does not have enough points for face-direction alignment.")
-            return None
-
-        current_angles = self._step_rotation_deg_tuple(label)
-        current_offset = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
-        current_matrix = self._step_rotation_matrix_from_angles(*current_angles)
-        delta_matrix = self._rotation_matrix_between_vectors(feature_normal, target_normal)
-        next_matrix = delta_matrix @ current_matrix
-        next_angles = self._step_angles_from_rotation_matrix(next_matrix)
-
-        self._set_step_rotation_deg_tuple(label, next_angles)
         try:
-            rotated_mesh = self._transformed_imported_step_mesh_for_label(label)
-        finally:
-            self._set_step_rotation_deg_tuple(label, current_angles)
-        if rotated_mesh is None or int(getattr(rotated_mesh, "n_points", 0)) <= 0:
-            self.status_var.set(f"{label.upper()} STEP rotated mesh unavailable for face-direction alignment.")
+            plan = self._step_face_direction_service().plan_overlay_face_direction(
+                label,
+                feature_center_xyz,
+                feature_normal_xyz,
+                direction_label,
+                face_id=face_id,
+            )
+        except ValueError as exc:
+            self.status_var.set(str(exc))
             return None
-        rotated_points = np.asarray(getattr(rotated_mesh, "points", np.empty((0, 3))), dtype=float)
-        affine = _affine_from_point_sets(current_points[:, :3], rotated_points[:, :3])
-        if affine is not None:
-            rotated_feature_center = (affine @ np.asarray((feature_center[0], feature_center[1], feature_center[2], 1.0), dtype=float))[:3]
-        else:
-            rotated_feature_center = feature_center[:3]
-        placement_delta = feature_center[:3] - np.asarray(rotated_feature_center, dtype=float).reshape(3)
-        next_offset = current_offset[:3] + placement_delta[:3]
-
+        if plan is None:
+            return None
         self._begin_history_capture()
-        self._set_step_rotation_deg_tuple(label, next_angles)
-        self._set_step_placement_offset_xyz(label, next_offset)
-        self._selected_step_label = label
+        self._set_step_rotation_deg_tuple(plan.label, plan.rotation_deg)
+        self._set_step_placement_offset_xyz(plan.label, plan.placement_offset_xyz)
+        self._selected_step_label = plan.label
         self._commit_history_capture()
-        rotated_normal = delta_matrix @ feature_normal
-        angle_error = float(np.rad2deg(np.arccos(np.clip(float(np.dot(rotated_normal, target_normal)), -1.0, 1.0))))
-        direction_text = str(direction_label or "").strip().title()
-        face_text = str(face_id or "").strip()
-        face_note = f" {face_text}" if face_text else ""
+        face_note = f" {plan.face_id}" if plan.face_id else ""
         self.status_var.set(
-            f"{label.upper()} STEP face{face_note} normal set to {direction_text}; "
-            f"face center held at ({feature_center[0]:.6g}, {feature_center[1]:.6g}, {feature_center[2]:.6g}) mm."
+            f"{plan.label.upper()} STEP face{face_note} normal set to {plan.direction_label}; "
+            f"face center held at ({plan.surface_center[0]:.6g}, "
+            f"{plan.surface_center[1]:.6g}, {plan.surface_center[2]:.6g}) mm."
         )
-        self._refresh_open_3d_views(step_label=label)
-        return {
-            "label": label,
-            "face_id": face_text,
-            "direction_label": direction_text,
-            "surface_center": tuple(float(value) for value in feature_center[:3]),
-            "target_direction": tuple(float(value) for value in target_normal[:3]),
-            "rotation_deg": tuple(float(value) for value in next_angles),
-            "placement_offset_xyz": tuple(float(value) for value in next_offset[:3]),
-            "angle_error_deg": angle_error,
-        }
+        self._refresh_open_3d_views(step_label=plan.label)
+        return plan.as_result()
 
     def _step_roll_deg(self, label: str) -> float:
         if label == "lens":

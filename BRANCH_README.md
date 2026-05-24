@@ -1061,6 +1061,12 @@ right-panel browser also recognizes durable row-backed STEP solids from
 saved layouts whose transient promotion block is absent still list imported STEP
 optical elements in the browser.
 
+Latest movement on 2026-05-24: `StepFaceDirectionService` now owns the
+calculation for Open 3D `Left`/`Right`/`Up`/`Down`/`Front`/`Back` STEP face
+orientation. `layout_editor.py` now applies the planned rotation/offset and
+refreshes the view, while the service keeps the picked face center anchored and
+validates the finite face center/normal inputs outside the editor coordinator.
+
 1. Split `KrakenOS/UI/layout_editor.py` into a package-style structure inspired
    by the organization of `optiland_gui/`, while keeping KrakenOS on Tk/ttk.
    The first target package layout should be:
@@ -1287,9 +1293,9 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Continue the production-readiness refactor by moving Open 3D STEP overlay
-import/carry/promotion transitions into `Open3DStepStateService`. The target is
-one state machine for transient STEP overlays and promoted optical solid rows,
+Continue the production-readiness refactor by moving the remaining Open 3D STEP
+overlay carry/drop/promotion transitions behind service-owned state. The target
+is one state machine for transient STEP overlays and promoted optical solid rows,
 so stale actors, duplicate visible solids, and display-only solids cannot
 diverge from the traced physics state. The next validator should drive import,
 carry/drop, accept/promote, face assignment, reassignment, and Trace Ray through
