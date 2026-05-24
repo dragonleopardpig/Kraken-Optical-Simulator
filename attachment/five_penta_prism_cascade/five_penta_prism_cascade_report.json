@@ -1,0 +1,338 @@
+{
+  "entrance_face": "F005",
+  "final": {
+    "central_terminal_direction": [
+      0.544795321,
+      -0.807695952,
+      0.225444687
+    ],
+    "ray_paths": 1,
+    "row_indices": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "surface_event_counts": {
+      "F003:reflection": 3,
+      "F003:refraction": 2,
+      "F004:reflection": 2,
+      "F004:refraction": 2,
+      "F005:reflection": 1,
+      "F005:refraction": 4,
+      "F006:reflection": 3,
+      "F006:refraction": 2,
+      "F007:reflection": 1
+    },
+    "surface_sequence_counts": {
+      "F005:refraction -> F004:reflection -> F003:reflection -> F006:refraction -> F003:refraction -> F006:reflection -> F007:reflection -> F005:refraction -> F004:refraction -> F003:reflection -> F006:reflection -> F005:refraction -> F003:refraction -> F006:reflection -> F005:reflection -> F004:refraction -> F005:refraction -> F004:reflection -> F003:reflection -> F006:refraction": 1
+    },
+    "terminal_counts": {
+      "escaped": 1
+    }
+  },
+  "layout_path": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/five_penta_prism_cascade.py",
+  "mirror_assignment_mode": "trace actual central-ray leak faces after promotion",
+  "nominal_vendor_mirror_faces": [
+    "F004",
+    "F003"
+  ],
+  "ok": true,
+  "penta_count": 5,
+  "report_path": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/five_penta_prism_cascade/five_penta_prism_cascade_report.json",
+  "snapshots": {
+    "iso": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/five_penta_prism_cascade/five_penta_final_iso.png",
+    "xy": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/five_penta_prism_cascade/five_penta_final_xy.png",
+    "xz": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/five_penta_prism_cascade/five_penta_final_xz.png",
+    "zy": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/five_penta_prism_cascade/five_penta_final_yz.png"
+  },
+  "stage_count": 5,
+  "stages": [
+    {
+      "assigned_faces": [
+        {
+          "assigned_face_id": "F004",
+          "function": "Mirror",
+          "mirror_number": 1,
+          "traced_action_before_assignment": "refraction",
+          "traced_event_index": 1,
+          "traced_face_id": "F004"
+        },
+        {
+          "assigned_face_id": "F003",
+          "function": "Mirror",
+          "mirror_number": 2,
+          "traced_action_before_assignment": "refraction",
+          "traced_event_index": 2,
+          "traced_face_id": "F003"
+        }
+      ],
+      "axis_id": "diagnostic:global-plus-z",
+      "axis_label": "diagnostic global +Z optical axis",
+      "central_sequence": "F005:refraction -> F004:reflection -> F003:reflection -> F006:refraction",
+      "central_terminal_direction": [
+        0.559192898,
+        -0.829037576,
+        1.1e-07
+      ],
+      "prism": 1,
+      "ray_paths_after_trace": 1,
+      "roll_deg": 34.0,
+      "row_index": 1,
+      "snap": {
+        "angle_error_deg": 0.0,
+        "face_id": "F005",
+        "placement_offset_xyz": [
+          -2.985214456,
+          4.425762438,
+          43.338432312
+        ],
+        "rotation_deg": [
+          0.0,
+          90.0,
+          214.0
+        ],
+        "target_direction": [
+          -0.0,
+          -0.0,
+          -1.0
+        ],
+        "target_point": [
+          0.0,
+          0.0,
+          38.0
+        ]
+      },
+      "snapshot": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/five_penta_prism_cascade/five_penta_stage_01_after_trace.png"
+    },
+    {
+      "assigned_faces": [
+        {
+          "assigned_face_id": "F006",
+          "function": "Mirror",
+          "mirror_number": 1,
+          "traced_action_before_assignment": "refraction",
+          "traced_event_index": 1,
+          "traced_face_id": "F006"
+        },
+        {
+          "assigned_face_id": "F007",
+          "function": "Mirror",
+          "mirror_number": 2,
+          "traced_action_before_assignment": "refraction",
+          "traced_event_index": 2,
+          "traced_face_id": "F007"
+        }
+      ],
+      "axis_id": "diagnostic:penta-1-exit",
+      "axis_label": "diagnostic penta 1 exit axis",
+      "central_sequence": "F005:refraction -> F004:reflection -> F003:reflection -> F006:refraction -> F003:refraction -> F006:reflection -> F007:reflection -> F005:refraction",
+      "central_terminal_direction": [
+        0.126065129,
+        -0.186900583,
+        -0.974256514
+      ],
+      "prism": 2,
+      "ray_paths_after_trace": 1,
+      "roll_deg": 34.0,
+      "row_index": 2,
+      "snap": {
+        "angle_error_deg": 0.0,
+        "face_id": "F005",
+        "placement_offset_xyz": [
+          115.551786764,
+          -170.471356284,
+          38.716635901
+        ],
+        "rotation_deg": [
+          269.999992,
+          67.499929,
+          124.000008
+        ],
+        "target_direction": [
+          -0.559192898,
+          0.829037576,
+          -1.1e-07
+        ],
+        "target_point": [
+          107.644633267,
+          -159.589733075,
+          50.500019715
+        ]
+      },
+      "snapshot": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/five_penta_prism_cascade/five_penta_stage_02_after_trace.png"
+    },
+    {
+      "assigned_faces": [
+        {
+          "assigned_face_id": "F003",
+          "function": "Mirror",
+          "mirror_number": 1,
+          "traced_action_before_assignment": "reflect_tir",
+          "traced_event_index": 1,
+          "traced_face_id": "F003"
+        },
+        {
+          "assigned_face_id": "F006",
+          "function": "Mirror",
+          "mirror_number": 2,
+          "traced_action_before_assignment": "reflect_tir",
+          "traced_event_index": 2,
+          "traced_face_id": "F006"
+        }
+      ],
+      "axis_id": "diagnostic:penta-2-exit",
+      "axis_label": "diagnostic penta 2 exit axis",
+      "central_sequence": "F005:refraction -> F004:reflection -> F003:reflection -> F006:refraction -> F003:refraction -> F006:reflection -> F007:reflection -> F005:refraction -> F004:refraction -> F003:reflection -> F006:reflection -> F005:refraction",
+      "central_terminal_direction": [
+        0.181520662,
+        -0.26911572,
+        0.945847228
+      ],
+      "prism": 3,
+      "ray_paths_after_trace": 1,
+      "roll_deg": 34.0,
+      "row_index": 3,
+      "snap": {
+        "angle_error_deg": 0.0,
+        "face_id": "F005",
+        "placement_offset_xyz": [
+          138.102560433,
+          -207.727642399,
+          -168.426314074
+        ],
+        "rotation_deg": [
+          89.999943,
+          54.471084,
+          303.999965
+        ],
+        "target_direction": [
+          -0.126065129,
+          0.186900583,
+          0.974256514
+        ],
+        "target_point": [
+          137.286670965,
+          -203.536178471,
+          -143.037864438
+        ]
+      },
+      "snapshot": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/five_penta_prism_cascade/five_penta_stage_03_after_trace.png"
+    },
+    {
+      "assigned_faces": [
+        {
+          "assigned_face_id": "F006",
+          "function": "Mirror",
+          "mirror_number": 1,
+          "traced_action_before_assignment": "reflect_tir",
+          "traced_event_index": 1,
+          "traced_face_id": "F006"
+        },
+        {
+          "assigned_face_id": "F005",
+          "function": "Mirror",
+          "mirror_number": 2,
+          "traced_action_before_assignment": "reflect_tir",
+          "traced_event_index": 2,
+          "traced_face_id": "F005"
+        }
+      ],
+      "axis_id": "diagnostic:penta-3-exit",
+      "axis_label": "diagnostic penta 3 exit axis",
+      "central_sequence": "F005:refraction -> F004:reflection -> F003:reflection -> F006:refraction -> F003:refraction -> F006:reflection -> F007:reflection -> F005:refraction -> F004:refraction -> F003:reflection -> F006:reflection -> F005:refraction -> F003:refraction -> F006:reflection -> F005:reflection -> F004:refraction",
+      "central_terminal_direction": [
+        0.126067299,
+        -0.186899625,
+        -0.974256417
+      ],
+      "prism": 4,
+      "ray_paths_after_trace": 1,
+      "roll_deg": 34.0,
+      "row_index": 4,
+      "snap": {
+        "angle_error_deg": 0.0,
+        "face_id": "F005",
+        "placement_offset_xyz": [
+          187.201578742,
+          -275.227033478,
+          17.460507639
+        ],
+        "rotation_deg": [
+          90.000059,
+          41.442012,
+          304.000036
+        ],
+        "target_direction": [
+          -0.181520662,
+          0.26911572,
+          -0.945847228
+        ],
+        "target_point": [
+          183.107312832,
+          -271.468035956,
+          17.603224321
+        ]
+      },
+      "snapshot": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/five_penta_prism_cascade/five_penta_stage_04_after_trace.png"
+    },
+    {
+      "assigned_faces": [
+        {
+          "assigned_face_id": "F004",
+          "function": "Mirror",
+          "mirror_number": 1,
+          "traced_action_before_assignment": "refraction",
+          "traced_event_index": 1,
+          "traced_face_id": "F004"
+        },
+        {
+          "assigned_face_id": "F003",
+          "function": "Mirror",
+          "mirror_number": 2,
+          "traced_action_before_assignment": "refraction",
+          "traced_event_index": 2,
+          "traced_face_id": "F003"
+        }
+      ],
+      "axis_id": "diagnostic:penta-4-exit",
+      "axis_label": "diagnostic penta 4 exit axis",
+      "central_sequence": "F005:refraction -> F004:reflection -> F003:reflection -> F006:refraction -> F003:refraction -> F006:reflection -> F007:reflection -> F005:refraction -> F004:refraction -> F003:reflection -> F006:reflection -> F005:refraction -> F003:refraction -> F006:reflection -> F005:reflection -> F004:refraction -> F005:refraction -> F004:reflection -> F003:reflection -> F006:refraction",
+      "central_terminal_direction": [
+        0.544795321,
+        -0.807695952,
+        0.225444687
+      ],
+      "prism": 5,
+      "ray_paths_after_trace": 1,
+      "roll_deg": 34.0,
+      "row_index": 5,
+      "snap": {
+        "angle_error_deg": 0.0,
+        "face_id": "F005",
+        "placement_offset_xyz": [
+          222.421454401,
+          -325.091979557,
+          -181.072733265
+        ],
+        "rotation_deg": [
+          90.000112,
+          346.970993,
+          303.999874
+        ],
+        "target_direction": [
+          -0.126067299,
+          0.186899625,
+          0.974256417
+        ],
+        "target_point": [
+          219.595022109,
+          -325.562708817,
+          -150.538363882
+        ]
+      },
+      "snapshot": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/five_penta_prism_cascade/five_penta_stage_05_after_trace.png"
+    }
+  ]
+}

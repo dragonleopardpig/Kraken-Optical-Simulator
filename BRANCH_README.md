@@ -1,6 +1,6 @@
 # KrakenOS Non-Sequential UI Branch
 
-Last updated: 2026-05-23
+Last updated: 2026-05-24
 
 This document summarizes the `nonseq-display-refactor` branch. The upstream
 `README.md` is intentionally left unchanged; this branch README is the public
@@ -66,6 +66,7 @@ Current pipeline checkpoint:
 | Open 3D STEP reselect rotation handles | Achieved | `██████████ 100%` | Blank-click deselection still clears selected STEP state and removes rotation-handle actors, but a later STEP body/face click now rebuilds the in-scene rotation handles immediately. Plain STEP face selection records the face for later normal/surface-center actions without automatically arming `Snap STEP Normal->Optical Axis`, so rotation-handle hover and click remain available until the user explicitly starts a snap command. |
 | Open 3D splitter branch bundle display | Achieved | `██████████ 100%` | The Open 3D `world_envelope` sampler now detects splitter/branched raykeeper paths before applying through-going envelope reduction. When a beam splitter expands one launch ray into reflected/transmitted child paths, the sampler keeps the full boundary launch bundle so the displayed cube/prism splitter shows the whole beam split instead of only the center ray pair. |
 | VTK 9.5 overlay API cleanup | Achieved | `██████████ 100%` | Open 3D text overlays now use `AddViewProp` / `RemoveViewProp` through a renderer helper, with deprecated `AddActor2D` / `RemoveActor2D` retained only as older-VTK fallbacks. This removes VTK 9.5 deprecation warnings from the mode badge, ray-terminal summary, placement-grid status, hover status, and ray-event label overlays. |
+| Tk teardown callback cleanup | Achieved | `██████████ 100%` | Custom table selection, table-grid, and active-cell-border callbacks now keep cancellable `after` ids and are cancelled during editor teardown. This prevents stale Tk callbacks such as `_update_active_cell_border`, `_emit_custom_table_selection_changed`, and `_update_table_grid` from firing after the root window has been destroyed. |
 | Internal cube beam-splitter continuation | Achieved | `██████████ 100%` | Internal optical-solid beam-splitter faces now preserve the current glass volume instead of toggling to glass-air at the diagonal plane, and reflected/transmitted child branches keep the same solid eligible for the next exit-face hit. Open 3D face hover/selection outlines now use the full planar face boundary, so cube internal splitter faces highlight as one enclosed diagonal face instead of small triangulation patches. |
 | STEP face-level partial reflectors | Achieved | `██████████ 100%` | Optical-solid face metadata saved from Open 3D `Partial Reflecting / Transmitting` now feeds the deterministic non-sequential branch tracer directly. Face-level `Beam Splitter` records carry split ratio, loss, and phase into reflected/transmitted child paths instead of being treated as a one-way mirror or a plain uncoated face. |
 | Blank starter launch default | Achieved | `██████████ 100%` | Reset/new blank Object+Image layouts now start in `Object mode = Infinity` with angle-field sampling, so Open 3D `Pupil / field` displays a parallel aperture-envelope launch by default. Explicit finite-object presets and saved layout settings still preserve their finite-object cone semantics. |
@@ -82,11 +83,21 @@ as reproducible user-like actions and validates that both full-reflecting fold
 faces steer the bundle in 3D, not only in the YZ plane.
 
 Additional movement on 2026-05-24: `validate_five_penta_prism_cascade.py`
-adds the requested five-penta-prism cascade file. It places one 42779 STEP
-prism at a time from the traced central exit axis, promotes it, assigns the two
-mirror faces by tracing the actual leak faces after promotion, then validates
-that the central beam ray traverses five complete refract/reflect/reflect/
-refract groups and exits in a true 3D direction.
+adds the requested five-penta-prism cascade generator/validator and writes the
+normal UI-loadable layout `attachment/five_penta_prism_cascade.py`. It places
+one 42779 STEP prism at a time from the traced central exit axis, promotes it,
+assigns the two mirror faces by tracing the actual leak faces after promotion,
+then validates that the central beam ray traverses five complete row-local
+refract/reflect/reflect/refract groups and exits in a true 3D direction. The
+headless capture path saves one Open 3D stage snapshot after each prism is
+placed/traced, final ISO/YZ/XY/XZ snapshots, a 2D YZ/XZ/XY projection snapshot,
+and a JSON report under `attachment/five_penta_prism_cascade/`.
+
+Additional movement on 2026-05-24: editor teardown now cancels tracked Tk
+`after`/`after_idle` callbacks for the custom table selection emitter,
+active-cell border refresh, and table-grid refresh. A headless destroy smoke
+test schedules all three plus a Matplotlib idle draw and exits cleanly, covering
+the stale-callback traceback class seen when closing or restarting the UI.
 
 Earlier movement on 2026-05-23: Open 3D STEP reselection now restores rotation
 handles after blank-click deselection. Plain STEP face clicks keep rotation

@@ -11,9 +11,13 @@ screen coordinates:
 5. trace and use the central ray's exit segment as the next optical axis.
 
 The final assertion starts with a central collimated beam ray and requires it
-to pass through five complete penta-prism interaction groups:
+to pass through five complete row-local penta-prism action groups:
 
-    F005 refraction -> F004 reflection -> F003 reflection -> F006 refraction
+    refraction -> reflection -> reflection -> refraction
+
+The face ids can differ after arbitrary 3D roll and promotion, so the guard
+validates the physics action sequence per promoted prism row rather than
+assuming the vendor drawing's F003/F004 labels survive every orientation.
 
 Run:
 
@@ -30,7 +34,15 @@ from typing import Any
 
 import numpy as np
 
-from KrakenOS.UI.capture_open3d_step_workflow_screenshots import PRISM_42779_STEP, _configure_base_editor, _set_optical_step_overlay
+from KrakenOS.UI.capture_open3d_step_workflow_screenshots import (
+    PRISM_42779_STEP,
+    PROJECT_ROOT,
+    _configure_base_editor,
+    _open_3d_inspector,
+    _refresh,
+    _save_vtk_snapshot,
+    _set_optical_step_overlay,
+)
 from KrakenOS.UI.layout_editor import KrakenLayoutEditor, _short_error_message
 from KrakenOS.UI.scene_geometry import ray_path_terminal_status_from_events
 from KrakenOS.UI.validate_penta_mirror_3d_cascade import (
@@ -58,6 +70,8 @@ PENTA_INTERACTION_GROUP = (
     "refraction",
 )
 NEXT_PRISM_SPACING_MM = 180.0
+DEFAULT_LAYOUT_PATH = PROJECT_ROOT / "attachment" / "five_penta_prism_cascade.py"
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "attachment" / "five_penta_prism_cascade"
 
 
 def _initial_axis() -> dict[str, object]:
@@ -266,62 +280,137 @@ def _validate_final_trace(scene_bundle: object, row_indices: list[int]) -> dict[
     }
 
 
-def run_case() -> dict[str, Any]:
+def build_case_editor(stage_snapshot_dir: Path | None = None) -> tuple[KrakenLayoutEditor, dict[str, Any]]:
     if not PRISM_42779_STEP.exists():
         raise RuntimeError(f"Expected STEP fixture: {PRISM_42779_STEP}")
     app = KrakenLayoutEditor(headless=True)
     stages: list[dict[str, object]] = []
     row_indices: list[int] = []
-    try:
-        _configure_base_editor(app)
-        _configure_collimated_bundle(app)
-        app.source_radius_var.set("0.0")
-        app.ray_count_var.set("1")
-        app._invalidate_preview_scene_trace()
+    if stage_snapshot_dir is not None:
+        stage_snapshot_dir = stage_snapshot_dir.resolve()
+        stage_snapshot_dir.mkdir(parents=True, exist_ok=True)
+    _configure_base_editor(app)
+    _configure_collimated_bundle(app)
+    app.source_radius_var.set("0.0")
+    app.ray_count_var.set("1")
+    app._invalidate_preview_scene_trace()
 
-        axis_info = _initial_axis()
-        scene_bundle = None
-        for index, roll_deg in enumerate(PENTA_ROLLS_DEG, start=1):
-            stage = _import_and_place_penta(
-                app,
-                prism_number=index,
-                axis_info=axis_info,
-                roll_deg=roll_deg,
+    axis_info = _initial_axis()
+    scene_bundle = None
+    for index, roll_deg in enumerate(PENTA_ROLLS_DEG, start=1):
+        stage = _import_and_place_penta(
+            app,
+            prism_number=index,
+            axis_info=axis_info,
+            roll_deg=roll_deg,
+        )
+        row_indices.append(int(stage["row_index"]))
+        _system, _rays, scene_bundle = _trace_scene(app)
+        ray_paths = list(getattr(scene_bundle, "ray_paths", []) or [])
+        if not ray_paths:
+            raise RuntimeError(f"Trace after prism {index} produced no ray paths.")
+        central = _central_path(ray_paths)
+        stage["ray_paths_after_trace"] = len(ray_paths)
+        stage["central_terminal_direction"] = _vector_json(_terminal_direction(central))
+        stage["central_sequence"] = " -> ".join(_surface_sequence(central))
+        if stage_snapshot_dir is not None:
+            inspector = _open_3d_inspector(app)
+            _refresh(inspector, reset_camera=True)
+            inspector.set_camera_preset("iso")
+            snapshot_path = _save_vtk_snapshot(
+                inspector,
+                stage_snapshot_dir / f"five_penta_stage_{index:02d}_after_trace.png",
             )
-            row_indices.append(int(stage["row_index"]))
-            _system, _rays, scene_bundle = _trace_scene(app)
-            ray_paths = list(getattr(scene_bundle, "ray_paths", []) or [])
-            if not ray_paths:
-                raise RuntimeError(f"Trace after prism {index} produced no ray paths.")
-            central = _central_path(ray_paths)
-            stage["ray_paths_after_trace"] = len(ray_paths)
-            stage["central_terminal_direction"] = _vector_json(_terminal_direction(central))
-            stage["central_sequence"] = " -> ".join(_surface_sequence(central))
-            stages.append(stage)
-            if index < PENTA_COUNT:
-                axis_info = _axis_from_central_exit(scene_bundle, index)
+            stage["snapshot"] = str(snapshot_path)
+        stages.append(stage)
+        if index < PENTA_COUNT:
+            axis_info = _axis_from_central_exit(scene_bundle, index)
 
-        final = _validate_final_trace(scene_bundle, row_indices)
-        return {
-            "ok": True,
-            "penta_count": PENTA_COUNT,
-            "entrance_face": PENTA_ENTRANCE_FACE,
-            "nominal_vendor_mirror_faces": list(PENTA_MIRROR_FACES),
-            "mirror_assignment_mode": "trace actual central-ray leak faces after promotion",
-            "stage_count": len(stages),
-            "stages": stages,
-            "final": final,
-        }
+    final = _validate_final_trace(scene_bundle, row_indices)
+    report = {
+        "ok": True,
+        "penta_count": PENTA_COUNT,
+        "entrance_face": PENTA_ENTRANCE_FACE,
+        "nominal_vendor_mirror_faces": list(PENTA_MIRROR_FACES),
+        "mirror_assignment_mode": "trace actual central-ray leak faces after promotion",
+        "stage_count": len(stages),
+        "stages": stages,
+        "final": final,
+    }
+    return app, report
+
+
+def run_case() -> dict[str, Any]:
+    app, report = build_case_editor()
+    try:
+        return report
     finally:
+        app.destroy()
+
+
+def save_case_layout(path: Path = DEFAULT_LAYOUT_PATH) -> tuple[Path, dict[str, Any]]:
+    app, report = build_case_editor()
+    try:
+        path = path.resolve()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        app.current_layout_file = path
+        app._write_layout_file(path)
+        report["layout_path"] = str(path)
+        return path, report
+    finally:
+        app.destroy()
+
+
+def capture_case(output_dir: Path = DEFAULT_OUTPUT_DIR, *, layout_path: Path | None = DEFAULT_LAYOUT_PATH) -> dict[str, Any]:
+    output_dir = output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    app, report = build_case_editor(stage_snapshot_dir=output_dir)
+    try:
+        if layout_path is not None:
+            layout_path = layout_path.resolve()
+            layout_path.parent.mkdir(parents=True, exist_ok=True)
+            app.current_layout_file = layout_path
+            app._write_layout_file(layout_path)
+            report["layout_path"] = str(layout_path)
+        inspector = _open_3d_inspector(app)
+        _refresh(inspector, reset_camera=True)
+        snapshots: dict[str, str] = {}
+        for preset, filename in (
+            ("iso", "five_penta_final_iso.png"),
+            ("zy", "five_penta_final_yz.png"),
+            ("xy", "five_penta_final_xy.png"),
+            ("xz", "five_penta_final_xz.png"),
+        ):
+            inspector.set_camera_preset(preset)
+            snapshot_path = _save_vtk_snapshot(inspector, output_dir / filename)
+            snapshots[preset] = str(snapshot_path)
+        report["snapshots"] = snapshots
+        report_path = output_dir / "five_penta_prism_cascade_report.json"
+        report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        report["report_path"] = str(report_path)
+        return report
+    finally:
+        try:
+            if app._three_d_inspector is not None:
+                app._three_d_inspector._on_close()
+        except Exception:
+            pass
         app.destroy()
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, default=None, help="Optional JSON report path.")
+    parser.add_argument("--layout", type=Path, default=None, help="Optional normal KrakenOS .py layout output path.")
+    parser.add_argument("--capture-dir", type=Path, default=None, help="Optional Open 3D snapshot/report output directory.")
     args = parser.parse_args()
     try:
-        report = run_case()
+        if args.capture_dir is not None:
+            report = capture_case(args.capture_dir, layout_path=args.layout or DEFAULT_LAYOUT_PATH)
+        elif args.layout is not None:
+            _layout_path, report = save_case_layout(args.layout)
+        else:
+            report = run_case()
     except Exception as exc:
         report = {"ok": False, "error": _short_error_message(exc)}
         if args.report is not None:

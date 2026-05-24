@@ -16840,6 +16840,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._cell_border_parts: list[tk.Frame] = []
         self._grid_overlays: list[tk.Widget] = []
         self._grid_after_id: str | None = None
+        self._active_cell_border_after_id: str | None = None
         self._table_selected_items: list[str] = []
         self._table_selection_after_id: str | None = None
         self._native_table_selection = None
@@ -17225,7 +17226,31 @@ class KrakenLayoutEditor(tk.Tk):
         self._widget_tooltips.append(WidgetTooltip(widget, text))
         return widget
 
+    def _cancel_after_callback_attr(self, attr_name: str) -> None:
+        after_id = self.__dict__.get(attr_name)
+        if after_id is None:
+            return
+        self.__dict__[attr_name] = None
+        try:
+            self.after_cancel(after_id)
+        except Exception:
+            pass
+
     def destroy(self) -> None:
+        for attr_name in (
+            "_active_cell_border_after_id",
+            "_grid_after_id",
+            "_table_selection_after_id",
+            "_autosave_after_id",
+            "_refresh_after_id",
+            "_spinner_after_id",
+            "_legacy_3d_after_id",
+        ):
+            self._cancel_after_callback_attr(attr_name)
+        try:
+            self.update_idletasks()
+        except Exception:
+            pass
         if self._three_d_inspector is not None:
             try:
                 self._three_d_inspector.destroy()
@@ -31915,7 +31940,10 @@ class KrakenLayoutEditor(tk.Tk):
     def _schedule_custom_table_selection_changed(self) -> None:
         if self._table_selection_after_id is not None:
             return
-        self._table_selection_after_id = self.after_idle(self._emit_custom_table_selection_changed)
+        try:
+            self._table_selection_after_id = self.after_idle(self._emit_custom_table_selection_changed)
+        except tk.TclError:
+            self._table_selection_after_id = None
 
     def _emit_custom_table_selection_changed(self) -> None:
         self._table_selection_after_id = None
@@ -31972,7 +32000,7 @@ class KrakenLayoutEditor(tk.Tk):
         self.table.focus(focus_item)
         self.table.see(focus_item)
         self._selection_anchor_row = focus_item
-        self.after_idle(self._update_active_cell_border)
+        self._schedule_active_cell_border_update()
 
     def _clear_table_selection_event(self, _event: tk.Event | None = None) -> str:
         self._clear_table_selection()
@@ -34028,7 +34056,7 @@ class KrakenLayoutEditor(tk.Tk):
             if target_current not in options:
                 self.nonseq_target_surface_var.set("Auto")
         self._schedule_table_grid_update()
-        self.after_idle(self._update_active_cell_border)
+        self._schedule_active_cell_border_update()
 
     @staticmethod
     def _parse_numeric_display(value: str) -> float:
@@ -34600,7 +34628,7 @@ class KrakenLayoutEditor(tk.Tk):
                     self.table.selection_set(row_id)
                 self._selection_anchor_row = row_id
                 self.table.focus(row_id)
-                self.after_idle(self._update_active_cell_border)
+                self._schedule_active_cell_border_update()
                 return "break"
             block_indices = self._element_indices_for_index(self.rows, row_index)
             block_items = [
@@ -34627,7 +34655,7 @@ class KrakenLayoutEditor(tk.Tk):
                 self.table.selection_set(block_items or [row_id])
                 self._selection_anchor_row = row_id
                 self.table.focus(row_id)
-            self.after_idle(self._update_active_cell_border)
+            self._schedule_active_cell_border_update()
             return "break"
         if shift_pressed and children:
             anchor = self._selection_anchor_row
@@ -34649,7 +34677,7 @@ class KrakenLayoutEditor(tk.Tk):
             else:
                 self.table.selection_set(selected_range)
             self.table.focus(row_id)
-            self.after_idle(self._update_active_cell_border)
+            self._schedule_active_cell_border_update()
             return "break"
         elif control_pressed:
             selected = set(self.table.selection())
@@ -34661,26 +34689,26 @@ class KrakenLayoutEditor(tk.Tk):
             self.table.selection_set(ordered)
             self._selection_anchor_row = row_id
             self.table.focus(row_id)
-            self.after_idle(self._update_active_cell_border)
+            self._schedule_active_cell_border_update()
             return "break"
         else:
             self.table.selection_set(row_id)
             self._selection_anchor_row = row_id
         self.table.focus(row_id)
-        self.after_idle(self._update_active_cell_border)
+        self._schedule_active_cell_border_update()
         return "break"
 
     def _on_table_drag(self, event: tk.Event) -> str | None:
         if self._table_column_resize_active:
             self._schedule_table_grid_update(delay=1)
-            self.after(1, self._update_active_cell_border)
+            self._schedule_active_cell_border_update(delay=1)
         return None
 
     def _on_table_button_release(self, event: tk.Event) -> str | None:
         if self._table_column_resize_active:
             self._table_column_resize_active = False
             self._schedule_table_grid_update(delay=1)
-            self.after(1, self._update_active_cell_border)
+            self._schedule_active_cell_border_update(delay=1)
         return None
 
     def _move_active_cell(self, event: tk.Event) -> str:
@@ -34711,8 +34739,8 @@ class KrakenLayoutEditor(tk.Tk):
         self.table.focus(row_id)
         self.table.selection_set(row_id)
         self._ensure_active_cell_visible(row_id, column_id)
-        self.after_idle(self._update_active_cell_border)
-        self.after_idle(self._schedule_table_grid_update)
+        self._schedule_active_cell_border_update()
+        self._schedule_table_grid_update(delay=1)
         return "break"
 
     def _ensure_active_cell_visible(self, row_id: str, column_id: str) -> None:
@@ -34727,8 +34755,8 @@ class KrakenLayoutEditor(tk.Tk):
             x, _y, width, _height = target_bbox
             visible_width = max(self.table.winfo_width(), 1)
             if x >= 0 and (x + width) <= visible_width:
-                self.after_idle(self._update_active_cell_border)
-                self.after_idle(self._schedule_table_grid_update)
+                self._schedule_active_cell_border_update()
+                self._schedule_table_grid_update(delay=1)
                 return
 
         total_width = 0
@@ -34754,8 +34782,8 @@ class KrakenLayoutEditor(tk.Tk):
             desired_left = max(0.0, target_left + target_width - visible_width + 16.0)
             self.table.xview_moveto(min(1.0, desired_left / total_width))
         self.update_idletasks()
-        self.after_idle(self._update_active_cell_border)
-        self.after_idle(self._schedule_table_grid_update)
+        self._schedule_active_cell_border_update()
+        self._schedule_table_grid_update(delay=1)
 
     def _hide_active_cell_border(self) -> None:
         for part in self._cell_border_parts:
@@ -34830,6 +34858,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._selection_border_overlays.extend([top, bottom, left, right])
 
     def _update_active_cell_border(self, _event: tk.Event | None = None) -> None:
+        self._active_cell_border_after_id = None
         if self._active_cell is None:
             self._hide_active_cell_border()
             self._update_selection_row_borders()
@@ -34862,10 +34891,21 @@ class KrakenLayoutEditor(tk.Tk):
         left.place(x=x, y=y, width=2, height=height)
         right.place(x=x + width - 2, y=y, width=2, height=height)
 
+    def _schedule_active_cell_border_update(self, *, delay: int | None = None) -> None:
+        if self._active_cell_border_after_id is not None:
+            return
+        try:
+            if delay is None:
+                self._active_cell_border_after_id = self.after_idle(self._update_active_cell_border)
+            else:
+                self._active_cell_border_after_id = self.after(max(0, int(delay)), self._update_active_cell_border)
+        except tk.TclError:
+            self._active_cell_border_after_id = None
+
     def _on_table_scroll(self, scrollbar: ttk.Scrollbar, first: str, last: str) -> None:
         scrollbar.set(first, last)
         self._schedule_table_grid_update()
-        self.after_idle(self._update_active_cell_border)
+        self._schedule_active_cell_border_update()
 
     def _on_table_xview(self, *args: object) -> None:
         self.table.xview(*args)
@@ -34897,8 +34937,15 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _schedule_table_grid_update(self, _event: tk.Event | None = None, delay: int = 30) -> None:
         if self._grid_after_id is not None:
-            self.after_cancel(self._grid_after_id)
-        self._grid_after_id = self.after(max(0, int(delay)), self._update_table_grid)
+            try:
+                self.after_cancel(self._grid_after_id)
+            except tk.TclError:
+                pass
+            self._grid_after_id = None
+        try:
+            self._grid_after_id = self.after(max(0, int(delay)), self._update_table_grid)
+        except tk.TclError:
+            self._grid_after_id = None
 
     def _update_table_grid(self, _event: tk.Event | None = None) -> None:
         self._grid_after_id = None
@@ -34930,7 +34977,7 @@ class KrakenLayoutEditor(tk.Tk):
             self._grid_overlays.append(row_line)
 
         self._draw_optimization_cell_markers(items, columns)
-        self.after_idle(self._update_active_cell_border)
+        self._schedule_active_cell_border_update()
 
     def _draw_optimization_cell_markers(self, items: tuple[str, ...], columns: list[str]) -> None:
         if not items or not columns:
@@ -34994,7 +35041,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._active_cell = (row_id, column_id)
         self.table.focus(row_id)
         self.table.selection_set(row_id)
-        self.after_idle(self._update_active_cell_border)
+        self._schedule_active_cell_border_update()
         return "break"
 
     def _refresh_operand_surface_choices(self) -> None:
@@ -38067,7 +38114,7 @@ class KrakenLayoutEditor(tk.Tk):
             return
         if not self._table_cell_enabled(row_index, field):
             self.status_var.set(self._surface_type_disabled_message(row_index, field))
-            self.after_idle(self._update_active_cell_border)
+            self._schedule_active_cell_border_update()
             return
         bbox = self.table.bbox(row_id, column_id)
         if not bbox or len(bbox) != 4:
@@ -40426,7 +40473,7 @@ class KrakenLayoutEditor(tk.Tk):
                 finally:
                     menu.grab_release()
                 self.status_var.set("Source scene rows are edited in Scene Source Manager; they do not consume KrakenOS surface indices.")
-                self.after_idle(self._update_active_cell_border)
+                self._schedule_active_cell_border_update()
             return
         if row_id not in self.table.selection():
             if field == "label":
@@ -40437,7 +40484,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._active_cell = (row_id, column_id)
         if not self._table_cell_enabled(row_index, field):
             self.status_var.set(self._surface_type_disabled_message(row_index, field))
-            self.after_idle(self._update_active_cell_border)
+            self._schedule_active_cell_border_update()
         paraxial_target = self._paraxial_solve_target_for_cell(row_index, field)
         paraxial_variable_target = self._paraxial_variable_thickness_target_for_cell(row_index, field)
         best_focus_target = self._best_focus_solve_target_for_cell(row_index, field)
