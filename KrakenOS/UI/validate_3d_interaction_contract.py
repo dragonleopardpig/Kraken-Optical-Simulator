@@ -13,6 +13,7 @@ from KrakenOS.UI.layout_editor import (
     KrakenLayoutEditor,
     _dotted_axis_records_from_ray_path,
 )
+from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
 from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
@@ -245,6 +246,9 @@ def main() -> int:
     key_press = inspect.getsource(Kraken3DInspector._on_key_press)
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
     add_mesh_actor = inspect.getsource(Kraken3DInspector._add_mesh_actor)
+    main_field_panel = inspect.getsource(MainFieldControlsPanel)
+    main_field_panel_factory = inspect.getsource(KrakenLayoutEditor._main_field_controls_panel)
+    build_field_panel = inspect.getsource(KrakenLayoutEditor._build_field_panel)
     main_source_panel = inspect.getsource(MainSourceControlsPanel)
     main_source_panel_factory = inspect.getsource(KrakenLayoutEditor._main_source_controls_panel)
     build_source_panel = inspect.getsource(KrakenLayoutEditor._build_source_panel)
@@ -644,6 +648,18 @@ def main() -> int:
             and "source_cone_angle_var" in main_source_panel
             and "Scene Source Manager..." in main_source_panel
             and "_register_source_mode_controls(" in main_source_panel,
+        ),
+        (
+            "Main Field controls panel lives outside layout_editor",
+            "MainFieldControlsPanel(" in main_field_panel_factory
+            and "field_type_values=FIELD_TYPE_CANONICAL_VALUES" in main_field_panel_factory
+            and "camera_none_label=CAMERA_NONE_LABEL" in main_field_panel_factory
+            and "self._main_field_controls_panel().build(parent)" in build_field_panel
+            and "field_type_var" in main_field_panel
+            and "field_count_var" in main_field_panel
+            and "image_diameter_mode_var" in main_field_panel
+            and "camera_model_var" in main_field_panel
+            and "_sync_field_mode_ui()" in main_field_panel,
         ),
         (
             "Open 3D renders editable table Thickness dimensions",

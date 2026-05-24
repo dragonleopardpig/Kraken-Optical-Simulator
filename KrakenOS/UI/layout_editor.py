@@ -265,6 +265,7 @@ from KrakenOS.UI.scene_projector import (
     scene_display_center_radius,
 )
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
+from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
 from KrakenOS.UI.panels.open3d_live_controls import Open3DLiveControlsPanel
 from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
@@ -25037,75 +25038,20 @@ class KrakenLayoutEditor(tk.Tk):
             extra_widgets=(branch_field_propagation_hint,),
         )
 
+    def _main_field_controls_panel(self) -> MainFieldControlsPanel:
+        panel = getattr(self, "_main_field_controls_panel_instance", None)
+        if panel is None:
+            panel = MainFieldControlsPanel(
+                self,
+                field_type_values=FIELD_TYPE_CANONICAL_VALUES,
+                camera_none_label=CAMERA_NONE_LABEL,
+                camera_names=camera_names,
+            )
+            self._main_field_controls_panel_instance = panel
+        return panel
+
     def _build_field_panel(self, parent) -> None:
-        for column in range(2):
-            parent.columnconfigure(column, weight=1)
-
-        ttk.Label(parent, text="Field type").grid(row=0, column=0, sticky="w", pady=(0, 2))
-        self.field_type_var = tk.StringVar(value=self._field_type_display_label("Angle"))
-        self.field_type_menu = ttk.Combobox(
-            parent,
-            textvariable=self.field_type_var,
-            state="readonly",
-            width=12,
-            values=[self._field_type_display_label(value) for value in FIELD_TYPE_CANONICAL_VALUES],
-        )
-        self.field_type_menu.grid(row=1, column=0, sticky="ew", pady=(0, 8))
-        self.field_type_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.field_type_menu.bind("<<ComboboxSelected>>", self._on_field_type_changed)
-
-        self.field_mode_note_var = tk.StringVar(value="")
-
-        self.field_value_label_var = tk.StringVar(value=self._field_type_value_label("Angle"))
-        ttk.Label(parent, textvariable=self.field_value_label_var).grid(row=0, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
-        self.field_value_var = tk.StringVar(value="5.0")
-        field_value_entry = ttk.Entry(parent, textvariable=self.field_value_var, width=12)
-        self.field_value_entry = field_value_entry
-        field_value_entry.grid(
-            row=1, column=1, sticky="ew", pady=(0, 8), padx=(8, 0)
-        )
-
-        self.field_count_label = ttk.Label(parent, text="Field samples")
-        self.field_count_label.grid(row=2, column=0, sticky="w", pady=(0, 2))
-        self.field_count_var = tk.StringVar(value="1")
-        field_count_entry = ttk.Entry(parent, textvariable=self.field_count_var, width=12)
-        self.field_count_entry = field_count_entry
-        field_count_entry.grid(
-            row=3, column=0, sticky="ew", pady=(0, 8)
-        )
-
-        ttk.Label(parent, text="Image dia mode").grid(row=2, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
-        self.image_diameter_mode_var = tk.StringVar(value="Auto")
-        self.image_diameter_mode_menu = ttk.Combobox(
-            parent,
-            textvariable=self.image_diameter_mode_var,
-            state="readonly",
-            width=12,
-            values=["Auto", "Manual"],
-        )
-        self.image_diameter_mode_menu.grid(row=3, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
-        self.image_diameter_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.image_diameter_mode_menu.bind("<<ComboboxSelected>>", self._on_image_diameter_mode_changed)
-
-        ttk.Label(parent, text="Camera").grid(row=4, column=0, sticky="w", pady=(0, 2))
-        self.camera_model_var = tk.StringVar(value=CAMERA_NONE_LABEL)
-        self.camera_model_menu = ttk.Combobox(
-            parent,
-            textvariable=self.camera_model_var,
-            state="readonly",
-            width=12,
-            values=[CAMERA_NONE_LABEL, *camera_names()],
-        )
-        self.camera_model_menu.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        self.camera_model_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.camera_model_menu.bind("<<ComboboxSelected>>", self._on_camera_model_changed)
-
-        self.field_warning_var = tk.StringVar(value="")
-        self.field_summary_var = tk.StringVar(value="")
-
-        self._bind_deferred_manual_update(field_value_entry, sync_fields=True)
-        self._bind_deferred_manual_update(field_count_entry, sync_fields=True)
-        self._sync_field_mode_ui()
+        self._main_field_controls_panel().build(parent)
 
     def _main_source_controls_panel(self) -> MainSourceControlsPanel:
         panel = getattr(self, "_main_source_controls_panel_instance", None)
