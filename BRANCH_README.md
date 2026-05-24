@@ -1092,7 +1092,8 @@ Production refactor progress:
    `KrakenOS/UI/services/layout_file_writer.py` now owns self-contained
    Python layout serialization, including saved runtime-system rebuild helpers.
    `KrakenOS/UI/services/legacy_3d_scene.py` now owns legacy PyVista scene
-   body/ray/helper assembly and physical dimension arrows.
+   body/ray/helper assembly, physical dimension arrows, and fallback viewer
+   toolbar wiring.
    `KrakenOS/UI/widgets/tooltips.py`
    starts the reusable Tk widget boundary. `KrakenOS/UI/panels/main_source_controls.py`,
    `KrakenOS/UI/panels/main_field_controls.py`, and

@@ -415,7 +415,7 @@ def main() -> int:
     except Exception:
         plain_step_select_block = ""
     open3d_display_camera = inspect.getsource(Kraken3DInspector._camera_preset_from_display_orientation)
-    legacy_configure = inspect.getsource(KrakenLayoutEditor._configure_legacy_3d_plotter)
+    legacy_configure_wrapper = inspect.getsource(KrakenLayoutEditor._configure_legacy_3d_plotter)
     legacy_display_camera = inspect.getsource(KrakenLayoutEditor._legacy_3d_camera_preset_from_display_orientation)
     main_ray_trace_inspectors = inspect.getsource(MainRayTraceInspectorDialogs)
     main_ray_trace_inspectors_factory = inspect.getsource(KrakenLayoutEditor._main_ray_trace_inspector_dialogs)
@@ -546,6 +546,7 @@ def main() -> int:
     legacy_scene_factory = inspect.getsource(KrakenLayoutEditor._legacy_3d_scene_service)
     legacy_open_3d_wrapper = inspect.getsource(KrakenLayoutEditor._populate_legacy_3d_plotter_scene)
     legacy_open_3d = legacy_scene_service
+    legacy_configure = legacy_scene_service
     legacy_replace_rays = inspect.getsource(KrakenLayoutEditor._legacy_3d_replace_rays)
     continuation_sync_ok, continuation_sync_diag = _scene_path_preserves_raykeeper_terminal_continuation()
     exit_axis_ok, exit_axis_diag = _traced_axis_records_mark_exit_segment()
@@ -1285,8 +1286,10 @@ def main() -> int:
             "Legacy 3D scene assembly lives outside layout_editor",
             "Legacy3DSceneService(self)" in legacy_scene_factory
             and "self._legacy_3d_scene_service()._populate_legacy_3d_plotter_scene(" in legacy_open_3d_wrapper
+            and "self._legacy_3d_scene_service()._configure_legacy_3d_plotter(" in legacy_configure_wrapper
             and "_scene_detector_overlay_specs(" in legacy_scene_service
             and "_add_legacy_3d_physical_dimensions" in legacy_scene_service
+            and "_enable_legacy_3d_picking(plotter)" in legacy_scene_service
             and "cad_step_actor_map" in legacy_scene_service,
         ),
         (
