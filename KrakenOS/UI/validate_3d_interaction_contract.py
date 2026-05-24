@@ -22,6 +22,7 @@ from KrakenOS.UI.panels.main_context_menu import MainContextMenu
 from KrakenOS.UI.panels.main_diffuse_scatter_dialog import MainDiffuseScatterDialog
 from KrakenOS.UI.panels.main_error_map_dialog import MainErrorMapDialog
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
+from KrakenOS.UI.panels.main_lens_drawing_dialogs import MainLensDrawingDialogs
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
 from KrakenOS.UI.panels.main_paraxial_analysis_dialogs import MainParaxialAnalysisDialogs
 from KrakenOS.UI.panels.main_scene_element_dialogs import MainSceneElementDialogs
@@ -311,6 +312,10 @@ def main() -> int:
     main_stock_lens_dialog = inspect.getsource(MainStockLensImporterDialog)
     main_stock_lens_factory = inspect.getsource(KrakenLayoutEditor._main_stock_lens_importer_dialog)
     open_stock_lens_importer = inspect.getsource(KrakenLayoutEditor.open_stock_lens_importer)
+    main_lens_drawing_dialogs = inspect.getsource(MainLensDrawingDialogs)
+    main_lens_drawing_factory = inspect.getsource(KrakenLayoutEditor._main_lens_drawing_dialogs)
+    open_lens_drawing_properties = inspect.getsource(KrakenLayoutEditor._open_lens_drawing_surface_properties_dialog)
+    export_lens_drawing_wrapper = inspect.getsource(KrakenLayoutEditor.export_lens_drawing)
     main_paraxial_analysis_dialogs = inspect.getsource(MainParaxialAnalysisDialogs)
     main_paraxial_analysis_factory = inspect.getsource(KrakenLayoutEditor._main_paraxial_analysis_dialogs)
     open_gaussian_report = inspect.getsource(KrakenLayoutEditor.open_gaussian_beam_report)
@@ -780,6 +785,15 @@ def main() -> int:
             and "Paraxial Calculator" in main_paraxial_analysis_dialogs
             and "Gaussian Beam Report" in main_paraxial_analysis_dialogs
             and "Use Cavity Eigenmode" in main_paraxial_analysis_dialogs,
+        ),
+        (
+            "Lens drawing dialogs live outside layout_editor",
+            "MainLensDrawingDialogs(self, screenshot_dir=SCREENSHOT_DIR)" in main_lens_drawing_factory
+            and "self._main_lens_drawing_dialogs()._open_lens_drawing_surface_properties_dialog(" in open_lens_drawing_properties
+            and "self._main_lens_drawing_dialogs().export_lens_drawing()" in export_lens_drawing_wrapper
+            and "Lens Drawing Surface Properties" in main_lens_drawing_dialogs
+            and "Save JSON..." in main_lens_drawing_dialogs
+            and "Export Lens Drawing" in main_lens_drawing_dialogs,
         ),
         (
             "Atmosphere controls and dialog live outside layout_editor",
