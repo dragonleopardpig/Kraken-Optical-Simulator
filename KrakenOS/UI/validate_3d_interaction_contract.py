@@ -51,6 +51,7 @@ from KrakenOS.UI.scene_builder import _sync_path_display_geometry_from_events
 from KrakenOS.UI.scene_geometry import RayEvent3D, RayPath3D
 from KrakenOS.UI.scene_projector import bounded_ray_points_for_scene_display, scene_display_center_radius
 from KrakenOS.UI.services.formula_help import FormulaHelpService
+from KrakenOS.UI.services.layout_file_writer import LayoutFileWriterService
 from KrakenOS.UI.services.layout_settings import LayoutSettingsService
 from KrakenOS.UI.services.nonseq_scene_graph_records import NonSequentialSceneGraphRecordService
 from KrakenOS.UI.services.open3d_face_pick import pick_face_from_ray
@@ -424,6 +425,9 @@ def main() -> int:
     formula_help_service = inspect.getsource(FormulaHelpService)
     formula_help_factory = inspect.getsource(KrakenLayoutEditor._formula_help_service)
     build_formula_help_html = inspect.getsource(KrakenLayoutEditor._build_formula_help_html)
+    layout_file_writer_service = inspect.getsource(LayoutFileWriterService)
+    layout_file_writer_factory = inspect.getsource(KrakenLayoutEditor._layout_file_writer_service)
+    write_layout_file = inspect.getsource(KrakenLayoutEditor._write_layout_file)
     tolerance_stackup_service = inspect.getsource(ToleranceStackupService)
     tolerance_stackup_factory = inspect.getsource(KrakenLayoutEditor._tolerance_stackup_service)
     tolerance_stackup_dashboard = inspect.getsource(KrakenLayoutEditor.tolerance_stackup_dashboard)
@@ -1264,6 +1268,14 @@ def main() -> int:
             and "KrakenOS Formula Sheet" in formula_help_service
             and "self.docs_html_dir" in formula_help_service
             and "self.docs_source_dir" in formula_help_service,
+        ),
+        (
+            "Layout file serialization lives outside layout_editor",
+            "LayoutFileWriterService(self)" in layout_file_writer_factory
+            and "self._layout_file_writer_service()._write_layout_file(path)" in write_layout_file
+            and "build_runtime_system" in layout_file_writer_service
+            and "apply_optical_solid_output_port_system_overrides" in layout_file_writer_service
+            and "omitted_complex_fields" in layout_file_writer_service,
         ),
         (
             "Tolerance stack-up dashboard assembly lives outside layout_editor",
