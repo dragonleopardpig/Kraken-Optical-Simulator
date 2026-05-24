@@ -15,6 +15,7 @@ from KrakenOS.UI.layout_editor import (
 )
 from KrakenOS.UI.panels.main_advanced_surface_dialog import MainAdvancedSurfaceDialog
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
+from KrakenOS.UI.panels.main_branch_gaussian_q_dialog import MainBranchGaussianQDialog
 from KrakenOS.UI.panels.main_atmosphere_panel import MainAtmospherePanel
 from KrakenOS.UI.panels.main_beam_splitter_dialog import MainBeamSplitterDialog
 from KrakenOS.UI.panels.main_coating_material_dialog import MainCoatingMaterialDialog
@@ -312,6 +313,10 @@ def main() -> int:
     main_stock_lens_dialog = inspect.getsource(MainStockLensImporterDialog)
     main_stock_lens_factory = inspect.getsource(KrakenLayoutEditor._main_stock_lens_importer_dialog)
     open_stock_lens_importer = inspect.getsource(KrakenLayoutEditor.open_stock_lens_importer)
+    main_branch_gaussian_q_dialog = inspect.getsource(MainBranchGaussianQDialog)
+    main_branch_gaussian_q_factory = inspect.getsource(KrakenLayoutEditor._main_branch_gaussian_q_dialog)
+    open_branch_gaussian_q_report = inspect.getsource(KrakenLayoutEditor.open_branch_gaussian_q_report)
+    refresh_branch_gaussian_q_report = inspect.getsource(KrakenLayoutEditor._refresh_branch_gaussian_q_report)
     main_lens_drawing_dialogs = inspect.getsource(MainLensDrawingDialogs)
     main_lens_drawing_factory = inspect.getsource(KrakenLayoutEditor._main_lens_drawing_dialogs)
     open_lens_drawing_properties = inspect.getsource(KrakenLayoutEditor._open_lens_drawing_surface_properties_dialog)
@@ -794,6 +799,15 @@ def main() -> int:
             and "Lens Drawing Surface Properties" in main_lens_drawing_dialogs
             and "Save JSON..." in main_lens_drawing_dialogs
             and "Export Lens Drawing" in main_lens_drawing_dialogs,
+        ),
+        (
+            "Branch Gaussian Q dialog lives outside layout_editor",
+            "MainBranchGaussianQDialog(self)" in main_branch_gaussian_q_factory
+            and "self._main_branch_gaussian_q_dialog().open_branch_gaussian_q_report()" in open_branch_gaussian_q_report
+            and "self._main_branch_gaussian_q_dialog()._refresh_branch_gaussian_q_report()" in refresh_branch_gaussian_q_report
+            and "Branch Gaussian Q Report" in main_branch_gaussian_q_dialog
+            and "Export Branch Gaussian Q CSV" in main_branch_gaussian_q_dialog
+            and "branch_gaussian_q_table_values" in main_branch_gaussian_q_dialog,
         ),
         (
             "Atmosphere controls and dialog live outside layout_editor",
