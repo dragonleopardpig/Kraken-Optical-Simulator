@@ -241,6 +241,9 @@ def main() -> int:
     remove_step_handles = inspect.getsource(Kraken3DInspector._remove_step_rotation_handle_actors)
     key_press = inspect.getsource(Kraken3DInspector._on_key_press)
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
+    add_mesh_actor = inspect.getsource(Kraken3DInspector._add_mesh_actor)
+    thickness_dimensions = inspect.getsource(Kraken3DInspector._add_thickness_dimension_overlays)
+    thickness_edit = inspect.getsource(Kraken3DInspector._edit_open3d_thickness_dimension)
     step_admin_source = inspect.getsource(Open3DStepAdminPanel).replace("self.inspector.", "self.")
     step_admin_overlay_select = inspect.getsource(Kraken3DInspector.select_step_overlay_from_admin)
     step_admin_promoted_select = inspect.getsource(Kraken3DInspector.select_promoted_step_row_from_admin)
@@ -622,6 +625,34 @@ def main() -> int:
             and "show_terminal_diagnostics_var = tk.BooleanVar(value=False)" in init
             and "show_placement_handles_var = tk.BooleanVar(value=False)" in init
             and "scene_visibility_toggled" in scene_visibility_changed,
+        ),
+        (
+            "Open 3D renders editable table Thickness dimensions",
+            "_actor_thickness_dimension_map" in init
+            and "_thickness_dimension_actor_map" in init
+            and "pick_thickness_dimension" in add_mesh_actor
+            and "_register_thickness_dimension_actor" in add_mesh_actor
+            and "_add_thickness_dimension_overlays(system, scene_bundle)" in refresh
+            and "thickness dimensions=" in refresh
+            and "show_physical_distances_var" in thickness_dimensions
+            and "_surface_reference_world_point(row_index" in thickness_dimensions
+            and "_surface_reference_world_point(row_index + 1" in thickness_dimensions
+            and "_thickness_dimension_arrow_mesh" in thickness_dimensions
+            and "vtkBillboardTextActor3D" in inspect.getsource(Kraken3DInspector._add_thickness_dimension_label_actor)
+            and "Thickness" in top_controls_source
+            and "show_physical_distances_var" in top_controls_source,
+        ),
+        (
+            "Open 3D Thickness dimension clicks edit only the selected row thickness",
+            "_actor_thickness_dimension_map.get(actor_key)" in pick
+            and "GetViewProp" in pick
+            and "_edit_open3d_thickness_dimension" in pick
+            and "simpledialog.askfloat" in thickness_edit
+            and "self.editor.rows[row_index].thickness = next_value" in thickness_edit
+            and "_sync_table()" in thickness_edit
+            and "_select_table_row(row_index)" in thickness_edit
+            and "Other table thickness values are unchanged" in thickness_edit
+            and "refresh_from_editor(force_retrace=True)" in thickness_edit,
         ),
         (
             "Open 3D STEP promotion refreshes and highlights the created row",

@@ -75,6 +75,11 @@ class Open3DTopControlsPanel:
             variable=self.inspector.show_terminal_diagnostics_var,
             command=self.inspector._on_scene_visibility_changed,
         )
+        overlay_menu.add_checkbutton(
+            label="Thickness",
+            variable=self.editor.show_physical_distances_var,
+            command=self.inspector._on_scene_visibility_changed,
+        )
         overlay_button["menu"] = overlay_menu
         overlay_button.pack(side="left", padx=(8, 0))
         self.inspector._open3d_overlay_menu = overlay_menu

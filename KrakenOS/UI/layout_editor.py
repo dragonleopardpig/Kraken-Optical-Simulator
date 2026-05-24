@@ -5459,6 +5459,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._actor_step_rotate_visual_keys: set[str] = set()
         self._actor_placement_move_map: dict[str, tuple[int, str, float]] = {}
         self._actor_placement_rotate_map: dict[str, tuple[int, str, float]] = {}
+        self._actor_thickness_dimension_map: dict[str, int] = {}
+        self._thickness_dimension_actor_map: dict[int, list[str]] = {}
         self._step_feature_cache: dict[tuple[str, int], tuple[np.ndarray, object | None, np.ndarray | None] | None] = {}
         self._picked_step_label: str | None = None
         self._picked_ray_index: int | None = None
@@ -6251,6 +6253,7 @@ class Kraken3DInspector(tk.Toplevel):
             "step_rotate_handles": len(getattr(self, "_actor_step_rotate_map", {}) or {}),
             "placement_move_handles": len(getattr(self, "_actor_placement_move_map", {}) or {}),
             "placement_rotate_handles": len(getattr(self, "_actor_placement_rotate_map", {}) or {}),
+            "thickness_dimension_actors": len(getattr(self, "_actor_thickness_dimension_map", {}) or {}),
             "show_rays": bool(self.show_rays_var.get()),
             "selected_step": getattr(self.editor, "_selected_step_label", None),
             "picked_row": self._picked_row_index,
@@ -6324,6 +6327,7 @@ class Kraken3DInspector(tk.Toplevel):
             "step_rotate": self._actor_step_rotate_map.get(actor_key) if actor_key is not None else None,
             "placement_move": self._actor_placement_move_map.get(actor_key) if actor_key is not None else None,
             "placement_rotate": self._actor_placement_rotate_map.get(actor_key) if actor_key is not None else None,
+            "thickness_dimension_row": self._actor_thickness_dimension_map.get(actor_key) if actor_key is not None else None,
         }
 
     def _on_show_rays_changed(self) -> None:
@@ -6353,6 +6357,7 @@ class Kraken3DInspector(tk.Toplevel):
             show_detector_overlays=bool(self.show_detector_overlays_var.get()),
             show_terminal_diagnostics=bool(self.show_terminal_diagnostics_var.get()),
             show_placement_handles=bool(self.show_placement_handles_var.get()),
+            show_thickness_dimensions=bool(self.editor.show_physical_distances_var.get()),
             counts=self._debug_actor_counts(),
         )
         self.refresh_from_editor()
@@ -8874,6 +8879,7 @@ class Kraken3DInspector(tk.Toplevel):
         pick_step_rotate: tuple[str, str, float] | None = None,
         pick_placement_move: tuple[int, str, float] | None = None,
         pick_placement_rotate: tuple[int, str, float] | None = None,
+        pick_thickness_dimension: int | None = None,
         follow_step_label: str | None = None,
         track_row_index: int | None = None,
         line_width: float = 1.0,
@@ -8931,6 +8937,7 @@ class Kraken3DInspector(tk.Toplevel):
             and pick_step_rotate is None
             and pick_placement_move is None
             and pick_placement_rotate is None
+            and pick_thickness_dimension is None
         ):
             actor.PickableOff()
         else:
@@ -8955,8 +8962,22 @@ class Kraken3DInspector(tk.Toplevel):
             if actor_key is not None and pick_placement_rotate is not None:
                 row_index, axis, delta_deg = pick_placement_rotate
                 self._actor_placement_rotate_map[actor_key] = (int(row_index), str(axis), float(delta_deg))
+            if actor_key is not None and pick_thickness_dimension is not None:
+                self._register_thickness_dimension_actor(actor, int(pick_thickness_dimension))
         self._renderer.AddActor(actor)
         return actor
+
+    def _register_thickness_dimension_actor(self, actor, row_index: int) -> None:
+        actor_key = self._actor_key(actor)
+        if actor_key is None:
+            return
+        self._actor_by_key[actor_key] = actor
+        self._actor_thickness_dimension_map[actor_key] = int(row_index)
+        self._thickness_dimension_actor_map.setdefault(int(row_index), []).append(actor_key)
+        try:
+            actor.PickableOn()
+        except Exception:
+            pass
 
     def _set_step_highlight(self, step_label: str | None) -> None:
         if step_label == self._picked_step_label:
@@ -11855,6 +11876,172 @@ class Kraken3DInspector(tk.Toplevel):
         return count
 
     @staticmethod
+    def _thickness_dimension_arrow_mesh(
+        start: np.ndarray,
+        end: np.ndarray,
+        *,
+        scene_span: float,
+    ):
+        if pv is None:
+            return None
+        start = np.asarray(start, dtype=float).reshape(3)
+        end = np.asarray(end, dtype=float).reshape(3)
+        delta = end - start
+        length = float(np.linalg.norm(delta))
+        if not np.isfinite(length) or length <= 1e-9:
+            return None
+        direction = delta / length
+        head = min(max(float(scene_span) * 0.018, 0.75), max(length * 0.28, 0.75))
+        radius = max(head * 0.20, 0.12)
+        tube_radius = max(radius * 0.18, 0.025)
+        parts: list[object] = []
+        try:
+            line = pv.Line(tuple(float(value) for value in start), tuple(float(value) for value in end))
+            try:
+                parts.append(line.tube(radius=float(tube_radius), n_sides=10))
+            except Exception:
+                parts.append(line)
+        except Exception:
+            return None
+        for tip, cone_direction in ((start, -direction), (end, direction)):
+            try:
+                center = np.asarray(tip, dtype=float) - np.asarray(cone_direction, dtype=float) * (head * 0.5)
+                parts.append(
+                    pv.Cone(
+                        center=tuple(float(value) for value in center),
+                        direction=tuple(float(value) for value in cone_direction),
+                        height=float(head),
+                        radius=float(radius),
+                        resolution=24,
+                    )
+                )
+            except Exception:
+                pass
+        merged = parts[0]
+        for part in parts[1:]:
+            try:
+                merged = merged.merge(part)
+            except Exception:
+                pass
+        return merged
+
+    @staticmethod
+    def _thickness_dimension_offset_direction(segment_direction: np.ndarray) -> np.ndarray:
+        direction = np.asarray(segment_direction, dtype=float).reshape(3)
+        norm = float(np.linalg.norm(direction))
+        if not np.isfinite(norm) or norm <= 1e-12:
+            return np.asarray((1.0, 0.0, 0.0), dtype=float)
+        direction = direction / norm
+        reference = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        if abs(float(np.dot(direction, reference))) > 0.90:
+            reference = np.asarray((0.0, 1.0, 0.0), dtype=float)
+        side = np.cross(direction, reference)
+        side_norm = float(np.linalg.norm(side))
+        if not np.isfinite(side_norm) or side_norm <= 1e-12:
+            return np.asarray((1.0, 0.0, 0.0), dtype=float)
+        return side / side_norm
+
+    def _add_thickness_dimension_label_actor(self, row_index: int, position: np.ndarray, text: str) -> bool:
+        if self._renderer is None or vtkBillboardTextActor3D is None:
+            return False
+        try:
+            actor = vtkBillboardTextActor3D()
+            actor.SetInput(str(text))
+            point = np.asarray(position, dtype=float).reshape(3)
+            actor.SetPosition(float(point[0]), float(point[1]), float(point[2]))
+            try:
+                text_prop = actor.GetTextProperty()
+                text_prop.SetFontSize(13)
+                text_prop.SetColor(0.02, 0.16, 0.32)
+                text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
+                text_prop.SetBackgroundOpacity(0.82)
+                text_prop.SetFrame(1)
+                text_prop.SetFrameColor(0.05, 0.42, 0.70)
+            except Exception:
+                pass
+            self._register_thickness_dimension_actor(actor, int(row_index))
+            self._add_renderer_view_prop(actor)
+            return True
+        except Exception as exc:
+            self.editor.append_debug(f"3D thickness label skipped: {exc}")
+            return False
+
+    def _add_thickness_dimension_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
+        del scene_bundle
+        if pv is None:
+            return 0
+        show_var = getattr(self.editor, "show_physical_distances_var", None)
+        if show_var is None or not bool(show_var.get()):
+            return 0
+        rows = list(getattr(self.editor, "rows", []) or [])
+        if len(rows) < 2:
+            return 0
+        _center, scene_span = self._row_scene_bounds()
+        base_offset = max(float(scene_span) * 0.045, 2.0)
+        color = (0.05, 0.42, 0.70)
+        count = 0
+        for row_index, row in enumerate(rows[:-1]):
+            try:
+                thickness = float(getattr(row, "thickness", 0.0) or 0.0)
+            except Exception:
+                continue
+            if not np.isfinite(thickness) or abs(thickness) <= 1e-9:
+                continue
+            try:
+                p0 = np.asarray(self.editor._surface_reference_world_point(row_index, system=system), dtype=float).reshape(3)
+                p1 = np.asarray(self.editor._surface_reference_world_point(row_index + 1, system=system), dtype=float).reshape(3)
+            except Exception as exc:
+                self.editor.append_debug(f"3D thickness dimension skipped for S{row_index}: {exc}")
+                continue
+            if not (np.all(np.isfinite(p0)) and np.all(np.isfinite(p1))):
+                continue
+            segment = p1 - p0
+            segment_length = float(np.linalg.norm(segment))
+            if not np.isfinite(segment_length) or segment_length <= 1e-9:
+                continue
+            side = self._thickness_dimension_offset_direction(segment)
+            row_band = 1.0 + 0.38 * float(row_index % 3)
+            offset = side * base_offset * row_band
+            start = p0 + offset
+            end = p1 + offset
+            mesh = self._thickness_dimension_arrow_mesh(start, end, scene_span=scene_span)
+            if mesh is None:
+                continue
+            actor = self._add_mesh_actor(
+                mesh,
+                color=color,
+                opacity=0.92,
+                pick_thickness_dimension=row_index,
+                flat_shading=True,
+                backface_culling=False,
+            )
+            if actor is None:
+                continue
+            count += 1
+            try:
+                self._add_mesh_actor(
+                    pv.Line(tuple(float(value) for value in p0), tuple(float(value) for value in start)),
+                    color=(0.62, 0.72, 0.80),
+                    opacity=0.52,
+                    line_width=1.0,
+                    backface_culling=False,
+                )
+                self._add_mesh_actor(
+                    pv.Line(tuple(float(value) for value in p1), tuple(float(value) for value in end)),
+                    color=(0.62, 0.72, 0.80),
+                    opacity=0.52,
+                    line_width=1.0,
+                    backface_culling=False,
+                )
+            except Exception:
+                pass
+            label = f"S{row_index} Thickness = {thickness:.6g} mm"
+            label_position = 0.5 * (start + end) + side * max(base_offset * 0.22, 0.8)
+            if self._add_thickness_dimension_label_actor(row_index, label_position, label):
+                count += 1
+        return count
+
+    @staticmethod
     def _scene_placement_translate_step(placement: ScenePlacement3D, spacing: float) -> float:
         if bool(getattr(placement, "snap_enabled", False)):
             step = float(getattr(placement, "snap_mm", spacing) or spacing)
@@ -12427,6 +12614,11 @@ class Kraken3DInspector(tk.Toplevel):
             previous_actor_count = int(self._renderer.GetViewProps().GetNumberOfItems())
         except Exception:
             previous_actor_count = 0
+        show_thickness_var = getattr(self.editor, "show_physical_distances_var", None)
+        try:
+            show_thickness_dimensions = bool(show_thickness_var.get()) if show_thickness_var is not None else False
+        except Exception:
+            show_thickness_dimensions = False
         self._debug_trace(
             "refresh_scene_start",
             rows=len(rows),
@@ -12446,6 +12638,7 @@ class Kraken3DInspector(tk.Toplevel):
             show_detector_overlays=bool(self.show_detector_overlays_var.get()),
             show_terminal_diagnostics=bool(self.show_terminal_diagnostics_var.get()),
             show_placement_handles=bool(self.show_placement_handles_var.get()),
+            show_thickness_dimensions=show_thickness_dimensions,
             reset_camera=bool(reset_camera),
         )
         if can_reuse_previous_meshes and (missing_file_backed_rows or suspicious_sparse_rebuild):
@@ -12520,6 +12713,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._actor_step_rotate_visual_keys.clear()
         self._actor_placement_move_map.clear()
         self._actor_placement_rotate_map.clear()
+        self._actor_thickness_dimension_map.clear()
+        self._thickness_dimension_actor_map.clear()
         self._step_feature_cache.clear()
         self._hover_rotation_handle_key = None
         self._picked_step_label = None
@@ -12649,6 +12844,7 @@ class Kraken3DInspector(tk.Toplevel):
             include_footprints=bool(self.show_detector_overlays_var.get()),
             include_miss_crosshairs=bool(self.show_terminal_diagnostics_var.get()),
         )
+        thickness_dimensions = self._add_thickness_dimension_overlays(system, scene_bundle)
 
         if self.show_rays_var.get():
             if scene_bundle is not None:
@@ -12843,7 +13039,7 @@ class Kraken3DInspector(tk.Toplevel):
         self.refresh_step_admin_panel()
         ray_count = len(getattr(scene_bundle, "ray_paths", []) or []) if scene_bundle is not None else len(getattr(rays, "CC", []))
         self.status_var.set(
-            f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | optical axes={optical_axis_overlays} | assigned face overlays={assigned_face_overlays} | face roles={face_role_markers} | virtual planes={virtual_plane_markers} | detector overlays={detector_overlay_lines} | placement grid={placement_grid_lines} | STEP carry active={step_carry_active} | STEP rotation handles={step_rotation_handles}"
+            f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | optical axes={optical_axis_overlays} | assigned face overlays={assigned_face_overlays} | face roles={face_role_markers} | virtual planes={virtual_plane_markers} | detector overlays={detector_overlay_lines} | thickness dimensions={thickness_dimensions} | placement grid={placement_grid_lines} | STEP carry active={step_carry_active} | STEP rotation handles={step_rotation_handles}"
         )
         self._debug_trace(
             "refresh_scene_done",
@@ -12854,6 +13050,7 @@ class Kraken3DInspector(tk.Toplevel):
             face_role_markers=face_role_markers,
             virtual_plane_markers=virtual_plane_markers,
             detector_overlays=detector_overlay_lines,
+            thickness_dimensions=thickness_dimensions,
             placement_grid=placement_grid_lines,
             step_carry_active=step_carry_active,
             step_rotation_handles=step_rotation_handles,
@@ -13787,6 +13984,45 @@ class Kraken3DInspector(tk.Toplevel):
             "Hold the STEP to lift for free movement."
         )
 
+    def _edit_open3d_thickness_dimension(self, row_index: int) -> None:
+        row_index = int(row_index)
+        if not (0 <= row_index < len(self.editor.rows) - 1):
+            self.status_var.set("Thickness dimension: choose a non-terminal table row.")
+            return
+        row = self.editor.rows[row_index]
+        try:
+            current = float(getattr(row, "thickness", 0.0) or 0.0)
+        except Exception:
+            current = 0.0
+        label = f"S{row_index}: {row.name or row.surface or 'Surface'}"
+        value = simpledialog.askfloat(
+            "Edit Thickness",
+            f"{label}\nThickness to next row [mm]:",
+            initialvalue=current,
+            parent=self,
+        )
+        if value is None:
+            self.status_var.set("Thickness edit cancelled.")
+            return
+        try:
+            next_value = float(value)
+        except Exception:
+            self.status_var.set("Thickness must be a finite number.")
+            return
+        if not np.isfinite(next_value):
+            self.status_var.set("Thickness must be a finite number.")
+            return
+        self.editor._begin_history_capture()
+        self.editor.rows[row_index].thickness = next_value
+        self.editor._sync_table()
+        self.editor._select_table_row(row_index)
+        self.editor._commit_history_capture()
+        self.editor._invalidate_preview_scene_trace()
+        self.editor._sync_trace_state_badge()
+        self.editor.status_var.set(f"S{row_index} Thickness set to {next_value:.6g} mm. Other table thickness values are unchanged.")
+        self.status_var.set(f"S{row_index} Thickness set to {next_value:.6g} mm.")
+        self.refresh_from_editor(force_retrace=True)
+
     def _on_left_button_press(self, obj, _event) -> None:
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
             return
@@ -13800,6 +14036,13 @@ class Kraken3DInspector(tk.Toplevel):
         x, y = self._vtk_interactor.GetEventPosition()
         self._picker.Pick(x, y, 0.0, self._renderer)
         actor = self._picker.GetActor()
+        if actor is None:
+            get_view_prop = getattr(self._picker, "GetViewProp", None)
+            if callable(get_view_prop):
+                try:
+                    actor = get_view_prop()
+                except Exception:
+                    actor = None
         actor_key = self._actor_key(actor)
         self._debug_trace(
             "left_click_pick",
@@ -13865,6 +14108,26 @@ class Kraken3DInspector(tk.Toplevel):
                 self.render()
                 return
             self._apply_scene_placement_translate_handle(*placement_move)
+            self.render()
+            return
+        thickness_row = self._actor_thickness_dimension_map.get(actor_key) if actor_key is not None else None
+        if thickness_row is not None:
+            if (
+                self._source_target_pick_mode
+                or self._center_row_to_ray_mode
+                or self._placement_target_pick_mode
+                or self._placement_orient_pick_mode
+                or self._placement_orient_ray_mode
+                or self._step_carry_snap_ray_mode
+                or self._step_carry_snap_target_mode
+                or self._step_normal_axis_pick_mode
+                or self._step_surface_center_axis_pick_mode
+                or bool(getattr(self.editor, "_cad_axis_pick_any", False))
+            ):
+                self.status_var.set("Thickness dimension: finish the active pick mode first.")
+                self.render()
+                return
+            self._edit_open3d_thickness_dimension(int(thickness_row))
             self.render()
             return
         if self._center_row_to_ray_mode and self._center_row_to_ray_index is None:
@@ -24672,7 +24935,7 @@ class KrakenLayoutEditor(tk.Tk):
             command=self._on_toggle_physical_distances,
         )
         physical_distance_button.pack(side="left", padx=(6, 0))
-        self._add_widget_tooltip(physical_distance_button, "Annotate physical distances in the 2D layout plot")
+        self._add_widget_tooltip(physical_distance_button, "Annotate physical distances in the 2D layout and Open 3D views")
         trace_button = ttk.Button(plot_toolbar_main, text="Trace", command=self.open_ray_inspector)
         trace_button.pack(side="right", padx=(0, 6))
         self._add_widget_tooltip(trace_button, "Inspect ray / surface physics")
