@@ -362,6 +362,7 @@ def main() -> int:
     open_glass_catalog_browser = inspect.getsource(KrakenLayoutEditor.open_glass_catalog_browser)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
+    edit_current_bounds = inspect.getsource(KrakenLayoutEditor.edit_current_bounds)
     main_trace_display_panel = inspect.getsource(MainTraceDisplayControlsPanel)
     main_tolerance_report_dialogs = inspect.getsource(MainToleranceReportDialogs)
     main_tolerance_report_factory = inspect.getsource(KrakenLayoutEditor._main_tolerance_report_dialogs)
@@ -815,8 +816,10 @@ def main() -> int:
             "Main optimization panel lives outside layout_editor",
             "MainOptimizationPanel(self, operand_specs=OPERAND_REGISTRY.values())" in main_optimization_factory
             and "self._main_optimization_panel().build(parent)" in build_optimization_panel
+            and "self._main_optimization_panel().edit_current_bounds()" in edit_current_bounds
             and "Start Optimization" in main_optimization_panel
             and "Check Backend" in main_optimization_panel
+            and "Bounds for" in main_optimization_panel
             and "optimization_workers_var" in main_optimization_panel
             and "merit_mode_list" in main_optimization_panel
             and "operand_weight_vars" in main_optimization_panel
