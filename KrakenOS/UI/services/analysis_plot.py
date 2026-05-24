@@ -830,7 +830,7 @@ class AnalysisPlotService:
                 if is_wavefront_function:
                     result_items.append(("Function reference", function_reference))
                     result_items.append(("Pupil quality", "OK" if function_quality_ok else function_quality_note))
-                reference = self.__dict__.get("_zemax_wavefront_reference", None)
+                reference = self.editor.__dict__.get("_zemax_wavefront_reference", None)
                 if zemax_comparison and bool(zemax_comparison.get("ok", False)):
                     result_items.extend(
                         [

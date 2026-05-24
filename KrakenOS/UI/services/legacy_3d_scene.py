@@ -488,7 +488,7 @@ class Legacy3DSceneService:
 
     def _add_legacy_3d_physical_dimensions(self, plotter, helper_actors: list) -> None:
         pv = _layout_module().pv
-        show_var = self.__dict__.get("show_physical_distances_var")
+        show_var = self.editor.__dict__.get("show_physical_distances_var")
         if show_var is None or not show_var.get():
             return
         values = self._physical_dimension_values()
@@ -575,7 +575,7 @@ class Legacy3DSceneService:
         _add_double_arrow(object_z, housing_front_z, "#2196f3", f"{dist_object:.1f} mm")
         _add_double_arrow(housing_front_z, camera_front_z, "#4caf50", f"{dist_camera:.1f} mm")
         led_edge_z = None
-        if self.__dict__.get("imported_led_step_path") is not None:
+        if self.editor.__dict__.get("imported_led_step_path") is not None:
             try:
                 led_edge_z = object_z + max(float(getattr(self, "led_object_edge_distance_mm", 0.0)), 0.0)
             except Exception:

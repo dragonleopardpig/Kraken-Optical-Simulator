@@ -199,7 +199,7 @@ class LayoutSettingsService:
                 getattr(self, "tolerance_solve_presets", [])
             ),
             TOLERANCE_MANUFACTURING_TEMPLATES_SETTINGS: self._normalize_tolerance_manufacturing_templates(
-                self.__dict__.get("tolerance_manufacturing_templates", [])
+                self.editor.__dict__.get("tolerance_manufacturing_templates", [])
             ),
             "active_tolerance_solve_preset": str(getattr(self, "active_tolerance_solve_preset_name", "") or ""),
         }

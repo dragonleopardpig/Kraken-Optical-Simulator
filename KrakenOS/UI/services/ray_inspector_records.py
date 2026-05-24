@@ -35,19 +35,20 @@ class RayInspectorRecordService:
         field_bundle_count: int | None = None,
         ray_count_per_field: int | None = None,
     ) -> list[dict[str, object]]:
-        row_list = self.__dict__.get("rows", []) if rows is None else rows
-        scene_bundle = self.__dict__.get("_last_scene_bundle") if scene_bundle is None and rays is None else scene_bundle
+        editor_state = self.editor.__dict__
+        row_list = editor_state.get("rows", []) if rows is None else rows
+        scene_bundle = editor_state.get("_last_scene_bundle") if scene_bundle is None and rays is None else scene_bundle
         if scene_bundle is not None:
             records = scene_bundle_ray_analysis_records(scene_bundle)
             if records:
                 return records
 
-        rays = self.__dict__.get("last_rays") if rays is None else rays
+        rays = editor_state.get("last_rays") if rays is None else rays
         if rays is None:
             return []
 
-        preview_bundle_count = self.__dict__.get("_preview_field_bundle_count")
-        preview_ray_count = self.__dict__.get("_preview_field_ray_count")
+        preview_bundle_count = editor_state.get("_preview_field_bundle_count")
+        preview_ray_count = editor_state.get("_preview_field_ray_count")
         if field_bundle_count is not None:
             field_count = int(field_bundle_count)
         elif preview_bundle_count is not None:
@@ -71,7 +72,7 @@ class RayInspectorRecordService:
         try:
             built_bundle = build_scene_bundle(
                 rows=row_list,
-                system=self.__dict__.get("last_system") if system is None else system,
+                system=editor_state.get("last_system") if system is None else system,
                 rays=rays,
                 field_count=field_count,
                 ray_count_per_field=ray_count_per_field,
