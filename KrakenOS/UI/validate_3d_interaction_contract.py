@@ -18,6 +18,7 @@ from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, 
 from KrakenOS.UI.panels.main_atmosphere_panel import MainAtmospherePanel
 from KrakenOS.UI.panels.main_beam_splitter_dialog import MainBeamSplitterDialog
 from KrakenOS.UI.panels.main_coating_material_dialog import MainCoatingMaterialDialog
+from KrakenOS.UI.panels.main_context_menu import MainContextMenu
 from KrakenOS.UI.panels.main_diffuse_scatter_dialog import MainDiffuseScatterDialog
 from KrakenOS.UI.panels.main_error_map_dialog import MainErrorMapDialog
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
@@ -291,6 +292,9 @@ def main() -> int:
     open_galvo_settings = inspect.getsource(KrakenLayoutEditor.open_galvo_scan_overlay_settings)
     open_surface_additional_settings = inspect.getsource(KrakenLayoutEditor.open_surface_additional_settings)
     open_grating_settings = inspect.getsource(KrakenLayoutEditor._open_grating_settings_editor)
+    main_context_menu = inspect.getsource(MainContextMenu)
+    main_context_menu_factory = inspect.getsource(KrakenLayoutEditor._main_context_menu)
+    show_context_menu = inspect.getsource(KrakenLayoutEditor.show_context_menu)
     main_optimization_panel = inspect.getsource(MainOptimizationPanel)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
@@ -839,6 +843,18 @@ def main() -> int:
             and "Galvo Scan Overlay" in main_surface_settings_dialogs
             and "Grating Settings" in main_surface_settings_dialogs
             and "Pitch [um] must be non-zero." in main_surface_settings_dialogs,
+        ),
+        (
+            "Main table context menu lives outside layout_editor",
+            "MainContextMenu(" in main_context_menu_factory
+            and "fields=FIELDS" in main_context_menu_factory
+            and "coating_preset_names=COATING_PRESET_NAMES" in main_context_menu_factory
+            and "element_arm_role_values=ELEMENT_ARM_ROLE_VALUES" in main_context_menu_factory
+            and "self._main_context_menu().show_context_menu(event)" in show_context_menu
+            and "Convert Type" in main_context_menu
+            and "Shape / Aperture" in main_context_menu
+            and "Coating / Polarization" in main_context_menu
+            and "Path assignment" in main_context_menu,
         ),
         (
             "Open 3D renders editable table Thickness dimensions",
