@@ -190,6 +190,57 @@ def main() -> int:
             ),
         ),
         (
+            "STEP carry drag deltas are service-owned",
+            (
+                lambda pixel_state, plane_state: (
+                    (
+                        lambda pixel_delta, plane_delta: (
+                            pixel_delta is not None
+                            and pixel_delta.label == "optical"
+                            and pixel_delta.applied_steps == 1
+                            and np.allclose(pixel_delta.delta_xyz, (0.0, -0.5, 0.0))
+                            and pixel_state["applied_steps"] == 1
+                            and plane_delta is not None
+                            and plane_delta.label == "optical"
+                            and plane_delta.applied_steps == 6
+                            and np.allclose(plane_delta.delta_xyz, (1.0, 2.0, 0.0))
+                            and plane_delta.force_refresh is True
+                            and plane_delta.live_refresh_message == "optical STEP carry moved"
+                            and plane_state["raw_drag_delta_world"] == (1.0, 2.0, 0.0)
+                        )
+                    )(
+                        service.carry_pixel_motion_delta(
+                            pixel_state,
+                            dx=22,
+                            dy=0,
+                            pixels_per_step=22,
+                        ),
+                        service.carry_plane_motion_delta(
+                            plane_state,
+                            cursor_world=(1.0, 2.0, 0.0),
+                            scene_span=50.0,
+                        ),
+                    )
+                )
+            )(
+                service.carry_motion_state(
+                    "optical",
+                    screen_axes=((0.2, -0.9, 0.1), (0.1, 0.3, 0.95)),
+                    spacing=0.5,
+                ),
+                {
+                    "label": "optical",
+                    "spacing": 0.5,
+                    "start_center_world": (0.0, 0.0, 0.0),
+                    "center_world": (0.0, 0.0, 0.0),
+                    "drag_plane_origin": (0.0, 0.0, 0.0),
+                    "drag_plane_normal": (0.0, 0.0, 1.0),
+                    "drag_anchor_world": (0.0, 0.0, 0.0),
+                    "applied_steps": 0,
+                },
+            ),
+        ),
+        (
             "STEP overlay promotion transition is service-owned",
             (
                 lambda transition: (

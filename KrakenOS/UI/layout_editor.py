@@ -7571,142 +7571,80 @@ class Kraken3DInspector(tk.Toplevel):
     def _step_carry_pixels_per_grid_step() -> float:
         return 22.0
 
-    def _apply_step_carry_motion_state(self, state: dict[str, object] | None, dx: int | float, dy: int | float) -> int:
-        if state is None:
-            return 0
+    def _apply_step_carry_motion_delta(self, state: dict[str, object], movement) -> int | None:
+        if movement is None:
+            return None
+        if getattr(movement, "debug_message", ""):
+            self.editor.append_debug(str(movement.debug_message))
         try:
-            spacing = float(state.get("spacing", 0.0))
-            pixel_x = float(state.get("pixel_x", 0.0)) + float(dx)
-            # Tk event Y grows downward; positive screen-up should move along
-            # the camera up vector.
-            pixel_y = float(state.get("pixel_y", 0.0)) - float(dy)
+            applied_steps = int(getattr(movement, "applied_steps", 0))
         except Exception:
-            return 0
-        if not np.isfinite(spacing) or spacing <= 0.0:
-            return 0
-        pixels_per_step = self._step_carry_pixels_per_grid_step()
-        if not bool(state.get("snap_enabled", True)):
-            try:
-                delta = (
-                    np.asarray(state.get("right_axis"), dtype=float).reshape(3) * float(dx)
-                    - np.asarray(state.get("up_axis"), dtype=float).reshape(3) * float(dy)
-                ) * (spacing / pixels_per_step)
-            except Exception:
-                return 0
-            label = str(state.get("label", "")).strip().lower()
-            if label not in STEP_OVERLAY_LABEL_SET or not np.any(np.abs(delta) > 1e-12):
-                return 0
-            if not bool(state.get("history_started", False)):
-                try:
-                    self.editor._begin_history_capture()
-                    state["history_started"] = True
-                except Exception:
-                    pass
-            state["applied_steps"] = int(state.get("applied_steps", 0)) + 1
-            self.editor.translate_step_overlay(label, delta, grid_spacing_mm=None, refresh=False, record_history=False)
-            if self._translate_step_overlay_actors(label, delta) <= 0:
-                self.refresh_from_editor()
-            self._update_step_carry_grip_after_delta(state, delta)
-            return 1
-        steps_x = int(pixel_x / pixels_per_step)
-        steps_y = int(pixel_y / pixels_per_step)
-        if steps_x == 0 and steps_y == 0:
-            state["pixel_x"] = pixel_x
-            state["pixel_y"] = pixel_y
-            return 0
-        state["pixel_x"] = pixel_x - float(steps_x) * pixels_per_step
-        state["pixel_y"] = pixel_y - float(steps_y) * pixels_per_step
-        delta = np.zeros(3, dtype=float)
-        if steps_x:
-            delta += np.asarray(state.get("right_axis"), dtype=float).reshape(3) * float(steps_x) * spacing
-        if steps_y:
-            delta += np.asarray(state.get("up_axis"), dtype=float).reshape(3) * float(steps_y) * spacing
-        label = str(state.get("label", "")).strip().lower()
-        if label not in STEP_OVERLAY_LABEL_SET or not np.any(np.abs(delta) > 1e-12):
-            return 0
+            applied_steps = 0
+        if not getattr(movement, "has_delta", False):
+            return applied_steps
+        label = str(getattr(movement, "label", "") or "").strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET:
+            return applied_steps
+        try:
+            delta = np.asarray(getattr(movement, "delta_xyz"), dtype=float).reshape(-1)[:3]
+        except Exception:
+            return applied_steps
+        if delta.size < 3 or not np.all(np.isfinite(delta[:3])) or not np.any(np.abs(delta[:3]) > 1e-12):
+            return applied_steps
         if not bool(state.get("history_started", False)):
             try:
                 self.editor._begin_history_capture()
                 state["history_started"] = True
             except Exception:
                 pass
-        applied_steps = abs(int(steps_x)) + abs(int(steps_y))
-        state["applied_steps"] = int(state.get("applied_steps", 0)) + applied_steps
-        self.editor.translate_step_overlay(label, delta, grid_spacing_mm=spacing, refresh=False, record_history=False)
+        grid_spacing = getattr(movement, "grid_spacing_mm", None)
+        self.editor.translate_step_overlay(
+            label,
+            delta,
+            grid_spacing_mm=grid_spacing,
+            refresh=False,
+            record_history=False,
+        )
         if self._translate_step_overlay_actors(label, delta) <= 0:
-            self.refresh_from_editor()
+            self.refresh_from_editor(force_retrace=bool(getattr(movement, "force_refresh", False)))
         self._update_step_carry_grip_after_delta(state, delta)
+        live_message = str(getattr(movement, "live_refresh_message", "") or "")
+        if live_message:
+            self.schedule_live_refresh(live_message)
         return applied_steps
+
+    def _apply_step_carry_motion_state(self, state: dict[str, object] | None, dx: int | float, dy: int | float) -> int:
+        if state is None:
+            return 0
+        movement = self.editor._open3d_step_state_service().carry_pixel_motion_delta(
+            state,
+            dx=dx,
+            dy=dy,
+            pixels_per_step=self._step_carry_pixels_per_grid_step(),
+        )
+        applied = self._apply_step_carry_motion_delta(state, movement)
+        return int(applied or 0)
 
     def _apply_step_carry_plane_motion_state(self, state: dict[str, object] | None, current_xy) -> int | None:
         if state is None or current_xy is None:
             return None
         try:
-            spacing = float(state.get("spacing", 0.0))
-            start_center = np.asarray(state.get("start_center_world"), dtype=float).reshape(-1)[:3]
-            current_center = np.asarray(state.get("center_world"), dtype=float).reshape(-1)[:3]
             plane_origin = np.asarray(state.get("drag_plane_origin"), dtype=float).reshape(-1)[:3]
             plane_normal = np.asarray(state.get("drag_plane_normal"), dtype=float).reshape(-1)[:3]
-            anchor_world = np.asarray(state.get("drag_anchor_world"), dtype=float).reshape(-1)[:3]
         except Exception:
             return None
-        if (
-            not np.isfinite(spacing)
-            or spacing <= 0.0
-            or start_center.size < 3
-            or current_center.size < 3
-            or plane_origin.size < 3
-            or plane_normal.size < 3
-            or anchor_world.size < 3
-            or not np.all(np.isfinite(start_center[:3]))
-            or not np.all(np.isfinite(current_center[:3]))
-            or not np.all(np.isfinite(plane_origin[:3]))
-            or not np.all(np.isfinite(plane_normal[:3]))
-            or not np.all(np.isfinite(anchor_world[:3]))
-        ):
+        if plane_origin.size < 3 or plane_normal.size < 3:
             return None
         cursor_world = self._cursor_plane_point(current_xy, plane_origin[:3], plane_normal[:3])
         if cursor_world is None:
             return None
-        raw_delta = np.asarray(cursor_world[:3] - anchor_world[:3], dtype=float)
-        continuous_plane_center = start_center[:3] + raw_delta[:3]
-        target_center = np.asarray(continuous_plane_center, dtype=float).reshape(-1)[:3]
-        delta = target_center[:3] - current_center[:3]
-        if not np.all(np.isfinite(delta[:3])) or not np.any(np.abs(delta[:3]) > 1e-12):
-            state["raw_drag_delta_world"] = tuple(float(value) for value in raw_delta[:3])
-            return 0
         _scene_center, scene_span = self._scene_bounds()
-        max_delta = max(float(scene_span) * 4.0, float(spacing) * 40.0, 100.0)
-        delta_norm = float(np.linalg.norm(delta[:3]))
-        if not np.isfinite(delta_norm) or delta_norm > max_delta:
-            self.editor.append_debug(
-                f"STEP carry ignored implausible drag-plane jump: |delta|={delta_norm:.6g} mm, limit={max_delta:.6g} mm."
-            )
-            state["drag_anchor_world"] = tuple(float(value) for value in cursor_world[:3])
-            state["start_center_world"] = tuple(float(value) for value in current_center[:3])
-            return 0
-        label = str(state.get("label", "")).strip().lower()
-        if label not in STEP_OVERLAY_LABEL_SET:
-            return 0
-        if not bool(state.get("history_started", False)):
-            try:
-                self.editor._begin_history_capture()
-                state["history_started"] = True
-            except Exception:
-                pass
-        try:
-            step_counts = np.abs(np.round(delta[:3] / spacing)).astype(int)
-            applied_steps = int(np.sum(step_counts))
-        except Exception:
-            applied_steps = 1
-        state["applied_steps"] = int(state.get("applied_steps", 0)) + max(applied_steps, 1)
-        state["raw_drag_delta_world"] = tuple(float(value) for value in raw_delta[:3])
-        self.editor.translate_step_overlay(label, delta, grid_spacing_mm=None, refresh=False, record_history=False)
-        if self._translate_step_overlay_actors(label, delta) <= 0:
-            self.refresh_from_editor(force_retrace=True)
-        self._update_step_carry_grip_after_delta(state, delta)
-        self.schedule_live_refresh(f"{label} STEP carry moved")
-        return max(applied_steps, 1)
+        movement = self.editor._open3d_step_state_service().carry_plane_motion_delta(
+            state,
+            cursor_world=cursor_world,
+            scene_span=float(scene_span),
+        )
+        return self._apply_step_carry_motion_delta(state, movement)
 
     def _apply_step_carry_drag_motion(
         self,

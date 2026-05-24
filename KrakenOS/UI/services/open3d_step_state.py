@@ -71,6 +71,23 @@ class StepCarryTransition:
         return bool(self.label)
 
 
+@dataclass(frozen=True, slots=True)
+class StepCarryMotionDelta:
+    """Computed imported STEP carry movement for the inspector to apply."""
+
+    label: str = ""
+    delta_xyz: tuple[float, float, float] = ()
+    applied_steps: int = 0
+    grid_spacing_mm: float | None = None
+    force_refresh: bool = False
+    live_refresh_message: str = ""
+    debug_message: str = ""
+
+    @property
+    def has_delta(self) -> bool:
+        return len(self.delta_xyz) == 3 and any(abs(value) > 1e-12 for value in self.delta_xyz)
+
+
 class Open3DStepStateService:
     """Resolve Open 3D STEP state transitions outside the widget layer."""
 
@@ -184,6 +201,144 @@ class Open3DStepStateService:
             "applied_steps": 0,
             "last_xy": None,
         }
+
+    def carry_pixel_motion_delta(
+        self,
+        state: dict[str, object] | None,
+        *,
+        dx: int | float,
+        dy: int | float,
+        pixels_per_step: float,
+    ) -> StepCarryMotionDelta | None:
+        """Advance an imported STEP carry state from screen-pixel drag deltas."""
+        if state is None:
+            return None
+        try:
+            spacing = float(state.get("spacing", 0.0))
+            pixel_x = float(state.get("pixel_x", 0.0)) + float(dx)
+            pixel_y = float(state.get("pixel_y", 0.0)) - float(dy)
+            pixels = float(pixels_per_step)
+        except Exception:
+            return None
+        if not np.isfinite(spacing) or spacing <= 0.0 or not np.isfinite(pixels) or pixels <= 0.0:
+            return None
+        label = self.resolve_active_carry_label(state.get("label", ""))
+        if not label:
+            return StepCarryMotionDelta()
+        if not bool(state.get("snap_enabled", True)):
+            try:
+                delta = (
+                    np.asarray(state.get("right_axis"), dtype=float).reshape(3) * float(dx)
+                    - np.asarray(state.get("up_axis"), dtype=float).reshape(3) * float(dy)
+                ) * (spacing / pixels)
+            except Exception:
+                return None
+            if not np.any(np.abs(delta[:3]) > 1e-12):
+                return StepCarryMotionDelta(label=label)
+            state["applied_steps"] = int(state.get("applied_steps", 0)) + 1
+            return StepCarryMotionDelta(
+                label=label,
+                delta_xyz=tuple(float(value) for value in delta[:3]),
+                applied_steps=1,
+            )
+        steps_x = int(pixel_x / pixels)
+        steps_y = int(pixel_y / pixels)
+        if steps_x == 0 and steps_y == 0:
+            state["pixel_x"] = pixel_x
+            state["pixel_y"] = pixel_y
+            return StepCarryMotionDelta(label=label)
+        state["pixel_x"] = pixel_x - float(steps_x) * pixels
+        state["pixel_y"] = pixel_y - float(steps_y) * pixels
+        delta = np.zeros(3, dtype=float)
+        if steps_x:
+            delta += np.asarray(state.get("right_axis"), dtype=float).reshape(3) * float(steps_x) * spacing
+        if steps_y:
+            delta += np.asarray(state.get("up_axis"), dtype=float).reshape(3) * float(steps_y) * spacing
+        if not np.any(np.abs(delta[:3]) > 1e-12):
+            return StepCarryMotionDelta(label=label)
+        applied_steps = abs(int(steps_x)) + abs(int(steps_y))
+        state["applied_steps"] = int(state.get("applied_steps", 0)) + applied_steps
+        return StepCarryMotionDelta(
+            label=label,
+            delta_xyz=tuple(float(value) for value in delta[:3]),
+            applied_steps=applied_steps,
+            grid_spacing_mm=float(spacing),
+        )
+
+    def carry_plane_motion_delta(
+        self,
+        state: dict[str, object] | None,
+        *,
+        cursor_world: object,
+        scene_span: float,
+    ) -> StepCarryMotionDelta | None:
+        """Advance an imported STEP carry state from a cursor point on its drag plane."""
+        if state is None:
+            return None
+        try:
+            spacing = float(state.get("spacing", 0.0))
+            start_center = np.asarray(state.get("start_center_world"), dtype=float).reshape(-1)[:3]
+            current_center = np.asarray(state.get("center_world"), dtype=float).reshape(-1)[:3]
+            plane_origin = np.asarray(state.get("drag_plane_origin"), dtype=float).reshape(-1)[:3]
+            plane_normal = np.asarray(state.get("drag_plane_normal"), dtype=float).reshape(-1)[:3]
+            anchor_world = np.asarray(state.get("drag_anchor_world"), dtype=float).reshape(-1)[:3]
+            cursor = np.asarray(cursor_world, dtype=float).reshape(-1)[:3]
+            span = float(scene_span)
+        except Exception:
+            return None
+        if (
+            not np.isfinite(spacing)
+            or spacing <= 0.0
+            or not np.isfinite(span)
+            or start_center.size < 3
+            or current_center.size < 3
+            or plane_origin.size < 3
+            or plane_normal.size < 3
+            or anchor_world.size < 3
+            or cursor.size < 3
+            or not np.all(np.isfinite(start_center[:3]))
+            or not np.all(np.isfinite(current_center[:3]))
+            or not np.all(np.isfinite(plane_origin[:3]))
+            or not np.all(np.isfinite(plane_normal[:3]))
+            or not np.all(np.isfinite(anchor_world[:3]))
+            or not np.all(np.isfinite(cursor[:3]))
+        ):
+            return None
+        raw_delta = np.asarray(cursor[:3] - anchor_world[:3], dtype=float)
+        target_center = np.asarray(start_center[:3] + raw_delta[:3], dtype=float).reshape(-1)[:3]
+        delta = target_center[:3] - current_center[:3]
+        state["raw_drag_delta_world"] = tuple(float(value) for value in raw_delta[:3])
+        label = self.resolve_active_carry_label(state.get("label", ""))
+        if not label:
+            return StepCarryMotionDelta()
+        if not np.all(np.isfinite(delta[:3])) or not np.any(np.abs(delta[:3]) > 1e-12):
+            return StepCarryMotionDelta(label=label)
+        max_delta = max(float(span) * 4.0, float(spacing) * 40.0, 100.0)
+        delta_norm = float(np.linalg.norm(delta[:3]))
+        if not np.isfinite(delta_norm) or delta_norm > max_delta:
+            state["drag_anchor_world"] = tuple(float(value) for value in cursor[:3])
+            state["start_center_world"] = tuple(float(value) for value in current_center[:3])
+            return StepCarryMotionDelta(
+                label=label,
+                debug_message=(
+                    "STEP carry ignored implausible drag-plane jump: "
+                    f"|delta|={delta_norm:.6g} mm, limit={max_delta:.6g} mm."
+                ),
+            )
+        try:
+            step_counts = np.abs(np.round(delta[:3] / spacing)).astype(int)
+            applied_steps = int(np.sum(step_counts))
+        except Exception:
+            applied_steps = 1
+        applied_steps = max(applied_steps, 1)
+        state["applied_steps"] = int(state.get("applied_steps", 0)) + applied_steps
+        return StepCarryMotionDelta(
+            label=label,
+            delta_xyz=tuple(float(value) for value in delta[:3]),
+            applied_steps=applied_steps,
+            force_refresh=True,
+            live_refresh_message=f"{label} STEP carry moved",
+        )
 
     @staticmethod
     def _finite_xyz(values: object) -> np.ndarray | None:

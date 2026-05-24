@@ -242,6 +242,7 @@ def main() -> int:
     step_carry_mode = inspect.getsource(Kraken3DInspector._on_step_carry_grid_selected)
     step_carry_motion = inspect.getsource(Kraken3DInspector._apply_step_carry_motion_state)
     step_carry_plane_motion = inspect.getsource(Kraken3DInspector._apply_step_carry_plane_motion_state)
+    step_carry_motion_delta = inspect.getsource(Kraken3DInspector._apply_step_carry_motion_delta)
     step_carry_actor_motion = inspect.getsource(Kraken3DInspector._translate_step_overlay_actors)
     step_carry_drag = inspect.getsource(Kraken3DInspector._apply_step_carry_drag_motion)
     step_carry_cursor_plane = inspect.getsource(Kraken3DInspector._cursor_plane_point)
@@ -733,14 +734,16 @@ def main() -> int:
             "Open 3D STEP carry drag writes through placement state",
             "_apply_step_carry_plane_motion_state" in step_carry_drag
             and "_apply_step_carry_motion_state" in step_carry_drag
-            and "translate_step_overlay" in step_carry_plane_motion
-            and "translate_step_overlay" in step_carry_motion
+            and "carry_plane_motion_delta" in step_carry_plane_motion
+            and "carry_pixel_motion_delta" in step_carry_motion
+            and "translate_step_overlay" in step_carry_motion_delta
             and "_step_placement_offset_xyz" in editor_step_translate,
         ),
         (
             "Open 3D STEP carry uses a center drag plane instead of screen deltas",
             "current_xy=current" in step_carry_drag_branch
             and "_cursor_plane_point" in step_carry_plane_motion
+            and "carry_plane_motion_delta" in open3d_step_state_service
             and "drag_plane_origin" in step_carry_hold_activate
             and "drag_plane_normal" in step_carry_hold_activate
             and "drag_anchor_world" in step_carry_hold_activate
@@ -748,8 +751,8 @@ def main() -> int:
             and "attach_to_cursor_on_next_motion" in step_carry_follow_state
             and "cursor_world[:3] - center_world[:3]" in step_carry_follow_motion
             and "DisplayToWorld" in step_carry_display_world
-            and "continuous_plane_center" in step_carry_plane_motion
-            and "np.trunc(raw_delta / spacing)" not in step_carry_plane_motion,
+            and "target_center" in open3d_step_state_service
+            and "np.trunc(raw_delta / spacing)" not in open3d_step_state_service,
         ),
         (
             "Open 3D STEP carry drag rebases each motion event",
@@ -758,7 +761,10 @@ def main() -> int:
             and step_carry_drag_branch.find("_left_drag_last_xy = current")
             < step_carry_drag_branch.find('return "break"'),
         ),
-        ("Open 3D STEP carry avoids full scene rebuild per drag motion", "refresh=False" in step_carry_motion and "record_history=False" in step_carry_motion),
+        (
+            "Open 3D STEP carry avoids full scene rebuild per drag motion",
+            "refresh=False" in step_carry_motion_delta and "record_history=False" in step_carry_motion_delta,
+        ),
         ("Open 3D STEP carry moves existing actors in place", "AddPosition" in step_carry_actor_motion and "_step_follow_actor_map" in step_carry_actor_motion),
         ("Open 3D STEP carry Ctrl-drag rotates camera", "_event_control_pressed" in bindings and "_rotate_camera_fixed_drag(dx, dy)" in bindings),
         (
@@ -796,7 +802,7 @@ def main() -> int:
             and "center_world" in step_carry_hold_activate
             and "_step_carry_grip_actor" in step_carry_grip_show
             and "actor.AddPosition" in step_carry_grip_translate
-            and "_update_step_carry_grip_after_delta(state, delta)" in step_carry_motion
+            and "_update_step_carry_grip_after_delta(state, delta)" in step_carry_motion_delta
             and "_show_step_carry_grip_marker(grip[:3])" in step_carry_grip_update
             and "RemoveActor(actor)" in step_carry_grip_clear,
         ),
