@@ -29,6 +29,7 @@ from KrakenOS.UI.panels.main_glass_catalog_browser_dialog import MainGlassCatalo
 from KrakenOS.UI.panels.main_lens_drawing_dialogs import MainLensDrawingDialogs
 from KrakenOS.UI.panels.main_nonseq_scene_graph_dialog import MainNonSequentialSceneGraphDialog
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
+from KrakenOS.UI.panels.main_optical_solid_dialogs import MainOpticalSolidDialogs
 from KrakenOS.UI.panels.main_path_detector_analysis import MainPathDetectorAnalysis
 from KrakenOS.UI.panels.main_ray_trace_inspectors import MainRayTraceInspectorDialogs
 from KrakenOS.UI.panels.main_paraxial_analysis_dialogs import MainParaxialAnalysisDialogs
@@ -360,6 +361,10 @@ def main() -> int:
     main_glass_catalog_browser_dialog = inspect.getsource(MainGlassCatalogBrowserDialog)
     main_glass_catalog_browser_factory = inspect.getsource(KrakenLayoutEditor._main_glass_catalog_browser_dialog)
     open_glass_catalog_browser = inspect.getsource(KrakenLayoutEditor.open_glass_catalog_browser)
+    main_optical_solid_dialogs = inspect.getsource(MainOpticalSolidDialogs)
+    main_optical_solid_dialogs_factory = inspect.getsource(KrakenLayoutEditor._main_optical_solid_dialogs)
+    open_optical_stl_diagnostics = inspect.getsource(KrakenLayoutEditor.open_optical_stl_diagnostics)
+    open_optical_stl_numeric_placement = inspect.getsource(KrakenLayoutEditor._open_optical_stl_numeric_placement_assistant)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
     edit_current_bounds = inspect.getsource(KrakenLayoutEditor.edit_current_bounds)
@@ -903,6 +908,15 @@ def main() -> int:
             and "self._main_glass_catalog_browser_dialog().open_glass_catalog_browser()" in open_glass_catalog_browser
             and "Glass Catalog Browser" in main_glass_catalog_browser_dialog
             and "Apply to Selected Row" in main_glass_catalog_browser_dialog,
+        ),
+        (
+            "Optical solid utility dialogs live outside layout_editor",
+            "MainOpticalSolidDialogs(" in main_optical_solid_dialogs_factory
+            and "axis_to_layout_z_tilts=STL_AXIS_TO_LAYOUT_Z_TILTS" in main_optical_solid_dialogs_factory
+            and "self._main_optical_solid_dialogs().open_optical_stl_diagnostics()" in open_optical_stl_diagnostics
+            and "self._main_optical_solid_dialogs()._open_optical_stl_numeric_placement_assistant(" in open_optical_stl_numeric_placement
+            and "Optical CAD/STL Solid Diagnostics" in main_optical_solid_dialogs
+            and "Place/Orient CAD/STL Solid" in main_optical_solid_dialogs,
         ),
         (
             "Atmosphere controls and dialog live outside layout_editor",
