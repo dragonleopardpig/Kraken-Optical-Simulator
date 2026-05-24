@@ -36,6 +36,7 @@ from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
 from KrakenOS.UI.panels.main_source_illumination_report_dialog import MainSourceIlluminationReportDialog
 from KrakenOS.UI.panels.main_surface_settings_dialogs import MainSurfaceSettingsDialogs
 from KrakenOS.UI.panels.main_surface_shape_builder_dialog import MainSurfaceShapeBuilderDialog
+from KrakenOS.UI.panels.main_tolerance_report_dialogs import MainToleranceReportDialogs
 from KrakenOS.UI.panels.main_trace_display_controls import MainTraceDisplayControlsPanel
 from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
@@ -345,6 +346,9 @@ def main() -> int:
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
     main_trace_display_panel = inspect.getsource(MainTraceDisplayControlsPanel)
+    main_tolerance_report_dialogs = inspect.getsource(MainToleranceReportDialogs)
+    main_tolerance_report_factory = inspect.getsource(KrakenLayoutEditor._main_tolerance_report_dialogs)
+    open_tolerance_monte_carlo_report = inspect.getsource(KrakenLayoutEditor.open_tolerance_monte_carlo_report)
     main_trace_display_panel_factory = inspect.getsource(KrakenLayoutEditor._main_trace_display_controls_panel)
     build_controls_panel = inspect.getsource(KrakenLayoutEditor._build_controls_panel)
     main_field_panel = inspect.getsource(MainFieldControlsPanel)
