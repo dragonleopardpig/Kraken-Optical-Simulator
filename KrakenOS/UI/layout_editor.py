@@ -266,6 +266,7 @@ from KrakenOS.UI.scene_projector import (
 )
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
+from KrakenOS.UI.panels.main_atmosphere_panel import MainAtmospherePanel
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
@@ -25192,205 +25193,25 @@ class KrakenLayoutEditor(tk.Tk):
             text = str(saved.get(var_name, fallback)).strip()
         return text
 
-    def _build_atmosphere_panel(self, parent) -> None:
-        for column in range(2):
-            parent.columnconfigure(column, weight=1)
-
-        ttk.Label(parent, text="Observatory preset").grid(row=0, column=0, sticky="w", pady=(0, 2))
-        self.atmos_observatory_var = tk.StringVar(value="Manual")
-        self.atmos_observatory_menu = ttk.Combobox(
-            parent,
-            textvariable=self.atmos_observatory_var,
-            state="readonly",
-            width=16,
-            values=self._atmos_observatory_names(),
-        )
-        self.atmos_observatory_menu.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        self.atmos_observatory_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.atmos_observatory_menu.bind("<<ComboboxSelected>>", self._on_atmos_observatory_changed)
-
-        ttk.Label(parent, text="Atmos plot").grid(row=2, column=0, sticky="w", pady=(0, 2))
-        self.atmos_plot_mode_var = tk.StringVar(value=ATMOS_PLOT_MODE_DEFAULT)
-        self.atmos_plot_mode_menu = ttk.Combobox(
-            parent,
-            textvariable=self.atmos_plot_mode_var,
-            state="readonly",
-            width=16,
-            values=ATMOS_PLOT_MODE_VALUES,
-        )
-        self.atmos_plot_mode_menu.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        self.atmos_plot_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.atmos_plot_mode_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
-
-        controls = (
-            ("Min wavelength [um]", "atmos_wavelength_min_var", "0.45"),
-            ("Max wavelength [um]", "atmos_wavelength_max_var", "0.75"),
-            ("Samples", "atmos_wavelength_count_var", "11"),
-            ("Zenith angle [deg]", "atmos_zenith_deg_var", "45.0"),
-            ("Temperature [K]", "atmos_temperature_k_var", "283.15"),
-            ("Pressure [Pa]", "atmos_pressure_pa_var", "101300"),
-            ("Humidity [0-1]", "atmos_humidity_var", "0.5"),
-            ("CO2 [ppm]", "atmos_co2_ppm_var", "400"),
-            ("Latitude [deg]", "atmos_latitude_deg_var", "31.0"),
-            ("Altitude [m]", "atmos_altitude_m_var", "2800"),
-        )
-        entries: list[ttk.Entry] = []
-        for index, (label, attr_name, default) in enumerate(controls):
-            row = 4 + (index // 2) * 2
-            column = index % 2
-            ttk.Label(parent, text=label).grid(
-                row=row,
-                column=column,
-                sticky="w",
-                pady=(0 if row == 0 else 6, 2),
-                padx=(8 if column else 0, 0),
+    def _main_atmosphere_panel(self) -> MainAtmospherePanel:
+        panel = getattr(self, "_main_atmosphere_panel_instance", None)
+        if panel is None:
+            panel = MainAtmospherePanel(
+                self,
+                atmos_plot_mode_default=ATMOS_PLOT_MODE_DEFAULT,
+                atmos_plot_mode_values=ATMOS_PLOT_MODE_VALUES,
             )
-            var = tk.StringVar(value=default)
-            setattr(self, attr_name, var)
-            entry = ttk.Entry(parent, textvariable=var, width=12)
-            entry.grid(row=row + 1, column=column, sticky="ew", padx=(8 if column else 0, 0))
-            entries.append(entry)
+            self._main_atmosphere_panel_instance = panel
+        return panel
 
-        self.atmosphere_summary_var = tk.StringVar(value="")
-        ttk.Label(
-            parent,
-            textvariable=self.atmosphere_summary_var,
-            foreground="#3f4a5a",
-            wraplength=460,
-            justify="left",
-        ).grid(row=14, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-
-        for entry in entries:
-            self._bind_deferred_manual_update(entry)
-        for _label, attr_name, _default in controls:
-            var = getattr(self, attr_name)
-            var.trace_add("write", lambda *_args: self._update_atmosphere_summary())
-        self.atmos_plot_mode_var.trace_add("write", lambda *_args: self._update_atmosphere_summary())
-        self._update_atmosphere_summary()
+    def _build_atmosphere_panel(self, parent) -> None:
+        self._main_atmosphere_panel().build_hidden_panel(parent)
 
     def open_atmosphere_settings_dialog(self) -> None:
-        window = self.__dict__.get("_atmosphere_settings_window")
-        if window is not None:
-            try:
-                if window.winfo_exists():
-                    window.deiconify()
-                    window.lift()
-                    window.focus_force()
-                    return
-            except Exception:
-                pass
-
-        window = tk.Toplevel(self)
-        self._atmosphere_settings_window = window
-        window.title("Atmospheric Settings")
-        window.transient(self)
-        window.protocol("WM_DELETE_WINDOW", self._close_atmosphere_settings_dialog)
-        window.columnconfigure(0, weight=1)
-
-        root = ttk.Frame(window, padding=12)
-        root.grid(row=0, column=0, sticky="nsew")
-        for column in range(2):
-            root.columnconfigure(column, weight=1)
-
-        ttk.Label(
-            root,
-            text=(
-                "Atmospheric refraction/dispersion settings are advanced analysis inputs. "
-                "Use the Atmos analysis button after changing these values."
-            ),
-            foreground="#475569",
-            wraplength=520,
-            justify="left",
-        ).grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
-
-        ttk.Label(root, text="Observatory preset").grid(row=1, column=0, sticky="w", pady=(0, 2))
-        observatory_menu = ttk.Combobox(
-            root,
-            textvariable=self.atmos_observatory_var,
-            state="readonly",
-            values=self._atmos_observatory_names(),
-            width=20,
-        )
-        observatory_menu.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        observatory_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        observatory_menu.bind("<<ComboboxSelected>>", self._on_atmos_observatory_changed)
-
-        ttk.Label(root, text="Atmos plot").grid(row=3, column=0, sticky="w", pady=(0, 2))
-        plot_menu = ttk.Combobox(
-            root,
-            textvariable=self.atmos_plot_mode_var,
-            state="readonly",
-            values=ATMOS_PLOT_MODE_VALUES,
-            width=20,
-        )
-        plot_menu.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        plot_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        plot_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
-
-        controls = (
-            ("Min wavelength [um]", "atmos_wavelength_min_var"),
-            ("Max wavelength [um]", "atmos_wavelength_max_var"),
-            ("Samples", "atmos_wavelength_count_var"),
-            ("Zenith angle [deg]", "atmos_zenith_deg_var"),
-            ("Temperature [K]", "atmos_temperature_k_var"),
-            ("Pressure [Pa]", "atmos_pressure_pa_var"),
-            ("Humidity [0-1]", "atmos_humidity_var"),
-            ("CO2 [ppm]", "atmos_co2_ppm_var"),
-            ("Latitude [deg]", "atmos_latitude_deg_var"),
-            ("Altitude [m]", "atmos_altitude_m_var"),
-        )
-        entries: list[ttk.Entry] = []
-        for index, (label, attr_name) in enumerate(controls):
-            row = 5 + (index // 2) * 2
-            column = index % 2
-            ttk.Label(root, text=label).grid(
-                row=row,
-                column=column,
-                sticky="w",
-                pady=(6, 2),
-                padx=(8 if column else 0, 0),
-            )
-            entry = ttk.Entry(root, textvariable=getattr(self, attr_name), width=14)
-            entry.grid(row=row + 1, column=column, sticky="ew", padx=(8 if column else 0, 0))
-            self._bind_deferred_manual_update(entry)
-            entries.append(entry)
-
-        ttk.Label(
-            root,
-            textvariable=self.atmosphere_summary_var,
-            foreground="#3f4a5a",
-            wraplength=520,
-            justify="left",
-        ).grid(row=16, column=0, columnspan=2, sticky="ew", pady=(10, 0))
-
-        buttons = ttk.Frame(root)
-        buttons.grid(row=17, column=0, columnspan=2, sticky="e", pady=(12, 0))
-        ttk.Button(
-            buttons,
-            text="Apply",
-            command=lambda: (self._update_atmosphere_summary(), self._mark_plot_update_pending()),
-        ).pack(side="left")
-        ttk.Button(
-            buttons,
-            text="Apply + Atmos",
-            command=lambda: (
-                self._update_atmosphere_summary(),
-                None if "atmosphere" in self.selected_analysis_modes else self.toggle_analysis_mode("atmosphere"),
-                self._mark_plot_update_pending(),
-            ),
-        ).pack(side="left", padx=(8, 0))
-        ttk.Button(buttons, text="Close", command=self._close_atmosphere_settings_dialog).pack(side="left", padx=(8, 0))
-
-        self._show_centered_dialog(window)
+        self._main_atmosphere_panel().open_settings_dialog()
 
     def _close_atmosphere_settings_dialog(self) -> None:
-        window = self.__dict__.get("_atmosphere_settings_window")
-        self._atmosphere_settings_window = None
-        if window is not None:
-            try:
-                window.destroy()
-            except Exception:
-                pass
+        self._main_atmosphere_panel().close_settings_dialog()
 
     def _on_control_stack_configure(self, _event=None) -> None:
         if not hasattr(self, "control_canvas"):

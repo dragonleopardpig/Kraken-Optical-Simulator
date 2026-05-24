@@ -1049,7 +1049,7 @@ Production refactor progress:
 | Slice | Status | Progress | Notes |
 | --- | --- | --- | --- |
 | `services/` boundary for Open 3D trace refresh | Started | `████████░░ 80%` | `Open3DTraceRefreshService` owns sampling-mode normalization, Live Mode preview-bundle creation, open-inspector synchronization, and transient STEP live-trace row creation through the editor trace contract. The `open3d_face_pick` service owns through-body transparent CAD face picking for internal planes, `Open3DStepStateService` owns delete-target resolution plus selected STEP face records for normal/surface-center optical-axis actions, and `Open3DThicknessDimensionService` owns Open 3D table-Thickness dimension geometry plus the row-scoped edit action. Remaining service work is stale-request cancellation, CAD mesh reuse/throttling, and moving STEP overlay import/carry/promotion/face-assignment transitions behind one service-owned state machine. |
-| `panels/` boundary for Open 3D controls | Started | `█████████░ 90%` | `Open3DLiveControlsPanel` owns the left-docked Live Controls UI, `Open3DTopControlsPanel` owns the View, Scene, and Carry toolbar rows, and `MainSourceControlsPanel`, `MainFieldControlsPanel`, `MainTraceDisplayControlsPanel`, `MainAnalysisToolbarPanel`/`MainInformationPanel`, plus `MainOptimizationPanel` own the main Source, Field, Trace/Display, analysis-toolbar, Information, and Optimization surfaces without moving analysis or optimization execution out of the editor model. `Kraken3DInspector` keeps thin compatibility callbacks. Remaining panel work is smaller dialog and specialized editor panels. |
+| `panels/` boundary for Open 3D controls | Started | `█████████▏ 92%` | `Open3DLiveControlsPanel` owns the left-docked Live Controls UI, `Open3DTopControlsPanel` owns the View, Scene, and Carry toolbar rows, and `MainSourceControlsPanel`, `MainFieldControlsPanel`, `MainTraceDisplayControlsPanel`, `MainAnalysisToolbarPanel`/`MainInformationPanel`, `MainOptimizationPanel`, plus `MainAtmospherePanel` own the main Source, Field, Trace/Display, analysis-toolbar, Information, Optimization, and Atmosphere settings surfaces without moving analysis or optimization execution out of the editor model. `Kraken3DInspector` keeps thin compatibility callbacks. Remaining panel work is smaller specialized editor dialogs. |
 | `widgets/` reusable Tk controls | Started | `█░░░░░░░░░ 10%` | `KrakenOS/UI/widgets/tooltips.py` now owns the reusable compact Tk tooltip used by toolbar and dialog controls. Validated entries, combobox commit helpers, projection selectors, menus, and table cell widgets still live mostly in `layout_editor.py`. |
 | Live Mode performance service | Pending | `░░░░░░░░░░ 0%` | Debouncing exists; cancellation, mesh throttling, and row-plan reuse need a stronger service contract before enabling Live Mode by default on heavy CAD scenes. |
 | `sv-ttk` theme adapter | Pending | `░░░░░░░░░░ 0%` | Theme work waits until panels/widgets/services are split enough that styling is a thin layer instead of another responsibility inside `layout_editor.py`. |
@@ -1080,10 +1080,12 @@ Production refactor progress:
    starts the reusable Tk widget boundary. `KrakenOS/UI/panels/main_source_controls.py`,
    `KrakenOS/UI/panels/main_field_controls.py`, and
    `KrakenOS/UI/panels/main_trace_display_controls.py`, and
-   `KrakenOS/UI/panels/main_analysis_controls.py`, and
-   `KrakenOS/UI/panels/main_optimization_panel.py` now own the main Source,
-   Field, Trace/Display, Analysis toolbar, Information table, and Optimization
-   controls while delegating state and callbacks back to the editor.
+   `KrakenOS/UI/panels/main_analysis_controls.py`,
+   `KrakenOS/UI/panels/main_optimization_panel.py`, and
+   `KrakenOS/UI/panels/main_atmosphere_panel.py` now own the main Source,
+   Field, Trace/Display, Analysis toolbar, Information table, Optimization,
+   and Atmosphere controls while delegating state and callbacks back to the
+   editor.
    `KrakenOS/UI/panels/open3d_live_controls.py` now owns the left-docked Live
    Controls panel construction, and
    `KrakenOS/UI/panels/open3d_top_controls.py` owns the top View, Scene, and

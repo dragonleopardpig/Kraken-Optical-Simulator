@@ -14,6 +14,7 @@ from KrakenOS.UI.layout_editor import (
     _dotted_axis_records_from_ray_path,
 )
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
+from KrakenOS.UI.panels.main_atmosphere_panel import MainAtmospherePanel
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
@@ -255,6 +256,11 @@ def main() -> int:
     main_information_panel = inspect.getsource(MainInformationPanel)
     main_information_factory = inspect.getsource(KrakenLayoutEditor._main_information_panel)
     build_results_panel = inspect.getsource(KrakenLayoutEditor._build_results_panel)
+    main_atmosphere_panel = inspect.getsource(MainAtmospherePanel)
+    main_atmosphere_factory = inspect.getsource(KrakenLayoutEditor._main_atmosphere_panel)
+    build_atmosphere_panel = inspect.getsource(KrakenLayoutEditor._build_atmosphere_panel)
+    open_atmosphere_dialog = inspect.getsource(KrakenLayoutEditor.open_atmosphere_settings_dialog)
+    close_atmosphere_dialog = inspect.getsource(KrakenLayoutEditor._close_atmosphere_settings_dialog)
     main_optimization_panel = inspect.getsource(MainOptimizationPanel)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
@@ -711,6 +717,17 @@ def main() -> int:
             and "merit_mode_list" in main_optimization_panel
             and "operand_weight_vars" in main_optimization_panel
             and "MTF @ freq" in main_optimization_panel,
+        ),
+        (
+            "Atmosphere controls and dialog live outside layout_editor",
+            "MainAtmospherePanel(" in main_atmosphere_factory
+            and "atmos_plot_mode_values=ATMOS_PLOT_MODE_VALUES" in main_atmosphere_factory
+            and "self._main_atmosphere_panel().build_hidden_panel(parent)" in build_atmosphere_panel
+            and "self._main_atmosphere_panel().open_settings_dialog()" in open_atmosphere_dialog
+            and "self._main_atmosphere_panel().close_settings_dialog()" in close_atmosphere_dialog
+            and "ATMOSPHERE_CONTROL_SPECS" in main_atmosphere_panel
+            and "Apply + Atmos" in main_atmosphere_panel
+            and "atmosphere_summary_var" in main_atmosphere_panel,
         ),
         (
             "Open 3D renders editable table Thickness dimensions",
