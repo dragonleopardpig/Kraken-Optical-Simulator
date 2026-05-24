@@ -345,6 +345,9 @@ def main() -> int:
     open_gaussian_report = inspect.getsource(KrakenLayoutEditor.open_gaussian_beam_report)
     open_paraxial_matrix_report = inspect.getsource(KrakenLayoutEditor.open_paraxial_matrix_report)
     open_paraxial_calculator = inspect.getsource(KrakenLayoutEditor.open_paraxial_calculator)
+    show_paraxial_solve_dialog = inspect.getsource(KrakenLayoutEditor._show_paraxial_solve_dialog)
+    show_folded_mirror_solve_dialog = inspect.getsource(KrakenLayoutEditor._show_folded_mirror_solve_dialog)
+    show_best_focus_dialog = inspect.getsource(KrakenLayoutEditor._show_best_focus_dialog)
     main_optimization_panel = inspect.getsource(MainOptimizationPanel)
     main_nonseq_scene_graph_dialog = inspect.getsource(MainNonSequentialSceneGraphDialog)
     main_nonseq_scene_graph_factory = inspect.getsource(KrakenLayoutEditor._main_nonseq_scene_graph_dialog)
@@ -821,9 +824,14 @@ def main() -> int:
             and "self._main_paraxial_analysis_dialogs().open_gaussian_beam_report()" in open_gaussian_report
             and "self._main_paraxial_analysis_dialogs().open_paraxial_matrix_report()" in open_paraxial_matrix_report
             and "self._main_paraxial_analysis_dialogs().open_paraxial_calculator()" in open_paraxial_calculator
+            and "self._main_paraxial_analysis_dialogs()._show_paraxial_solve_dialog(result)" in show_paraxial_solve_dialog
+            and "self._main_paraxial_analysis_dialogs()._show_folded_mirror_solve_dialog(result)" in show_folded_mirror_solve_dialog
+            and "self._main_paraxial_analysis_dialogs()._show_best_focus_dialog(result)" in show_best_focus_dialog
             and "Paraxial Calculator" in main_paraxial_analysis_dialogs
             and "Paraxial Matrix Report" in main_paraxial_analysis_dialogs
             and "Gaussian Beam Report" in main_paraxial_analysis_dialogs
+            and "Folded Mirror Solve" in main_paraxial_analysis_dialogs
+            and "Best Image Solve" in main_paraxial_analysis_dialogs
             and "Use Cavity Eigenmode" in main_paraxial_analysis_dialogs,
         ),
         (
