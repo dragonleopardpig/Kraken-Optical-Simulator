@@ -23,6 +23,7 @@ from KrakenOS.UI.panels.main_error_map_dialog import MainErrorMapDialog
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
+from KrakenOS.UI.panels.main_surface_settings_dialogs import MainSurfaceSettingsDialogs
 from KrakenOS.UI.panels.main_surface_shape_builder_dialog import MainSurfaceShapeBuilderDialog
 from KrakenOS.UI.panels.main_trace_display_controls import MainTraceDisplayControlsPanel
 from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
@@ -285,6 +286,11 @@ def main() -> int:
     main_advanced_surface_dialog = inspect.getsource(MainAdvancedSurfaceDialog)
     main_advanced_surface_factory = inspect.getsource(KrakenLayoutEditor._main_advanced_surface_dialog)
     open_advanced_surface_dialog = inspect.getsource(KrakenLayoutEditor.open_advanced_surface_editor)
+    main_surface_settings_dialogs = inspect.getsource(MainSurfaceSettingsDialogs)
+    main_surface_settings_factory = inspect.getsource(KrakenLayoutEditor._main_surface_settings_dialogs)
+    open_galvo_settings = inspect.getsource(KrakenLayoutEditor.open_galvo_scan_overlay_settings)
+    open_surface_additional_settings = inspect.getsource(KrakenLayoutEditor.open_surface_additional_settings)
+    open_grating_settings = inspect.getsource(KrakenLayoutEditor._open_grating_settings_editor)
     main_optimization_panel = inspect.getsource(MainOptimizationPanel)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
@@ -821,6 +827,18 @@ def main() -> int:
             and "Shape Params" in main_advanced_surface_dialog
             and "Optimize conic k" in main_advanced_surface_dialog
             and "Advanced Surface Validation" in main_advanced_surface_dialog,
+        ),
+        (
+            "Specialized surface settings dialogs live outside layout_editor",
+            "MainSurfaceSettingsDialogs(" in main_surface_settings_factory
+            and "galvo_scan_overlay_key=GALVO_SCAN_OVERLAY_KEY" in main_surface_settings_factory
+            and "parse_float_sequence_text=_parse_float_sequence_text" in main_surface_settings_factory
+            and "self._main_surface_settings_dialogs().open_galvo_scan_overlay_settings(index)" in open_galvo_settings
+            and "self._main_surface_settings_dialogs().open_surface_additional_settings(index)" in open_surface_additional_settings
+            and "self._main_surface_settings_dialogs().open_grating_settings_editor(row_index)" in open_grating_settings
+            and "Galvo Scan Overlay" in main_surface_settings_dialogs
+            and "Grating Settings" in main_surface_settings_dialogs
+            and "Pitch [um] must be non-zero." in main_surface_settings_dialogs,
         ),
         (
             "Open 3D renders editable table Thickness dimensions",

@@ -1049,7 +1049,7 @@ Production refactor progress:
 | Slice | Status | Progress | Notes |
 | --- | --- | --- | --- |
 | `services/` boundary for Open 3D trace refresh | Started | `████████░░ 80%` | `Open3DTraceRefreshService` owns sampling-mode normalization, Live Mode preview-bundle creation, open-inspector synchronization, and transient STEP live-trace row creation through the editor trace contract. The `open3d_face_pick` service owns through-body transparent CAD face picking for internal planes, `Open3DStepStateService` owns delete-target resolution plus selected STEP face records for normal/surface-center optical-axis actions, and `Open3DThicknessDimensionService` owns Open 3D table-Thickness dimension geometry plus the row-scoped edit action. Remaining service work is stale-request cancellation, CAD mesh reuse/throttling, and moving STEP overlay import/carry/promotion/face-assignment transitions behind one service-owned state machine. |
-| `panels/` boundary for Open 3D controls | Started | `█████████▊ 98%` | `Open3DLiveControlsPanel` owns the left-docked Live Controls UI, `Open3DTopControlsPanel` owns the View, Scene, and Carry toolbar rows, and `MainSourceControlsPanel`, `MainFieldControlsPanel`, `MainTraceDisplayControlsPanel`, `MainAnalysisToolbarPanel`/`MainInformationPanel`, `MainOptimizationPanel`, `MainAtmospherePanel`, `MainCoatingMaterialDialog`, `MainDiffuseScatterDialog`, `MainSurfaceShapeBuilderDialog`, `MainBeamSplitterDialog`, `MainErrorMapDialog`, plus `MainAdvancedSurfaceDialog` own the main Source, Field, Trace/Display, analysis-toolbar, Information, Optimization, Atmosphere, Coating/Material, Diffuse/BRDF, Surface Shape Builder, Beam Splitter, Error Map, and Advanced Surface editor surfaces without moving analysis, optimization, coating, scatter, shape, splitter, error-map, or advanced-surface validation execution out of the editor model. `Kraken3DInspector` keeps thin compatibility callbacks. Remaining panel work is smaller specialized editor dialogs. |
+| `panels/` boundary for Open 3D controls | Started | `█████████▉ 99%` | `Open3DLiveControlsPanel` owns the left-docked Live Controls UI, `Open3DTopControlsPanel` owns the View, Scene, and Carry toolbar rows, and `MainSourceControlsPanel`, `MainFieldControlsPanel`, `MainTraceDisplayControlsPanel`, `MainAnalysisToolbarPanel`/`MainInformationPanel`, `MainOptimizationPanel`, `MainAtmospherePanel`, `MainCoatingMaterialDialog`, `MainDiffuseScatterDialog`, `MainSurfaceShapeBuilderDialog`, `MainBeamSplitterDialog`, `MainErrorMapDialog`, `MainAdvancedSurfaceDialog`, plus `MainSurfaceSettingsDialogs` own the main Source, Field, Trace/Display, analysis-toolbar, Information, Optimization, Atmosphere, Coating/Material, Diffuse/BRDF, Surface Shape Builder, Beam Splitter, Error Map, Advanced Surface, Galvo overlay, and Grating settings surfaces without moving analysis, optimization, coating, scatter, shape, splitter, error-map, advanced-surface, galvo, or grating validation execution out of the editor model. `Kraken3DInspector` keeps thin compatibility callbacks. Remaining panel work is final small specialized dialogs. |
 | `widgets/` reusable Tk controls | Started | `█░░░░░░░░░ 10%` | `KrakenOS/UI/widgets/tooltips.py` now owns the reusable compact Tk tooltip used by toolbar and dialog controls. Validated entries, combobox commit helpers, projection selectors, menus, and table cell widgets still live mostly in `layout_editor.py`. |
 | Live Mode performance service | Pending | `░░░░░░░░░░ 0%` | Debouncing exists; cancellation, mesh throttling, and row-plan reuse need a stronger service contract before enabling Live Mode by default on heavy CAD scenes. |
 | `sv-ttk` theme adapter | Pending | `░░░░░░░░░░ 0%` | Theme work waits until panels/widgets/services are split enough that styling is a thin layer instead of another responsibility inside `layout_editor.py`. |
@@ -1087,12 +1087,13 @@ Production refactor progress:
    `KrakenOS/UI/panels/main_diffuse_scatter_dialog.py`,
    `KrakenOS/UI/panels/main_surface_shape_builder_dialog.py`,
    `KrakenOS/UI/panels/main_beam_splitter_dialog.py`,
-   `KrakenOS/UI/panels/main_error_map_dialog.py`, and
-   `KrakenOS/UI/panels/main_advanced_surface_dialog.py` now own the main
+   `KrakenOS/UI/panels/main_error_map_dialog.py`,
+   `KrakenOS/UI/panels/main_advanced_surface_dialog.py`, and
+   `KrakenOS/UI/panels/main_surface_settings_dialogs.py` now own the main
    Source, Field, Trace/Display, Analysis toolbar, Information table,
    Optimization, Atmosphere, Coating/Material, Diffuse/BRDF, Surface Shape
-   Builder, Beam Splitter, Error Map, and Advanced Surface controls while
-   delegating state and callbacks back to the editor.
+   Builder, Beam Splitter, Error Map, Advanced Surface, Galvo overlay, and
+   Grating controls while delegating state and callbacks back to the editor.
    `KrakenOS/UI/panels/open3d_live_controls.py` now owns the left-docked Live
    Controls panel construction, and
    `KrakenOS/UI/panels/open3d_top_controls.py` owns the top View, Scene, and
