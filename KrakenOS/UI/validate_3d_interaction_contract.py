@@ -29,6 +29,7 @@ from KrakenOS.UI.panels.main_glass_catalog_browser_dialog import MainGlassCatalo
 from KrakenOS.UI.panels.main_lens_drawing_dialogs import MainLensDrawingDialogs
 from KrakenOS.UI.panels.main_nonseq_scene_graph_dialog import MainNonSequentialSceneGraphDialog
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
+from KrakenOS.UI.panels.main_window import MainWindowBuilder
 from KrakenOS.UI.panels.main_optical_solid_face_roles_dialog import MainOpticalSolidFaceRolesDialog
 from KrakenOS.UI.panels.main_optical_solid_dialogs import MainOpticalSolidDialogs
 from KrakenOS.UI.panels.main_path_component_placement_dialog import MainPathComponentPlacementDialog
@@ -284,7 +285,8 @@ def main() -> int:
     key_press = inspect.getsource(Kraken3DInspector._on_key_press)
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
     add_mesh_actor = inspect.getsource(Kraken3DInspector._add_mesh_actor)
-    build_ui = inspect.getsource(KrakenLayoutEditor._build_ui)
+    build_ui = inspect.getsource(MainWindowBuilder._build_ui)
+    main_window_builder_factory = inspect.getsource(KrakenLayoutEditor._main_window_builder)
     main_analysis_toolbar_panel = inspect.getsource(MainAnalysisToolbarPanel)
     main_analysis_toolbar_factory = inspect.getsource(KrakenLayoutEditor._main_analysis_toolbar_panel)
     main_information_panel = inspect.getsource(MainInformationPanel)
@@ -852,7 +854,8 @@ def main() -> int:
         ),
         (
             "Main analysis toolbar and information panel live outside layout_editor",
-            "MainAnalysisToolbarPanel(self)" in main_analysis_toolbar_factory
+            "MainWindowBuilder(self)" in main_window_builder_factory
+            and "MainAnalysisToolbarPanel(self)" in main_analysis_toolbar_factory
             and "self._main_analysis_toolbar_panel().build(plot_toolbar_analysis)" in build_ui
             and "MainInformationPanel(self)" in main_information_factory
             and "self._main_information_panel().build(parent)" in build_results_panel
