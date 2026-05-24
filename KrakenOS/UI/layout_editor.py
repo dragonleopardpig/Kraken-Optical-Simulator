@@ -7661,11 +7661,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._apply_step_carry_motion_state(state, dx, dy)
 
     def _finish_step_carry_drag(self, state: dict[str, object]) -> None:
-        try:
-            label = str(state.get("label", "")).strip().upper()
-            applied_steps = int(state.get("applied_steps", 0))
-            spacing = float(state.get("spacing", 0.0))
-        except Exception:
+        transition = self.editor._open3d_step_state_service().carry_finish_transition(state)
+        if transition is None:
             return
         try:
             self.editor._commit_history_capture()
@@ -7675,15 +7672,14 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_step_carry_cursor(False)
         self._clear_step_carry_grip_marker(render=False)
         self._update_mode_badge()
-        if applied_steps <= 0:
-            self.status_var.set(f"{label} STEP dropped: no movement.")
-        else:
+        if transition.moved:
             try:
                 self.refresh_from_editor(force_retrace=True)
             except Exception as exc:
                 self.editor.append_debug(f"STEP carry final refresh failed: {exc}")
-            self.schedule_live_refresh(f"{label} STEP carry dropped", delay_ms=0)
-            self.status_var.set(f"{label} STEP dropped after free drag movement.")
+            if transition.live_refresh_message:
+                self.schedule_live_refresh(transition.live_refresh_message, delay_ms=0)
+        self.status_var.set(transition.status)
 
     def _apply_placement_drag_motion(self, dx: int | float, dy: int | float) -> None:
         state = self._placement_drag_state

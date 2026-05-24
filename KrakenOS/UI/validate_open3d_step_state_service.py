@@ -241,6 +241,28 @@ def main() -> int:
             ),
         ),
         (
+            "STEP carry finish transitions are service-owned",
+            (
+                lambda moved, still: (
+                    moved is not None
+                    and moved.label == "optical"
+                    and moved.applied_steps == 3
+                    and moved.moved is True
+                    and moved.status == "OPTICAL STEP dropped after free drag movement."
+                    and moved.live_refresh_message == "OPTICAL STEP carry dropped"
+                    and still is not None
+                    and still.label == "optical"
+                    and still.applied_steps == 0
+                    and still.moved is False
+                    and still.status == "OPTICAL STEP dropped: no movement."
+                    and still.live_refresh_message == ""
+                )
+            )(
+                service.carry_finish_transition({"label": "optical", "applied_steps": 3}),
+                service.carry_finish_transition({"label": "optical", "applied_steps": 0}),
+            ),
+        ),
+        (
             "STEP overlay promotion transition is service-owned",
             (
                 lambda transition: (

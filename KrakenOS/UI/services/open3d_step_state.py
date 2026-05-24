@@ -88,6 +88,17 @@ class StepCarryMotionDelta:
         return len(self.delta_xyz) == 3 and any(abs(value) > 1e-12 for value in self.delta_xyz)
 
 
+@dataclass(frozen=True, slots=True)
+class StepCarryFinishTransition:
+    """Imported STEP carry finish state for the inspector to apply."""
+
+    label: str = ""
+    applied_steps: int = 0
+    moved: bool = False
+    status: str = ""
+    live_refresh_message: str = ""
+
+
 class Open3DStepStateService:
     """Resolve Open 3D STEP state transitions outside the widget layer."""
 
@@ -338,6 +349,32 @@ class Open3DStepStateService:
             applied_steps=applied_steps,
             force_refresh=True,
             live_refresh_message=f"{label} STEP carry moved",
+        )
+
+    @staticmethod
+    def carry_finish_transition(state: dict[str, object] | None) -> StepCarryFinishTransition | None:
+        """Return the finish/drop status for an imported STEP carry drag."""
+        if state is None:
+            return None
+        try:
+            label = str(state.get("label", "") or "").strip().lower()
+            applied_steps = int(state.get("applied_steps", 0))
+        except Exception:
+            return None
+        component = f"{label.upper()} STEP" if label else "STEP"
+        if applied_steps <= 0:
+            return StepCarryFinishTransition(
+                label=label,
+                applied_steps=applied_steps,
+                moved=False,
+                status=f"{component} dropped: no movement.",
+            )
+        return StepCarryFinishTransition(
+            label=label,
+            applied_steps=applied_steps,
+            moved=True,
+            status=f"{component} dropped after free drag movement.",
+            live_refresh_message=f"{component} carry dropped",
         )
 
     @staticmethod

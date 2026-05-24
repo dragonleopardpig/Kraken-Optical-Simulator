@@ -245,6 +245,7 @@ def main() -> int:
     step_carry_motion_delta = inspect.getsource(Kraken3DInspector._apply_step_carry_motion_delta)
     step_carry_actor_motion = inspect.getsource(Kraken3DInspector._translate_step_overlay_actors)
     step_carry_drag = inspect.getsource(Kraken3DInspector._apply_step_carry_drag_motion)
+    step_carry_finish = inspect.getsource(Kraken3DInspector._finish_step_carry_drag)
     step_carry_cursor_plane = inspect.getsource(Kraken3DInspector._cursor_plane_point)
     step_carry_display_world = inspect.getsource(Kraken3DInspector._display_to_world_3d)
     step_carry_follow_state = inspect.getsource(Kraken3DInspector._new_step_carry_follow_state)
@@ -1218,6 +1219,12 @@ def main() -> int:
             "_step_carry_active_label = None" in step_carry_drop
             and "_step_carry_follow_state = None" in step_carry_drop
             and "carry_drop_status" in step_carry_drop,
+        ),
+        (
+            "Open 3D STEP carry finish status is service-owned",
+            "carry_finish_transition" in step_carry_finish
+            and "transition.moved" in step_carry_finish
+            and "transition.status" in step_carry_finish,
         ),
         (
             "Open 3D Esc cancels active carry and pick operations",
