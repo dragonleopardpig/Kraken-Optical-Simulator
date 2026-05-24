@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import numpy as np
+
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 
 
@@ -160,6 +162,32 @@ def main() -> int:
             and service.resolve_active_carry_label("lens") == ""
             and service.carry_drop_status("optical") == "STEP carry dropped for OPTICAL."
             and service.carry_drop_status("") == "STEP carry dropped.",
+        ),
+        (
+            "STEP carry spacing and motion axes are service-owned",
+            (
+                lambda state: (
+                    state is not None
+                    and state["label"] == "optical"
+                    and state["spacing"] == 0.5
+                    and state["snap_enabled"] is False
+                    and state["ray_snap_enabled"] is False
+                    and np.allclose(state["right_axis"], (0.0, -1.0, 0.0))
+                    and np.allclose(state["up_axis"], (0.0, 0.0, 1.0))
+                    and service.carry_motion_state(
+                        "lens",
+                        screen_axes=((1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),
+                        spacing=0.5,
+                    )
+                    is None
+                )
+            )(
+                service.carry_motion_state(
+                    "optical",
+                    screen_axes=((0.2, -0.9, 0.1), (0.1, 0.3, 0.95)),
+                    spacing=service.carry_spacing_for_scene(scene_span=36.0, step_extent=0.0),
+                )
+            ),
         ),
         (
             "STEP overlay promotion transition is service-owned",

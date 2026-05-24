@@ -666,8 +666,9 @@ def main() -> int:
         ("Open 3D STEP carry defaults to Free mode", STEP_CARRY_GRID_CHOICES == (STEP_CARRY_GRID_FREE,)),
         (
             "Open 3D STEP carry removes ray/grid snapping from drag path",
-            "ray_snap_enabled\": False" in inspect.getsource(Kraken3DInspector._new_step_carry_motion_state)
-            and "snap_enabled\": False" in inspect.getsource(Kraken3DInspector._new_step_carry_motion_state)
+            "ray_snap_enabled\": False" in open3d_step_state_service
+            and "snap_enabled\": False" in open3d_step_state_service
+            and "carry_motion_state" in inspect.getsource(Kraken3DInspector._new_step_carry_motion_state)
             and "_step_carry_ray_target(state" not in step_carry_plane_motion,
         ),
         (

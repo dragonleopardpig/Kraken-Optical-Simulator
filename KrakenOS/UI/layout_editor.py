@@ -7148,17 +7148,6 @@ class Kraken3DInspector(tk.Toplevel):
     def _placement_drag_pixels_per_step() -> float:
         return 18.0
 
-    @staticmethod
-    def _nice_grid_spacing(raw_spacing: float) -> float:
-        raw = max(float(raw_spacing), 1e-6)
-        exponent = float(np.floor(np.log10(raw)))
-        base = 10.0 ** exponent
-        for multiplier in (1.0, 2.0, 5.0, 10.0):
-            candidate = base * multiplier
-            if candidate >= raw:
-                return float(candidate)
-        return float(base * 10.0)
-
     def _step_carry_grid_mode(self) -> str:
         return STEP_CARRY_GRID_FREE
 
@@ -7166,7 +7155,7 @@ class Kraken3DInspector(tk.Toplevel):
         return False
 
     def _step_carry_spacing_from_mode(self, auto_spacing: float) -> float:
-        return self._nice_grid_spacing(max(float(auto_spacing) * 0.25, 0.05))
+        return self.editor._open3d_step_state_service().carry_spacing_from_auto(auto_spacing)
 
     def _on_step_carry_grid_selected(self, *_args) -> None:
         self._step_carry_grid_label = None
@@ -7206,25 +7195,15 @@ class Kraken3DInspector(tk.Toplevel):
         return moved
 
     def _new_step_carry_motion_state(self, label: str) -> dict[str, object] | None:
-        label = self.editor._open3d_step_state_service().resolve_active_carry_label(label)
-        if not label:
-            return None
         axes = self._camera_screen_world_axes()
         if axes is None:
             return None
         spacing = self._step_carry_grid_spacing(label)
-        return {
-            "label": label,
-            "spacing": float(spacing),
-            "snap_enabled": False,
-            "ray_snap_enabled": False,
-            "right_axis": self._nearest_cube_axis(axes[0]),
-            "up_axis": self._nearest_cube_axis(axes[1]),
-            "pixel_x": 0.0,
-            "pixel_y": 0.0,
-            "applied_steps": 0,
-            "last_xy": None,
-        }
+        return self.editor._open3d_step_state_service().carry_motion_state(
+            label,
+            screen_axes=axes,
+            spacing=spacing,
+        )
 
     def _step_carry_label(self) -> str | None:
         label = self.editor._open3d_step_state_service().resolve_active_carry_label(
@@ -7250,8 +7229,10 @@ class Kraken3DInspector(tk.Toplevel):
                     step_extent = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4], 0.0)
             except Exception:
                 step_extent = 0.0
-        raw_spacing = max(float(scene_span) / 18.0, float(step_extent) / 6.0, 0.5)
-        return self._step_carry_spacing_from_mode(self._nice_grid_spacing(raw_spacing))
+        return self.editor._open3d_step_state_service().carry_spacing_for_scene(
+            scene_span=float(scene_span),
+            step_extent=float(step_extent),
+        )
 
     @staticmethod
     def _polyline_point_and_along(points: np.ndarray, target: np.ndarray) -> dict[str, object] | None:
@@ -7585,16 +7566,6 @@ class Kraken3DInspector(tk.Toplevel):
             return right, up
         except Exception:
             return None
-
-    @staticmethod
-    def _nearest_cube_axis(vector: np.ndarray) -> np.ndarray:
-        values = np.asarray(vector, dtype=float).reshape(-1)[:3]
-        if values.size < 3 or not np.all(np.isfinite(values)):
-            return np.asarray((1.0, 0.0, 0.0), dtype=float)
-        index = int(np.argmax(np.abs(values)))
-        result = np.zeros(3, dtype=float)
-        result[index] = 1.0 if float(values[index]) >= 0.0 else -1.0
-        return result
 
     @staticmethod
     def _step_carry_pixels_per_grid_step() -> float:
