@@ -104,40 +104,6 @@ def _point_json(value: object) -> list[float]:
     return [round(float(component), 9) for component in point[:3]]
 
 
-def _face_record(metadata: dict[str, object], face_id: str) -> dict[str, object]:
-    for face in list(metadata.get("faces", []) or []):
-        if isinstance(face, dict) and str(face.get("face_id", "") or "").strip() == face_id:
-            return optical_solid_metadata.normalize_optical_solid_face_record(face)
-    raise RuntimeError(f"Vendor penta metadata does not contain face {face_id}.")
-
-
-def _basis_from_pair(primary: np.ndarray, secondary: np.ndarray) -> np.ndarray:
-    e1 = _unit(primary)
-    projected = np.asarray(secondary, dtype=float).reshape(3) - e1 * float(np.dot(secondary, e1))
-    e2 = _unit(projected)
-    e3 = _unit(np.cross(e1, e2))
-    return np.column_stack((e1, e2, e3))
-
-
-def _rotation_from_face_pair(
-    *,
-    local_input_outward: np.ndarray,
-    local_output_outward: np.ndarray,
-    incoming_direction: np.ndarray,
-    outgoing_direction: np.ndarray,
-) -> np.ndarray:
-    incoming = _unit(incoming_direction)
-    outgoing = _unit(outgoing_direction)
-    if abs(float(np.dot(incoming, outgoing))) > 1e-8:
-        raise ValueError(f"Penta input/output directions must be perpendicular: {incoming} -> {outgoing}.")
-    local_basis = _basis_from_pair(_unit(local_input_outward), _unit(local_output_outward))
-    target_basis = _basis_from_pair(-incoming, outgoing)
-    rotation = target_basis @ local_basis.T
-    if float(np.linalg.det(rotation)) < 0.0:
-        raise RuntimeError("Solved penta rotation is left-handed.")
-    return rotation
-
-
 def _prepare_penta_asset() -> tuple[Path, dict[str, object]]:
     if not PRISM_42779_STEP.exists():
         raise RuntimeError(f"Expected STEP fixture: {PRISM_42779_STEP}")
@@ -166,21 +132,28 @@ def _solve_penta_row_pose(
     entrance_point_world: np.ndarray,
     z_station: float,
 ) -> dict[str, object]:
-    input_face = _face_record(metadata, PENTA_ENTRANCE_FACE)
-    output_face = _face_record(metadata, PENTA_EXIT_FACE)
-    rotation = _rotation_from_face_pair(
-        local_input_outward=optical_solid_metadata.optical_solid_face_local_normal(input_face),
-        local_output_outward=optical_solid_metadata.optical_solid_face_local_normal(output_face),
-        incoming_direction=incoming_direction,
-        outgoing_direction=outgoing_direction,
+    incoming = _unit(incoming_direction)
+    outgoing = _unit(outgoing_direction)
+    if abs(float(np.dot(incoming, outgoing))) > 1e-8:
+        raise ValueError(f"Penta input/output directions must be perpendicular: {incoming} -> {outgoing}.")
+    fit = optical_solid_metadata.solve_optical_solid_two_face_fit(
+        metadata,
+        anchor_face_id=PENTA_ENTRANCE_FACE,
+        guide_face_id=PENTA_EXIT_FACE,
+        target_anchor_normal=-incoming,
+        target_guide_normal=outgoing,
+        target_point=entrance_point_world,
     )
-    anchor_local = optical_solid_metadata.optical_solid_face_local_anchor_point(input_face)
-    center_world = np.asarray(entrance_point_world, dtype=float).reshape(3) - (rotation @ anchor_local)
-    tilts = optical_solid_metadata.kraken_tilts_from_rotation_matrix(rotation)
+    if fit is None:
+        raise RuntimeError("Could not solve deterministic penta two-face pose.")
+    rotation = np.asarray(fit["rotation"], dtype=float).reshape(3, 3)
+    tilts = tuple(float(value) for value in fit["tilts"])
+    desp_absolute = np.asarray(fit["desp"], dtype=float).reshape(3)
+    center_world = np.asarray(desp_absolute, dtype=float)
     desp = (float(center_world[0]), float(center_world[1]), float(center_world[2] - float(z_station)))
     return {
         "rotation": rotation,
-        "tilts": tuple(float(value) for value in tilts),
+        "tilts": tilts,
         "desp": desp,
         "center_world": center_world,
         "entrance_point_world": np.asarray(entrance_point_world, dtype=float).reshape(3),

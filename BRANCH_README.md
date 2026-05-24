@@ -76,9 +76,18 @@ Current pipeline checkpoint:
 | Open 3D trace/render mesh congruence | Achieved | `██████████ 100%` | Open 3D file-backed optical solids now render the same runtime mesh used by the KrakenOS trace instead of replacing it with a separately transformed STL display mesh when the runtime mesh is available. The five-penta guard measures every ray/surface event point against the rendered mesh and fails if any visible prism surface is detached from the physical event location, preventing "ray bends in empty space" screenshots from passing. |
 | Open 3D assigned-face tint congruence | Achieved | `██████████ 100%` | Assigned face tints now use the runtime trace mesh cell triangles for row-backed optical STEP solids, with the old STL-transform reconstruction retained only as a fallback. This keeps transparent bodies, dark feature edges, and colored face-function overlays in the same coordinate frame instead of showing a separated ghost solid around prisms. |
 | Five-penta stage snapshots | Achieved | `██████████ 100%` | The five-penta guard now captures one Open 3D image after each prism is placed and traced, plus final ISO/YZ/XY/XZ snapshots, a generated 2D YZ/XZ/XY projection image, and a JSON report. Each stage verifies zero launch-angle spread for a 13-ray collimated disk source, the exact accumulated penta face/action sequence, sub-micron event-to-rendered-mesh congruence, regenerated body/edge/tint alignment, and the expected external exit-axis count without internal reflection axes, so visual regressions from element 2 onward are checked against the same physics oracle. |
-| Literal click-to-cascade placement | In progress | `█████████▊ 98%` | The fully interactive import/click/snap/promote cascade still needs to call the same deterministic vendor-face solver used by the five-penta reference guard. Until that integration lands, the passing five-penta artifact is the reference layout and screenshot oracle, not a claim that arbitrary repeated manual snaps are complete. |
+| Literal click-to-cascade placement | Achieved | `██████████ 100%` | The Open 3D imported-STEP face selection now preserves the picked face id, and the snap-to-axis command routes known 42779 penta entrance picks through the same deterministic two-face solver used by the five-penta reference guard. F005 is constrained to the incoming optical axis and F006 constrains roll/output direction before promotion, so the import/click/snap/promote path is no longer an entrance-normal-only placement. `validate_penta_mirror_3d_cascade.py` now requests a concrete +X penta exit direction and fails unless every ray follows the assigned vendor mirror faces and exits along that direction. |
 
-Latest movement on 2026-05-24: traced Open 3D optical-axis overlays now include
+Latest movement on 2026-05-24: the remaining literal click-to-cascade placement
+gap is closed. Imported STEP face picks now retain face ids, and penta
+entrance-face snaps can use a two-face constraint: F005 fixes the upstream
+entrance axis while F006 fixes the intended output roll. The shared
+``optical_solid_metadata.solve_optical_solid_two_face_fit`` helper now feeds
+both the five-penta reference layout and the Open 3D penta snap path, and the
+headless penta workflow guard verifies a requested +X exit instead of merely
+checking that the ray turns somewhere in 3D.
+
+Earlier movement on 2026-05-24: traced Open 3D optical-axis overlays now include
 external exit-to-next-entrance beam legs as well as the final post-surface exit
 leg. The axis extractor uses adjacent surface-event metadata to reject same-row
 internal prism reflection segments, so a five-penta cascade now reports five

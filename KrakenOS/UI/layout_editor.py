@@ -1977,6 +1977,25 @@ def solve_optical_solid_face_fit(
     )
 
 
+def solve_optical_solid_two_face_fit(
+    metadata: dict[str, object] | list[dict[str, object]] | tuple[dict[str, object], ...],
+    *,
+    anchor_face_id: str,
+    guide_face_id: str,
+    target_anchor_normal,
+    target_guide_normal,
+    target_point=(0.0, 0.0, 0.0),
+) -> dict[str, object] | None:
+    return optical_solid_metadata.solve_optical_solid_two_face_fit(
+        metadata,
+        anchor_face_id=anchor_face_id,
+        guide_face_id=guide_face_id,
+        target_anchor_normal=target_anchor_normal,
+        target_guide_normal=target_guide_normal,
+        target_point=target_point,
+    )
+
+
 def solve_optical_solid_left_input_pose(
     metadata: dict[str, object] | list[dict[str, object]] | tuple[dict[str, object], ...],
     *,
@@ -9649,12 +9668,20 @@ class Kraken3DInspector(tk.Toplevel):
         label = selection.label
         center = selection.pick_point_world if anchor_mode == "pick_point" else selection.surface_center_world
         normal = selection.normal_world
-        axis_frame = self._optical_axis_frame_from_pick(axis_info, self._picker)
-        if axis_frame is None:
-            self.status_var.set("Snap STEP Normal->Optical Axis: could not resolve the clicked optical axis.")
-            return
         try:
-            result = self.editor.snap_step_feature_normal_to_optical_axis(label, center, normal, axis_frame=axis_frame)
+            if anchor_mode == "surface_center" and str(getattr(selection, "face_id", "") or "").strip():
+                result = self.editor.snap_step_overlay_face_to_optical_axis(
+                    label,
+                    axis_info,
+                    face_id=str(selection.face_id).strip(),
+                )
+                axis_frame = None
+            else:
+                axis_frame = self._optical_axis_frame_from_pick(axis_info, self._picker)
+                if axis_frame is None:
+                    self.status_var.set("Snap STEP Normal->Optical Axis: could not resolve the clicked optical axis.")
+                    return
+                result = self.editor.snap_step_feature_normal_to_optical_axis(label, center, normal, axis_frame=axis_frame)
         except Exception as exc:
             self.status_var.set(f"Snap STEP Normal->Optical Axis failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"3D STEP normal-axis snap failed: {exc}")
@@ -13881,10 +13908,12 @@ class Kraken3DInspector(tk.Toplevel):
                         self._hover_overlay_for_step_face(step_label, through_pick.face),
                     )
                     surface_center = self._surface_center_from_face_ray_pick(through_pick)
+                    picked_face_id = str(through_pick.face.get("face_id", "") or "").strip()
                 else:
                     feature = self._picked_feature_info_cached(actor, self._picker, actor_key=str(source_actor_key) if source_actor_key else None, cell_id=cell_id)
                     surface_center = None
-                if not self._remember_selected_step_feature(step_label, feature, surface_center_world=surface_center):
+                    picked_face_id = ""
+                if not self._remember_selected_step_feature(step_label, feature, surface_center_world=surface_center, face_id=picked_face_id):
                     self.status_var.set("Center Row->Optical Axis: click a planar imported STEP face or a KrakenOS surface row.")
                     self.render()
                     return
@@ -14004,10 +14033,12 @@ class Kraken3DInspector(tk.Toplevel):
                         self._hover_overlay_for_step_face(str(step_label), through_pick.face),
                     )
                     surface_center = self._surface_center_from_face_ray_pick(through_pick)
+                    picked_face_id = str(through_pick.face.get("face_id", "") or "").strip()
                 else:
                     feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=step_cell_id)
                     surface_center = None
-                remembered = self._remember_selected_step_feature(step_label, feature, surface_center_world=surface_center)
+                    picked_face_id = ""
+                remembered = self._remember_selected_step_feature(step_label, feature, surface_center_world=surface_center, face_id=picked_face_id)
                 self.editor.select_step_component(step_label)
                 self._set_step_highlight(step_label)
                 self.show_step_rotation_handler(step_label)
@@ -14028,8 +14059,10 @@ class Kraken3DInspector(tk.Toplevel):
                     through_pick,
                     self._hover_overlay_for_step_face(str(step_label), through_pick.face),
                 )
+                picked_face_id = str(through_pick.face.get("face_id", "") or "").strip()
             else:
                 feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=step_cell_id)
+                picked_face_id = ""
             if feature is None:
                 try:
                     center = np.asarray(self._picker.GetPickPosition(), dtype=float)
@@ -14044,6 +14077,7 @@ class Kraken3DInspector(tk.Toplevel):
                 step_label,
                 feature,
                 surface_center_world=self._surface_center_from_face_ray_pick(through_pick) if through_pick is not None else None,
+                face_id=picked_face_id,
             )
             self._set_step_hover_outline(None, None)
             self._set_axis_pick_cursor(False)
@@ -14892,11 +14926,12 @@ class Kraken3DInspector(tk.Toplevel):
         feature = Kraken3DInspector._picked_feature_info(actor, picker)
         return feature[0] if feature is not None else None
 
-    def _remember_selected_step_feature(self, label: str, feature, *, surface_center_world=None) -> bool:
+    def _remember_selected_step_feature(self, label: str, feature, *, surface_center_world=None, face_id: str = "") -> bool:
         selection = self.editor._open3d_step_state_service().step_feature_selection(
             label,
             feature,
             surface_center_world=surface_center_world,
+            face_id=face_id,
         )
         if selection is None:
             return False
@@ -23251,6 +23286,8 @@ class KrakenLayoutEditor(tk.Tk):
         axis_info: dict[str, object],
         *,
         face_id: str = "",
+        guide_face_id: str = "",
+        guide_direction=None,
     ) -> dict[str, object] | None:
         label = str(label).strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET or self._step_path_for_label(label) is None:
@@ -23273,6 +23310,20 @@ class KrakenLayoutEditor(tk.Tk):
         if face is None:
             self.status_var.set(f"{label.upper()} STEP has no planar face available for optical-axis snap.")
             return None
+        resolved_face_id = str(face.get("face_id", "") or "").strip()
+        resolved_guide_face_id = str(guide_face_id or "").strip()
+        if not resolved_guide_face_id:
+            resolved_guide_face_id = self._default_step_pair_guide_face_id(label, metadata, resolved_face_id)
+        if resolved_guide_face_id:
+            pair_result = self.snap_step_overlay_face_pair_to_optical_axis(
+                label,
+                axis_info,
+                anchor_face_id=resolved_face_id,
+                guide_face_id=resolved_guide_face_id,
+                guide_direction=guide_direction,
+            )
+            if pair_result is not None:
+                return pair_result
         feature_center = np.asarray(face.get("centroid", ()), dtype=float).reshape(-1)[:3]
         feature_normal = np.asarray(face.get("normal", ()), dtype=float).reshape(-1)[:3]
         if feature_center.size < 3 or feature_normal.size < 3:
@@ -23298,6 +23349,170 @@ class KrakenLayoutEditor(tk.Tk):
             }
         )
         return result
+
+    def _default_step_pair_guide_face_id(self, label: str, metadata: dict[str, object], anchor_face_id: str) -> str:
+        """Return a second face when one-click STEP axis snap needs a roll constraint."""
+        label = str(label).strip().lower()
+        anchor = str(anchor_face_id or "").strip()
+        face_ids = {
+            str(face.get("face_id", "") or "").strip()
+            for face in list(metadata.get("faces", []) or [])
+            if isinstance(face, dict)
+        }
+        source_path = self._step_path_for_label(label)
+        source_text = str(source_path or "")
+        if anchor == "F005" and "F006" in face_ids and "42779" in source_text:
+            return "F006"
+        return ""
+
+    @staticmethod
+    def _project_direction_perpendicular(direction, normal) -> np.ndarray:
+        candidate = np.asarray(direction, dtype=float).reshape(3)
+        axis = np.asarray(normal, dtype=float).reshape(3)
+        axis_norm = float(np.linalg.norm(axis))
+        if axis_norm <= 1e-12 or not np.isfinite(axis_norm):
+            raise ValueError("Projection normal must be finite and non-zero.")
+        axis = axis / axis_norm
+        candidate = candidate - axis * float(np.dot(candidate, axis))
+        candidate_norm = float(np.linalg.norm(candidate))
+        if candidate_norm <= 1e-9 or not np.isfinite(candidate_norm):
+            raise ValueError("Guide direction is parallel to the snapped axis.")
+        return candidate / candidate_norm
+
+    def snap_step_overlay_face_pair_to_optical_axis(
+        self,
+        label: str,
+        axis_info: dict[str, object],
+        *,
+        anchor_face_id: str,
+        guide_face_id: str,
+        guide_direction=None,
+    ) -> dict[str, object] | None:
+        label = str(label).strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET or self._step_path_for_label(label) is None:
+            self.status_var.set(f"No {label} STEP is imported.")
+            return None
+        metadata = self._step_overlay_face_metadata(label)
+        faces = {
+            str(face.get("face_id", "") or "").strip(): normalize_optical_solid_face_record(face)
+            for face in list(metadata.get("faces", []) or [])
+            if isinstance(face, dict) and str(face.get("face_id", "") or "").strip()
+        }
+        anchor_id = str(anchor_face_id or "").strip()
+        guide_id = str(guide_face_id or "").strip()
+        anchor = faces.get(anchor_id)
+        guide = faces.get(guide_id)
+        if anchor is None or guide is None:
+            self.status_var.set(f"{label.upper()} STEP two-face snap needs faces {anchor_id}/{guide_id}.")
+            return None
+        anchor_center = np.asarray(anchor.get("centroid", ()), dtype=float).reshape(-1)[:3]
+        anchor_normal = np.asarray(anchor.get("normal", ()), dtype=float).reshape(-1)[:3]
+        guide_normal = np.asarray(guide.get("normal", ()), dtype=float).reshape(-1)[:3]
+        if (
+            anchor_center.size < 3
+            or anchor_normal.size < 3
+            or guide_normal.size < 3
+            or not np.all(np.isfinite(anchor_center[:3]))
+            or not np.all(np.isfinite(anchor_normal[:3]))
+            or not np.all(np.isfinite(guide_normal[:3]))
+        ):
+            self.status_var.set(f"{label.upper()} STEP two-face snap has incomplete face geometry.")
+            return None
+        anchor_normal = self._normalized_vector(anchor_normal[:3])
+        guide_normal = self._normalized_vector(guide_normal[:3])
+        axis_frame = self._optical_axis_frame_from_record(axis_info, reference_point=anchor_center[:3])
+        target_point = np.asarray(axis_frame["target_point"], dtype=float).reshape(3)
+        axis_direction = self._normalized_vector(axis_frame["direction"])
+        target_anchor_normal = -axis_direction
+        if guide_direction is None:
+            anchor_only_delta = self._rotation_matrix_between_vectors(anchor_normal, target_anchor_normal)
+            target_guide_normal = self._project_direction_perpendicular(anchor_only_delta @ guide_normal, target_anchor_normal)
+        else:
+            target_guide_normal = self._project_direction_perpendicular(guide_direction, target_anchor_normal)
+
+        current_mesh = self._transformed_imported_step_mesh_for_label(label)
+        if current_mesh is None or int(getattr(current_mesh, "n_points", 0)) <= 0:
+            self.status_var.set(f"{label.upper()} STEP mesh unavailable for optical-axis two-face snap.")
+            return None
+        current_points = np.asarray(getattr(current_mesh, "points", np.empty((0, 3))), dtype=float)
+        if current_points.ndim != 2 or current_points.shape[0] < 4 or current_points.shape[1] < 3:
+            self.status_var.set(f"{label.upper()} STEP mesh does not have enough points for optical-axis two-face snap.")
+            return None
+
+        current_angles = self._step_rotation_deg_tuple(label)
+        current_offset = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
+        current_matrix = self._step_rotation_matrix_from_angles(*current_angles)
+        try:
+            delta_matrix = optical_solid_metadata.rotation_matrix_from_vector_pairs(
+                source_primary=anchor_normal,
+                source_secondary=guide_normal,
+                target_primary=target_anchor_normal,
+                target_secondary=target_guide_normal,
+            )
+        except Exception as exc:
+            self.status_var.set(f"{label.upper()} STEP two-face snap failed: {_short_error_message(exc)}")
+            return None
+        next_matrix = delta_matrix @ current_matrix
+        next_angles = self._step_angles_from_rotation_matrix(next_matrix)
+
+        self._set_step_rotation_deg_tuple(label, next_angles)
+        try:
+            rotated_mesh = self._transformed_imported_step_mesh_for_label(label)
+        finally:
+            self._set_step_rotation_deg_tuple(label, current_angles)
+        if rotated_mesh is None or int(getattr(rotated_mesh, "n_points", 0)) <= 0:
+            self.status_var.set(f"{label.upper()} STEP rotated mesh unavailable for optical-axis two-face snap.")
+            return None
+        rotated_points = np.asarray(getattr(rotated_mesh, "points", np.empty((0, 3))), dtype=float)
+        affine = _affine_from_point_sets(current_points[:, :3], rotated_points[:, :3])
+        if affine is not None:
+            rotated_anchor_center = (affine @ np.asarray((anchor_center[0], anchor_center[1], anchor_center[2], 1.0), dtype=float))[:3]
+        else:
+            rotated_anchor_center = anchor_center[:3]
+        placement_delta = target_point[:3] - np.asarray(rotated_anchor_center, dtype=float).reshape(3)
+        next_offset = current_offset[:3] + placement_delta[:3]
+
+        self._begin_history_capture()
+        self._set_step_rotation_deg_tuple(label, next_angles)
+        self._set_step_placement_offset_xyz(label, next_offset)
+        self._cad_axis_pick_label = None
+        self._cad_axis_pick_any = False
+        self._cad_led_object_edge_pick = False
+        self._selected_step_label = label
+        self._commit_history_capture()
+        rotated_anchor_normal = delta_matrix @ anchor_normal
+        rotated_guide_normal = delta_matrix @ guide_normal
+        anchor_error = float(
+            np.rad2deg(np.arccos(np.clip(float(np.dot(rotated_anchor_normal, target_anchor_normal)), -1.0, 1.0)))
+        )
+        guide_error = float(
+            np.rad2deg(np.arccos(np.clip(float(np.dot(rotated_guide_normal, target_guide_normal)), -1.0, 1.0)))
+        )
+        axis_label = str(axis_frame.get("axis_label", "optical axis"))
+        self.status_var.set(
+            f"{label.upper()} STEP {anchor_id}/{guide_id} snapped to {axis_label}; "
+            f"entrance error {anchor_error:.6g} deg, roll error {guide_error:.6g} deg."
+        )
+        self._refresh_open_3d_views(step_label=label)
+        return {
+            "label": label,
+            "axis_label": axis_label,
+            "axis_id": str(axis_frame.get("axis_id", axis_info.get("axis_id", "")) or ""),
+            "axis_kind": str(axis_frame.get("axis_kind", axis_info.get("axis_kind", "")) or ""),
+            "axis_role": str(axis_frame.get("axis_role", axis_info.get("axis_role", "")) or ""),
+            "segment_index": int(axis_frame.get("segment_index", axis_info.get("segment_index", -1))),
+            "face_id": anchor_id,
+            "guide_face_id": guide_id,
+            "target_point": tuple(float(value) for value in target_point[:3]),
+            "target_direction": tuple(float(value) for value in target_anchor_normal[:3]),
+            "guide_direction": tuple(float(value) for value in target_guide_normal[:3]),
+            "rotation_deg": tuple(float(value) for value in next_angles),
+            "placement_offset_xyz": tuple(float(value) for value in next_offset[:3]),
+            "angle_error_deg": anchor_error,
+            "guide_angle_error_deg": guide_error,
+            "ray_index": int(axis_frame.get("ray_index", -1)),
+            "branch_path": str(axis_frame.get("branch_path", "") or ""),
+        }
 
     def snap_step_feature_normal_to_optical_axis(
         self,

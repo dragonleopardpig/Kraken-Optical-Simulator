@@ -29,7 +29,9 @@ from KrakenOS.UI.scene_geometry import ray_path_terminal_status_from_events
 PENTA_IMPORT_OFFSET = (18.0, -22.0, 38.0)
 PENTA_INITIAL_ROLL_DEG = 34.0
 PENTA_ENTRANCE_FACE = "F005"
+PENTA_EXIT_FACE = "F006"
 PENTA_MIRROR_FACES = ("F004", "F003")
+PENTA_REQUESTED_EXIT_DIRECTION = np.asarray((1.0, 0.0, 0.0), dtype=float)
 
 
 def _global_plus_z_axis() -> dict[str, object]:
@@ -177,6 +179,8 @@ def run_case() -> dict[str, Any]:
             "optical",
             _global_plus_z_axis(),
             face_id=PENTA_ENTRANCE_FACE,
+            guide_face_id=PENTA_EXIT_FACE,
+            guide_direction=PENTA_REQUESTED_EXIT_DIRECTION,
         )
         if snap is None:
             raise RuntimeError(f"Entrance-face snap failed: {app.status_var.get()}")
@@ -184,6 +188,8 @@ def run_case() -> dict[str, Any]:
             {
                 "action": "snap_face_normal_to_optical_axis",
                 "face_id": PENTA_ENTRANCE_FACE,
+                "guide_face_id": str(snap.get("guide_face_id", "")),
+                "guide_direction": [round(float(value), 6) for value in snap.get("guide_direction", ())],
                 "axis_id": str(snap.get("axis_id", "")),
                 "rotation_deg": [round(float(value), 6) for value in snap.get("rotation_deg", ())],
                 "placement_offset_xyz": [round(float(value), 6) for value in snap.get("placement_offset_xyz", ())],
@@ -224,10 +230,11 @@ def run_case() -> dict[str, Any]:
                     f"Expected every ray to reflect at {face_id}; rays={expected_reflect_count}, reflections={count}, "
                     f"events={dict(event_counts)!r}."
                 )
-        if abs(float(direction[0])) < 0.05:
-            raise RuntimeError(f"Terminal beam did not leave the YZ plane; direction={direction}.")
-        if float(np.dot(direction, np.asarray((0.0, 0.0, 1.0), dtype=float))) > 0.95:
-            raise RuntimeError(f"Terminal beam was not steered away from the input optical axis; direction={direction}.")
+        if float(np.dot(direction, PENTA_REQUESTED_EXIT_DIRECTION)) < 0.999:
+            raise RuntimeError(
+                "Terminal beam did not follow the requested deterministic penta exit direction: "
+                f"actual={direction}, expected={PENTA_REQUESTED_EXIT_DIRECTION}."
+            )
 
         return {
             "ok": True,

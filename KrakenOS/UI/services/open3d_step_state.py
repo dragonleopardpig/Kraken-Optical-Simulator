@@ -30,6 +30,7 @@ class StepFeatureSelection:
     """Selected imported STEP face/feature used by axis-alignment actions."""
 
     label: str = ""
+    face_id: str = ""
     pick_point_world: tuple[float, float, float] = ()
     surface_center_world: tuple[float, float, float] = ()
     normal_world: tuple[float, float, float] = ()
@@ -87,6 +88,7 @@ class Open3DStepStateService:
         feature: object,
         *,
         surface_center_world: object = None,
+        face_id: object = "",
     ) -> StepFeatureSelection | None:
         """Normalize a picked imported STEP face/feature into service-owned state."""
         label_text = self.selected_import_label((label,))
@@ -108,6 +110,7 @@ class Open3DStepStateService:
             surface_center = pick_point
         return StepFeatureSelection(
             label=label_text,
+            face_id=str(face_id or "").strip(),
             pick_point_world=tuple(float(value) for value in pick_point[:3]),
             surface_center_world=tuple(float(value) for value in surface_center[:3]),
             normal_world=tuple(float(value) for value in normal[:3]),

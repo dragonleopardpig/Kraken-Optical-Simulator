@@ -1168,6 +1168,105 @@ def select_optical_solid_roll_reference_face(
     return None
 
 
+def basis_from_vector_pair(primary, secondary) -> np.ndarray:
+    """Build a right-handed basis from two non-parallel direction vectors."""
+    e1 = _normalized_direction(primary)
+    secondary_vec = np.asarray(secondary, dtype=float).reshape(3)
+    secondary_projected = secondary_vec - e1 * float(np.dot(secondary_vec, e1))
+    secondary_norm = float(np.linalg.norm(secondary_projected))
+    if secondary_norm <= 1e-9 or not np.isfinite(secondary_norm):
+        raise ValueError("Vector pair must contain two non-parallel finite directions.")
+    e2 = secondary_projected / secondary_norm
+    e3 = np.cross(e1, e2)
+    e3_norm = float(np.linalg.norm(e3))
+    if e3_norm <= 1e-9 or not np.isfinite(e3_norm):
+        raise ValueError("Vector pair did not produce a finite right-handed basis.")
+    e3 = e3 / e3_norm
+    return np.column_stack((e1, e2, e3))
+
+
+def rotation_matrix_from_vector_pairs(
+    *,
+    source_primary,
+    source_secondary,
+    target_primary,
+    target_secondary,
+) -> np.ndarray:
+    """Return the rotation that maps one constrained vector pair onto another."""
+    source_basis = basis_from_vector_pair(source_primary, source_secondary)
+    target_basis = basis_from_vector_pair(target_primary, target_secondary)
+    rotation = target_basis @ source_basis.T
+    if float(np.linalg.det(rotation)) < 0.0:
+        raise ValueError("Vector-pair rotation is left-handed.")
+    return np.asarray(rotation, dtype=float)
+
+
+def _face_record_by_id(metadata: dict[str, object], face_id: str) -> dict[str, object] | None:
+    target = str(face_id or "").strip()
+    if not target:
+        return None
+    for face in list(normalize_optical_solid_face_metadata(metadata).get("faces", []) or []):
+        if isinstance(face, dict) and str(face.get("face_id", "") or "").strip() == target:
+            return normalize_optical_solid_face_record(face)
+    return None
+
+
+def solve_optical_solid_two_face_fit(
+    metadata: dict[str, object] | list[dict[str, object]] | tuple[dict[str, object], ...],
+    *,
+    anchor_face_id: str,
+    guide_face_id: str,
+    target_anchor_normal,
+    target_guide_normal,
+    target_point=(0.0, 0.0, 0.0),
+) -> dict[str, object] | None:
+    """Solve a pose from an entrance/guide face pair.
+
+    This is the deterministic version of "align one face to the optical axis":
+    the anchor face fixes the entrance normal and point, while the guide face
+    fixes roll around that entrance axis. Penta prisms use this with the vendor
+    entrance and exit faces, so the output direction is explicit instead of an
+    accidental roll inherited from the imported CAD transform.
+    """
+    normalized = normalize_optical_solid_face_metadata(metadata)
+    anchor = _face_record_by_id(normalized, anchor_face_id)
+    guide = _face_record_by_id(normalized, guide_face_id)
+    if anchor is None or guide is None:
+        return None
+    target_anchor = np.asarray(target_anchor_normal, dtype=float).reshape(3)
+    target_guide = np.asarray(target_guide_normal, dtype=float).reshape(3)
+    target_anchor_point = np.asarray(target_point, dtype=float).reshape(3)
+    if not (
+        np.all(np.isfinite(target_anchor))
+        and np.all(np.isfinite(target_guide))
+        and np.all(np.isfinite(target_anchor_point))
+    ):
+        raise ValueError("Two-face fit target normals and point must be finite.")
+    rotation = rotation_matrix_from_vector_pairs(
+        source_primary=optical_solid_face_local_normal(anchor),
+        source_secondary=optical_solid_face_local_normal(guide),
+        target_primary=target_anchor,
+        target_secondary=target_guide,
+    )
+    anchor_local_point = optical_solid_face_local_anchor_point(anchor)
+    tilts = kraken_tilts_from_rotation_matrix(rotation)
+    anchor_world = anchor_local_point @ rotation.T
+    desp_vector = target_anchor_point - anchor_world
+    return {
+        "face_id": str(anchor.get("face_id", "") or "").strip(),
+        "guide_face_id": str(guide.get("face_id", "") or "").strip(),
+        "label": optical_solid_face_marker_label(anchor),
+        "guide_label": optical_solid_face_marker_label(guide),
+        "tilts": tuple(float(value) for value in tilts),
+        "desp": tuple(float(value) for value in desp_vector[:3]),
+        "rotation": np.asarray(rotation, dtype=float),
+        "target_normal": tuple(float(value) for value in _normalized_direction(target_anchor)),
+        "target_guide_normal": tuple(float(value) for value in _normalized_direction(target_guide)),
+        "target_point": tuple(float(value) for value in target_anchor_point[:3]),
+        "anchor_local_point": tuple(float(value) for value in anchor_local_point[:3]),
+    }
+
+
 def solve_optical_solid_face_fit(
     metadata: dict[str, object] | list[dict[str, object]] | tuple[dict[str, object], ...],
     *,
