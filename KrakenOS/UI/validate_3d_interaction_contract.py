@@ -29,6 +29,7 @@ from KrakenOS.UI.panels.main_glass_catalog_browser_dialog import MainGlassCatalo
 from KrakenOS.UI.panels.main_lens_drawing_dialogs import MainLensDrawingDialogs
 from KrakenOS.UI.panels.main_nonseq_scene_graph_dialog import MainNonSequentialSceneGraphDialog
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
+from KrakenOS.UI.panels.main_optical_solid_face_roles_dialog import MainOpticalSolidFaceRolesDialog
 from KrakenOS.UI.panels.main_optical_solid_dialogs import MainOpticalSolidDialogs
 from KrakenOS.UI.panels.main_path_component_placement_dialog import MainPathComponentPlacementDialog
 from KrakenOS.UI.panels.main_path_detector_analysis import MainPathDetectorAnalysis
@@ -362,6 +363,9 @@ def main() -> int:
     main_glass_catalog_browser_dialog = inspect.getsource(MainGlassCatalogBrowserDialog)
     main_glass_catalog_browser_factory = inspect.getsource(KrakenLayoutEditor._main_glass_catalog_browser_dialog)
     open_glass_catalog_browser = inspect.getsource(KrakenLayoutEditor.open_glass_catalog_browser)
+    main_optical_solid_face_roles_dialog = inspect.getsource(MainOpticalSolidFaceRolesDialog)
+    main_optical_solid_face_roles_factory = inspect.getsource(KrakenLayoutEditor._main_optical_solid_face_roles_dialog)
+    open_optical_solid_faces_for_row = inspect.getsource(KrakenLayoutEditor._open_optical_solid_faces_for_row)
     main_optical_solid_dialogs = inspect.getsource(MainOpticalSolidDialogs)
     main_optical_solid_dialogs_factory = inspect.getsource(KrakenLayoutEditor._main_optical_solid_dialogs)
     open_optical_stl_diagnostics = inspect.getsource(KrakenLayoutEditor.open_optical_stl_diagnostics)
@@ -922,6 +926,15 @@ def main() -> int:
             and "self._main_optical_solid_dialogs()._open_optical_stl_numeric_placement_assistant(" in open_optical_stl_numeric_placement
             and "Optical CAD/STL Solid Diagnostics" in main_optical_solid_dialogs
             and "Place/Orient CAD/STL Solid" in main_optical_solid_dialogs,
+        ),
+        (
+            "Optical solid face-role editor lives outside layout_editor",
+            "MainOpticalSolidFaceRolesDialog(self)" in main_optical_solid_face_roles_factory
+            and "self._main_optical_solid_face_roles_dialog()._open_optical_solid_faces_for_row(" in open_optical_solid_faces_for_row
+            and "Assign CAD/STL Optical Faces" in main_optical_solid_face_roles_dialog
+            and "Virtual Internal Plane" in main_optical_solid_face_roles_dialog
+            and "Use Face As Source Target" in main_optical_solid_face_roles_dialog
+            and "solve_optical_solid_left_input_pose" in main_optical_solid_face_roles_dialog,
         ),
         (
             "Path component placement dialog lives outside layout_editor",
