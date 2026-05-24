@@ -29278,7 +29278,7 @@ class KrakenLayoutEditor(tk.Tk):
                 mesh = KrakenLayoutEditor._runtime_trace_surface_mesh(system, index)
             if row_transform is None:
                 row_transform = transforms[index]
-            if file_backed_optical_solid and row_transform is not None:
+            if file_backed_optical_solid and row_transform is not None and mesh is None:
                 solid_mesh = self._stl_mesh_with_world_transform(row, row_transform)
                 if solid_mesh is not None and int(getattr(solid_mesh, "n_points", 0)) > 0:
                     mesh = solid_mesh

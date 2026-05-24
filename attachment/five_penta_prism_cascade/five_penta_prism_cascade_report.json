@@ -7,6 +7,24 @@
       -2.344e-06,
       -1.609e-06
     ],
+    "display_mesh_congruence": {
+      "checked_events": 260,
+      "max_allowed_distance_mm": 0.15,
+      "max_event_to_display_mesh_distance_mm": 9.135e-06,
+      "worst_event": {
+        "action": "reflection",
+        "distance_mm": 9.135e-06,
+        "face_id": "F003",
+        "point_world": [
+          138.922851562,
+          -137.051147461,
+          213.954437256
+        ],
+        "ray_index": 8,
+        "row_index": 4,
+        "step": 13
+      }
+    },
     "ray_paths": 13,
     "row_indices": [
       1,
@@ -119,6 +137,24 @@
         0.0,
         -55.0
       ],
+      "display_mesh_congruence": {
+        "checked_events": 52,
+        "max_allowed_distance_mm": 0.15,
+        "max_event_to_display_mesh_distance_mm": 3.35e-06,
+        "worst_event": {
+          "action": "reflection",
+          "distance_mm": 3.35e-06,
+          "face_id": "F003",
+          "point_world": [
+            1.101184249,
+            3.510802269,
+            76.631950378
+          ],
+          "ray_index": 11,
+          "row_index": 1,
+          "step": 1
+        }
+      },
       "entrance_point_world": [
         0.0,
         0.0,
@@ -214,6 +250,24 @@
         -127.500100136,
         -42.499855042
       ],
+      "display_mesh_congruence": {
+        "checked_events": 104,
+        "max_allowed_distance_mm": 0.15,
+        "max_event_to_display_mesh_distance_mm": 7.043e-06,
+        "worst_event": {
+          "action": "reflection",
+          "distance_mm": 7.043e-06,
+          "face_id": "F003",
+          "point_world": [
+            1.169499397,
+            -157.193389893,
+            59.025058746
+          ],
+          "ray_index": 3,
+          "row_index": 2,
+          "step": 5
+        }
+      },
       "entrance_point_world": [
         9.2027e-05,
         -127.500100136,
@@ -310,6 +364,24 @@
         -139.999771118,
         -42.499889374
       ],
+      "display_mesh_congruence": {
+        "checked_events": 156,
+        "max_allowed_distance_mm": 0.15,
+        "max_event_to_display_mesh_distance_mm": 7.043e-06,
+        "worst_event": {
+          "action": "reflection",
+          "distance_mm": 7.043e-06,
+          "face_id": "F003",
+          "point_world": [
+            1.169499397,
+            -157.193389893,
+            59.025058746
+          ],
+          "ray_index": 3,
+          "row_index": 2,
+          "step": 5
+        }
+      },
       "entrance_point_world": [
         127.500091553,
         -139.999771118,
@@ -407,6 +479,24 @@
         -139.999542236,
         84.999382019
       ],
+      "display_mesh_congruence": {
+        "checked_events": 208,
+        "max_allowed_distance_mm": 0.15,
+        "max_event_to_display_mesh_distance_mm": 9.135e-06,
+        "worst_event": {
+          "action": "reflection",
+          "distance_mm": 9.135e-06,
+          "face_id": "F003",
+          "point_world": [
+            138.922851562,
+            -137.051147461,
+            213.954437256
+          ],
+          "ray_index": 8,
+          "row_index": 4,
+          "step": 13
+        }
+      },
       "entrance_point_world": [
         139.999221802,
         -139.999542236,
@@ -505,6 +595,24 @@
         -12.500389099,
         97.496871948
       ],
+      "display_mesh_congruence": {
+        "checked_events": 260,
+        "max_allowed_distance_mm": 0.15,
+        "max_event_to_display_mesh_distance_mm": 9.135e-06,
+        "worst_event": {
+          "action": "reflection",
+          "distance_mm": 9.135e-06,
+          "face_id": "F003",
+          "point_world": [
+            138.922851562,
+            -137.051147461,
+            213.954437256
+          ],
+          "ray_index": 8,
+          "row_index": 4,
+          "step": 13
+        }
+      },
       "entrance_point_world": [
         139.999130249,
         -12.500389099,

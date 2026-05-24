@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import math
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -292,6 +293,170 @@ def _snapshot(
     return str(_save_vtk_snapshot(inspector, stage_snapshot_dir / filename))
 
 
+def _mesh_triangles(mesh: object) -> np.ndarray:
+    try:
+        surface = mesh.extract_surface(algorithm="dataset_surface")
+    except Exception:
+        surface = mesh
+    try:
+        points = np.asarray(surface.points, dtype=float)
+        faces = np.asarray(surface.faces, dtype=np.int64).ravel()
+    except Exception:
+        return np.empty((0, 3, 3), dtype=float)
+    if points.ndim != 2 or points.shape[0] < 3 or points.shape[1] < 3 or faces.size < 4:
+        return np.empty((0, 3, 3), dtype=float)
+    triangles: list[np.ndarray] = []
+    cursor = 0
+    while cursor < faces.size:
+        count = int(faces[cursor])
+        cursor += 1
+        if count < 3 or cursor + count > faces.size:
+            break
+        indices = faces[cursor : cursor + count]
+        cursor += count
+        if np.any(indices < 0) or np.any(indices >= points.shape[0]):
+            continue
+        for offset in range(1, count - 1):
+            triangles.append(points[[indices[0], indices[offset], indices[offset + 1]], :3])
+    if not triangles:
+        return np.empty((0, 3, 3), dtype=float)
+    return np.asarray(triangles, dtype=float)
+
+
+def _point_triangle_distance_sq(point: np.ndarray, a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
+    # Real-Time Collision Detection, Christer Ericson, closest point on triangle.
+    ab = b - a
+    ac = c - a
+    ap = point - a
+    d1 = float(np.dot(ab, ap))
+    d2 = float(np.dot(ac, ap))
+    if d1 <= 0.0 and d2 <= 0.0:
+        return float(np.dot(ap, ap))
+
+    bp = point - b
+    d3 = float(np.dot(ab, bp))
+    d4 = float(np.dot(ac, bp))
+    if d3 >= 0.0 and d4 <= d3:
+        return float(np.dot(bp, bp))
+
+    vc = d1 * d4 - d3 * d2
+    if vc <= 0.0 and d1 >= 0.0 and d3 <= 0.0:
+        v = d1 / (d1 - d3)
+        closest = a + v * ab
+        delta = point - closest
+        return float(np.dot(delta, delta))
+
+    cp = point - c
+    d5 = float(np.dot(ab, cp))
+    d6 = float(np.dot(ac, cp))
+    if d6 >= 0.0 and d5 <= d6:
+        return float(np.dot(cp, cp))
+
+    vb = d5 * d2 - d1 * d6
+    if vb <= 0.0 and d2 >= 0.0 and d6 <= 0.0:
+        w = d2 / (d2 - d6)
+        closest = a + w * ac
+        delta = point - closest
+        return float(np.dot(delta, delta))
+
+    va = d3 * d6 - d5 * d4
+    if va <= 0.0 and (d4 - d3) >= 0.0 and (d5 - d6) >= 0.0:
+        w = (d4 - d3) / ((d4 - d3) + (d5 - d6))
+        closest = b + w * (c - b)
+        delta = point - closest
+        return float(np.dot(delta, delta))
+
+    denom = va + vb + vc
+    if abs(denom) <= 1.0e-18:
+        return min(float(np.dot(ap, ap)), float(np.dot(bp, bp)), float(np.dot(cp, cp)))
+    v = vb / denom
+    w = vc / denom
+    closest = a + ab * v + ac * w
+    delta = point - closest
+    return float(np.dot(delta, delta))
+
+
+def _point_to_mesh_distance(point: np.ndarray, triangles: np.ndarray) -> float:
+    if triangles.ndim != 3 or triangles.shape[0] < 1:
+        return float("inf")
+    p = np.asarray(point, dtype=float).reshape(-1)[:3]
+    if p.size < 3 or not np.all(np.isfinite(p[:3])):
+        return float("inf")
+    best_sq = float("inf")
+    for triangle in triangles:
+        if not np.all(np.isfinite(triangle)):
+            continue
+        distance_sq = _point_triangle_distance_sq(p[:3], triangle[0], triangle[1], triangle[2])
+        if distance_sq < best_sq:
+            best_sq = distance_sq
+    return math.sqrt(best_sq) if np.isfinite(best_sq) else float("inf")
+
+
+def _validate_event_mesh_congruence(
+    app: KrakenLayoutEditor,
+    system: object,
+    scene_bundle: object,
+    row_indices: list[int],
+    *,
+    max_allowed_distance_mm: float = 0.15,
+) -> dict[str, object]:
+    row_set = {int(index) for index in row_indices}
+    mesh_by_row: dict[int, np.ndarray] = {}
+    for mesh_item in app._scene_surface_meshes(system, scene_bundle, include_reference_surfaces=False):
+        try:
+            row_index = int(getattr(mesh_item, "row_index"))
+        except Exception:
+            continue
+        if row_index not in row_set:
+            continue
+        triangles = _mesh_triangles(getattr(mesh_item, "mesh", None))
+        if triangles.shape[0] > 0:
+            mesh_by_row[row_index] = triangles
+
+    missing = sorted(row_set.difference(mesh_by_row))
+    if missing:
+        raise RuntimeError(f"Open 3D display mesh missing for traced penta rows: {missing}.")
+
+    checked = 0
+    worst: dict[str, object] = {"distance_mm": 0.0}
+    for path in list(getattr(scene_bundle, "ray_paths", []) or []):
+        for event in _surface_events(path):
+            try:
+                row_index = int(getattr(event, "surface_id", -1))
+            except Exception:
+                continue
+            if row_index not in row_set:
+                continue
+            point = np.asarray(getattr(event, "point_world", ()), dtype=float).reshape(-1)[:3]
+            if point.size < 3 or not np.all(np.isfinite(point[:3])):
+                raise RuntimeError(f"Ray event has no finite point for row {row_index}.")
+            distance = _point_to_mesh_distance(point[:3], mesh_by_row[row_index])
+            checked += 1
+            if distance > float(worst.get("distance_mm", 0.0) or 0.0):
+                worst = {
+                    "distance_mm": round(float(distance), 9),
+                    "row_index": row_index,
+                    "ray_index": int(getattr(path, "ray_index", -1) or -1),
+                    "step": int(getattr(event, "step", -1) or -1),
+                    "face_id": _event_face_id(event),
+                    "action": _event_action(event),
+                    "point_world": _point_json(point[:3]),
+                }
+    if checked <= 0:
+        raise RuntimeError("No penta ray/surface events were available for display-mesh congruence validation.")
+    if float(worst.get("distance_mm", 0.0) or 0.0) > max_allowed_distance_mm:
+        raise RuntimeError(
+            "Open 3D rendered mesh is not congruent with traced ray events; "
+            f"worst={worst}, allowed={max_allowed_distance_mm} mm."
+        )
+    return {
+        "checked_events": checked,
+        "max_allowed_distance_mm": float(max_allowed_distance_mm),
+        "max_event_to_display_mesh_distance_mm": worst["distance_mm"],
+        "worst_event": worst,
+    }
+
+
 def _validate_trace(scene_bundle: object, row_indices: list[int], *, final_expected_direction: np.ndarray) -> dict[str, object]:
     ray_paths = list(getattr(scene_bundle, "ray_paths", []) or [])
     if not ray_paths:
@@ -385,6 +550,7 @@ def build_case_editor(stage_snapshot_dir: Path | None = None) -> tuple[KrakenLay
             raise RuntimeError(f"Trace after prism {prism_number} produced no ray paths.")
         central = _central_path(ray_paths)
         prefix_validation = _validate_trace(scene_bundle, row_indices + [insert_at], final_expected_direction=outgoing)
+        mesh_congruence = _validate_event_mesh_congruence(app, _system, scene_bundle, row_indices + [insert_at])
         stage: dict[str, object] = {
             "prism": prism_number,
             "row_index": insert_at,
@@ -411,6 +577,7 @@ def build_case_editor(stage_snapshot_dir: Path | None = None) -> tuple[KrakenLay
             "central_terminal_direction": _vector_json(_terminal_direction(central)),
             "central_sequence": " -> ".join(_surface_sequence(central)),
             "prefix_validation": prefix_validation,
+            "display_mesh_congruence": mesh_congruence,
             "snapshots": {},
         }
         snapshot_path = _snapshot(
@@ -427,6 +594,7 @@ def build_case_editor(stage_snapshot_dir: Path | None = None) -> tuple[KrakenLay
             entrance_point, _actual = _axis_from_central_exit(scene_bundle, outgoing, prism_number)
 
     final = _validate_trace(scene_bundle, row_indices, final_expected_direction=directions[-1])
+    final["display_mesh_congruence"] = _validate_event_mesh_congruence(app, _system, scene_bundle, row_indices)
     report = {
         "ok": True,
         "penta_count": PENTA_COUNT,
