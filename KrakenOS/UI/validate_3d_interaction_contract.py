@@ -31,6 +31,7 @@ from KrakenOS.UI.panels.main_scene_element_dialogs import MainSceneElementDialog
 from KrakenOS.UI.panels.main_scene_source_manager_dialog import MainSceneSourceManagerDialog
 from KrakenOS.UI.panels.main_stock_lens_importer_dialog import MainStockLensImporterDialog
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
+from KrakenOS.UI.panels.main_source_illumination_report_dialog import MainSourceIlluminationReportDialog
 from KrakenOS.UI.panels.main_surface_settings_dialogs import MainSurfaceSettingsDialogs
 from KrakenOS.UI.panels.main_surface_shape_builder_dialog import MainSurfaceShapeBuilderDialog
 from KrakenOS.UI.panels.main_trace_display_controls import MainTraceDisplayControlsPanel
@@ -314,6 +315,10 @@ def main() -> int:
     main_stock_lens_dialog = inspect.getsource(MainStockLensImporterDialog)
     main_stock_lens_factory = inspect.getsource(KrakenLayoutEditor._main_stock_lens_importer_dialog)
     open_stock_lens_importer = inspect.getsource(KrakenLayoutEditor.open_stock_lens_importer)
+    main_source_illumination_report_dialog = inspect.getsource(MainSourceIlluminationReportDialog)
+    main_source_illumination_factory = inspect.getsource(KrakenLayoutEditor._main_source_illumination_report_dialog)
+    open_source_illumination_report = inspect.getsource(KrakenLayoutEditor.open_source_illumination_report)
+    refresh_source_illumination_report = inspect.getsource(KrakenLayoutEditor._refresh_source_illumination_report)
     main_detector_aperture_report_dialog = inspect.getsource(MainDetectorApertureReportDialog)
     main_detector_aperture_factory = inspect.getsource(KrakenLayoutEditor._main_detector_aperture_report_dialog)
     open_detector_aperture_report = inspect.getsource(KrakenLayoutEditor.open_detector_aperture_report)
@@ -822,6 +827,15 @@ def main() -> int:
             and "Detector Aperture Report" in main_detector_aperture_report_dialog
             and "Export Detector Aperture CSV" in main_detector_aperture_report_dialog
             and "detector_aperture_table_values" in main_detector_aperture_report_dialog,
+        ),
+        (
+            "Source Illumination Report dialog lives outside layout_editor",
+            "MainSourceIlluminationReportDialog(self)" in main_source_illumination_factory
+            and "self._main_source_illumination_report_dialog().open_source_illumination_report()" in open_source_illumination_report
+            and "self._main_source_illumination_report_dialog()._refresh_source_illumination_report()" in refresh_source_illumination_report
+            and "Source Illumination Report" in main_source_illumination_report_dialog
+            and "Export Source Illumination CSV" in main_source_illumination_report_dialog
+            and "source_illumination_table_values" in main_source_illumination_report_dialog,
         ),
         (
             "Atmosphere controls and dialog live outside layout_editor",
