@@ -20,6 +20,7 @@ from KrakenOS.UI.panels.main_atmosphere_panel import MainAtmospherePanel
 from KrakenOS.UI.panels.main_beam_splitter_dialog import MainBeamSplitterDialog
 from KrakenOS.UI.panels.main_coating_material_dialog import MainCoatingMaterialDialog
 from KrakenOS.UI.panels.main_context_menu import MainContextMenu
+from KrakenOS.UI.panels.main_detector_aperture_report_dialog import MainDetectorApertureReportDialog
 from KrakenOS.UI.panels.main_diffuse_scatter_dialog import MainDiffuseScatterDialog
 from KrakenOS.UI.panels.main_error_map_dialog import MainErrorMapDialog
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
@@ -313,6 +314,10 @@ def main() -> int:
     main_stock_lens_dialog = inspect.getsource(MainStockLensImporterDialog)
     main_stock_lens_factory = inspect.getsource(KrakenLayoutEditor._main_stock_lens_importer_dialog)
     open_stock_lens_importer = inspect.getsource(KrakenLayoutEditor.open_stock_lens_importer)
+    main_detector_aperture_report_dialog = inspect.getsource(MainDetectorApertureReportDialog)
+    main_detector_aperture_factory = inspect.getsource(KrakenLayoutEditor._main_detector_aperture_report_dialog)
+    open_detector_aperture_report = inspect.getsource(KrakenLayoutEditor.open_detector_aperture_report)
+    refresh_detector_aperture_report = inspect.getsource(KrakenLayoutEditor._refresh_detector_aperture_report)
     main_branch_gaussian_q_dialog = inspect.getsource(MainBranchGaussianQDialog)
     main_branch_gaussian_q_factory = inspect.getsource(KrakenLayoutEditor._main_branch_gaussian_q_dialog)
     open_branch_gaussian_q_report = inspect.getsource(KrakenLayoutEditor.open_branch_gaussian_q_report)
@@ -808,6 +813,15 @@ def main() -> int:
             and "Branch Gaussian Q Report" in main_branch_gaussian_q_dialog
             and "Export Branch Gaussian Q CSV" in main_branch_gaussian_q_dialog
             and "branch_gaussian_q_table_values" in main_branch_gaussian_q_dialog,
+        ),
+        (
+            "Detector Aperture Report dialog lives outside layout_editor",
+            "MainDetectorApertureReportDialog(self)" in main_detector_aperture_factory
+            and "self._main_detector_aperture_report_dialog().open_detector_aperture_report()" in open_detector_aperture_report
+            and "self._main_detector_aperture_report_dialog()._refresh_detector_aperture_report()" in refresh_detector_aperture_report
+            and "Detector Aperture Report" in main_detector_aperture_report_dialog
+            and "Export Detector Aperture CSV" in main_detector_aperture_report_dialog
+            and "detector_aperture_table_values" in main_detector_aperture_report_dialog,
         ),
         (
             "Atmosphere controls and dialog live outside layout_editor",
