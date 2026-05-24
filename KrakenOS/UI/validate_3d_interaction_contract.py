@@ -55,6 +55,7 @@ from KrakenOS.UI.services.open3d_face_pick import pick_face_from_ray
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
+from KrakenOS.UI.services.ray_inspector_records import RayInspectorRecordService
 from KrakenOS.UI.widgets.tooltips import WidgetTooltip
 
 
@@ -414,6 +415,9 @@ def main() -> int:
     main_ray_trace_inspectors = inspect.getsource(MainRayTraceInspectorDialogs)
     main_ray_trace_inspectors_factory = inspect.getsource(KrakenLayoutEditor._main_ray_trace_inspector_dialogs)
     open_ray_inspector = inspect.getsource(KrakenLayoutEditor.open_ray_inspector)
+    ray_inspector_record_service = inspect.getsource(RayInspectorRecordService)
+    ray_inspector_record_factory = inspect.getsource(KrakenLayoutEditor._ray_inspector_record_service)
+    collect_ray_inspector_records = inspect.getsource(KrakenLayoutEditor._collect_ray_inspector_records)
     ray_inspector = main_ray_trace_inspectors
     placement_grid = inspect.getsource(Kraken3DInspector._add_scene_placement_grid_overlays)
     show_scene_placement_handles = inspect.getsource(Kraken3DInspector._show_scene_placement_handles)
@@ -1232,6 +1236,14 @@ def main() -> int:
             and "Trace Path Inspector" in main_ray_trace_inspectors
             and "Export Ray Events CSV" in main_ray_trace_inspectors
             and "Export Trace Path Tree CSV" in main_ray_trace_inspectors,
+        ),
+        (
+            "Ray Inspector record collection lives outside layout_editor",
+            "RayInspectorRecordService(self)" in ray_inspector_record_factory
+            and "self._ray_inspector_record_service()._collect_ray_inspector_records(" in collect_ray_inspector_records
+            and "scene_bundle_ray_analysis_records" in ray_inspector_record_service
+            and "BRANCH_TERMINATION_REASON" in ray_inspector_record_service
+            and "interaction_model" in ray_inspector_record_service,
         ),
         (
             "STEP surface-to-axis picking hides regular rays before axis selection",
