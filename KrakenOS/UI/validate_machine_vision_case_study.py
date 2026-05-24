@@ -9,6 +9,7 @@ import numpy as np
 from matplotlib.figure import Figure
 
 from KrakenOS.UI.layout_editor import KrakenLayoutEditor
+from KrakenOS.UI.panels.main_path_detector_analysis import MainPathDetectorAnalysis
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -53,7 +54,7 @@ def main() -> int:
     capture = _text(CAPTURE_SCRIPT)
     helper_source = inspect.getsource(KrakenLayoutEditor._apply_equal_spot_axis_scaling)
     analysis_source = inspect.getsource(KrakenLayoutEditor._plot_analysis)
-    branch_spot_source = inspect.getsource(KrakenLayoutEditor._plot_branch_detector_spot_analysis)
+    branch_spot_source = inspect.getsource(MainPathDetectorAnalysis._plot_branch_detector_spot_analysis)
     spot_block = analysis_source.split('if self.analysis_mode == "spot":', 1)[1].split(
         'if self.analysis_mode == "psf":', 1
     )[0]

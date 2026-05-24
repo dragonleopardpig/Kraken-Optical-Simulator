@@ -28,6 +28,7 @@ from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_lens_drawing_dialogs import MainLensDrawingDialogs
 from KrakenOS.UI.panels.main_nonseq_scene_graph_dialog import MainNonSequentialSceneGraphDialog
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
+from KrakenOS.UI.panels.main_path_detector_analysis import MainPathDetectorAnalysis
 from KrakenOS.UI.panels.main_ray_trace_inspectors import MainRayTraceInspectorDialogs
 from KrakenOS.UI.panels.main_paraxial_analysis_dialogs import MainParaxialAnalysisDialogs
 from KrakenOS.UI.panels.main_scene_element_dialogs import MainSceneElementDialogs
@@ -348,6 +349,10 @@ def main() -> int:
     main_nonseq_scene_graph_dialog = inspect.getsource(MainNonSequentialSceneGraphDialog)
     main_nonseq_scene_graph_factory = inspect.getsource(KrakenLayoutEditor._main_nonseq_scene_graph_dialog)
     open_nonseq_scene_graph = inspect.getsource(KrakenLayoutEditor.open_nonseq_scene_graph)
+    main_path_detector_analysis = inspect.getsource(MainPathDetectorAnalysis)
+    main_path_detector_analysis_factory = inspect.getsource(KrakenLayoutEditor._main_path_detector_analysis)
+    export_detector_map_csv = inspect.getsource(KrakenLayoutEditor.export_detector_map_csv)
+    plot_coherent_detector_analysis = inspect.getsource(KrakenLayoutEditor._plot_coherent_detector_analysis)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
     main_trace_display_panel = inspect.getsource(MainTraceDisplayControlsPanel)
@@ -866,6 +871,15 @@ def main() -> int:
             and "Path Throughput Report" in main_branch_throughput_report_dialog
             and "Export Path Throughput CSV" in main_branch_throughput_report_dialog
             and "branch_throughput_table_values" in main_branch_throughput_report_dialog,
+        ),
+        (
+            "Path detector analysis orchestration lives outside layout_editor",
+            "MainPathDetectorAnalysis(self)" in main_path_detector_analysis_factory
+            and "self._main_path_detector_analysis().export_detector_map_csv()" in export_detector_map_csv
+            and "self._main_path_detector_analysis()._plot_coherent_detector_analysis(" in plot_coherent_detector_analysis
+            and "Detector Power Map" in main_path_detector_analysis
+            and "Coherent Detector Field Sum" in main_path_detector_analysis
+            and "Diffraction Detector Angular Spectrum" in main_path_detector_analysis,
         ),
         (
             "Atmosphere controls and dialog live outside layout_editor",
