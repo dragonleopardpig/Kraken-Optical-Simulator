@@ -1256,3 +1256,29 @@ diverge from the traced physics state. The next validator should drive import,
 carry/drop, accept/promote, face assignment, reassignment, and Trace Ray through
 service-owned transition records rather than direct widget fields inside
 `Kraken3DInspector`.
+
+Before that larger extraction resumes, run a focused Open 3D correction pass:
+
+1. Saved layout reload must restore the STEP element browser. Opening a saved
+   `.py` layout that contains promoted optical STEP rows should rebuild the
+   right-panel browser from row-backed file/STL/STEP metadata, not only from
+   transient in-memory overlay slots. If a saved optical solid traces and draws
+   but is absent from the browser, treat that as a persistence/reconstruction
+   bug in the saved layout writer or browser inventory service.
+2. Put explicit `Left`, `Right`, `Up`, `Down`, `Front`, and `Back` face-direction
+   labels back into Open 3D face assignment. Direct 3D workflows should not
+   require those labels for physics when the user snaps a real face to an
+   optical axis, but the labels are still useful orientation metadata,
+   documentation, browser filtering, and legacy STEP-placement compatibility.
+   The UI should show them as optional descriptive face roles alongside the
+   physical function (`Uncoated`, `Full Reflecting`, `Partial Reflecting`, etc.).
+3. Audit Source panel control applicability by source model. For `Pupil / field`,
+   `Source Radius` does not affect the launch; the active aperture/envelope is
+   driven by Object/Image/field/pupil settings instead. Gray out or hide controls
+   that do not participate in the selected source model, and do the same for
+   every other source-model/control combination where the value is retained only
+   as metadata. The validator should confirm disabled controls are restored when
+   switching back to a model that uses them.
+4. Keep these UI-state fixes behavior-preserving: they should not change ray
+   physics, only ensure saved state, browser state, face metadata, and enabled
+   controls truthfully reflect the active scene model.
