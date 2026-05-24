@@ -20,6 +20,7 @@ from KrakenOS.UI.panels.main_diffuse_scatter_dialog import MainDiffuseScatterDia
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
+from KrakenOS.UI.panels.main_surface_shape_builder_dialog import MainSurfaceShapeBuilderDialog
 from KrakenOS.UI.panels.main_trace_display_controls import MainTraceDisplayControlsPanel
 from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
@@ -269,6 +270,9 @@ def main() -> int:
     main_diffuse_dialog = inspect.getsource(MainDiffuseScatterDialog)
     main_diffuse_dialog_factory = inspect.getsource(KrakenLayoutEditor._main_diffuse_scatter_dialog)
     open_diffuse_dialog = inspect.getsource(KrakenLayoutEditor.open_diffuse_scatter_settings)
+    main_surface_shape_dialog = inspect.getsource(MainSurfaceShapeBuilderDialog)
+    main_surface_shape_factory = inspect.getsource(KrakenLayoutEditor._main_surface_shape_builder_dialog)
+    open_surface_shape_builder = inspect.getsource(KrakenLayoutEditor.open_surface_shape_builder)
     main_optimization_panel = inspect.getsource(MainOptimizationPanel)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
@@ -760,6 +764,18 @@ def main() -> int:
             and "pySCATMECH BRDF" in main_diffuse_dialog
             and "Guided target surface" in main_diffuse_dialog
             and "Validation passed." in main_diffuse_dialog,
+        ),
+        (
+            "Surface Shape Builder dialog lives outside layout_editor",
+            "MainSurfaceShapeBuilderDialog(" in main_surface_shape_factory
+            and "attachment_dir=ATTACHMENT_DIR" in main_surface_shape_factory
+            and "optical_solid_filetypes=OPTICAL_SOLID_FILETYPES" in main_surface_shape_factory
+            and "validate_advanced_surface_inputs=_validate_advanced_surface_inputs" in main_surface_shape_factory
+            and "self._main_surface_shape_builder_dialog().open(row_index)" in open_surface_shape_builder
+            and "Surface Shape Builder" in main_surface_shape_dialog
+            and "Aperture / UDA / Mask" in main_surface_shape_dialog
+            and "Optical CAD/STL" in main_surface_shape_dialog
+            and "Refresh Preview" in main_surface_shape_dialog,
         ),
         (
             "Open 3D renders editable table Thickness dimensions",
