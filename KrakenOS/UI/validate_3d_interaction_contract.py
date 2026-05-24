@@ -15,6 +15,7 @@ from KrakenOS.UI.layout_editor import (
 )
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
+from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
 from KrakenOS.UI.panels.main_trace_display_controls import MainTraceDisplayControlsPanel
 from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
@@ -254,6 +255,9 @@ def main() -> int:
     main_information_panel = inspect.getsource(MainInformationPanel)
     main_information_factory = inspect.getsource(KrakenLayoutEditor._main_information_panel)
     build_results_panel = inspect.getsource(KrakenLayoutEditor._build_results_panel)
+    main_optimization_panel = inspect.getsource(MainOptimizationPanel)
+    main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
+    build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
     main_trace_display_panel = inspect.getsource(MainTraceDisplayControlsPanel)
     main_trace_display_panel_factory = inspect.getsource(KrakenLayoutEditor._main_trace_display_controls_panel)
     build_controls_panel = inspect.getsource(KrakenLayoutEditor._build_controls_panel)
@@ -696,6 +700,17 @@ def main() -> int:
             and "TolCmp" in main_analysis_toolbar_panel
             and "results_table" in main_information_panel
             and "Property" in main_information_panel,
+        ),
+        (
+            "Main optimization panel lives outside layout_editor",
+            "MainOptimizationPanel(self, operand_specs=OPERAND_REGISTRY.values())" in main_optimization_factory
+            and "self._main_optimization_panel().build(parent)" in build_optimization_panel
+            and "Start Optimization" in main_optimization_panel
+            and "Check Backend" in main_optimization_panel
+            and "optimization_workers_var" in main_optimization_panel
+            and "merit_mode_list" in main_optimization_panel
+            and "operand_weight_vars" in main_optimization_panel
+            and "MTF @ freq" in main_optimization_panel,
         ),
         (
             "Open 3D renders editable table Thickness dimensions",

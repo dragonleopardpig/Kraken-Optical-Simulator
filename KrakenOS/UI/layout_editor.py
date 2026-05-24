@@ -267,6 +267,7 @@ from KrakenOS.UI.scene_projector import (
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
+from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
 from KrakenOS.UI.panels.main_trace_display_controls import MainTraceDisplayControlsPanel
 from KrakenOS.UI.panels.open3d_live_controls import Open3DLiveControlsPanel
@@ -25460,191 +25461,15 @@ class KrakenLayoutEditor(tk.Tk):
         parts = [part for part in (note, sampling_note, warning, summary) if part]
         self.status_hint_var.set("  ||  ".join(parts))
 
+    def _main_optimization_panel(self) -> MainOptimizationPanel:
+        panel = getattr(self, "_main_optimization_panel_instance", None)
+        if panel is None:
+            panel = MainOptimizationPanel(self, operand_specs=OPERAND_REGISTRY.values())
+            self._main_optimization_panel_instance = panel
+        return panel
+
     def _build_optimization_panel(self, parent) -> None:
-        operand_list_width = max((len(spec.label) for spec in OPERAND_REGISTRY.values()), default=14) + 2
-        operand_list_minsize = max(150, operand_list_width * 8)
-        parent.columnconfigure(0, weight=0, minsize=operand_list_minsize)
-        parent.columnconfigure(1, weight=1, minsize=220)
-
-        button_row = ttk.Frame(parent)
-        button_row.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        ttk.Button(button_row, text="Start Optimization", command=self.start_optimization).pack(side="left")
-        ttk.Button(button_row, text="Stop", command=self.stop_optimization).pack(side="left", padx=(8, 0))
-        ttk.Button(button_row, text="Check Backend", command=self.check_optimization_backend).pack(
-            side="left",
-            padx=(8, 0),
-        )
-        cpu_total = max(1, int(os.cpu_count() or 1))
-        worker_choices = ["Auto", "1"]
-        for candidate in (2, 4, 6, 8, 12, 16, cpu_total):
-            candidate = max(1, min(cpu_total, int(candidate)))
-            text = str(candidate)
-            if text not in worker_choices:
-                worker_choices.append(text)
-        ttk.Label(button_row, text="Workers").pack(side="left", padx=(14, 0))
-        self.optimization_workers_var = tk.StringVar(value="Auto")
-        ttk.Combobox(
-            button_row,
-            textvariable=self.optimization_workers_var,
-            state="readonly",
-            width=6,
-            values=worker_choices,
-        ).pack(side="left", padx=(6, 0))
-
-        ttk.Label(parent, text="Merit operands").grid(row=1, column=0, sticky="w", pady=(0, 2))
-        self.merit_mode_list = tk.Listbox(
-            parent,
-            exportselection=False,
-            selectmode="extended",
-            height=min(4, max(2, len(OPERAND_REGISTRY))),
-            width=operand_list_width,
-        )
-        for spec in OPERAND_REGISTRY.values():
-            self.merit_mode_list.insert("end", spec.label)
-        if OPERAND_REGISTRY:
-            self.merit_mode_list.selection_set(0)
-        self.merit_mode_list.grid(row=2, column=0, sticky="nsw", pady=(0, 8), padx=(0, 8))
-        self.merit_mode_list.bind("<ButtonPress-1>", self._begin_history_capture, add="+")
-        self.merit_mode_list.bind("<<ListboxSelect>>", lambda _e: self._update_operand_setup_visibility())
-
-        setup_holder = ttk.Frame(parent, height=320)
-        setup_holder.grid(row=2, column=1, sticky="nsew", pady=(0, 8), padx=(4, 0))
-        setup_holder.grid_propagate(False)
-        setup_holder.columnconfigure(0, weight=1)
-        setup_holder.rowconfigure(0, weight=1)
-
-        setup_frame = ttk.Frame(setup_holder)
-        setup_frame.grid(row=0, column=0, sticky="nsew")
-        setup_frame.columnconfigure(0, weight=1, minsize=220)
-        ttk.Label(setup_frame, text="Operand setup").grid(row=0, column=0, sticky="w", pady=(0, 2))
-
-        for idx, spec in enumerate(OPERAND_REGISTRY.values(), start=1):
-            card = ttk.LabelFrame(setup_frame, text=spec.label, padding=6)
-            card.grid(row=idx, column=0, sticky="ew", pady=(0, 8))
-            card.columnconfigure(1, weight=1, minsize=120)
-            control_widgets: dict[str, tuple[tk.Widget, ...]] = {}
-
-            weight_var = tk.StringVar(value=f"{spec.default_weight:g}")
-            self.operand_weight_vars[spec.label] = weight_var
-            weight_label = ttk.Label(card, text="Weight")
-            weight_label.grid(row=0, column=0, sticky="w")
-            weight_entry = ttk.Entry(card, textvariable=weight_var, width=12)
-            weight_entry.grid(row=0, column=1, sticky="ew", padx=(6, 0), pady=(0, 4))
-            self._bind_deferred_refresh(weight_entry)
-            control_widgets["weight"] = (weight_label, weight_entry)
-
-            target_var = tk.StringVar(value=f"{spec.default_target:g}")
-            self.operand_target_vars[spec.label] = target_var
-            target_label = ttk.Label(card, text="Target")
-            target_label.grid(row=1, column=0, sticky="w")
-            target_entry = ttk.Entry(card, textvariable=target_var, width=12)
-            target_entry.grid(row=1, column=1, sticky="ew", padx=(6, 0), pady=(0, 4))
-            self._bind_deferred_refresh(target_entry)
-            control_widgets["target"] = (target_label, target_entry)
-
-            wavelength_var = tk.StringVar(value=self.wavelength_var.get())
-            self.operand_wavelength_vars[spec.label] = wavelength_var
-            wavelength_label = ttk.Label(card, text="Wvl")
-            wavelength_label.grid(row=2, column=0, sticky="w")
-            wavelength_entry = ttk.Entry(card, textvariable=wavelength_var, width=12)
-            wavelength_entry.grid(row=2, column=1, sticky="ew", padx=(6, 0), pady=(0, 4))
-            self._bind_deferred_refresh(wavelength_entry)
-            control_widgets["wavelength"] = (wavelength_label, wavelength_entry)
-
-            field_var = tk.StringVar(value="0")
-            self.operand_field_vars[spec.label] = field_var
-            field_label = ttk.Label(card, text="Field")
-            field_label.grid(row=3, column=0, sticky="w")
-            field_entry = ttk.Entry(card, textvariable=field_var, width=12)
-            field_entry.grid(row=3, column=1, sticky="ew", padx=(6, 0), pady=(0, 4))
-            self._bind_deferred_refresh(field_entry)
-            control_widgets["field"] = (field_label, field_entry)
-
-            surface_row = 4
-            frequency_row = 6
-            mode_row = 7
-            algorithm_row = 8
-
-            if spec.label == "MTF @ freq":
-                field_x_var = tk.StringVar(value="0")
-                field_y_var = tk.StringVar(value="0")
-                self.operand_field_x_vars[spec.label] = field_x_var
-                self.operand_field_y_vars[spec.label] = field_y_var
-                field_x_label = ttk.Label(card, text="Field X")
-                field_x_label.grid(row=3, column=0, sticky="w")
-                field_x_entry = ttk.Entry(card, textvariable=field_x_var, width=12)
-                field_x_entry.grid(row=3, column=1, sticky="ew", padx=(6, 0), pady=(0, 4))
-                self._bind_deferred_refresh(field_x_entry)
-                field_y_label = ttk.Label(card, text="Field Y(s)")
-                field_y_label.grid(row=4, column=0, sticky="w")
-                field_y_entry = ttk.Entry(card, textvariable=field_y_var, width=12)
-                field_y_entry.grid(row=4, column=1, sticky="ew", padx=(6, 0), pady=(0, 4))
-                self._bind_deferred_refresh(field_y_entry)
-                control_widgets["field_xy"] = (field_x_label, field_x_entry, field_y_label, field_y_entry)
-                field_label.grid_remove()
-                field_entry.grid_remove()
-                surface_row = 5
-                frequency_row = 6
-                mode_row = 7
-                algorithm_row = 8
-
-            surface_var = tk.StringVar(value="Auto")
-            self.operand_surface_vars[spec.label] = surface_var
-            surface_label = ttk.Label(card, text="Surf")
-            surface_label.grid(row=surface_row, column=0, sticky="w")
-            surface_menu = ttk.Combobox(card, textvariable=surface_var, state="readonly", width=12, values=["Auto"])
-            surface_menu.grid(row=surface_row, column=1, sticky="ew", padx=(6, 0), pady=(0, 4))
-            surface_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-            surface_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
-            control_widgets["surface"] = (surface_label, surface_menu)
-
-            if spec.label == "MTF @ freq":
-                frequency_var = tk.StringVar(value="5")
-                self.operand_frequency_vars[spec.label] = frequency_var
-                frequency_label = ttk.Label(card, text="Freq")
-                frequency_label.grid(row=frequency_row, column=0, sticky="w")
-                frequency_entry = ttk.Entry(card, textvariable=frequency_var, width=12)
-                frequency_entry.grid(row=frequency_row, column=1, sticky="ew", padx=(6, 0), pady=(0, 0))
-                self._bind_deferred_refresh(frequency_entry)
-                control_widgets["frequency"] = (frequency_label, frequency_entry)
-
-                mtf_mode_var = tk.StringVar(value="Average")
-                self.operand_mtf_mode_vars[spec.label] = mtf_mode_var
-                mode_label = ttk.Label(card, text="Mode")
-                mode_label.grid(row=mode_row, column=0, sticky="w")
-                mtf_mode_menu = ttk.Combobox(
-                    card,
-                    textvariable=mtf_mode_var,
-                    state="readonly",
-                    width=12,
-                    values=["Average", "Tangential", "Sagittal"],
-                )
-                mtf_mode_menu.grid(row=mode_row, column=1, sticky="ew", padx=(6, 0), pady=(4, 0))
-                mtf_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-                mtf_mode_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
-                control_widgets["mtf_mode"] = (mode_label, mtf_mode_menu)
-
-                mtf_algorithm_var = tk.StringVar(value="Diffraction FFT")
-                self.operand_mtf_algorithm_vars[spec.label] = mtf_algorithm_var
-                algorithm_label = ttk.Label(card, text="Alg")
-                algorithm_label.grid(row=algorithm_row, column=0, sticky="w")
-                mtf_algorithm_menu = ttk.Combobox(
-                    card,
-                    textvariable=mtf_algorithm_var,
-                    state="readonly",
-                    width=12,
-                    values=["Diffraction FFT", "PSF FFT", "LSF FFT"],
-                )
-                mtf_algorithm_menu.grid(row=algorithm_row, column=1, sticky="ew", padx=(6, 0), pady=(4, 0))
-                mtf_algorithm_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-                mtf_algorithm_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
-                control_widgets["mtf_algorithm"] = (algorithm_label, mtf_algorithm_menu)
-
-            self.operand_control_widgets[spec.label] = control_widgets
-            self.operand_setup_frames[spec.label] = card
-            self._apply_operand_control_visibility(spec.label)
-
-        self._update_operand_setup_visibility()
+        self._main_optimization_panel().build(parent)
 
     def _build_results_panel(self, parent) -> None:
         self._main_information_panel().build(parent)
