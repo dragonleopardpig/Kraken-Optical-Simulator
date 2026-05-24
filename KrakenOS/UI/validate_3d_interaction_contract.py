@@ -24,6 +24,7 @@ from KrakenOS.UI.panels.main_error_map_dialog import MainErrorMapDialog
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
 from KrakenOS.UI.panels.main_scene_element_dialogs import MainSceneElementDialogs
+from KrakenOS.UI.panels.main_scene_source_manager_dialog import MainSceneSourceManagerDialog
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
 from KrakenOS.UI.panels.main_surface_settings_dialogs import MainSurfaceSettingsDialogs
 from KrakenOS.UI.panels.main_surface_shape_builder_dialog import MainSurfaceShapeBuilderDialog
@@ -302,6 +303,9 @@ def main() -> int:
     open_scene_target_dialog = inspect.getsource(KrakenLayoutEditor.open_scene_target_editor)
     open_path_pose_dialog = inspect.getsource(KrakenLayoutEditor.open_selected_path_local_pose_editor)
     open_element_dialog = inspect.getsource(KrakenLayoutEditor.open_element_settings)
+    main_scene_source_dialog = inspect.getsource(MainSceneSourceManagerDialog)
+    main_scene_source_factory = inspect.getsource(KrakenLayoutEditor._main_scene_source_manager_dialog)
+    open_scene_source_manager = inspect.getsource(KrakenLayoutEditor.open_scene_source_manager)
     main_optimization_panel = inspect.getsource(MainOptimizationPanel)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
@@ -877,6 +881,17 @@ def main() -> int:
             and "Scene Target" in main_scene_element_dialogs
             and "Path-Local Pose" in main_scene_element_dialogs
             and "Element Settings" in main_scene_element_dialogs,
+        ),
+        (
+            "Scene Source Manager dialog lives outside layout_editor",
+            "MainSceneSourceManagerDialog(" in main_scene_source_factory
+            and "source_model_values=SOURCE_MODEL_VALUES" in main_scene_source_factory
+            and "source_row_order_default=SOURCE_ROW_ORDER_DEFAULT" in main_scene_source_factory
+            and "normalize_source_row_order=normalize_source_row_order" in main_scene_source_factory
+            and "self._main_scene_source_manager_dialog().open_scene_source_manager(" in open_scene_source_manager
+            and "Scene Source Manager" in main_scene_source_dialog
+            and "Add From Source Panel" in main_scene_source_dialog
+            and "Use Source Panel Only" in main_scene_source_dialog,
         ),
         (
             "Open 3D renders editable table Thickness dimensions",
