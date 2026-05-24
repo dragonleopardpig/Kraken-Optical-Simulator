@@ -10813,6 +10813,77 @@ class Kraken3DInspector(tk.Toplevel):
         ).ravel()
         return pv.PolyData(points, faces)
 
+    @staticmethod
+    def _surface_cell_triangles(mesh) -> np.ndarray:
+        if pv is None or mesh is None:
+            return np.empty((0, 3, 3), dtype=float)
+        try:
+            surface = pv.wrap(mesh).extract_surface(algorithm="dataset_surface")
+        except Exception:
+            try:
+                surface = pv.wrap(mesh)
+            except Exception:
+                return np.empty((0, 3, 3), dtype=float)
+        try:
+            points = np.asarray(surface.points, dtype=float)
+            faces = np.asarray(surface.faces, dtype=np.int64).ravel()
+        except Exception:
+            return np.empty((0, 3, 3), dtype=float)
+        if points.ndim != 2 or points.shape[0] < 3 or points.shape[1] < 3 or faces.size < 4:
+            return np.empty((0, 3, 3), dtype=float)
+        triangles: list[np.ndarray] = []
+        cursor = 0
+        while cursor < int(faces.size):
+            vertex_count = int(faces[cursor])
+            cursor += 1
+            if vertex_count < 3 or cursor + vertex_count > int(faces.size):
+                break
+            indices = np.asarray(faces[cursor : cursor + vertex_count], dtype=np.int64)
+            cursor += vertex_count
+            if np.any(indices < 0) or np.any(indices >= points.shape[0]):
+                continue
+            for offset in range(1, vertex_count - 1):
+                triangle = points[[indices[0], indices[offset], indices[offset + 1]], :3]
+                if np.all(np.isfinite(triangle)):
+                    triangles.append(triangle)
+        if not triangles:
+            return np.empty((0, 3, 3), dtype=float)
+        return np.asarray(triangles, dtype=float)
+
+    @staticmethod
+    def _runtime_world_face_triangles_for_record(
+        system,
+        row_index: int,
+        face: dict[str, object],
+        *,
+        scene_radius: float = 1.0,
+    ) -> np.ndarray:
+        runtime_mesh = KrakenLayoutEditor._runtime_trace_surface_mesh(system, int(row_index)) if system is not None else None
+        if runtime_mesh is None:
+            return np.empty((0, 3, 3), dtype=float)
+        triangles = Kraken3DInspector._surface_cell_triangles(runtime_mesh)
+        if triangles.ndim != 3 or triangles.shape[0] == 0:
+            return np.empty((0, 3, 3), dtype=float)
+        indices: list[int] = []
+        for value in list(face.get("triangle_indices", []) or []):
+            try:
+                index = int(value)
+            except Exception:
+                continue
+            if 0 <= index < int(triangles.shape[0]):
+                indices.append(index)
+        if not indices:
+            return np.empty((0, 3, 3), dtype=float)
+        selected = np.asarray(triangles[np.asarray(indices, dtype=int)], dtype=float)
+        if selected.ndim != 3 or selected.shape[1:] != (3, 3) or selected.shape[0] == 0:
+            return np.empty((0, 3, 3), dtype=float)
+        normals = np.cross(selected[:, 1, :] - selected[:, 0, :], selected[:, 2, :] - selected[:, 0, :])
+        normal = np.sum(normals, axis=0)
+        norm = float(np.linalg.norm(normal))
+        if norm > 1.0e-12 and np.isfinite(norm):
+            selected = selected + (normal[:3] / norm) * max(float(scene_radius) * 0.0007, 0.02)
+        return selected
+
     def _add_optical_solid_assigned_face_overlays(self, system=None) -> int:
         if self._renderer is None or pv is None:
             return 0
@@ -10843,14 +10914,21 @@ class Kraken3DInspector(tk.Toplevel):
                 record = normalize_optical_solid_face_record(face)
                 if not self._assigned_optical_solid_face(record):
                     continue
-                world_triangles = self._world_face_triangles_for_record(
-                    row,
-                    triangles,
+                world_triangles = self._runtime_world_face_triangles_for_record(
+                    system,
+                    row_index,
                     record,
-                    z_station=z_station,
-                    transform=transform,
                     scene_radius=scene_radius,
                 )
+                if world_triangles.size == 0:
+                    world_triangles = self._world_face_triangles_for_record(
+                        row,
+                        triangles,
+                        record,
+                        z_station=z_station,
+                        transform=transform,
+                        scene_radius=scene_radius,
+                    )
                 mesh = self._polydata_from_triangles(world_triangles)
                 if mesh is None:
                     continue
