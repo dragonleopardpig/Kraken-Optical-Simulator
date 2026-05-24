@@ -5307,6 +5307,33 @@ def _dotted_axis_records_from_ray_path(path, bounds, *, max_segments: int = 6) -
         ray_index = -1
     branch_path = str(getattr(path, "branch_path", "") or "")
     source_id = str(getattr(path, "source_id", "") or "")
+
+    def _event_surface_index(event) -> int | None:
+        try:
+            value = getattr(event, "surface_id", None)
+            return None if value is None else int(value)
+        except Exception:
+            return None
+
+    def _is_external_between_surface_axis(event_before, event_after) -> bool:
+        if event_before is None or event_after is None:
+            return False
+        before_surface = _event_surface_index(event_before)
+        after_surface = _event_surface_index(event_after)
+        if before_surface is None or after_surface is None or before_surface == after_surface:
+            return False
+        before_inside = str(getattr(event_before, "inside_volumes_after", "") or "").strip()
+        after_inside = str(getattr(event_after, "inside_volumes_before", "") or "").strip()
+        if before_inside and before_inside == after_inside:
+            return False
+        before_action = str(getattr(event_before, "event_type", "") or "").strip().lower()
+        after_action = str(getattr(event_after, "event_type", "") or "").strip().lower()
+        if before_action in {"reflection", "reflect", "reflect_mirror", "reflect_tir", "scatter", "absorb", "absorption"}:
+            return False
+        if after_action in {"reflection", "reflect", "reflect_mirror", "reflect_tir", "scatter", "absorb", "absorption"}:
+            return False
+        return True
+
     for index, (start, end) in enumerate(zip(points[:-1], points[1:]), start=1):
         event_before = surface_events[index - 2] if 0 <= index - 2 < len(surface_events) else None
         event_after = surface_events[index - 1] if 0 <= index - 1 < len(surface_events) else None
@@ -5316,7 +5343,9 @@ def _dotted_axis_records_from_ray_path(path, bounds, *, max_segments: int = 6) -
             axis_role = "post_surface"
         else:
             axis_role = "between_surfaces"
-        if axis_role != "post_surface":
+        if axis_role == "launch_segment":
+            continue
+        if axis_role == "between_surfaces" and not _is_external_between_surface_axis(event_before, event_after):
             continue
         direction = end - start
         length = float(np.linalg.norm(direction))

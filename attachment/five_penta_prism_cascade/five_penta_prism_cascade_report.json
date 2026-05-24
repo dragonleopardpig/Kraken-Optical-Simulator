@@ -25,6 +25,84 @@
         "step": 13
       }
     },
+    "exit_axis_validation": {
+      "axis_roles": [
+        "between_surfaces",
+        "between_surfaces",
+        "between_surfaces",
+        "between_surfaces",
+        "post_surface"
+      ],
+      "axis_segments": [
+        {
+          "axis_label": "Optical Axis 2",
+          "axis_role": "between_surfaces",
+          "from_mesh_face_id": "F006",
+          "from_surface_id": 1,
+          "segment_direction": [
+            1.897e-06,
+            -1.0,
+            -1.99e-07
+          ],
+          "to_mesh_face_id": "F005",
+          "to_surface_id": 2
+        },
+        {
+          "axis_label": "Optical Axis 3",
+          "axis_role": "between_surfaces",
+          "from_mesh_face_id": "F006",
+          "from_surface_id": 2,
+          "segment_direction": [
+            1.0,
+            1.858e-06,
+            -1.99e-07
+          ],
+          "to_mesh_face_id": "F005",
+          "to_surface_id": 3
+        },
+        {
+          "axis_label": "Optical Axis 4",
+          "axis_role": "between_surfaces",
+          "from_mesh_face_id": "F006",
+          "from_surface_id": 3,
+          "segment_direction": [
+            2.65e-07,
+            1.592e-06,
+            1.0
+          ],
+          "to_mesh_face_id": "F005",
+          "to_surface_id": 4
+        },
+        {
+          "axis_label": "Optical Axis 5",
+          "axis_role": "between_surfaces",
+          "from_mesh_face_id": "F006",
+          "from_surface_id": 4,
+          "segment_direction": [
+            -2.388e-06,
+            1.0,
+            -1.592e-06
+          ],
+          "to_mesh_face_id": "F005",
+          "to_surface_id": 5
+        },
+        {
+          "axis_label": "Optical Axis 6",
+          "axis_role": "post_surface",
+          "from_mesh_face_id": "F006",
+          "from_surface_id": 5,
+          "segment_direction": [
+            -1.0,
+            -2.344e-06,
+            -1.609e-06
+          ],
+          "to_mesh_face_id": "",
+          "to_surface_id": null
+        }
+      ],
+      "exit_axis_count": 5,
+      "expected_exit_axes": 5
+    },
     "ray_paths": 13,
     "row_indices": [
       1,
@@ -160,6 +238,28 @@
         0.0,
         45.0
       ],
+      "exit_axis_validation": {
+        "axis_roles": [
+          "post_surface"
+        ],
+        "axis_segments": [
+          {
+            "axis_label": "Optical Axis 2",
+            "axis_role": "post_surface",
+            "from_mesh_face_id": "F006",
+            "from_surface_id": 1,
+            "segment_direction": [
+              1.897e-06,
+              -1.0,
+              -2.14e-07
+            ],
+            "to_mesh_face_id": "",
+            "to_surface_id": null
+          }
+        ],
+        "exit_axis_count": 1,
+        "expected_exit_axes": 1
+      },
       "incoming_direction": [
         0.0,
         0.0,
@@ -273,6 +373,42 @@
         -127.500100136,
         57.500144958
       ],
+      "exit_axis_validation": {
+        "axis_roles": [
+          "between_surfaces",
+          "post_surface"
+        ],
+        "axis_segments": [
+          {
+            "axis_label": "Optical Axis 2",
+            "axis_role": "between_surfaces",
+            "from_mesh_face_id": "F006",
+            "from_surface_id": 1,
+            "segment_direction": [
+              1.897e-06,
+              -1.0,
+              -1.99e-07
+            ],
+            "to_mesh_face_id": "F005",
+            "to_surface_id": 2
+          },
+          {
+            "axis_label": "Optical Axis 3",
+            "axis_role": "post_surface",
+            "from_mesh_face_id": "F006",
+            "from_surface_id": 2,
+            "segment_direction": [
+              1.0,
+              1.897e-06,
+              -2.14e-07
+            ],
+            "to_mesh_face_id": "",
+            "to_surface_id": null
+          }
+        ],
+        "exit_axis_count": 2,
+        "expected_exit_axes": 2
+      },
       "incoming_direction": [
         0.0,
         -1.0,
@@ -387,6 +523,56 @@
         -139.999771118,
         57.500110626
       ],
+      "exit_axis_validation": {
+        "axis_roles": [
+          "between_surfaces",
+          "between_surfaces",
+          "post_surface"
+        ],
+        "axis_segments": [
+          {
+            "axis_label": "Optical Axis 2",
+            "axis_role": "between_surfaces",
+            "from_mesh_face_id": "F006",
+            "from_surface_id": 1,
+            "segment_direction": [
+              1.897e-06,
+              -1.0,
+              -1.99e-07
+            ],
+            "to_mesh_face_id": "F005",
+            "to_surface_id": 2
+          },
+          {
+            "axis_label": "Optical Axis 3",
+            "axis_role": "between_surfaces",
+            "from_mesh_face_id": "F006",
+            "from_surface_id": 2,
+            "segment_direction": [
+              1.0,
+              1.858e-06,
+              -1.99e-07
+            ],
+            "to_mesh_face_id": "F005",
+            "to_surface_id": 3
+          },
+          {
+            "axis_label": "Optical Axis 4",
+            "axis_role": "post_surface",
+            "from_mesh_face_id": "F006",
+            "from_surface_id": 3,
+            "segment_direction": [
+              3.06e-07,
+              1.609e-06,
+              1.0
+            ],
+            "to_mesh_face_id": "",
+            "to_surface_id": null
+          }
+        ],
+        "exit_axis_count": 3,
+        "expected_exit_axes": 3
+      },
       "incoming_direction": [
         1.0,
         0.0,
@@ -502,6 +688,70 @@
         -139.999542236,
         184.999382019
       ],
+      "exit_axis_validation": {
+        "axis_roles": [
+          "between_surfaces",
+          "between_surfaces",
+          "between_surfaces",
+          "post_surface"
+        ],
+        "axis_segments": [
+          {
+            "axis_label": "Optical Axis 2",
+            "axis_role": "between_surfaces",
+            "from_mesh_face_id": "F006",
+            "from_surface_id": 1,
+            "segment_direction": [
+              1.897e-06,
+              -1.0,
+              -1.99e-07
+            ],
+            "to_mesh_face_id": "F005",
+            "to_surface_id": 2
+          },
+          {
+            "axis_label": "Optical Axis 3",
+            "axis_role": "between_surfaces",
+            "from_mesh_face_id": "F006",
+            "from_surface_id": 2,
+            "segment_direction": [
+              1.0,
+              1.858e-06,
+              -1.99e-07
+            ],
+            "to_mesh_face_id": "F005",
+            "to_surface_id": 3
+          },
+          {
+            "axis_label": "Optical Axis 4",
+            "axis_role": "between_surfaces",
+            "from_mesh_face_id": "F006",
+            "from_surface_id": 3,
+            "segment_direction": [
+              2.65e-07,
+              1.592e-06,
+              1.0
+            ],
+            "to_mesh_face_id": "F005",
+            "to_surface_id": 4
+          },
+          {
+            "axis_label": "Optical Axis 5",
+            "axis_role": "post_surface",
+            "from_mesh_face_id": "F006",
+            "from_surface_id": 4,
+            "segment_direction": [
+              -2.344e-06,
+              1.0,
+              -1.609e-06
+            ],
+            "to_mesh_face_id": "",
+            "to_surface_id": null
+          }
+        ],
+        "exit_axis_count": 4,
+        "expected_exit_axes": 4
+      },
       "incoming_direction": [
         0.0,
         0.0,
@@ -618,6 +868,84 @@
         -12.500389099,
         197.496871948
       ],
+      "exit_axis_validation": {
+        "axis_roles": [
+          "between_surfaces",
+          "between_surfaces",
+          "between_surfaces",
+          "between_surfaces",
+          "post_surface"
+        ],
+        "axis_segments": [
+          {
+            "axis_label": "Optical Axis 2",
+            "axis_role": "between_surfaces",
+            "from_mesh_face_id": "F006",
+            "from_surface_id": 1,
+            "segment_direction": [
+              1.897e-06,
+              -1.0,
+              -1.99e-07
+            ],
+            "to_mesh_face_id": "F005",
+            "to_surface_id": 2
+          },
+          {
+            "axis_label": "Optical Axis 3",
+            "axis_role": "between_surfaces",
+            "from_mesh_face_id": "F006",
+            "from_surface_id": 2,
+            "segment_direction": [
+              1.0,
+              1.858e-06,
+              -1.99e-07
+            ],
+            "to_mesh_face_id": "F005",
+            "to_surface_id": 3
+          },
+          {
+            "axis_label": "Optical Axis 4",
+            "axis_role": "between_surfaces",
+            "from_mesh_face_id": "F006",
+            "from_surface_id": 3,
+            "segment_direction": [
+              2.65e-07,
+              1.592e-06,
+              1.0
+            ],
+            "to_mesh_face_id": "F005",
+            "to_surface_id": 4
+          },
+          {
+            "axis_label": "Optical Axis 5",
+            "axis_role": "between_surfaces",
+            "from_mesh_face_id": "F006",
+            "from_surface_id": 4,
+            "segment_direction": [
+              -2.388e-06,
+              1.0,
+              -1.592e-06
+            ],
+            "to_mesh_face_id": "F005",
+            "to_surface_id": 5
+          },
+          {
+            "axis_label": "Optical Axis 6",
+            "axis_role": "post_surface",
+            "from_mesh_face_id": "F006",
+            "from_surface_id": 5,
+            "segment_direction": [
+              -1.0,
+              -2.344e-06,
+              -1.609e-06
+            ],
+            "to_mesh_face_id": "",
+            "to_surface_id": null
+          }
+        ],
+        "exit_axis_count": 5,
+        "expected_exit_axes": 5
+      },
       "incoming_direction": [
         0.0,
         1.0,

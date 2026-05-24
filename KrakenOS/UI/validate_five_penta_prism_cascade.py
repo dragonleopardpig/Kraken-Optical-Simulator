@@ -47,6 +47,7 @@ from KrakenOS.UI.layout_editor import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
     KrakenLayoutEditor,
     SurfaceRow,
+    _dotted_axis_records_from_ray_path,
     _short_error_message,
 )
 from KrakenOS.UI.scene_geometry import ray_path_terminal_status_from_events
@@ -457,6 +458,75 @@ def _validate_event_mesh_congruence(
     }
 
 
+def _bounds_for_ray_path(path: object) -> np.ndarray:
+    points = np.asarray(getattr(path, "points_world", ()), dtype=float)
+    if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+        return np.asarray((-10.0, 10.0, -10.0, 10.0, 0.0, 100.0), dtype=float)
+    finite = np.all(np.isfinite(points[:, :3]), axis=1)
+    if not np.any(finite):
+        return np.asarray((-10.0, 10.0, -10.0, 10.0, 0.0, 100.0), dtype=float)
+    pts = points[finite, :3]
+    mins = np.min(pts, axis=0)
+    maxs = np.max(pts, axis=0)
+    pad = max(float(np.max(maxs - mins)) * 0.05, 5.0)
+    return np.asarray(
+        (
+            float(mins[0] - pad),
+            float(maxs[0] + pad),
+            float(mins[1] - pad),
+            float(maxs[1] + pad),
+            float(mins[2] - pad),
+            float(maxs[2] + pad),
+        ),
+        dtype=float,
+    )
+
+
+def _validate_exit_axis_records(scene_bundle: object, *, expected_exit_axes: int) -> dict[str, object]:
+    ray_paths = list(getattr(scene_bundle, "ray_paths", []) or [])
+    central = _central_path(ray_paths)
+    records = _dotted_axis_records_from_ray_path(
+        central,
+        _bounds_for_ray_path(central),
+        max_segments=max(int(expected_exit_axes) + 2, 8),
+    )
+    exit_records = [
+        record
+        for record in records
+        if str(record.get("axis_role", "") or "") in {"between_surfaces", "post_surface"}
+    ]
+    internal_records = [
+        record
+        for record in records
+        if str(record.get("axis_role", "") or "") == "between_surfaces"
+        and record.get("from_surface_id") == record.get("to_surface_id")
+    ]
+    if internal_records:
+        raise RuntimeError(f"Optical-axis records include internal same-row segments: {internal_records!r}.")
+    if len(exit_records) != int(expected_exit_axes):
+        raise RuntimeError(
+            f"Expected {expected_exit_axes} external penta exit-axis records, got {len(exit_records)}: "
+            f"{[(record.get('axis_role'), record.get('from_surface_id'), record.get('to_surface_id'), record.get('from_mesh_face_id'), record.get('to_mesh_face_id')) for record in exit_records]}"
+        )
+    return {
+        "expected_exit_axes": int(expected_exit_axes),
+        "exit_axis_count": len(exit_records),
+        "axis_roles": [str(record.get("axis_role", "") or "") for record in exit_records],
+        "axis_segments": [
+            {
+                "axis_label": str(record.get("axis_label", "") or ""),
+                "axis_role": str(record.get("axis_role", "") or ""),
+                "from_surface_id": record.get("from_surface_id"),
+                "to_surface_id": record.get("to_surface_id"),
+                "from_mesh_face_id": str(record.get("from_mesh_face_id", "") or ""),
+                "to_mesh_face_id": str(record.get("to_mesh_face_id", "") or ""),
+                "segment_direction": _vector_json(record.get("segment_direction", ())),
+            }
+            for record in exit_records
+        ],
+    }
+
+
 def _validate_trace(scene_bundle: object, row_indices: list[int], *, final_expected_direction: np.ndarray) -> dict[str, object]:
     ray_paths = list(getattr(scene_bundle, "ray_paths", []) or [])
     if not ray_paths:
@@ -551,6 +621,7 @@ def build_case_editor(stage_snapshot_dir: Path | None = None) -> tuple[KrakenLay
         central = _central_path(ray_paths)
         prefix_validation = _validate_trace(scene_bundle, row_indices + [insert_at], final_expected_direction=outgoing)
         mesh_congruence = _validate_event_mesh_congruence(app, _system, scene_bundle, row_indices + [insert_at])
+        exit_axis_validation = _validate_exit_axis_records(scene_bundle, expected_exit_axes=prism_number)
         stage: dict[str, object] = {
             "prism": prism_number,
             "row_index": insert_at,
@@ -578,6 +649,7 @@ def build_case_editor(stage_snapshot_dir: Path | None = None) -> tuple[KrakenLay
             "central_sequence": " -> ".join(_surface_sequence(central)),
             "prefix_validation": prefix_validation,
             "display_mesh_congruence": mesh_congruence,
+            "exit_axis_validation": exit_axis_validation,
             "snapshots": {},
         }
         snapshot_path = _snapshot(
@@ -595,6 +667,7 @@ def build_case_editor(stage_snapshot_dir: Path | None = None) -> tuple[KrakenLay
 
     final = _validate_trace(scene_bundle, row_indices, final_expected_direction=directions[-1])
     final["display_mesh_congruence"] = _validate_event_mesh_congruence(app, _system, scene_bundle, row_indices)
+    final["exit_axis_validation"] = _validate_exit_axis_records(scene_bundle, expected_exit_axes=len(row_indices))
     report = {
         "ok": True,
         "penta_count": PENTA_COUNT,
