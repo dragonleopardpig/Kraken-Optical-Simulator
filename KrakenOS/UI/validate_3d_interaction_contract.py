@@ -51,6 +51,7 @@ from KrakenOS.UI.scene_builder import _sync_path_display_geometry_from_events
 from KrakenOS.UI.scene_geometry import RayEvent3D, RayPath3D
 from KrakenOS.UI.scene_projector import bounded_ray_points_for_scene_display, scene_display_center_radius
 from KrakenOS.UI.services.layout_settings import LayoutSettingsService
+from KrakenOS.UI.services.nonseq_scene_graph_records import NonSequentialSceneGraphRecordService
 from KrakenOS.UI.services.open3d_face_pick import pick_face_from_ray
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
@@ -418,6 +419,9 @@ def main() -> int:
     ray_inspector_record_service = inspect.getsource(RayInspectorRecordService)
     ray_inspector_record_factory = inspect.getsource(KrakenLayoutEditor._ray_inspector_record_service)
     collect_ray_inspector_records = inspect.getsource(KrakenLayoutEditor._collect_ray_inspector_records)
+    nonseq_scene_graph_record_service = inspect.getsource(NonSequentialSceneGraphRecordService)
+    nonseq_scene_graph_record_factory = inspect.getsource(KrakenLayoutEditor._nonseq_scene_graph_record_service)
+    collect_nonseq_scene_graph_records = inspect.getsource(KrakenLayoutEditor._collect_nonseq_scene_graph_records)
     ray_inspector = main_ray_trace_inspectors
     placement_grid = inspect.getsource(Kraken3DInspector._add_scene_placement_grid_overlays)
     show_scene_placement_handles = inspect.getsource(Kraken3DInspector._show_scene_placement_handles)
@@ -1244,6 +1248,14 @@ def main() -> int:
             and "scene_bundle_ray_analysis_records" in ray_inspector_record_service
             and "BRANCH_TERMINATION_REASON" in ray_inspector_record_service
             and "interaction_model" in ray_inspector_record_service,
+        ),
+        (
+            "Non-sequential scene graph records live outside layout_editor",
+            "NonSequentialSceneGraphRecordService(self)" in nonseq_scene_graph_record_factory
+            and "self._nonseq_scene_graph_record_service()._collect_nonseq_scene_graph_records()" in collect_nonseq_scene_graph_records
+            and "Scene row order" in nonseq_scene_graph_record_service
+            and "BoundaryFace" in nonseq_scene_graph_record_service
+            and "scene_target_to_runtime_record" in nonseq_scene_graph_record_service,
         ),
         (
             "STEP surface-to-axis picking hides regular rays before axis selection",
