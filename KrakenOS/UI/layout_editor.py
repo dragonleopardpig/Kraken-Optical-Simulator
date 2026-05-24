@@ -5172,14 +5172,25 @@ def _raykeeper_has_non_primary_branch_paths(rays, *, expected_launch_count: int 
     return False
 
 
-def _optical_axis_z_span(bounds) -> tuple[float, float]:
+def _finite_bounds_array(bounds) -> np.ndarray:
     try:
         b = np.asarray(bounds, dtype=float).reshape(-1)
     except Exception:
         b = np.asarray([], dtype=float)
     if b.size != 6 or not np.all(np.isfinite(b)) or b[0] > b[1] or b[2] > b[3] or b[4] > b[5]:
         b = np.asarray([-10.0, 10.0, -10.0, 10.0, 0.0, 100.0], dtype=float)
+    return b
+
+
+def _bounds_span(bounds) -> float:
+    b = _finite_bounds_array(bounds)
     span = max(float(b[1] - b[0]), float(b[3] - b[2]), float(b[5] - b[4]), 20.0)
+    return float(span)
+
+
+def _optical_axis_z_span(bounds) -> tuple[float, float]:
+    b = _finite_bounds_array(bounds)
+    span = _bounds_span(b)
     z0 = min(float(b[4]), 0.0) - 0.65 * span
     z1 = max(float(b[5]), 0.0) + 0.65 * span
     if z1 <= z0:
@@ -5255,13 +5266,7 @@ def _extended_axis_points(point, direction, bounds) -> np.ndarray | None:
     if not np.isfinite(norm) or norm <= 1e-12:
         return None
     vector = vector[:3] / norm
-    try:
-        b = np.asarray(bounds, dtype=float).reshape(-1)
-    except Exception:
-        b = np.asarray([], dtype=float)
-    if b.size != 6 or not np.all(np.isfinite(b)) or b[0] > b[1] or b[2] > b[3] or b[4] > b[5]:
-        b = np.asarray([-10.0, 10.0, -10.0, 10.0, 0.0, 100.0], dtype=float)
-    span = max(float(b[1] - b[0]), float(b[3] - b[2]), float(b[5] - b[4]), 20.0)
+    span = _bounds_span(bounds)
     half = max(0.85 * span, 10.0)
     return np.vstack((origin[:3] - vector * half, origin[:3] + vector * half))
 
@@ -5320,7 +5325,16 @@ def _dotted_axis_records_from_ray_path(path, bounds, *, max_segments: int = 6) -
         direction = direction / length
         if abs(float(direction[2])) > 0.998 and float(np.hypot(start[0], start[1])) < 1e-5 and float(np.hypot(end[0], end[1])) < 1e-5:
             continue
-        axis_points = _extended_axis_points(0.5 * (start + end), direction, bounds)
+        axis_origin = 0.5 * (start + end)
+        if axis_role == "post_surface":
+            span = _bounds_span(bounds)
+            # Escaped non-sequential paths can carry a long synthetic terminal
+            # tail. Anchor the pickable optical-axis guide near the last real
+            # surface event instead of at that tail's midpoint, otherwise the
+            # guide can poison camera-fit bounds by many orders of magnitude.
+            offset = min(length * 0.5, max(0.08 * span, 2.0))
+            axis_origin = start + direction * offset
+        axis_points = _extended_axis_points(axis_origin, direction, bounds)
         if axis_points is None:
             continue
         key = tuple(np.round(np.concatenate((axis_points[0], axis_points[1])), 5))
@@ -7416,7 +7430,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self.editor.append_debug(f"3D row carry actor move failed for S{int(row_index)}: {exc}")
         if moved:
             try:
-                self._renderer.ResetCameraClippingRange()
+                self._reset_camera_clipping_range_for_scene()
             except Exception:
                 pass
             self.render()
@@ -7732,7 +7746,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self.editor.append_debug(f"3D STEP carry actor move failed for {label}: {exc}")
         if moved:
             try:
-                self._renderer.ResetCameraClippingRange()
+                self._reset_camera_clipping_range_for_scene()
             except Exception:
                 pass
             self.render()
@@ -8379,7 +8393,7 @@ class Kraken3DInspector(tk.Toplevel):
             camera.Elevation(dy_f * degrees_per_pixel)
             camera.SetFocalPoint(*focal)
             camera.OrthogonalizeViewUp()
-            self._renderer.ResetCameraClippingRange()
+            self._reset_camera_clipping_range_for_scene()
             self.render()
         except Exception as exc:
             self.editor.append_debug(f"3D fixed-drag rotation failed: {exc}")
@@ -8439,7 +8453,7 @@ class Kraken3DInspector(tk.Toplevel):
             camera.SetPosition(*(position[:3] + delta[:3]))
             camera.SetFocalPoint(*(focal[:3] + delta[:3]))
             camera.OrthogonalizeViewUp()
-            self._renderer.ResetCameraClippingRange()
+            self._reset_camera_clipping_range_for_scene()
             self.render()
         except Exception as exc:
             self.editor.append_debug(f"3D middle-drag pan failed: {exc}")
@@ -10917,10 +10931,83 @@ class Kraken3DInspector(tk.Toplevel):
                     count += 1
         return count
 
+    def _visible_actor_bounds(
+        self,
+        *,
+        include_guides: bool = False,
+        preferred_keys: set[str] | None = None,
+    ) -> np.ndarray | None:
+        if self._renderer is None:
+            return None
+        mins = np.array((np.inf, np.inf, np.inf), dtype=float)
+        maxs = np.array((-np.inf, -np.inf, -np.inf), dtype=float)
+        found = False
+
+        def consider_actor(actor) -> None:
+            nonlocal found, mins, maxs
+            if actor is None:
+                return
+            try:
+                if not int(actor.GetVisibility()):
+                    return
+            except Exception:
+                pass
+            actor_key = self._actor_key(actor)
+            if not include_guides:
+                if actor_key is not None and actor_key in self._actor_optical_axis_map:
+                    return
+                if actor is self._optical_axis_highlight_actor:
+                    return
+            try:
+                bounds = np.asarray(actor.GetBounds(), dtype=float).reshape(6)
+            except Exception:
+                return
+            if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[0] > bounds[1]:
+                return
+            mins = np.minimum(mins, (bounds[0], bounds[2], bounds[4]))
+            maxs = np.maximum(maxs, (bounds[1], bounds[3], bounds[5]))
+            found = True
+
+        if preferred_keys:
+            for actor_key in sorted(str(key) for key in preferred_keys):
+                consider_actor(self._actor_by_key.get(actor_key))
+        else:
+            actors = self._renderer.GetActors()
+            actors.InitTraversal()
+            for _ in range(actors.GetNumberOfItems()):
+                consider_actor(actors.GetNextActor())
+        if not found:
+            return None
+        return np.asarray((mins[0], maxs[0], mins[1], maxs[1], mins[2], maxs[2]), dtype=float)
+
+    def _camera_fit_bounds(self) -> np.ndarray:
+        preferred_keys: set[str] = set()
+        for keys in list(self._row_actor_map.values()):
+            preferred_keys.update(str(key) for key in list(keys or []))
+        for keys in list(self._ray_actor_map.values()):
+            preferred_keys.update(str(key) for key in list(keys or []))
+        preferred_keys.update(str(key) for key in self._actor_step_map)
+        for keys in list(self._step_follow_actor_map.values()):
+            preferred_keys.update(str(key) for key in list(keys or []))
+        bounds = self._visible_actor_bounds(include_guides=False, preferred_keys=preferred_keys)
+        if bounds is None:
+            bounds = self._visible_actor_bounds(include_guides=False)
+        if bounds is not None:
+            return bounds
+        try:
+            return _finite_bounds_array(self._renderer.ComputeVisiblePropBounds())
+        except Exception:
+            return _finite_bounds_array(None)
+
     def _scene_bounds(self) -> tuple[np.ndarray, float]:
         if self._renderer is None:
             return np.zeros(3, dtype=float), 1.0
-        bounds = np.asarray(self._renderer.ComputeVisiblePropBounds(), dtype=float)
+        bounds = self._visible_actor_bounds(include_guides=False)
+        if bounds is None:
+            try:
+                bounds = np.asarray(self._renderer.ComputeVisiblePropBounds(), dtype=float)
+            except Exception:
+                bounds = _finite_bounds_array(None)
         if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[0] > bounds[1]:
             return np.zeros(3, dtype=float), 1.0
         center = np.array(
@@ -10933,6 +11020,37 @@ class Kraken3DInspector(tk.Toplevel):
         )
         radius = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4], 1.0)
         return center, radius
+
+    def _reset_camera_clipping_range_for_scene(self) -> None:
+        if self._renderer is None:
+            return
+        hidden: list[object] = []
+        for actor_key in list(self._actor_optical_axis_map):
+            actor = self._actor_by_key.get(actor_key)
+            if actor is None:
+                continue
+            try:
+                if int(actor.GetVisibility()):
+                    actor.SetVisibility(False)
+                    hidden.append(actor)
+            except Exception:
+                pass
+        actor = self._optical_axis_highlight_actor
+        if actor is not None:
+            try:
+                if int(actor.GetVisibility()):
+                    actor.SetVisibility(False)
+                    hidden.append(actor)
+            except Exception:
+                pass
+        try:
+            self._renderer.ResetCameraClippingRange()
+        finally:
+            for actor in hidden:
+                try:
+                    actor.SetVisibility(True)
+                except Exception:
+                    pass
 
     def _row_scene_bounds(self) -> tuple[np.ndarray, float]:
         if self._renderer is None:
@@ -10988,8 +11106,16 @@ class Kraken3DInspector(tk.Toplevel):
         camera = self._renderer.GetActiveCamera()
         if camera is None:
             return
-        center, radius = self._scene_bounds()
-        bounds = np.asarray(self._renderer.ComputeVisiblePropBounds(), dtype=float)
+        bounds = self._camera_fit_bounds()
+        center = np.array(
+            [
+                0.5 * (bounds[0] + bounds[1]),
+                0.5 * (bounds[2] + bounds[3]),
+                0.5 * (bounds[4] + bounds[5]),
+            ],
+            dtype=float,
+        )
+        radius = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4], 1.0)
         if bounds.size == 6 and np.all(np.isfinite(bounds)) and bounds[0] <= bounds[1]:
             span_x = float(bounds[1] - bounds[0])
             span_y = float(bounds[3] - bounds[2])
@@ -11027,7 +11153,7 @@ class Kraken3DInspector(tk.Toplevel):
                 camera.SetParallelScale(float(parallel_scale))
         except Exception:
             pass
-        self._renderer.ResetCameraClippingRange()
+        self._reset_camera_clipping_range_for_scene()
         self.render()
 
     def render(self) -> None:
@@ -12566,7 +12692,7 @@ class Kraken3DInspector(tk.Toplevel):
                     camera.SetViewUp(*camera_state["view_up"])
                     camera.SetParallelProjection(int(camera_state["parallel_projection"]))
                     camera.SetParallelScale(float(camera_state["parallel_scale"]))
-                    self._renderer.ResetCameraClippingRange()
+                    self._reset_camera_clipping_range_for_scene()
                 except Exception:
                     camera_state = None
         if camera_state is None:

@@ -101,14 +101,54 @@ def _traced_axis_records_mark_exit_segment() -> tuple[bool, str]:
         return False, f"records={records}"
     exit_record = max(exit_records, key=lambda record: int(record.get("segment_index", -1) or -1))
     midpoint = np.asarray(exit_record.get("segment_midpoint", ()), dtype=float).reshape(-1)
+    axis_points = np.asarray(exit_record.get("points", ()), dtype=float)
     ok = (
         str(exit_record.get("from_mesh_face_id", "") or "") == "F006"
         and str(exit_record.get("from_event_type", "") or "") == "refract"
         and int(exit_record.get("segment_index", -1) or -1) == 5
         and midpoint.size >= 3
         and np.all(np.isfinite(midpoint[:3]))
+        and axis_points.ndim == 2
+        and axis_points.shape[0] == 2
+        and float(np.max(np.abs(axis_points[:, :3]))) < 100.0
     )
     return ok, f"exit_record={exit_record}"
+
+
+def _traced_axis_records_bound_long_escaped_tail() -> tuple[bool, str]:
+    points = np.asarray(
+        [
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 20.0],
+            [12.5, -12.5, 45.0],
+            [20.0, -12.5, 45.0],
+            [-6.0e7, -150.0, 100.0],
+        ],
+        dtype=float,
+    )
+    events = [
+        RayEvent3D(event_kind="surface", event_type="refract", surface_id=1, mesh_face_id="F005"),
+        RayEvent3D(event_kind="surface", event_type="reflect", surface_id=1, mesh_face_id="F004"),
+        RayEvent3D(event_kind="surface", event_type="refract", surface_id=1, mesh_face_id="F006"),
+    ]
+    path = RayPath3D(
+        ray_index=0,
+        source_position=points[0].copy(),
+        points_world=points.copy(),
+        surface_ids=np.asarray([1, 1, 1], dtype=int),
+        events=events,
+        branch_path="primary",
+        source_id="source:0",
+    )
+    bounds = np.asarray([-30.0, 30.0, -30.0, 30.0, -10.0, 70.0], dtype=float)
+    records = _dotted_axis_records_from_ray_path(path, bounds)
+    if len(records) != 1:
+        return False, f"records={records}"
+    axis_points = np.asarray(records[0].get("points", ()), dtype=float)
+    if axis_points.ndim != 2 or axis_points.shape != (2, 3):
+        return False, f"axis_points={axis_points}"
+    max_abs = float(np.max(np.abs(axis_points[:, :3])))
+    return max_abs < 250.0, f"axis_points={axis_points.tolist()}, max_abs={max_abs:.6g}"
 
 
 def main() -> int:
@@ -324,6 +364,7 @@ def main() -> int:
     legacy_replace_rays = inspect.getsource(KrakenLayoutEditor._legacy_3d_replace_rays)
     continuation_sync_ok, continuation_sync_diag = _scene_path_preserves_raykeeper_terminal_continuation()
     exit_axis_ok, exit_axis_diag = _traced_axis_records_mark_exit_segment()
+    escaped_axis_ok, escaped_axis_diag = _traced_axis_records_bound_long_escaped_tail()
     checks = [
         (
             "Scene path event sync preserves raykeeper terminal continuation",
@@ -332,6 +373,10 @@ def main() -> int:
         (
             "Traced optical-axis records identify post-surface exit segments for cascade placement",
             exit_axis_ok,
+        ),
+        (
+            "Traced optical-axis records anchor escaped tails near the last real surface",
+            escaped_axis_ok,
         ),
         ("left drag binding exists", '"<B1-Motion>"' in bindings),
         ("plain left press no longer performs immediate pick", "_on_left_button_press(None, None)" not in bindings.split("def left_motion", 1)[0]),
