@@ -18,6 +18,7 @@ from KrakenOS.UI.panels.main_atmosphere_panel import MainAtmospherePanel
 from KrakenOS.UI.panels.main_beam_splitter_dialog import MainBeamSplitterDialog
 from KrakenOS.UI.panels.main_coating_material_dialog import MainCoatingMaterialDialog
 from KrakenOS.UI.panels.main_diffuse_scatter_dialog import MainDiffuseScatterDialog
+from KrakenOS.UI.panels.main_error_map_dialog import MainErrorMapDialog
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
@@ -277,6 +278,9 @@ def main() -> int:
     main_beam_splitter_dialog = inspect.getsource(MainBeamSplitterDialog)
     main_beam_splitter_factory = inspect.getsource(KrakenLayoutEditor._main_beam_splitter_dialog)
     open_beam_splitter_dialog = inspect.getsource(KrakenLayoutEditor.open_beam_splitter_settings)
+    main_error_map_dialog = inspect.getsource(MainErrorMapDialog)
+    main_error_map_factory = inspect.getsource(KrakenLayoutEditor._main_error_map_dialog)
+    open_error_map_dialog = inspect.getsource(KrakenLayoutEditor.open_error_map_editor)
     main_optimization_panel = inspect.getsource(MainOptimizationPanel)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
@@ -791,6 +795,17 @@ def main() -> int:
             and "Beam Splitter can spawn deterministic" in main_beam_splitter_dialog
             and "Fresnel P/S mode" in main_beam_splitter_dialog
             and "Validation passed:" in main_beam_splitter_dialog,
+        ),
+        (
+            "Error Map dialog lives outside layout_editor",
+            "MainErrorMapDialog(" in main_error_map_factory
+            and "attachment_dir=ATTACHMENT_DIR" in main_error_map_factory
+            and "load_error_map_file=_load_error_map_file" in main_error_map_factory
+            and "validate_error_map=_validate_error_map" in main_error_map_factory
+            and "self._main_error_map_dialog().open(row_index)" in open_error_map_dialog
+            and "Error_map = [X, Y, Z, SPACE]" in main_error_map_dialog
+            and "Import..." in main_error_map_dialog
+            and "Validation passed: no error map." in main_error_map_dialog,
         ),
         (
             "Open 3D renders editable table Thickness dimensions",
