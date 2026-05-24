@@ -62,6 +62,7 @@ from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDime
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.ray_inspector_records import RayInspectorRecordService
 from KrakenOS.UI.services.tolerance_stackup import ToleranceStackupService
+from KrakenOS.UI.services.trace_preview import TracePreviewService
 from KrakenOS.UI.widgets.tooltips import WidgetTooltip
 
 
@@ -534,6 +535,8 @@ def main() -> int:
     apply_layout_settings = inspect.getsource(KrakenLayoutEditor._apply_layout_settings)
     widget_tooltip = inspect.getsource(WidgetTooltip)
     preview_sampling = inspect.getsource(KrakenLayoutEditor._preview_scene_sampling_mode)
+    trace_preview_service = inspect.getsource(TracePreviewService)
+    trace_preview_factory = inspect.getsource(KrakenLayoutEditor._trace_preview_service)
     trace_preview_rays = inspect.getsource(KrakenLayoutEditor._trace_preview_rays)
     build_source_panel = inspect.getsource(KrakenLayoutEditor._build_source_panel)
     reset_runtime_state = inspect.getsource(KrakenLayoutEditor._reset_complete_layout_runtime_state)
@@ -1555,12 +1558,18 @@ def main() -> int:
             and "_preview_2d_sampling_mode()" in saved_layout_figure,
         ),
         ("Open 3D sync receives the same SceneBundle as 2D", "scene_bundle=bundle" in editor_refresh_plot and "refresh_scene(" in open3d_refresh_service),
-        ("shared scene sampling supports full-pupil, world-envelope, and explicit source-cone-world modes", "full_pupil" in preview_sampling and "world_envelope" in preview_sampling and "source_cone_world" in trace_preview_rays),
+        (
+            "preview ray tracing orchestration lives outside layout_editor",
+            "TracePreviewService(self)" in trace_preview_factory
+            and "self._trace_preview_service()._trace_preview_rays(" in trace_preview_rays
+            and "NonSequentialTracePreviewError" in trace_preview_service,
+        ),
+        ("shared scene sampling supports full-pupil, world-envelope, and explicit source-cone-world modes", "full_pupil" in preview_sampling and "world_envelope" in preview_sampling and "source_cone_world" in trace_preview_service),
         (
             "Pupil/field source cone is not auto-promoted into a physical point cone",
             'return "world_envelope"' in preview_sampling
             and 'return "source_cone_world"' not in preview_sampling
-            and "_build_default_finite_cone_world_bundles" in trace_preview_rays,
+            and "_build_default_finite_cone_world_bundles" in trace_preview_service,
         ),
         (
             "Open 3D forced refresh uses 3D sampling instead of the 2D display slice",

@@ -285,6 +285,7 @@ from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDime
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.ray_inspector_records import RayInspectorRecordService
 from KrakenOS.UI.services.tolerance_stackup import ToleranceStackupService
+from KrakenOS.UI.services.trace_preview import TracePreviewService
 from KrakenOS.UI.widgets.tooltips import WidgetTooltip
 from KrakenOS.UI.scene_row_mapping import (
     SCENE_ROW_SOURCE,
@@ -49138,6 +49139,13 @@ class KrakenLayoutEditor(tk.Tk):
             return radius
         return max(min(radius, float(aperture_radius)), 1e-6)
 
+    def _trace_preview_service(self) -> TracePreviewService:
+        service = self.__dict__.get("_trace_preview_service_instance")
+        if service is None:
+            service = TracePreviewService(self)
+            self._trace_preview_service_instance = service
+        return service
+
     def _trace_preview_rays(
         self,
         system,
@@ -49148,305 +49156,14 @@ class KrakenLayoutEditor(tk.Tk):
         allow_full_pupil: bool = True,
         sampling_mode: str = "display_slice",
     ) -> None:
-        system.IgnoreVignetting(0)
-        pupil_radius = self._resolved_preview_pupil_radius(
+        self._trace_preview_service()._trace_preview_rays(
+            system,
+            rays,
+            wavelength,
             max_radius,
-            system=system,
-            wavelength=wavelength,
+            allow_full_pupil=allow_full_pupil,
+            sampling_mode=sampling_mode,
         )
-        preview_bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
-        mode = str(sampling_mode or "display_slice").strip().lower()
-        self._active_preview_sampling_mode = mode
-        full_pupil = bool(allow_full_pupil and (self._is_full_pupil_mode() or mode == "full_pupil"))
-        self._preview_field_bundle_count = max(1, self._current_field_count())
-        scene_source_bundles, scene_source_records = self._build_scene_source_bundles(wavelength)
-        if scene_source_bundles:
-            rays.clean()
-            self._trace_preview_bundles(
-                system,
-                rays,
-                wavelength,
-                scene_source_bundles,
-                bundle_sources=scene_source_records,
-            )
-            self._preview_field_ray_count = max(int(len(np.asarray(bundle[0]))) for bundle in scene_source_bundles)
-            self._preview_field_bundle_count = len(scene_source_bundles)
-            system.Vignetting(0)
-            return
-        random_source_bundle = self._build_random_source_bundle()
-        if random_source_bundle is not None:
-            rays.clean()
-            self._trace_preview_bundles(system, rays, wavelength, [random_source_bundle])
-            self._preview_field_ray_count = int(len(np.asarray(random_source_bundle[0])))
-            self._preview_field_bundle_count = 1
-            system.Vignetting(0)
-            return
-        use_legacy_default_cone = self._should_use_default_finite_cone_source(system=system)
-        if use_legacy_default_cone and mode in {"source_cone_world", "world_source_cone", "point_cone_world"}:
-            default_cone_bundles, default_cone_ray_count = self._build_default_finite_cone_world_bundles()
-            if default_cone_bundles:
-                rays.clean()
-                self._trace_preview_bundles(system, rays, wavelength, default_cone_bundles)
-                self._preview_field_ray_count = max(1, int(default_cone_ray_count))
-                self._preview_field_bundle_count = len(default_cone_bundles)
-                system.Vignetting(0)
-                return
-        if mode == "world_envelope":
-            if self._trace_world_envelope_rays(system, rays, wavelength, pupil_radius):
-                system.Vignetting(0)
-                return
-        if use_legacy_default_cone and mode != "world_envelope":
-            default_cone_bundles, default_cone_ray_count = self._build_default_finite_cone_preview_bundles()
-            if default_cone_bundles:
-                rays.clean()
-                self._trace_preview_bundles(system, rays, wavelength, default_cone_bundles)
-                self._preview_field_ray_count = max(1, int(default_cone_ray_count))
-                self._preview_field_bundle_count = len(default_cone_bundles)
-                system.Vignetting(0)
-                return
-        if mode == "world_sections":
-            section_bundles, section_ray_count = self._build_world_section_bundles(pupil_radius)
-            if section_bundles:
-                rays.clean()
-                self._trace_preview_bundles(system, rays, wavelength, section_bundles)
-                self._preview_field_ray_count = max(1, int(section_ray_count))
-                self._preview_field_bundle_count = int(len(section_bundles))
-                system.Vignetting(0)
-                return
-        if full_pupil and not self._has_off_axis_geometry():
-            # Full Pupil for axisymmetric systems. Each sampled field carries a
-            # filled pupil bundle; finite objects must launch from the resolved
-            # object field point rather than a synthetic parallel grid.
-            rays.clean()
-            if self._current_object_mode() == "Infinity":
-                bundles = self._build_grid_angular_bundles(system, wavelength, pupil_radius)
-                if bundles:
-                    self._trace_preview_bundles(system, rays, wavelength, bundles)
-                    self._preview_field_ray_count = int(len(np.asarray(bundles[0][0])))
-                    self._preview_field_bundle_count = int(len(bundles))
-                else:
-                    self._preview_field_ray_count = 0
-                    self._preview_field_bundle_count = 1
-            else:
-                bundles = self._build_grid_finite_object_bundles(system, wavelength, pupil_radius)
-                if bundles:
-                    self._trace_preview_bundles(system, rays, wavelength, bundles)
-                    self._preview_field_ray_count = int(len(np.asarray(bundles[0][0])))
-                    self._preview_field_bundle_count = int(len(bundles))
-                else:
-                    self._preview_field_ray_count = 0
-                    self._preview_field_bundle_count = 1
-            system.Vignetting(0)
-            return
-        if self._has_off_axis_geometry():
-            rays.clean()
-            if self._current_object_mode() == "Infinity":
-                field_values = self._sample_field_values(self._current_field_angle_deg())
-                if full_pupil:
-                    disk_pts = self._sample_pupil_disk(pupil_radius)
-                    for field_angle in field_values:
-                        angle_rad = np.deg2rad(float(field_angle))
-                        direction = np.array([0.0, np.sin(angle_rad), np.cos(angle_rad)], dtype=float)
-                        norm = np.linalg.norm(direction)
-                        if norm <= 1e-12:
-                            continue
-                        direction /= norm
-                        n_pts = len(disk_pts)
-                        x_values = disk_pts[:, 0].copy()
-                        y_values = disk_pts[:, 1].copy()
-                        z_values = np.zeros(n_pts, dtype=float)
-                        l_values = np.full(n_pts, float(direction[0]), dtype=float)
-                        m_values = np.full(n_pts, float(direction[1]), dtype=float)
-                        n_values = np.full(n_pts, float(direction[2]), dtype=float)
-                        preview_bundles.append((x_values, y_values, z_values, l_values, m_values, n_values))
-                    self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
-                    self._preview_field_ray_count = len(disk_pts)
-                else:
-                    pupil_samples = self._sample_ray_heights(pupil_radius)
-                    for field_angle in field_values:
-                        angle_rad = np.deg2rad(float(field_angle))
-                        direction = np.array([0.0, np.sin(angle_rad), np.cos(angle_rad)], dtype=float)
-                        norm = np.linalg.norm(direction)
-                        if norm <= 1e-12:
-                            continue
-                        direction /= norm
-                        x_values = np.zeros(len(pupil_samples), dtype=float)
-                        y_values = np.asarray(pupil_samples, dtype=float)
-                        z_values = np.zeros(len(pupil_samples), dtype=float)
-                        l_values = np.full(len(pupil_samples), float(direction[0]), dtype=float)
-                        m_values = np.full(len(pupil_samples), float(direction[1]), dtype=float)
-                        n_values = np.full(len(pupil_samples), float(direction[2]), dtype=float)
-                        preview_bundles.append((x_values, y_values, z_values, l_values, m_values, n_values))
-                        x_values = np.asarray(pupil_samples, dtype=float)
-                        y_values = np.zeros(len(pupil_samples), dtype=float)
-                        z_values = np.zeros(len(pupil_samples), dtype=float)
-                        l_values = np.full(len(pupil_samples), float(direction[0]), dtype=float)
-                        m_values = np.full(len(pupil_samples), float(direction[1]), dtype=float)
-                        n_values = np.full(len(pupil_samples), float(direction[2]), dtype=float)
-                        preview_bundles.append((x_values, y_values, z_values, l_values, m_values, n_values))
-                    self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
-                    self._preview_field_ray_count = len(pupil_samples) * 2
-            else:
-                field_values = self._sample_field_values(self._current_field_height())
-                object_distance = self._current_object_distance()
-                if full_pupil:
-                    disk_pts = self._sample_pupil_disk(pupil_radius)
-                    for field_value in field_values:
-                        origin = np.array([0.0, float(field_value), 0.0], dtype=float)
-                        x_vals: list[float] = []
-                        y_vals: list[float] = []
-                        z_vals: list[float] = []
-                        l_vals: list[float] = []
-                        m_vals: list[float] = []
-                        n_vals: list[float] = []
-                        for px, py in disk_pts:
-                            target = np.array([float(px), float(py), object_distance], dtype=float)
-                            direction = target - origin
-                            norm = np.linalg.norm(direction)
-                            if norm <= 1e-12:
-                                continue
-                            direction /= norm
-                            x_vals.append(float(origin[0]))
-                            y_vals.append(float(origin[1]))
-                            z_vals.append(float(origin[2]))
-                            l_vals.append(float(direction[0]))
-                            m_vals.append(float(direction[1]))
-                            n_vals.append(float(direction[2]))
-                        if x_vals:
-                            preview_bundles.append(
-                                (
-                                    np.asarray(x_vals, dtype=float),
-                                    np.asarray(y_vals, dtype=float),
-                                    np.asarray(z_vals, dtype=float),
-                                    np.asarray(l_vals, dtype=float),
-                                    np.asarray(m_vals, dtype=float),
-                                    np.asarray(n_vals, dtype=float),
-                                )
-                            )
-                    self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
-                    self._preview_field_ray_count = len(disk_pts)
-                else:
-                    pupil_samples = self._sample_ray_heights(pupil_radius)
-                    for field_value in field_values:
-                        origin = np.array([0.0, float(field_value), 0.0], dtype=float)
-                        x_values: list[float] = []
-                        y_values: list[float] = []
-                        z_values: list[float] = []
-                        l_values: list[float] = []
-                        m_values: list[float] = []
-                        n_values: list[float] = []
-                        for pupil_y in pupil_samples:
-                            target = np.array([0.0, float(pupil_y), object_distance], dtype=float)
-                            direction = target - origin
-                            norm = np.linalg.norm(direction)
-                            if norm <= 1e-12:
-                                continue
-                            direction /= norm
-                            x_values.append(float(origin[0]))
-                            y_values.append(float(origin[1]))
-                            z_values.append(float(origin[2]))
-                            l_values.append(float(direction[0]))
-                            m_values.append(float(direction[1]))
-                            n_values.append(float(direction[2]))
-                        for pupil_x in pupil_samples:
-                            target = np.array([float(pupil_x), 0.0, object_distance], dtype=float)
-                            direction = target - origin
-                            norm = np.linalg.norm(direction)
-                            if norm <= 1e-12:
-                                continue
-                            direction /= norm
-                            x_values.append(float(origin[0]))
-                            y_values.append(float(origin[1]))
-                            z_values.append(float(origin[2]))
-                            l_values.append(float(direction[0]))
-                            m_values.append(float(direction[1]))
-                            n_values.append(float(direction[2]))
-                        if x_values:
-                            preview_bundles.append(
-                                (
-                                    np.asarray(x_values, dtype=float),
-                                    np.asarray(y_values, dtype=float),
-                                    np.asarray(z_values, dtype=float),
-                                    np.asarray(l_values, dtype=float),
-                                    np.asarray(m_values, dtype=float),
-                                    np.asarray(n_values, dtype=float),
-                                )
-                            )
-                    self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
-                    self._preview_field_ray_count = len(pupil_samples) * 2
-        elif self._current_object_mode() == "Infinity":
-            if not full_pupil and (mode == "display_slice" or not allow_full_pupil):
-                preview_bundles, rays_per_field = self._build_meridional_preview_bundles(
-                    pupil_radius,
-                    system=system,
-                    wavelength=wavelength,
-                )
-                self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
-                self._preview_field_ray_count = max(1, int(rays_per_field))
-                system.Vignetting(0)
-                return
-            pupil = Kos.PupilCalc(
-                system,
-                self._analysis_surface_index(),
-                wavelength,
-                self._current_aperture_type(),
-                self._current_aperture_value(),
-            )
-            pattern = self._current_kraken_pupil_pattern()
-            if full_pupil:
-                pupil.Samp = max(3, self._current_ray_count())
-                pupil.Ptype = pattern or "hexapolar"
-            else:
-                pupil.Samp = max(1, self._current_ray_count() // 2)
-                pupil.Ptype = pattern or "fan"
-            last_bundle = 1
-            pupil.FieldType = "angle"
-            field_values = self._sample_field_values(self._current_field_angle_deg())
-            for field_value in field_values:
-                pupil.FieldX = 0.0
-                pupil.FieldY = float(field_value)
-                bundle = self._pupil_pattern_bundle(pupil)
-                last_bundle = max(1, len(np.asarray(bundle[0])))
-                preview_bundles.append(bundle)
-            self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
-            self._preview_field_ray_count = last_bundle
-        else:
-            if not full_pupil and (mode == "display_slice" or not allow_full_pupil):
-                preview_bundles, rays_per_field = self._build_meridional_preview_bundles(
-                    pupil_radius,
-                    system=system,
-                    wavelength=wavelength,
-                )
-                self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
-                self._preview_field_ray_count = max(1, int(rays_per_field))
-                system.Vignetting(0)
-                return
-            pupil = Kos.PupilCalc(
-                system,
-                self._analysis_surface_index(),
-                wavelength,
-                self._current_aperture_type(),
-                self._current_aperture_value(),
-            )
-            pattern = self._current_kraken_pupil_pattern()
-            if full_pupil:
-                pupil.Samp = max(3, self._current_ray_count())
-                pupil.Ptype = pattern or "hexapolar"
-            else:
-                pupil.Samp = max(1, self._current_ray_count() // 2)
-                pupil.Ptype = pattern or "fan"
-            pupil.FieldType = "height"
-            field_values = self._sample_field_values(self._current_field_height())
-            last_bundle = 1
-            for field_value in field_values:
-                pupil.FieldX = 0.0
-                pupil.FieldY = float(field_value)
-                bundle = self._pupil_pattern_bundle(pupil)
-                last_bundle = max(1, len(np.asarray(bundle[0])))
-                preview_bundles.append(bundle)
-            self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
-            self._preview_field_ray_count = last_bundle
-        system.Vignetting(0)
 
     def _trace_preview_bundles(
         self,
@@ -49457,158 +49174,23 @@ class KrakenLayoutEditor(tk.Tk):
         *,
         bundle_sources: list[SceneSource3D | None] | None = None,
     ) -> None:
-        self._last_preview_trace_backend = "none"
-        self._last_preview_trace_note = ""
-        if not bundles:
-            rays.clean()
-            return
-        row_specs = self._serializable_row_specs()
-        trace_state = self._resolved_trace_mode(system=system)
-        sampling_mode = str(self.__dict__.get("_active_preview_sampling_mode", "") or "ui_preview")
-        launch_metadata = self._launch_metadata_for_trace(trace_state, sampling_mode=sampling_mode)
-
-        def _bundle_launch_metadata(source: SceneSource3D | None) -> dict[str, object]:
-            if source is None:
-                return dict(launch_metadata)
-            return {
-                **launch_metadata,
-                "launch_ray_count": int(
-                    getattr(source, "ray_count", launch_metadata.get("launch_ray_count", 1))
-                    or launch_metadata.get("launch_ray_count", 1)
-                ),
-            }
-
-        if bool(trace_state.get("use_nonseq")):
-            rays.clean()
-            clean = 1
-            restore_nonseq_settings = self._apply_nonseq_trace_settings(system)
-            terminal_policy = self._trace_terminal_policy_metadata(trace_state)
-            try:
-                for bundle_index, bundle in enumerate(bundles):
-                    source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
-                    metadata = self._source_metadata_for_bundle(
-                        bundle,
-                        wavelength,
-                        source=source,
-                        terminal_policy=terminal_policy,
-                        launch_metadata=_bundle_launch_metadata(source),
-                    )
-                    Kos.NsTraceLoop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
-                    clean = 0
-                self._last_preview_trace_backend = "NsTraceLoop"
-                return
-            except Exception as exc:
-                rays.clean()
-                reason_text = ", ".join(str(reason) for reason in trace_state.get("reasons", ()) or ()) or "non-sequential scene request"
-                detail = _short_error_message(exc)
-                message = f"NsTraceLoop failed for {reason_text}: {detail}"
-                self._last_preview_trace_backend = "NsTraceLoop failed"
-                self._last_preview_trace_note = f"{message}; sequential fallback suppressed."
-                raise NonSequentialTracePreviewError(message, trace_state=trace_state) from exc
-            finally:
-                restore_nonseq_settings()
-        preview_row_specs = row_specs
-        restore_image_catch = lambda: None
-        image_catch_diameter = self._sequential_preview_image_catch_diameter(trace_state)
-        if image_catch_diameter is not None:
-            preview_row_specs = [dict(spec) for spec in row_specs]
-            if preview_row_specs:
-                preview_row_specs[-1]["diameter"] = float(image_catch_diameter)
-                preview_row_specs[-1]["Diameter"] = float(image_catch_diameter)
-            restore_image_catch = self._temporarily_set_system_surface_diameter(
-                system,
-                len(preview_row_specs) - 1,
-                float(image_catch_diameter),
-            )
-        total_rays = int(sum(len(np.asarray(bundle[0])) for bundle in bundles))
-        worker_count = max(1, min(self._optimization_worker_count(), total_rays))
-        if (
-            worker_count <= 1
-            or total_rays < 2
-            or _requires_scalar_trace(preview_row_specs)
-            or not hasattr(system, "BatchTrace")
-            or not hasattr(rays, "batch_push")
-        ):
-            trace_loop = Kos.TraceLoop if _requires_scalar_trace(preview_row_specs) else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
-            self._last_preview_trace_backend = "Scalar TraceLoop" if trace_loop is Kos.TraceLoop else "BatchTraceLoop"
-            try:
-                clean = 1
-                for bundle_index, bundle in enumerate(bundles):
-                    source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
-                    metadata = self._source_metadata_for_bundle(
-                        bundle,
-                        wavelength,
-                        source=source,
-                        launch_metadata=_bundle_launch_metadata(source),
-                    )
-                    trace_loop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
-                    clean = 0
-            finally:
-                restore_image_catch()
-            return
-
-        rays.clean()
-        executor = self._ensure_analysis_executor(worker_count)
-        if executor is None:
-            trace_loop = Kos.TraceLoop if _requires_scalar_trace(preview_row_specs) else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
-            self._last_preview_trace_backend = "Scalar TraceLoop" if trace_loop is Kos.TraceLoop else "BatchTraceLoop"
-            try:
-                clean = 1
-                for bundle_index, bundle in enumerate(bundles):
-                    source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
-                    metadata = self._source_metadata_for_bundle(
-                        bundle,
-                        wavelength,
-                        source=source,
-                        launch_metadata=_bundle_launch_metadata(source),
-                    )
-                    trace_loop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
-                    clean = 0
-            finally:
-                restore_image_catch()
-            return
-
-        merged_bundle = tuple(
-            np.concatenate([np.asarray(bundle[index], dtype=float) for bundle in bundles if len(np.asarray(bundle[0])) > 0])
-            for index in range(6)
+        self._trace_preview_service()._trace_preview_bundles(
+            system,
+            rays,
+            wavelength,
+            bundles,
+            bundle_sources=bundle_sources,
         )
-        merged_metadata: list[dict[str, object]] = []
-        for bundle_index, bundle in enumerate(bundles):
-            if len(np.asarray(bundle[0])) > 0:
-                source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
-                merged_metadata.extend(
-                    self._source_metadata_for_bundle(
-                        bundle,
-                        wavelength,
-                        source=source,
-                        launch_metadata=_bundle_launch_metadata(source),
-                    )
-                )
-        merged_total = len(np.asarray(merged_bundle[0]))
-        if merged_total <= 0:
-            self._shutdown_analysis_executor()
-            return
-        try:
-            self._last_preview_trace_backend = "Parallel Batch preview"
-            futures = []
-            for chunk in np.array_split(np.arange(merged_total), min(worker_count, merged_total)):
-                if chunk.size == 0:
-                    continue
-                chunk_bundle = tuple(np.asarray(values)[chunk] for values in merged_bundle)
-                chunk_metadata = [merged_metadata[int(index)] for index in chunk if int(index) < len(merged_metadata)]
-                future = executor.submit(
-                        _trace_preview_chunk_batch,
-                        preview_row_specs,
-                        wavelength,
-                        *chunk_bundle,
-                    )
-                futures.append((future, chunk_metadata))
-            for future, chunk_metadata in futures:
-                batch_results, batch_active = future.result()
-                rays.batch_push(batch_results, batch_active, wavelength, source_metadata=chunk_metadata)
-        finally:
-            restore_image_catch()
-            self._shutdown_analysis_executor()
+
+    def _build_pupilcalc_preview_bundles(self, system, wavelength: float, pattern: str):
+        return self._trace_preview_service()._build_pupilcalc_preview_bundles(system, wavelength, pattern)
+
+    def _build_meridional_preview_bundles(self, pupil_radius: float, *, system=None, wavelength: float | None = None):
+        return self._trace_preview_service()._build_meridional_preview_bundles(
+            pupil_radius,
+            system=system,
+            wavelength=wavelength,
+        )
 
     def _sequential_preview_image_catch_diameter(self, trace_state: dict[str, object] | None = None) -> float | None:
         if trace_state is not None and bool(trace_state.get("use_nonseq")):
@@ -50146,169 +49728,7 @@ class KrakenLayoutEditor(tk.Tk):
                 )
         return bundles
 
-    def _build_pupilcalc_preview_bundles(self, system, wavelength: float, pattern: str):
-        pupil = Kos.PupilCalc(
-            system,
-            self._analysis_surface_index(),
-            float(wavelength),
-            self._current_aperture_type(),
-            self._current_aperture_value(),
-        )
-        pupil.Samp = max(2, self._current_ray_count())
-        pupil.Ptype = str(pattern)
-        axis = self._current_display_slice_axis()
-        if self._current_object_mode() == "Infinity":
-            pupil.FieldType = "angle"
-            field_values = self._sample_field_values(self._current_field_angle_deg())
-        else:
-            pupil.FieldType = "height"
-            field_values = self._sample_field_values(self._current_field_height())
-        bundles = []
-        for field_value in field_values:
-            value = float(field_value)
-            pupil.FieldX = value if axis == "x" else 0.0
-            pupil.FieldY = value if axis == "y" else 0.0
-            bundle = self._pupil_pattern_bundle(pupil)
-            if len(bundle) == 6 and len(np.asarray(bundle[0])) > 0:
-                bundles.append(bundle)
-        rays_per_field = max((len(np.asarray(bundle[0])) for bundle in bundles), default=0)
-        return bundles, int(rays_per_field)
 
-    def _build_meridional_preview_bundles(self, pupil_radius: float, *, system=None, wavelength: float | None = None):
-        """Per-field meridional fans for the 2D layout preview.
-
-        Unlike full-pupil mode, this keeps the visible ray count tied to the
-        user's `ray_count` setting so the 2D plot stays readable.
-        """
-        if self._should_use_default_finite_cone_source(system=system):
-            default_cone_bundles, default_cone_ray_count = self._build_default_finite_cone_preview_bundles()
-            if default_cone_bundles:
-                return default_cone_bundles, default_cone_ray_count
-
-        pattern = self._current_kraken_pupil_pattern()
-        if pattern is not None and system is not None and wavelength is not None:
-            try:
-                bundles, rays_per_field = self._build_pupilcalc_preview_bundles(system, float(wavelength), pattern)
-                if bundles:
-                    return bundles, rays_per_field
-            except Exception as exc:
-                self.append_debug(f"Pupil pattern preview failed ({_short_error_message(exc)}); using meridional fan.")
-
-        axis = self._current_display_slice_axis()
-        pupil_samples = np.asarray(self._sample_ray_heights(pupil_radius), dtype=float)
-        bundles = []
-
-        if self._current_object_mode() == "Infinity":
-            if system is not None and wavelength is not None:
-                try:
-                    pupil = Kos.PupilCalc(
-                        system,
-                        self._analysis_surface_index(),
-                        float(wavelength),
-                        self._current_aperture_type(),
-                        self._current_aperture_value(),
-                    )
-                    pupil.Samp = max(1, self._current_ray_count() // 2)
-                    pupil.Ptype = "fan"
-                    pupil.FieldType = "angle"
-                    for field_angle in self._sample_field_values(self._current_field_angle_deg()):
-                        angle = float(field_angle)
-                        pupil.FieldX = angle if axis == "x" else 0.0
-                        pupil.FieldY = angle if axis == "y" else 0.0
-                        bundle = self._pupil_pattern_bundle(pupil)
-                        if len(bundle) != 6 or len(bundle[0]) == 0:
-                            continue
-                        if axis == "x":
-                            cross = np.asarray(bundle[1], dtype=float)
-                        else:
-                            cross = np.asarray(bundle[0], dtype=float)
-                        tolerance = max(1e-8, 1e-9 * max(float(pupil_radius), 1.0))
-                        mask = np.abs(cross) <= tolerance
-                        if not np.any(mask):
-                            center = float(np.median(cross))
-                            mask = np.abs(cross - center) <= tolerance
-                        if np.any(mask):
-                            selected = tuple(np.asarray(values, dtype=float)[mask] for values in bundle)
-                            selected_points = np.column_stack(selected)
-                            if selected_points.shape[0] > 1:
-                                _unique_rows, unique_idx = np.unique(
-                                    np.round(selected_points, decimals=12),
-                                    axis=0,
-                                    return_index=True,
-                                )
-                                selected = tuple(values[np.sort(unique_idx)] for values in selected)
-                            bundles.append(selected)
-                    if bundles:
-                        return bundles, int(max(len(bundle[0]) for bundle in bundles))
-                except Exception:
-                    bundles = []
-
-            field_values = self._sample_field_values(self._current_field_angle_deg())
-            for field_angle in field_values:
-                angle_rad = np.deg2rad(float(field_angle))
-                direction = np.array([0.0, 0.0, 1.0], dtype=float)
-                direction[0 if axis == "x" else 1] = np.sin(angle_rad)
-                direction[2] = np.cos(angle_rad)
-                norm = np.linalg.norm(direction)
-                if norm <= 1e-12:
-                    continue
-                direction /= norm
-                n_pts = len(pupil_samples)
-                x_values = np.zeros(n_pts, dtype=float)
-                y_values = np.zeros(n_pts, dtype=float)
-                if axis == "x":
-                    x_values = pupil_samples.copy()
-                else:
-                    y_values = pupil_samples.copy()
-                bundles.append(
-                    (
-                        x_values,
-                        y_values,
-                        np.zeros(n_pts, dtype=float),
-                        np.full(n_pts, float(direction[0]), dtype=float),
-                        np.full(n_pts, float(direction[1]), dtype=float),
-                        np.full(n_pts, float(direction[2]), dtype=float),
-                    )
-                )
-        else:
-            field_values = self._sample_field_values(self._current_field_height())
-            object_distance = self._current_object_distance()
-            for field_value in field_values:
-                origin = np.array([0.0, 0.0, 0.0], dtype=float)
-                origin[0 if axis == "x" else 1] = float(field_value)
-                x_values: list[float] = []
-                y_values: list[float] = []
-                z_values: list[float] = []
-                l_values: list[float] = []
-                m_values: list[float] = []
-                n_values: list[float] = []
-                for pupil_value in pupil_samples:
-                    target = np.array([0.0, 0.0, object_distance], dtype=float)
-                    target[0 if axis == "x" else 1] = float(pupil_value)
-                    direction = target - origin
-                    norm = np.linalg.norm(direction)
-                    if norm <= 1e-12:
-                        continue
-                    direction /= norm
-                    x_values.append(float(origin[0]))
-                    y_values.append(float(origin[1]))
-                    z_values.append(float(origin[2]))
-                    l_values.append(float(direction[0]))
-                    m_values.append(float(direction[1]))
-                    n_values.append(float(direction[2]))
-                if x_values:
-                    bundles.append(
-                        (
-                            np.asarray(x_values, dtype=float),
-                            np.asarray(y_values, dtype=float),
-                            np.asarray(z_values, dtype=float),
-                            np.asarray(l_values, dtype=float),
-                            np.asarray(m_values, dtype=float),
-                            np.asarray(n_values, dtype=float),
-                        )
-                    )
-
-        return bundles, int(len(pupil_samples))
 
     def _current_ray_count(self) -> int:
         try:
