@@ -58,6 +58,7 @@ from KrakenOS.UI.services.layout_file_writer import LayoutFileWriterService
 from KrakenOS.UI.services.layout_settings import LayoutSettingsService
 from KrakenOS.UI.services.nonseq_scene_graph_records import NonSequentialSceneGraphRecordService
 from KrakenOS.UI.services.open3d_face_pick import pick_face_from_ray
+from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
 from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
@@ -225,9 +226,10 @@ def main() -> int:
     ray_pick_enabled = inspect.getsource(Kraken3DInspector._ray_pick_enabled)
     ray_pick_changed = inspect.getsource(Kraken3DInspector._on_ray_pick_changed)
     scene_visibility_changed = inspect.getsource(Kraken3DInspector._on_scene_visibility_changed)
-    surface_menu = inspect.getsource(Kraken3DInspector._show_surface_function_context_menu)
-    context_assign = inspect.getsource(Kraken3DInspector._assign_row_face_function_from_context)
-    context_promote_assign = inspect.getsource(Kraken3DInspector._promote_step_and_assign_face_function)
+    surface_menu = inspect.getsource(Open3DFaceAssignmentService._show_surface_function_context_menu)
+    context_assign = inspect.getsource(Open3DFaceAssignmentService._assign_row_face_function_from_context)
+    context_promote_assign = inspect.getsource(Open3DFaceAssignmentService._promote_step_and_assign_face_function)
+    face_assignment_factory = inspect.getsource(Kraken3DInspector._face_assignment_service)
     hover_status = inspect.getsource(Kraken3DInspector._update_hover_status)
     face_hover_status = inspect.getsource(Kraken3DInspector._face_hover_status_text)
     step_rotate_pick = inspect.getsource(Kraken3DInspector._apply_step_rotation_handle)
@@ -517,8 +519,8 @@ def main() -> int:
     traced_face_context_pick = inspect.getsource(Kraken3DInspector._traced_row_face_hit_near_display_xy)
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
     stl_refresh = inspect.getsource(Kraken3DInspector._refresh_after_stl_pose_change)
-    right_click_menu = inspect.getsource(Kraken3DInspector._show_surface_function_context_menu)
-    assign_row_face_context = inspect.getsource(Kraken3DInspector._assign_row_face_function_from_context)
+    right_click_menu = inspect.getsource(Open3DFaceAssignmentService._show_surface_function_context_menu)
+    assign_row_face_context = inspect.getsource(Open3DFaceAssignmentService._assign_row_face_function_from_context)
     row_carry_pick = inspect.getsource(Kraken3DInspector._row_carry_index_from_current_pick)
     row_carry_activate = inspect.getsource(Kraken3DInspector._activate_row_carry_hold)
     row_carry_apply = inspect.getsource(Kraken3DInspector._apply_row_carry_drag_motion)
@@ -627,6 +629,7 @@ def main() -> int:
             "_open3d_debug_seq" in init
             and "Open3DTrace" in debug_trace
             and "Open3DInteractionService(self)" in interaction_factory
+            and "Open3DFaceAssignmentService(self)" in face_assignment_factory
             and "left_click_pick" in pick
             and "right_click_context" in surface_menu
             and "face_assignment_start" in context_assign

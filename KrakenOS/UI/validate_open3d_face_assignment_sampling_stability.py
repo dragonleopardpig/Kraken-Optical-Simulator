@@ -13,6 +13,8 @@ from KrakenOS.UI.layout_editor import (
     KrakenLayoutEditor,
     _raykeeper_has_non_primary_branch_paths,
 )
+from KrakenOS.UI.panels.main_optical_solid_face_roles_dialog import MainOpticalSolidFaceRolesDialog
+from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 
 
@@ -139,8 +141,8 @@ def _validate_current_trace_records_active_mode() -> None:
 
 
 def _validate_face_assignment_handlers_capture_mode_before_mutation() -> None:
-    assign_source = inspect.getsource(Kraken3DInspector._assign_row_face_function_from_context)
-    promote_assign_source = inspect.getsource(Kraken3DInspector._promote_step_and_assign_face_function)
+    assign_source = inspect.getsource(Open3DFaceAssignmentService._assign_row_face_function_from_context)
+    promote_assign_source = inspect.getsource(Open3DFaceAssignmentService._promote_step_and_assign_face_function)
     for name, source in (
         ("row face assignment", assign_source),
         ("STEP promote-and-assign", promote_assign_source),
@@ -178,18 +180,21 @@ def _validate_focus_and_vtk_teardown_are_guarded() -> None:
 
 
 def _validate_face_role_save_forces_stale_trace_rebuild() -> None:
-    face_editor_source = inspect.getsource(KrakenLayoutEditor._open_optical_solid_faces_for_row)
+    face_editor_source = inspect.getsource(MainOpticalSolidFaceRolesDialog._open_optical_solid_faces_for_row)
     refresh_source = inspect.getsource(KrakenLayoutEditor._refresh_open_3d_views)
     assign_source = inspect.getsource(KrakenLayoutEditor.assign_optical_solid_face_function)
     if "_refresh_open_3d_views(force_retrace=True)" not in face_editor_source:
         raise AssertionError("CAD/STL face-role Save Roles does not force an open Open 3D inspector to retrace.")
-    if "_invalidate_optical_solid_face_assignment_trace(row_index, \"Save Roles\")" not in face_editor_source:
+    if (
+        "reason_text = str(reason or 'Face Editor')" not in face_editor_source
+        or "_invalidate_optical_solid_face_assignment_trace(row_index, reason_text)" not in face_editor_source
+    ):
         raise AssertionError("CAD/STL face-role Save Roles does not clear stale traced scene state.")
     if "def persist_face_editor_metadata" not in face_editor_source:
         raise AssertionError("CAD/STL face-role editor has no immediate row-metadata persistence helper.")
-    if "persist_face_editor_metadata(f\"{face_id} {function_display}\")" not in face_editor_source:
+    if "persist_face_editor_metadata(f'{face_id} {function_display}')" not in face_editor_source:
         raise AssertionError("CAD/STL face-role combobox edits are not saved immediately to row metadata.")
-    if "entry_widget.bind(\"<FocusOut>\", auto_apply_selected_face_identity" not in face_editor_source:
+    if "entry_widget.bind('<FocusOut>', auto_apply_selected_face_identity" not in face_editor_source:
         raise AssertionError("CAD/STL face-role text fields do not save on focus-out.")
     if "_invalidate_optical_solid_face_assignment_trace(row_index, face_id, function)" not in assign_source:
         raise AssertionError("Direct CAD/STL face assignment does not clear stale traced scene state.")
