@@ -15,6 +15,7 @@ from KrakenOS.UI.layout_editor import (
 )
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
+from KrakenOS.UI.panels.main_trace_display_controls import MainTraceDisplayControlsPanel
 from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
 from KrakenOS.UI.saved_layout_plot import build_saved_layout_figure
@@ -246,6 +247,9 @@ def main() -> int:
     key_press = inspect.getsource(Kraken3DInspector._on_key_press)
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
     add_mesh_actor = inspect.getsource(Kraken3DInspector._add_mesh_actor)
+    main_trace_display_panel = inspect.getsource(MainTraceDisplayControlsPanel)
+    main_trace_display_panel_factory = inspect.getsource(KrakenLayoutEditor._main_trace_display_controls_panel)
+    build_controls_panel = inspect.getsource(KrakenLayoutEditor._build_controls_panel)
     main_field_panel = inspect.getsource(MainFieldControlsPanel)
     main_field_panel_factory = inspect.getsource(KrakenLayoutEditor._main_field_controls_panel)
     build_field_panel = inspect.getsource(KrakenLayoutEditor._build_field_panel)
@@ -660,6 +664,18 @@ def main() -> int:
             and "image_diameter_mode_var" in main_field_panel
             and "camera_model_var" in main_field_panel
             and "_sync_field_mode_ui()" in main_field_panel,
+        ),
+        (
+            "Main Trace/Display controls panel lives outside layout_editor",
+            "MainTraceDisplayControlsPanel(" in main_trace_display_panel_factory
+            and "source_model_default=SOURCE_MODEL_DEFAULT" in main_trace_display_panel_factory
+            and "coherent_sum_mode_values=COHERENT_SUM_MODE_VALUES" in main_trace_display_panel_factory
+            and "self._main_trace_display_controls_panel().build(parent)" in build_controls_panel
+            and "object_mode_var" in main_trace_display_panel
+            and "trace_mode_var" in main_trace_display_panel
+            and "nonseq_target_surface_var" in main_trace_display_panel
+            and "analysis_branch_filter_var" in main_trace_display_panel
+            and "_register_left_mode_control(" in main_trace_display_panel,
         ),
         (
             "Open 3D renders editable table Thickness dimensions",
