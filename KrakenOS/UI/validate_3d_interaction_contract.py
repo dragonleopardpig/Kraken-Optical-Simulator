@@ -134,6 +134,8 @@ def main() -> int:
     rotation_hover = inspect.getsource(Kraken3DInspector._set_rotation_handle_hover)
     debug_trace = inspect.getsource(Kraken3DInspector._debug_trace)
     show_rays_changed = inspect.getsource(Kraken3DInspector._on_show_rays_changed)
+    ray_pick_enabled = inspect.getsource(Kraken3DInspector._ray_pick_enabled)
+    ray_pick_changed = inspect.getsource(Kraken3DInspector._on_ray_pick_changed)
     scene_visibility_changed = inspect.getsource(Kraken3DInspector._on_scene_visibility_changed)
     surface_menu = inspect.getsource(Kraken3DInspector._show_surface_function_context_menu)
     context_assign = inspect.getsource(Kraken3DInspector._assign_row_face_function_from_context)
@@ -216,6 +218,7 @@ def main() -> int:
     open3d_display_camera = inspect.getsource(Kraken3DInspector._camera_preset_from_display_orientation)
     legacy_configure = inspect.getsource(KrakenLayoutEditor._configure_legacy_3d_plotter)
     legacy_display_camera = inspect.getsource(KrakenLayoutEditor._legacy_3d_camera_preset_from_display_orientation)
+    ray_inspector = inspect.getsource(KrakenLayoutEditor.open_ray_inspector)
     placement_grid = inspect.getsource(Kraken3DInspector._add_scene_placement_grid_overlays)
     show_scene_placement_handles = inspect.getsource(Kraken3DInspector._show_scene_placement_handles)
     placement_grid_mesh = inspect.getsource(Kraken3DInspector._scene_placement_grid_mesh)
@@ -651,6 +654,33 @@ def main() -> int:
         ("active mode badge covers Orient Row->Target", "ORIENT ROW -> TARGET" in badge_text),
         ("active mode badge covers Orient Row->Ray", "ORIENT ROW -> RAY" in badge_text),
         ("active mode badge covers Source Target", "SOURCE TARGET" in badge_text),
+        (
+            "Open 3D passive ray selection is disabled by default",
+            "ray_pick_enabled_var = tk.BooleanVar(value=False)" in init
+            and 'text="Pick rays"' in init_with_top_controls
+            and "_on_ray_pick_changed" in init_with_top_controls
+            and "return bool(self.ray_pick_enabled_var.get())" in ray_pick_enabled
+            and "Ray picking disabled" in ray_pick_changed,
+        ),
+        (
+            "Open 3D ray clicks only open Ray Inspector when Pick rays is enabled",
+            "if not self._ray_pick_enabled():" in pick
+            and "Ray picking is disabled" in pick
+            and "self.editor._select_ray_inspector_ray(int(ray_index))" in pick
+            and pick.find("if not self._ray_pick_enabled():") < pick.find("self.editor._select_ray_inspector_ray(int(ray_index))"),
+        ),
+        (
+            "Ray Inspector keeps wide ray fields inside a horizontally scrollable table",
+            'window.geometry("1180x660")' in ray_inspector
+            and "ray_x_scroll" in ray_inspector
+            and "xscrollcommand=ray_x_scroll.set" in ray_inspector,
+        ),
+        (
+            "STEP surface-to-axis picking hides regular rays before axis selection",
+            "_hide_regular_rays_for_center_axis_pick()" in step_normal_axis_start
+            and "_hide_regular_rays_for_center_axis_pick()" in step_surface_center_axis_start
+            and "show_rays_var.set(False)" in center_row_axis_hide,
+        ),
         ("active mode badge is a VTK overlay", "_add_renderer_view_prop(actor)" in badge_update and "vtkTextActor" in badge_update),
         ("active mode badge survives 3D refresh", "_update_mode_badge" in refresh),
         ("embedded STL placement toolbar removed", "stl_toolbar" not in init and "placement toolbar" not in init),

@@ -5477,6 +5477,7 @@ class Kraken3DInspector(tk.Toplevel):
         self.step_carry_grid_var = tk.StringVar(value=STEP_CARRY_GRID_FREE)
         self.rotation_step_deg_var = tk.StringVar(value="90")
         self.show_rays_var = tk.BooleanVar(value=True)
+        self.ray_pick_enabled_var = tk.BooleanVar(value=False)
         self.show_rotation_handles_var = tk.BooleanVar(value=True)
         self.show_reference_surfaces_var = tk.BooleanVar(value=False)
         self.show_detector_overlays_var = tk.BooleanVar(value=False)
@@ -6266,6 +6267,21 @@ class Kraken3DInspector(tk.Toplevel):
     def _on_show_rays_changed(self) -> None:
         self._debug_trace("show_rays_toggled", show_rays=bool(self.show_rays_var.get()), counts=self._debug_actor_counts())
         self.refresh_from_editor()
+
+    def _ray_pick_enabled(self) -> bool:
+        try:
+            return bool(self.ray_pick_enabled_var.get())
+        except Exception:
+            return False
+
+    def _on_ray_pick_changed(self) -> None:
+        enabled = self._ray_pick_enabled()
+        if not enabled:
+            self._set_ray_highlight(None)
+            self.status_var.set("Ray picking disabled. Use the Pick rays toggle before opening Ray Inspector from the 3D canvas.")
+        else:
+            self.status_var.set("Ray picking enabled. Click a traced ray to open Ray Inspector.")
+        self.render()
 
     def _on_scene_visibility_changed(self) -> None:
         self._debug_trace(
@@ -9538,7 +9554,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_step_carry_cursor(False)
         self._set_axis_pick_cursor(True)
         self._update_mode_badge()
-        self.refresh_from_editor()
+        self._hide_regular_rays_for_center_axis_pick()
         anchor_text = "surface center" if anchor_mode == "surface_center" else "picked point"
         coordinate = selection.surface_center_world if anchor_mode == "surface_center" else selection.pick_point_world
         self.status_var.set(
@@ -9571,7 +9587,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_step_carry_cursor(False)
         self._set_axis_pick_cursor(True)
         self._update_mode_badge()
-        self.refresh_from_editor()
+        self._hide_regular_rays_for_center_axis_pick()
         center_text = self._world_xyz_text(selection.surface_center_world)
         self.status_var.set(
             f"Center {label.upper()} STEP surface: click the dotted Optical Axis guide. Surface center={center_text}."
@@ -13876,6 +13892,11 @@ class Kraken3DInspector(tk.Toplevel):
                 return
             if self._center_row_to_ray_mode:
                 self.status_var.set("Center Row->Optical Axis: regular rays are ignored; click the dotted Optical Axis guide.")
+                self.render()
+                return
+            if not self._ray_pick_enabled():
+                self._set_ray_highlight(None)
+                self.status_var.set("Ray picking is disabled. Enable Pick rays in the toolbar before inspecting ray events.")
                 self.render()
                 return
             self._clear_open3d_selection(render=False)
@@ -42433,7 +42454,7 @@ class KrakenLayoutEditor(tk.Tk):
         window = tk.Toplevel(self)
         window.withdraw()
         window.title("Ray Inspector")
-        window.geometry("1080x620")
+        window.geometry("1180x660")
         window.minsize(780, 420)
         window.transient(self)
         window.protocol("WM_DELETE_WINDOW", self._close_ray_inspector)
@@ -42521,20 +42542,20 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.column("source", width=120, anchor="w", stretch=False)
         ray_table.column("field", width=70, anchor="center", stretch=False)
         ray_table.column("branch", width=70, anchor="center", stretch=False)
-        ray_table.column("path", width=220, anchor="w", stretch=True)
+        ray_table.column("path", width=180, anchor="w", stretch=True)
         ray_table.column("power", width=72, anchor="e", stretch=False)
         ray_table.column("pfrac", width=62, anchor="e", stretch=False)
         ray_table.column("branches", width=76, anchor="center", stretch=False)
-        ray_table.column("status", width=150, anchor="w", stretch=True)
+        ray_table.column("status", width=120, anchor="w", stretch=True)
         ray_table.column("aperture", width=120, anchor="w", stretch=False)
         ray_table.column("aperture_margin", width=82, anchor="e", stretch=False)
-        ray_table.column("termination", width=170, anchor="w", stretch=True)
+        ray_table.column("termination", width=140, anchor="w", stretch=True)
         ray_table.column("terminal_media", width=120, anchor="w", stretch=False)
         ray_table.column("terminal_index", width=82, anchor="e", stretch=False)
         ray_table.column("terminal_inside", width=130, anchor="w", stretch=False)
-        ray_table.column("diagnostic", width=240, anchor="w", stretch=True)
+        ray_table.column("diagnostic", width=180, anchor="w", stretch=True)
         ray_table.column("hits", width=60, anchor="center", stretch=False)
-        ray_table.column("last_surface", width=160, anchor="w", stretch=True)
+        ray_table.column("last_surface", width=130, anchor="w", stretch=True)
         ray_table.column("target", width=70, anchor="center", stretch=False)
         ray_table.column("distance", width=90, anchor="e", stretch=False)
         ray_table.column("op", width=90, anchor="e", stretch=False)
@@ -42542,7 +42563,9 @@ class KrakenLayoutEditor(tk.Tk):
         ray_table.grid(row=0, column=0, sticky="nsew")
         ray_scroll = ttk.Scrollbar(rays_frame, orient="vertical", command=ray_table.yview)
         ray_scroll.grid(row=0, column=1, sticky="ns")
-        ray_table.configure(yscrollcommand=ray_scroll.set)
+        ray_x_scroll = ttk.Scrollbar(rays_frame, orient="horizontal", command=ray_table.xview)
+        ray_x_scroll.grid(row=1, column=0, sticky="ew")
+        ray_table.configure(yscrollcommand=ray_scroll.set, xscrollcommand=ray_x_scroll.set)
         ray_table.bind("<<TreeviewSelect>>", self._populate_ray_inspector_hits, add="+")
 
         hit_specs = self._ray_hit_table_specs()

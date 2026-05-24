@@ -14,7 +14,7 @@ from KrakenOS.UI.layout_editor import Kraken3DInspector
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
 
 
-_MAX_DIRECT_VIEW_CONTROLS = 9
+_MAX_DIRECT_VIEW_CONTROLS = 10
 _MAX_DIRECT_SCENE_CONTROLS = 8
 _MAX_DIRECT_CARRY_CONTROLS = 7
 
@@ -29,7 +29,9 @@ _MENU_EXPECTATIONS: dict[str, tuple[str, ...]] = {
         "Accept STEP Placement",
         "Promote STEP to Optical Solid Row",
         "Center STEP Axis",
-        "Snap STEP Normal->Optical Axis",
+        "Snap STEP Surface-Center Normal->Optical Axis",
+        "Snap STEP Pick-Point Normal->Optical Axis",
+        "Center STEP Surface->Optical Axis",
         "Obj->LED",
         "Export STEP",
         "Faces...",
@@ -153,6 +155,13 @@ def main() -> int:
             "Open 3D carry row uses free movement guidance",
             "Hold-drag STEP to move freely" in toolbar_source and "Snap step" not in toolbar_source,
             "STEP carry should be free movement, with optical-axis alignment handled by a separate command",
+        ),
+        (
+            "Open 3D view row gates passive ray picking behind an explicit toggle",
+            'text="Pick rays"' in toolbar_source
+            and "ray_pick_enabled_var" in toolbar_source
+            and "_on_ray_pick_changed" in toolbar_source,
+            "ray clicks should not open Ray Inspector unless the user enables the Pick rays toggle",
         ),
         (
             "Open 3D carry row avoids explicit Lift/Drop buttons",

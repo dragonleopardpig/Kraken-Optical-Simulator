@@ -70,8 +70,18 @@ Current pipeline checkpoint:
 | STEP face-level partial reflectors | Achieved | `██████████ 100%` | Optical-solid face metadata saved from Open 3D `Partial Reflecting / Transmitting` now feeds the deterministic non-sequential branch tracer directly. Face-level `Beam Splitter` records carry split ratio, loss, and phase into reflected/transmitted child paths instead of being treated as a one-way mirror or a plain uncoated face. |
 | Blank starter launch default | Achieved | `██████████ 100%` | Reset/new blank Object+Image layouts now start in `Object mode = Infinity` with angle-field sampling, so Open 3D `Pupil / field` displays a parallel aperture-envelope launch by default. Explicit finite-object presets and saved layout settings still preserve their finite-object cone semantics. |
 | Open 3D world-envelope axes | Achieved | `██████████ 100%` | The default `Pupil / field` Open 3D launch keeps a real center reference ray alongside the aperture-envelope rim, selected through-going envelope traces retain that center ray, and traced `Optical Axis 2+` overlays are now limited to the final post-surface exit segment. This prevents off-axis rim rays and internal prism legs from creating multiple input-axis guides or an output guide offset from the physical exit bundle. |
+| Open 3D ray-pick gating and 3D penta cascade guard | Achieved | `██████████ 100%` | Passive ray clicks no longer open the Ray Inspector by default; the View toolbar now has an explicit `Pick rays` toggle, and STEP surface-normal/surface-center axis-pick modes hide regular ray actors so the dotted Optical Axis remains the intended second-click target. The Ray Inspector ray table is horizontally scrollable when intentionally opened. `validate_penta_mirror_3d_cascade.py` mimics importing the 42779 penta STEP, selecting/snap-aligning the entrance face, promoting it, assigning the two fold faces as `Full Reflecting`, and proving a finite collimated bundle reflects from both mirror faces and exits in a rolled 3D direction. |
 
-Latest movement on 2026-05-23: Open 3D STEP reselection now restores rotation
+Latest movement on 2026-05-24: Open 3D passive ray selection now requires the
+`Pick rays` toolbar toggle, so surface-to-axis snapping cannot be intercepted
+by a traced ray and accidentally pop the Ray Inspector. STEP normal/surface
+center axis-pick modes also hide regular ray actors before the optical-axis
+second click, while leaving the dotted axis guide visible. A new headless
+`validate_penta_mirror_3d_cascade.py` script records the penta-prism workflow
+as reproducible user-like actions and validates that both full-reflecting fold
+faces steer the bundle in 3D, not only in the YZ plane.
+
+Earlier movement on 2026-05-23: Open 3D STEP reselection now restores rotation
 handles after blank-click deselection. Plain STEP face clicks keep rotation
 handles live and only record the face for later Snap/Center actions; they no
 longer auto-enter normal-to-axis snap mode and block handle hover/click.
@@ -650,8 +660,11 @@ kraken-vtk-tk-check
   hover/selection highlighting. The optical-axis target is the persistent dotted
   `Optical Axis` guide itself, not an additional blue line; the guide is
   ignored by the first-click source picker so it cannot block surfaces/STEP
-  faces, then only the guide is accepted as the second click. Imported STEP face
-  picks transition to STEP normal-to-axis
+  faces, then only the guide is accepted as the second click. Passive ray
+  inspection is opt-in through the View-row `Pick rays` toggle, and STEP
+  normal/surface-center axis-pick modes hide regular ray actors before the
+  optical-axis second click. Imported STEP face picks transition to STEP
+  normal-to-axis
   alignment, and cached/throttled STEP face picking avoids rescanning large STEP
   meshes on every mouse move. `Show rays` now controls traced rays only; the
   dotted optical-axis guide remains visible and pickable. Row centering writes

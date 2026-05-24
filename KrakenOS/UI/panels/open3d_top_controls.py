@@ -52,6 +52,12 @@ class Open3DTopControlsPanel:
             variable=self.inspector.show_rays_var,
             command=self.inspector._on_show_rays_changed,
         ).pack(side="left", padx=(12, 0))
+        ttk.Checkbutton(
+            view_toolbar,
+            text="Pick rays",
+            variable=self.inspector.ray_pick_enabled_var,
+            command=self.inspector._on_ray_pick_changed,
+        ).pack(side="left", padx=(8, 0))
         overlay_button = ttk.Menubutton(view_toolbar, text="Overlays")
         overlay_menu = tk.Menu(overlay_button, tearoff=False)
         overlay_menu.add_checkbutton(
