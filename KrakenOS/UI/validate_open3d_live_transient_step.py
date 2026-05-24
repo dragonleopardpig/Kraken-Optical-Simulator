@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
+from KrakenOS.UI.services.step_overlay_promotion import StepOverlayPromotionService
 
 
 @dataclass
@@ -20,6 +21,7 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
     inspector_source = inspect.getsource(Kraken3DInspector)
     editor_source = inspect.getsource(KrakenLayoutEditor)
     open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)
+    step_promotion_service = inspect.getsource(StepOverlayPromotionService)
     checks = [
         Open3DLiveTransientStepCheck(
             "Live refresh requests transient STEP overlays",
@@ -30,10 +32,11 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
         ),
         Open3DLiveTransientStepCheck(
             "Transient optical STEP rows use the promoted-solid contract",
-            "def _step_overlay_optical_solid_row_plan" in editor_source
-            and "self._optical_stl_solid_row(" in editor_source
-            and '"Solid_3d_stl"' in editor_source
-            and '"LiveStepOverlayTrace"' in editor_source,
+            "def _step_overlay_optical_solid_row_plan" in step_promotion_service
+            and "self._optical_stl_solid_row(" in step_promotion_service
+            and 'source_format="STEP"' in step_promotion_service
+            and '"StepOverlayPromotion"' in step_promotion_service
+            and '"LiveStepOverlayTrace"' in step_promotion_service,
             "The imported optical STEP is converted to a file-backed Solid_3d_stl row with face metadata.",
         ),
         Open3DLiveTransientStepCheck(

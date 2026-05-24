@@ -63,6 +63,7 @@ from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDime
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.plot_refresh import PlotRefreshService
 from KrakenOS.UI.services.ray_inspector_records import RayInspectorRecordService
+from KrakenOS.UI.services.step_overlay_promotion import StepOverlayPromotionService
 from KrakenOS.UI.services.tolerance_stackup import ToleranceStackupService
 from KrakenOS.UI.services.trace_preview import TracePreviewService
 from KrakenOS.UI.widgets.tooltips import WidgetTooltip
@@ -482,7 +483,8 @@ def main() -> int:
     default_uncoated = inspect.getsource(KrakenLayoutEditor._default_uncoated_optical_solid_face_metadata)
     editor_step_translate = inspect.getsource(KrakenLayoutEditor.translate_step_overlay)
     editor_row_translate_vector = inspect.getsource(KrakenLayoutEditor.translate_scene_row_pose_vector)
-    editor_step_promote = inspect.getsource(KrakenLayoutEditor.promote_imported_step_to_optical_solid_row)
+    editor_step_promote = inspect.getsource(StepOverlayPromotionService.promote_imported_step_to_optical_solid_row)
+    editor_step_promote_factory = inspect.getsource(KrakenLayoutEditor._step_overlay_promotion_service)
     editor_step_snap = inspect.getsource(KrakenLayoutEditor.snap_step_overlay_center_to_world_point)
     editor_step_snap_target = inspect.getsource(KrakenLayoutEditor.snap_step_overlay_center_to_scene_target)
     editor_step_normal_snap = inspect.getsource(KrakenLayoutEditor.snap_step_feature_normal_to_optical_axis)
@@ -1179,7 +1181,8 @@ def main() -> int:
         ),
         (
             "STEP promotion writes a file-backed optical solid row",
-            "_transformed_imported_step_mesh_for_label" in editor_step_promote
+            "StepOverlayPromotionService(self)" in editor_step_promote_factory
+            and "_transformed_imported_step_mesh_for_label" in editor_step_promote
             and "Solid_3d_stl" in editor_step_promote
             and "_optical_stl_solid_row" in editor_step_promote
             and "StepOverlayPromotion" in editor_step_promote,
