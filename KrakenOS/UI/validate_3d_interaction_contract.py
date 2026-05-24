@@ -30,6 +30,7 @@ from KrakenOS.UI.panels.main_lens_drawing_dialogs import MainLensDrawingDialogs
 from KrakenOS.UI.panels.main_nonseq_scene_graph_dialog import MainNonSequentialSceneGraphDialog
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
 from KrakenOS.UI.panels.main_optical_solid_dialogs import MainOpticalSolidDialogs
+from KrakenOS.UI.panels.main_path_component_placement_dialog import MainPathComponentPlacementDialog
 from KrakenOS.UI.panels.main_path_detector_analysis import MainPathDetectorAnalysis
 from KrakenOS.UI.panels.main_ray_trace_inspectors import MainRayTraceInspectorDialogs
 from KrakenOS.UI.panels.main_paraxial_analysis_dialogs import MainParaxialAnalysisDialogs
@@ -365,6 +366,10 @@ def main() -> int:
     main_optical_solid_dialogs_factory = inspect.getsource(KrakenLayoutEditor._main_optical_solid_dialogs)
     open_optical_stl_diagnostics = inspect.getsource(KrakenLayoutEditor.open_optical_stl_diagnostics)
     open_optical_stl_numeric_placement = inspect.getsource(KrakenLayoutEditor._open_optical_stl_numeric_placement_assistant)
+    main_path_component_placement_dialog = inspect.getsource(MainPathComponentPlacementDialog)
+    main_path_component_placement_factory = inspect.getsource(KrakenLayoutEditor._main_path_component_placement_dialog)
+    open_arm_path_component_placement = inspect.getsource(KrakenLayoutEditor.open_arm_path_component_placement)
+    open_current_path_component_placement = inspect.getsource(KrakenLayoutEditor.open_current_path_component_placement)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
     edit_current_bounds = inspect.getsource(KrakenLayoutEditor.edit_current_bounds)
@@ -917,6 +922,17 @@ def main() -> int:
             and "self._main_optical_solid_dialogs()._open_optical_stl_numeric_placement_assistant(" in open_optical_stl_numeric_placement
             and "Optical CAD/STL Solid Diagnostics" in main_optical_solid_dialogs
             and "Place/Orient CAD/STL Solid" in main_optical_solid_dialogs,
+        ),
+        (
+            "Path component placement dialog lives outside layout_editor",
+            "MainPathComponentPlacementDialog(" in main_path_component_placement_factory
+            and "short_error_message=_short_error_message" in main_path_component_placement_factory
+            and "self._main_path_component_placement_dialog().open_arm_path_component_placement(" in open_arm_path_component_placement
+            and "self._main_path_component_placement_dialog().open_current_path_component_placement()" in open_current_path_component_placement
+            and "Add Traced Path Component" in main_path_component_placement_dialog
+            and "Distance from splitter [mm]" in main_path_component_placement_dialog
+            and "PATH_COMPONENT_TYPES" in main_path_component_placement_dialog
+            and "_path_component_row_for_branch_path" in main_path_component_placement_dialog,
         ),
         (
             "Atmosphere controls and dialog live outside layout_editor",
