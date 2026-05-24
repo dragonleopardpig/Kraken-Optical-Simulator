@@ -13,6 +13,7 @@ from KrakenOS.UI.layout_editor import (
     KrakenLayoutEditor,
     _dotted_axis_records_from_ray_path,
 )
+from KrakenOS.UI.panels.main_advanced_surface_dialog import MainAdvancedSurfaceDialog
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_atmosphere_panel import MainAtmospherePanel
 from KrakenOS.UI.panels.main_beam_splitter_dialog import MainBeamSplitterDialog
@@ -281,6 +282,9 @@ def main() -> int:
     main_error_map_dialog = inspect.getsource(MainErrorMapDialog)
     main_error_map_factory = inspect.getsource(KrakenLayoutEditor._main_error_map_dialog)
     open_error_map_dialog = inspect.getsource(KrakenLayoutEditor.open_error_map_editor)
+    main_advanced_surface_dialog = inspect.getsource(MainAdvancedSurfaceDialog)
+    main_advanced_surface_factory = inspect.getsource(KrakenLayoutEditor._main_advanced_surface_dialog)
+    open_advanced_surface_dialog = inspect.getsource(KrakenLayoutEditor.open_advanced_surface_editor)
     main_optimization_panel = inspect.getsource(MainOptimizationPanel)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
@@ -806,6 +810,17 @@ def main() -> int:
             and "Error_map = [X, Y, Z, SPACE]" in main_error_map_dialog
             and "Import..." in main_error_map_dialog
             and "Validation passed: no error map." in main_error_map_dialog,
+        ),
+        (
+            "Advanced Surface dialog lives outside layout_editor",
+            "MainAdvancedSurfaceDialog(" in main_advanced_surface_factory
+            and "advanced_row_shape_fields=ADVANCED_ROW_SHAPE_FIELDS" in main_advanced_surface_factory
+            and "advanced_surface_field_groups=ADVANCED_SURFACE_FIELD_GROUPS" in main_advanced_surface_factory
+            and "validate_advanced_surface_inputs=_validate_advanced_surface_inputs" in main_advanced_surface_factory
+            and "self._main_advanced_surface_dialog().open(row_index)" in open_advanced_surface_dialog
+            and "Shape Params" in main_advanced_surface_dialog
+            and "Optimize conic k" in main_advanced_surface_dialog
+            and "Advanced Surface Validation" in main_advanced_surface_dialog,
         ),
         (
             "Open 3D renders editable table Thickness dimensions",
