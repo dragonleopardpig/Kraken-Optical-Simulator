@@ -73,6 +73,8 @@ Current pipeline checkpoint:
 | Open 3D world-envelope axes | Achieved | `██████████ 100%` | The default `Pupil / field` Open 3D launch keeps a real center reference ray alongside the aperture-envelope rim, selected through-going envelope traces retain that center ray, and traced `Optical Axis 2+` overlays are now limited to the final post-surface exit segment. This prevents off-axis rim rays and internal prism legs from creating multiple input-axis guides or an output guide offset from the physical exit bundle. |
 | Open 3D camera/guide bounds | Achieved | `██████████ 100%` | Traced `Optical Axis 2+` guides for escaped paths are now anchored near the last real surface event instead of at the midpoint of KrakenOS' synthetic escaped terminal tail. Open 3D camera-fit and clipping-range updates ignore optical-axis guide actors, so clicking Iso/YZ/XY/XZ or dragging the camera no longer frames the scene around an outlier guide and makes the optical elements disappear. |
 | Open 3D ray-pick gating and 3D penta cascade guard | Achieved | `██████████ 100%` | Passive ray clicks no longer open the Ray Inspector by default; the View toolbar now has an explicit `Pick rays` toggle, and STEP surface-normal/surface-center axis-pick modes hide regular ray actors so the dotted Optical Axis remains the intended second-click target. The Ray Inspector ray table is horizontally scrollable when intentionally opened. `validate_penta_mirror_3d_cascade.py` mimics importing the 42779 penta STEP, selecting/snap-aligning the entrance face, promoting it, assigning the two fold faces as `Full Reflecting`, and proving a finite collimated bundle reflects from both mirror faces and exits in a rolled 3D direction. `validate_five_penta_prism_cascade.py` now uses a two-vector vendor-face pose solve for five cascaded penta prisms: F005 is constrained as the upstream entrance face, F006 is constrained to the requested downstream axis, and F003/F004 remain the vendor mirror faces. The validator checks a 13-ray collimated bundle against five exact row-local `F005 refraction -> F003 reflection -> F004 reflection -> F006 refraction` groups instead of fitting face assignments from an already-traced path. |
+| Five-penta stage snapshots | Achieved | `██████████ 100%` | The five-penta guard now captures one Open 3D image after each prism is placed and traced, plus final ISO/YZ/XY/XZ snapshots, a generated 2D YZ/XZ/XY projection image, and a JSON report. Each stage verifies zero launch-angle spread for a 13-ray collimated disk source and the exact accumulated penta face/action sequence, so visual regressions from element 2 onward are checked against the same physics oracle. |
+| Literal click-to-cascade placement | In progress | `█████████▊ 98%` | The fully interactive import/click/snap/promote cascade still needs to call the same deterministic vendor-face solver used by the five-penta reference guard. Until that integration lands, the passing five-penta artifact is the reference layout and screenshot oracle, not a claim that arbitrary repeated manual snaps are complete. |
 
 Latest movement on 2026-05-24: Open 3D camera and clipping calculations now
 exclude optical-axis guide actors, and traced exit-axis guides are bounded near
@@ -103,6 +105,16 @@ groups. The headless capture path saves one Open 3D stage snapshot after each
 prism is placed/traced, final ISO/YZ/XY/XZ snapshots, a 2D YZ/XZ/XY projection
 snapshot, the generated STL asset, and a JSON report under
 `attachment/five_penta_prism_cascade/`.
+
+Additional movement on 2026-05-24: the five-penta cascade guard now runs as a
+stage-by-stage visual oracle. The generated report records one stage after each
+prism insertion, confirms the source is `Collimated disk source` with
+`source_cone_angle = 0.0`, proves all 13 launch rays have zero angular spread,
+and checks that every ray follows the accumulated row-local penta sequence. The
+saved snapshots show the second through fifth prisms placed on the propagated
+axis instead of relying on manual screenshot inspection alone. The remaining
+Open 3D authoring gap is routing the literal import/click/snap/promote workflow
+through this same stable source-face pose solver.
 
 Additional movement on 2026-05-24: editor teardown now cancels tracked Tk
 `after`/`after_idle` callbacks for the custom table selection emitter,

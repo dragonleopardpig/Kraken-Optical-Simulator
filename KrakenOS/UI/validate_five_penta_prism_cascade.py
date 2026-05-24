@@ -243,6 +243,55 @@ def _axis_from_central_exit(scene_bundle: object, expected_direction: np.ndarray
     return exit_point + expected * float(NEXT_PRISM_SPACING_MM), actual_direction
 
 
+def _validate_collimated_launch(scene_bundle: object) -> dict[str, object]:
+    ray_paths = list(getattr(scene_bundle, "ray_paths", []) or [])
+    directions: list[np.ndarray] = []
+    origins: list[np.ndarray] = []
+    for path in ray_paths:
+        points = np.asarray(getattr(path, "points_world", ()), dtype=float)
+        if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+            continue
+        segment = points[1, :3] - points[0, :3]
+        norm = float(np.linalg.norm(segment))
+        if norm <= 1e-12:
+            continue
+        directions.append(segment / norm)
+        origins.append(points[0, :3])
+    if not directions:
+        raise RuntimeError("No usable launch segments were available for collimation validation.")
+    reference = _unit(np.mean(np.asarray(directions, dtype=float), axis=0))
+    max_angle_error = max(
+        float(np.rad2deg(np.arccos(np.clip(float(np.dot(direction, reference)), -1.0, 1.0))))
+        for direction in directions
+    )
+    if max_angle_error > 1e-5:
+        raise RuntimeError(f"Launch bundle is not collimated; max angular spread is {max_angle_error:.6g} deg.")
+    origin_radius = 0.0
+    if origins:
+        origin_points = np.asarray(origins, dtype=float)
+        center = np.mean(origin_points[:, :3], axis=0)
+        origin_radius = float(np.max(np.linalg.norm(origin_points[:, :3] - center[:3], axis=1)))
+    return {
+        "ray_count": len(directions),
+        "mean_direction": _vector_json(reference),
+        "max_angle_error_deg": round(float(max_angle_error), 12),
+        "origin_radius_mm": round(float(origin_radius), 9),
+    }
+
+
+def _snapshot(
+    app: KrakenLayoutEditor,
+    inspector,
+    stage_snapshot_dir: Path | None,
+    filename: str,
+) -> str | None:
+    if inspector is None or stage_snapshot_dir is None:
+        return None
+    _refresh(inspector, reset_camera=True)
+    inspector.set_camera_preset("iso")
+    return str(_save_vtk_snapshot(inspector, stage_snapshot_dir / filename))
+
+
 def _validate_trace(scene_bundle: object, row_indices: list[int], *, final_expected_direction: np.ndarray) -> dict[str, object]:
     ray_paths = list(getattr(scene_bundle, "ray_paths", []) or [])
     if not ray_paths:
@@ -292,14 +341,14 @@ def _validate_trace(scene_bundle: object, row_indices: list[int], *, final_expec
 
 
 def build_case_editor(stage_snapshot_dir: Path | None = None) -> tuple[KrakenLayoutEditor, dict[str, Any]]:
-    mesh_path, metadata = _prepare_penta_asset()
+    source_mesh_path, source_metadata = _prepare_penta_asset()
     app = KrakenLayoutEditor(headless=True)
     if stage_snapshot_dir is not None:
         stage_snapshot_dir = stage_snapshot_dir.resolve()
         stage_snapshot_dir.mkdir(parents=True, exist_ok=True)
     _configure_base_editor(app)
     _configure_collimated_bundle(app)
-    app.source_radius_var.set("2.0")
+    app.source_radius_var.set("4.0")
     app.ray_count_var.set("13")
     app.source_cone_angle_var.set("0.0")
     app._invalidate_preview_scene_trace()
@@ -309,19 +358,21 @@ def build_case_editor(stage_snapshot_dir: Path | None = None) -> tuple[KrakenLay
     entrance_point = FIRST_ENTRANCE_POINT_MM.copy()
     scene_bundle = None
     directions = [_unit(direction) for direction in PENTA_PATH_DIRECTIONS]
+    inspector = _open_3d_inspector(app) if stage_snapshot_dir is not None else None
     for index in range(PENTA_COUNT):
+        prism_number = index + 1
         insert_at = max(1, len(app.rows) - 1)
         z_station = _z_station_for_insert(app.rows, insert_at)
         incoming = directions[index]
         outgoing = directions[index + 1]
         pose = _solve_penta_row_pose(
-            metadata,
+            source_metadata,
             incoming_direction=incoming,
             outgoing_direction=outgoing,
             entrance_point_world=entrance_point,
             z_station=z_station,
         )
-        row = _make_penta_row(prism_number=index + 1, mesh_path=mesh_path, metadata=metadata, pose=pose)
+        row = _make_penta_row(prism_number=prism_number, mesh_path=source_mesh_path, metadata=source_metadata, pose=pose)
         app.rows.insert(insert_at, row)
         app._normalize_special_rows()
         app._sync_table()
@@ -331,10 +382,11 @@ def build_case_editor(stage_snapshot_dir: Path | None = None) -> tuple[KrakenLay
         _system, _rays, scene_bundle = _trace_scene(app)
         ray_paths = list(getattr(scene_bundle, "ray_paths", []) or [])
         if not ray_paths:
-            raise RuntimeError(f"Trace after prism {index + 1} produced no ray paths.")
+            raise RuntimeError(f"Trace after prism {prism_number} produced no ray paths.")
         central = _central_path(ray_paths)
+        prefix_validation = _validate_trace(scene_bundle, row_indices + [insert_at], final_expected_direction=outgoing)
         stage: dict[str, object] = {
-            "prism": index + 1,
+            "prism": prism_number,
             "row_index": insert_at,
             "z_station": round(float(z_station), 9),
             "incoming_direction": _vector_json(incoming),
@@ -343,34 +395,53 @@ def build_case_editor(stage_snapshot_dir: Path | None = None) -> tuple[KrakenLay
             "center_world": _point_json(pose["center_world"]),
             "tilts_deg": [round(float(value), 9) for value in pose["tilts"]],
             "desp": [round(float(value), 9) for value in pose["desp"]],
+            "actions": [
+                {
+                    "action": "place_optical_step_reference",
+                    "constraints": {
+                        "entrance_face": PENTA_ENTRANCE_FACE,
+                        "exit_face": PENTA_EXIT_FACE,
+                        "mirror_faces": list(PENTA_MIRROR_FACES),
+                    },
+                },
+                {"action": "trace_after_placement", "row_index": insert_at},
+            ],
+            "launch_validation": _validate_collimated_launch(scene_bundle),
             "ray_paths_after_trace": len(ray_paths),
             "central_terminal_direction": _vector_json(_terminal_direction(central)),
             "central_sequence": " -> ".join(_surface_sequence(central)),
+            "prefix_validation": prefix_validation,
+            "snapshots": {},
         }
-        if stage_snapshot_dir is not None:
-            inspector = _open_3d_inspector(app)
-            _refresh(inspector, reset_camera=True)
-            inspector.set_camera_preset("iso")
-            snapshot_path = _save_vtk_snapshot(
-                inspector,
-                stage_snapshot_dir / f"five_penta_stage_{index + 1:02d}_after_trace.png",
-            )
-            stage["snapshot"] = str(snapshot_path)
+        snapshot_path = _snapshot(
+            app,
+            inspector,
+            stage_snapshot_dir,
+            f"five_penta_stage_{prism_number:02d}_after_trace.png",
+        )
+        if snapshot_path:
+            stage["snapshots"]["trace"] = snapshot_path
         stages.append(stage)
         row_indices.append(insert_at)
         if index < PENTA_COUNT - 1:
-            entrance_point, _actual = _axis_from_central_exit(scene_bundle, outgoing, index + 1)
+            entrance_point, _actual = _axis_from_central_exit(scene_bundle, outgoing, prism_number)
 
     final = _validate_trace(scene_bundle, row_indices, final_expected_direction=directions[-1])
     report = {
         "ok": True,
         "penta_count": PENTA_COUNT,
         "source_step": str(PRISM_42779_STEP),
-        "source_mesh": str(mesh_path),
+        "source_mesh": str(source_mesh_path),
         "entrance_face": PENTA_ENTRANCE_FACE,
         "exit_face": PENTA_EXIT_FACE,
         "mirror_faces": list(PENTA_MIRROR_FACES),
-        "placement_mode": "two-vector vendor face solve: F005 upstream, F006 requested output axis",
+        "placement_mode": "deterministic two-face reference placement: F005 upstream, F006 requested output-axis roll",
+        "source_validation": {
+            "source_model": str(app.source_model_var.get()),
+            "source_radius": str(app.source_radius_var.get()),
+            "source_cone_angle": str(app.source_cone_angle_var.get()),
+            "ray_count": str(app.ray_count_var.get()),
+        },
         "path_directions": [_vector_json(direction) for direction in directions],
         "stage_count": len(stages),
         "stages": stages,
