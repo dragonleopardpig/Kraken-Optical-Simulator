@@ -15,6 +15,7 @@ from KrakenOS.UI.layout_editor import (
 )
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_atmosphere_panel import MainAtmospherePanel
+from KrakenOS.UI.panels.main_coating_material_dialog import MainCoatingMaterialDialog
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
@@ -261,6 +262,9 @@ def main() -> int:
     build_atmosphere_panel = inspect.getsource(KrakenLayoutEditor._build_atmosphere_panel)
     open_atmosphere_dialog = inspect.getsource(KrakenLayoutEditor.open_atmosphere_settings_dialog)
     close_atmosphere_dialog = inspect.getsource(KrakenLayoutEditor._close_atmosphere_settings_dialog)
+    main_coating_dialog = inspect.getsource(MainCoatingMaterialDialog)
+    main_coating_dialog_factory = inspect.getsource(KrakenLayoutEditor._main_coating_material_dialog)
+    open_coating_dialog = inspect.getsource(KrakenLayoutEditor.open_coating_material_editor)
     main_optimization_panel = inspect.getsource(MainOptimizationPanel)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
@@ -728,6 +732,18 @@ def main() -> int:
             and "ATMOSPHERE_CONTROL_SPECS" in main_atmosphere_panel
             and "Apply + Atmos" in main_atmosphere_panel
             and "atmosphere_summary_var" in main_atmosphere_panel,
+        ),
+        (
+            "Coating/material dialog lives outside layout_editor",
+            "MainCoatingMaterialDialog(" in main_coating_dialog_factory
+            and "coating_presets=COATING_PRESETS" in main_coating_dialog_factory
+            and "metal_catalog_dir=METAL_CATALOG_DIR" in main_coating_dialog_factory
+            and "validate_advanced_surface_inputs=_validate_advanced_surface_inputs" in main_coating_dialog_factory
+            and "self._main_coating_material_dialog().open(row_index)" in open_coating_dialog
+            and "Coating / Material" in main_coating_dialog
+            and "Load CSV..." in main_coating_dialog
+            and "CoatingMet" in main_coating_dialog
+            and "Validation passed." in main_coating_dialog,
         ),
         (
             "Open 3D renders editable table Thickness dimensions",
