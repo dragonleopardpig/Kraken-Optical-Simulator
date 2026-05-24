@@ -490,6 +490,149 @@ class MainParaxialAnalysisDialogs:
         dialog.lift()
         dialog.focus_force()
 
+    @staticmethod
+    def _matrix_cell(matrix, row: int, column: int) -> float:
+        arr = np.asarray(matrix, dtype=float)
+        return float(arr[row, column])
+
+    def open_paraxial_matrix_report(self) -> None:
+        try:
+            system = self.build_system(force_rebuild=True)
+            trace = system.ParaxMatrices(self._current_wavelength())
+        except Exception as exc:
+            message = self.short_error_message(exc)
+            messagebox.showerror("Paraxial Matrix Report", f"Could not build paraxial matrix report:\n\n{message}", parent=self.editor)
+            self.status_var.set(f"Paraxial matrix report failed: {message}")
+            return
+
+        window = tk.Toplevel(self.editor)
+        window.withdraw()
+        window.title("Paraxial Matrix Report")
+        window.geometry("1180x620")
+        window.minsize(860, 420)
+        window.transient(self.editor)
+        window.columnconfigure(0, weight=1)
+        window.rowconfigure(2, weight=1)
+
+        summary = (
+            f"Wavelength {float(trace.wavelength):.6g} um | "
+            f"EFFL {float(trace.effl):.6g} mm | "
+            f"PPA {float(trace.ppa):.6g} mm | PPP {float(trace.ppp):.6g} mm | "
+            f"ABCD=[{self._matrix_cell(trace.system_matrix_abcd, 0, 0):.6g}, "
+            f"{self._matrix_cell(trace.system_matrix_abcd, 0, 1):.6g}; "
+            f"{self._matrix_cell(trace.system_matrix_abcd, 1, 0):.6g}, "
+            f"{self._matrix_cell(trace.system_matrix_abcd, 1, 1):.6g}]"
+        )
+        ttk.Label(window, text=summary, padding=(8, 8, 8, 4), anchor="w").grid(row=0, column=0, sticky="ew")
+
+        toolbar = ttk.Frame(window, padding=(8, 0, 8, 4))
+        toolbar.grid(row=1, column=0, sticky="ew")
+
+        columns = (
+            "surface",
+            "name",
+            "glass",
+            "n_before",
+            "n_after",
+            "radius",
+            "curvature",
+            "thickness",
+            "kind",
+            "A",
+            "B",
+            "C",
+            "D",
+            "K00",
+            "K01",
+            "K10",
+            "K11",
+        )
+        frame = ttk.Frame(window, padding=8)
+        frame.grid(row=2, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+        tree = ttk.Treeview(frame, columns=columns, show="headings")
+        headings = {
+            "surface": "Surf",
+            "name": "Name",
+            "glass": "Glass",
+            "n_before": "n0",
+            "n_after": "n1",
+            "radius": "R [mm]",
+            "curvature": "C [1/mm]",
+            "thickness": "T [mm]",
+            "kind": "Kind",
+            "A": "A",
+            "B": "B",
+            "C": "C",
+            "D": "D",
+            "K00": "K00",
+            "K01": "K01",
+            "K10": "K10",
+            "K11": "K11",
+        }
+        for column in columns:
+            tree.heading(column, text=headings[column])
+            width = 70 if column not in {"name", "kind"} else 150
+            tree.column(column, width=width, anchor=("w" if column in {"name", "glass", "kind"} else "e"), stretch=column in {"name", "kind"})
+        tree.grid(row=0, column=0, sticky="nsew")
+        yscroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        yscroll.grid(row=0, column=1, sticky="ns")
+        xscroll = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
+        xscroll.grid(row=1, column=0, sticky="ew")
+        tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
+
+        def _fmt(value) -> str:
+            try:
+                return f"{float(value):.8g}"
+            except Exception:
+                return str(value)
+
+        export_rows: list[dict[str, object]] = []
+        for surface in trace.surfaces:
+            row = {
+                "surface": int(surface.surface_index),
+                "name": str(surface.surface_name or ""),
+                "glass": str(surface.glass),
+                "n_before": float(surface.n_before),
+                "n_after": float(surface.n_after),
+                "radius": float(surface.radius),
+                "curvature": float(surface.curvature),
+                "thickness": float(surface.thickness),
+                "kind": "mirror" if surface.is_mirror else ("thin_lens" if surface.is_thin_lens else "surface"),
+                "A": self._matrix_cell(surface.abcd_matrix, 0, 0),
+                "B": self._matrix_cell(surface.abcd_matrix, 0, 1),
+                "C": self._matrix_cell(surface.abcd_matrix, 1, 0),
+                "D": self._matrix_cell(surface.abcd_matrix, 1, 1),
+                "K00": self._matrix_cell(surface.kraken_matrix, 0, 0),
+                "K01": self._matrix_cell(surface.kraken_matrix, 0, 1),
+                "K10": self._matrix_cell(surface.kraken_matrix, 1, 0),
+                "K11": self._matrix_cell(surface.kraken_matrix, 1, 1),
+            }
+            export_rows.append(row)
+            tree.insert("", "end", values=tuple(_fmt(row[column]) if column not in {"name", "glass", "kind"} else row[column] for column in columns))
+
+        def export_csv() -> None:
+            path = filedialog.asksaveasfilename(
+                title="Export Paraxial Matrix CSV",
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*")],
+                parent=window,
+            )
+            if not path:
+                return
+            with open(path, "w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(columns))
+                writer.writeheader()
+                writer.writerows(export_rows)
+            self.status_var.set(f"Paraxial matrix CSV exported: {Path(path).name}")
+
+        ttk.Button(toolbar, text="Export CSV", command=export_csv).pack(side="left")
+        ttk.Button(toolbar, text="Close", command=window.destroy).pack(side="left", padx=(6, 0))
+
+        self._show_centered_dialog(window)
+
+
     def open_gaussian_beam_report(self) -> None:
         try:
             system = self.build_system(force_rebuild=True)
