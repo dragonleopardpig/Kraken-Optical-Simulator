@@ -50,6 +50,7 @@ from KrakenOS.UI.saved_layout_plot import build_saved_layout_figure
 from KrakenOS.UI.scene_builder import _sync_path_display_geometry_from_events
 from KrakenOS.UI.scene_geometry import RayEvent3D, RayPath3D
 from KrakenOS.UI.scene_projector import bounded_ray_points_for_scene_display, scene_display_center_radius
+from KrakenOS.UI.services.analysis_plot import AnalysisPlotService
 from KrakenOS.UI.services.formula_help import FormulaHelpService
 from KrakenOS.UI.services.legacy_3d_scene import Legacy3DSceneService
 from KrakenOS.UI.services.layout_file_writer import LayoutFileWriterService
@@ -420,6 +421,9 @@ def main() -> int:
     main_ray_trace_inspectors = inspect.getsource(MainRayTraceInspectorDialogs)
     main_ray_trace_inspectors_factory = inspect.getsource(KrakenLayoutEditor._main_ray_trace_inspector_dialogs)
     open_ray_inspector = inspect.getsource(KrakenLayoutEditor.open_ray_inspector)
+    analysis_plot_service = inspect.getsource(AnalysisPlotService)
+    analysis_plot_factory = inspect.getsource(KrakenLayoutEditor._analysis_plot_service)
+    plot_analysis = inspect.getsource(KrakenLayoutEditor._plot_analysis)
     ray_inspector_record_service = inspect.getsource(RayInspectorRecordService)
     ray_inspector_record_factory = inspect.getsource(KrakenLayoutEditor._ray_inspector_record_service)
     collect_ray_inspector_records = inspect.getsource(KrakenLayoutEditor._collect_ray_inspector_records)
@@ -1257,6 +1261,14 @@ def main() -> int:
             and "Trace Path Inspector" in main_ray_trace_inspectors
             and "Export Ray Events CSV" in main_ray_trace_inspectors
             and "Export Trace Path Tree CSV" in main_ray_trace_inspectors,
+        ),
+        (
+            "Analysis plot dispatch lives outside layout_editor",
+            "AnalysisPlotService(self)" in analysis_plot_factory
+            and "self._analysis_plot_service().plot_analysis(" in plot_analysis
+            and 'self.analysis_mode == "spot"' in analysis_plot_service
+            and 'self.analysis_mode == "mtf"' in analysis_plot_service
+            and "WAVEFRONT_FUNCTION_STYLE" in analysis_plot_service,
         ),
         (
             "Ray Inspector record collection lives outside layout_editor",
