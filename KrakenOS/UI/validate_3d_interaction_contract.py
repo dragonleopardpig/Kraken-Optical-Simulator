@@ -21,7 +21,9 @@ from KrakenOS.UI.scene_geometry import RayEvent3D, RayPath3D
 from KrakenOS.UI.scene_projector import bounded_ray_points_for_scene_display, scene_display_center_radius
 from KrakenOS.UI.services.open3d_face_pick import pick_face_from_ray
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
+from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
+from KrakenOS.UI.widgets.tooltips import WidgetTooltip
 
 
 def _scene_path_preserves_raykeeper_terminal_continuation() -> tuple[bool, str]:
@@ -242,8 +244,10 @@ def main() -> int:
     key_press = inspect.getsource(Kraken3DInspector._on_key_press)
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
     add_mesh_actor = inspect.getsource(Kraken3DInspector._add_mesh_actor)
-    thickness_dimensions = inspect.getsource(Kraken3DInspector._add_thickness_dimension_overlays)
-    thickness_edit = inspect.getsource(Kraken3DInspector._edit_open3d_thickness_dimension)
+    thickness_dimensions = inspect.getsource(Open3DThicknessDimensionService.add_overlays)
+    thickness_arrow = inspect.getsource(Open3DThicknessDimensionService.arrow_mesh)
+    thickness_label = inspect.getsource(Open3DThicknessDimensionService.add_label_actor)
+    thickness_edit = inspect.getsource(Open3DThicknessDimensionService.edit_dimension)
     step_admin_source = inspect.getsource(Open3DStepAdminPanel).replace("self.inspector.", "self.")
     step_admin_overlay_select = inspect.getsource(Kraken3DInspector.select_step_overlay_from_admin)
     step_admin_promoted_select = inspect.getsource(Kraken3DInspector.select_promoted_step_row_from_admin)
@@ -350,6 +354,7 @@ def main() -> int:
     refresh_3d_sync = inspect.getsource(KrakenLayoutEditor._refresh_3d_inspector_if_open)
     open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)
     open3d_step_state_service = inspect.getsource(Open3DStepStateService)
+    widget_tooltip = inspect.getsource(WidgetTooltip)
     preview_sampling = inspect.getsource(KrakenLayoutEditor._preview_scene_sampling_mode)
     trace_preview_rays = inspect.getsource(KrakenLayoutEditor._trace_preview_rays)
     build_source_panel = inspect.getsource(KrakenLayoutEditor._build_source_panel)
@@ -637,10 +642,17 @@ def main() -> int:
             and "show_physical_distances_var" in thickness_dimensions
             and "_surface_reference_world_point(row_index" in thickness_dimensions
             and "_surface_reference_world_point(row_index + 1" in thickness_dimensions
-            and "_thickness_dimension_arrow_mesh" in thickness_dimensions
-            and "vtkBillboardTextActor3D" in inspect.getsource(Kraken3DInspector._add_thickness_dimension_label_actor)
+            and "self.arrow_mesh(" in thickness_dimensions
+            and "pv.Cone" in thickness_arrow
+            and "billboard_text_actor_cls" in inspect.getsource(Open3DThicknessDimensionService.__init__)
+            and "_register_thickness_dimension_actor" in thickness_label
             and "Thickness" in top_controls_source
             and "show_physical_distances_var" in top_controls_source,
+        ),
+        (
+            "Reusable Tk tooltip lives outside layout_editor",
+            WidgetTooltip.__module__.endswith(".widgets.tooltips")
+            and "wm_attributes(\"-type\", \"tooltip\")" in widget_tooltip,
         ),
         (
             "Open 3D Thickness dimension clicks edit only the selected row thickness",

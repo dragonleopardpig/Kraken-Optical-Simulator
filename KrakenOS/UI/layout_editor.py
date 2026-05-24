@@ -270,7 +270,9 @@ from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
 from KrakenOS.UI.services.open3d_face_pick import FaceRayPick, pick_face_from_ray
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService, StepFeatureSelection
+from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
+from KrakenOS.UI.widgets.tooltips import WidgetTooltip
 from KrakenOS.UI.scene_row_mapping import (
     SCENE_ROW_SOURCE,
     SCENE_ROW_SURFACE,
@@ -365,140 +367,6 @@ _DISPLAY_EDGE_3D = None
 _DISPLAY_FILTER_FACE_2DPLOT = None
 _DISPLAY_WAVELENGTH_TO_RGB = None
 _DISPLAY_HELPERS_ATTEMPTED = False
-
-
-class WidgetTooltip:
-    """Small Tk tooltip for compact toolbar controls."""
-
-    def __init__(self, widget: tk.Widget, text: str, *, delay_ms: int = 650, wraplength: int = 360) -> None:
-        self.widget = widget
-        self.text = text
-        self.delay_ms = delay_ms
-        self.wraplength = wraplength
-        self._show_after_id: str | None = None
-        self._hide_after_id: str | None = None
-        self._window: tk.Toplevel | None = None
-        widget.bind("<Enter>", self._schedule, add="+")
-        widget.bind("<Leave>", self._schedule_hide, add="+")
-        widget.bind("<ButtonPress>", self._hide_now, add="+")
-        widget.bind("<Destroy>", self._hide_now, add="+")
-
-    def _schedule(self, _event=None) -> None:
-        self._cancel_hide()
-        if self._window is not None:
-            return
-        self._cancel_show()
-        self._show_after_id = self.widget.after(self.delay_ms, self._show)
-
-    def _cancel_show(self) -> None:
-        if self._show_after_id is None:
-            return
-        try:
-            self.widget.after_cancel(self._show_after_id)
-        except Exception:
-            pass
-        self._show_after_id = None
-
-    def _cancel_hide(self) -> None:
-        if self._hide_after_id is None:
-            return
-        try:
-            self.widget.after_cancel(self._hide_after_id)
-        except Exception:
-            pass
-        self._hide_after_id = None
-
-    def _show(self) -> None:
-        self._show_after_id = None
-        if self._window is not None or not self.text:
-            return
-        try:
-            pointer_x, pointer_y = self.widget.winfo_pointerxy()
-        except Exception:
-            return
-        window = tk.Toplevel(self.widget)
-        window.withdraw()
-        window.wm_overrideredirect(True)
-        try:
-            window.wm_attributes("-type", "tooltip")
-        except Exception:
-            pass
-        label = tk.Label(
-            window,
-            text=self.text,
-            justify="left",
-            wraplength=self.wraplength,
-            background="#111827",
-            foreground="#f8fafc",
-            borderwidth=1,
-            relief="solid",
-            padx=8,
-            pady=5,
-        )
-        label.pack()
-        window.update_idletasks()
-        try:
-            screen_width = self.widget.winfo_screenwidth()
-            screen_height = self.widget.winfo_screenheight()
-            width = window.winfo_width()
-            height = window.winfo_height()
-            x = pointer_x + 14
-            y = pointer_y + 20
-            x = min(max(0, x), max(0, screen_width - width - 8))
-            if y + height > screen_height - 8:
-                y = pointer_y - height - 12
-            y = min(max(0, y), max(0, screen_height - height - 8))
-        except Exception:
-            x = pointer_x + 14
-            y = pointer_y + 20
-        window.wm_geometry(f"+{x}+{y}")
-        self._window = window
-        try:
-            window.deiconify()
-        except Exception:
-            pass
-
-    def _schedule_hide(self, _event=None) -> None:
-        self._cancel_show()
-        self._cancel_hide()
-        self._hide_after_id = self.widget.after(120, self._hide_if_pointer_outside)
-
-    def _hide_if_pointer_outside(self) -> None:
-        self._hide_after_id = None
-        if self._pointer_inside_widget_or_tip():
-            return
-        self._hide_now()
-
-    def _pointer_inside_widget_or_tip(self) -> bool:
-        try:
-            pointer_x, pointer_y = self.widget.winfo_pointerxy()
-        except Exception:
-            return False
-        widgets = [self.widget]
-        if self._window is not None:
-            widgets.append(self._window)
-        for widget in widgets:
-            try:
-                x0 = widget.winfo_rootx()
-                y0 = widget.winfo_rooty()
-                x1 = x0 + widget.winfo_width()
-                y1 = y0 + widget.winfo_height()
-            except Exception:
-                continue
-            if x0 <= pointer_x <= x1 and y0 <= pointer_y <= y1:
-                return True
-        return False
-
-    def _hide_now(self, _event=None) -> None:
-        self._cancel_show()
-        self._cancel_hide()
-        if self._window is None:
-            return
-        try:
-            self._window.destroy()
-        except Exception:
-            pass
-        self._window = None
 
 
 LAYOUTS_DIR = Path(__file__).resolve().parent.parent / "common_optical_layouts"
@@ -5635,6 +5503,17 @@ class Kraken3DInspector(tk.Toplevel):
             panel = Open3DTopControlsPanel(self, normal_target_choices=SCENE_NORMAL_TARGET_CHOICES)
             self._open3d_top_controls_panel_instance = panel
         return panel
+
+    def _open3d_thickness_dimension_service(self) -> Open3DThicknessDimensionService:
+        service = getattr(self, "_open3d_thickness_dimension_service_instance", None)
+        if service is None:
+            service = Open3DThicknessDimensionService(
+                self,
+                pv_module=pv,
+                billboard_text_actor_cls=vtkBillboardTextActor3D,
+            )
+            self._open3d_thickness_dimension_service_instance = service
+        return service
 
     def _build_open3d_top_controls(self, parent: tk.Widget) -> ttk.Frame:
         return self._open3d_top_controls_panel().build(parent)
@@ -11875,171 +11754,8 @@ class Kraken3DInspector(tk.Toplevel):
                 continue
         return count
 
-    @staticmethod
-    def _thickness_dimension_arrow_mesh(
-        start: np.ndarray,
-        end: np.ndarray,
-        *,
-        scene_span: float,
-    ):
-        if pv is None:
-            return None
-        start = np.asarray(start, dtype=float).reshape(3)
-        end = np.asarray(end, dtype=float).reshape(3)
-        delta = end - start
-        length = float(np.linalg.norm(delta))
-        if not np.isfinite(length) or length <= 1e-9:
-            return None
-        direction = delta / length
-        head = min(max(float(scene_span) * 0.018, 0.75), max(length * 0.28, 0.75))
-        radius = max(head * 0.20, 0.12)
-        tube_radius = max(radius * 0.18, 0.025)
-        parts: list[object] = []
-        try:
-            line = pv.Line(tuple(float(value) for value in start), tuple(float(value) for value in end))
-            try:
-                parts.append(line.tube(radius=float(tube_radius), n_sides=10))
-            except Exception:
-                parts.append(line)
-        except Exception:
-            return None
-        for tip, cone_direction in ((start, -direction), (end, direction)):
-            try:
-                center = np.asarray(tip, dtype=float) - np.asarray(cone_direction, dtype=float) * (head * 0.5)
-                parts.append(
-                    pv.Cone(
-                        center=tuple(float(value) for value in center),
-                        direction=tuple(float(value) for value in cone_direction),
-                        height=float(head),
-                        radius=float(radius),
-                        resolution=24,
-                    )
-                )
-            except Exception:
-                pass
-        merged = parts[0]
-        for part in parts[1:]:
-            try:
-                merged = merged.merge(part)
-            except Exception:
-                pass
-        return merged
-
-    @staticmethod
-    def _thickness_dimension_offset_direction(segment_direction: np.ndarray) -> np.ndarray:
-        direction = np.asarray(segment_direction, dtype=float).reshape(3)
-        norm = float(np.linalg.norm(direction))
-        if not np.isfinite(norm) or norm <= 1e-12:
-            return np.asarray((1.0, 0.0, 0.0), dtype=float)
-        direction = direction / norm
-        reference = np.asarray((0.0, 0.0, 1.0), dtype=float)
-        if abs(float(np.dot(direction, reference))) > 0.90:
-            reference = np.asarray((0.0, 1.0, 0.0), dtype=float)
-        side = np.cross(direction, reference)
-        side_norm = float(np.linalg.norm(side))
-        if not np.isfinite(side_norm) or side_norm <= 1e-12:
-            return np.asarray((1.0, 0.0, 0.0), dtype=float)
-        return side / side_norm
-
-    def _add_thickness_dimension_label_actor(self, row_index: int, position: np.ndarray, text: str) -> bool:
-        if self._renderer is None or vtkBillboardTextActor3D is None:
-            return False
-        try:
-            actor = vtkBillboardTextActor3D()
-            actor.SetInput(str(text))
-            point = np.asarray(position, dtype=float).reshape(3)
-            actor.SetPosition(float(point[0]), float(point[1]), float(point[2]))
-            try:
-                text_prop = actor.GetTextProperty()
-                text_prop.SetFontSize(13)
-                text_prop.SetColor(0.02, 0.16, 0.32)
-                text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
-                text_prop.SetBackgroundOpacity(0.82)
-                text_prop.SetFrame(1)
-                text_prop.SetFrameColor(0.05, 0.42, 0.70)
-            except Exception:
-                pass
-            self._register_thickness_dimension_actor(actor, int(row_index))
-            self._add_renderer_view_prop(actor)
-            return True
-        except Exception as exc:
-            self.editor.append_debug(f"3D thickness label skipped: {exc}")
-            return False
-
     def _add_thickness_dimension_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
-        del scene_bundle
-        if pv is None:
-            return 0
-        show_var = getattr(self.editor, "show_physical_distances_var", None)
-        if show_var is None or not bool(show_var.get()):
-            return 0
-        rows = list(getattr(self.editor, "rows", []) or [])
-        if len(rows) < 2:
-            return 0
-        _center, scene_span = self._row_scene_bounds()
-        base_offset = max(float(scene_span) * 0.045, 2.0)
-        color = (0.05, 0.42, 0.70)
-        count = 0
-        for row_index, row in enumerate(rows[:-1]):
-            try:
-                thickness = float(getattr(row, "thickness", 0.0) or 0.0)
-            except Exception:
-                continue
-            if not np.isfinite(thickness) or abs(thickness) <= 1e-9:
-                continue
-            try:
-                p0 = np.asarray(self.editor._surface_reference_world_point(row_index, system=system), dtype=float).reshape(3)
-                p1 = np.asarray(self.editor._surface_reference_world_point(row_index + 1, system=system), dtype=float).reshape(3)
-            except Exception as exc:
-                self.editor.append_debug(f"3D thickness dimension skipped for S{row_index}: {exc}")
-                continue
-            if not (np.all(np.isfinite(p0)) and np.all(np.isfinite(p1))):
-                continue
-            segment = p1 - p0
-            segment_length = float(np.linalg.norm(segment))
-            if not np.isfinite(segment_length) or segment_length <= 1e-9:
-                continue
-            side = self._thickness_dimension_offset_direction(segment)
-            row_band = 1.0 + 0.38 * float(row_index % 3)
-            offset = side * base_offset * row_band
-            start = p0 + offset
-            end = p1 + offset
-            mesh = self._thickness_dimension_arrow_mesh(start, end, scene_span=scene_span)
-            if mesh is None:
-                continue
-            actor = self._add_mesh_actor(
-                mesh,
-                color=color,
-                opacity=0.92,
-                pick_thickness_dimension=row_index,
-                flat_shading=True,
-                backface_culling=False,
-            )
-            if actor is None:
-                continue
-            count += 1
-            try:
-                self._add_mesh_actor(
-                    pv.Line(tuple(float(value) for value in p0), tuple(float(value) for value in start)),
-                    color=(0.62, 0.72, 0.80),
-                    opacity=0.52,
-                    line_width=1.0,
-                    backface_culling=False,
-                )
-                self._add_mesh_actor(
-                    pv.Line(tuple(float(value) for value in p1), tuple(float(value) for value in end)),
-                    color=(0.62, 0.72, 0.80),
-                    opacity=0.52,
-                    line_width=1.0,
-                    backface_culling=False,
-                )
-            except Exception:
-                pass
-            label = f"S{row_index} Thickness = {thickness:.6g} mm"
-            label_position = 0.5 * (start + end) + side * max(base_offset * 0.22, 0.8)
-            if self._add_thickness_dimension_label_actor(row_index, label_position, label):
-                count += 1
-        return count
+        return self._open3d_thickness_dimension_service().add_overlays(system, scene_bundle)
 
     @staticmethod
     def _scene_placement_translate_step(placement: ScenePlacement3D, spacing: float) -> float:
@@ -13985,43 +13701,7 @@ class Kraken3DInspector(tk.Toplevel):
         )
 
     def _edit_open3d_thickness_dimension(self, row_index: int) -> None:
-        row_index = int(row_index)
-        if not (0 <= row_index < len(self.editor.rows) - 1):
-            self.status_var.set("Thickness dimension: choose a non-terminal table row.")
-            return
-        row = self.editor.rows[row_index]
-        try:
-            current = float(getattr(row, "thickness", 0.0) or 0.0)
-        except Exception:
-            current = 0.0
-        label = f"S{row_index}: {row.name or row.surface or 'Surface'}"
-        value = simpledialog.askfloat(
-            "Edit Thickness",
-            f"{label}\nThickness to next row [mm]:",
-            initialvalue=current,
-            parent=self,
-        )
-        if value is None:
-            self.status_var.set("Thickness edit cancelled.")
-            return
-        try:
-            next_value = float(value)
-        except Exception:
-            self.status_var.set("Thickness must be a finite number.")
-            return
-        if not np.isfinite(next_value):
-            self.status_var.set("Thickness must be a finite number.")
-            return
-        self.editor._begin_history_capture()
-        self.editor.rows[row_index].thickness = next_value
-        self.editor._sync_table()
-        self.editor._select_table_row(row_index)
-        self.editor._commit_history_capture()
-        self.editor._invalidate_preview_scene_trace()
-        self.editor._sync_trace_state_badge()
-        self.editor.status_var.set(f"S{row_index} Thickness set to {next_value:.6g} mm. Other table thickness values are unchanged.")
-        self.status_var.set(f"S{row_index} Thickness set to {next_value:.6g} mm.")
-        self.refresh_from_editor(force_retrace=True)
+        self._open3d_thickness_dimension_service().edit_dimension(int(row_index))
 
     def _on_left_button_press(self, obj, _event) -> None:
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
