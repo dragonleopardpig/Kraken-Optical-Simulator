@@ -750,6 +750,8 @@ def main() -> int:
             and "drag_anchor_world" in step_carry_hold_activate
             and "start_center_world" in step_carry_hold_activate
             and "attach_to_cursor_on_next_motion" in step_carry_follow_state
+            and "prepare_carry_follow_state" in step_carry_follow_state
+            and "prepare_carry_follow_state" in open3d_step_state_service
             and "cursor_world[:3] - center_world[:3]" in step_carry_follow_motion
             and "DisplayToWorld" in step_carry_display_world
             and "target_center" in open3d_step_state_service

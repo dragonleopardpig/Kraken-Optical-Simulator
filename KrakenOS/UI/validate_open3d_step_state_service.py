@@ -263,6 +263,36 @@ def main() -> int:
             ),
         ),
         (
+            "STEP carry follow state preparation is service-owned",
+            (
+                lambda state: (
+                    (
+                        lambda transition: (
+                            transition is not None
+                            and transition.state is state
+                            and transition.has_initial_delta
+                            and np.allclose(transition.initial_delta_xyz, (1.0, 2.0, 0.0))
+                            and state["attach_to_cursor_on_next_motion"] is False
+                            and state["center_world"] == (2.0, 4.0, 3.0)
+                            and state["start_center_world"] == (2.0, 4.0, 3.0)
+                            and state["drag_plane_origin"] == (2.0, 4.0, 3.0)
+                            and state["drag_plane_normal"] == (0.0, 0.0, 1.0)
+                            and state["drag_anchor_world"] == (2.0, 4.0, 3.0)
+                            and state["grip_world"] == (2.0, 4.0, 3.0)
+                        )
+                    )(
+                        service.prepare_carry_follow_state(
+                            state,
+                            center_world=(1.0, 2.0, 3.0),
+                            plane_normal=(0.0, 0.0, 1.0),
+                            anchor_world=(2.0, 4.0, 3.0),
+                            attach_to_cursor_on_next_motion=False,
+                        )
+                    )
+                )
+            )({"label": "optical", "spacing": 0.5}),
+        ),
+        (
             "STEP overlay promotion transition is service-owned",
             (
                 lambda transition: (

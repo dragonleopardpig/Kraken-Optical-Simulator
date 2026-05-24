@@ -7028,20 +7028,24 @@ class Kraken3DInspector(tk.Toplevel):
         current_xy = self._current_widget_pointer_xy()
         if center_world is None or plane_normal is None:
             return state
-        state["attach_to_cursor_on_next_motion"] = current_xy is None
-        state["center_world"] = tuple(float(value) for value in center_world[:3])
-        state["start_center_world"] = tuple(float(value) for value in center_world[:3])
-        state["drag_plane_origin"] = tuple(float(value) for value in center_world[:3])
-        state["drag_plane_normal"] = tuple(float(value) for value in plane_normal[:3])
         anchor_world = None
         if current_xy is not None:
             anchor_world = self._cursor_plane_point(current_xy, center_world[:3], plane_normal[:3])
-        if anchor_world is None:
-            anchor_world = np.asarray(center_world[:3], dtype=float)
-        anchor_world = np.asarray(anchor_world, dtype=float).reshape(-1)[:3]
-        if anchor_world.size >= 3 and np.all(np.isfinite(anchor_world[:3])):
-            delta = anchor_world[:3] - np.asarray(center_world[:3], dtype=float)
-            if np.any(np.abs(delta[:3]) > 1e-12):
+        transition = self.editor._open3d_step_state_service().prepare_carry_follow_state(
+            state,
+            center_world=center_world,
+            plane_normal=plane_normal,
+            anchor_world=anchor_world,
+            attach_to_cursor_on_next_motion=current_xy is None,
+        )
+        if transition is None:
+            return state
+        if transition.has_initial_delta:
+            try:
+                delta = np.asarray(transition.initial_delta_xyz, dtype=float).reshape(-1)[:3]
+            except Exception:
+                delta = np.asarray([], dtype=float)
+            if delta.size >= 3 and np.all(np.isfinite(delta[:3])):
                 try:
                     self.editor._begin_history_capture()
                     state["history_started"] = True
@@ -7050,13 +7054,7 @@ class Kraken3DInspector(tk.Toplevel):
                 self.editor.translate_step_overlay(label, delta, grid_spacing_mm=None, refresh=False, record_history=False)
                 if self._translate_step_overlay_actors(label, delta) <= 0:
                     self.refresh_from_editor()
-                center_world = anchor_world[:3]
-        state["center_world"] = tuple(float(value) for value in np.asarray(center_world, dtype=float).reshape(-1)[:3])
-        state["start_center_world"] = tuple(float(value) for value in np.asarray(center_world, dtype=float).reshape(-1)[:3])
-        state["drag_plane_origin"] = tuple(float(value) for value in np.asarray(center_world, dtype=float).reshape(-1)[:3])
-        state["drag_anchor_world"] = tuple(float(value) for value in np.asarray(center_world, dtype=float).reshape(-1)[:3])
-        state["grip_world"] = tuple(float(value) for value in np.asarray(center_world, dtype=float).reshape(-1)[:3])
-        return state
+        return transition.state
 
     def _start_step_carry_follow(self, label: str) -> None:
         label = str(label).strip().lower()

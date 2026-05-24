@@ -99,6 +99,18 @@ class StepCarryFinishTransition:
     live_refresh_message: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class StepCarryFollowTransition:
+    """Prepared imported STEP carry-follow state plus any initial movement."""
+
+    state: dict[str, object] = field(default_factory=dict)
+    initial_delta_xyz: tuple[float, float, float] = ()
+
+    @property
+    def has_initial_delta(self) -> bool:
+        return len(self.initial_delta_xyz) == 3 and any(abs(value) > 1e-12 for value in self.initial_delta_xyz)
+
+
 class Open3DStepStateService:
     """Resolve Open 3D STEP state transitions outside the widget layer."""
 
@@ -212,6 +224,47 @@ class Open3DStepStateService:
             "applied_steps": 0,
             "last_xy": None,
         }
+
+    def prepare_carry_follow_state(
+        self,
+        state: dict[str, object] | None,
+        *,
+        center_world: object,
+        plane_normal: object,
+        anchor_world: object = None,
+        attach_to_cursor_on_next_motion: bool = False,
+    ) -> StepCarryFollowTransition | None:
+        """Populate center/drag-plane fields before imported STEP carry-follow starts."""
+        if state is None:
+            return None
+        try:
+            center = np.asarray(center_world, dtype=float).reshape(-1)[:3]
+            normal = np.asarray(plane_normal, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if (
+            center.size < 3
+            or normal.size < 3
+            or not np.all(np.isfinite(center[:3]))
+            or not np.all(np.isfinite(normal[:3]))
+        ):
+            return None
+        anchor = self._finite_xyz(anchor_world)
+        if anchor is None:
+            anchor = np.asarray(center[:3], dtype=float)
+        delta = np.asarray(anchor[:3] - center[:3], dtype=float)
+        final_center = np.asarray(anchor[:3] if np.any(np.abs(delta[:3]) > 1e-12) else center[:3], dtype=float)
+        state["attach_to_cursor_on_next_motion"] = bool(attach_to_cursor_on_next_motion)
+        state["center_world"] = tuple(float(value) for value in final_center[:3])
+        state["start_center_world"] = tuple(float(value) for value in final_center[:3])
+        state["drag_plane_origin"] = tuple(float(value) for value in final_center[:3])
+        state["drag_plane_normal"] = tuple(float(value) for value in normal[:3])
+        state["drag_anchor_world"] = tuple(float(value) for value in final_center[:3])
+        state["grip_world"] = tuple(float(value) for value in final_center[:3])
+        return StepCarryFollowTransition(
+            state=state,
+            initial_delta_xyz=tuple(float(value) for value in delta[:3]) if np.any(np.abs(delta[:3]) > 1e-12) else (),
+        )
 
     def carry_pixel_motion_delta(
         self,
