@@ -15,6 +15,7 @@ from KrakenOS.UI.layout_editor import (
 )
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_atmosphere_panel import MainAtmospherePanel
+from KrakenOS.UI.panels.main_beam_splitter_dialog import MainBeamSplitterDialog
 from KrakenOS.UI.panels.main_coating_material_dialog import MainCoatingMaterialDialog
 from KrakenOS.UI.panels.main_diffuse_scatter_dialog import MainDiffuseScatterDialog
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
@@ -273,6 +274,9 @@ def main() -> int:
     main_surface_shape_dialog = inspect.getsource(MainSurfaceShapeBuilderDialog)
     main_surface_shape_factory = inspect.getsource(KrakenLayoutEditor._main_surface_shape_builder_dialog)
     open_surface_shape_builder = inspect.getsource(KrakenLayoutEditor.open_surface_shape_builder)
+    main_beam_splitter_dialog = inspect.getsource(MainBeamSplitterDialog)
+    main_beam_splitter_factory = inspect.getsource(KrakenLayoutEditor._main_beam_splitter_dialog)
+    open_beam_splitter_dialog = inspect.getsource(KrakenLayoutEditor.open_beam_splitter_settings)
     main_optimization_panel = inspect.getsource(MainOptimizationPanel)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
@@ -776,6 +780,17 @@ def main() -> int:
             and "Aperture / UDA / Mask" in main_surface_shape_dialog
             and "Optical CAD/STL" in main_surface_shape_dialog
             and "Refresh Preview" in main_surface_shape_dialog,
+        ),
+        (
+            "Beam Splitter settings dialog lives outside layout_editor",
+            "MainBeamSplitterDialog(" in main_beam_splitter_factory
+            and "beam_splitter_surface=BEAM_SPLITTER_SURFACE" in main_beam_splitter_factory
+            and "beam_splitter_split_modes=BEAM_SPLITTER_SPLIT_MODES" in main_beam_splitter_factory
+            and "beam_splitter_coating_for_settings=_beam_splitter_coating_for_settings" in main_beam_splitter_factory
+            and "self._main_beam_splitter_dialog().open(row_index)" in open_beam_splitter_dialog
+            and "Beam Splitter can spawn deterministic" in main_beam_splitter_dialog
+            and "Fresnel P/S mode" in main_beam_splitter_dialog
+            and "Validation passed:" in main_beam_splitter_dialog,
         ),
         (
             "Open 3D renders editable table Thickness dimensions",
