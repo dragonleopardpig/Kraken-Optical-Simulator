@@ -25,6 +25,7 @@ from KrakenOS.UI.panels.main_detector_aperture_report_dialog import MainDetector
 from KrakenOS.UI.panels.main_diffuse_scatter_dialog import MainDiffuseScatterDialog
 from KrakenOS.UI.panels.main_error_map_dialog import MainErrorMapDialog
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
+from KrakenOS.UI.panels.main_glass_catalog_browser_dialog import MainGlassCatalogBrowserDialog
 from KrakenOS.UI.panels.main_lens_drawing_dialogs import MainLensDrawingDialogs
 from KrakenOS.UI.panels.main_nonseq_scene_graph_dialog import MainNonSequentialSceneGraphDialog
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
@@ -356,6 +357,9 @@ def main() -> int:
     main_path_detector_analysis_factory = inspect.getsource(KrakenLayoutEditor._main_path_detector_analysis)
     export_detector_map_csv = inspect.getsource(KrakenLayoutEditor.export_detector_map_csv)
     plot_coherent_detector_analysis = inspect.getsource(KrakenLayoutEditor._plot_coherent_detector_analysis)
+    main_glass_catalog_browser_dialog = inspect.getsource(MainGlassCatalogBrowserDialog)
+    main_glass_catalog_browser_factory = inspect.getsource(KrakenLayoutEditor._main_glass_catalog_browser_dialog)
+    open_glass_catalog_browser = inspect.getsource(KrakenLayoutEditor.open_glass_catalog_browser)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
     main_trace_display_panel = inspect.getsource(MainTraceDisplayControlsPanel)
@@ -888,6 +892,14 @@ def main() -> int:
             and "Detector Power Map" in main_path_detector_analysis
             and "Coherent Detector Field Sum" in main_path_detector_analysis
             and "Diffraction Detector Angular Spectrum" in main_path_detector_analysis,
+        ),
+        (
+            "Glass catalog browser lives outside layout_editor",
+            "MainGlassCatalogBrowserDialog(" in main_glass_catalog_browser_factory
+            and "shared_setup=_shared_setup" in main_glass_catalog_browser_factory
+            and "self._main_glass_catalog_browser_dialog().open_glass_catalog_browser()" in open_glass_catalog_browser
+            and "Glass Catalog Browser" in main_glass_catalog_browser_dialog
+            and "Apply to Selected Row" in main_glass_catalog_browser_dialog,
         ),
         (
             "Atmosphere controls and dialog live outside layout_editor",
