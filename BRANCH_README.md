@@ -70,7 +70,7 @@ Current pipeline checkpoint:
 | STEP face-level partial reflectors | Achieved | `██████████ 100%` | Optical-solid face metadata saved from Open 3D `Partial Reflecting / Transmitting` now feeds the deterministic non-sequential branch tracer directly. Face-level `Beam Splitter` records carry split ratio, loss, and phase into reflected/transmitted child paths instead of being treated as a one-way mirror or a plain uncoated face. |
 | Blank starter launch default | Achieved | `██████████ 100%` | Reset/new blank Object+Image layouts now start in `Object mode = Infinity` with angle-field sampling, so Open 3D `Pupil / field` displays a parallel aperture-envelope launch by default. Explicit finite-object presets and saved layout settings still preserve their finite-object cone semantics. |
 | Open 3D world-envelope axes | Achieved | `██████████ 100%` | The default `Pupil / field` Open 3D launch keeps a real center reference ray alongside the aperture-envelope rim, selected through-going envelope traces retain that center ray, and traced `Optical Axis 2+` overlays are now limited to the final post-surface exit segment. This prevents off-axis rim rays and internal prism legs from creating multiple input-axis guides or an output guide offset from the physical exit bundle. |
-| Open 3D ray-pick gating and 3D penta cascade guard | Achieved | `██████████ 100%` | Passive ray clicks no longer open the Ray Inspector by default; the View toolbar now has an explicit `Pick rays` toggle, and STEP surface-normal/surface-center axis-pick modes hide regular ray actors so the dotted Optical Axis remains the intended second-click target. The Ray Inspector ray table is horizontally scrollable when intentionally opened. `validate_penta_mirror_3d_cascade.py` mimics importing the 42779 penta STEP, selecting/snap-aligning the entrance face, promoting it, assigning the two fold faces as `Full Reflecting`, and proving a finite collimated bundle reflects from both mirror faces and exits in a rolled 3D direction. |
+| Open 3D ray-pick gating and 3D penta cascade guard | Achieved | `██████████ 100%` | Passive ray clicks no longer open the Ray Inspector by default; the View toolbar now has an explicit `Pick rays` toggle, and STEP surface-normal/surface-center axis-pick modes hide regular ray actors so the dotted Optical Axis remains the intended second-click target. The Ray Inspector ray table is horizontally scrollable when intentionally opened. `validate_penta_mirror_3d_cascade.py` mimics importing the 42779 penta STEP, selecting/snap-aligning the entrance face, promoting it, assigning the two fold faces as `Full Reflecting`, and proving a finite collimated bundle reflects from both mirror faces and exits in a rolled 3D direction. `validate_five_penta_prism_cascade.py` repeats the workflow for five cascaded penta prisms, assigning each promoted prism's two mirror faces from the actual traced central-ray hits and verifying a continuous 3D refract/reflect/reflect/refract action group on every prism. |
 
 Latest movement on 2026-05-24: Open 3D passive ray selection now requires the
 `Pick rays` toolbar toggle, so surface-to-axis snapping cannot be intercepted
@@ -80,6 +80,13 @@ second click, while leaving the dotted axis guide visible. A new headless
 `validate_penta_mirror_3d_cascade.py` script records the penta-prism workflow
 as reproducible user-like actions and validates that both full-reflecting fold
 faces steer the bundle in 3D, not only in the YZ plane.
+
+Additional movement on 2026-05-24: `validate_five_penta_prism_cascade.py`
+adds the requested five-penta-prism cascade file. It places one 42779 STEP
+prism at a time from the traced central exit axis, promotes it, assigns the two
+mirror faces by tracing the actual leak faces after promotion, then validates
+that the central beam ray traverses five complete refract/reflect/reflect/
+refract groups and exits in a true 3D direction.
 
 Earlier movement on 2026-05-23: Open 3D STEP reselection now restores rotation
 handles after blank-click deselection. Plain STEP face clicks keep rotation
