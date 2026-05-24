@@ -61,6 +61,7 @@ from KrakenOS.UI.services.open3d_face_pick import pick_face_from_ray
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
+from KrakenOS.UI.services.plot_refresh import PlotRefreshService
 from KrakenOS.UI.services.ray_inspector_records import RayInspectorRecordService
 from KrakenOS.UI.services.tolerance_stackup import ToleranceStackupService
 from KrakenOS.UI.services.trace_preview import TracePreviewService
@@ -525,7 +526,8 @@ def main() -> int:
     clear_step_overlay_state = inspect.getsource(Kraken3DInspector._clear_step_overlay_interaction_state)
     virtual_plane_overlays = inspect.getsource(Kraken3DInspector._add_optical_solid_virtual_plane_overlays)
     runtime_face_markers = inspect.getsource(Kraken3DInspector._face_role_markers_from_runtime_transform)
-    editor_refresh_plot = inspect.getsource(KrakenLayoutEditor.refresh_plot)
+    editor_refresh_plot = inspect.getsource(PlotRefreshService.refresh_plot)
+    editor_refresh_plot_factory = inspect.getsource(KrakenLayoutEditor._plot_refresh_service)
     editor_build_scene_bundle = inspect.getsource(KrakenLayoutEditor._build_scene_bundle)
     editor_surface_meshes = inspect.getsource(KrakenLayoutEditor._iter_3d_optical_surface_meshes)
     refresh_3d_sync = inspect.getsource(KrakenLayoutEditor._refresh_3d_inspector_if_open)
@@ -1552,6 +1554,11 @@ def main() -> int:
             and "_build_preview_system_rays_bundle" in open3d_refresh_service,
         ),
         ("Open 3D ray-on leaves Object/Image reference disks translucent", 'row_surface in {"Object", "Image"}' in refresh and "mesh_opacity = min(mesh_opacity, 0.22)" in refresh),
+        (
+            "2D plot refresh orchestration lives outside layout_editor",
+            "PlotRefreshService(self)" in editor_refresh_plot_factory
+            and "_preview_scene_sampling_mode()" in editor_refresh_plot,
+        ),
         ("2D refresh uses shared 3D scene sampling", "_preview_scene_sampling_mode()" in editor_refresh_plot),
         ("2D refresh no longer traces display_slice as the main layout simulation", 'sampling_mode="display_slice"' not in editor_refresh_plot),
         (
