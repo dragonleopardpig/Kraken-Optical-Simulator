@@ -16,6 +16,7 @@ from KrakenOS.UI.layout_editor import (
 from KrakenOS.UI.panels.main_advanced_surface_dialog import MainAdvancedSurfaceDialog
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_branch_gaussian_q_dialog import MainBranchGaussianQDialog
+from KrakenOS.UI.panels.main_branch_throughput_report_dialog import MainBranchThroughputReportDialog
 from KrakenOS.UI.panels.main_atmosphere_panel import MainAtmospherePanel
 from KrakenOS.UI.panels.main_beam_splitter_dialog import MainBeamSplitterDialog
 from KrakenOS.UI.panels.main_coating_material_dialog import MainCoatingMaterialDialog
@@ -315,6 +316,10 @@ def main() -> int:
     main_stock_lens_dialog = inspect.getsource(MainStockLensImporterDialog)
     main_stock_lens_factory = inspect.getsource(KrakenLayoutEditor._main_stock_lens_importer_dialog)
     open_stock_lens_importer = inspect.getsource(KrakenLayoutEditor.open_stock_lens_importer)
+    main_branch_throughput_report_dialog = inspect.getsource(MainBranchThroughputReportDialog)
+    main_branch_throughput_factory = inspect.getsource(KrakenLayoutEditor._main_branch_throughput_report_dialog)
+    open_branch_throughput_report = inspect.getsource(KrakenLayoutEditor.open_branch_throughput_report)
+    refresh_branch_throughput_report = inspect.getsource(KrakenLayoutEditor._refresh_branch_throughput_report)
     main_source_illumination_report_dialog = inspect.getsource(MainSourceIlluminationReportDialog)
     main_source_illumination_factory = inspect.getsource(KrakenLayoutEditor._main_source_illumination_report_dialog)
     open_source_illumination_report = inspect.getsource(KrakenLayoutEditor.open_source_illumination_report)
@@ -836,6 +841,16 @@ def main() -> int:
             and "Source Illumination Report" in main_source_illumination_report_dialog
             and "Export Source Illumination CSV" in main_source_illumination_report_dialog
             and "source_illumination_table_values" in main_source_illumination_report_dialog,
+        ),
+        (
+            "Path Throughput Report dialog lives outside layout_editor",
+            "MainBranchThroughputReportDialog(" in main_branch_throughput_factory
+            and "analysis_path_filter_default=ANALYSIS_PATH_FILTER_DEFAULT" in main_branch_throughput_factory
+            and "self._main_branch_throughput_report_dialog().open_branch_throughput_report()" in open_branch_throughput_report
+            and "self._main_branch_throughput_report_dialog()._refresh_branch_throughput_report()" in refresh_branch_throughput_report
+            and "Path Throughput Report" in main_branch_throughput_report_dialog
+            and "Export Path Throughput CSV" in main_branch_throughput_report_dialog
+            and "branch_throughput_table_values" in main_branch_throughput_report_dialog,
         ),
         (
             "Atmosphere controls and dialog live outside layout_editor",
