@@ -25,6 +25,7 @@ from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
 from KrakenOS.UI.panels.main_scene_element_dialogs import MainSceneElementDialogs
 from KrakenOS.UI.panels.main_scene_source_manager_dialog import MainSceneSourceManagerDialog
+from KrakenOS.UI.panels.main_stock_lens_importer_dialog import MainStockLensImporterDialog
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
 from KrakenOS.UI.panels.main_surface_settings_dialogs import MainSurfaceSettingsDialogs
 from KrakenOS.UI.panels.main_surface_shape_builder_dialog import MainSurfaceShapeBuilderDialog
@@ -306,6 +307,9 @@ def main() -> int:
     main_scene_source_dialog = inspect.getsource(MainSceneSourceManagerDialog)
     main_scene_source_factory = inspect.getsource(KrakenLayoutEditor._main_scene_source_manager_dialog)
     open_scene_source_manager = inspect.getsource(KrakenLayoutEditor.open_scene_source_manager)
+    main_stock_lens_dialog = inspect.getsource(MainStockLensImporterDialog)
+    main_stock_lens_factory = inspect.getsource(KrakenLayoutEditor._main_stock_lens_importer_dialog)
+    open_stock_lens_importer = inspect.getsource(KrakenLayoutEditor.open_stock_lens_importer)
     main_optimization_panel = inspect.getsource(MainOptimizationPanel)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
@@ -892,6 +896,17 @@ def main() -> int:
             and "Scene Source Manager" in main_scene_source_dialog
             and "Add From Source Panel" in main_scene_source_dialog
             and "Use Source Panel Only" in main_scene_source_dialog,
+        ),
+        (
+            "Stock lens importer dialog lives outside layout_editor",
+            "MainStockLensImporterDialog(" in main_stock_lens_factory
+            and "available_stock_lens_catalogs=_available_stock_lens_catalogs" in main_stock_lens_factory
+            and "load_stock_lens_catalog=_load_stock_lens_catalog" in main_stock_lens_factory
+            and "stock_lens_summary=_stock_lens_summary" in main_stock_lens_factory
+            and "self._main_stock_lens_importer_dialog().open_stock_lens_importer(" in open_stock_lens_importer
+            and "Import Stock Lens" in main_stock_lens_dialog
+            and "Add Stock Lens to Path" in main_stock_lens_dialog
+            and "Import Selected" in main_stock_lens_dialog,
         ),
         (
             "Open 3D renders editable table Thickness dimensions",
