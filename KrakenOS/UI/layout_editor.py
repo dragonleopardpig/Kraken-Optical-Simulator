@@ -692,6 +692,8 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
             ("OpticalSolidFaces", "CAD/STL optical face roles"),
             ("OpticalSolidSourcePath", "Original CAD/STL source path"),
             ("OpticalSolidSourceFormat", "Original CAD/STL source format"),
+            ("StepOverlayPromotion", "Open 3D STEP promotion metadata"),
+            ("LiveStepOverlayTrace", "Open 3D live STEP trace metadata"),
             ("Note", "Note"),
             ("Order", "Native order"),
             ("Var", "Native optimization vars"),
@@ -33921,13 +33923,31 @@ class KrakenLayoutEditor(tk.Tk):
         return False
 
     @staticmethod
-    def _is_open3d_promoted_optical_solid_row(row) -> bool:
+    def _open3d_step_label_for_optical_solid_row(row) -> str:
         advanced = row.get("advanced", {}) if isinstance(row, dict) else getattr(row, "advanced", {})
         if not isinstance(advanced, dict):
-            return False
+            return ""
         if not KrakenLayoutEditor._geometry_value_present(advanced.get("Solid_3d_stl")):
-            return False
-        return isinstance(advanced.get("StepOverlayPromotion"), dict)
+            return ""
+        promotion = advanced.get("StepOverlayPromotion")
+        if isinstance(promotion, dict):
+            label = str(promotion.get("step_label", "optical") or "optical").strip().lower()
+            return label or "optical"
+        source_format = str(advanced.get("OpticalSolidSourceFormat", "") or "").strip().upper()
+        source_path_text = str(advanced.get("OpticalSolidSourcePath", "") or "").strip()
+        source_suffix = ""
+        if source_path_text:
+            try:
+                source_suffix = Path(source_path_text).suffix.lower()
+            except Exception:
+                source_suffix = ""
+        if source_format in {"STEP", "STP"} or source_suffix in {".step", ".stp"}:
+            return "optical"
+        return ""
+
+    @staticmethod
+    def _is_open3d_promoted_optical_solid_row(row) -> bool:
+        return bool(KrakenLayoutEditor._open3d_step_label_for_optical_solid_row(row))
 
     @staticmethod
     def _geometry_value_present(value) -> bool:

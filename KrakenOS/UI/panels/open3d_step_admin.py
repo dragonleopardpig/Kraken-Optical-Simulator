@@ -151,8 +151,11 @@ class Open3DStepAdminPanel:
             except Exception:
                 continue
             advanced = getattr(row, "advanced", {}) if not isinstance(row, dict) else row.get("advanced", {})
-            promotion = advanced.get("StepOverlayPromotion", {}) if isinstance(advanced, dict) else {}
-            label = str(promotion.get("step_label", "optical") or "optical").strip().lower()
+            try:
+                label = str(self.editor._open3d_step_label_for_optical_solid_row(row) or "optical").strip().lower()
+            except Exception:
+                promotion = advanced.get("StepOverlayPromotion", {}) if isinstance(advanced, dict) else {}
+                label = str(promotion.get("step_label", "optical") or "optical").strip().lower()
             if not label:
                 label = "optical"
             name = str(getattr(row, "name", "") or f"S{row_index} STEP solid")
@@ -304,7 +307,16 @@ class Open3DStepAdminPanel:
                 row_selected = True
                 advanced = getattr(row, "advanced", {}) if not isinstance(row, dict) else row.get("advanced", {})
                 promotion = advanced.get("StepOverlayPromotion", {}) if isinstance(advanced, dict) else {}
-                path_text = Path(str(promotion.get("source_step_path") or promotion.get("promoted_mesh_path") or "")).name
+                source_path = ""
+                if isinstance(advanced, dict):
+                    source_path = str(
+                        promotion.get("source_step_path")
+                        or advanced.get("OpticalSolidSourcePath")
+                        or promotion.get("promoted_mesh_path")
+                        or advanced.get("Solid_3d_stl")
+                        or ""
+                    )
+                path_text = Path(source_path).name
                 face_metadata = advanced.get("OpticalSolidFaces", {}) if isinstance(advanced, dict) else {}
                 assigned = 0
                 if isinstance(face_metadata, dict):

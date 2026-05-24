@@ -1055,6 +1055,12 @@ Production refactor progress:
 | `sv-ttk` theme adapter | Pending | `░░░░░░░░░░ 0%` | Theme work waits until panels/widgets/services are split enough that styling is a thin layer instead of another responsibility inside `layout_editor.py`. |
 | Public `kraken-os[ui]` install path | Pending | `░░░░░░░░░░ 0%` | The intended branch install command is documented below; packaging metadata and clean-venv validation are still needed. |
 
+Saved `.py` reload now preserves `StepOverlayPromotion` metadata and the Open 3D
+right-panel browser also recognizes durable row-backed STEP solids from
+`Solid_3d_stl` plus `OpticalSolidSourcePath`/`OpticalSolidSourceFormat`, so older
+saved layouts whose transient promotion block is absent still list imported STEP
+optical elements in the browser.
+
 1. Split `KrakenOS/UI/layout_editor.py` into a package-style structure inspired
    by the organization of `optiland_gui/`, while keeping KrakenOS on Tk/ttk.
    The first target package layout should be:
