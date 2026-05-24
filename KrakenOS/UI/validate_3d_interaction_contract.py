@@ -23,6 +23,7 @@ from KrakenOS.UI.panels.main_diffuse_scatter_dialog import MainDiffuseScatterDia
 from KrakenOS.UI.panels.main_error_map_dialog import MainErrorMapDialog
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
+from KrakenOS.UI.panels.main_paraxial_analysis_dialogs import MainParaxialAnalysisDialogs
 from KrakenOS.UI.panels.main_scene_element_dialogs import MainSceneElementDialogs
 from KrakenOS.UI.panels.main_scene_source_manager_dialog import MainSceneSourceManagerDialog
 from KrakenOS.UI.panels.main_stock_lens_importer_dialog import MainStockLensImporterDialog
@@ -310,6 +311,10 @@ def main() -> int:
     main_stock_lens_dialog = inspect.getsource(MainStockLensImporterDialog)
     main_stock_lens_factory = inspect.getsource(KrakenLayoutEditor._main_stock_lens_importer_dialog)
     open_stock_lens_importer = inspect.getsource(KrakenLayoutEditor.open_stock_lens_importer)
+    main_paraxial_analysis_dialogs = inspect.getsource(MainParaxialAnalysisDialogs)
+    main_paraxial_analysis_factory = inspect.getsource(KrakenLayoutEditor._main_paraxial_analysis_dialogs)
+    open_gaussian_report = inspect.getsource(KrakenLayoutEditor.open_gaussian_beam_report)
+    open_paraxial_calculator = inspect.getsource(KrakenLayoutEditor.open_paraxial_calculator)
     main_optimization_panel = inspect.getsource(MainOptimizationPanel)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
@@ -766,6 +771,15 @@ def main() -> int:
             and "merit_mode_list" in main_optimization_panel
             and "operand_weight_vars" in main_optimization_panel
             and "MTF @ freq" in main_optimization_panel,
+        ),
+        (
+            "Main paraxial/Gaussian dialogs live outside layout_editor",
+            "MainParaxialAnalysisDialogs(self, short_error_message=_short_error_message)" in main_paraxial_analysis_factory
+            and "self._main_paraxial_analysis_dialogs().open_gaussian_beam_report()" in open_gaussian_report
+            and "self._main_paraxial_analysis_dialogs().open_paraxial_calculator()" in open_paraxial_calculator
+            and "Paraxial Calculator" in main_paraxial_analysis_dialogs
+            and "Gaussian Beam Report" in main_paraxial_analysis_dialogs
+            and "Use Cavity Eigenmode" in main_paraxial_analysis_dialogs,
         ),
         (
             "Atmosphere controls and dialog live outside layout_editor",
