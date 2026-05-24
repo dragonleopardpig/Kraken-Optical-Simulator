@@ -13,6 +13,7 @@ from KrakenOS.UI.layout_editor import (
     KrakenLayoutEditor,
     _dotted_axis_records_from_ray_path,
 )
+from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
 from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
 from KrakenOS.UI.saved_layout_plot import build_saved_layout_figure
@@ -244,6 +245,9 @@ def main() -> int:
     key_press = inspect.getsource(Kraken3DInspector._on_key_press)
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
     add_mesh_actor = inspect.getsource(Kraken3DInspector._add_mesh_actor)
+    main_source_panel = inspect.getsource(MainSourceControlsPanel)
+    main_source_panel_factory = inspect.getsource(KrakenLayoutEditor._main_source_controls_panel)
+    build_source_panel = inspect.getsource(KrakenLayoutEditor._build_source_panel)
     thickness_dimensions = inspect.getsource(Open3DThicknessDimensionService.add_overlays)
     thickness_arrow = inspect.getsource(Open3DThicknessDimensionService.arrow_mesh)
     thickness_label = inspect.getsource(Open3DThicknessDimensionService.add_label_actor)
@@ -632,6 +636,16 @@ def main() -> int:
             and "scene_visibility_toggled" in scene_visibility_changed,
         ),
         (
+            "Main Source controls panel lives outside layout_editor",
+            "MainSourceControlsPanel(" in main_source_panel_factory
+            and "source_model_default=SOURCE_MODEL_DEFAULT" in main_source_panel_factory
+            and "self._main_source_controls_panel().build(parent)" in build_source_panel
+            and "source_model_var" in main_source_panel
+            and "source_cone_angle_var" in main_source_panel
+            and "Scene Source Manager..." in main_source_panel
+            and "_register_source_mode_controls(" in main_source_panel,
+        ),
+        (
             "Open 3D renders editable table Thickness dimensions",
             "_actor_thickness_dimension_map" in init
             and "_thickness_dimension_actor_map" in init
@@ -847,7 +861,7 @@ def main() -> int:
         ),
         (
             "Open 3D default source launch is collimated unless a cone is requested",
-            'source_cone_angle_var = tk.StringVar(value="0.0")' in build_source_panel
+            'source_cone_angle_var = tk.StringVar(value="0.0")' in main_source_panel
             and '_set_optional_var("source_cone_angle_var", "0.0")' in reset_runtime_state
             and "else 0.0" in current_source_cone,
         ),

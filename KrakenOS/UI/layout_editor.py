@@ -265,6 +265,7 @@ from KrakenOS.UI.scene_projector import (
     scene_display_center_radius,
 )
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
+from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
 from KrakenOS.UI.panels.open3d_live_controls import Open3DLiveControlsPanel
 from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
@@ -25106,282 +25107,28 @@ class KrakenLayoutEditor(tk.Tk):
         self._bind_deferred_manual_update(field_count_entry, sync_fields=True)
         self._sync_field_mode_ui()
 
+    def _main_source_controls_panel(self) -> MainSourceControlsPanel:
+        panel = getattr(self, "_main_source_controls_panel_instance", None)
+        if panel is None:
+            panel = MainSourceControlsPanel(
+                self,
+                source_model_default=SOURCE_MODEL_DEFAULT,
+                source_model_values=SOURCE_MODEL_VALUES,
+                pupil_pattern_default=PUPIL_PATTERN_DEFAULT,
+                pupil_pattern_values=PUPIL_PATTERN_VALUES,
+                gaussian_input_mode_default=GAUSSIAN_INPUT_MODE_DEFAULT,
+                gaussian_input_mode_values=GAUSSIAN_INPUT_MODE_VALUES,
+                gaussian_waist_side_default=GAUSSIAN_WAIST_SIDE_DEFAULT,
+                gaussian_waist_side_values=GAUSSIAN_WAIST_SIDE_VALUES,
+                source_direction_preset_values=SOURCE_DIRECTION_PRESET_VALUES,
+                source_angular_weight_default=SOURCE_ANGULAR_WEIGHT_DEFAULT,
+                source_angular_weight_values=SOURCE_ANGULAR_WEIGHT_VALUES,
+            )
+            self._main_source_controls_panel_instance = panel
+        return panel
+
     def _build_source_panel(self, parent) -> None:
-        for column in range(2):
-            parent.columnconfigure(column, weight=1)
-
-        self.source_model_label = ttk.Label(parent, text="Source model")
-        self.source_model_label.grid(row=0, column=0, sticky="w", pady=(0, 2))
-        self.source_model_var = tk.StringVar(value=SOURCE_MODEL_DEFAULT)
-        self.source_model_menu = ttk.Combobox(
-            parent,
-            textvariable=self.source_model_var,
-            state="readonly",
-            width=16,
-            values=SOURCE_MODEL_VALUES,
-        )
-        self.source_model_menu.grid(row=1, column=0, sticky="ew", pady=(0, 8))
-        self.source_model_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.source_model_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
-
-        self.pupil_pattern_label = ttk.Label(parent, text="Pupil pattern")
-        self.pupil_pattern_label.grid(row=0, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
-        self.pupil_pattern_var = tk.StringVar(value=PUPIL_PATTERN_DEFAULT)
-        self.pupil_pattern_menu = ttk.Combobox(
-            parent,
-            textvariable=self.pupil_pattern_var,
-            state="readonly",
-            width=16,
-            values=PUPIL_PATTERN_VALUES,
-        )
-        self.pupil_pattern_menu.grid(row=1, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
-        self.pupil_pattern_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.pupil_pattern_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
-
-        ttk.Label(parent, text="Source radius [mm]").grid(row=2, column=0, sticky="w", pady=(0, 2))
-        self.source_radius_var = tk.StringVar(value="5.0")
-        source_radius_entry = ttk.Entry(parent, textvariable=self.source_radius_var, width=12)
-        source_radius_entry.grid(row=3, column=0, sticky="ew", pady=(0, 8))
-
-        ttk.Label(parent, text="Cone half-angle [deg]").grid(row=2, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
-        self.source_cone_angle_var = tk.StringVar(value="0.0")
-        source_cone_angle_entry = ttk.Entry(parent, textvariable=self.source_cone_angle_var, width=12)
-        source_cone_angle_entry.grid(row=3, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
-        self._add_widget_tooltip(
-            source_cone_angle_entry,
-            "Angular half-angle for physical cone sources and non-sequential source-cone previews.",
-        )
-
-        ttk.Label(parent, text="GB input mode").grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 2))
-        self.gaussian_input_mode_var = tk.StringVar(value=GAUSSIAN_INPUT_MODE_DEFAULT)
-        gaussian_input_mode_menu = ttk.Combobox(
-            parent,
-            textvariable=self.gaussian_input_mode_var,
-            state="readonly",
-            width=16,
-            values=GAUSSIAN_INPUT_MODE_VALUES,
-        )
-        gaussian_input_mode_menu.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        gaussian_input_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        gaussian_input_mode_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
-
-        ttk.Label(parent, text="GB waist [mm]").grid(row=6, column=0, sticky="w", pady=(0, 2))
-        self.gaussian_waist_radius_var = tk.StringVar(value="0.5")
-        gaussian_waist_entry = ttk.Entry(parent, textvariable=self.gaussian_waist_radius_var, width=12)
-        gaussian_waist_entry.grid(row=7, column=0, sticky="ew", pady=(0, 8))
-
-        ttk.Label(parent, text="GB waist offset [mm]").grid(row=6, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
-        self.gaussian_waist_offset_var = tk.StringVar(value="0.0")
-        gaussian_offset_entry = ttk.Entry(parent, textvariable=self.gaussian_waist_offset_var, width=12)
-        gaussian_offset_entry.grid(row=7, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
-
-        ttk.Label(parent, text="GB diameter [mm]").grid(row=8, column=0, sticky="w", pady=(0, 2))
-        self.gaussian_beam_diameter_var = tk.StringVar(value="1.0")
-        gaussian_diameter_entry = ttk.Entry(parent, textvariable=self.gaussian_beam_diameter_var, width=12)
-        gaussian_diameter_entry.grid(row=9, column=0, sticky="ew", pady=(0, 8))
-
-        ttk.Label(parent, text="GB full div [mrad]").grid(row=8, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
-        self.gaussian_full_divergence_var = tk.StringVar(value="1.0")
-        gaussian_divergence_entry = ttk.Entry(parent, textvariable=self.gaussian_full_divergence_var, width=12)
-        gaussian_divergence_entry.grid(row=9, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
-        self._add_widget_tooltip(
-            gaussian_divergence_entry,
-            "Gaussian laser datasheet divergence: full far-field angle in milliradians.",
-        )
-
-        ttk.Label(parent, text="GB M2").grid(row=10, column=0, sticky="w", pady=(0, 2))
-        self.gaussian_m2_var = tk.StringVar(value="1.0")
-        gaussian_m2_entry = ttk.Entry(parent, textvariable=self.gaussian_m2_var, width=12)
-        gaussian_m2_entry.grid(row=11, column=0, sticky="ew", pady=(0, 8))
-
-        ttk.Label(parent, text="GB waist side").grid(row=10, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
-        self.gaussian_waist_side_var = tk.StringVar(value=GAUSSIAN_WAIST_SIDE_DEFAULT)
-        gaussian_waist_side_menu = ttk.Combobox(
-            parent,
-            textvariable=self.gaussian_waist_side_var,
-            state="readonly",
-            width=16,
-            values=GAUSSIAN_WAIST_SIDE_VALUES,
-        )
-        gaussian_waist_side_menu.grid(row=11, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
-        gaussian_waist_side_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        gaussian_waist_side_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
-
-        ttk.Label(parent, text="Pupil r [0..1]").grid(row=12, column=0, sticky="w", pady=(0, 2))
-        self.pupil_rad_var = tk.StringVar(value="0.0")
-        pupil_rad_entry = ttk.Entry(parent, textvariable=self.pupil_rad_var, width=12)
-        pupil_rad_entry.grid(row=13, column=0, sticky="ew", pady=(0, 8))
-
-        ttk.Label(parent, text="Pupil theta [deg]").grid(row=12, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
-        self.pupil_theta_var = tk.StringVar(value="0.0")
-        pupil_theta_entry = ttk.Entry(parent, textvariable=self.pupil_theta_var, width=12)
-        pupil_theta_entry.grid(row=13, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
-
-        ttk.Label(parent, text="Source power [arb]").grid(row=14, column=0, sticky="w", pady=(0, 2))
-        self.source_power_var = tk.StringVar(value="1.0")
-        source_power_entry = ttk.Entry(parent, textvariable=self.source_power_var, width=12)
-        source_power_entry.grid(row=15, column=0, sticky="ew", pady=(0, 8))
-
-        ttk.Label(parent, text="Random seed").grid(row=14, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
-        self.source_seed_var = tk.StringVar(value="1")
-        source_seed_entry = ttk.Entry(parent, textvariable=self.source_seed_var, width=12)
-        source_seed_entry.grid(row=15, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
-
-        ttk.Label(parent, text="Source X [mm]").grid(row=16, column=0, sticky="w", pady=(0, 2))
-        self.source_x_var = tk.StringVar(value="0.0")
-        source_x_entry = ttk.Entry(parent, textvariable=self.source_x_var, width=12)
-        source_x_entry.grid(row=17, column=0, sticky="ew", pady=(0, 8))
-
-        ttk.Label(parent, text="Source Y [mm]").grid(row=16, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
-        self.source_y_var = tk.StringVar(value="0.0")
-        source_y_entry = ttk.Entry(parent, textvariable=self.source_y_var, width=12)
-        source_y_entry.grid(row=17, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
-
-        ttk.Label(parent, text="Source Z [mm]").grid(row=18, column=0, sticky="w", pady=(0, 2))
-        self.source_z_var = tk.StringVar(value="0.0")
-        source_z_entry = ttk.Entry(parent, textvariable=self.source_z_var, width=12)
-        source_z_entry.grid(row=19, column=0, sticky="ew", pady=(0, 8))
-
-        ttk.Label(parent, text="Source L").grid(row=18, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
-        self.source_l_var = tk.StringVar(value="0.0")
-        source_l_entry = ttk.Entry(parent, textvariable=self.source_l_var, width=12)
-        source_l_entry.grid(row=19, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
-
-        ttk.Label(parent, text="Source M").grid(row=20, column=0, sticky="w", pady=(0, 2))
-        self.source_m_var = tk.StringVar(value="0.0")
-        source_m_entry = ttk.Entry(parent, textvariable=self.source_m_var, width=12)
-        source_m_entry.grid(row=21, column=0, sticky="ew", pady=(0, 8))
-
-        ttk.Label(parent, text="Source N").grid(row=20, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
-        self.source_n_var = tk.StringVar(value="1.0")
-        source_n_entry = ttk.Entry(parent, textvariable=self.source_n_var, width=12)
-        source_n_entry.grid(row=21, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
-
-        ttk.Label(parent, text="Direction preset").grid(row=22, column=0, columnspan=2, sticky="w", pady=(0, 2))
-        self.source_direction_preset_var = tk.StringVar(value="Horizontal +Z (right)")
-        source_direction_preset_menu = ttk.Combobox(
-            parent,
-            textvariable=self.source_direction_preset_var,
-            state="readonly",
-            width=16,
-            values=SOURCE_DIRECTION_PRESET_VALUES,
-        )
-        source_direction_preset_menu.grid(row=23, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        source_direction_preset_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        source_direction_preset_menu.bind("<<ComboboxSelected>>", self._on_source_direction_preset_changed)
-
-        ttk.Label(parent, text="SourceRnd angular weight").grid(row=24, column=0, columnspan=2, sticky="w", pady=(0, 2))
-        self.source_angular_weight_var = tk.StringVar(value=SOURCE_ANGULAR_WEIGHT_DEFAULT)
-        source_angular_weight_menu = ttk.Combobox(
-            parent,
-            textvariable=self.source_angular_weight_var,
-            state="readonly",
-            width=16,
-            values=SOURCE_ANGULAR_WEIGHT_VALUES,
-        )
-        source_angular_weight_menu.grid(row=25, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        source_angular_weight_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        source_angular_weight_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
-
-        source_physical_note = ttk.Label(
-            parent,
-            text="Physical sources launch from Source X/Y/Z along Source L/M/N; L/M/N are X/Y/Z direction cosines.",
-            foreground="#5f6b7a",
-            wraplength=220,
-            justify="left",
-        )
-        source_physical_note.grid(row=26, column=0, columnspan=2, sticky="ew")
-
-        self.source_summary_var = tk.StringVar(value="")
-        source_summary_label = ttk.Label(
-            parent,
-            textvariable=self.source_summary_var,
-            foreground="#3f4a5a",
-            wraplength=460,
-            justify="left",
-        )
-        source_summary_label.grid(row=27, column=0, columnspan=2, sticky="ew", pady=(4, 0))
-
-        source_manager_button = ttk.Button(
-            parent,
-            text="Scene Source Manager...",
-            command=self.open_scene_source_manager,
-        )
-        source_manager_button.grid(row=28, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-
-        self._bind_deferred_manual_update(source_radius_entry)
-        self._bind_deferred_manual_update(source_cone_angle_entry)
-        self._bind_deferred_manual_update(gaussian_waist_entry)
-        self._bind_deferred_manual_update(gaussian_offset_entry)
-        self._bind_deferred_manual_update(gaussian_diameter_entry)
-        self._bind_deferred_manual_update(gaussian_divergence_entry)
-        self._bind_deferred_manual_update(gaussian_m2_entry)
-        self._bind_deferred_manual_update(pupil_rad_entry)
-        self._bind_deferred_manual_update(pupil_theta_entry)
-        self._bind_deferred_manual_update(source_power_entry)
-        self._bind_deferred_manual_update(source_seed_entry)
-        self._bind_deferred_manual_update(source_x_entry)
-        self._bind_deferred_manual_update(source_y_entry)
-        self._bind_deferred_manual_update(source_z_entry)
-        self._bind_deferred_manual_update(source_l_entry)
-        self._bind_deferred_manual_update(source_m_entry)
-        self._bind_deferred_manual_update(source_n_entry)
-        for var in (
-            self.source_model_var,
-            self.pupil_pattern_var,
-            self.source_radius_var,
-            self.source_cone_angle_var,
-            self.gaussian_input_mode_var,
-            self.gaussian_waist_radius_var,
-            self.gaussian_waist_offset_var,
-            self.gaussian_beam_diameter_var,
-            self.gaussian_full_divergence_var,
-            self.gaussian_m2_var,
-            self.gaussian_waist_side_var,
-            self.pupil_rad_var,
-            self.pupil_theta_var,
-            self.source_power_var,
-            self.source_seed_var,
-            self.source_x_var,
-            self.source_y_var,
-            self.source_z_var,
-            self.source_l_var,
-            self.source_m_var,
-            self.source_n_var,
-            self.source_direction_preset_var,
-            self.source_angular_weight_var,
-        ):
-            var.trace_add("write", lambda *_args: self._update_source_summary())
-        for var in (self.source_l_var, self.source_m_var, self.source_n_var):
-            var.trace_add("write", lambda *_args: self._sync_source_direction_preset_from_lmn())
-        self._register_source_mode_controls(
-            source_radius_entry=source_radius_entry,
-            source_cone_angle_entry=source_cone_angle_entry,
-            gaussian_input_mode_menu=gaussian_input_mode_menu,
-            gaussian_waist_entry=gaussian_waist_entry,
-            gaussian_offset_entry=gaussian_offset_entry,
-            gaussian_diameter_entry=gaussian_diameter_entry,
-            gaussian_divergence_entry=gaussian_divergence_entry,
-            gaussian_m2_entry=gaussian_m2_entry,
-            gaussian_waist_side_menu=gaussian_waist_side_menu,
-            pupil_rad_entry=pupil_rad_entry,
-            pupil_theta_entry=pupil_theta_entry,
-            source_power_entry=source_power_entry,
-            source_seed_entry=source_seed_entry,
-            source_x_entry=source_x_entry,
-            source_y_entry=source_y_entry,
-            source_z_entry=source_z_entry,
-            source_l_entry=source_l_entry,
-            source_m_entry=source_m_entry,
-            source_n_entry=source_n_entry,
-            source_direction_preset_menu=source_direction_preset_menu,
-            source_angular_weight_menu=source_angular_weight_menu,
-            source_physical_note=source_physical_note,
-            source_summary_label=source_summary_label,
-            source_manager_button=source_manager_button,
-        )
-        self._update_source_summary()
-        self._sync_left_mode_controls()
+        self._main_source_controls_panel().build(parent)
 
     def _register_left_mode_control(
         self,
