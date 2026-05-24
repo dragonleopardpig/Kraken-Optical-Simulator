@@ -23,6 +23,7 @@ from KrakenOS.UI.panels.main_diffuse_scatter_dialog import MainDiffuseScatterDia
 from KrakenOS.UI.panels.main_error_map_dialog import MainErrorMapDialog
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
+from KrakenOS.UI.panels.main_scene_element_dialogs import MainSceneElementDialogs
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
 from KrakenOS.UI.panels.main_surface_settings_dialogs import MainSurfaceSettingsDialogs
 from KrakenOS.UI.panels.main_surface_shape_builder_dialog import MainSurfaceShapeBuilderDialog
@@ -295,6 +296,12 @@ def main() -> int:
     main_context_menu = inspect.getsource(MainContextMenu)
     main_context_menu_factory = inspect.getsource(KrakenLayoutEditor._main_context_menu)
     show_context_menu = inspect.getsource(KrakenLayoutEditor.show_context_menu)
+    main_scene_element_dialogs = inspect.getsource(MainSceneElementDialogs)
+    main_scene_element_factory = inspect.getsource(KrakenLayoutEditor._main_scene_element_dialogs)
+    open_detector_dialog = inspect.getsource(KrakenLayoutEditor.open_detector_settings)
+    open_scene_target_dialog = inspect.getsource(KrakenLayoutEditor.open_scene_target_editor)
+    open_path_pose_dialog = inspect.getsource(KrakenLayoutEditor.open_selected_path_local_pose_editor)
+    open_element_dialog = inspect.getsource(KrakenLayoutEditor.open_element_settings)
     main_optimization_panel = inspect.getsource(MainOptimizationPanel)
     main_optimization_factory = inspect.getsource(KrakenLayoutEditor._main_optimization_panel)
     build_optimization_panel = inspect.getsource(KrakenLayoutEditor._build_optimization_panel)
@@ -855,6 +862,21 @@ def main() -> int:
             and "Shape / Aperture" in main_context_menu
             and "Coating / Polarization" in main_context_menu
             and "Path assignment" in main_context_menu,
+        ),
+        (
+            "Scene and element settings dialogs live outside layout_editor",
+            "MainSceneElementDialogs(" in main_scene_element_factory
+            and "normalize_detector_settings=_normalize_detector_settings" in main_scene_element_factory
+            and "scene_target_editor_kind_choices=SCENE_TARGET_EDITOR_KIND_CHOICES" in main_scene_element_factory
+            and "element_branch_selector_values=ELEMENT_BRANCH_SELECTOR_VALUES" in main_scene_element_factory
+            and "self._main_scene_element_dialogs().open_detector_settings(row_index)" in open_detector_dialog
+            and "self._main_scene_element_dialogs().open_scene_target_editor(row_index)" in open_scene_target_dialog
+            and "self._main_scene_element_dialogs().open_selected_path_local_pose_editor()" in open_path_pose_dialog
+            and "self._main_scene_element_dialogs().open_element_settings()" in open_element_dialog
+            and "Detector Settings" in main_scene_element_dialogs
+            and "Scene Target" in main_scene_element_dialogs
+            and "Path-Local Pose" in main_scene_element_dialogs
+            and "Element Settings" in main_scene_element_dialogs,
         ),
         (
             "Open 3D renders editable table Thickness dimensions",
