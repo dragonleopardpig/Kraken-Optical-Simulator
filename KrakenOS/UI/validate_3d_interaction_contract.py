@@ -50,6 +50,7 @@ from KrakenOS.UI.saved_layout_plot import build_saved_layout_figure
 from KrakenOS.UI.scene_builder import _sync_path_display_geometry_from_events
 from KrakenOS.UI.scene_geometry import RayEvent3D, RayPath3D
 from KrakenOS.UI.scene_projector import bounded_ray_points_for_scene_display, scene_display_center_radius
+from KrakenOS.UI.services.layout_settings import LayoutSettingsService
 from KrakenOS.UI.services.open3d_face_pick import pick_face_from_ray
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
@@ -502,6 +503,10 @@ def main() -> int:
     refresh_3d_sync = inspect.getsource(KrakenLayoutEditor._refresh_3d_inspector_if_open)
     open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)
     open3d_step_state_service = inspect.getsource(Open3DStepStateService)
+    layout_settings_service = inspect.getsource(LayoutSettingsService)
+    layout_settings_factory = inspect.getsource(KrakenLayoutEditor._layout_settings_service)
+    collect_layout_settings = inspect.getsource(KrakenLayoutEditor._collect_layout_settings)
+    apply_layout_settings = inspect.getsource(KrakenLayoutEditor._apply_layout_settings)
     widget_tooltip = inspect.getsource(WidgetTooltip)
     preview_sampling = inspect.getsource(KrakenLayoutEditor._preview_scene_sampling_mode)
     trace_preview_rays = inspect.getsource(KrakenLayoutEditor._trace_preview_rays)
@@ -1434,6 +1439,15 @@ def main() -> int:
         ("Open 3D Snapshot has a short default filename", 'initialfile="3D.png"' in snapshot),
         ("Open 3D Snapshot uses VTK PNG capture", "vtkWindowToImageFilter" in snapshot and "vtkPNGWriter" in snapshot),
         ("Open 3D refresh reuses current SceneBundle when valid", "_current_preview_scene_trace" in open3d_refresh_service),
+        (
+            "Layout settings serialization lives outside layout_editor",
+            "LayoutSettingsService(self)" in layout_settings_factory
+            and "self._layout_settings_service()._collect_layout_settings()" in collect_layout_settings
+            and "self._layout_settings_service()._apply_layout_settings(settings)" in apply_layout_settings
+            and "scene_sources" in layout_settings_service
+            and "tolerance_solve_presets" in layout_settings_service
+            and "camera_step_placement_offset_xyz" in layout_settings_service,
+        ),
         (
             "Open 3D fallback traces the 3D sampling mode when it rebuilds locally",
             "_preview_3d_sampling_mode()" in open3d_refresh_service
