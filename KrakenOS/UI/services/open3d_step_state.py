@@ -59,6 +59,18 @@ class StepPromotionTransition:
     raw_result: dict[str, object] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class StepCarryTransition:
+    """Imported STEP carry transition resolved outside the widget layer."""
+
+    label: str = ""
+    status: str = ""
+
+    @property
+    def has_label(self) -> bool:
+        return bool(self.label)
+
+
 class Open3DStepStateService:
     """Resolve Open 3D STEP state transitions outside the widget layer."""
 
@@ -82,6 +94,28 @@ class Open3DStepStateService:
     def is_loaded_import_label(self, label: object) -> bool:
         """Return true when label names a currently loaded imported STEP overlay."""
         return bool(self.selected_import_label((label,)))
+
+    def resolve_active_carry_label(self, label: object) -> str:
+        """Return an active imported STEP carry label if it is still loaded."""
+        return self.selected_import_label((label,))
+
+    def resolve_carry_start(self, label_candidates: Iterable[object]) -> StepCarryTransition:
+        """Resolve the selected imported STEP overlay for press-hold carry."""
+        label = self.selected_import_label(label_candidates)
+        if not label:
+            return StepCarryTransition(
+                status="Carry STEP: select or import a lens, optical, camera, or LED STEP first.",
+            )
+        return StepCarryTransition(
+            label=label,
+            status=f"{label.upper()} STEP armed: hold on the STEP to lift; drag freely; release to drop.",
+        )
+
+    @staticmethod
+    def carry_drop_status(label: object) -> str:
+        """Return the user-facing status for an imported STEP carry stop."""
+        label_text = str(label or "").strip().lower()
+        return f"STEP carry dropped{f' for {label_text.upper()}' if label_text else ''}."
 
     @staticmethod
     def _finite_xyz(values: object) -> np.ndarray | None:

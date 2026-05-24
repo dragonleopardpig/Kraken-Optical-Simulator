@@ -140,6 +140,28 @@ def main() -> int:
             and service.step_feature_selection("camera", ((1.0, 2.0, 3.0), object(), (0.0, 0.0, 1.0))) is None,
         ),
         (
+            "STEP carry start resolves only loaded imported overlays",
+            (
+                lambda loaded, unloaded: (
+                    loaded.has_label
+                    and loaded.label == "optical"
+                    and "hold on the STEP" in loaded.status
+                    and not unloaded.has_label
+                    and "select or import" in unloaded.status
+                )
+            )(
+                service.resolve_carry_start(("camera", "optical")),
+                service.resolve_carry_start(("camera", "led")),
+            ),
+        ),
+        (
+            "active STEP carry label and drop status are service-owned",
+            service.resolve_active_carry_label("optical") == "optical"
+            and service.resolve_active_carry_label("lens") == ""
+            and service.carry_drop_status("optical") == "STEP carry dropped for OPTICAL."
+            and service.carry_drop_status("") == "STEP carry dropped.",
+        ),
+        (
             "STEP overlay promotion transition is service-owned",
             (
                 lambda transition: (

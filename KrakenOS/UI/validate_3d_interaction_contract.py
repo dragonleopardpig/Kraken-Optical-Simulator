@@ -1206,7 +1206,12 @@ def main() -> int:
             and "promotion_source" in editor_step_promote
             and "center_world" in editor_step_promote,
         ),
-        ("Open 3D STEP carry has explicit drop state", "_step_carry_active_label = None" in step_carry_drop and "_step_carry_follow_state = None" in step_carry_drop and "STEP carry dropped" in step_carry_drop),
+        (
+            "Open 3D STEP carry has explicit drop state",
+            "_step_carry_active_label = None" in step_carry_drop
+            and "_step_carry_follow_state = None" in step_carry_drop
+            and "carry_drop_status" in step_carry_drop,
+        ),
         (
             "Open 3D Esc cancels active carry and pick operations",
             '"<Escape>"' in init

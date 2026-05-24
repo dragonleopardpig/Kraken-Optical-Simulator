@@ -7206,8 +7206,8 @@ class Kraken3DInspector(tk.Toplevel):
         return moved
 
     def _new_step_carry_motion_state(self, label: str) -> dict[str, object] | None:
-        label = str(label).strip().lower()
-        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
+        label = self.editor._open3d_step_state_service().resolve_active_carry_label(label)
+        if not label:
             return None
         axes = self._camera_screen_world_axes()
         if axes is None:
@@ -7227,10 +7227,10 @@ class Kraken3DInspector(tk.Toplevel):
         }
 
     def _step_carry_label(self) -> str | None:
-        label = str(self._step_carry_active_label or "").strip().lower()
-        if label in STEP_OVERLAY_LABEL_SET and self.editor._step_path_for_label(label) is not None:
-            return label
-        return None
+        label = self.editor._open3d_step_state_service().resolve_active_carry_label(
+            self._step_carry_active_label,
+        )
+        return label or None
 
     def _step_carry_grid_spacing(self, label: str, mesh=None) -> float:
         label = str(label).strip().lower()
@@ -8927,10 +8927,13 @@ class Kraken3DInspector(tk.Toplevel):
         )
 
     def start_selected_step_carry(self) -> None:
-        label = str(self.editor._selected_step_label or self._step_rotation_active_label or "").strip().lower()
-        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
-            self.status_var.set("Carry STEP: select or import a lens, optical, camera, or LED STEP first.")
+        transition = self.editor._open3d_step_state_service().resolve_carry_start(
+            (self.editor._selected_step_label, self._step_rotation_active_label),
+        )
+        if not transition.has_label:
+            self.status_var.set(transition.status)
             return
+        label = transition.label
         self._step_carry_active_label = label
         self._step_carry_follow_state = None
         self._step_carry_snap_ray_mode = False
@@ -8942,7 +8945,7 @@ class Kraken3DInspector(tk.Toplevel):
         self.editor.select_step_component(label)
         self.refresh_from_editor()
         self.show_step_rotation_handler(label)
-        self.status_var.set(f"{label.upper()} STEP armed: hold on the STEP to lift; drag freely; release to drop.")
+        self.status_var.set(transition.status)
 
     def _step_feature_action_selection(
         self,
@@ -9444,7 +9447,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_axis_pick_cursor(False)
         self._update_mode_badge()
         self.refresh_from_editor()
-        self.status_var.set(f"STEP carry dropped{f' for {label.upper()}' if label else ''}.")
+        self.status_var.set(self.editor._open3d_step_state_service().carry_drop_status(label))
 
     def _active_3d_operation_labels(self) -> list[str]:
         labels: list[str] = []
