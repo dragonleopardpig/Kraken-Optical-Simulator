@@ -21,6 +21,8 @@ class _Editor:
             _Row({"StepOverlayPromotion": {"step_label": "lens"}}),
         ]
         self.step_paths = {"optical": "/tmp/optical.step", "lens": None, "camera": None, "led": None}
+        self._live_step_overlay_trace_plan_cache = {"stale": object()}
+        self.promotions: list[dict[str, object]] = []
 
     def _step_path_for_label(self, label: str):
         return self.step_paths.get(str(label or "").strip().lower())
@@ -28,6 +30,36 @@ class _Editor:
     @staticmethod
     def _is_open3d_promoted_optical_solid_row(row: _Row) -> bool:
         return isinstance(dict(row.advanced or {}).get("StepOverlayPromotion"), dict)
+
+    def promote_imported_step_to_optical_solid_row(
+        self,
+        label: str,
+        *,
+        open_face_editor: bool,
+        clear_overlay: bool,
+        refresh_open_3d: bool,
+    ) -> dict[str, object]:
+        record = {
+            "label": str(label),
+            "open_face_editor": bool(open_face_editor),
+            "clear_overlay": bool(clear_overlay),
+            "refresh_open_3d": bool(refresh_open_3d),
+        }
+        self.promotions.append(record)
+        return {
+            "label": str(label),
+            "row_index": 4,
+            "mesh_path": "/tmp/promoted-optical.stl",
+            "source_step_path": "/tmp/optical.step",
+        }
+
+
+def _promotion_rejects_unloaded(service: Open3DStepStateService) -> bool:
+    try:
+        service.promote_imported_overlay_to_row("camera", open_face_editor=False, action_label="Accept")
+    except ValueError as exc:
+        return "select or import" in str(exc)
+    return False
 
 
 def main() -> int:
@@ -106,6 +138,35 @@ def main() -> int:
             "invalid feature selections are rejected",
             service.step_feature_selection("optical", ((1.0, 2.0, 3.0), object(), (0.0, 0.0, 0.0))) is None
             and service.step_feature_selection("camera", ((1.0, 2.0, 3.0), object(), (0.0, 0.0, 1.0))) is None,
+        ),
+        (
+            "STEP overlay promotion transition is service-owned",
+            (
+                lambda transition: (
+                    transition is not None
+                    and transition.label == "optical"
+                    and transition.row_index == 4
+                    and transition.mesh_path == "/tmp/promoted-optical.stl"
+                    and editor._live_step_overlay_trace_plan_cache == {}
+                    and editor.promotions[-1]
+                    == {
+                        "label": "optical",
+                        "open_face_editor": False,
+                        "clear_overlay": True,
+                        "refresh_open_3d": False,
+                    }
+                )
+            )(
+                service.promote_imported_overlay_to_row(
+                    "optical",
+                    open_face_editor=False,
+                    action_label="Accept",
+                )
+            ),
+        ),
+        (
+            "STEP overlay promotion rejects unloaded labels",
+            _promotion_rejects_unloaded(service),
         ),
     ]
     failed = [name for name, ok in checks if not ok]

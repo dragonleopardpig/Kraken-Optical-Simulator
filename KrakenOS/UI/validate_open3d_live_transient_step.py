@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
+from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.step_overlay_promotion import StepOverlayPromotionService
 
@@ -22,6 +23,7 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
     inspector_source = inspect.getsource(Kraken3DInspector)
     editor_source = inspect.getsource(KrakenLayoutEditor)
     open3d_scene_refresh_service = inspect.getsource(Open3DSceneRefreshService)
+    open3d_step_state_service = inspect.getsource(Open3DStepStateService)
     open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)
     step_promotion_service = inspect.getsource(StepOverlayPromotionService)
     checks = [
@@ -100,8 +102,9 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             "def accept_selected_step_placement" in inspector_source
             and "def _promote_step_overlay_to_optical_solid_row" in inspector_source
             and "open_face_editor=False" in inspector_source
-            and "clear_overlay=True" in inspector_source
-            and "_live_step_overlay_trace_plan_cache = {}" in inspector_source,
+            and "promote_imported_overlay_to_row" in open3d_step_state_service
+            and "clear_overlay=True" in open3d_step_state_service
+            and "_live_step_overlay_trace_plan_cache = {}" in open3d_step_state_service,
             "Accepting placement promotes the overlay into a row-backed optical solid and clears transient state.",
         ),
     ]

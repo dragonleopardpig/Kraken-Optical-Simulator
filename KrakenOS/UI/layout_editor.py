@@ -8849,9 +8849,6 @@ class Kraken3DInspector(tk.Toplevel):
         action_label: str,
     ) -> dict[str, object] | None:
         label = str(label).strip().lower()
-        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
-            self.status_var.set(f"{action_label} STEP: select or import a lens, optical, camera, or LED STEP first.")
-            return None
         self._debug_trace(
             "step_overlay_promote_to_row",
             label=label,
@@ -8860,25 +8857,28 @@ class Kraken3DInspector(tk.Toplevel):
             counts_before=self._debug_actor_counts(),
         )
         try:
-            result = self.editor.promote_imported_step_to_optical_solid_row(
+            transition = self.editor._open3d_step_state_service().promote_imported_overlay_to_row(
                 label,
                 open_face_editor=bool(open_face_editor),
-                clear_overlay=True,
-                refresh_open_3d=False,
+                action_label=action_label,
             )
+        except ValueError as exc:
+            self.status_var.set(str(exc))
+            self._debug_trace("step_overlay_promote_to_row_no_target", label=label, status=str(exc))
+            return None
         except Exception as exc:
             self.status_var.set(f"{action_label} STEP failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"Open 3D STEP {action_label.lower()} failed: {exc}")
             self._debug_trace("step_overlay_promote_to_row_failed", label=label, error=_short_error_message(exc))
             return None
-        if result is None:
+        if transition is None:
             self.status_var.set(self.editor.status_var.get())
             self._debug_trace("step_overlay_promote_to_row_no_result", label=label, status=self.editor.status_var.get())
             return None
+        result = transition.raw_result
         self._stl_placement_dirty = True
-        self.editor._live_step_overlay_trace_plan_cache = {}
-        self._clear_step_overlay_interaction_state(label)
-        row_index = int(result.get("row_index", -1))
+        self._clear_step_overlay_interaction_state(transition.label)
+        row_index = int(transition.row_index)
         try:
             self.refresh_from_editor(force_retrace=True)
             if row_index >= 0:
@@ -8887,7 +8887,7 @@ class Kraken3DInspector(tk.Toplevel):
             self.editor.append_debug(f"Open 3D STEP {action_label.lower()} refresh failed: {exc}")
         self._debug_trace(
             "step_overlay_promote_to_row_done",
-            label=label,
+            label=transition.label,
             row_index=row_index,
             action_label=action_label,
             counts_after=self._debug_actor_counts(),

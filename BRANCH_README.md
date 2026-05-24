@@ -1075,6 +1075,13 @@ Input Port to traced ray`. Face-role metadata saves also clear the Open 3D
 hover/face-pick cache before rebuilding the scene, so stale offset outlines
 cannot survive a face-role save or point to an invisible previous pose.
 
+Latest movement on 2026-05-24: `Open3DStepStateService` now owns the imported
+STEP overlay promotion transition used by the Open 3D `Accept STEP Placement`
+and `Promote STEP` actions. The inspector still owns debug/status/refresh, but
+the service now validates the active imported overlay, promotes it with
+`clear_overlay=True`/`refresh_open_3d=False`, and clears stale transient live
+STEP trace-plan cache state before returning the promoted row record.
+
 1. Split `KrakenOS/UI/layout_editor.py` into a package-style structure inspired
    by the organization of `optiland_gui/`, while keeping KrakenOS on Tk/ttk.
    The first target package layout should be:

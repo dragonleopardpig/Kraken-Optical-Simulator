@@ -7,7 +7,7 @@ events.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Iterable
 
 import numpy as np
@@ -46,6 +46,17 @@ class StepFeatureSelection:
     @property
     def has_normal(self) -> bool:
         return len(self.normal_world) == 3
+
+
+@dataclass(frozen=True, slots=True)
+class StepPromotionTransition:
+    """Imported STEP overlay promotion result normalized for Open 3D callers."""
+
+    label: str
+    row_index: int
+    mesh_path: str
+    source_step_path: str = ""
+    raw_result: dict[str, object] = field(default_factory=dict)
 
 
 class Open3DStepStateService:
@@ -168,3 +179,36 @@ class Open3DStepStateService:
         if label:
             return StepDeleteSelection(import_label=label)
         return StepDeleteSelection(row_indices=self.promoted_step_row_indices(row_index_candidates))
+
+    def promote_imported_overlay_to_row(
+        self,
+        label: object,
+        *,
+        open_face_editor: bool,
+        action_label: str = "Promote",
+    ) -> StepPromotionTransition | None:
+        """Promote a loaded imported STEP overlay into a persistent optical-solid row."""
+        action = str(action_label or "Promote").strip() or "Promote"
+        resolved_label = self.selected_import_label((label,))
+        if not resolved_label:
+            raise ValueError(f"{action} STEP: select or import a lens, optical, camera, or LED STEP first.")
+        result = self.editor.promote_imported_step_to_optical_solid_row(
+            resolved_label,
+            open_face_editor=bool(open_face_editor),
+            clear_overlay=True,
+            refresh_open_3d=False,
+        )
+        if result is None:
+            return None
+        self.editor._live_step_overlay_trace_plan_cache = {}
+        try:
+            row_index = int(result.get("row_index", -1))
+        except Exception:
+            row_index = -1
+        return StepPromotionTransition(
+            label=resolved_label,
+            row_index=row_index,
+            mesh_path=str(result.get("mesh_path", "") or ""),
+            source_step_path=str(result.get("source_step_path", "") or ""),
+            raw_result=dict(result),
+        )

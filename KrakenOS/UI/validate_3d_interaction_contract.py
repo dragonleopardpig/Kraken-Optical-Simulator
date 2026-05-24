@@ -1181,7 +1181,8 @@ def main() -> int:
         ),
         (
             "Open 3D STEP promotion refreshes and highlights the created row",
-            "promote_imported_step_to_optical_solid_row" in step_promote_helper
+            "promote_imported_overlay_to_row" in step_promote_helper
+            and "promote_imported_step_to_optical_solid_row" in open3d_step_state_service
             and "highlight_row(row_index)" in step_promote_helper
             and "Hold the promoted solid to move it" in step_promote,
         ),
@@ -1471,8 +1472,8 @@ def main() -> int:
         ),
         (
             "Open 3D STEP promotion clears stale overlay interaction state",
-            "_clear_step_overlay_interaction_state(label)" in step_promote_helper
-            and "refresh_open_3d=False" in step_promote_helper
+            "_clear_step_overlay_interaction_state(transition.label)" in step_promote_helper
+            and "refresh_open_3d=False" in open3d_step_state_service
             and "_selected_step_label = None" in clear_step_overlay_state
             and "_close_step_rotation_handler()" in clear_step_overlay_state,
         ),
