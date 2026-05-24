@@ -27,6 +27,7 @@ from KrakenOS.UI.panels.main_error_map_dialog import MainErrorMapDialog
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_lens_drawing_dialogs import MainLensDrawingDialogs
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
+from KrakenOS.UI.panels.main_ray_trace_inspectors import MainRayTraceInspectorDialogs
 from KrakenOS.UI.panels.main_paraxial_analysis_dialogs import MainParaxialAnalysisDialogs
 from KrakenOS.UI.panels.main_scene_element_dialogs import MainSceneElementDialogs
 from KrakenOS.UI.panels.main_scene_source_manager_dialog import MainSceneSourceManagerDialog
@@ -373,7 +374,10 @@ def main() -> int:
     open3d_display_camera = inspect.getsource(Kraken3DInspector._camera_preset_from_display_orientation)
     legacy_configure = inspect.getsource(KrakenLayoutEditor._configure_legacy_3d_plotter)
     legacy_display_camera = inspect.getsource(KrakenLayoutEditor._legacy_3d_camera_preset_from_display_orientation)
-    ray_inspector = inspect.getsource(KrakenLayoutEditor.open_ray_inspector)
+    main_ray_trace_inspectors = inspect.getsource(MainRayTraceInspectorDialogs)
+    main_ray_trace_inspectors_factory = inspect.getsource(KrakenLayoutEditor._main_ray_trace_inspector_dialogs)
+    open_ray_inspector = inspect.getsource(KrakenLayoutEditor.open_ray_inspector)
+    ray_inspector = main_ray_trace_inspectors
     placement_grid = inspect.getsource(Kraken3DInspector._add_scene_placement_grid_overlays)
     show_scene_placement_handles = inspect.getsource(Kraken3DInspector._show_scene_placement_handles)
     placement_grid_mesh = inspect.getsource(Kraken3DInspector._scene_placement_grid_mesh)
@@ -1124,6 +1128,14 @@ def main() -> int:
             'window.geometry("1180x660")' in ray_inspector
             and "ray_x_scroll" in ray_inspector
             and "xscrollcommand=ray_x_scroll.set" in ray_inspector,
+        ),
+        (
+            "Ray and Trace Path Inspector dialogs live outside layout_editor",
+            "MainRayTraceInspectorDialogs(self)" in main_ray_trace_inspectors_factory
+            and "self._main_ray_trace_inspector_dialogs().open_ray_inspector()" in open_ray_inspector
+            and "Trace Path Inspector" in main_ray_trace_inspectors
+            and "Export Ray Events CSV" in main_ray_trace_inspectors
+            and "Export Trace Path Tree CSV" in main_ray_trace_inspectors,
         ),
         (
             "STEP surface-to-axis picking hides regular rays before axis selection",
