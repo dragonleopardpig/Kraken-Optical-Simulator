@@ -265,6 +265,7 @@ from KrakenOS.UI.scene_projector import (
     scene_display_center_radius,
 )
 from KrakenOS.UI.scene_renderer_2d import render_optics_markers, render_scene_2d, set_plot_limits
+from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
 from KrakenOS.UI.panels.main_trace_display_controls import MainTraceDisplayControlsPanel
@@ -24501,83 +24502,7 @@ class KrakenLayoutEditor(tk.Tk):
             self.display_orientation_menu,
             "Choose the primary 2D projection plane for the editable layout plot",
         )
-        mode_button_groups = (
-            (
-                ("Spot", "spot"),
-                ("RMS", "rms"),
-                ("PSF", "psf"),
-                ("MTF", "mtf"),
-            ),
-            (
-                ("Pupil", "pupil"),
-                ("Seidel", "seidel"),
-                ("WFront", "wavefront"),
-                ("Zernike", "zernike"),
-            ),
-            (
-                ("FC/Dist", "field_curvature"),
-                ("Illum", "relative_illumination"),
-                ("LatClr", "lateral_color"),
-                ("Pol", "polarization"),
-                ("Atmos", "atmosphere"),
-            ),
-            (
-                ("PSFMap", "psf_map"),
-                ("FldMap", "field_map"),
-                ("IllMap", "illum_map"),
-                ("WfeMap", "wavefront_map"),
-                ("DetMap", "detector_map"),
-                ("CohDet", "coherent_detector"),
-                ("BField", "branch_field"),
-                ("Diffr", "diffraction_detector"),
-            ),
-            (
-                ("Interf", "interferogram"),
-                ("TolCmp", "tolerance_compare"),
-            ),
-        )
-        mode_tooltips = {
-            "spot": "Spot Diagram: traced ray intercepts at the image or selected detector",
-            "psf": "Point Spread Function",
-            "psf_map": "Point Spread Function Map",
-            "rms": "RMS Spot Radius",
-            "field_curvature": "Field Curvature / Distortion",
-            "relative_illumination": "Relative Illumination",
-            "polarization": "Polarization analysis",
-            "lateral_color": "Lateral Color",
-            "detector_map": "Detector Power Map",
-            "coherent_detector": "Coherent Detector Field Sum",
-            "branch_field": "Branch Field Intensity / Phase + TEM00 Overlap",
-            "diffraction_detector": "Diffraction Detector Angular Spectrum",
-            "field_map": "Field Map",
-            "illum_map": "Illumination Map",
-            "wavefront_map": "Wavefront Error Map",
-            "atmosphere": "Atmospheric Dispersion",
-            "pupil": "Pupil Diagnostic",
-            "seidel": "Seidel Aberrations",
-            "wavefront": "Wavefront Analysis",
-            "zernike": "Zernike Polynomial Fit",
-            "interferogram": "Interferogram",
-            "tolerance_compare": "Tolerance nominal-vs-worst spot overlay",
-            "mtf": "Modulation Transfer Function",
-        }
-        self.analysis_mode_vars: dict[str, tk.BooleanVar] = {}
-        ttk.Label(plot_toolbar_analysis, text="Analysis").pack(side="left", padx=(0, 4))
-        for group_index, group in enumerate(mode_button_groups):
-            if group_index > 0:
-                ttk.Separator(plot_toolbar_analysis, orient="vertical").pack(side="left", fill="y", padx=(8, 2), pady=2)
-            for text, mode in group:
-                var = tk.BooleanVar(value=False)
-                self.analysis_mode_vars[mode] = var
-                analysis_button = ttk.Checkbutton(
-                    plot_toolbar_analysis,
-                    text=text,
-                    style="Toolbutton",
-                    variable=var,
-                    command=lambda m=mode: self.toggle_analysis_mode(m),
-                )
-                analysis_button.pack(side="left", padx=(4, 0))
-                self._add_widget_tooltip(analysis_button, mode_tooltips.get(mode, text))
+        self._main_analysis_toolbar_panel().build(plot_toolbar_analysis)
         cardinal_button = ttk.Checkbutton(
             plot_toolbar_main,
             text="Show PP / EP / XP",
@@ -24759,6 +24684,20 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _build_source_panel(self, parent) -> None:
         self._main_source_controls_panel().build(parent)
+
+    def _main_analysis_toolbar_panel(self) -> MainAnalysisToolbarPanel:
+        panel = getattr(self, "_main_analysis_toolbar_panel_instance", None)
+        if panel is None:
+            panel = MainAnalysisToolbarPanel(self)
+            self._main_analysis_toolbar_panel_instance = panel
+        return panel
+
+    def _main_information_panel(self) -> MainInformationPanel:
+        panel = getattr(self, "_main_information_panel_instance", None)
+        if panel is None:
+            panel = MainInformationPanel(self)
+            self._main_information_panel_instance = panel
+        return panel
 
     def _register_left_mode_control(
         self,
@@ -25708,15 +25647,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._update_operand_setup_visibility()
 
     def _build_results_panel(self, parent) -> None:
-        self.results_table = ttk.Treeview(parent, columns=("property", "value"), show="headings", selectmode="none")
-        self.results_table.heading("property", text="Property")
-        self.results_table.heading("value", text="Value")
-        self.results_table.column("property", width=96, anchor="w", stretch=False)
-        self.results_table.column("value", width=40, anchor="w", stretch=True)
-        self.results_table.grid(row=0, column=0, sticky="nsew")
-        scroll = ttk.Scrollbar(parent, orient="vertical", command=self.results_table.yview)
-        scroll.grid(row=0, column=1, sticky="ns")
-        self.results_table.configure(yscrollcommand=scroll.set)
+        self._main_information_panel().build(parent)
 
     def _bind_deferred_refresh(self, widget: tk.Widget) -> None:
         widget.bind("<FocusIn>", self._begin_history_capture, add="+")

@@ -13,6 +13,7 @@ from KrakenOS.UI.layout_editor import (
     KrakenLayoutEditor,
     _dotted_axis_records_from_ray_path,
 )
+from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_source_controls import MainSourceControlsPanel
 from KrakenOS.UI.panels.main_trace_display_controls import MainTraceDisplayControlsPanel
@@ -247,6 +248,12 @@ def main() -> int:
     key_press = inspect.getsource(Kraken3DInspector._on_key_press)
     refresh = inspect.getsource(Kraken3DInspector.refresh_scene)
     add_mesh_actor = inspect.getsource(Kraken3DInspector._add_mesh_actor)
+    build_ui = inspect.getsource(KrakenLayoutEditor._build_ui)
+    main_analysis_toolbar_panel = inspect.getsource(MainAnalysisToolbarPanel)
+    main_analysis_toolbar_factory = inspect.getsource(KrakenLayoutEditor._main_analysis_toolbar_panel)
+    main_information_panel = inspect.getsource(MainInformationPanel)
+    main_information_factory = inspect.getsource(KrakenLayoutEditor._main_information_panel)
+    build_results_panel = inspect.getsource(KrakenLayoutEditor._build_results_panel)
     main_trace_display_panel = inspect.getsource(MainTraceDisplayControlsPanel)
     main_trace_display_panel_factory = inspect.getsource(KrakenLayoutEditor._main_trace_display_controls_panel)
     build_controls_panel = inspect.getsource(KrakenLayoutEditor._build_controls_panel)
@@ -676,6 +683,19 @@ def main() -> int:
             and "nonseq_target_surface_var" in main_trace_display_panel
             and "analysis_branch_filter_var" in main_trace_display_panel
             and "_register_left_mode_control(" in main_trace_display_panel,
+        ),
+        (
+            "Main analysis toolbar and information panel live outside layout_editor",
+            "MainAnalysisToolbarPanel(self)" in main_analysis_toolbar_factory
+            and "self._main_analysis_toolbar_panel().build(plot_toolbar_analysis)" in build_ui
+            and "MainInformationPanel(self)" in main_information_factory
+            and "self._main_information_panel().build(parent)" in build_results_panel
+            and "analysis_mode_vars" in main_analysis_toolbar_panel
+            and "toggle_analysis_mode" in main_analysis_toolbar_panel
+            and "CohDet" in main_analysis_toolbar_panel
+            and "TolCmp" in main_analysis_toolbar_panel
+            and "results_table" in main_information_panel
+            and "Property" in main_information_panel,
         ),
         (
             "Open 3D renders editable table Thickness dimensions",
