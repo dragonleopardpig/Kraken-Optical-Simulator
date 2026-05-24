@@ -25,6 +25,8 @@ class Open3DStepAdminPanel:
         self._selected_item_id = ""
         self._property_vars: dict[str, tk.StringVar] = {}
         self._selection_buttons: dict[str, ttk.Button] = {}
+        self._face_direction_var: tk.StringVar | None = None
+        self._face_direction_combo: ttk.Combobox | None = None
 
     def build(self, parent: tk.Widget) -> ttk.Frame:
         parent.columnconfigure(0, weight=1)
@@ -100,6 +102,18 @@ class Open3DStepAdminPanel:
             self._surface_center_selected,
             columnspan=2,
         )
+        ttk.Label(action_frame, text="Face direction").grid(row=6, column=0, sticky="w", pady=(7, 0))
+        self._face_direction_var = tk.StringVar(value="")
+        face_direction_combo = ttk.Combobox(
+            action_frame,
+            textvariable=self._face_direction_var,
+            state="disabled",
+            values=("Left", "Right", "Up", "Down", "Front", "Back"),
+            width=10,
+        )
+        face_direction_combo.grid(row=6, column=1, sticky="ew", pady=(7, 0))
+        face_direction_combo.bind("<<ComboboxSelected>>", self._on_face_direction_selected)
+        self._face_direction_combo = face_direction_combo
 
         self.refresh()
         return stack
@@ -352,6 +366,11 @@ class Open3DStepAdminPanel:
                 button.configure(state="normal" if button_states.get(key, False) else "disabled")
             except Exception:
                 pass
+        if self._face_direction_combo is not None:
+            try:
+                self._face_direction_combo.configure(state="readonly" if overlay_selected else "disabled")
+            except Exception:
+                pass
 
     def _select_current_for_action(self) -> bool:
         kind, value = self._current_kind_value()
@@ -425,3 +444,13 @@ class Open3DStepAdminPanel:
         if self._select_current_for_action():
             self.inspector.center_selected_step_surface_to_optical_axis()
             self.refresh()
+
+    def _on_face_direction_selected(self, _event=None) -> None:
+        var = self._face_direction_var
+        direction = str(var.get() if var is not None else "").strip()
+        if direction not in {"Left", "Right", "Up", "Down", "Front", "Back"}:
+            return
+        if not self._select_current_for_action():
+            return
+        self.inspector.orient_selected_step_face_to_direction(direction)
+        self.refresh()
