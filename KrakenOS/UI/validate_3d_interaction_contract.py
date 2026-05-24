@@ -58,6 +58,7 @@ from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.ray_inspector_records import RayInspectorRecordService
+from KrakenOS.UI.services.tolerance_stackup import ToleranceStackupService
 from KrakenOS.UI.widgets.tooltips import WidgetTooltip
 
 
@@ -423,6 +424,9 @@ def main() -> int:
     formula_help_service = inspect.getsource(FormulaHelpService)
     formula_help_factory = inspect.getsource(KrakenLayoutEditor._formula_help_service)
     build_formula_help_html = inspect.getsource(KrakenLayoutEditor._build_formula_help_html)
+    tolerance_stackup_service = inspect.getsource(ToleranceStackupService)
+    tolerance_stackup_factory = inspect.getsource(KrakenLayoutEditor._tolerance_stackup_service)
+    tolerance_stackup_dashboard = inspect.getsource(KrakenLayoutEditor.tolerance_stackup_dashboard)
     nonseq_scene_graph_record_service = inspect.getsource(NonSequentialSceneGraphRecordService)
     nonseq_scene_graph_record_factory = inspect.getsource(KrakenLayoutEditor._nonseq_scene_graph_record_service)
     collect_nonseq_scene_graph_records = inspect.getsource(KrakenLayoutEditor._collect_nonseq_scene_graph_records)
@@ -1260,6 +1264,14 @@ def main() -> int:
             and "KrakenOS Formula Sheet" in formula_help_service
             and "self.docs_html_dir" in formula_help_service
             and "self.docs_source_dir" in formula_help_service,
+        ),
+        (
+            "Tolerance stack-up dashboard assembly lives outside layout_editor",
+            "ToleranceStackupService(self)" in tolerance_stackup_factory
+            and "self._tolerance_stackup_service().tolerance_stackup_dashboard(summary)" in tolerance_stackup_dashboard
+            and "linearized_variance_sum" in tolerance_stackup_service
+            and "tolerance_stackup_group_csv_rows" in tolerance_stackup_service
+            and "manufacturing-group contribution" in tolerance_stackup_service,
         ),
         (
             "Non-sequential scene graph records live outside layout_editor",
