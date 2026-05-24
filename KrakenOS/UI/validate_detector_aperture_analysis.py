@@ -19,6 +19,9 @@ from KrakenOS.UI.detector_aperture_analysis import (
     iter_detector_aperture_csv_rows,
 )
 from KrakenOS.UI.layout_editor import KrakenLayoutEditor
+from KrakenOS.UI.panels.main_detector_aperture_report_dialog import MainDetectorApertureReportDialog
+from KrakenOS.UI.panels.main_ray_trace_inspectors import MainRayTraceInspectorDialogs
+from KrakenOS.UI.services.results_display import ResultsDisplayService
 from KrakenOS.UI.validate_branch_analysis import _load_traced_editor
 
 
@@ -122,11 +125,11 @@ def validate_detector_aperture_analysis() -> list[DetectorApertureValidationResu
     )
 
     editor_collect_source = inspect.getsource(KrakenLayoutEditor._collect_detector_aperture_records)
-    refresh_source = inspect.getsource(KrakenLayoutEditor._refresh_detector_aperture_report)
-    menu_source = inspect.getsource(KrakenLayoutEditor.open_detector_aperture_report)
-    ray_table_source = inspect.getsource(KrakenLayoutEditor.open_ray_inspector)
-    ray_export_source = inspect.getsource(KrakenLayoutEditor.export_ray_inspector_csv)
-    results_source = inspect.getsource(KrakenLayoutEditor._update_results)
+    refresh_source = inspect.getsource(MainDetectorApertureReportDialog._refresh_detector_aperture_report)
+    menu_source = inspect.getsource(MainDetectorApertureReportDialog.open_detector_aperture_report)
+    ray_table_source = inspect.getsource(MainRayTraceInspectorDialogs.open_ray_inspector)
+    ray_export_source = inspect.getsource(MainRayTraceInspectorDialogs.export_ray_inspector_csv)
+    results_source = inspect.getsource(ResultsDisplayService._update_results)
     status_source = inspect.getsource(KrakenLayoutEditor._detector_aperture_status_suffix)
     try:
         editor, system, rays, _wavelength = _load_traced_editor("Right-Angle Beam-Splitter Illumination")
