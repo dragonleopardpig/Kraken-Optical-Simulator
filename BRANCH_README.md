@@ -1067,6 +1067,14 @@ orientation. `layout_editor.py` now applies the planned rotation/offset and
 refreshes the view, while the service keeps the picked face center anchored and
 validates the finite face center/normal inputs outside the editor coordinator.
 
+Latest movement on 2026-05-24: the CAD/STL face-role editor now preserves the
+current Open 3D pose by default for rows promoted from imported STEP overlays.
+`Save Roles` no longer auto-solves a second Tilt/Decenter pose for an already
+placed Open 3D STEP solid unless the user explicitly enables `On Save: snap
+Input Port to traced ray`. Face-role metadata saves also clear the Open 3D
+hover/face-pick cache before rebuilding the scene, so stale offset outlines
+cannot survive a face-role save or point to an invisible previous pose.
+
 1. Split `KrakenOS/UI/layout_editor.py` into a package-style structure inspired
    by the organization of `optiland_gui/`, while keeping KrakenOS on Tk/ttk.
    The first target package layout should be:

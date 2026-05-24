@@ -8574,6 +8574,29 @@ class Kraken3DInspector(tk.Toplevel):
             self.render()
         return changed
 
+    def clear_face_metadata_hover_state(self, row_index: int | None = None) -> None:
+        """Drop transient hover/selection state after CAD face metadata changes."""
+        try:
+            self._set_step_hover_outline(None, None, render=False)
+        except Exception:
+            pass
+        try:
+            self._update_hover_status("", render=False)
+        except Exception:
+            pass
+        try:
+            self._step_feature_cache.clear()
+        except Exception:
+            pass
+        self._hover_step_actor = None
+        self._hover_step_cell_key = None
+        self._hover_rotation_handle_key = None
+        if row_index is None or self._picked_row_index == int(row_index):
+            self._set_row_highlight(None)
+        self._set_ray_highlight(None)
+        self._set_optical_axis_highlight(None)
+        self._set_axis_pick_cursor(False)
+
     def _step_rotation_status_text(self, label: str) -> str:
         label = str(label).strip().lower()
         display = self.editor._step_overlay_display_label(label).upper()
@@ -18559,6 +18582,20 @@ class KrakenLayoutEditor(tk.Tk):
             if refreshed:
                 return
             self.status_var.set("STEP change saved. Close and reopen legacy 3D view to redraw.")
+
+    def _clear_open3d_face_metadata_hover_state(self, row_index: int | None = None) -> None:
+        inspector = getattr(self, "_three_d_inspector", None)
+        if inspector is None:
+            return
+        try:
+            if not inspector.winfo_exists():
+                return
+        except Exception:
+            return
+        try:
+            inspector.clear_face_metadata_hover_state(row_index)
+        except Exception as exc:
+            self.append_debug(f"Open 3D face metadata hover clear failed: {exc}")
 
     def _refresh_legacy_camera_step_actor(self, plotter) -> bool:
         return self._refresh_legacy_step_actor(plotter, "camera")

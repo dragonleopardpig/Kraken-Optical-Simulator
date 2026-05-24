@@ -119,7 +119,21 @@ class MainOpticalSolidFaceRolesDialog:
         virtual_phase_var = tk.StringVar(master=window, value=f"{float(initial_virtual_plane.get('phase_deg', 0.0) or 0.0):.6g}")
         virtual_aperture_var = tk.StringVar(master=window, value=f"{float(initial_virtual_plane.get('aperture_mm', 0.0) or 0.0):.6g}")
         virtual_notes_var = tk.StringVar(master=window, value=str(initial_virtual_plane.get('notes', '') or ''))
-        auto_orient_var = tk.BooleanVar(master=window, value=True)
+        row_advanced = row.advanced if isinstance(row.advanced, dict) else {}
+        placement_settings = row_advanced.get(le.SCENE_PLACEMENT_ADVANCED_ATTR, {})
+        open3d_promoted_step_row = (
+            isinstance(row_advanced.get('StepOverlayPromotion'), dict)
+            or (
+                isinstance(placement_settings, dict)
+                and str(placement_settings.get('promotion_source', '') or '').strip() == 'open3d_step_overlay'
+            )
+        )
+        auto_orient_var = tk.BooleanVar(master=window, value=not open3d_promoted_step_row)
+        auto_orient_hint = (
+            'This row was placed in Open 3D; Save Roles preserves its current pose unless this box is enabled.'
+            if open3d_promoted_step_row
+            else 'When enabled, Save Roles solves the row pose from the Input Port face.'
+        )
         virtual_status_var = tk.StringVar(master=window, value=f'{len(virtual_planes)} virtual internal plane(s) saved.' if virtual_planes else 'No virtual internal plane saved.')
         form_loading = False
         ttk.Label(editor, text='2D side').grid(row=0, column=0, sticky='w', pady=(0, 2))
@@ -1202,6 +1216,7 @@ class MainOpticalSolidFaceRolesDialog:
             self._mark_plot_update_pending()
             reason_text = str(reason or 'Face Editor')
             self._invalidate_optical_solid_face_assignment_trace(row_index, reason_text)
+            self._clear_open3d_face_metadata_hover_state(row_index)
             self._refresh_open_3d_views(force_retrace=True)
             assigned_count = sum((1 for record in records if le._normalize_optical_solid_face_function(record.get('function'), legacy_role=record.get('role')) != le.OPTICAL_SOLID_FACE_FUNCTION_DEFAULT))
             self.append_debug(f'CAD/STL face editor saved S{row_index}: {reason_text}; {assigned_count} non-default face functions.')
@@ -1362,6 +1377,7 @@ class MainOpticalSolidFaceRolesDialog:
             self._commit_history_capture()
             self._mark_plot_update_pending()
             self._invalidate_optical_solid_face_assignment_trace(row_index, 'Save Roles')
+            self._clear_open3d_face_metadata_hover_state(row_index)
             self._refresh_open_3d_views(force_retrace=True)
             summary = self._optical_solid_faces_summary(row_index, target)
             self.append_debug(summary)
@@ -1429,7 +1445,7 @@ class MainOpticalSolidFaceRolesDialog:
             self.status_var.set(f'CAD/STL optical face summary copied ({backend}).' if ok else 'CAD/STL optical face summary written to Debug; clipboard unavailable.')
         auto_orient_check = ttk.Checkbutton(editor, text='On Save: snap Input Port to traced ray', variable=auto_orient_var)
         auto_orient_check.grid(row=15, column=0, columnspan=2, sticky='w', pady=(0, 6))
-        self._add_widget_tooltip(auto_orient_check, 'Solves Tilt/Decenter so the Input Port face is centred on the current Path view or nearest traced 3D ray. Falls back to the row plane +Z input if no traced ray is available.')
+        self._add_widget_tooltip(auto_orient_check, auto_orient_hint + ' Solves Tilt/Decenter so the Input Port face is centred on the current Path view or nearest traced 3D ray. Falls back to the row plane +Z input if no traced ray is available.')
         button_row = 16
         quick_sides = ttk.LabelFrame(editor, text='2D side')
         quick_sides.grid(row=button_row, column=0, columnspan=2, sticky='ew', pady=(4, 4))

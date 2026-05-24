@@ -666,6 +666,20 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
             "VTK face preview uses click-on-release selection plus fixed-speed left-drag rotation.",
         ),
         OpticalSolidFaceRoleCheck(
+            "Open 3D promoted STEP face editor preserves viewport pose by default",
+            "open3d_promoted_step_row" in layout_editor_source
+            and "auto_orient_var = tk.BooleanVar(master=window, value=not open3d_promoted_step_row)" in layout_editor_source
+            and "Save Roles preserves its current pose" in layout_editor_source,
+            "Promoted Open 3D STEP solids require an explicit checkbox before Save Roles rewrites Tilt/Decenter.",
+        ),
+        OpticalSolidFaceRoleCheck(
+            "Open 3D face metadata save clears stale hover pick state",
+            "def clear_face_metadata_hover_state" in layout_editor_source
+            and "_clear_open3d_face_metadata_hover_state(row_index)" in layout_editor_source
+            and "_step_feature_cache.clear()" in layout_editor_source,
+            "Face-role saves clear row/STEP hover outlines and cached feature picks before the 3D scene rebuild.",
+        ),
+        OpticalSolidFaceRoleCheck(
             "non-sequential terminal escape segment uses signed ray direction",
             signed_terminal_endpoint[2] > 0.0,
             f"endpoint={tuple(float(value) for value in signed_terminal_endpoint)}",
