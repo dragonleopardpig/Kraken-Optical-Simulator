@@ -293,6 +293,7 @@ from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.plot_refresh import PlotRefreshService
 from KrakenOS.UI.services.ray_inspector_records import RayInspectorRecordService
 from KrakenOS.UI.services.results_display import ResultsDisplayService
+from KrakenOS.UI.services.step_overlay_import import StepOverlayImportService
 from KrakenOS.UI.services.step_overlay_promotion import StepOverlayPromotionService
 from KrakenOS.UI.services.tolerance_analysis import ToleranceAnalysisService
 from KrakenOS.UI.services.tolerance_stackup import ToleranceStackupService
@@ -16794,6 +16795,13 @@ class KrakenLayoutEditor(tk.Tk):
             diagnostics,
         )
 
+    def _step_overlay_import_service(self) -> StepOverlayImportService:
+        service = self.__dict__.get("_step_overlay_import_service_instance")
+        if service is None:
+            service = StepOverlayImportService(self)
+            self._step_overlay_import_service_instance = service
+        return service
+
     def import_lens_step(
         self,
         dialog_parent: tk.Misc | None = None,
@@ -16802,148 +16810,30 @@ class KrakenLayoutEditor(tk.Tk):
         display_label: str = "Lens STEP",
         largest_component_only: bool = True,
     ) -> Path | None:
-        path = self._ask_step_file(title, DEFAULT_LENS_STEP_PATH.parent, parent=dialog_parent)
-        if path is None:
-            return None
-        self._begin_history_capture()
-        self.imported_lens_step_path = path
-        self.lens_step_largest_component_only = bool(largest_component_only)
-        self.lens_step_rotation_x_deg = 0.0
-        self.lens_step_rotation_y_deg = 0.0
-        self.lens_step_rotation_z_deg = 0.0
-        self.lens_step_axis_offset_xy = (0.0, 0.0)
-        self.lens_step_placement_offset_xyz = (0.0, 0.0, 0.0)
-        self._selected_step_label = "lens"
-        self._cad_axis_pick_any = False
-        self._commit_history_capture()
-        self._live_step_overlay_trace_plan_cache = {}
-        self._invalidate_preview_scene_trace()
-        self.status_var.set(f"{display_label} imported: {path.name}. Open or refresh 3D view.")
-        self._refresh_open_3d_views()
-        return path
+        return self._step_overlay_import_service().import_lens_step(
+            dialog_parent=dialog_parent,
+            title=title,
+            display_label=display_label,
+            largest_component_only=largest_component_only,
+        )
 
     def _default_optical_step_import_offset(self) -> tuple[float, float, float]:
-        z_values = [0.0]
-        z = 0.0
-        for row in list(getattr(self, "rows", []) or []):
-            try:
-                z += float(getattr(row, "thickness", 0.0) or 0.0)
-                z_values.append(float(z))
-            except Exception:
-                continue
-        finite = [value for value in z_values if np.isfinite(value)]
-        if not finite:
-            return (0.0, 0.0, 0.0)
-        return (0.0, 0.0, 0.5 * (min(finite) + max(finite)))
+        return self._step_overlay_import_service()._default_optical_step_import_offset()
 
     def _preserve_unpromoted_step_overlay(self, label: str) -> dict[str, object] | None:
-        """Promote an un-promoted STEP overlay before its import slot is reused.
-
-        STEP overlays are stored in four fixed slots (lens/optical/led/camera),
-        so importing another STEP of the same kind would otherwise silently
-        discard the existing un-promoted overlay.  Promote it to a persistent
-        optical-solid row first, so repeated imports accumulate optical
-        elements instead of overwriting the previous one.
-        """
-        label = str(label).strip().lower()
-        if label not in STEP_OVERLAY_LABEL_SET:
-            return None
-        if self._step_path_for_label(label) is None:
-            return None
-        try:
-            result = self.promote_imported_step_to_optical_solid_row(
-                label,
-                open_face_editor=False,
-                clear_overlay=True,
-                refresh_open_3d=False,
-            )
-        except Exception as exc:
-            self.append_debug(f"Auto-keep of the existing {label} STEP overlay failed: {exc}")
-            return None
-        if result is not None:
-            row_index = int(result.get("row_index", -1))
-            self.append_debug(
-                f"Auto-promoted the existing {label.upper()} STEP overlay to optical "
-                f"solid row S{row_index} so the new import does not overwrite it."
-            )
-        return result
+        return self._step_overlay_import_service()._preserve_unpromoted_step_overlay(label)
 
     def import_optical_step(self, dialog_parent: tk.Misc | None = None) -> Path | None:
-        path = self._ask_step_file("Import optical STEP", DEFAULT_LENS_STEP_PATH.parent, parent=dialog_parent)
-        if path is None:
-            return None
-        self._preserve_unpromoted_step_overlay("optical")
-        self._begin_history_capture()
-        self.imported_optical_step_path = path
-        self.optical_step_rotation_x_deg = 0.0
-        self.optical_step_rotation_y_deg = 0.0
-        self.optical_step_rotation_z_deg = 0.0
-        self.optical_step_axis_offset_xy = (0.0, 0.0)
-        self.optical_step_placement_offset_xyz = self._default_optical_step_import_offset()
-        self._selected_step_label = "optical"
-        self._cad_axis_pick_any = False
-        self._commit_history_capture()
-        self._live_step_overlay_trace_plan_cache = {}
-        self._invalidate_preview_scene_trace()
-        self.status_var.set(f"Optical STEP imported: {path.name}. Carry and place it in Open 3D.")
-        self._refresh_open_3d_views(step_label="optical")
-        return path
+        return self._step_overlay_import_service().import_optical_step(dialog_parent=dialog_parent)
 
     def import_camera_step(self, dialog_parent: tk.Misc | None = None) -> Path | None:
-        path = self._ask_step_file("Import camera STEP", DEFAULT_CAMERA_STEP_PATH.parent, parent=dialog_parent)
-        if path is None:
-            return None
-        self._begin_history_capture()
-        self.imported_camera_step_path = path
-        self.camera_step_rotation_x_deg = 0.0
-        self.camera_step_rotation_y_deg = 0.0
-        self.camera_step_rotation_z_deg = 0.0
-        self.camera_step_axis_offset_xy = (0.0, 0.0)
-        self.camera_step_placement_offset_xyz = (0.0, 0.0, 0.0)
-        self._selected_step_label = "camera"
-        self._cad_axis_pick_any = False
-        self._commit_history_capture()
-        self._live_step_overlay_trace_plan_cache = {}
-        self._invalidate_preview_scene_trace()
-        self.status_var.set(f"Camera STEP imported: {path.name}. Open or refresh 3D view.")
-        self._refresh_open_3d_views(camera_only=True)
-        return path
+        return self._step_overlay_import_service().import_camera_step(dialog_parent=dialog_parent)
 
     def rotate_camera_step_z(self, delta_deg: float) -> None:
         self.rotate_step_z("camera", delta_deg)
 
     def import_led_step(self, dialog_parent: tk.Misc | None = None) -> Path | None:
-        initial_dir = DEFAULT_LED_STEP_PATH if DEFAULT_LED_STEP_PATH.is_dir() else DEFAULT_LED_STEP_PATH.parent
-        path = self._ask_step_file("Import LED STEP", initial_dir, parent=dialog_parent)
-        if path is None:
-            return None
-        initial_distance = max(float(getattr(self, "led_object_edge_distance_mm", 0.0)), 0.0)
-        if initial_distance <= 0.0:
-            initial_distance = self._default_led_object_edge_distance()
-        edge_distance = self._ask_led_edge_distance(initial_distance, parent=dialog_parent)
-        if edge_distance is None:
-            self.status_var.set("LED STEP import cancelled.")
-            return None
-        self._begin_history_capture()
-        self.imported_led_step_path = path
-        self.led_step_rotation_x_deg = 0.0
-        self.led_step_rotation_y_deg = 0.0
-        self.led_step_rotation_z_deg = 0.0
-        self.led_step_object_edge_local_z = None
-        self.led_step_axis_offset_xy = (0.0, 0.0)
-        self.led_step_placement_offset_xyz = (0.0, 0.0, 0.0)
-        self._selected_step_label = "led"
-        self._cad_axis_pick_any = False
-        self._cad_led_object_edge_pick = False
-        self.led_object_edge_distance_mm = float(edge_distance)
-        self._commit_history_capture()
-        self._live_step_overlay_trace_plan_cache = {}
-        self._invalidate_preview_scene_trace()
-        self.status_var.set(
-            f"LED STEP imported: {path.name}; edge distance={self.led_object_edge_distance_mm:.3g} mm."
-        )
-        self._refresh_open_3d_views(step_label="led")
-        return path
+        return self._step_overlay_import_service().import_led_step(dialog_parent=dialog_parent)
 
     def _default_led_object_edge_distance(self) -> float:
         lens_front_z = max(float(self._lens_front_datum_z()), 0.0)
@@ -17056,59 +16946,13 @@ class KrakenLayoutEditor(tk.Tk):
         self._refresh_open_3d_views(step_label="led")
 
     def _step_overlay_display_label(self, label: str) -> str:
-        label = str(label).strip().lower()
-        if label == "lens" and not bool(getattr(self, "lens_step_largest_component_only", True)):
-            return "Optical"
-        return {
-            "lens": "Lens",
-            "optical": "Optical",
-            "led": "LED",
-            "camera": "Camera",
-        }.get(label, "STEP")
+        return self._step_overlay_import_service().step_overlay_display_label(label)
 
     def _step_path_for_label(self, label: str) -> Path | None:
-        label = str(label).strip().lower()
-        if label not in STEP_OVERLAY_LABEL_SET:
-            return None
-        return {
-            "lens": self.imported_lens_step_path,
-            "optical": self.imported_optical_step_path,
-            "led": self.imported_led_step_path,
-            "camera": self.imported_camera_step_path,
-        }.get(label)
+        return self._step_overlay_import_service().step_path_for_label(label)
 
     def _clear_imported_step_overlay_state(self, label: str) -> None:
-        label = str(label).strip().lower()
-        if label not in STEP_OVERLAY_LABEL_SET:
-            return
-        path_attrs = {
-            "lens": "imported_lens_step_path",
-            "optical": "imported_optical_step_path",
-            "led": "imported_led_step_path",
-            "camera": "imported_camera_step_path",
-        }
-        path_attr = path_attrs.get(label)
-        if path_attr:
-            setattr(self, path_attr, None)
-        for axis in ("x", "y", "z"):
-            attr = f"{label}_step_rotation_{axis}_deg"
-            if hasattr(self, attr):
-                setattr(self, attr, 0.0)
-        axis_attr = f"{label}_step_axis_offset_xy"
-        if hasattr(self, axis_attr):
-            setattr(self, axis_attr, (0.0, 0.0))
-        placement_attr = f"{label}_step_placement_offset_xyz"
-        if hasattr(self, placement_attr):
-            setattr(self, placement_attr, (0.0, 0.0, 0.0))
-        self._live_step_overlay_trace_plan_cache = {}
-        if label == "led":
-            self.led_object_edge_distance_mm = 0.0
-            self.led_step_object_edge_local_z = None
-        if label == "lens":
-            self.lens_step_largest_component_only = True
-        if self._selected_step_label == label:
-            self._selected_step_label = None
-        self._invalidate_preview_scene_trace()
+        self._step_overlay_import_service().clear_imported_step_overlay_state(label)
 
     def rotate_step_axis(self, label: str, axis: str, delta_deg: float) -> None:
         label = str(label).strip().lower()
