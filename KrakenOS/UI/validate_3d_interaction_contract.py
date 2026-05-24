@@ -51,6 +51,7 @@ from KrakenOS.UI.scene_builder import _sync_path_display_geometry_from_events
 from KrakenOS.UI.scene_geometry import RayEvent3D, RayPath3D
 from KrakenOS.UI.scene_projector import bounded_ray_points_for_scene_display, scene_display_center_radius
 from KrakenOS.UI.services.formula_help import FormulaHelpService
+from KrakenOS.UI.services.legacy_3d_scene import Legacy3DSceneService
 from KrakenOS.UI.services.layout_file_writer import LayoutFileWriterService
 from KrakenOS.UI.services.layout_settings import LayoutSettingsService
 from KrakenOS.UI.services.nonseq_scene_graph_records import NonSequentialSceneGraphRecordService
@@ -541,7 +542,10 @@ def main() -> int:
     shared_bounded_ray_display = inspect.getsource(bounded_ray_points_for_scene_display)
     shared_scene_bounds = inspect.getsource(scene_display_center_radius)
     editor_detector_overlays = inspect.getsource(KrakenLayoutEditor._scene_detector_overlay_specs)
-    legacy_open_3d = inspect.getsource(KrakenLayoutEditor._populate_legacy_3d_plotter_scene)
+    legacy_scene_service = inspect.getsource(Legacy3DSceneService)
+    legacy_scene_factory = inspect.getsource(KrakenLayoutEditor._legacy_3d_scene_service)
+    legacy_open_3d_wrapper = inspect.getsource(KrakenLayoutEditor._populate_legacy_3d_plotter_scene)
+    legacy_open_3d = legacy_scene_service
     legacy_replace_rays = inspect.getsource(KrakenLayoutEditor._legacy_3d_replace_rays)
     continuation_sync_ok, continuation_sync_diag = _scene_path_preserves_raykeeper_terminal_continuation()
     exit_axis_ok, exit_axis_diag = _traced_axis_records_mark_exit_segment()
@@ -1276,6 +1280,14 @@ def main() -> int:
             and "build_runtime_system" in layout_file_writer_service
             and "apply_optical_solid_output_port_system_overrides" in layout_file_writer_service
             and "omitted_complex_fields" in layout_file_writer_service,
+        ),
+        (
+            "Legacy 3D scene assembly lives outside layout_editor",
+            "Legacy3DSceneService(self)" in legacy_scene_factory
+            and "self._legacy_3d_scene_service()._populate_legacy_3d_plotter_scene(" in legacy_open_3d_wrapper
+            and "_scene_detector_overlay_specs(" in legacy_scene_service
+            and "_add_legacy_3d_physical_dimensions" in legacy_scene_service
+            and "cad_step_actor_map" in legacy_scene_service,
         ),
         (
             "Tolerance stack-up dashboard assembly lives outside layout_editor",
