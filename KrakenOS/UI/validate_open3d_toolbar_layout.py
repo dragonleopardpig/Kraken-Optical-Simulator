@@ -12,6 +12,7 @@ import re
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
+from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
 
 
 _MAX_DIRECT_VIEW_CONTROLS = 10
@@ -167,7 +168,7 @@ def main() -> int:
             "Open 3D carry row avoids explicit Lift/Drop buttons",
             'ttk.Button(carry_toolbar, text="Lift"' not in toolbar_source
             and 'ttk.Button(carry_toolbar, text="Drop"' not in toolbar_source
-            and "_arm_step_carry_hold" in inspect.getsource(Kraken3DInspector._install_pick_only_left_click_bindings),
+            and "_arm_step_carry_hold" in inspect.getsource(Open3DMouseBindingsService._install_pick_only_left_click_bindings),
             "STEP carry should use press-hold lift and release drop instead of toolbar Lift/Drop buttons",
         ),
         (

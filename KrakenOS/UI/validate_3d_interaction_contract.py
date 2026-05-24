@@ -60,6 +60,7 @@ from KrakenOS.UI.services.nonseq_scene_graph_records import NonSequentialSceneGr
 from KrakenOS.UI.services.open3d_face_pick import pick_face_from_ray
 from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
 from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
+from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
@@ -200,7 +201,7 @@ def _traced_axis_records_bound_long_escaped_tail() -> tuple[bool, str]:
 
 
 def main() -> int:
-    bindings = inspect.getsource(Kraken3DInspector._install_pick_only_left_click_bindings)
+    bindings = inspect.getsource(Open3DMouseBindingsService._install_pick_only_left_click_bindings)
     try:
         step_carry_drag_branch = bindings.split("elif self._step_carry_drag_state is not None:", 1)[1].split(
             "else:",
@@ -212,6 +213,7 @@ def main() -> int:
     camera_pan = inspect.getsource(Kraken3DInspector._pan_camera_fixed_drag)
     pick = inspect.getsource(Open3DInteractionService._on_left_button_press)
     mouse_move = inspect.getsource(Open3DInteractionService._on_mouse_move)
+    mouse_bindings_factory = inspect.getsource(Kraken3DInspector._mouse_bindings_service)
     interaction_factory = inspect.getsource(Kraken3DInspector._interaction_service)
     handler = inspect.getsource(Kraken3DInspector.show_step_rotation_handler)
     handler_rotate = inspect.getsource(Kraken3DInspector._rotate_step_from_handler)
@@ -628,6 +630,7 @@ def main() -> int:
             "Open 3D interaction trace captures clicks, face assignment, and refresh counts",
             "_open3d_debug_seq" in init
             and "Open3DTrace" in debug_trace
+            and "Open3DMouseBindingsService(self)" in mouse_bindings_factory
             and "Open3DInteractionService(self)" in interaction_factory
             and "Open3DFaceAssignmentService(self)" in face_assignment_factory
             and "left_click_pick" in pick
