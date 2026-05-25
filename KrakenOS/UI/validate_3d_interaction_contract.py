@@ -745,10 +745,11 @@ def main() -> int:
             "current_xy=current" in step_carry_drag_branch
             and "_cursor_plane_point" in step_carry_plane_motion
             and "carry_plane_motion_delta" in open3d_step_state_service
-            and "drag_plane_origin" in step_carry_hold_activate
-            and "drag_plane_normal" in step_carry_hold_activate
-            and "drag_anchor_world" in step_carry_hold_activate
-            and "start_center_world" in step_carry_hold_activate
+            and "prepare_carry_hold_state" in step_carry_hold_activate
+            and "drag_plane_origin" in open3d_step_state_service
+            and "drag_plane_normal" in open3d_step_state_service
+            and "drag_anchor_world" in open3d_step_state_service
+            and "start_center_world" in open3d_step_state_service
             and "attach_to_cursor_on_next_motion" in step_carry_follow_state
             and "prepare_carry_follow_state" in step_carry_follow_state
             and "prepare_carry_follow_state" in open3d_step_state_service
@@ -778,6 +779,8 @@ def main() -> int:
             and "_activate_step_carry_hold()" in step_carry_drag_branch
             and "_vtk_widget.after" in step_carry_hold_arm
             and "_activate_step_carry_hold" in step_carry_hold_arm
+            and "prepare_carry_hold_state" in step_carry_hold_activate
+            and "prepare_carry_hold_state" in open3d_step_state_service
             and "_step_carry_hold_after_id = None" in step_carry_hold_cancel,
         ),
         (
@@ -789,7 +792,7 @@ def main() -> int:
         (
             "Open 3D STEP carry avoids pointer warping while gripping center",
             "_step_overlay_center_world(label)" in step_carry_hold_activate
-            and "_show_step_carry_grip_marker(grip_world)" in step_carry_hold_activate
+            and "_show_step_carry_grip_marker(transition.grip_world)" in step_carry_hold_activate
             and "center_world" in step_carry_hold_activate
             and "_sync_pointer_to_step_carry_center" not in step_carry_hold_activate
             and "_sync_pointer_to_step_carry_center" not in step_carry_drag
@@ -801,7 +804,7 @@ def main() -> int:
         ),
         (
             "Open 3D STEP carry shows an in-scene grip cursor",
-            "_show_step_carry_grip_marker(grip_world)" in step_carry_hold_activate
+            "_show_step_carry_grip_marker(transition.grip_world)" in step_carry_hold_activate
             and "center_world" in step_carry_hold_activate
             and "_step_carry_grip_actor" in step_carry_grip_show
             and "actor.AddPosition" in step_carry_grip_translate

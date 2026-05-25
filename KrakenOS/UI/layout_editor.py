@@ -6741,31 +6741,36 @@ class Kraken3DInspector(tk.Toplevel):
         label = str(self._step_carry_hold_candidate_label or "").strip().lower()
         press_xy = self._step_carry_hold_press_xy
         center_world = self._step_overlay_center_world(label)
-        grip_world = center_world if center_world is not None else self._step_carry_hold_pick_world
+        pick_world = self._step_carry_hold_pick_world
         self._step_carry_hold_candidate_label = None
         self._step_carry_hold_press_xy = None
         self._step_carry_hold_pick_world = None
         if not self._left_drag_active or label not in STEP_OVERLAY_LABEL_SET:
             return
         state = self._new_step_carry_motion_state(label)
-        if state is None:
-            self.status_var.set(f"Carry {label.upper()} STEP: move the camera once, then hold the STEP again.")
-            return
-        state["hold_carry"] = True
-        state["last_xy"] = self._left_drag_last_xy or press_xy
-        if grip_world is not None:
-            state["grip_world"] = tuple(float(value) for value in grip_world[:3])
-        if center_world is not None:
-            state["center_world"] = tuple(float(value) for value in center_world[:3])
-            state["start_center_world"] = tuple(float(value) for value in center_world[:3])
-            state["drag_plane_origin"] = tuple(float(value) for value in center_world[:3])
-            plane_normal = self._camera_view_normal()
-            if plane_normal is not None:
-                state["drag_plane_normal"] = tuple(float(value) for value in plane_normal[:3])
-                anchor_xy = self._left_drag_last_xy or press_xy
+        plane_normal = self._camera_view_normal() if center_world is not None else None
+        anchor_world = None
+        if center_world is not None and plane_normal is not None:
+            anchor_xy = self._left_drag_last_xy or press_xy
+            if anchor_xy is not None:
                 anchor_world = self._cursor_plane_point(anchor_xy, center_world[:3], plane_normal[:3])
-                if anchor_world is not None:
-                    state["drag_anchor_world"] = tuple(float(value) for value in anchor_world[:3])
+        transition = self.editor._open3d_step_state_service().prepare_carry_hold_state(
+            label,
+            state,
+            left_drag_active=self._left_drag_active,
+            press_xy=press_xy,
+            last_xy=self._left_drag_last_xy,
+            center_world=center_world,
+            pick_world=pick_world,
+            plane_normal=plane_normal,
+            anchor_world=anchor_world,
+        )
+        if not transition.has_state:
+            if transition.status:
+                self.status_var.set(transition.status)
+            return
+        state = transition.state
+        label = transition.label
         self._step_carry_active_label = label
         self._step_carry_drag_state = state
         self._step_carry_follow_state = None
@@ -6777,18 +6782,11 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_step_highlight(label)
         self.show_step_rotation_handler(label)
         self._set_step_carry_cursor(True)
-        if grip_world is not None:
-            self._show_step_carry_grip_marker(grip_world)
+        if transition.has_grip_world:
+            self._show_step_carry_grip_marker(transition.grip_world)
         self._update_mode_badge()
-        spacing = float(state.get("spacing", 0.0))
-        if bool(state.get("ray_snap_enabled", False)):
-            self.status_var.set(
-                f"{label.upper()} STEP center gripped: drag near a ray for {spacing:.6g} mm ray steps; release to drop."
-            )
-        elif bool(state.get("snap_enabled", True)):
-            self.status_var.set(f"{label.upper()} STEP center gripped: drag in snapped {spacing:.6g} mm steps; release to drop.")
-        else:
-            self.status_var.set(f"{label.upper()} STEP center gripped: drag freely on the 3D plane; release to drop.")
+        if transition.status:
+            self.status_var.set(transition.status)
 
     def _new_row_carry_motion_state(self, row_index: int) -> dict[str, object] | None:
         try:

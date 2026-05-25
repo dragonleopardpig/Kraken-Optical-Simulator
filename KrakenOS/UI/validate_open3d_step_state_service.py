@@ -263,6 +263,58 @@ def main() -> int:
             ),
         ),
         (
+            "STEP carry hold state preparation is service-owned",
+            (
+                lambda state: (
+                    (
+                        lambda transition, unavailable, inactive: (
+                            transition.has_state
+                            and transition.label == "optical"
+                            and transition.state is state
+                            and transition.has_grip_world
+                            and transition.grip_world == (1.0, 2.0, 3.0)
+                            and transition.status
+                            == "OPTICAL STEP center gripped: drag freely on the 3D plane; release to drop."
+                            and state["hold_carry"] is True
+                            and state["last_xy"] == (5, 6)
+                            and state["grip_world"] == (1.0, 2.0, 3.0)
+                            and state["center_world"] == (1.0, 2.0, 3.0)
+                            and state["start_center_world"] == (1.0, 2.0, 3.0)
+                            and state["drag_plane_origin"] == (1.0, 2.0, 3.0)
+                            and state["drag_plane_normal"] == (0.0, 0.0, 1.0)
+                            and state["drag_anchor_world"] == (2.0, 2.0, 3.0)
+                            and not unavailable.has_state
+                            and "move the camera once" in unavailable.status
+                            and not inactive.has_state
+                            and inactive.status == ""
+                        )
+                    )(
+                        service.prepare_carry_hold_state(
+                            "optical",
+                            state,
+                            left_drag_active=True,
+                            press_xy=(3, 4),
+                            last_xy=(5, 6),
+                            center_world=(1.0, 2.0, 3.0),
+                            pick_world=(9.0, 9.0, 9.0),
+                            plane_normal=(0.0, 0.0, 1.0),
+                            anchor_world=(2.0, 2.0, 3.0),
+                        ),
+                        service.prepare_carry_hold_state(
+                            "optical",
+                            None,
+                            left_drag_active=True,
+                        ),
+                        service.prepare_carry_hold_state(
+                            "optical",
+                            state,
+                            left_drag_active=False,
+                        ),
+                    )
+                )
+            )({"label": "optical", "spacing": 0.5, "snap_enabled": False, "ray_snap_enabled": False}),
+        ),
+        (
             "STEP carry follow state preparation is service-owned",
             (
                 lambda state: (

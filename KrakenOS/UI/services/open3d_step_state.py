@@ -111,6 +111,24 @@ class StepCarryFollowTransition:
         return len(self.initial_delta_xyz) == 3 and any(abs(value) > 1e-12 for value in self.initial_delta_xyz)
 
 
+@dataclass(frozen=True, slots=True)
+class StepCarryHoldTransition:
+    """Prepared imported STEP press-hold carry state for the inspector."""
+
+    label: str = ""
+    state: dict[str, object] | None = None
+    grip_world: tuple[float, float, float] = ()
+    status: str = ""
+
+    @property
+    def has_state(self) -> bool:
+        return self.state is not None and bool(self.label)
+
+    @property
+    def has_grip_world(self) -> bool:
+        return len(self.grip_world) == 3
+
+
 class Open3DStepStateService:
     """Resolve Open 3D STEP state transitions outside the widget layer."""
 
@@ -264,6 +282,58 @@ class Open3DStepStateService:
         return StepCarryFollowTransition(
             state=state,
             initial_delta_xyz=tuple(float(value) for value in delta[:3]) if np.any(np.abs(delta[:3]) > 1e-12) else (),
+        )
+
+    def prepare_carry_hold_state(
+        self,
+        label: object,
+        state: dict[str, object] | None,
+        *,
+        left_drag_active: bool,
+        press_xy: object = None,
+        last_xy: object = None,
+        center_world: object = None,
+        pick_world: object = None,
+        plane_normal: object = None,
+        anchor_world: object = None,
+    ) -> StepCarryHoldTransition:
+        """Populate imported STEP state when a press-hold lift becomes active."""
+        label_text = self.resolve_active_carry_label(label)
+        if not bool(left_drag_active) or not label_text:
+            return StepCarryHoldTransition(label=label_text)
+        if state is None:
+            return StepCarryHoldTransition(
+                label=label_text,
+                status=f"Carry {label_text.upper()} STEP: move the camera once, then hold the STEP again.",
+            )
+        state["hold_carry"] = True
+        xy = self._finite_xy(last_xy)
+        if xy is None:
+            xy = self._finite_xy(press_xy)
+        if xy is not None:
+            state["last_xy"] = xy
+
+        center = self._finite_xyz(center_world)
+        pick = self._finite_xyz(pick_world)
+        grip = center if center is not None else pick
+        if grip is not None:
+            state["grip_world"] = tuple(float(value) for value in grip[:3])
+        if center is not None:
+            state["center_world"] = tuple(float(value) for value in center[:3])
+            state["start_center_world"] = tuple(float(value) for value in center[:3])
+            state["drag_plane_origin"] = tuple(float(value) for value in center[:3])
+            normal = self._finite_xyz(plane_normal)
+            if normal is not None:
+                state["drag_plane_normal"] = tuple(float(value) for value in normal[:3])
+                anchor = self._finite_xyz(anchor_world)
+                if anchor is not None:
+                    state["drag_anchor_world"] = tuple(float(value) for value in anchor[:3])
+
+        return StepCarryHoldTransition(
+            label=label_text,
+            state=state,
+            grip_world=tuple(float(value) for value in grip[:3]) if grip is not None else (),
+            status=self._carry_hold_status(label_text, state),
         )
 
     def carry_pixel_motion_delta(
@@ -439,6 +509,31 @@ class Open3DStepStateService:
         if array.size < 3 or not np.all(np.isfinite(array[:3])):
             return None
         return np.asarray(array[:3], dtype=float)
+
+    @staticmethod
+    def _finite_xy(values: object) -> tuple[int, int] | None:
+        try:
+            x, y = values
+        except Exception:
+            return None
+        try:
+            return (int(x), int(y))
+        except Exception:
+            return None
+
+    @staticmethod
+    def _carry_hold_status(label: str, state: dict[str, object]) -> str:
+        component = str(label or "").strip().upper()
+        try:
+            spacing = float(state.get("spacing", 0.0))
+        except Exception:
+            spacing = 0.0
+        spacing_text = f"{spacing:.6g}"
+        if bool(state.get("ray_snap_enabled", False)):
+            return f"{component} STEP center gripped: drag near a ray for {spacing_text} mm ray steps; release to drop."
+        if bool(state.get("snap_enabled", True)):
+            return f"{component} STEP center gripped: drag in snapped {spacing_text} mm steps; release to drop."
+        return f"{component} STEP center gripped: drag freely on the 3D plane; release to drop."
 
     def step_feature_selection(
         self,
