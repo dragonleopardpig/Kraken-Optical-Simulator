@@ -61,6 +61,48 @@ except Exception:
 
 
 @dataclass(frozen=True)
+class NonSequentialIntersectionPolicy:
+    """Scene-scaled tolerances for non-sequential self-intersection rejection."""
+
+    near_hit_tolerance: float
+    same_surface_tolerance: float
+
+    @staticmethod
+    def _surface_scale(surfaces):
+        scales = []
+        for surf in list(surfaces or []):
+            for attr_name in ("Diameter", "InDiameter", "Thickness"):
+                try:
+                    value = abs(float(getattr(surf, attr_name, 0.0) or 0.0))
+                except Exception:
+                    value = 0.0
+                if np.isfinite(value) and value > 0.0:
+                    scales.append(value)
+        return max(scales) if scales else 1.0
+
+    @classmethod
+    def from_surfaces(cls, surfaces):
+        scale = cls._surface_scale(surfaces)
+        return cls(
+            near_hit_tolerance=max(1.0e-6, float(scale) * 1.0e-6),
+            same_surface_tolerance=max(1.0e-6, float(scale) * 1.0e-5),
+        )
+
+    def rejection_tolerance(self, mesh_surface_index, current_surface_index=None):
+        try:
+            mesh_index = int(mesh_surface_index)
+        except Exception:
+            mesh_index = -1
+        try:
+            current_index = int(current_surface_index)
+        except Exception:
+            current_index = -1
+        if current_index >= 0 and mesh_index == current_index:
+            return max(self.near_hit_tolerance, self.same_surface_tolerance)
+        return self.near_hit_tolerance
+
+
+@dataclass(frozen=True)
 class NonSequentialRayState:
     """Media-region state carried by a non-sequential ray branch."""
 
@@ -1102,24 +1144,14 @@ class system():
             self.__ReplaceSceneMesh(mesh_index, mesh)
         return points, hits
 
+    def __NonSequentialIntersectionPolicy(self):
+        return NonSequentialIntersectionPolicy.from_surfaces(getattr(self, "SDT", []))
+
     def __NonSequentialNearHitTolerance(self):
-        return self.__NonSequentialSceneScaledTolerance(1.0e-6)
+        return self.__NonSequentialIntersectionPolicy().near_hit_tolerance
 
     def __NonSequentialSameSurfaceHitTolerance(self):
-        return self.__NonSequentialSceneScaledTolerance(1.0e-5)
-
-    def __NonSequentialSceneScaledTolerance(self, scale_factor):
-        scales = []
-        for surf in list(getattr(self, "SDT", []) or []):
-            for attr_name in ("Diameter", "InDiameter", "Thickness"):
-                try:
-                    value = abs(float(getattr(surf, attr_name, 0.0) or 0.0))
-                except Exception:
-                    value = 0.0
-                if np.isfinite(value) and value > 0.0:
-                    scales.append(value)
-        scale = max(scales) if scales else 1.0
-        return max(1.0e-6, float(scale) * float(scale_factor))
+        return self.__NonSequentialIntersectionPolicy().same_surface_tolerance
 
 
     def __NonSequentialChooserToot(self, A_RayOrig, A_Proto_pTarget, k, current_surface_index=None):
@@ -1150,22 +1182,18 @@ class system():
             else:
                 s = 0
                 h = []
-                near_hit_tolerance = self.__NonSequentialNearHitTolerance()
+                intersection_policy = self.__NonSequentialIntersectionPolicy()
                 try:
                     mesh_surface_index = int(self.GlassOnSide[int(k)])
                 except Exception:
                     mesh_surface_index = -1
-                try:
-                    current_index = int(current_surface_index)
-                except Exception:
-                    current_index = -1
-                same_surface_tolerance = self.__NonSequentialSameSurfaceHitTolerance()
                 for f in A_SurfHit:
                     PD = (np.asarray(A_pTarget[s]) - np.asarray(A_RayOrig))
                     distance = np.linalg.norm(PD)
-                    reject_tolerance = near_hit_tolerance
-                    if mesh_surface_index == current_index:
-                        reject_tolerance = max(reject_tolerance, same_surface_tolerance)
+                    reject_tolerance = intersection_policy.rejection_tolerance(
+                        mesh_surface_index,
+                        current_surface_index,
+                    )
                     if (np.abs(distance) <= reject_tolerance):
                         distance = 99999999999999.9
                     h.append(distance)

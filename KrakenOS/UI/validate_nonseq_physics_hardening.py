@@ -66,8 +66,11 @@ def validate_nonseq_physics_hardening() -> list[NonSeqPhysicsHardeningCheck]:
     )
 
     system = _build_reference_system()
-    kernel_tolerance = float(system._system__NonSequentialNearHitTolerance())
-    same_surface_tolerance = float(system._system__NonSequentialSameSurfaceHitTolerance())
+    policy = system._system__NonSequentialIntersectionPolicy()
+    kernel_tolerance = float(policy.near_hit_tolerance)
+    same_surface_tolerance = float(policy.same_surface_tolerance)
+    method_kernel_tolerance = float(system._system__NonSequentialNearHitTolerance())
+    method_same_surface_tolerance = float(system._system__NonSequentialSameSurfaceHitTolerance())
     inter_normal_tolerance = float(system.INORM._InterNormalCalc__RaySelfHitTolerance())
     checks.append(
         NonSeqPhysicsHardeningCheck(
@@ -81,6 +84,31 @@ def validate_nonseq_physics_hardening() -> list[NonSeqPhysicsHardeningCheck]:
             "same-surface self-hit rejection is tighter than real scene spacing but wider than the generic near-hit epsilon",
             kernel_tolerance < same_surface_tolerance < 0.01,
             f"near_mm={kernel_tolerance:.9g}, same_surface_mm={same_surface_tolerance:.9g}",
+        )
+    )
+    checks.append(
+        NonSeqPhysicsHardeningCheck(
+            "intersection policy preserves the legacy private tolerance accessors",
+            abs(method_kernel_tolerance - kernel_tolerance) <= 1.0e-12
+            and abs(method_same_surface_tolerance - same_surface_tolerance) <= 1.0e-12,
+            (
+                f"policy_near_mm={kernel_tolerance:.9g}, method_near_mm={method_kernel_tolerance:.9g}, "
+                f"policy_same_surface_mm={same_surface_tolerance:.9g}, "
+                f"method_same_surface_mm={method_same_surface_tolerance:.9g}"
+            ),
+        )
+    )
+    checks.append(
+        NonSeqPhysicsHardeningCheck(
+            "intersection policy widens only the current surface's immediate re-hit window",
+            policy.rejection_tolerance(2, 2) == same_surface_tolerance
+            and policy.rejection_tolerance(3, 2) == kernel_tolerance
+            and policy.rejection_tolerance(2, None) == kernel_tolerance,
+            (
+                f"same_surface_reject_mm={policy.rejection_tolerance(2, 2):.9g}, "
+                f"other_surface_reject_mm={policy.rejection_tolerance(3, 2):.9g}, "
+                f"no_current_surface_reject_mm={policy.rejection_tolerance(2, None):.9g}"
+            ),
         )
     )
     checks.append(
