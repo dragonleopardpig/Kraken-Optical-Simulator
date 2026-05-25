@@ -6398,7 +6398,7 @@ class Kraken3DInspector(tk.Toplevel):
 
     @staticmethod
     def _step_carry_hold_delay_ms() -> int:
-        return 280
+        return Open3DStepStateService.carry_hold_delay_ms()
 
     def _set_step_carry_cursor(self, active: bool) -> None:
         try:
@@ -6614,13 +6614,16 @@ class Kraken3DInspector(tk.Toplevel):
     def _arm_step_carry_hold(self, label: str, press_xy: tuple[int, int]) -> None:
         if self._vtk_widget is None:
             return
-        label = str(label).strip().lower()
-        if label not in STEP_OVERLAY_LABEL_SET:
+        transition = self.editor._open3d_step_state_service().prepare_carry_hold_arm(label, press_xy)
+        if not transition.has_label or not transition.has_press_xy:
+            if transition.status:
+                self.status_var.set(transition.status)
             return
         self._cancel_step_carry_hold_timer()
-        self._step_carry_hold_candidate_label = label
-        self._step_carry_hold_press_xy = (int(press_xy[0]), int(press_xy[1]))
-        self.status_var.set(f"Hold {label.upper()} STEP briefly to lift; drag freely; release to drop.")
+        self._step_carry_hold_candidate_label = transition.label
+        self._step_carry_hold_press_xy = transition.press_xy
+        if transition.status:
+            self.status_var.set(transition.status)
         try:
             self._step_carry_hold_after_id = self._vtk_widget.after(
                 self._step_carry_hold_delay_ms(),
@@ -6738,15 +6741,20 @@ class Kraken3DInspector(tk.Toplevel):
 
     def _activate_step_carry_hold(self) -> None:
         self._step_carry_hold_after_id = None
-        label = str(self._step_carry_hold_candidate_label or "").strip().lower()
-        press_xy = self._step_carry_hold_press_xy
-        center_world = self._step_overlay_center_world(label)
-        pick_world = self._step_carry_hold_pick_world
+        request = self.editor._open3d_step_state_service().consume_carry_hold_request(
+            self._step_carry_hold_candidate_label,
+            self._step_carry_hold_press_xy,
+            self._step_carry_hold_pick_world,
+        )
         self._step_carry_hold_candidate_label = None
         self._step_carry_hold_press_xy = None
         self._step_carry_hold_pick_world = None
-        if not self._left_drag_active or label not in STEP_OVERLAY_LABEL_SET:
+        if not self._left_drag_active or not request.has_label:
             return
+        label = request.label
+        press_xy = request.press_xy if request.has_press_xy else None
+        pick_world = request.pick_world if request.has_pick_world else None
+        center_world = self._step_overlay_center_world(label)
         state = self._new_step_carry_motion_state(label)
         plane_normal = self._camera_view_normal() if center_world is not None else None
         anchor_world = None

@@ -157,6 +157,31 @@ def main() -> int:
             ),
         ),
         (
+            "STEP carry hold arm and consume requests are service-owned",
+            (
+                lambda armed, consumed, unloaded: (
+                    service.carry_hold_delay_ms() == 280
+                    and armed.has_label
+                    and armed.has_press_xy
+                    and armed.label == "optical"
+                    and armed.press_xy == (10, 20)
+                    and "Hold OPTICAL STEP" in armed.status
+                    and consumed.has_label
+                    and consumed.has_press_xy
+                    and consumed.has_pick_world
+                    and consumed.label == "optical"
+                    and consumed.press_xy == (10, 20)
+                    and consumed.pick_world == (1.0, 2.0, 3.0)
+                    and not unloaded.has_label
+                    and "select or import" in unloaded.status
+                )
+            )(
+                service.prepare_carry_hold_arm("optical", (10, 20)),
+                service.consume_carry_hold_request("optical", (10, 20), (1.0, 2.0, 3.0)),
+                service.prepare_carry_hold_arm("lens", (10, 20)),
+            ),
+        ),
+        (
             "active STEP carry label and drop status are service-owned",
             service.resolve_active_carry_label("optical") == "optical"
             and service.resolve_active_carry_label("lens") == ""

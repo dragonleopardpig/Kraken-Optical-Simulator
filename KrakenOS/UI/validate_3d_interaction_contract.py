@@ -779,7 +779,12 @@ def main() -> int:
             and "_activate_step_carry_hold()" in step_carry_drag_branch
             and "_vtk_widget.after" in step_carry_hold_arm
             and "_activate_step_carry_hold" in step_carry_hold_arm
+            and "prepare_carry_hold_arm" in step_carry_hold_arm
+            and "consume_carry_hold_request" in step_carry_hold_activate
             and "prepare_carry_hold_state" in step_carry_hold_activate
+            and "carry_hold_delay_ms" in open3d_step_state_service
+            and "prepare_carry_hold_arm" in open3d_step_state_service
+            and "consume_carry_hold_request" in open3d_step_state_service
             and "prepare_carry_hold_state" in open3d_step_state_service
             and "_step_carry_hold_after_id = None" in step_carry_hold_cancel,
         ),

@@ -64,11 +64,16 @@ class StepCarryTransition:
     """Imported STEP carry transition resolved outside the widget layer."""
 
     label: str = ""
+    press_xy: tuple[int, int] = ()
     status: str = ""
 
     @property
     def has_label(self) -> bool:
         return bool(self.label)
+
+    @property
+    def has_press_xy(self) -> bool:
+        return len(self.press_xy) == 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +134,27 @@ class StepCarryHoldTransition:
         return len(self.grip_world) == 3
 
 
+@dataclass(frozen=True, slots=True)
+class StepCarryHoldRequest:
+    """Normalized pending imported STEP press-hold request."""
+
+    label: str = ""
+    press_xy: tuple[int, int] = ()
+    pick_world: tuple[float, float, float] = ()
+
+    @property
+    def has_label(self) -> bool:
+        return bool(self.label)
+
+    @property
+    def has_press_xy(self) -> bool:
+        return len(self.press_xy) == 2
+
+    @property
+    def has_pick_world(self) -> bool:
+        return len(self.pick_world) == 3
+
+
 class Open3DStepStateService:
     """Resolve Open 3D STEP state transitions outside the widget layer."""
 
@@ -167,6 +193,48 @@ class Open3DStepStateService:
         return StepCarryTransition(
             label=label,
             status=f"{label.upper()} STEP armed: hold on the STEP to lift; drag freely; release to drop.",
+        )
+
+    @staticmethod
+    def carry_hold_delay_ms() -> int:
+        """Return the press-hold lift delay for imported STEP overlays."""
+        return 280
+
+    def prepare_carry_hold_arm(self, label: object, press_xy: object) -> StepCarryTransition:
+        """Normalize an imported STEP press-hold arm request before Tk starts the timer."""
+        label_text = self.selected_import_label((label,))
+        if not label_text:
+            return StepCarryTransition(
+                status="Carry STEP: select or import a lens, optical, camera, or LED STEP first.",
+            )
+        xy = self._finite_xy(press_xy)
+        if xy is None:
+            return StepCarryTransition(
+                label=label_text,
+                status=f"Carry {label_text.upper()} STEP: press position unavailable.",
+            )
+        return StepCarryTransition(
+            label=label_text,
+            press_xy=xy,
+            status=f"Hold {label_text.upper()} STEP briefly to lift; drag freely; release to drop.",
+        )
+
+    def consume_carry_hold_request(
+        self,
+        label: object,
+        press_xy: object,
+        pick_world: object = None,
+    ) -> StepCarryHoldRequest:
+        """Normalize pending imported STEP hold fields before activation consumes them."""
+        label_text = self.selected_import_label((label,))
+        if not label_text:
+            return StepCarryHoldRequest()
+        xy = self._finite_xy(press_xy)
+        pick = self._finite_xyz(pick_world)
+        return StepCarryHoldRequest(
+            label=label_text,
+            press_xy=xy or (),
+            pick_world=tuple(float(value) for value in pick[:3]) if pick is not None else (),
         )
 
     @staticmethod
