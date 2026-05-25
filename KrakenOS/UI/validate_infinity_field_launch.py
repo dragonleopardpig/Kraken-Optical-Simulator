@@ -9,6 +9,7 @@ import KrakenOS as Kos
 import numpy as np
 
 from KrakenOS.UI.layout_editor import SurfaceRow, _build_system_from_specs
+from KrakenOS.UI.layout_plot_controller import project_scene_bundle
 from KrakenOS.UI.render_layout_snapshot import _snapshot_editor
 
 
@@ -79,6 +80,19 @@ def validate_infinity_field_launch() -> list[InfinityFieldLaunchCheck]:
     )
     traced_world_count = len(getattr(world_rays, "CC", []) or [])
     expected_world_count = int(len(world_bundles) * int(settings["ray_count"]))
+    world_bundle = editor._build_scene_bundle(system, world_rays, pupil_radius)
+    displayable_world_count = sum(
+        1
+        for path in list(getattr(world_bundle, "ray_paths", []) or [])
+        if np.asarray(getattr(path, "points_world", []), dtype=float).ndim == 2
+        and np.asarray(getattr(path, "points_world", []), dtype=float).shape[0] >= 2
+    )
+    world_yz_projection = project_scene_bundle(
+        world_bundle,
+        "YZ",
+        filter_projection_slice=editor._should_filter_projection_slice(world_bundle),
+    )
+    projected_world_count = len(list(getattr(world_yz_projection, "rays", []) or []))
     bundles, rays_per_field = editor._build_world_section_bundles(pupil_radius, system=system)
     reference = editor._infinity_field_launch_reference_point(system=system)
     field_pairs = editor._field_cross_pairs_for_world_sections(editor._current_field_angle_deg())
@@ -121,6 +135,16 @@ def validate_infinity_field_launch() -> list[InfinityFieldLaunchCheck]:
                 f"ray_count={settings['ray_count']}, rays_per_field={world_rays_per_field}, "
                 f"bundle_lengths={world_bundle_lengths[:5]}, bundles={len(world_bundles)}, "
                 f"traced={traced_world_count}, expected={expected_world_count}"
+            ),
+        ),
+        InfinityFieldLaunchCheck(
+            "canonical YZ projection displays all traced world-envelope rays",
+            not editor._should_filter_projection_slice(world_bundle)
+            and projected_world_count == displayable_world_count,
+            (
+                f"mode={editor._scene_bundle_launch_sampling_mode(world_bundle)}, "
+                f"projected={projected_world_count}, displayable={displayable_world_count}, "
+                f"traced={traced_world_count}"
             ),
         ),
         InfinityFieldLaunchCheck(

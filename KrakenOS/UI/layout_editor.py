@@ -34093,7 +34093,7 @@ class KrakenLayoutEditor(tk.Tk):
             projected = project_scene_bundle(
                 bundle,
                 str(plane),
-                filter_projection_slice=True,
+                filter_projection_slice=self._should_filter_projection_slice(bundle),
                 filter_arm_view=self._filter_projected_scene_for_arm_view,
                 filter_ray_display=self._filter_projected_scene_for_ray_display,
             )
@@ -35997,6 +35997,24 @@ class KrakenLayoutEditor(tk.Tk):
 
     def _current_display_slice_axis(self) -> str:
         return "x" if self._current_display_orientation() == "XZ" else "y"
+
+    @staticmethod
+    def _scene_bundle_launch_sampling_mode(bundle: SceneBundle | None) -> str:
+        if bundle is None:
+            return ""
+        for path in list(getattr(bundle, "ray_paths", []) or []):
+            for event in list(getattr(path, "events", []) or []):
+                mode = str(getattr(event, "launch_sampling_mode", "") or "").strip().lower()
+                if mode:
+                    return mode
+        for event in list(getattr(bundle, "ray_events", []) or []):
+            mode = str(getattr(event, "launch_sampling_mode", "") or "").strip().lower()
+            if mode:
+                return mode
+        return ""
+
+    def _should_filter_projection_slice(self, bundle: SceneBundle | None) -> bool:
+        return self._scene_bundle_launch_sampling_mode(bundle) == "world_sections"
 
     def _project_xy(self, z, y):
         z_arr = np.asarray(z, dtype=float)
