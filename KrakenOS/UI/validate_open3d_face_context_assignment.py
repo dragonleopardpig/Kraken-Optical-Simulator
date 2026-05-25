@@ -22,10 +22,9 @@ from KrakenOS.UI.layout_editor import (
     optical_solid_face_world_records,
 )
 from KrakenOS.UI.optical_solid_metadata import normalize_optical_solid_face_metadata
+from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-PRISM_42779_STEP = PROJECT_ROOT / "attachment" / "prisms" / "42779" / "step_42779.step"
 VALIDATION_CACHE_DIR = Path("/tmp/kraken-open3d-face-context-cache")
 
 

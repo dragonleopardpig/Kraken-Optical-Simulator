@@ -35,9 +35,7 @@ from KrakenOS.UI.scene_builder import (
     _build_row_surface_groups,
     _reference_plane_display_points,
 )
-
-
-PRISM_42779_STEP = le.PROJECT_ROOT / "attachment" / "prisms" / "42779" / "step_42779.step"
+from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
 
 
 @dataclass

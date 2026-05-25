@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from collections import Counter
-from pathlib import Path
-
 import numpy as np
 
 from KrakenOS.UI.layout_editor import (
@@ -13,10 +11,7 @@ from KrakenOS.UI.layout_editor import (
     OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
     optical_solid_face_world_records,
 )
-
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-PRISM_42779_STEP = PROJECT_ROOT / "attachment" / "prisms" / "42779" / "step_42779.step"
+from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
 
 
 def _event_face_id(event: object) -> str:

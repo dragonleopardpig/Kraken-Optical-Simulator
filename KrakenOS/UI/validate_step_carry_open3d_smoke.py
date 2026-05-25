@@ -16,10 +16,7 @@ from pathlib import Path
 import numpy as np
 
 from KrakenOS.UI.layout_editor import KrakenLayoutEditor, Kraken3DInspector
-
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-PRISM_42779_STEP = PROJECT_ROOT / "attachment" / "prisms" / "42779" / "step_42779.step"
+from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
 
 
 def _capture_widget(widget, output_path: Path) -> None:

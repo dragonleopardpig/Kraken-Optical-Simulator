@@ -34,11 +34,11 @@ The tutorial uses a small Edmund 42779 prism package under:
 
 .. code-block:: text
 
-   attachment/prisms/42779/step_42779.step
-   attachment/prisms/42779/iges_42779.igs
-   attachment/prisms/42779/prnt_42779.pdf
-   attachment/prisms/42779/CURV_42779.pdf
-   attachment/prisms/42779/edrw_42779.eprt
+   attachment/prisms/Penta/step_42779.step
+   attachment/prisms/Penta/iges_42779.igs
+   attachment/prisms/Penta/prnt_42779.pdf
+   attachment/prisms/Penta/CURV_42779.pdf
+   attachment/prisms/Penta/edrw_42779.eprt
 
 The STEP file is the preferred import source. The IGES file is kept as a
 fallback reference. The PDF files are not used by the ray trace; they are kept
@@ -50,7 +50,7 @@ Load The Vendor CAD Prism
 
 1. Start the UI with ``python -m KrakenOS.UI.layout_editor``.
 2. Choose ``File -> Import Optical CAD/STL Solid...``.
-3. Select ``attachment/prisms/42779/step_42779.step``.
+3. Select ``attachment/prisms/Penta/step_42779.step``.
 4. The CAD/STL optical-face assignment dialog opens automatically after the
    row is inserted.
 5. Keep the row material as the intended optical glass, for example ``BK7`` if

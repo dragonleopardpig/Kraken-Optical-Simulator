@@ -24,9 +24,10 @@ from KrakenOS.UI.optical_solid_metadata import (
     OPTICAL_SOLID_FACE_PORT_INTERACTION,
     OPTICAL_SOLID_FACE_PORT_OUTPUT,
 )
+from KrakenOS.UI.services.prism_fixtures import PRISM_32336_STEP
 
 
-RIGHT_ANGLE_PRISM_STEP = le.PROJECT_ROOT / "attachment" / "prisms" / "32336" / "step_32336.step"
+RIGHT_ANGLE_PRISM_STEP = PRISM_32336_STEP
 
 
 @dataclass

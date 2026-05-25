@@ -540,6 +540,7 @@ def main() -> int:
     row_carry_apply = inspect.getsource(Kraken3DInspector._apply_row_carry_drag_motion)
     row_carry_finish = inspect.getsource(Kraken3DInspector._finish_row_carry_drag)
     snapshot = inspect.getsource(Kraken3DInspector.save_snapshot)
+    open_layout = inspect.getsource(KrakenLayoutEditor.open_layout)
     refresh_from_editor = inspect.getsource(Kraken3DInspector.refresh_from_editor)
     endpoint_actor = inspect.getsource(Kraken3DInspector._add_ray_endpoint_actor)
     face_overlays = inspect.getsource(Kraken3DInspector._add_optical_solid_face_role_overlays)
@@ -1636,6 +1637,10 @@ def main() -> int:
         ("Open 3D Snapshot defaults to attachment directory", "initialdir=str(ATTACHMENT_DIR)" in snapshot),
         ("Open 3D Snapshot has a short default filename", 'initialfile="3D.png"' in snapshot),
         ("Open 3D Snapshot uses VTK PNG capture", "vtkWindowToImageFilter" in snapshot and "vtkPNGWriter" in snapshot),
+        (
+            "File Open defaults to attachment directory",
+            "initial_dir = ATTACHMENT_DIR" in open_layout and "initialdir=str(initial_dir)" in open_layout,
+        ),
         ("Open 3D refresh reuses current SceneBundle when valid", "_current_preview_scene_trace" in open3d_refresh_service),
         (
             "Open 3D initial refresh retraces promoted STEP optical solids",

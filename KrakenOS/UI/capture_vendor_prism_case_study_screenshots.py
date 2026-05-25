@@ -21,6 +21,7 @@ import numpy as np
 from PIL import Image, ImageGrab
 
 import KrakenOS.UI.layout_editor as le
+from KrakenOS.UI.services.prism_fixtures import PRISM_42779_IGES, PRISM_42779_STEP
 from KrakenOS.UI.layout_editor import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
     KrakenLayoutEditor,
@@ -36,8 +37,6 @@ from KrakenOS.UI.layout_editor import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "docs" / "source" / "_static" / "tutorials" / "vendor_prism_cad_placement"
-PRISM_42779_STEP = PROJECT_ROOT / "attachment" / "prisms" / "42779" / "step_42779.step"
-PRISM_42779_IGES = PROJECT_ROOT / "attachment" / "prisms" / "42779" / "iges_42779.igs"
 
 
 def _mesh_vendor_prism(cache_dir: Path) -> tuple[Path, Path, str, le.StlMeshDiagnostics]:

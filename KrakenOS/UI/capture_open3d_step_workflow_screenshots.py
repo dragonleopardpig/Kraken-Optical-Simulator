@@ -21,6 +21,7 @@ from KrakenOS.UI.capture_vendor_prism_case_study_screenshots import (
     PROJECT_ROOT,
     _metadata_for_mesh,
 )
+from KrakenOS.UI.services.prism_fixtures import PRISM_32336_STEP
 from KrakenOS.UI.layout_editor import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
     Kraken3DInspector,
@@ -31,7 +32,6 @@ from KrakenOS.UI.layout_editor import (
 from KrakenOS.UI.scene_geometry import ray_path_terminal_status_from_events
 
 
-PRISM_32336_STEP = PROJECT_ROOT / "attachment" / "prisms" / "32336" / "step_32336.step"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "attachment" / "open3d_step_workflow_headless"
 
 

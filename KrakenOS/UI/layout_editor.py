@@ -46440,9 +46440,15 @@ class KrakenLayoutEditor(tk.Tk):
         self._main_stock_lens_importer_dialog().open_stock_lens_importer(path_placement=path_placement)
 
     def open_layout(self) -> None:
+        if ATTACHMENT_DIR.exists():
+            initial_dir = ATTACHMENT_DIR
+        elif LAYOUTS_DIR.exists():
+            initial_dir = LAYOUTS_DIR
+        else:
+            initial_dir = PROJECT_ROOT
         path = filedialog.askopenfilename(
             title="Open Kraken layout",
-            initialdir=str(LAYOUTS_DIR),
+            initialdir=str(initial_dir),
             filetypes=[("Python layout", "*.py")],
         )
         if not path:

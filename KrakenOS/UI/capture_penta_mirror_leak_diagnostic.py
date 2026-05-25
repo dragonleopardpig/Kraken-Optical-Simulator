@@ -101,6 +101,13 @@ def _assert_f004_reflects(report: dict[str, Any], *, expected_terminal: str | No
             )
 
 
+def _report_image_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(path)
+
+
 def capture(output_dir: Path = DEFAULT_OUTPUT_DIR) -> list[Path]:
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -124,7 +131,7 @@ def capture(output_dir: Path = DEFAULT_OUTPUT_DIR) -> list[Path]:
         _refresh(inspector, reset_camera=True)
         path = _save_vtk_snapshot(inspector, output_dir / "f004_only_mirror.png")
         report = _state_report(app, inspector, "F004 mirror only; F003 still default Uncoated")
-        report["image"] = str(path.relative_to(PROJECT_ROOT))
+        report["image"] = _report_image_path(path)
         reports.append(report)
         outputs.append(path)
         _assert_f004_reflects(report, expected_terminal="F003 refraction")
@@ -133,7 +140,7 @@ def capture(output_dir: Path = DEFAULT_OUTPUT_DIR) -> list[Path]:
         _refresh(inspector, reset_camera=True)
         path = _save_vtk_snapshot(inspector, output_dir / "f003_f004_mirrors.png")
         report = _state_report(app, inspector, "F003 and F004 mirrors")
-        report["image"] = str(path.relative_to(PROJECT_ROOT))
+        report["image"] = _report_image_path(path)
         reports.append(report)
         outputs.append(path)
         _assert_f004_reflects(report)

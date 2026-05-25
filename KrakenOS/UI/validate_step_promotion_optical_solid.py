@@ -9,10 +9,9 @@ import numpy as np
 from KrakenOS.UI import layout_editor as le
 from KrakenOS.UI.layout_editor import KrakenLayoutEditor, transformed_stl_bounds
 from KrakenOS.UI.scene_placement import SCENE_PLACEMENT_ADVANCED_ATTR, normalize_scene_placement_settings
+from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-PRISM_42779_STEP = PROJECT_ROOT / "attachment" / "prisms" / "42779" / "step_42779.step"
 VALIDATION_CACHE_DIR = Path("/tmp/kraken-step-promotion-cache")
 
 

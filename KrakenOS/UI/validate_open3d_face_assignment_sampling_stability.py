@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import inspect
-from pathlib import Path
 from types import MethodType
 
 import numpy as np
@@ -17,10 +16,7 @@ from KrakenOS.UI.layout_editor import (
 from KrakenOS.UI.panels.main_optical_solid_face_roles_dialog import MainOpticalSolidFaceRolesDialog
 from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
-
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-PRISM_42779_STEP = PROJECT_ROOT / "attachment" / "prisms" / "42779" / "step_42779.step"
+from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
 
 
 class _StatusVar:
