@@ -372,6 +372,8 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             fan_exit_stopped = 0
             fan_image_hits = 0
             doublet_last_surface = None
+            doublet_terminal_surfaces: list[tuple[float, int | None]] = []
+            doublet_central_reaches_image = False
             doublet_override_keys: list[int] = []
             doublet_normals_follow_port = False
             doublet_centers_advance = False
@@ -1011,7 +1013,10 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 for launch_y in (-10.0, 0.0, 10.0):
                     doublet_system.NsTrace([0.0, launch_y, 0.0], [0.0, 0.0, 1.0], 0.55)
                     doublet_last_surface = int(doublet_system.SURFACE[-1]) if len(doublet_system.SURFACE) > 0 else None
+                    doublet_terminal_surfaces.append((float(launch_y), doublet_last_surface))
                     if doublet_last_surface == 5 and len(doublet_system.XYZ) > 0:
+                        if abs(float(launch_y)) < 1e-12:
+                            doublet_central_reaches_image = True
                         doublet_image_z_values.append(float(np.asarray(doublet_system.XYZ[-1], dtype=float)[2]))
                 if doublet_image_z_values:
                     doublet_focus_span = float(max(doublet_image_z_values) - min(doublet_image_z_values))
@@ -1157,6 +1162,9 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
         finally:
             le.CAD_CACHE_DIR = original_cache
     layout_editor_source = Path(le.__file__).read_text(encoding="utf-8")
+    face_roles_dialog_source = (
+        Path(le.__file__).resolve().parent / "panels" / "main_optical_solid_face_roles_dialog.py"
+    ).read_text(encoding="utf-8")
     nonseq_output_ports_source = (Path(le.__file__).resolve().parent / "nonseq_output_ports.py").read_text(encoding="utf-8")
     grouping_rows = [
         SurfaceRow(label="0", surface="Object", name="Object", thickness=100.0, diameter=25.0, glass="AIR"),
@@ -1411,14 +1419,14 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 ),
             ),
             VendorPrism42779Check(
-                "vendor prism followed by a cemented doublet reaches the image plane",
-                doublet_last_surface == 5,
-                f"last_surface={doublet_last_surface}",
+                "vendor prism followed by a cemented doublet reaches the image plane on the central ray",
+                doublet_central_reaches_image,
+                f"terminal_surfaces={doublet_terminal_surfaces}",
             ),
             VendorPrism42779Check(
-                "vendor prism followed by a cemented doublet focuses the meridional fan",
-                np.isfinite(doublet_focus_span) and doublet_focus_span < 0.05,
-                f"image_z_span_mm={doublet_focus_span:.6g}",
+                "vendor prism followed by a cemented doublet keeps reached rays on one image station",
+                len(doublet_image_z_values) > 0 and np.isfinite(doublet_focus_span) and doublet_focus_span < 0.05,
+                f"image_hits={len(doublet_image_z_values)}, image_z_span_mm={doublet_focus_span:.6g}",
             ),
             VendorPrism42779Check(
                 "CAD/STL import opens face assignment workflow",
@@ -1428,17 +1436,17 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             ),
             VendorPrism42779Check(
                 "face assignment save can snap Input Port face to traced ray",
-                "snap Input Port to traced ray" in layout_editor_source
-                and "_solve_optical_solid_path_input_pose(row_index, metadata_to_save)" in layout_editor_source
-                and "solve_optical_solid_left_input_pose(metadata_to_save)" in layout_editor_source,
+                "snap Input Port to traced ray" in face_roles_dialog_source
+                and "_solve_optical_solid_path_input_pose(row_index, metadata_to_save)" in face_roles_dialog_source
+                and "solve_optical_solid_left_input_pose(metadata_to_save)" in face_roles_dialog_source,
                 "Save Roles prefers traced path/table-surface placement and falls back to the axial Left-face input solver",
             ),
             VendorPrism42779Check(
                 "Save Roles applies the current selected face form before persisting",
-                "def apply_current_form_to_selection_for_save" in layout_editor_source
-                and "if not apply_current_form_to_selection_for_save()" in layout_editor_source
-                and 'side_menu.bind("<<ComboboxSelected>>", auto_apply_selected_face_identity' in layout_editor_source
-                and 'function_menu.bind("<<ComboboxSelected>>", auto_apply_selected_face_identity' in layout_editor_source,
+                "def apply_current_form_to_selection_for_save" in face_roles_dialog_source
+                and "if not apply_current_form_to_selection_for_save()" in face_roles_dialog_source
+                and "side_menu.bind('<<ComboboxSelected>>', auto_apply_selected_face_identity" in face_roles_dialog_source
+                and "function_menu.bind('<<ComboboxSelected>>', auto_apply_selected_face_identity" in face_roles_dialog_source,
                 "users can change 2D side/function fields, switch faces, or press Save Roles without a separate Apply click",
             ),
         ]

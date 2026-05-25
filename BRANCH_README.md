@@ -63,6 +63,7 @@ Current pipeline checkpoint:
 
 | Item | Status | Progress | Notes |
 | --- | --- | --- | --- |
+| Vendor-prism workflow validator hygiene | Achieved | `██████████ 100%` | `validate_vendor_prism_42779` now follows the post-refactor source layout: Save Roles behavior is checked in `panels/main_optical_solid_face_roles_dialog.py` instead of stale `layout_editor.py` strings, and the penta-prism-plus-doublet check now states the current guarantee precisely: the port-followed central ray reaches the image plane and reached rays share one image station. The separate off-axis fan loop on the first follower lens surface remains the next physics target rather than being hidden under a passing "meridional fan" label. |
 | Attachment-first file open and readable prism fixtures | Achieved | `██████████ 100%` | `File -> Open` now starts in the project `attachment/` directory, matching the branch convention that screenshots, generated layouts, and working CAD examples live there. Prism CAD fixtures are resolved through a shared helper that prefers human-readable directories such as `attachment/prisms/Penta` and `attachment/prisms/Right_Angle`, while retaining fallback support for the older numeric folders used by historical scripts. The vendor-prism Sphinx tutorial now documents the readable `Penta` path. |
 | Open 3D initial STEP trace parity | Achieved | `██████████ 100%` | Opening or syncing Open 3D now follows the same STEP-specific trace policy as `Trace now`. If an unpromoted optical STEP overlay or a saved/promoted STEP optical-solid row exists, the refresh service rebuilds the 3D scene bundle through the Open 3D trace path instead of reusing a cached 2D preview trace that can carry detector-miss image-plane continuations, preventing loaded `.py` layouts from showing one stale bent ray until `Trace now` is clicked. The fast validator now includes a promoted-STEP first-open/sync regression contract so ordinary cached SceneBundle reuse remains allowed but row-backed STEP solids cannot receive stale 2D detector-miss bundles. |
 | Open 3D STEP reselect rotation handles | Achieved | `██████████ 100%` | Blank-click deselection still clears selected STEP state and removes rotation-handle actors, but a later STEP body/face click now rebuilds the in-scene rotation handles immediately. Plain STEP face selection records the face for later normal/surface-center actions without automatically arming `Snap STEP Normal->Optical Axis`, so rotation-handle hover and click remain available until the user explicitly starts a snap command. |
@@ -91,7 +92,15 @@ Current pipeline checkpoint:
 | Literal click-to-cascade placement | Achieved | `██████████ 100%` | The Open 3D imported-STEP face selection now preserves the picked face id, and the snap-to-axis command routes known 42779 penta entrance picks through the same deterministic two-face solver used by the five-penta reference guard. F005 is constrained to the incoming optical axis and F006 constrains roll/output direction before promotion, so the import/click/snap/promote path is no longer an entrance-normal-only placement. `validate_penta_mirror_3d_cascade.py` now requests a concrete +X penta exit direction and fails unless every ray follows the assigned vendor mirror faces and exits along that direction. |
 | Open 3D editable thickness dimensions | Achieved | `██████████ 100%` | The shared Physical Distance toggle now also draws Open 3D double-ended dimension arrows between adjacent editable-table rows. Each arrow uses the current 3D row/reference geometry, carries a numerical `Thickness` label, is pickable in the embedded VTK scene, and opens a row-scoped inline Tk/ttk thickness editor near the 3D canvas instead of a modal generic prompt. Enter/focus-out commits only that row's `Thickness`, Esc cancels, the editable table is synchronized, and Open 3D retraces without rewriting other spacing rows. The same dimension arrows/labels can now be dragged along their displayed direction; release commits the adjusted value to only the selected row and retraces Open 3D. |
 
-Latest movement on 2026-05-25: `File -> Open` now defaults to the project
+Latest movement on 2026-05-25: the vendor-prism workflow validator is green
+again after the face-role editor extraction. Save Roles contracts now inspect
+the extracted dialog module instead of stale `layout_editor.py` text, and the
+penta-prism-plus-doublet check reports the current central-ray image-plane
+guarantee explicitly. The observed off-axis fan loop on the first follower lens
+surface is kept as the next physics item, not mislabeled as solved by this
+validator.
+
+Earlier movement on 2026-05-25: `File -> Open` now defaults to the project
 `attachment/` directory, and prism fixture lookup now prefers the renamed
 human-readable attachment paths (`Penta`, `Right_Angle`) while retaining
 fallbacks for the historical numeric directories. The vendor-prism Sphinx page
