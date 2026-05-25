@@ -1279,7 +1279,7 @@ Together these remove more than 2,400 source lines of non-Tk CAD/STL,
 ray-envelope, STEP-export, surface-metrology parsing, and optical-interaction
 metadata logic from the editor coordinator while keeping backward-compatible
 symbols available from `layout_editor.py` for existing validators and panels.
-The main editor coordinator is now 44,836 lines before the next extraction
+The main editor coordinator is now 44,838 lines before the next extraction
 slice.
 
 Earlier movement on 2026-05-25: the Open 3D service boundary reached 100% for
