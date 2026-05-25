@@ -63,7 +63,7 @@ Current pipeline checkpoint:
 
 | Item | Status | Progress | Notes |
 | --- | --- | --- | --- |
-| Open 3D initial STEP trace parity | Achieved | `██████████ 100%` | Opening or syncing Open 3D now follows the same transient optical STEP trace policy as `Trace now`. If an unpromoted optical STEP overlay exists, the refresh service rebuilds the 3D scene bundle with live STEP overlay rows instead of reusing a cached 2D preview trace that omitted the overlay, preventing loaded `.py` layouts from showing one stale bent ray until `Trace now` is clicked. |
+| Open 3D initial STEP trace parity | Achieved | `██████████ 100%` | Opening or syncing Open 3D now follows the same STEP-specific trace policy as `Trace now`. If an unpromoted optical STEP overlay or a saved/promoted STEP optical-solid row exists, the refresh service rebuilds the 3D scene bundle through the Open 3D trace path instead of reusing a cached 2D preview trace that can carry detector-miss image-plane continuations, preventing loaded `.py` layouts from showing one stale bent ray until `Trace now` is clicked. |
 | Open 3D STEP reselect rotation handles | Achieved | `██████████ 100%` | Blank-click deselection still clears selected STEP state and removes rotation-handle actors, but a later STEP body/face click now rebuilds the in-scene rotation handles immediately. Plain STEP face selection records the face for later normal/surface-center actions without automatically arming `Snap STEP Normal->Optical Axis`, so rotation-handle hover and click remain available until the user explicitly starts a snap command. |
 | Open 3D splitter branch bundle display | Achieved | `██████████ 100%` | The Open 3D `world_envelope` sampler now detects splitter/branched raykeeper paths before applying through-going envelope reduction. When a beam splitter expands one launch ray into reflected/transmitted child paths, the sampler keeps the full boundary launch bundle so the displayed cube/prism splitter shows the whole beam split instead of only the center ray pair. |
 | VTK 9.5 overlay API cleanup | Achieved | `██████████ 100%` | Open 3D text overlays now use `AddViewProp` / `RemoveViewProp` through a renderer helper, with deprecated `AddActor2D` / `RemoveActor2D` retained only as older-VTK fallbacks. This removes VTK 9.5 deprecation warnings from the mode badge, placement-grid status, hover status, and ray-event label overlays. |
@@ -89,7 +89,14 @@ Current pipeline checkpoint:
 | Literal click-to-cascade placement | Achieved | `██████████ 100%` | The Open 3D imported-STEP face selection now preserves the picked face id, and the snap-to-axis command routes known 42779 penta entrance picks through the same deterministic two-face solver used by the five-penta reference guard. F005 is constrained to the incoming optical axis and F006 constrains roll/output direction before promotion, so the import/click/snap/promote path is no longer an entrance-normal-only placement. `validate_penta_mirror_3d_cascade.py` now requests a concrete +X penta exit direction and fails unless every ray follows the assigned vendor mirror faces and exits along that direction. |
 | Open 3D editable thickness dimensions | Achieved | `██████████ 100%` | The shared Physical Distance toggle now also draws Open 3D double-ended dimension arrows between adjacent editable-table rows. Each arrow uses the current 3D row/reference geometry, carries a numerical `Thickness` label, is pickable in the embedded VTK scene, and opens a row-scoped inline Tk/ttk thickness editor near the 3D canvas instead of a modal generic prompt. Enter/focus-out commits only that row's `Thickness`, Esc cancels, the editable table is synchronized, and Open 3D retraces without rewriting other spacing rows. The same dimension arrows/labels can now be dragged along their displayed direction; release commits the adjusted value to only the selected row and retraces Open 3D. |
 
-Latest movement on 2026-05-25: Open 3D editable Thickness dimensions are now
+Latest movement on 2026-05-25: Open 3D initial refresh now retraces saved and
+promoted STEP optical solids the same way it already retraced transient optical
+STEP overlays. This prevents the first Open 3D view of saved prism cascades
+from reusing a 2D preview SceneBundle that marked escaped CAD rays as
+detector-miss image-plane continuations, which appeared as a single unphysical
+initial bend until `Trace now` rebuilt the 3D bundle.
+
+Earlier movement on 2026-05-25: Open 3D editable Thickness dimensions are now
 complete as a first production-ready pass. Clicking a 3D dimension label/arrow
 opens the compact inline Tk/ttk editor for precise entry, while dragging the
 same arrow/label along its displayed direction previews a new `Thickness` value

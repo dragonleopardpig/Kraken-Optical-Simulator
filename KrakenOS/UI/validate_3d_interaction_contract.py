@@ -1638,6 +1638,15 @@ def main() -> int:
         ("Open 3D Snapshot uses VTK PNG capture", "vtkWindowToImageFilter" in snapshot and "vtkPNGWriter" in snapshot),
         ("Open 3D refresh reuses current SceneBundle when valid", "_current_preview_scene_trace" in open3d_refresh_service),
         (
+            "Open 3D initial refresh retraces promoted STEP optical solids",
+            "has_promoted_step_optical_solid_rows" in open3d_refresh_service
+            and "requires_open3d_retrace = include_live_step_overlays or self.has_promoted_step_optical_solid_rows()"
+            in open3d_refresh_service
+            and "if requires_open3d_retrace:" in open3d_refresh_service
+            and "current = None if requires_open3d_retrace else self.editor._current_preview_scene_trace()"
+            in open3d_refresh_service,
+        ),
+        (
             "Layout settings serialization lives outside layout_editor",
             "LayoutSettingsService(self)" in layout_settings_factory
             and "self._layout_settings_service()._collect_layout_settings()" in collect_layout_settings
@@ -1652,7 +1661,7 @@ def main() -> int:
             and "_preview_2d_sampling_mode()" not in open3d_refresh_service,
         ),
         (
-            "Open 3D sync keeps supplied 2D SceneBundle instead of rebuilding",
+            "Open 3D sync can keep supplied 2D SceneBundle instead of rebuilding",
             "if system is None or rays is None or scene_bundle is None" in open3d_refresh_service
             and "_build_preview_system_rays_bundle" in open3d_refresh_service,
         ),

@@ -61,6 +61,15 @@ class Open3DTraceRefreshService:
         except Exception:
             return False
 
+    def has_promoted_step_optical_solid_rows(self) -> bool:
+        """Return True when saved row-backed STEP solids need an Open 3D trace."""
+        try:
+            rows = getattr(self.editor, "rows", []) or []
+            is_promoted = getattr(self.editor, "_is_open3d_promoted_optical_solid_row")
+            return any(bool(is_promoted(row)) for row in rows)
+        except Exception:
+            return False
+
     def build_inspector_refresh(
         self,
         inspector: Any,
@@ -73,7 +82,8 @@ class Open3DTraceRefreshService:
         open3d_sampling_mode = None
         current = None
         include_live_step_overlays = self.has_traceable_step_overlays()
-        if not include_live_step_overlays and not force_retrace and resolved_sampling_mode is None:
+        requires_open3d_retrace = include_live_step_overlays or self.has_promoted_step_optical_solid_rows()
+        if not requires_open3d_retrace and not force_retrace and resolved_sampling_mode is None:
             open3d_sampling_mode = self.normalize_sampling_mode_label(self.editor._preview_3d_sampling_mode())
             current_mode = self.normalize_sampling_mode_label(getattr(self.editor, "_active_preview_sampling_mode", None))
             if current_mode == open3d_sampling_mode or self.sampling_mode_is_open3d_scene(current_mode):
@@ -149,8 +159,13 @@ class Open3DTraceRefreshService:
         scene_bundle: Any = None,
     ) -> Open3DRefreshResult:
         include_live_step_overlays = self.has_traceable_step_overlays()
+        requires_open3d_retrace = include_live_step_overlays or self.has_promoted_step_optical_solid_rows()
+        if requires_open3d_retrace:
+            system = None
+            rays = None
+            scene_bundle = None
         if system is None or rays is None or scene_bundle is None:
-            current = None if include_live_step_overlays else self.editor._current_preview_scene_trace()
+            current = None if requires_open3d_retrace else self.editor._current_preview_scene_trace()
             if current is not None:
                 system, rays, scene_bundle = current
                 sampling_mode = self.normalize_sampling_mode_label(
