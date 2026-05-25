@@ -7,6 +7,11 @@ from typing import Any
 import numpy as np
 
 
+_OPTICAL_STEP_BODY_COLOR = (0.10, 0.62, 0.72)
+_OPTICAL_STEP_EDGE_COLOR = (0.02, 0.48, 0.68)
+_OPTICAL_STEP_SILHOUETTE_COLOR = (0.01, 0.26, 0.38)
+
+
 def _layout_module():
     from KrakenOS.UI import layout_editor as layout_editor_module
 
@@ -241,12 +246,26 @@ class Open3DSceneRefreshService:
             transient_step_label = live_trace_step_labels_by_row.get(row_index)
             if transient_step_label is not None and bool(getattr(mesh_item, "is_body", False)):
                 live_trace_step_mesh_by_label.setdefault(str(transient_step_label), mesh)
+            row_step_label = transient_step_label
+            if row_step_label is None:
+                try:
+                    row_step_label = KrakenLayoutEditor._open3d_step_label_for_optical_solid_row(getattr(mesh_item, "row", None)) or None
+                except Exception:
+                    row_step_label = None
+            row_step_label = str(row_step_label or "").strip().lower()
+            mesh_color = _OPTICAL_STEP_BODY_COLOR if row_step_label == "optical" and row_index in file_backed_rows else tuple(mesh_item.color)
             mesh_opacity = float(getattr(mesh_item, "opacity", 1.0))
             row_surface = str(getattr(getattr(mesh_item, "row", None), "surface", "") or "")
             if row_index in file_backed_rows:
                 mesh_opacity = min(max(mesh_opacity, 0.14), 0.28)
-            file_backed_edge_color = self._solid_edge_color_from_body(getattr(mesh_item, "color", (0.04, 0.06, 0.10)))
-            file_backed_silhouette_color = self._solid_silhouette_edge_color()
+                if row_step_label == "optical":
+                    mesh_opacity = min(max(mesh_opacity, 0.30), 0.36)
+            if row_step_label == "optical":
+                file_backed_edge_color = _OPTICAL_STEP_EDGE_COLOR
+                file_backed_silhouette_color = _OPTICAL_STEP_SILHOUETTE_COLOR
+            else:
+                file_backed_edge_color = self._solid_edge_color_from_body(getattr(mesh_item, "color", (0.04, 0.06, 0.10)))
+                file_backed_silhouette_color = self._solid_silhouette_edge_color()
             if show_launch_reference_surface and not show_reference_surfaces and row_surface == "Object":
                 mesh_opacity = min(mesh_opacity, 0.18)
             if ray_visibility_requested and row_index >= 0:
@@ -254,14 +273,16 @@ class Open3DSceneRefreshService:
                     mesh_opacity = min(mesh_opacity, 0.22)
                 elif row_index in file_backed_rows:
                     mesh_opacity = min(max(mesh_opacity, 0.14), 0.24)
+                    if row_step_label == "optical":
+                        mesh_opacity = min(max(mesh_opacity, 0.30), 0.36)
                 else:
                     mesh_opacity = max(mesh_opacity, 0.86)
-                    wire_color = tuple(mesh_item.color)
+                    wire_color = mesh_color
                     wire_width = 1.35
                     ray_surface_wire_overlays.append((mesh, wire_color, wire_width, row_index))
             body_actor = self._add_mesh_actor(
                 mesh,
-                color=mesh_item.color,
+                color=mesh_color,
                 opacity=mesh_opacity,
                 pick_row_index=mesh_item.row_index,
                 pick_step_label=transient_step_label,
@@ -486,9 +507,11 @@ class Open3DSceneRefreshService:
                 try:
                     cad_edges = self._display_feature_edges(cad_mesh, feature_angle=24)
                     if int(getattr(cad_edges, "n_points", 0)) > 0:
+                        edge_color = _OPTICAL_STEP_EDGE_COLOR if label == "optical" else self._solid_edge_color_from_body(color)
+                        silhouette_color = _OPTICAL_STEP_SILHOUETTE_COLOR if label == "optical" else self._solid_silhouette_edge_color()
                         self._add_mesh_actor(
                             cad_edges,
-                            color=self._solid_silhouette_edge_color(),
+                            color=silhouette_color,
                             opacity=0.98,
                             line_width=4.2 if ray_visibility_requested else 2.2,
                             follow_step_label=label,
@@ -496,7 +519,7 @@ class Open3DSceneRefreshService:
                         )
                         self._add_mesh_actor(
                             cad_edges,
-                            color=self._solid_edge_color_from_body(color),
+                            color=edge_color,
                             opacity=0.96,
                             line_width=2.6 if ray_visibility_requested else 1.4,
                             follow_step_label=label,

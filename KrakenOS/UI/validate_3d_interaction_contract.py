@@ -1711,9 +1711,12 @@ def main() -> int:
             and "last_translate_mode" in editor_row_translate_vector,
         ),
         (
-            "promoted optical solid display uses light body and strong edges",
+            "promoted optical solid display uses blue translucent body and blue edges",
             "row_index in file_backed_rows" in refresh
             and "mesh_opacity = min(max(mesh_opacity, 0.14), 0.28)" in refresh
+            and "_OPTICAL_STEP_BODY_COLOR" in refresh
+            and "_OPTICAL_STEP_EDGE_COLOR" in refresh
+            and 'row_step_label == "optical"' in refresh
             and "_solid_edge_color_from_body" in refresh
             and "_solid_silhouette_edge_color" in refresh
             and "if row_index in file_backed_rows:" in refresh
