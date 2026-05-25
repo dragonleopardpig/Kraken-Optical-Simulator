@@ -181,7 +181,7 @@ def _validate_world_sections_trace_does_not_seed_open3d() -> None:
         raise AssertionError("Initial Open 3D refresh rendered the current world_sections SceneBundle.")
 
 
-def _validate_machine_vision_open3d_rebuilds_from_projection_scene_after_2d_refresh() -> None:
+def _validate_machine_vision_open3d_reuses_canonical_scene_after_2d_refresh() -> None:
     app = KrakenLayoutEditor(headless=True)
     try:
         app.load_layouts()
@@ -194,9 +194,9 @@ def _validate_machine_vision_open3d_rebuilds_from_projection_scene_after_2d_refr
         if not layout_name:
             raise AssertionError("Machine Vision 150 mm measured layout was not discovered.")
         app.load_layout_by_name(layout_name, refresh=True)
-        if str(getattr(app, "_active_preview_sampling_mode", "") or "") != "world_sections":
+        if str(getattr(app, "_active_preview_sampling_mode", "") or "") != "world_envelope":
             raise AssertionError(
-                "Machine Vision load should seed the 2D world_sections trace before Open 3D opens; "
+                "Machine Vision load should seed the canonical 3D world-envelope trace before Open 3D opens; "
                 f"got {getattr(app, '_active_preview_sampling_mode', None)!r}."
             )
         inspector = type("_FakeInspector", (), {"_last_refresh_sampling_mode": None})()
@@ -205,9 +205,9 @@ def _validate_machine_vision_open3d_rebuilds_from_projection_scene_after_2d_refr
             update_state=False,
         )
         if result.sampling_mode != "world_envelope":
-            raise AssertionError(f"Open 3D did not rebuild with the 3D sampler, got {result.sampling_mode!r}.")
-        if result.scene_bundle is getattr(app, "_last_scene_bundle", None):
-            raise AssertionError("Open 3D Machine Vision reused the current section-only 2D SceneBundle.")
+            raise AssertionError(f"Open 3D did not use the canonical 3D sampler, got {result.sampling_mode!r}.")
+        if result.scene_bundle is not getattr(app, "_last_scene_bundle", None):
+            raise AssertionError("Open 3D Machine Vision did not reuse the current canonical SceneBundle.")
         paths = list(getattr(result.scene_bundle, "ray_paths", []) or [])
         if not paths:
             raise AssertionError("Open 3D Machine Vision rebuild produced no traced paths.")
@@ -428,7 +428,7 @@ def _run_focused_checks(*, include_layout_smoke: bool = False) -> None:
     _validate_current_trace_records_active_mode()
     _validate_world_sections_trace_does_not_seed_open3d()
     if include_layout_smoke:
-        _validate_machine_vision_open3d_rebuilds_from_projection_scene_after_2d_refresh()
+        _validate_machine_vision_open3d_reuses_canonical_scene_after_2d_refresh()
     _validate_trace_now_preserves_active_mode_with_transient_step_support()
     _validate_trace_now_rejects_world_sections_mode()
     _validate_face_assignment_handlers_capture_mode_before_mutation()
@@ -454,7 +454,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--layout-smoke",
         action="store_true",
-        help="Also load Machine Vision 150 mm measured and verify Open 3D rebuilds section-only 2D traces after a 2D refresh.",
+        help="Also load Machine Vision 150 mm measured and verify Open 3D reuses the canonical 3D trace after a 2D refresh.",
     )
     args = parser.parse_args(argv)
     if args.focused:

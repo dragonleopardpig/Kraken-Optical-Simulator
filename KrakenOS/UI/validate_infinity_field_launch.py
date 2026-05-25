@@ -60,6 +60,8 @@ def validate_infinity_field_launch() -> list[InfinityFieldLaunchCheck]:
     rows, settings = _double_gauss_rows_settings()
     editor = _snapshot_editor(rows, settings)
     system = _build_system_from_specs(editor._serializable_row_specs())
+    preview_2d_mode = editor._preview_2d_sampling_mode()
+    preview_3d_mode = editor._preview_3d_sampling_mode()
     pupil_radius = max(float(row.diameter) for row in rows) / 2.0
     bundles, rays_per_field = editor._build_world_section_bundles(pupil_radius, system=system)
     reference = editor._infinity_field_launch_reference_point(system=system)
@@ -88,6 +90,11 @@ def validate_infinity_field_launch() -> list[InfinityFieldLaunchCheck]:
     ]
 
     checks = [
+        InfinityFieldLaunchCheck(
+            "Double Gauss 2D and Open 3D previews use the same canonical sampling mode",
+            preview_2d_mode == preview_3d_mode == "world_envelope",
+            f"2d={preview_2d_mode}, 3d={preview_3d_mode}",
+        ),
         InfinityFieldLaunchCheck(
             "Double Gauss infinity field samples build multiple world-section bundles",
             len(bundles) >= 3 and int(rays_per_field) > 1 and len(field_pairs) >= 3,

@@ -1648,8 +1648,8 @@ def main() -> int:
             and "requires_open3d_retrace = include_live_step_overlays or self.has_promoted_step_optical_solid_rows()"
             in open3d_refresh_service
             and "if requires_open3d_retrace:" in open3d_refresh_service
-            and "current = None if requires_open3d_retrace else self.editor._current_preview_scene_trace()"
-            in open3d_refresh_service,
+            and "if not requires_open3d_retrace and self._active_trace_can_feed_open3d():" in open3d_refresh_service
+            and "current = self.editor._current_preview_scene_trace()" in open3d_refresh_service,
         ),
         (
             "Layout settings serialization lives outside layout_editor",

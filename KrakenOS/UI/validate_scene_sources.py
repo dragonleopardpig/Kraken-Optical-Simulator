@@ -742,11 +742,12 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
     )
     checks.append(
         SceneSourceCheck(
-            "2D sequential pupil/field preview traces shared 3D section bundle",
-            doublet_2d_mode == "world_sections"
-            and int(doublet_editor._preview_field_ray_count) >= 31
-            and doublet_2d_yz_slice_count >= 31
-            and doublet_2d_xz_slice_count >= 31,
+            "2D sequential pupil/field preview traces the Open 3D world envelope",
+            doublet_2d_mode == "world_envelope"
+            and int(doublet_editor._preview_field_ray_count) > 2
+            and len(doublet_2d_paths) > 2
+            and doublet_2d_yz_slice_count > 0
+            and doublet_2d_xz_slice_count > 0,
             (
                 f"mode={doublet_2d_mode}, rays={len(doublet_2d_paths)}, "
                 f"preview={doublet_editor._preview_field_ray_count}, "

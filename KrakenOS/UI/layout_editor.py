@@ -21901,22 +21901,13 @@ class KrakenLayoutEditor(tk.Tk):
         return "display_slice"
 
     def _preview_2d_sampling_mode(self) -> str:
-        """Sampling mode for the editable 2D projections.
+        """Sampling mode for editable 2D projections.
 
-        Sequential 2D plots now trace a real 3-D cross-section bundle and let
-        each projection pane filter the resulting world paths to its slice.
+        2D panes are projections of the same physical 3D launch family used by
+        Open 3D.  The denser ``world_sections`` sampler remains available for
+        explicit diagnostics, but it is no longer the default 2D scene trace.
         """
-        if self._is_full_pupil_mode():
-            return "full_pupil"
-        try:
-            trace_state = self._resolved_trace_mode(system=self.__dict__.get("last_system"))
-        except Exception:
-            trace_state = {}
-        if bool(trace_state.get("use_nonseq")) or bool(trace_state.get("use_folded")):
-            return self._preview_scene_sampling_mode()
-        if self._current_source_model() == SOURCE_MODEL_DEFAULT:
-            return "world_sections"
-        return self._preview_scene_sampling_mode()
+        return self._preview_3d_sampling_mode()
 
     def _preview_3d_sampling_mode(self) -> str:
         """Sampling mode for Open 3D.
@@ -40437,7 +40428,10 @@ class KrakenLayoutEditor(tk.Tk):
                 diagnostics.append(
                     (
                         "Projection sampling note",
-                        f"{pattern} is a 2D pupil slice; the orthogonal auxiliary projection can collapse to the axis. Use Cross fan or Full Pupil for paired XZ/YZ content.",
+                        (
+                            f"{pattern} uses the shared 3D envelope for layout projections; "
+                            "use Full Pupil for denser pupil fills or explicit section diagnostics for dense YZ/XZ slices."
+                        ),
                     )
                 )
 
