@@ -70,6 +70,7 @@ Current pipeline checkpoint:
 | Open 3D STEP rotation-handle service extraction | Achieved | `██████████ 100%` | Imported STEP rotation-handle actor removal, rebuild, half-arc/arrow generation, hover highlighting, and world-axis write-through now live in `Open3DStepRotationHandleService`; `layout_editor.py` keeps only compatibility wrappers and status coordination. |
 | Open 3D Trace Now sampling stability | Achieved | `██████████ 100%` | `Trace now` no longer switches a current Open 3D scene to the default 3D envelope sampler when Live Mode is off. It retraces the sampling mode already displayed in Open 3D, while still including transient optical STEP overlays if one is being placed. |
 | Fast validation contract runner | Achieved | `██████████ 100%` | `KrakenOS.UI.validate_fast_contracts` runs the lightweight no-display/no-CAD-fixture contracts first, including focused Open 3D sampling-stability checks. Display-backed CAD smoke tests remain explicit targeted commands for rendering, face-picking, and screenshot regressions. |
+| Open 3D initial sampler isolation | Achieved | `██████████ 100%` | Opening Open 3D after a 2D plot refresh no longer reuses a cached 2D `world_sections` trace. The inspector rebuilds with the Open 3D `world_envelope` sampler, preventing Machine Vision 150 mm measured from showing 365 display-slice rays and 84 clipped entrance-lens rays as if they were the native 3D launch. |
 | Tk teardown callback cleanup | Achieved | `██████████ 100%` | Custom table selection, table-grid, and active-cell-border callbacks now keep cancellable `after` ids and are cancelled during editor teardown. This prevents stale Tk callbacks such as `_update_active_cell_border`, `_emit_custom_table_selection_changed`, and `_update_table_grid` from firing after the root window has been destroyed. |
 | Internal cube beam-splitter continuation | Achieved | `██████████ 100%` | Internal optical-solid beam-splitter faces now preserve the current glass volume instead of toggling to glass-air at the diagonal plane, and reflected/transmitted child branches keep the same solid eligible for the next exit-face hit. Open 3D face hover/selection outlines now use the full planar face boundary, so cube internal splitter faces highlight as one enclosed diagonal face instead of small triangulation patches. |
 | STEP face-level partial reflectors | Achieved | `██████████ 100%` | Optical-solid face metadata saved from Open 3D `Partial Reflecting / Transmitting` now feeds the deterministic non-sequential branch tracer directly. Face-level `Beam Splitter` records carry split ratio, loss, and phase into reflected/transmitted child paths instead of being treated as a one-way mirror or a plain uncoated face. |
@@ -83,13 +84,20 @@ Current pipeline checkpoint:
 | Literal click-to-cascade placement | Achieved | `██████████ 100%` | The Open 3D imported-STEP face selection now preserves the picked face id, and the snap-to-axis command routes known 42779 penta entrance picks through the same deterministic two-face solver used by the five-penta reference guard. F005 is constrained to the incoming optical axis and F006 constrains roll/output direction before promotion, so the import/click/snap/promote path is no longer an entrance-normal-only placement. `validate_penta_mirror_3d_cascade.py` now requests a concrete +X penta exit direction and fails unless every ray follows the assigned vendor mirror faces and exits along that direction. |
 | Open 3D editable thickness dimensions | Started | `██████░░░░ 60%` | The shared Physical Distance toggle now also draws Open 3D double-ended dimension arrows between adjacent editable-table rows. Each arrow uses the current 3D row/reference geometry, carries a numerical `Thickness` label, is pickable in the embedded VTK scene, and opens a row-scoped thickness editor that updates only that table row before forcing an Open 3D retrace. Remaining work is replacing the modal numeric prompt with an inline label editor and adding drag-to-adjust distance handles. |
 
-Latest movement on 2026-05-25: Open 3D `Trace now` now preserves the currently
+Latest movement on 2026-05-25: Open 3D initial refresh now rejects cached 2D
+`world_sections` traces when the inspector first opens. A normal load of
+Machine Vision 150 mm measured still builds the 2D slice for the Matplotlib
+plot, but Open 3D immediately rebuilds the native 3D `world_envelope` bundle:
+9 detector-hit rays instead of the previous 365 display-slice rays with 84
+stopped-at-S2 entrance-lens rays.
+
+Earlier movement on 2026-05-25: Open 3D `Trace now` now preserves the currently
 displayed sampling mode when Live Mode is off. This keeps layouts such as
 Machine Vision 150 mm measured from switching between the current 2D-derived
 ray family and the default Open 3D envelope family just because the manual
 trace button was pressed.
 
-Latest movement on 2026-05-25: validation now has a quick first-pass entry
+Earlier movement on 2026-05-25: validation now has a quick first-pass entry
 point. `python -m KrakenOS.UI.validate_fast_contracts` runs the fast
 fixture-light contract suite in one Python process, while
 `validate_open3d_face_assignment_sampling_stability --focused` skips the large
@@ -985,6 +993,7 @@ python -m KrakenOS.UI.validate_step_rotation_handles
 python -m KrakenOS.UI.validate_step_promotion_optical_solid
 python -m KrakenOS.UI.validate_open3d_face_context_assignment
 python -m KrakenOS.UI.validate_open3d_face_assignment_sampling_stability
+python -m KrakenOS.UI.validate_open3d_face_assignment_sampling_stability --focused --layout-smoke
 python -m KrakenOS.UI.validate_open3d_live_mode
 python -m KrakenOS.UI.validate_open3d_live_transient_step
 python -m KrakenOS.UI.validate_step_carry_lightweight
@@ -1012,6 +1021,9 @@ targets in one Python process to avoid repeated import/startup overhead; use
 `--subprocess` when debugging a target that needs process isolation. The longer
 validators and display-backed capture scripts below should still run when a
 change touches CAD import, Open 3D rendering, face picking, or tutorial assets.
+The Machine Vision Open 3D initial-sampler regression is covered by
+`validate_open3d_face_assignment_sampling_stability --focused --layout-smoke`;
+it loads the preset and is intentionally kept out of the default fast bundle.
 
 Devenv users can run the same commands under `devenv shell`, for example:
 

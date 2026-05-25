@@ -135,15 +135,78 @@ def _validate_missing_mode_falls_back_to_3d_default() -> None:
 
 def _validate_current_trace_records_active_mode() -> None:
     editor = _FakeEditor()
-    editor._active_preview_sampling_mode = "world_envelope"
+    editor._active_preview_sampling_mode = "source_cone_world"
     editor.current_trace = (object(), object(), object())
     inspector = _inspector_with_fake_editor(editor)
     inspector._last_refresh_sampling_mode = None
     Kraken3DInspector.refresh_from_editor(inspector)
     if editor.build_sampling_modes:
         raise AssertionError(f"Current SceneBundle refresh should not rebuild, got {editor.build_sampling_modes!r}.")
-    if inspector._last_refresh_sampling_mode != "world_envelope":
+    if inspector._last_refresh_sampling_mode != "source_cone_world":
         raise AssertionError("Current SceneBundle refresh did not remember the active sampling mode.")
+
+
+def _validate_2d_cached_trace_does_not_seed_open3d() -> None:
+    editor = _FakeEditor()
+    editor._active_preview_sampling_mode = "world_sections"
+    editor.current_trace = (object(), object(), object())
+    inspector = _inspector_with_fake_editor(editor)
+    inspector._last_refresh_sampling_mode = None
+    Kraken3DInspector.refresh_from_editor(inspector)
+    if editor.build_sampling_modes != ["source_cone_world"]:
+        raise AssertionError(
+            "Initial Open 3D refresh should rebuild a 3D sampler instead of reusing a cached 2D world_sections trace; "
+            f"got {editor.build_sampling_modes!r}."
+        )
+    if inspector._last_refresh_sampling_mode != "source_cone_world":
+        raise AssertionError(
+            "Initial Open 3D refresh did not remember the rebuilt 3D sampling mode: "
+            f"{inspector._last_refresh_sampling_mode!r}."
+        )
+    if inspector.refresh_calls and inspector.refresh_calls[0]["scene_bundle"] is editor.current_trace[2]:
+        raise AssertionError("Initial Open 3D refresh rendered the cached 2D SceneBundle.")
+
+
+def _validate_machine_vision_open3d_rebuilds_world_envelope_after_2d_refresh() -> None:
+    app = KrakenLayoutEditor(headless=True)
+    try:
+        app.load_layouts()
+        layout_name = ""
+        for name in list(getattr(app, "machine_vision_names", []) or []):
+            normalized = str(name).lower()
+            if "150" in normalized and "measured" in normalized:
+                layout_name = str(name)
+                break
+        if not layout_name:
+            raise AssertionError("Machine Vision 150 mm measured layout was not discovered.")
+        app.load_layout_by_name(layout_name, refresh=True)
+        if str(getattr(app, "_active_preview_sampling_mode", "") or "") != "world_sections":
+            raise AssertionError(
+                "Machine Vision load should seed the 2D world_sections trace before Open 3D opens; "
+                f"got {getattr(app, '_active_preview_sampling_mode', None)!r}."
+            )
+        inspector = type("_FakeInspector", (), {"_last_refresh_sampling_mode": None})()
+        result = app._open3d_trace_refresh_service().build_inspector_refresh(
+            inspector,
+            update_state=False,
+        )
+        if result.sampling_mode != "world_envelope":
+            raise AssertionError(f"Open 3D did not rebuild with world_envelope, got {result.sampling_mode!r}.")
+        paths = list(getattr(result.scene_bundle, "ray_paths", []) or [])
+        if len(paths) != 9:
+            raise AssertionError(f"Open 3D Machine Vision envelope should show 9 rays, got {len(paths)}.")
+        stopped = [
+            str(getattr(path, "termination_reason", "") or "")
+            for path in paths
+            if str(getattr(path, "termination_reason", "") or "") not in {"image", "hit_detector"}
+        ]
+        if stopped:
+            raise AssertionError(
+                "Open 3D Machine Vision envelope reused clipped 2D display-slice paths: "
+                f"{stopped[:8]!r}."
+            )
+    finally:
+        app.destroy()
 
 
 def _validate_trace_now_preserves_active_mode_with_transient_step_support() -> None:
@@ -315,11 +378,14 @@ def _validate_world_envelope_keeps_splitter_branch_bundles() -> None:
         raise AssertionError("World-envelope branch path does not preserve the full launch bundle.")
 
 
-def _run_focused_checks() -> None:
+def _run_focused_checks(*, include_layout_smoke: bool = False) -> None:
     _validate_forced_refresh_preserves_active_mode()
     _validate_explicit_mode_still_wins()
     _validate_missing_mode_falls_back_to_3d_default()
     _validate_current_trace_records_active_mode()
+    _validate_2d_cached_trace_does_not_seed_open3d()
+    if include_layout_smoke:
+        _validate_machine_vision_open3d_rebuilds_world_envelope_after_2d_refresh()
     _validate_trace_now_preserves_active_mode_with_transient_step_support()
     _validate_face_assignment_handlers_capture_mode_before_mutation()
     _validate_done_2d_and_close_preserve_open3d_sampling()
@@ -329,7 +395,7 @@ def _run_focused_checks() -> None:
 
 
 def _run_full_checks() -> None:
-    _run_focused_checks()
+    _run_focused_checks(include_layout_smoke=True)
     _validate_world_envelope_survives_off_axis_step_promotion()
 
 
@@ -340,9 +406,14 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Run only fixture-free sampling contract checks.",
     )
+    parser.add_argument(
+        "--layout-smoke",
+        action="store_true",
+        help="Also load Machine Vision 150 mm measured and verify Open 3D rebuilds the 3D sampler after a 2D refresh.",
+    )
     args = parser.parse_args(argv)
     if args.focused:
-        _run_focused_checks()
+        _run_focused_checks(include_layout_smoke=bool(args.layout_smoke))
         print("Focused Open 3D face assignment sampling stability validation passed.")
         return 0
     _run_full_checks()
