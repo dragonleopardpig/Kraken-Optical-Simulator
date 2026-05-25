@@ -35,6 +35,14 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             "Live Mode builds a render-only trace bundle without overwriting the persistent 2D preview state.",
         ),
         Open3DLiveTransientStepCheck(
+            "Initial Open 3D refresh includes transient optical STEP overlays",
+            "def has_traceable_step_overlays" in open3d_refresh_service
+            and "include_live_step_overlays = self.has_traceable_step_overlays()" in open3d_refresh_service
+            and "if not include_live_step_overlays and not force_retrace" in open3d_refresh_service
+            and "include_live_step_overlays=include_live_step_overlays" in open3d_refresh_service,
+            "Opening or syncing Open 3D must not reuse a 2D preview trace that omitted an unpromoted optical STEP solid.",
+        ),
+        Open3DLiveTransientStepCheck(
             "Transient optical STEP rows use the promoted-solid contract",
             "def _step_overlay_optical_solid_row_plan" in step_promotion_service
             and "self._optical_stl_solid_row(" in step_promotion_service

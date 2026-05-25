@@ -54,6 +54,13 @@ class Open3DTraceRefreshService:
         if mode is not None:
             inspector._last_refresh_sampling_mode = mode
 
+    def has_traceable_step_overlays(self) -> bool:
+        """Return True when Open 3D must add transient STEP rows before tracing."""
+        try:
+            return self.editor._step_path_for_label("optical") is not None
+        except Exception:
+            return False
+
     def build_inspector_refresh(
         self,
         inspector: Any,
@@ -65,7 +72,8 @@ class Open3DTraceRefreshService:
         resolved_sampling_mode = self.normalize_sampling_mode_label(sampling_mode)
         open3d_sampling_mode = None
         current = None
-        if not force_retrace and resolved_sampling_mode is None:
+        include_live_step_overlays = self.has_traceable_step_overlays()
+        if not include_live_step_overlays and not force_retrace and resolved_sampling_mode is None:
             open3d_sampling_mode = self.normalize_sampling_mode_label(self.editor._preview_3d_sampling_mode())
             current_mode = self.normalize_sampling_mode_label(getattr(self.editor, "_active_preview_sampling_mode", None))
             if current_mode == open3d_sampling_mode or self.sampling_mode_is_open3d_scene(current_mode):
@@ -85,6 +93,7 @@ class Open3DTraceRefreshService:
             system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
                 sampling_mode=resolved_sampling_mode,
                 update_state=bool(update_state),
+                include_live_step_overlays=include_live_step_overlays,
             )
         self.remember_inspector_sampling_mode(inspector, resolved_sampling_mode)
         row_names = self.editor._preview_render_row_names(scene_bundle)
@@ -139,8 +148,9 @@ class Open3DTraceRefreshService:
         rays: Any = None,
         scene_bundle: Any = None,
     ) -> Open3DRefreshResult:
+        include_live_step_overlays = self.has_traceable_step_overlays()
         if system is None or rays is None or scene_bundle is None:
-            current = self.editor._current_preview_scene_trace()
+            current = None if include_live_step_overlays else self.editor._current_preview_scene_trace()
             if current is not None:
                 system, rays, scene_bundle = current
                 sampling_mode = self.normalize_sampling_mode_label(
@@ -151,6 +161,7 @@ class Open3DTraceRefreshService:
                 system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
                     sampling_mode=sampling_mode,
                     update_state=False,
+                    include_live_step_overlays=include_live_step_overlays,
                 )
         else:
             sampling_mode = self.normalize_sampling_mode_label(
