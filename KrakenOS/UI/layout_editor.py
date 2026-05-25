@@ -9249,6 +9249,12 @@ class Kraken3DInspector(tk.Toplevel):
             labels.append("row carry drag")
         if self._middle_drag_active:
             labels.append("view pan")
+        thickness_service = getattr(self, "_open3d_thickness_dimension_service_instance", None)
+        try:
+            if thickness_service is not None and thickness_service.has_inline_editor():
+                labels.append("thickness edit")
+        except Exception:
+            pass
         if bool(getattr(self.editor, "_cad_axis_pick_any", False)) or getattr(self.editor, "_cad_axis_pick_label", None) is not None:
             labels.append("STEP axis pick")
         if bool(getattr(self.editor, "_cad_led_object_edge_pick", False)):
@@ -9271,6 +9277,12 @@ class Kraken3DInspector(tk.Toplevel):
 
         self._cancel_step_carry_hold_timer()
         self._cancel_row_carry_hold_timer()
+        thickness_service = getattr(self, "_open3d_thickness_dimension_service_instance", None)
+        try:
+            if thickness_service is not None and thickness_service.has_inline_editor():
+                thickness_service.cancel_inline_editor()
+        except Exception:
+            pass
         self._source_target_pick_mode = False
         self._center_row_to_ray_mode = False
         self._center_row_to_ray_index = None

@@ -290,6 +290,7 @@ def main() -> int:
     face_ray_pick_service = inspect.getsource(pick_face_from_ray)
     remember_step_feature = inspect.getsource(Kraken3DInspector._remember_selected_step_feature)
     step_carry_drop = inspect.getsource(Kraken3DInspector.stop_step_carry)
+    active_operation_labels = inspect.getsource(Kraken3DInspector._active_3d_operation_labels)
     operation_cancel = inspect.getsource(Kraken3DInspector.cancel_active_3d_operation)
     clear_selection = inspect.getsource(Kraken3DInspector._clear_open3d_selection)
     remove_step_handles = inspect.getsource(Open3DStepRotationHandleService.remove_actors)
@@ -416,6 +417,8 @@ def main() -> int:
     thickness_arrow = inspect.getsource(Open3DThicknessDimensionService.arrow_mesh)
     thickness_label = inspect.getsource(Open3DThicknessDimensionService.add_label_actor)
     thickness_edit = inspect.getsource(Open3DThicknessDimensionService.edit_dimension)
+    thickness_apply = inspect.getsource(Open3DThicknessDimensionService.apply_dimension_value)
+    thickness_service_source = inspect.getsource(Open3DThicknessDimensionService)
     step_admin_source = inspect.getsource(Open3DStepAdminPanel).replace("self.inspector.", "self.")
     step_admin_overlay_select = inspect.getsource(Kraken3DInspector.select_step_overlay_from_admin)
     step_admin_promoted_select = inspect.getsource(Kraken3DInspector.select_promoted_step_row_from_admin)
@@ -1196,16 +1199,26 @@ def main() -> int:
             and "wm_attributes(\"-type\", \"tooltip\")" in widget_tooltip,
         ),
         (
-            "Open 3D Thickness dimension clicks edit only the selected row thickness",
+            "Open 3D Thickness dimension clicks open an inline row-scoped editor",
             "_actor_thickness_dimension_map.get(actor_key)" in pick
             and "GetViewProp" in pick
             and "_edit_open3d_thickness_dimension" in pick
-            and "simpledialog.askfloat" in thickness_edit
-            and "self.editor.rows[row_index].thickness = next_value" in thickness_edit
-            and "_sync_table()" in thickness_edit
-            and "_select_table_row(row_index)" in thickness_edit
-            and "Other table thickness values are unchanged" in thickness_edit
-            and "refresh_from_editor(force_retrace=True)" in thickness_edit,
+            and "tk.Toplevel" in thickness_service_source
+            and "ttk.Entry" in thickness_edit
+            and "<FocusOut>" in thickness_edit
+            and "<Return>" in thickness_edit
+            and "<Escape>" in thickness_edit
+            and "simpledialog.askfloat" not in thickness_service_source
+            and "grab_set" not in thickness_service_source
+            and "self.apply_dimension_value(row_index, next_value)" in thickness_edit
+            and "has_inline_editor" in thickness_service_source
+            and "thickness edit" in active_operation_labels
+            and "cancel_inline_editor" in operation_cancel
+            and "self.editor.rows[row_index].thickness = next_value" in thickness_apply
+            and "_sync_table()" in thickness_apply
+            and "_select_table_row(row_index)" in thickness_apply
+            and "Other table thickness values are unchanged" in thickness_apply
+            and "refresh_from_editor(force_retrace=True)" in thickness_apply,
         ),
         (
             "Open 3D STEP promotion refreshes and highlights the created row",

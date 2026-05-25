@@ -10,7 +10,8 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from tkinter import simpledialog
+import tkinter as tk
+from tkinter import ttk
 
 
 class Open3DThicknessDimensionService:
@@ -27,6 +28,9 @@ class Open3DThicknessDimensionService:
         self.editor = inspector.editor
         self.pv = pv_module
         self.billboard_text_actor_cls = billboard_text_actor_cls
+        self._inline_editor_window: tk.Toplevel | None = None
+        self._inline_editor_row_index: int | None = None
+        self._inline_editor_committing = False
 
     def arrow_mesh(
         self,
@@ -197,34 +201,69 @@ class Open3DThicknessDimensionService:
                 count += 1
         return count
 
-    def edit_dimension(self, row_index: int) -> None:
+    def _destroy_inline_editor(self) -> None:
+        window = self._inline_editor_window
+        self._inline_editor_window = None
+        self._inline_editor_row_index = None
+        self._inline_editor_committing = False
+        if window is None:
+            return
+        try:
+            if window.winfo_exists():
+                window.destroy()
+        except Exception:
+            pass
+
+    def has_inline_editor(self) -> bool:
+        window = self._inline_editor_window
+        if window is None:
+            return False
+        try:
+            return bool(window.winfo_exists())
+        except Exception:
+            return False
+
+    def cancel_inline_editor(self) -> None:
+        self._destroy_inline_editor()
+        try:
+            self.inspector.status_var.set("Thickness edit cancelled.")
+        except Exception:
+            pass
+
+    def _position_inline_editor(self, window: tk.Toplevel) -> None:
+        try:
+            window.update_idletasks()
+            width = max(int(window.winfo_reqwidth()), 260)
+            height = max(int(window.winfo_reqheight()), 80)
+            pointer_x = int(self.inspector.winfo_pointerx())
+            pointer_y = int(self.inspector.winfo_pointery())
+            screen_w = max(int(window.winfo_screenwidth()), width)
+            screen_h = max(int(window.winfo_screenheight()), height)
+            x = min(max(pointer_x + 14, 8), max(screen_w - width - 12, 8))
+            y = min(max(pointer_y + 14, 8), max(screen_h - height - 36, 8))
+            window.geometry(f"{width}x{height}+{x}+{y}")
+        except Exception:
+            pass
+
+    def _row_label(self, row_index: int) -> str:
+        if not (0 <= int(row_index) < len(self.editor.rows)):
+            return f"S{int(row_index)}"
+        row = self.editor.rows[int(row_index)]
+        return f"S{int(row_index)}: {row.name or row.surface or 'Surface'}"
+
+    def apply_dimension_value(self, row_index: int, next_value: float) -> bool:
         row_index = int(row_index)
         if not (0 <= row_index < len(self.editor.rows) - 1):
             self.inspector.status_var.set("Thickness dimension: choose a non-terminal table row.")
-            return
-        row = self.editor.rows[row_index]
+            return False
         try:
-            current = float(getattr(row, "thickness", 0.0) or 0.0)
-        except Exception:
-            current = 0.0
-        label = f"S{row_index}: {row.name or row.surface or 'Surface'}"
-        value = simpledialog.askfloat(
-            "Edit Thickness",
-            f"{label}\nThickness to next row [mm]:",
-            initialvalue=current,
-            parent=self.inspector,
-        )
-        if value is None:
-            self.inspector.status_var.set("Thickness edit cancelled.")
-            return
-        try:
-            next_value = float(value)
+            next_value = float(next_value)
         except Exception:
             self.inspector.status_var.set("Thickness must be a finite number.")
-            return
+            return False
         if not np.isfinite(next_value):
             self.inspector.status_var.set("Thickness must be a finite number.")
-            return
+            return False
         self.editor._begin_history_capture()
         self.editor.rows[row_index].thickness = next_value
         self.editor._sync_table()
@@ -235,3 +274,91 @@ class Open3DThicknessDimensionService:
         self.editor.status_var.set(f"S{row_index} Thickness set to {next_value:.6g} mm. Other table thickness values are unchanged.")
         self.inspector.status_var.set(f"S{row_index} Thickness set to {next_value:.6g} mm.")
         self.inspector.refresh_from_editor(force_retrace=True)
+        return True
+
+    def edit_dimension(self, row_index: int) -> None:
+        row_index = int(row_index)
+        if not (0 <= row_index < len(self.editor.rows) - 1):
+            self.inspector.status_var.set("Thickness dimension: choose a non-terminal table row.")
+            return
+        row = self.editor.rows[row_index]
+        try:
+            current = float(getattr(row, "thickness", 0.0) or 0.0)
+        except Exception:
+            current = 0.0
+        self._destroy_inline_editor()
+        value_var = tk.StringVar(value=f"{current:.6g}")
+        window = tk.Toplevel(self.inspector)
+        self._inline_editor_window = window
+        self._inline_editor_row_index = row_index
+        try:
+            window.title("Edit Thickness")
+            window.transient(self.inspector)
+            window.resizable(False, False)
+        except Exception:
+            pass
+        frame = ttk.Frame(window, padding=8)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(1, weight=1)
+        ttk.Label(frame, text=self._row_label(row_index)).grid(row=0, column=0, columnspan=3, sticky="w")
+        ttk.Label(frame, text="Thickness [mm]").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        entry = ttk.Entry(frame, textvariable=value_var, width=16)
+        entry.grid(row=1, column=1, sticky="ew", padx=(8, 6), pady=(6, 0))
+
+        def commit(_event=None):
+            if self._inline_editor_committing:
+                return "break"
+            self._inline_editor_committing = True
+            try:
+                next_value = float(value_var.get())
+            except Exception:
+                self._inline_editor_committing = False
+                self.inspector.status_var.set("Thickness must be a finite number.")
+                try:
+                    entry.focus_set()
+                    entry.selection_range(0, "end")
+                except Exception:
+                    pass
+                return "break"
+            if not np.isfinite(next_value):
+                self._inline_editor_committing = False
+                self.inspector.status_var.set("Thickness must be a finite number.")
+                try:
+                    entry.focus_set()
+                    entry.selection_range(0, "end")
+                except Exception:
+                    pass
+                return "break"
+            self._destroy_inline_editor()
+            self.apply_dimension_value(row_index, next_value)
+            return "break"
+
+        def cancel(_event=None):
+            self.cancel_inline_editor()
+            return "break"
+
+        def commit_when_leaving_window(_event=None):
+            try:
+                focus = window.focus_get()
+                if focus is not None and focus.winfo_toplevel() is window:
+                    return None
+            except Exception:
+                pass
+            return commit()
+
+        ttk.Button(frame, text="OK", command=commit, width=6).grid(row=1, column=2, sticky="e", pady=(6, 0))
+        window.bind("<Return>", commit, add="+")
+        window.bind("<KP_Enter>", commit, add="+")
+        window.bind("<Escape>", cancel, add="+")
+        entry.bind("<FocusOut>", commit_when_leaving_window, add="+")
+        try:
+            window.protocol("WM_DELETE_WINDOW", cancel)
+        except Exception:
+            pass
+        self._position_inline_editor(window)
+        try:
+            entry.focus_set()
+            entry.selection_range(0, "end")
+        except Exception:
+            pass
+        self.inspector.status_var.set(f"Editing {self._row_label(row_index)} Thickness. Press Enter to apply or Esc to cancel.")

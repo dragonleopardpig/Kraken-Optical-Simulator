@@ -86,9 +86,17 @@ Current pipeline checkpoint:
 | Open 3D row-face hover outline congruence | Achieved | `██████████ 100%` | Row-backed CAD/STL face hover and right-click selection outlines now prefer the runtime/rendered mesh triangles, with the old transformed STL reconstruction only as fallback. Hover outline actors also attach and detach through the renderer ViewProp helper, so detached red face outlines are not left behind or drawn from a stale coordinate frame. |
 | Five-penta stage snapshots | Achieved | `██████████ 100%` | The five-penta guard now captures one Open 3D image after each prism is placed and traced, plus final ISO/YZ/XY/XZ snapshots, a generated 2D YZ/XZ/XY projection image, and a JSON report. Each stage verifies zero launch-angle spread for a 13-ray collimated disk source, the exact accumulated penta face/action sequence, sub-micron event-to-rendered-mesh congruence, regenerated body/edge/tint alignment, and the expected external exit-axis count without internal reflection axes, so visual regressions from element 2 onward are checked against the same physics oracle. |
 | Literal click-to-cascade placement | Achieved | `██████████ 100%` | The Open 3D imported-STEP face selection now preserves the picked face id, and the snap-to-axis command routes known 42779 penta entrance picks through the same deterministic two-face solver used by the five-penta reference guard. F005 is constrained to the incoming optical axis and F006 constrains roll/output direction before promotion, so the import/click/snap/promote path is no longer an entrance-normal-only placement. `validate_penta_mirror_3d_cascade.py` now requests a concrete +X penta exit direction and fails unless every ray follows the assigned vendor mirror faces and exits along that direction. |
-| Open 3D editable thickness dimensions | Started | `██████░░░░ 60%` | The shared Physical Distance toggle now also draws Open 3D double-ended dimension arrows between adjacent editable-table rows. Each arrow uses the current 3D row/reference geometry, carries a numerical `Thickness` label, is pickable in the embedded VTK scene, and opens a row-scoped thickness editor that updates only that table row before forcing an Open 3D retrace. Remaining work is replacing the modal numeric prompt with an inline label editor and adding drag-to-adjust distance handles. |
+| Open 3D editable thickness dimensions | Advanced | `████████░░ 80%` | The shared Physical Distance toggle now also draws Open 3D double-ended dimension arrows between adjacent editable-table rows. Each arrow uses the current 3D row/reference geometry, carries a numerical `Thickness` label, is pickable in the embedded VTK scene, and opens a row-scoped inline Tk/ttk thickness editor near the 3D canvas instead of a modal generic prompt. Enter/focus-out commits only that row's `Thickness`, Esc cancels, the editable table is synchronized, and Open 3D retraces without rewriting other spacing rows. Remaining work is adding drag-to-adjust distance handles. |
 
-Latest movement on 2026-05-25: Open 3D initial refresh now matches `Trace now`
+Latest movement on 2026-05-25: Open 3D editable Thickness dimensions moved
+from a modal numeric prompt to a row-scoped inline editor. Clicking a 3D
+dimension label/arrow now opens a compact Tk/ttk editor near the canvas; Enter
+or focus-out commits the selected row's `Thickness`, Esc cancels, the editable
+table stays synchronized, and Open 3D retraces while all other row distances
+remain unchanged. The remaining 20% of this checkpoint is direct
+drag-to-adjust dimension handles.
+
+Earlier movement on 2026-05-25: Open 3D initial refresh now matches `Trace now`
 when an imported optical STEP overlay is still transient. The refresh service
 checks for a traceable optical STEP overlay before reusing the cached preview
 SceneBundle; when one exists, it rebuilds with the same live STEP overlay rows
