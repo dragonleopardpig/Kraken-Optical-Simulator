@@ -438,10 +438,10 @@ class Open3DSceneRefreshService:
         step_carry_grid_summary = ""
         live_trace_step_overlay_labels = self._live_trace_step_overlay_labels()
         for label, builder, color, opacity in (
-            ("lens", self.editor._transformed_imported_lens_step_mesh, (0.25, 0.31, 0.39), 0.22),
-            ("optical", self.editor._transformed_imported_optical_step_mesh, (0.10, 0.62, 0.72), 0.30),
+            ("lens", self.editor._transformed_imported_lens_step_mesh, (0.30, 0.36, 0.46), 0.26),
+            ("optical", self.editor._transformed_imported_optical_step_mesh, (0.10, 0.62, 0.72), 0.34),
             ("led", self.editor._transformed_imported_led_step_mesh, (0.95, 0.62, 0.16), 0.35),
-            ("camera", self.editor._transformed_imported_camera_step_mesh, (0.36, 0.39, 0.44), 0.32),
+            ("camera", self.editor._transformed_imported_camera_step_mesh, (0.28, 0.33, 0.42), 0.38),
         ):
             if label in live_trace_step_overlay_labels:
                 continue
@@ -452,8 +452,8 @@ class Open3DSceneRefreshService:
                 self.editor.append_debug(f"3D {label} STEP error: {exc}")
             if cad_mesh is not None and int(getattr(cad_mesh, "n_points", 0)) > 0:
                 display_opacity = float(opacity)
-                if ray_visibility_requested:
-                    display_opacity = max(display_opacity, 0.92)
+                if ray_visibility_requested and label == "optical":
+                    display_opacity = max(display_opacity, 0.46)
                 self._add_mesh_actor(
                     cad_mesh,
                     color=color,

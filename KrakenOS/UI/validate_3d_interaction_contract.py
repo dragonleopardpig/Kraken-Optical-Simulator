@@ -1181,6 +1181,13 @@ def main() -> int:
             and "show_physical_distances_var" in top_controls_source,
         ),
         (
+            "Open 3D STEP overlays use readable actor colors",
+            "ScalarVisibilityOff" in add_mesh_actor
+            and '"camera", self.editor._transformed_imported_camera_step_mesh, (0.28, 0.33, 0.42), 0.38' in refresh
+            and '"lens", self.editor._transformed_imported_lens_step_mesh, (0.30, 0.36, 0.46), 0.26' in refresh
+            and "max(display_opacity, 0.92)" not in refresh,
+        ),
+        (
             "Reusable Tk tooltip lives outside layout_editor",
             WidgetTooltip.__module__.endswith(".widgets.tooltips")
             and "wm_attributes(\"-type\", \"tooltip\")" in widget_tooltip,
@@ -1673,7 +1680,8 @@ def main() -> int:
             and "bounded_ray_count" in refresh
             and "suppressed_endpoint_count" in refresh
             and "Ray terminals:" in trace_summary_text
-            and "SetDisplayPosition(16, max(int(height) - 58, 16))" in trace_summary,
+            and "status_var.set(status_text)" in trace_summary
+            and "SetDisplayPosition" not in trace_summary,
         ),
         (
             "Open 3D terminal summary reports final CAD face and physics action",

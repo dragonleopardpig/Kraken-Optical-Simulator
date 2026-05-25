@@ -8059,6 +8059,10 @@ class Kraken3DInspector(tk.Toplevel):
             return None
         mapper = vtkDataSetMapper()
         mapper.SetInputData(mesh)
+        try:
+            mapper.ScalarVisibilityOff()
+        except Exception:
+            pass
         actor = vtkActor()
         actor.SetMapper(mapper)
         prop = actor.GetProperty()
@@ -10913,48 +10917,19 @@ class Kraken3DInspector(tk.Toplevel):
             terminal_sequence_counts=terminal_sequence_counts,
         )
         actor = self._trace_summary_actor
+        if actor is not None:
+            self._remove_renderer_view_prop(actor)
+            self._trace_summary_actor = None
+            if render:
+                self.render()
         if not text:
-            if actor is not None:
-                self._remove_renderer_view_prop(actor)
-                self._trace_summary_actor = None
-                if render:
-                    self.render()
-            return
-        if actor is None and vtkTextActor is not None:
-            try:
-                actor = vtkTextActor()
-                prop = actor.GetTextProperty()
-                prop.SetFontSize(13)
-                prop.SetBold(True)
-                prop.SetColor(0.04, 0.06, 0.10)
-                try:
-                    prop.SetBackgroundColor(1.0, 1.0, 1.0)
-                    prop.SetBackgroundOpacity(0.86)
-                    prop.SetFrame(1)
-                    prop.SetFrameColor(0.34, 0.40, 0.48)
-                except Exception:
-                    pass
-                actor.SetPickable(False)
-                self._add_renderer_view_prop(actor)
-                self._trace_summary_actor = actor
-            except Exception as exc:
-                self.editor.append_debug(f"3D ray terminal summary unavailable: {exc}")
-                self._trace_summary_actor = None
-                return
-        if actor is None:
             return
         try:
-            actor.SetInput(text)
-            height = 720
-            if self._vtk_widget is not None:
-                _width, height = self._vtk_widget.GetRenderWindow().GetSize()
-            actor.SetDisplayPosition(16, max(int(height) - 58, 16))
-            actor.SetVisibility(True)
+            status_text = " | ".join(part.strip() for part in str(text).splitlines() if part.strip())
+            if status_text:
+                self.status_var.set(status_text)
         except Exception as exc:
             self.editor.append_debug(f"3D ray terminal summary update failed: {exc}")
-            return
-        if render:
-            self.render()
 
     @staticmethod
     def _scene_placement_point(values: object) -> np.ndarray | None:
