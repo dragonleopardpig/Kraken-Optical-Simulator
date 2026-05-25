@@ -21586,6 +21586,75 @@ class KrakenLayoutEditor(tk.Tk):
         system, rays, _scene_bundle = self._build_preview_system_rays_bundle(update_state=True)
         return system, rays
 
+    def _folded_preview_mirror_mesh_for_row(
+        self,
+        row_index: int,
+        row: SurfaceRow,
+        *,
+        system=None,
+    ):
+        """Return a 3-D mirror mesh congruent with folded-preview ray geometry."""
+        if pv is None or row.surface != "Mirror":
+            return None
+        try:
+            folded_geometry = self._current_folded_surface_geometry(system=system)
+        except Exception:
+            folded_geometry = None
+        if folded_geometry is None:
+            return None
+        try:
+            _point, _direction, _max_half, _extent_points, elements = folded_geometry
+        except Exception:
+            return None
+        mirror_tangent = None
+        center = None
+        for element_index, element in enumerate(list(elements or []), start=1):
+            if element_index != int(row_index):
+                continue
+            try:
+                surface_type, element_center = element[0], element[1]
+            except Exception:
+                return None
+            if surface_type != "Mirror":
+                return None
+            center = np.asarray(element_center, dtype=float).reshape(-1)[:2]
+            mirror_tangent = element[4] if len(element) > 4 else None
+            break
+        if center is None or center.size < 2 or not np.all(np.isfinite(center[:2])):
+            return None
+        tangent = np.asarray(mirror_tangent, dtype=float).reshape(-1)[:2] if mirror_tangent is not None else None
+        if tangent is None or tangent.size < 2 or not np.all(np.isfinite(tangent[:2])):
+            angle = np.deg2rad(self._mirror_display_slant_deg_for_rows(self.rows, int(row_index)))
+            tangent = np.asarray((np.cos(angle), np.sin(angle)), dtype=float)
+        norm = float(np.linalg.norm(tangent))
+        if norm <= 1e-12:
+            return None
+        tangent = tangent / norm
+        try:
+            half_line = max(float(row.diameter) * 0.5, 0.5)
+        except Exception:
+            half_line = 0.5
+        try:
+            half_width = max(min(float(row.diameter) * 0.5, half_line), 0.5)
+        except Exception:
+            half_width = half_line
+        p0 = center[:2] - tangent * half_line
+        p1 = center[:2] + tangent * half_line
+        points = np.asarray(
+            (
+                (-half_width, p0[1], p0[0]),
+                (half_width, p0[1], p0[0]),
+                (half_width, p1[1], p1[0]),
+                (-half_width, p1[1], p1[0]),
+            ),
+            dtype=float,
+        )
+        faces = np.asarray((4, 0, 1, 2, 3), dtype=np.int64)
+        try:
+            return pv.PolyData(points, faces)
+        except Exception:
+            return None
+
     def _iter_3d_optical_surface_meshes(
         self,
         system,
@@ -21612,7 +21681,9 @@ class KrakenLayoutEditor(tk.Tk):
             mesh = None
             advanced = row.advanced if isinstance(row.advanced, dict) else {}
             file_backed_optical_solid = self._scene_graph_value_present(advanced.get("Solid_3d_stl"))
-            if file_backed_optical_solid or index in pose_overrides:
+            if row.surface == "Mirror":
+                mesh = self._folded_preview_mirror_mesh_for_row(index, row, system=system)
+            if mesh is None and (file_backed_optical_solid or index in pose_overrides):
                 mesh = KrakenLayoutEditor._runtime_trace_surface_mesh(system, index)
             if row_transform is None:
                 row_transform = transforms[index]
@@ -21769,7 +21840,7 @@ class KrakenLayoutEditor(tk.Tk):
                 side_index += 1
                 continue
             try:
-                body = pv.wrap(system.BBB[side_index]).extract_surface().copy(deep=True)
+                body = pv.wrap(system.BBB[side_index]).extract_surface(algorithm="dataset_surface").copy(deep=True)
             except Exception:
                 side_index += 1
                 continue

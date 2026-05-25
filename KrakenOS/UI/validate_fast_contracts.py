@@ -81,6 +81,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Shared 2D/Open 3D terminal ray capping and direction contracts.",
     ),
     ValidationTarget(
+        "folded-mirror-projection",
+        "KrakenOS.UI.validate_folded_mirror_projection_parity",
+        reason="Folded mirror 2D/Open 3D surface geometry parity.",
+    ),
+    ValidationTarget(
         "selected-ray-labels",
         "KrakenOS.UI.validate_selected_ray_event_labels",
         reason="Ray event labels and inspector-facing selection records.",
