@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 from dataclasses import dataclass
 
+import KrakenOS as Kos
 import numpy as np
 
 from KrakenOS.UI.layout_editor import SurfaceRow, _build_system_from_specs
@@ -63,6 +64,21 @@ def validate_infinity_field_launch() -> list[InfinityFieldLaunchCheck]:
     preview_2d_mode = editor._preview_2d_sampling_mode()
     preview_3d_mode = editor._preview_3d_sampling_mode()
     pupil_radius = max(float(row.diameter) for row in rows) / 2.0
+    world_bundles, world_rays_per_field = editor._build_world_envelope_bundles(pupil_radius, system=system)
+    world_bundle_lengths = [
+        int(len(np.asarray(bundle[0], dtype=float).reshape(-1)))
+        for bundle in world_bundles
+    ]
+    world_rays = Kos.raykeeper(system)
+    editor._trace_preview_rays(
+        system,
+        world_rays,
+        editor._current_wavelength(),
+        pupil_radius,
+        sampling_mode=preview_2d_mode,
+    )
+    traced_world_count = len(getattr(world_rays, "CC", []) or [])
+    expected_world_count = int(len(world_bundles) * int(settings["ray_count"]))
     bundles, rays_per_field = editor._build_world_section_bundles(pupil_radius, system=system)
     reference = editor._infinity_field_launch_reference_point(system=system)
     field_pairs = editor._field_cross_pairs_for_world_sections(editor._current_field_angle_deg())
@@ -94,6 +110,18 @@ def validate_infinity_field_launch() -> list[InfinityFieldLaunchCheck]:
             "Double Gauss 2D and Open 3D previews use the same canonical sampling mode",
             preview_2d_mode == preview_3d_mode == "world_envelope",
             f"2d={preview_2d_mode}, 3d={preview_3d_mode}",
+        ),
+        InfinityFieldLaunchCheck(
+            "canonical world-envelope trace honors Ray Count per field",
+            int(world_rays_per_field) == int(settings["ray_count"])
+            and bool(world_bundle_lengths)
+            and all(length == int(settings["ray_count"]) for length in world_bundle_lengths)
+            and traced_world_count == expected_world_count,
+            (
+                f"ray_count={settings['ray_count']}, rays_per_field={world_rays_per_field}, "
+                f"bundle_lengths={world_bundle_lengths[:5]}, bundles={len(world_bundles)}, "
+                f"traced={traced_world_count}, expected={expected_world_count}"
+            ),
         ),
         InfinityFieldLaunchCheck(
             "Double Gauss infinity field samples build multiple world-section bundles",
