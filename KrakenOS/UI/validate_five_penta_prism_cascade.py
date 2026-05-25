@@ -30,6 +30,7 @@ from typing import Any
 
 import numpy as np
 
+from KrakenOS.UI import layout_editor as le
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI.capture_open3d_step_workflow_screenshots import (
     PROJECT_ROOT,
@@ -549,6 +550,7 @@ def _validate_trace(scene_bundle: object, row_indices: list[int], *, final_expec
 
 
 def build_case_editor(stage_snapshot_dir: Path | None = None) -> tuple[KrakenLayoutEditor, dict[str, Any]]:
+    le._load_3d_backends()
     source_mesh_path, source_metadata = _prepare_penta_asset()
     app = KrakenLayoutEditor(headless=True)
     if stage_snapshot_dir is not None:

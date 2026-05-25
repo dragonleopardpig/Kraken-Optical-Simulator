@@ -373,7 +373,6 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             fan_image_hits = 0
             doublet_last_surface = None
             doublet_terminal_surfaces: list[tuple[float, int | None]] = []
-            doublet_central_reaches_image = False
             doublet_override_keys: list[int] = []
             doublet_normals_follow_port = False
             doublet_centers_advance = False
@@ -1015,8 +1014,6 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                     doublet_last_surface = int(doublet_system.SURFACE[-1]) if len(doublet_system.SURFACE) > 0 else None
                     doublet_terminal_surfaces.append((float(launch_y), doublet_last_surface))
                     if doublet_last_surface == 5 and len(doublet_system.XYZ) > 0:
-                        if abs(float(launch_y)) < 1e-12:
-                            doublet_central_reaches_image = True
                         doublet_image_z_values.append(float(np.asarray(doublet_system.XYZ[-1], dtype=float)[2]))
                 if doublet_image_z_values:
                     doublet_focus_span = float(max(doublet_image_z_values) - min(doublet_image_z_values))
@@ -1419,13 +1416,14 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 ),
             ),
             VendorPrism42779Check(
-                "vendor prism followed by a cemented doublet reaches the image plane on the central ray",
-                doublet_central_reaches_image,
+                "vendor prism followed by a cemented doublet reaches the image plane",
+                len(doublet_terminal_surfaces) == 3
+                and all(surface == 5 for _launch_y, surface in doublet_terminal_surfaces),
                 f"terminal_surfaces={doublet_terminal_surfaces}",
             ),
             VendorPrism42779Check(
-                "vendor prism followed by a cemented doublet keeps reached rays on one image station",
-                len(doublet_image_z_values) > 0 and np.isfinite(doublet_focus_span) and doublet_focus_span < 0.05,
+                "vendor prism followed by a cemented doublet focuses the meridional fan",
+                len(doublet_image_z_values) == 3 and np.isfinite(doublet_focus_span) and doublet_focus_span < 0.05,
                 f"image_hits={len(doublet_image_z_values)}, image_z_span_mm={doublet_focus_span:.6g}",
             ),
             VendorPrism42779Check(

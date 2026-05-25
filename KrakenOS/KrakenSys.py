@@ -1103,6 +1103,12 @@ class system():
         return points, hits
 
     def __NonSequentialNearHitTolerance(self):
+        return self.__NonSequentialSceneScaledTolerance(1.0e-6)
+
+    def __NonSequentialSameSurfaceHitTolerance(self):
+        return self.__NonSequentialSceneScaledTolerance(1.0e-5)
+
+    def __NonSequentialSceneScaledTolerance(self, scale_factor):
         scales = []
         for surf in list(getattr(self, "SDT", []) or []):
             for attr_name in ("Diameter", "InDiameter", "Thickness"):
@@ -1113,10 +1119,10 @@ class system():
                 if np.isfinite(value) and value > 0.0:
                     scales.append(value)
         scale = max(scales) if scales else 1.0
-        return max(1.0e-6, float(scale) * 1.0e-6)
+        return max(1.0e-6, float(scale) * float(scale_factor))
 
 
-    def __NonSequentialChooserToot(self, A_RayOrig, A_Proto_pTarget, k):
+    def __NonSequentialChooserToot(self, A_RayOrig, A_Proto_pTarget, k, current_surface_index=None):
         """__NonSequentialChooserToot.
 
         Parameters
@@ -1145,10 +1151,22 @@ class system():
                 s = 0
                 h = []
                 near_hit_tolerance = self.__NonSequentialNearHitTolerance()
+                try:
+                    mesh_surface_index = int(self.GlassOnSide[int(k)])
+                except Exception:
+                    mesh_surface_index = -1
+                try:
+                    current_index = int(current_surface_index)
+                except Exception:
+                    current_index = -1
+                same_surface_tolerance = self.__NonSequentialSameSurfaceHitTolerance()
                 for f in A_SurfHit:
                     PD = (np.asarray(A_pTarget[s]) - np.asarray(A_RayOrig))
                     distance = np.linalg.norm(PD)
-                    if (np.abs(distance) <= near_hit_tolerance):
+                    reject_tolerance = near_hit_tolerance
+                    if mesh_surface_index == current_index:
+                        reject_tolerance = max(reject_tolerance, same_surface_tolerance)
+                    if (np.abs(distance) <= reject_tolerance):
                         distance = 99999999999999.9
                     h.append(distance)
                     s = (s + 1)
@@ -1176,7 +1194,7 @@ class system():
         [LL, MM, NN] = ResVec
         A_Proto_pTarget = (np.asarray(A_RayOrig) + ((np.asarray(ResVec) * 999999999.9) * SIGN))
         for k in range(1, len(self.EEE)):
-            distance = self.__NonSequentialChooserToot(A_RayOrig, A_Proto_pTarget, k)
+            distance = self.__NonSequentialChooserToot(A_RayOrig, A_Proto_pTarget, k, current_surface_index=j)
             chooser.append(distance)
         chooser = np.asarray(chooser)
         if skip_surface is not None:
@@ -4177,8 +4195,11 @@ class system():
                         )
                         self.RAY.append(np.asarray(pTarget, dtype=float))
                     else:
-                        RayOrig = pTarget
-                        self.RAY.append(RayOrig)
+                        RayOrig = self.__NudgeNsBranchOrigin(
+                            pTarget,
+                            self.__NsPhysicalDirection(ResVec, SIGN),
+                        )
+                        self.RAY.append(np.asarray(pTarget, dtype=float))
 
                     if self.__NsTraceIsRepeatedSurfaceStall(
                         a,
@@ -4494,8 +4515,11 @@ class system():
                     )
                     self.RAY.append(np.asarray(pTarget, dtype=float))
                 else:
-                    RayOrig = pTarget
-                    self.RAY.append(RayOrig)
+                    RayOrig = self.__NudgeNsBranchOrigin(
+                        pTarget,
+                        self.__NsPhysicalDirection(ResVec, SIGN),
+                    )
+                    self.RAY.append(np.asarray(pTarget, dtype=float))
 
                 if self.__NsTraceIsRepeatedSurfaceStall(
                     a,

@@ -67,12 +67,20 @@ def validate_nonseq_physics_hardening() -> list[NonSeqPhysicsHardeningCheck]:
 
     system = _build_reference_system()
     kernel_tolerance = float(system._system__NonSequentialNearHitTolerance())
+    same_surface_tolerance = float(system._system__NonSequentialSameSurfaceHitTolerance())
     inter_normal_tolerance = float(system.INORM._InterNormalCalc__RaySelfHitTolerance())
     checks.append(
         NonSeqPhysicsHardeningCheck(
             "non-sequential chooser near-hit tolerance scales below the old fixed 0.05 mm prism skip",
             0.0 < kernel_tolerance < 0.001,
             f"kernel_tolerance_mm={kernel_tolerance:.9g}",
+        )
+    )
+    checks.append(
+        NonSeqPhysicsHardeningCheck(
+            "same-surface self-hit rejection is tighter than real scene spacing but wider than the generic near-hit epsilon",
+            kernel_tolerance < same_surface_tolerance < 0.01,
+            f"near_mm={kernel_tolerance:.9g}, same_surface_mm={same_surface_tolerance:.9g}",
         )
     )
     checks.append(
