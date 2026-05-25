@@ -51,6 +51,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Transient STEP live-trace routing without VTK screenshot capture.",
     ),
     ValidationTarget(
+        "open3d-promoted-step-refresh",
+        "KrakenOS.UI.validate_open3d_promoted_step_refresh",
+        reason="First-open/sync retrace policy for saved row-backed STEP optical solids.",
+    ),
+    ValidationTarget(
         "open3d-step-state",
         "KrakenOS.UI.validate_open3d_step_state_service",
         reason="STEP selection, carry, delete, and promotion service logic.",
