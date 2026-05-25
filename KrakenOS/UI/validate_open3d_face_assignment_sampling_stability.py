@@ -291,6 +291,24 @@ def _validate_face_role_save_forces_stale_trace_rebuild() -> None:
         raise AssertionError("Open 3D view refresh helper cannot propagate forced retrace requests.")
 
 
+def _validate_row_face_hover_uses_runtime_mesh_geometry() -> None:
+    hover_source = inspect.getsource(Kraken3DInspector._hover_overlay_for_row_face)
+    pick_source = inspect.getsource(Kraken3DInspector._row_face_ray_pick_for_display_xy)
+    outline_source = inspect.getsource(Kraken3DInspector._set_step_hover_outline)
+    runtime_call = "_runtime_world_face_triangles_for_record" in hover_source
+    fallback_call = "world_triangles = self._world_face_triangles_for_record" in hover_source
+    if not runtime_call or not fallback_call:
+        raise AssertionError("Open 3D row face hover outline does not use runtime mesh triangles before STL fallback.")
+    if hover_source.find("_runtime_world_face_triangles_for_record") > hover_source.find("world_triangles = self._world_face_triangles_for_record"):
+        raise AssertionError("Open 3D row face hover fallback runs before runtime geometry.")
+    if "_runtime_trace_surface_mesh" not in pick_source or "_surface_cell_triangles" not in pick_source:
+        raise AssertionError("Open 3D row face ray-pick does not prefer the rendered runtime mesh triangles.")
+    if "_remove_renderer_view_prop(self._hover_step_outline_actor)" not in outline_source:
+        raise AssertionError("Open 3D hover outline removal bypasses renderer ViewProp cleanup.")
+    if "_add_renderer_view_prop(actor)" not in outline_source:
+        raise AssertionError("Open 3D hover outline addition bypasses renderer ViewProp cleanup.")
+
+
 def _launch_signature(scene_bundle) -> tuple[tuple[float, ...], ...]:
     signature: list[tuple[float, ...]] = []
     for path in list(getattr(scene_bundle, "ray_paths", []) or []):
@@ -392,6 +410,7 @@ def _run_focused_checks(*, include_layout_smoke: bool = False) -> None:
     _validate_done_2d_and_close_preserve_open3d_sampling()
     _validate_focus_and_vtk_teardown_are_guarded()
     _validate_face_role_save_forces_stale_trace_rebuild()
+    _validate_row_face_hover_uses_runtime_mesh_geometry()
     _validate_world_envelope_keeps_splitter_branch_bundles()
 
 

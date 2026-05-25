@@ -12657,10 +12657,7 @@ class Kraken3DInspector(tk.Toplevel):
         if self._renderer is None:
             return
         if self._hover_step_outline_actor is not None:
-            try:
-                self._renderer.RemoveActor(self._hover_step_outline_actor)
-            except Exception:
-                pass
+            self._remove_renderer_view_prop(self._hover_step_outline_actor)
             self._hover_step_outline_actor = None
         self._hover_step_cell_key = hover_key
         if outline_mesh is not None and int(getattr(outline_mesh, "n_points", 0)) > 0 and vtkActor is not None and vtkDataSetMapper is not None:
@@ -12680,7 +12677,7 @@ class Kraken3DInspector(tk.Toplevel):
                 except Exception:
                     pass
                 actor.PickableOff()
-                self._renderer.AddActor(actor)
+                self._add_renderer_view_prop(actor)
                 self._hover_step_outline_actor = actor
             except Exception:
                 self._hover_step_outline_actor = None
@@ -12979,28 +12976,37 @@ class Kraken3DInspector(tk.Toplevel):
             return None
         row, path = item
         try:
-            _fmt, triangles = _read_stl_triangle_vertices(path)
-            triangles = np.asarray(triangles, dtype=float)
-        except Exception:
-            return None
-        if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or triangles.shape[0] == 0:
-            return None
-        try:
             _center, scene_radius = self._scene_bounds()
         except Exception:
             scene_radius = 1.0
-        world_triangles = self._world_face_triangles_for_record(
-            row,
-            triangles,
+        world_triangles = self._runtime_world_face_triangles_for_record(
+            self.__dict__.get("_current_system"),
+            int(row_index),
             face,
-            z_station=self.editor._stl_row_z_station(int(row_index)),
-            transform=self._runtime_transform_for_row(self.__dict__.get("_current_system"), int(row_index)),
             scene_radius=float(scene_radius),
         )
+        if world_triangles.size == 0:
+            try:
+                _fmt, triangles = _read_stl_triangle_vertices(path)
+                triangles = np.asarray(triangles, dtype=float)
+            except Exception:
+                return None
+            if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or triangles.shape[0] == 0:
+                return None
+            world_triangles = self._world_face_triangles_for_record(
+                row,
+                triangles,
+                face,
+                z_station=self.editor._stl_row_z_station(int(row_index)),
+                transform=self._runtime_transform_for_row(self.__dict__.get("_current_system"), int(row_index)),
+                scene_radius=float(scene_radius),
+            )
+        if world_triangles.ndim != 3 or world_triangles.shape[1:] != (3, 3) or world_triangles.shape[0] == 0:
+            return None
         face_mesh = self._polydata_from_triangles(world_triangles)
         if face_mesh is None:
             return None
-        outline = self._planar_outline_from_triangles(world_triangles, normal_world=face.get("normal_world", face.get("normal")))
+        outline = self._planar_outline_from_triangles(world_triangles, normal_world=None)
         if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
             outline = self._display_feature_edges(face_mesh, feature_angle=8.0)
         if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
@@ -13008,7 +13014,10 @@ class Kraken3DInspector(tk.Toplevel):
                 outline = face_mesh.extract_all_edges()
             except Exception:
                 outline = None
-        center = face.get("centroid_world", face.get("centroid", ()))
+        try:
+            center = np.mean(np.asarray(world_triangles, dtype=float).reshape((-1, 3)), axis=0)
+        except Exception:
+            center = face.get("centroid_world", face.get("centroid", ()))
         return self._hover_overlay_for_feature(center, outline)
 
     def _hover_overlay_for_step_face(self, label: str, face: dict[str, object] | None):
@@ -13129,13 +13138,34 @@ class Kraken3DInspector(tk.Toplevel):
             return None
         if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or triangles.shape[0] == 0:
             return None
-        transform = self._runtime_transform_for_row(self.__dict__.get("_current_system"), int(row_index))
-        world_triangles = self._world_triangles_for_row_pick(
-            row,
-            triangles,
-            z_station=self.editor._stl_row_z_station(int(row_index)),
-            transform=transform,
+        system = self.__dict__.get("_current_system")
+        transform = self._runtime_transform_for_row(system, int(row_index))
+        runtime_triangles = self._surface_cell_triangles(
+            KrakenLayoutEditor._runtime_trace_surface_mesh(system, int(row_index))
         )
+        max_face_triangle_index = -1
+        for face in list(metadata.get("faces", []) or []):
+            if not isinstance(face, dict):
+                continue
+            for value in list(face.get("triangle_indices", face.get("cell_indices", [])) or []):
+                try:
+                    max_face_triangle_index = max(max_face_triangle_index, int(value))
+                except Exception:
+                    pass
+        if (
+            runtime_triangles.ndim == 3
+            and runtime_triangles.shape[1:] == (3, 3)
+            and runtime_triangles.shape[0] > max_face_triangle_index
+            and runtime_triangles.shape[0] > 0
+        ):
+            world_triangles = runtime_triangles
+        else:
+            world_triangles = self._world_triangles_for_row_pick(
+                row,
+                triangles,
+                z_station=self.editor._stl_row_z_station(int(row_index)),
+                transform=transform,
+            )
         if world_triangles.size == 0:
             return None
         if transform is not None:
