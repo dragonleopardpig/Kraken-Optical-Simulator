@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +27,7 @@ from KrakenOS.UI.capture_open3d_step_workflow_screenshots import (
 )
 from KrakenOS.UI.capture_vendor_prism_case_study_screenshots import PROJECT_ROOT
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor, _short_error_message
-from KrakenOS.UI.scene_geometry import ray_path_terminal_status_from_events
+from KrakenOS.UI.services.open3d_diagnostics import inspector_state_report
 
 
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "attachment" / "open3d_penta_mirror_diagnostic"
@@ -36,83 +35,12 @@ PENTA_OFFSET = (0.0, 5.338434219360337, 35.338052809592156)
 PENTA_ROTATION = (0.0, 90.0, 180.0)
 
 
-def _event_face_id(event: object) -> str:
-    metadata = getattr(event, "metadata", {}) or {}
-    if not isinstance(metadata, dict):
-        metadata = {}
-    return str(
-        getattr(event, "mesh_face_id", "")
-        or metadata.get("mesh_face_id", "")
-        or metadata.get("face_id", "")
-        or ""
-    ).strip()
-
-
-def _event_action(event: object) -> str:
-    return str(getattr(event, "event_type", "") or "").strip().lower()
-
-
-def _surface_sequence(path: object) -> tuple[str, ...]:
-    sequence: list[str] = []
-    for event in list(getattr(path, "events", []) or []):
-        if str(getattr(event, "event_kind", "") or "") != "surface":
-            continue
-        face_id = _event_face_id(event) or "surface"
-        action = _event_action(event)
-        sequence.append(f"{face_id}:{action}" if action else face_id)
-    return tuple(sequence)
-
-
-def _last_surface_summary(path: object) -> str:
-    sequence = _surface_sequence(path)
-    if not sequence:
-        return ""
-    face_action = sequence[-1].split(":", 1)
-    if len(face_action) == 2 and face_action[1]:
-        return f"{face_action[0]} {face_action[1]}"
-    return face_action[0]
-
-
-def _all_surface_events(ray_paths: list[object]) -> list[tuple[str, str]]:
-    events: list[tuple[str, str]] = []
-    for path in ray_paths:
-        for event in list(getattr(path, "events", []) or []):
-            if str(getattr(event, "event_kind", "") or "") != "surface":
-                continue
-            events.append((_event_face_id(event), _event_action(event)))
-    return events
-
-
-def _trace_summary_text(inspector: Kraken3DInspector) -> str:
-    actor = getattr(inspector, "_trace_summary_actor", None)
-    if actor is None:
-        return ""
-    try:
-        return str(actor.GetInput() or "")
-    except Exception:
-        return ""
-
-
 def _state_report(app: KrakenLayoutEditor, inspector: Kraken3DInspector, label: str) -> dict[str, Any]:
-    scene_bundle = getattr(inspector, "_current_scene_bundle", None)
-    ray_paths = list(getattr(scene_bundle, "ray_paths", []) or [])
-    sequences = Counter(_surface_sequence(path) for path in ray_paths)
-    terminal_counts = Counter(
-        str(ray_path_terminal_status_from_events(path) or "unknown").strip() or "unknown"
-        for path in ray_paths
+    return inspector_state_report(
+        inspector,
+        label,
+        status=str(app.status_var.get()),
     )
-    terminal_faces = Counter(_last_surface_summary(path) for path in ray_paths if _last_surface_summary(path))
-    events = Counter(_all_surface_events(ray_paths))
-    return {
-        "label": label,
-        "ray_paths": len(ray_paths),
-        "terminal_counts": dict(sorted(terminal_counts.items())),
-        "terminal_last_faces": dict(sorted(terminal_faces.items())),
-        "surface_sequence_counts": {" -> ".join(sequence): count for sequence, count in sorted(sequences.items())},
-        "surface_event_counts": {f"{face}:{action}": count for (face, action), count in sorted(events.items())},
-        "trace_summary_text": _trace_summary_text(inspector),
-        "status": str(app.status_var.get()),
-    }
 
 
 def _promote_current_optical_step_with_default_faces(app: KrakenLayoutEditor) -> int:

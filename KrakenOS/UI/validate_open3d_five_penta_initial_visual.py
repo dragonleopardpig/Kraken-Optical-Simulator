@@ -14,17 +14,14 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
 from KrakenOS.UI.capture_open3d_step_workflow_screenshots import _open_3d_inspector, _save_vtk_snapshot, _settle
 from KrakenOS.UI.capture_vendor_prism_case_study_screenshots import PROJECT_ROOT
-from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor, _load_python_data, _short_error_message
-from KrakenOS.UI.scene_geometry import ray_path_terminal_status_from_events
-from KrakenOS.UI.validate_penta_mirror_3d_cascade import _event_action, _event_face_id, _surface_events, _surface_sequence
+from KrakenOS.UI.layout_editor import KrakenLayoutEditor, _load_python_data, _short_error_message
+from KrakenOS.UI.services.open3d_diagnostics import inspector_state_report
 
 
 DEFAULT_LAYOUT_PATH = PROJECT_ROOT / "attachment" / "five_penta_prism_cascade.py"
@@ -49,98 +46,6 @@ def _load_saved_layout(app: KrakenLayoutEditor, path: Path) -> None:
     app.auto_save_plot_var.set(False)
     app.update_idletasks()
     app.update()
-
-
-def _terminal_direction(path: object) -> list[float]:
-    points = np.asarray(getattr(path, "points_world", ()), dtype=float)
-    if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
-        return []
-    direction = points[-1, :3] - points[-2, :3]
-    norm = float(np.linalg.norm(direction))
-    if norm <= 1e-12:
-        return []
-    return [round(float(value), 9) for value in (direction / norm)[:3]]
-
-
-def _path_signature(path: object) -> dict[str, object]:
-    points = np.asarray(getattr(path, "points_world", ()), dtype=float)
-    terminal_point: list[float] = []
-    max_abs_coordinate = 0.0
-    if points.ndim == 2 and points.shape[0] and points.shape[1] >= 3:
-        terminal_point = [round(float(value), 6) for value in points[-1, :3]]
-        finite = points[:, :3][np.isfinite(points[:, :3])]
-        if finite.size:
-            max_abs_coordinate = float(np.max(np.abs(finite)))
-    return {
-        "ray_index": int(getattr(path, "ray_index", 0) or 0),
-        "source_ray_index": int(getattr(path, "source_ray_index", getattr(path, "ray_index", 0)) or 0),
-        "terminal_status": str(ray_path_terminal_status_from_events(path) or "unknown"),
-        "terminal_point": terminal_point,
-        "terminal_direction": _terminal_direction(path),
-        "max_abs_coordinate": round(max_abs_coordinate, 6),
-        "sequence": " -> ".join(_surface_sequence(path)),
-    }
-
-
-def _central_path(ray_paths: list[object]) -> object:
-    if not ray_paths:
-        raise RuntimeError("No ray paths were rendered.")
-
-    def _score(path: object) -> tuple[float, int]:
-        points = np.asarray(getattr(path, "points_world", ()), dtype=float)
-        radius = float("inf")
-        if points.ndim == 2 and points.shape[0] and points.shape[1] >= 2:
-            radius = float(np.linalg.norm(points[0, :2]))
-        return radius, int(getattr(path, "ray_index", 0) or 0)
-
-    return min(ray_paths, key=_score)
-
-
-def _snapshot_stats(path: Path) -> dict[str, object]:
-    try:
-        from PIL import Image
-    except Exception:
-        return {"path": str(path), "bytes": path.stat().st_size, "pixel_check": "PIL unavailable"}
-    image = Image.open(path).convert("RGB")
-    pixels = np.asarray(image, dtype=np.uint8)
-    non_white = np.any(pixels < 245, axis=2)
-    colored = (
-        (np.abs(pixels[:, :, 0].astype(int) - pixels[:, :, 1].astype(int)) > 8)
-        | (np.abs(pixels[:, :, 1].astype(int) - pixels[:, :, 2].astype(int)) > 8)
-        | (np.abs(pixels[:, :, 0].astype(int) - pixels[:, :, 2].astype(int)) > 8)
-    )
-    return {
-        "path": str(path),
-        "bytes": path.stat().st_size,
-        "size": [int(image.width), int(image.height)],
-        "non_white_pixels": int(np.count_nonzero(non_white)),
-        "colored_pixels": int(np.count_nonzero(colored)),
-    }
-
-
-def _state_report(inspector: Kraken3DInspector, label: str, image_path: Path) -> dict[str, object]:
-    scene_bundle = getattr(inspector, "_current_scene_bundle", None)
-    ray_paths = list(getattr(scene_bundle, "ray_paths", []) or [])
-    central = _central_path(ray_paths)
-    statuses = Counter(str(ray_path_terminal_status_from_events(path) or "unknown") for path in ray_paths)
-    events = Counter(
-        (_event_face_id(event), _event_action(event))
-        for path in ray_paths
-        for event in _surface_events(path)
-    )
-    sequences = Counter(_surface_sequence(path) for path in ray_paths)
-    path_signatures = [_path_signature(path) for path in sorted(ray_paths, key=lambda item: int(getattr(item, "ray_index", 0) or 0))]
-    return {
-        "label": label,
-        "sampling_mode": str(getattr(inspector, "_last_refresh_sampling_mode", "") or ""),
-        "path_count": len(ray_paths),
-        "terminal_counts": dict(sorted(statuses.items())),
-        "central_path": _path_signature(central),
-        "path_signatures": path_signatures,
-        "surface_event_counts": {f"{face}:{action}": count for (face, action), count in sorted(events.items())},
-        "surface_sequence_counts": {" -> ".join(sequence): count for sequence, count in sorted(sequences.items())},
-        "image": _snapshot_stats(image_path),
-    }
 
 
 def _assert_state_ok(state: dict[str, object]) -> None:
@@ -196,14 +101,14 @@ def capture_case(layout_path: Path = DEFAULT_LAYOUT_PATH, output_dir: Path = DEF
 
         inspector.set_camera_preset("iso")
         initial_image = _save_vtk_snapshot(inspector, output_dir / "initial_open3d.png")
-        initial = _state_report(inspector, "initial_open3d", initial_image)
+        initial = inspector_state_report(inspector, "initial_open3d", image_path=initial_image)
         _assert_state_ok(initial)
 
         inspector._refresh_trace_now_scene("five-penta visual guard")
         _settle(inspector, 0.35)
         inspector.set_camera_preset("iso")
         trace_now_image = _save_vtk_snapshot(inspector, output_dir / "after_trace_now.png")
-        trace_now = _state_report(inspector, "after_trace_now", trace_now_image)
+        trace_now = inspector_state_report(inspector, "after_trace_now", image_path=trace_now_image)
         _assert_state_ok(trace_now)
         _compare_initial_and_trace_now(initial, trace_now)
 

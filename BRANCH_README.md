@@ -90,7 +90,13 @@ Current pipeline checkpoint:
 | Literal click-to-cascade placement | Achieved | `██████████ 100%` | The Open 3D imported-STEP face selection now preserves the picked face id, and the snap-to-axis command routes known 42779 penta entrance picks through the same deterministic two-face solver used by the five-penta reference guard. F005 is constrained to the incoming optical axis and F006 constrains roll/output direction before promotion, so the import/click/snap/promote path is no longer an entrance-normal-only placement. `validate_penta_mirror_3d_cascade.py` now requests a concrete +X penta exit direction and fails unless every ray follows the assigned vendor mirror faces and exits along that direction. |
 | Open 3D editable thickness dimensions | Achieved | `██████████ 100%` | The shared Physical Distance toggle now also draws Open 3D double-ended dimension arrows between adjacent editable-table rows. Each arrow uses the current 3D row/reference geometry, carries a numerical `Thickness` label, is pickable in the embedded VTK scene, and opens a row-scoped inline Tk/ttk thickness editor near the 3D canvas instead of a modal generic prompt. Enter/focus-out commits only that row's `Thickness`, Esc cancels, the editable table is synchronized, and Open 3D retraces without rewriting other spacing rows. The same dimension arrows/labels can now be dragged along their displayed direction; release commits the adjusted value to only the selected row and retraces Open 3D. |
 
-Latest movement on 2026-05-25: a display-backed five-penta first-open visual
+Latest movement on 2026-05-25: reusable Open 3D diagnostic report helpers now
+live in `services/open3d_diagnostics.py`. The display-backed five-penta visual
+guard and the penta mirror leak diagnostic now share the same ray-path
+signature, terminal-status, surface-event counting, terminal-face summary, and
+snapshot pixel-stat logic instead of duplicating local helper code.
+
+Earlier movement on 2026-05-25: a display-backed five-penta first-open visual
 parity guard now covers the screenshot-level initial-bend regression. The new
 validator opens the saved five-penta layout, captures the initial Open 3D view
 before Trace Now, captures the Trace Now view, compares the complete ray-path
