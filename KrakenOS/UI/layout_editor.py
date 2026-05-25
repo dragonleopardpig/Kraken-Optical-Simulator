@@ -5786,6 +5786,73 @@ class Kraken3DInspector(tk.Toplevel):
     def _install_pick_only_left_click_bindings(self) -> None:
         return self._mouse_bindings_service()._install_pick_only_left_click_bindings()
 
+    def _right_click_face_ray_context(self, display_xy, event=None) -> dict[str, object] | None:
+        try:
+            x, y = display_xy
+            display_xy = (float(x), float(y))
+        except Exception:
+            return None
+        candidates: list[tuple[float, int, dict[str, object]]] = []
+        for label_order, label in enumerate(STEP_OVERLAY_LABELS):
+            label = str(label).strip().lower()
+            if self.editor._step_path_for_label(label) is None:
+                continue
+            try:
+                pick = self._step_face_ray_pick_for_display_xy(label, display_xy)
+            except Exception:
+                pick = None
+            if pick is None:
+                continue
+            candidates.append(
+                (
+                    float(pick.distance),
+                    int(label_order),
+                    {
+                        "actor": None,
+                        "actor_key": None,
+                        "cell_id": -1,
+                        "feature": self._feature_from_face_ray_pick(pick),
+                        "row_index": None,
+                        "step_label": label,
+                        "point_world": np.asarray(pick.point_world, dtype=float).reshape(3),
+                        "normal_world": np.asarray(pick.normal_world, dtype=float).reshape(3),
+                        "display_xy": display_xy,
+                        "event": event,
+                    },
+                )
+            )
+        for row_index, _row in enumerate(list(self.editor.rows or [])):
+            if self.editor._file_backed_stl_row_at(int(row_index)) is None:
+                continue
+            try:
+                pick = self._row_face_ray_pick_for_display_xy(int(row_index), display_xy)
+            except Exception:
+                pick = None
+            if pick is None:
+                continue
+            candidates.append(
+                (
+                    float(pick.distance),
+                    int(len(STEP_OVERLAY_LABELS) + row_index),
+                    {
+                        "actor": None,
+                        "actor_key": None,
+                        "cell_id": -1,
+                        "feature": self._feature_from_face_ray_pick(pick),
+                        "row_index": int(row_index),
+                        "step_label": "",
+                        "point_world": np.asarray(pick.point_world, dtype=float).reshape(3),
+                        "normal_world": np.asarray(pick.normal_world, dtype=float).reshape(3),
+                        "display_xy": display_xy,
+                        "event": event,
+                    },
+                )
+            )
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: (item[0], item[1]))
+        return candidates[0][2]
+
     def _right_click_pick_context(self, event) -> dict[str, object] | None:
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
             return None
@@ -5803,7 +5870,7 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             return None
         if actor_key is None:
-            return None
+            return self._right_click_face_ray_context((float(x), float(y)), event=event)
         if pick_point.size < 3 or not np.all(np.isfinite(pick_point[:3])):
             pick_point = np.asarray([], dtype=float)
         feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
@@ -5827,7 +5894,7 @@ class Kraken3DInspector(tk.Toplevel):
             norm = float(np.linalg.norm(feature_normal[:3]))
             if np.isfinite(norm) and norm > 1e-12:
                 normal = feature_normal[:3] / norm
-        return {
+        context = {
             "actor": actor,
             "actor_key": actor_key,
             "cell_id": int(cell_id),
@@ -5839,6 +5906,11 @@ class Kraken3DInspector(tk.Toplevel):
             "display_xy": (float(x), float(y)),
             "event": event,
         }
+        if context["row_index"] is None and context["step_label"] is None:
+            fallback = self._right_click_face_ray_context((float(x), float(y)), event=event)
+            if fallback is not None:
+                return fallback
+        return context
 
     @staticmethod
     def _ray_event_mesh_face_id(event: object) -> str:
@@ -11085,6 +11157,59 @@ class Kraken3DInspector(tk.Toplevel):
             return None
         return np.asarray(point[:3], dtype=float)
 
+    def _row_display_actor_center(self, row_index: int) -> np.ndarray | None:
+        try:
+            row_index = int(row_index)
+        except Exception:
+            return None
+        actor_keys = list(dict.fromkeys(self._row_actor_map.get(row_index, []) or []))
+        if not actor_keys:
+            return None
+
+        def combined_center(*, require_body: bool) -> np.ndarray | None:
+            bounds_list: list[np.ndarray] = []
+            for actor_key in actor_keys:
+                actor = self._actor_by_key.get(actor_key)
+                if actor is None:
+                    continue
+                if require_body and not bool(getattr(actor, "_kraken_file_backed_row_body", False)):
+                    continue
+                try:
+                    bounds = np.asarray(actor.GetBounds(), dtype=float).reshape(6)
+                except Exception:
+                    continue
+                if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[0] > bounds[1]:
+                    continue
+                bounds_list.append(bounds)
+            if not bounds_list:
+                return None
+            stacked = np.vstack(bounds_list)
+            merged = np.asarray(
+                (
+                    np.min(stacked[:, 0]),
+                    np.max(stacked[:, 1]),
+                    np.min(stacked[:, 2]),
+                    np.max(stacked[:, 3]),
+                    np.min(stacked[:, 4]),
+                    np.max(stacked[:, 5]),
+                ),
+                dtype=float,
+            )
+            center = np.asarray(
+                (
+                    0.5 * (merged[0] + merged[1]),
+                    0.5 * (merged[2] + merged[3]),
+                    0.5 * (merged[4] + merged[5]),
+                ),
+                dtype=float,
+            )
+            return center if np.all(np.isfinite(center[:3])) else None
+
+        body_center = combined_center(require_body=True)
+        if body_center is not None:
+            return body_center
+        return combined_center(require_body=False)
+
     def _scene_placements_for_3d(self, scene_bundle: SceneBundle | None) -> list[ScenePlacement3D]:
         placements = list(getattr(scene_bundle, "placements", []) or []) if scene_bundle is not None else []
         if placements:
@@ -11191,6 +11316,14 @@ class Kraken3DInspector(tk.Toplevel):
                 if point is not None
             ]
             center = np.mean(np.asarray(centers, dtype=float), axis=0) if centers else np.zeros(3, dtype=float)
+        try:
+            primary_row = int(primary.row_index)
+        except Exception:
+            primary_row = -1
+        if primary_row >= 0 and self.editor._file_backed_stl_row_at(primary_row) is not None:
+            display_center = self._row_display_actor_center(primary_row)
+            if display_center is not None:
+                center = display_center
         spacing = max(float(getattr(primary, "grid_spacing_mm", 10.0) or 10.0), 1e-6)
         extent = max(float(getattr(primary, "grid_extent_mm", spacing) or spacing), spacing)
         if bool(getattr(primary, "snap_enabled", False)):

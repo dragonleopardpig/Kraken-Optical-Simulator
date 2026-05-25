@@ -235,6 +235,8 @@ def main() -> int:
     context_assign = inspect.getsource(Open3DFaceAssignmentService._assign_row_face_function_from_context)
     context_promote_assign = inspect.getsource(Open3DFaceAssignmentService._promote_step_and_assign_face_function)
     face_assignment_factory = inspect.getsource(Kraken3DInspector._face_assignment_service)
+    right_click_context = inspect.getsource(Kraken3DInspector._right_click_pick_context)
+    right_click_face_ray_context = inspect.getsource(Kraken3DInspector._right_click_face_ray_context)
     hover_status = inspect.getsource(Kraken3DInspector._update_hover_status)
     face_hover_status = inspect.getsource(Kraken3DInspector._face_hover_status_text)
     step_rotate_pick = inspect.getsource(Open3DStepRotationHandleService.apply_handle)
@@ -249,6 +251,7 @@ def main() -> int:
     step_carry_actor_motion = inspect.getsource(Kraken3DInspector._translate_step_overlay_actors)
     step_carry_drag = inspect.getsource(Kraken3DInspector._apply_step_carry_drag_motion)
     step_carry_finish = inspect.getsource(Kraken3DInspector._finish_step_carry_drag)
+    row_display_center = inspect.getsource(Kraken3DInspector._row_display_actor_center)
     step_carry_cursor_plane = inspect.getsource(Kraken3DInspector._cursor_plane_point)
     step_carry_display_world = inspect.getsource(Kraken3DInspector._display_to_world_3d)
     step_carry_follow_state = inspect.getsource(Kraken3DInspector._new_step_carry_follow_state)
@@ -1491,6 +1494,13 @@ def main() -> int:
             and "internal" in face_ray_pick_service,
         ),
         (
+            "Open 3D right-click face assignment falls back to display-ray CAD picking",
+            "_right_click_face_ray_context((float(x), float(y)), event=event)" in right_click_context
+            and "_step_face_ray_pick_for_display_xy(label, display_xy)" in right_click_face_ray_context
+            and "_row_face_ray_pick_for_display_xy(int(row_index), display_xy)" in right_click_face_ray_context
+            and "candidates.sort" in right_click_face_ray_context,
+        ),
+        (
             "Open 3D row face assignment uses the picked face id directly",
             "face_id: str" in assign_row_face_context
             and "optical_solid_face_record_for_mesh_cell" in right_click_menu
@@ -1791,6 +1801,13 @@ def main() -> int:
         ("embedded 3D detector overlays are line meshes", "pv.lines_from_points" in detector_overlays and "line_width" in detector_overlays),
         ("legacy 3D includes detector overlays", "_scene_detector_overlay_specs(" in legacy_open_3d and "cap_miss_crosshairs_to_scene=True" in legacy_open_3d),
         ("Open 3D renders row-backed placement handle state", "self._scene_placements_for_3d(scene_bundle)" in placement_grid and "grid_spacing_mm" in placement_grid),
+        (
+            "Open 3D placement handles anchor to displayed optical-solid body center",
+            "_row_display_actor_center(primary_row)" in placement_grid
+            and "_file_backed_stl_row_at(primary_row)" in placement_grid
+            and "_kraken_file_backed_row_body" in row_display_center
+            and "actor.GetBounds()" in row_display_center,
+        ),
         ("Open 3D suppresses visible placement grid planes", "_scene_placement_grid_mesh(" not in placement_grid and "Placement handles:" in placement_grid),
         ("Open 3D placement handles are contextual or explicitly enabled", "_show_scene_placement_handles()" in refresh and "_stl_placement_panel_visible()" in show_scene_placement_handles),
         ("Open 3D placement status is a VTK overlay", "vtkTextActor" in placement_grid_status and "Placement handles:" in placement_grid),
