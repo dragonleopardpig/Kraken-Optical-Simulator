@@ -70,7 +70,7 @@ Current pipeline checkpoint:
 | Open 3D STEP rotation-handle service extraction | Achieved | `██████████ 100%` | Imported STEP rotation-handle actor removal, rebuild, half-arc/arrow generation, hover highlighting, and world-axis write-through now live in `Open3DStepRotationHandleService`; `layout_editor.py` keeps only compatibility wrappers and status coordination. |
 | Open 3D Trace Now sampling stability | Achieved | `██████████ 100%` | `Trace now` no longer switches a current Open 3D scene to the default 3D envelope sampler when Live Mode is off. It retraces the sampling mode already displayed in Open 3D, while still including transient optical STEP overlays if one is being placed. |
 | Fast validation contract runner | Achieved | `██████████ 100%` | `KrakenOS.UI.validate_fast_contracts` runs the lightweight no-display/no-CAD-fixture contracts first, including focused Open 3D sampling-stability checks. Display-backed CAD smoke tests remain explicit targeted commands for rendering, face-picking, and screenshot regressions. |
-| Open 3D initial sampler isolation | Achieved | `██████████ 100%` | Opening Open 3D after a 2D plot refresh no longer reuses a cached 2D `world_sections` trace. The inspector rebuilds with the Open 3D `world_envelope` sampler, preventing Machine Vision 150 mm measured from showing 365 display-slice rays and 84 clipped entrance-lens rays as if they were the native 3D launch. |
+| Open 3D projection-synced sequential sampling | Achieved | `██████████ 100%` | Opening Open 3D after a sequential 2D plot refresh now reuses the current 3D-compatible `world_sections` SceneBundle instead of silently replacing it with a smaller `world_envelope` bundle. Machine Vision 150 mm measured keeps its 365 traced section paths, hides the 84 clipped entrance-lens paths when Show clipped rays is off, and preserves field colors in Open 3D. Incompatible legacy display-only sampling still falls back to the Open 3D sampler. |
 | Folded mirror 2D/Open 3D surface parity | Achieved | `██████████ 100%` | Folded-preview mirror rows now render their Open 3D mirror surface from the same folded SceneBundle geometry that drives the traced ray display and 2D projection, instead of showing a raw sequential `TRANS_2A` mesh with the opposite YZ slant. `validate_folded_mirror_projection_parity` checks the Galvo F-Theta folded mirror mesh tangent against the SceneBundle mirror curve and is included in the fast contract runner. |
 | Tk teardown callback cleanup | Achieved | `██████████ 100%` | Custom table selection, table-grid, and active-cell-border callbacks now keep cancellable `after` ids and are cancelled during editor teardown. This prevents stale Tk callbacks such as `_update_active_cell_border`, `_emit_custom_table_selection_changed`, and `_update_table_grid` from firing after the root window has been destroyed. |
 | Internal cube beam-splitter continuation | Achieved | `██████████ 100%` | Internal optical-solid beam-splitter faces now preserve the current glass volume instead of toggling to glass-air at the diagonal plane, and reflected/transmitted child branches keep the same solid eligible for the next exit-face hit. Open 3D face hover/selection outlines now use the full planar face boundary, so cube internal splitter faces highlight as one enclosed diagonal face instead of small triangulation patches. |
@@ -85,7 +85,16 @@ Current pipeline checkpoint:
 | Literal click-to-cascade placement | Achieved | `██████████ 100%` | The Open 3D imported-STEP face selection now preserves the picked face id, and the snap-to-axis command routes known 42779 penta entrance picks through the same deterministic two-face solver used by the five-penta reference guard. F005 is constrained to the incoming optical axis and F006 constrains roll/output direction before promotion, so the import/click/snap/promote path is no longer an entrance-normal-only placement. `validate_penta_mirror_3d_cascade.py` now requests a concrete +X penta exit direction and fails unless every ray follows the assigned vendor mirror faces and exits along that direction. |
 | Open 3D editable thickness dimensions | Started | `██████░░░░ 60%` | The shared Physical Distance toggle now also draws Open 3D double-ended dimension arrows between adjacent editable-table rows. Each arrow uses the current 3D row/reference geometry, carries a numerical `Thickness` label, is pickable in the embedded VTK scene, and opens a row-scoped thickness editor that updates only that table row before forcing an Open 3D retrace. Remaining work is replacing the modal numeric prompt with an inline label editor and adding drag-to-adjust distance handles. |
 
-Latest movement on 2026-05-25: Folded-preview mirror surfaces now use one
+Latest movement on 2026-05-25: Open 3D now treats sequential `world_sections`
+as a real 3D scene bundle, not as a disposable 2D-only cache. Machine Vision
+150 mm measured no longer opens Open 3D as a 9-ray `world_envelope` substitute
+when the 2D plot is already showing the correct field-fan section trace. The
+Open 3D refresh service reuses the current `world_sections` SceneBundle,
+Open 3D ray rendering hides non-detector clipped paths when Show clipped rays
+is off, and ray colors now come from the SceneBundle field color so 2D and 3D
+use the same field grouping.
+
+Earlier movement on 2026-05-25: Folded-preview mirror surfaces now use one
 display geometry contract across the SceneBundle, 2D projection, and Open 3D
 surface mesh. The Galvo F-Theta screenshot exposed a real North Star risk:
 2D drew the physically folded `-45 deg` mirror curve while Open 3D showed the
@@ -94,12 +103,10 @@ builds folded mirror meshes from the same folded scene geometry as the traced
 ray display, and `validate_folded_mirror_projection_parity` guards the
 contract in the fast validation runner.
 
-Earlier movement on 2026-05-25: Open 3D initial refresh rejects cached 2D
-`world_sections` traces when the inspector first opens. A normal load of
-Machine Vision 150 mm measured still builds the 2D slice for the Matplotlib
-plot, but Open 3D immediately rebuilds the native 3D `world_envelope` bundle:
-9 detector-hit rays instead of the previous 365 display-slice rays with 84
-stopped-at-S2 entrance-lens rays.
+Earlier movement on 2026-05-25: Open 3D initial refresh was hardened to avoid
+using incompatible legacy display-only traces as if they were native 3D launch
+bundles. The follow-up above narrows that rule so compatible `world_sections`
+projection bundles remain valid Open 3D scene data.
 
 Earlier movement on 2026-05-25: Open 3D `Trace now` now preserves the currently
 displayed sampling mode when Live Mode is off. This keeps layouts such as

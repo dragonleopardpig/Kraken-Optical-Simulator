@@ -146,28 +146,28 @@ def _validate_current_trace_records_active_mode() -> None:
         raise AssertionError("Current SceneBundle refresh did not remember the active sampling mode.")
 
 
-def _validate_2d_cached_trace_does_not_seed_open3d() -> None:
+def _validate_3d_compatible_projection_trace_seeds_open3d() -> None:
     editor = _FakeEditor()
     editor._active_preview_sampling_mode = "world_sections"
     editor.current_trace = (object(), object(), object())
     inspector = _inspector_with_fake_editor(editor)
     inspector._last_refresh_sampling_mode = None
     Kraken3DInspector.refresh_from_editor(inspector)
-    if editor.build_sampling_modes != ["source_cone_world"]:
+    if editor.build_sampling_modes:
         raise AssertionError(
-            "Initial Open 3D refresh should rebuild a 3D sampler instead of reusing a cached 2D world_sections trace; "
+            "Initial Open 3D refresh should reuse a current 3D-compatible world_sections trace; "
             f"got {editor.build_sampling_modes!r}."
         )
-    if inspector._last_refresh_sampling_mode != "source_cone_world":
+    if inspector._last_refresh_sampling_mode != "world_sections":
         raise AssertionError(
-            "Initial Open 3D refresh did not remember the rebuilt 3D sampling mode: "
+            "Initial Open 3D refresh did not remember the reused 3D-compatible sampling mode: "
             f"{inspector._last_refresh_sampling_mode!r}."
         )
-    if inspector.refresh_calls and inspector.refresh_calls[0]["scene_bundle"] is editor.current_trace[2]:
-        raise AssertionError("Initial Open 3D refresh rendered the cached 2D SceneBundle.")
+    if not inspector.refresh_calls or inspector.refresh_calls[0]["scene_bundle"] is not editor.current_trace[2]:
+        raise AssertionError("Initial Open 3D refresh did not render the current world_sections SceneBundle.")
 
 
-def _validate_machine_vision_open3d_rebuilds_world_envelope_after_2d_refresh() -> None:
+def _validate_machine_vision_open3d_reuses_projection_scene_after_2d_refresh() -> None:
     app = KrakenLayoutEditor(headless=True)
     try:
         app.load_layouts()
@@ -190,21 +190,22 @@ def _validate_machine_vision_open3d_rebuilds_world_envelope_after_2d_refresh() -
             inspector,
             update_state=False,
         )
-        if result.sampling_mode != "world_envelope":
-            raise AssertionError(f"Open 3D did not rebuild with world_envelope, got {result.sampling_mode!r}.")
+        if result.sampling_mode != "world_sections":
+            raise AssertionError(f"Open 3D did not keep the projection-synced world_sections trace, got {result.sampling_mode!r}.")
+        if result.scene_bundle is not getattr(app, "_last_scene_bundle", None):
+            raise AssertionError("Open 3D Machine Vision did not reuse the current 2D/3D SceneBundle.")
         paths = list(getattr(result.scene_bundle, "ray_paths", []) or [])
-        if len(paths) != 9:
-            raise AssertionError(f"Open 3D Machine Vision envelope should show 9 rays, got {len(paths)}.")
-        stopped = [
-            str(getattr(path, "termination_reason", "") or "")
-            for path in paths
-            if str(getattr(path, "termination_reason", "") or "") not in {"image", "hit_detector"}
-        ]
-        if stopped:
+        if len(paths) != 365:
+            raise AssertionError(f"Open 3D Machine Vision projection bundle should keep 365 traced paths, got {len(paths)}.")
+        visible_records = app._iter_3d_scene_ray_records(result.rays, result.scene_bundle)
+        if len(visible_records) != 281:
             raise AssertionError(
-                "Open 3D Machine Vision envelope reused clipped 2D display-slice paths: "
-                f"{stopped[:8]!r}."
+                "Open 3D Machine Vision should hide clipped world-section paths when Show clipped rays is off; "
+                f"got {len(visible_records)} visible records."
             )
+        visible_colors = {tuple(round(float(channel), 6) for channel in record[1]) for record in visible_records}
+        if len(visible_colors) < 3:
+            raise AssertionError(f"Open 3D Machine Vision should preserve field colors, got {visible_colors!r}.")
     finally:
         app.destroy()
 
@@ -383,9 +384,9 @@ def _run_focused_checks(*, include_layout_smoke: bool = False) -> None:
     _validate_explicit_mode_still_wins()
     _validate_missing_mode_falls_back_to_3d_default()
     _validate_current_trace_records_active_mode()
-    _validate_2d_cached_trace_does_not_seed_open3d()
+    _validate_3d_compatible_projection_trace_seeds_open3d()
     if include_layout_smoke:
-        _validate_machine_vision_open3d_rebuilds_world_envelope_after_2d_refresh()
+        _validate_machine_vision_open3d_reuses_projection_scene_after_2d_refresh()
     _validate_trace_now_preserves_active_mode_with_transient_step_support()
     _validate_face_assignment_handlers_capture_mode_before_mutation()
     _validate_done_2d_and_close_preserve_open3d_sampling()
@@ -409,7 +410,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--layout-smoke",
         action="store_true",
-        help="Also load Machine Vision 150 mm measured and verify Open 3D rebuilds the 3D sampler after a 2D refresh.",
+        help="Also load Machine Vision 150 mm measured and verify Open 3D keeps the projection-synced scene after a 2D refresh.",
     )
     args = parser.parse_args(argv)
     if args.focused:

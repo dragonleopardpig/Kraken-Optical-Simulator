@@ -31,6 +31,18 @@ class Open3DTraceRefreshService:
         mode = str(sampling_mode or "").strip().lower()
         return mode or None
 
+    @staticmethod
+    def sampling_mode_is_open3d_scene(mode: object) -> bool:
+        normalized = Open3DTraceRefreshService.normalize_sampling_mode_label(mode)
+        return normalized in {
+            "full_pupil",
+            "world_envelope",
+            "world_sections",
+            "source_cone_world",
+            "world_source_cone",
+            "point_cone_world",
+        }
+
     def inspector_active_sampling_mode(self, inspector: Any) -> str | None:
         mode = self.normalize_sampling_mode_label(getattr(inspector, "_last_refresh_sampling_mode", None))
         if mode is not None:
@@ -56,7 +68,7 @@ class Open3DTraceRefreshService:
         if not force_retrace and resolved_sampling_mode is None:
             open3d_sampling_mode = self.normalize_sampling_mode_label(self.editor._preview_3d_sampling_mode())
             current_mode = self.normalize_sampling_mode_label(getattr(self.editor, "_active_preview_sampling_mode", None))
-            if current_mode == open3d_sampling_mode:
+            if current_mode == open3d_sampling_mode or self.sampling_mode_is_open3d_scene(current_mode):
                 current = self.editor._current_preview_scene_trace()
         if current is not None:
             system, rays, scene_bundle = current

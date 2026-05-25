@@ -22086,6 +22086,8 @@ class KrakenLayoutEditor(tk.Tk):
         bundle = scene_bundle if scene_bundle is not None else self._last_scene_bundle
         scene_paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
         if scene_paths:
+            if not bool(self.show_clipped_rays_var.get()):
+                scene_paths = [path for path in scene_paths if ray_path_reaches_image_from_events(path)]
             total = len(scene_paths)
             step = max(total // 300, 1) if total > 300 else 1
             rendered: list[tuple[int, tuple[float, float, float], np.ndarray, str]] = []
@@ -22093,18 +22095,21 @@ class KrakenLayoutEditor(tk.Tk):
                 points = np.asarray(path.points_world, dtype=float)
                 if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
                     continue
-                wavelength = getattr(path, "wavelength", None)
-                if wavelength is not None:
-                    color = tuple(_wavelength_to_rgb(float(wavelength) * 1000.0))
+                path_color = str(getattr(path, "color", "") or "").strip()
+                if path_color:
+                    color = _color_to_rgb_tuple(path_color)
                 else:
-                    color = _color_to_rgb_tuple(getattr(path, "color", "#39FF14"))
+                    wavelength = getattr(path, "wavelength", None)
+                    if wavelength is not None:
+                        color = tuple(_wavelength_to_rgb(float(wavelength) * 1000.0))
+                    else:
+                        color = _color_to_rgb_tuple("#39FF14")
                 try:
                     ray_index = int(getattr(path, "ray_index"))
                 except Exception:
                     ray_index = int(fallback_index * step)
                 rendered.append((ray_index, color, points[:, :3], ray_path_terminal_status_from_events(path)))
-            if rendered:
-                return rendered
+            return rendered
 
         fallback_rays = rays if rays is not None else self.last_rays
         return [
