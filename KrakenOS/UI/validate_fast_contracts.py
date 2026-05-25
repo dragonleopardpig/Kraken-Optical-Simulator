@@ -106,6 +106,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Scalar Snell and near-hit tolerance hardening checks.",
     ),
     ValidationTarget(
+        "infinity-field-launch",
+        "KrakenOS.UI.validate_infinity_field_launch",
+        reason="Infinity-object field-angle bundles are stop-centered parallel launches.",
+    ),
+    ValidationTarget(
         "source-object-split",
         "KrakenOS.UI.validate_source_object_split",
         reason="Source/object scene-entity split contract.",

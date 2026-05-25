@@ -98,7 +98,7 @@ class TracePreviewService:
                 system.Vignetting(0)
                 return
         if mode == "world_sections":
-            section_bundles, section_ray_count = self._build_world_section_bundles(pupil_radius)
+            section_bundles, section_ray_count = self._build_world_section_bundles(pupil_radius, system=system)
             if section_bundles:
                 rays.clean()
                 self._trace_preview_bundles(system, rays, wavelength, section_bundles)
@@ -151,7 +151,12 @@ class TracePreviewService:
                         l_values = np.full(n_pts, float(direction[0]), dtype=float)
                         m_values = np.full(n_pts, float(direction[1]), dtype=float)
                         n_values = np.full(n_pts, float(direction[2]), dtype=float)
-                        preview_bundles.append((x_values, y_values, z_values, l_values, m_values, n_values))
+                        preview_bundles.append(
+                            self._center_infinity_bundle_on_launch_reference(
+                                (x_values, y_values, z_values, l_values, m_values, n_values),
+                                system=system,
+                            )
+                        )
                     self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
                     self._preview_field_ray_count = len(disk_pts)
                 else:
@@ -169,14 +174,24 @@ class TracePreviewService:
                         l_values = np.full(len(pupil_samples), float(direction[0]), dtype=float)
                         m_values = np.full(len(pupil_samples), float(direction[1]), dtype=float)
                         n_values = np.full(len(pupil_samples), float(direction[2]), dtype=float)
-                        preview_bundles.append((x_values, y_values, z_values, l_values, m_values, n_values))
+                        preview_bundles.append(
+                            self._center_infinity_bundle_on_launch_reference(
+                                (x_values, y_values, z_values, l_values, m_values, n_values),
+                                system=system,
+                            )
+                        )
                         x_values = np.asarray(pupil_samples, dtype=float)
                         y_values = np.zeros(len(pupil_samples), dtype=float)
                         z_values = np.zeros(len(pupil_samples), dtype=float)
                         l_values = np.full(len(pupil_samples), float(direction[0]), dtype=float)
                         m_values = np.full(len(pupil_samples), float(direction[1]), dtype=float)
                         n_values = np.full(len(pupil_samples), float(direction[2]), dtype=float)
-                        preview_bundles.append((x_values, y_values, z_values, l_values, m_values, n_values))
+                        preview_bundles.append(
+                            self._center_infinity_bundle_on_launch_reference(
+                                (x_values, y_values, z_values, l_values, m_values, n_values),
+                                system=system,
+                            )
+                        )
                     self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
                     self._preview_field_ray_count = len(pupil_samples) * 2
             else:
@@ -532,6 +547,8 @@ class TracePreviewService:
             pupil.FieldY = value if axis == "y" else 0.0
             bundle = self._pupil_pattern_bundle(pupil)
             if len(bundle) == 6 and len(np.asarray(bundle[0])) > 0:
+                if self._current_object_mode() == "Infinity":
+                    bundle = self._center_infinity_bundle_on_launch_reference(bundle, system=system)
                 bundles.append(bundle)
         rays_per_field = max((len(np.asarray(bundle[0])) for bundle in bundles), default=0)
         return bundles, int(rays_per_field)
@@ -600,6 +617,7 @@ class TracePreviewService:
                                     return_index=True,
                                 )
                                 selected = tuple(values[np.sort(unique_idx)] for values in selected)
+                            selected = self._center_infinity_bundle_on_launch_reference(selected, system=system)
                             bundles.append(selected)
                     if bundles:
                         return bundles, int(max(len(bundle[0]) for bundle in bundles))
@@ -623,16 +641,16 @@ class TracePreviewService:
                     x_values = pupil_samples.copy()
                 else:
                     y_values = pupil_samples.copy()
-                bundles.append(
-                    (
-                        x_values,
-                        y_values,
-                        np.zeros(n_pts, dtype=float),
-                        np.full(n_pts, float(direction[0]), dtype=float),
-                        np.full(n_pts, float(direction[1]), dtype=float),
-                        np.full(n_pts, float(direction[2]), dtype=float),
-                    )
+                bundle = (
+                    x_values,
+                    y_values,
+                    np.zeros(n_pts, dtype=float),
+                    np.full(n_pts, float(direction[0]), dtype=float),
+                    np.full(n_pts, float(direction[1]), dtype=float),
+                    np.full(n_pts, float(direction[2]), dtype=float),
                 )
+                bundle = self._center_infinity_bundle_on_launch_reference(bundle, system=system)
+                bundles.append(bundle)
         else:
             field_values = self._sample_field_values(self._current_field_height())
             object_distance = self._current_object_distance()

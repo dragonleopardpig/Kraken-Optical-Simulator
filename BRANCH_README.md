@@ -63,6 +63,7 @@ Current pipeline checkpoint:
 
 | Item | Status | Progress | Notes |
 | --- | --- | --- | --- |
+| Infinity-field launch centering | Achieved | `██████████ 100%` | Infinity Object + Field Half-Angle now builds off-axis parallel field bundles whose chief rays are centered on the active aperture/analysis surface, rather than launching every field from the Object-row center and letting oblique bundles clip at the first lens. `validate_infinity_field_launch` covers the Zemax Double Gauss 28 degree case and is included in the fast contract runner. |
 | Non-sequential intersection policy extraction | Achieved | `██████████ 100%` | The kernel now exposes `NonSequentialIntersectionPolicy` as the single owner of scene-scaled near-hit and same-surface self-hit rejection. Existing private tolerance accessors delegate to the policy for compatibility, and `validate_nonseq_physics_hardening` checks that only the current surface receives the widened immediate re-hit window. |
 | Non-sequential same-surface self-hit rejection | Achieved | `██████████ 100%` | Ordinary non-STL surface hits now advance the next non-sequential ray origin by the same scene-scaled physical-direction nudge used by CAD/STL continuations, and the chooser rejects only very-near repeat hits on the just-hit surface. This fixes the penta-prism-to-doublet off-axis fan loop where tessellated follower-lens surface `S2` reported a sub-micron self-hit and trapped the ray until `NsLimit`; `validate_vendor_prism_42779` again proves all three meridional samples traverse `S2 -> S3 -> S4 -> S5` and focus on one image station. |
 | Vendor-prism workflow validator hygiene | Achieved | `██████████ 100%` | `validate_vendor_prism_42779` now follows the post-refactor source layout: Save Roles behavior is checked in `panels/main_optical_solid_face_roles_dialog.py` instead of stale `layout_editor.py` strings, and the penta-prism-plus-doublet checks are again strong enough to prove the off-axis fan reaches the image plane instead of only checking the central ray. |
@@ -94,7 +95,17 @@ Current pipeline checkpoint:
 | Literal click-to-cascade placement | Achieved | `██████████ 100%` | The Open 3D imported-STEP face selection now preserves the picked face id, and the snap-to-axis command routes known 42779 penta entrance picks through the same deterministic two-face solver used by the five-penta reference guard. F005 is constrained to the incoming optical axis and F006 constrains roll/output direction before promotion, so the import/click/snap/promote path is no longer an entrance-normal-only placement. `validate_penta_mirror_3d_cascade.py` now requests a concrete +X penta exit direction and fails unless every ray follows the assigned vendor mirror faces and exits along that direction. |
 | Open 3D editable thickness dimensions | Achieved | `██████████ 100%` | The shared Physical Distance toggle now also draws Open 3D double-ended dimension arrows between adjacent editable-table rows. Each arrow uses the current 3D row/reference geometry, carries a numerical `Thickness` label, is pickable in the embedded VTK scene, and opens a row-scoped inline Tk/ttk thickness editor near the 3D canvas instead of a modal generic prompt. Enter/focus-out commits only that row's `Thickness`, Esc cancels, the editable table is synchronized, and Open 3D retraces without rewriting other spacing rows. The same dimension arrows/labels can now be dragged along their displayed direction; release commits the adjusted value to only the selected row and retraces Open 3D. |
 
-Latest movement on 2026-05-25: the non-sequential near-hit rules have been
+Latest movement on 2026-05-25: Infinity Object + Field Half-Angle launch
+geometry is now stop-centered. The 3D Double Gauss screenshot showed the same
+root problem as the 2D plot: off-axis fields were represented as oblique
+bundles launched from the Object-row center, so the lens received a shifted
+fan that looked like an object-point cone and clipped at the entrance lens.
+The shared world-section/world-envelope launch builders now translate each
+infinity-field bundle so its chief ray passes through the selected
+aperture/analysis surface. `validate_infinity_field_launch` guards the
+Zemax Double Gauss 28 degree case and is part of the fast contract suite.
+
+Earlier movement on 2026-05-25: the non-sequential near-hit rules have been
 extracted into `NonSequentialIntersectionPolicy`. The policy is now the single
 kernel-level owner of scene-scaled generic near-hit rejection and the wider
 current-surface self-hit rejection used after reflections/refractions. The old

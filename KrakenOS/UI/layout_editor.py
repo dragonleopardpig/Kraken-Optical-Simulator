@@ -34854,6 +34854,44 @@ class KrakenLayoutEditor(tk.Tk):
             return True
         return bool(np.isfinite(span) and abs(float(span)) > 1e-12)
 
+    def _infinity_field_launch_reference_point(self, system=None) -> np.ndarray:
+        try:
+            reference_index = int(self._analysis_surface_index())
+            reference = np.asarray(
+                self._surface_reference_world_point(reference_index, system=system),
+                dtype=float,
+            ).reshape(-1)[:3]
+        except Exception:
+            reference = np.asarray((0.0, 0.0, self._current_object_distance()), dtype=float)
+        if reference.size < 3 or not np.all(np.isfinite(reference[:3])):
+            reference = np.asarray((0.0, 0.0, self._current_object_distance()), dtype=float)
+        return reference.astype(float)
+
+    def _center_infinity_bundle_on_launch_reference(self, bundle, *, system=None):
+        arrays = tuple(np.asarray(values, dtype=float).reshape(-1).copy() for values in bundle)
+        if len(arrays) != 6 or len(arrays[0]) == 0:
+            return bundle
+        reference = self._infinity_field_launch_reference_point(system=system)
+        origins = np.column_stack(arrays[:3])
+        directions = np.column_stack(arrays[3:])
+        dz = directions[:, 2]
+        valid = np.isfinite(dz) & (np.abs(dz) > 1.0e-12)
+        if not np.any(valid):
+            return arrays
+        t = (float(reference[2]) - origins[valid, 2]) / dz[valid]
+        hits_xy = origins[valid, :2] + directions[valid, :2] * t[:, None]
+        finite = np.all(np.isfinite(hits_xy), axis=1)
+        if not np.any(finite):
+            return arrays
+        center_xy = np.median(hits_xy[finite], axis=0)
+        shift_xy = np.asarray(reference[:2], dtype=float) - center_xy
+        if not np.all(np.isfinite(shift_xy)):
+            return arrays
+        arrays = list(arrays)
+        arrays[0] = arrays[0] + float(shift_xy[0])
+        arrays[1] = arrays[1] + float(shift_xy[1])
+        return tuple(arrays)
+
     def _current_field_count(self) -> int:
         if not self._field_sampling_is_active():
             return 1
@@ -44113,7 +44151,7 @@ class KrakenLayoutEditor(tk.Tk):
         unique = np.unique(np.round(np.asarray(pts, dtype=float), decimals=12), axis=0)
         return np.asarray(unique, dtype=float)
 
-    def _build_world_envelope_bundles(self, pupil_radius: float):
+    def _build_world_envelope_bundles(self, pupil_radius: float, *, system=None):
         """Build source-driven 3D center/boundary bundles for 3D/CAD preview.
 
         The 2D layout uses meridional fans for readability, but 3D and STEP
@@ -44131,9 +44169,9 @@ class KrakenLayoutEditor(tk.Tk):
         if radius <= 1e-9:
             radius = 1.0
         rim_pts = self._sample_pupil_rim(radius)
-        return self._build_world_bundles_from_pupil_points(rim_pts)
+        return self._build_world_bundles_from_pupil_points(rim_pts, system=system)
 
-    def _build_world_sparse_pupil_bundles(self, pupil_radius: float):
+    def _build_world_sparse_pupil_bundles(self, pupil_radius: float, *, system=None):
         radius = float(pupil_radius) if np.isfinite(float(pupil_radius)) else 0.0
         if radius <= 1e-9 and self.rows:
             try:
@@ -44142,7 +44180,7 @@ class KrakenLayoutEditor(tk.Tk):
                 radius = 0.0
         if radius <= 1e-9:
             radius = 1.0
-        return self._build_world_bundles_from_pupil_points(self._sample_sparse_pupil_disk(radius))
+        return self._build_world_bundles_from_pupil_points(self._sample_sparse_pupil_disk(radius), system=system)
 
     def _sample_world_section_pupil_points(self, max_radius: float) -> np.ndarray:
         radius = float(max_radius) if np.isfinite(float(max_radius)) else 0.0
@@ -44181,19 +44219,20 @@ class KrakenLayoutEditor(tk.Tk):
                 pairs.append(pair)
         return pairs
 
-    def _build_world_section_bundles(self, pupil_radius: float):
+    def _build_world_section_bundles(self, pupil_radius: float, *, system=None):
         pupil_points = self._sample_world_section_pupil_points(pupil_radius)
         if self._current_object_mode() == "Infinity":
             field_pairs = self._field_cross_pairs_for_world_sections(self._current_field_angle_deg())
         else:
             field_pairs = self._field_cross_pairs_for_world_sections(self._current_field_height())
-        return self._build_world_bundles_from_pupil_points(pupil_points, field_pairs=field_pairs)
+        return self._build_world_bundles_from_pupil_points(pupil_points, field_pairs=field_pairs, system=system)
 
     def _build_world_bundles_from_pupil_points(
         self,
         pupil_points: np.ndarray,
         *,
         field_pairs: list[tuple[float, float]] | None = None,
+        system=None,
     ):
         pupil_points = np.asarray(pupil_points, dtype=float)
         if pupil_points.ndim != 2 or pupil_points.shape[0] == 0 or pupil_points.shape[1] < 2:
@@ -44210,16 +44249,16 @@ class KrakenLayoutEditor(tk.Tk):
                     continue
                 direction /= norm
                 n_pts = len(pupil_points)
-                bundles.append(
-                    (
-                        np.asarray(pupil_points[:, 0], dtype=float),
-                        np.asarray(pupil_points[:, 1], dtype=float),
-                        np.zeros(n_pts, dtype=float),
-                        np.full(n_pts, float(direction[0]), dtype=float),
-                        np.full(n_pts, float(direction[1]), dtype=float),
-                        np.full(n_pts, float(direction[2]), dtype=float),
-                    )
+                bundle = (
+                    np.asarray(pupil_points[:, 0], dtype=float),
+                    np.asarray(pupil_points[:, 1], dtype=float),
+                    np.zeros(n_pts, dtype=float),
+                    np.full(n_pts, float(direction[0]), dtype=float),
+                    np.full(n_pts, float(direction[1]), dtype=float),
+                    np.full(n_pts, float(direction[2]), dtype=float),
                 )
+                bundle = self._center_infinity_bundle_on_launch_reference(bundle, system=system)
+                bundles.append(bundle)
         else:
             object_distance = self._current_object_distance()
             pairs = field_pairs if field_pairs is not None else self._sample_field_grid_pairs(self._current_field_height())
@@ -44258,13 +44297,13 @@ class KrakenLayoutEditor(tk.Tk):
         return bundles, int(len(pupil_points))
 
     def _trace_world_envelope_rays(self, system, rays, wavelength: float, pupil_radius: float) -> bool:
-        boundary_bundles, _boundary_count = self._build_world_envelope_bundles(pupil_radius)
+        boundary_bundles, _boundary_count = self._build_world_envelope_bundles(pupil_radius, system=system)
         if not boundary_bundles:
             return False
         if self._trace_selected_through_envelope(system, rays, wavelength, boundary_bundles):
             return True
 
-        sparse_bundles, _sparse_count = self._build_world_sparse_pupil_bundles(pupil_radius)
+        sparse_bundles, _sparse_count = self._build_world_sparse_pupil_bundles(pupil_radius, system=system)
         if sparse_bundles and self._trace_selected_through_envelope(system, rays, wavelength, sparse_bundles):
             return True
 
@@ -44439,6 +44478,7 @@ class KrakenLayoutEditor(tk.Tk):
                 pupil.FieldY = float(field_y)
                 bundle = self._pupil_pattern_bundle(pupil)
                 if bundle and len(np.asarray(bundle[0])) > 0:
+                    bundle = self._center_infinity_bundle_on_launch_reference(bundle, system=system)
                     bundles.append(bundle)
             if bundles:
                 return bundles
@@ -44464,16 +44504,16 @@ class KrakenLayoutEditor(tk.Tk):
                 continue
             direction /= norm
             n_pts = len(disk_pts)
-            bundles.append(
-                (
-                    np.asarray(disk_pts[:, 0], dtype=float),
-                    np.asarray(disk_pts[:, 1], dtype=float),
-                    np.zeros(n_pts, dtype=float),
-                    np.full(n_pts, float(direction[0]), dtype=float),
-                    np.full(n_pts, float(direction[1]), dtype=float),
-                    np.full(n_pts, float(direction[2]), dtype=float),
-                )
+            bundle = (
+                np.asarray(disk_pts[:, 0], dtype=float),
+                np.asarray(disk_pts[:, 1], dtype=float),
+                np.zeros(n_pts, dtype=float),
+                np.full(n_pts, float(direction[0]), dtype=float),
+                np.full(n_pts, float(direction[1]), dtype=float),
+                np.full(n_pts, float(direction[2]), dtype=float),
             )
+            bundle = self._center_infinity_bundle_on_launch_reference(bundle, system=system)
+            bundles.append(bundle)
         return bundles
 
     def _build_grid_finite_object_bundles(self, system, wavelength: float, pupil_radius: float):
