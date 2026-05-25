@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
 from KrakenOS.UI.panels.open3d_live_controls import Open3DLiveControlsPanel
+from KrakenOS.UI.services.open3d_live_refresh import Open3DLiveRefreshService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 
 
@@ -21,6 +22,7 @@ def validate_open3d_live_mode() -> list[Open3DLiveModeCheck]:
     inspector_source = inspect.getsource(Kraken3DInspector)
     editor_source = inspect.getsource(KrakenLayoutEditor)
     open3d_live_controls_panel_source = inspect.getsource(Open3DLiveControlsPanel)
+    open3d_live_refresh_service = inspect.getsource(Open3DLiveRefreshService)
     open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)
     checks = [
         Open3DLiveModeCheck(
@@ -59,10 +61,16 @@ def validate_open3d_live_mode() -> list[Open3DLiveModeCheck]:
             "Live Mode uses a debounced 3D retrace scheduler",
             "def schedule_live_refresh" in inspector_source
             and "def _run_live_refresh" in inspector_source
+            and "Open3DLiveRefreshService(self)" in inspector_source
+            and "def schedule" in open3d_live_refresh_service
+            and "def run" in open3d_live_refresh_service
+            and "self.after_id = inspector.after(delay, self.run)" in open3d_live_refresh_service
+            and "self.pending = True" in open3d_live_refresh_service
+            and 'self.schedule("pending scene change", delay_ms=40)' in open3d_live_refresh_service
             and "def build_live_preview" in open3d_refresh_service
             and "self.editor._preview_3d_sampling_mode()" in open3d_refresh_service
-            and "self.after(delay, self._run_live_refresh)" in inspector_source,
-            "Live refresh builds the same 3D preview scene instead of a display-only branch.",
+            and "self._open3d_live_refresh_service().schedule(reason, delay_ms=delay_ms)" in inspector_source,
+            "Live refresh builds the same 3D preview scene through a service-owned debounce/cancellation contract.",
         ),
         Open3DLiveModeCheck(
             "Main left-panel edits can drive Open 3D Live Mode",

@@ -286,6 +286,7 @@ from KrakenOS.UI.services.open3d_carry_grip import Open3DCarryGripService
 from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
 from KrakenOS.UI.services.open3d_face_pick import FaceRayPick, pick_face_from_ray
 from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
+from KrakenOS.UI.services.open3d_live_refresh import Open3DLiveRefreshService
 from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService, StepFeatureSelection
@@ -5453,10 +5454,6 @@ class Kraken3DInspector(tk.Toplevel):
         self.show_terminal_diagnostics_var = tk.BooleanVar(value=False)
         self.show_placement_handles_var = tk.BooleanVar(value=False)
         self.live_mode_var = tk.BooleanVar(value=False)
-        self._live_refresh_after_id: str | None = None
-        self._live_refresh_busy = False
-        self._live_refresh_pending = False
-        self._live_refresh_reason = ""
         self.status_var = tk.StringVar(value="3D inspector ready")
 
         self.columnconfigure(0, weight=0)
@@ -5561,6 +5558,13 @@ class Kraken3DInspector(tk.Toplevel):
                 valid_labels=STEP_OVERLAY_LABEL_SET,
             )
             self._open3d_step_rotation_handle_service_instance = service
+        return service
+
+    def _open3d_live_refresh_service(self) -> Open3DLiveRefreshService:
+        service = getattr(self, "_open3d_live_refresh_service_instance", None)
+        if service is None:
+            service = Open3DLiveRefreshService(self)
+            self._open3d_live_refresh_service_instance = service
         return service
 
     def _build_open3d_top_controls(self, parent: tk.Widget) -> ttk.Frame:
@@ -5708,59 +5712,13 @@ class Kraken3DInspector(tk.Toplevel):
             return False
 
     def _cancel_live_refresh(self) -> None:
-        after_id = self._live_refresh_after_id
-        self._live_refresh_after_id = None
-        if after_id is not None:
-            try:
-                self.after_cancel(after_id)
-            except Exception:
-                pass
-        self._live_refresh_pending = False
+        self._open3d_live_refresh_service().cancel()
 
     def schedule_live_refresh(self, reason: str = "", *, delay_ms: int = 180) -> bool:
-        if not self._live_mode_enabled():
-            return False
-        if not bool(getattr(self, "available", False)):
-            return False
-        self._live_refresh_reason = str(reason or "scene change")
-        if self._live_refresh_busy:
-            self._live_refresh_pending = True
-            return True
-        after_id = self._live_refresh_after_id
-        if after_id is not None:
-            try:
-                self.after_cancel(after_id)
-            except Exception:
-                pass
-        delay = max(0, int(delay_ms))
-        self._live_refresh_after_id = self.after(delay, self._run_live_refresh)
-        self.status_var.set(f"Live Mode: scheduled trace ({self._live_refresh_reason}).")
-        return True
+        return self._open3d_live_refresh_service().schedule(reason, delay_ms=delay_ms)
 
     def _run_live_refresh(self) -> None:
-        self._live_refresh_after_id = None
-        if not self._live_mode_enabled():
-            return
-        if self._live_refresh_busy:
-            self._live_refresh_pending = True
-            return
-        self._live_refresh_busy = True
-        reason = self._live_refresh_reason or "scene change"
-        try:
-            try:
-                self.editor._sync_object_controls()
-                self.editor._sync_left_mode_controls()
-            except Exception:
-                pass
-            self._refresh_live_preview_scene(reason)
-        except Exception as exc:
-            self.status_var.set(f"Live Mode trace failed: {_short_error_message(exc)}")
-            self.editor.append_debug(f"Open 3D live trace failed: {exc}")
-        finally:
-            self._live_refresh_busy = False
-            if self._live_refresh_pending and self._live_mode_enabled():
-                self._live_refresh_pending = False
-                self.schedule_live_refresh("pending scene change", delay_ms=40)
+        self._open3d_live_refresh_service().run()
 
     def _refresh_live_preview_scene(self, reason: str) -> None:
         result = self.editor._open3d_trace_refresh_service().build_live_preview(self)
