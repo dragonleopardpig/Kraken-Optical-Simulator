@@ -230,12 +230,17 @@ class Open3DSceneRefreshService:
         ray_visibility_requested = bool(self.show_rays_var.get())
         ray_surface_edge_overlays: list[tuple[object, tuple[float, float, float], float, int | None]] = []
         ray_surface_wire_overlays: list[tuple[object, tuple[float, float, float], float, int]] = []
+        live_trace_step_labels_by_row = self._live_trace_step_overlay_label_by_row()
+        live_trace_step_mesh_by_label: dict[str, object] = {}
         for mesh_item in mesh_items:
             mesh = mesh_item.mesh
             try:
                 row_index = int(getattr(mesh_item, "row_index", -1))
             except Exception:
                 row_index = -1
+            transient_step_label = live_trace_step_labels_by_row.get(row_index)
+            if transient_step_label is not None and bool(getattr(mesh_item, "is_body", False)):
+                live_trace_step_mesh_by_label.setdefault(str(transient_step_label), mesh)
             mesh_opacity = float(getattr(mesh_item, "opacity", 1.0))
             row_surface = str(getattr(getattr(mesh_item, "row", None), "surface", "") or "")
             if row_index in file_backed_rows:
@@ -259,6 +264,8 @@ class Open3DSceneRefreshService:
                 color=mesh_item.color,
                 opacity=mesh_opacity,
                 pick_row_index=mesh_item.row_index,
+                pick_step_label=transient_step_label,
+                follow_step_label=transient_step_label,
                 backface_culling=False,
             )
             if body_actor is not None and row_index in file_backed_rows:
@@ -271,8 +278,8 @@ class Open3DSceneRefreshService:
                     try:
                         edges = self._display_feature_edges(mesh, feature_angle=24)
                         if edges is not None and int(getattr(edges, "n_points", 0)) > 0:
-                            self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0, track_row_index=row_index)
-                            self._add_mesh_actor(edges, color=file_backed_edge_color, opacity=1.0, line_width=3.2, track_row_index=row_index)
+                            self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0, track_row_index=row_index, follow_step_label=transient_step_label)
+                            self._add_mesh_actor(edges, color=file_backed_edge_color, opacity=1.0, line_width=3.2, track_row_index=row_index, follow_step_label=transient_step_label)
                             if ray_visibility_requested:
                                 ray_surface_edge_overlays.append((edges, file_backed_silhouette_color, 5.8, row_index))
                                 ray_surface_edge_overlays.append((edges, file_backed_edge_color, 3.8, row_index))
@@ -291,8 +298,8 @@ class Open3DSceneRefreshService:
                         edge_color = file_backed_edge_color if row_index in file_backed_rows else (0.15, 0.15, 0.15)
                         edge_width = 3.2 if row_index in file_backed_rows else 1.0
                         if row_index in file_backed_rows:
-                            self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0, track_row_index=row_index)
-                        self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width, track_row_index=row_index if row_index in file_backed_rows else None)
+                            self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0, track_row_index=row_index, follow_step_label=transient_step_label)
+                        self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width, track_row_index=row_index if row_index in file_backed_rows else None, follow_step_label=transient_step_label)
                         if ray_visibility_requested and row_index >= 0:
                             ray_surface_edge_overlays.append(
                                 (
@@ -320,8 +327,8 @@ class Open3DSceneRefreshService:
                         if ray_visibility_requested:
                             ray_surface_edge_overlays.append((edges, file_backed_silhouette_color, 5.8, row_index))
                             ray_surface_edge_overlays.append((edges, file_backed_edge_color, 3.8, row_index))
-                        self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0, track_row_index=row_index)
-                        self._add_mesh_actor(edges, color=file_backed_edge_color, opacity=1.0, line_width=3.2, track_row_index=row_index)
+                        self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0, track_row_index=row_index, follow_step_label=transient_step_label)
+                        self._add_mesh_actor(edges, color=file_backed_edge_color, opacity=1.0, line_width=3.2, track_row_index=row_index, follow_step_label=transient_step_label)
                 except Exception:
                     pass
             drew_surfaces += 1
@@ -411,13 +418,17 @@ class Open3DSceneRefreshService:
             if suppressed_endpoint_count:
                 self._debug_trace("ray_display_suppressed_diagnostic_endpoints", rays=suppressed_endpoint_count)
             for edges, edge_color, edge_width, edge_row_index in ray_surface_edge_overlays:
-                self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width, backface_culling=False, track_row_index=edge_row_index)
+                transient_step_label = live_trace_step_labels_by_row.get(int(edge_row_index)) if edge_row_index is not None else None
+                self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width, backface_culling=False, track_row_index=edge_row_index, follow_step_label=transient_step_label)
             for mesh, wire_color, wire_width, row_index in ray_surface_wire_overlays:
+                transient_step_label = live_trace_step_labels_by_row.get(int(row_index))
                 self._add_mesh_actor(
                     mesh,
                     color=wire_color,
                     opacity=1.0,
                     pick_row_index=row_index,
+                    pick_step_label=transient_step_label,
+                    follow_step_label=transient_step_label,
                     line_width=wire_width,
                     wireframe=True,
                     backface_culling=False,
@@ -440,6 +451,12 @@ class Open3DSceneRefreshService:
         step_carry_active = 0
         step_carry_grid_summary = ""
         live_trace_step_overlay_labels = self._live_trace_step_overlay_labels()
+        selected_step_label = str(selected_step or "").strip().lower()
+        transient_selected_mesh = live_trace_step_mesh_by_label.get(selected_step_label)
+        if transient_selected_mesh is not None and int(getattr(transient_selected_mesh, "n_points", 0)) > 0:
+            if self._step_carry_label() == selected_step_label:
+                step_carry_active, step_carry_grid_summary = self._add_step_carry_grid_overlay(selected_step_label, transient_selected_mesh)
+            step_rotation_handles += self._add_step_rotation_handles(selected_step_label, transient_selected_mesh)
         for label, builder, color, opacity in (
             ("lens", self.editor._transformed_imported_lens_step_mesh, (0.30, 0.36, 0.46), 0.26),
             ("optical", self.editor._transformed_imported_optical_step_mesh, (0.10, 0.62, 0.72), 0.34),

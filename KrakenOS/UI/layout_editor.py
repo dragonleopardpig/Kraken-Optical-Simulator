@@ -5906,7 +5906,15 @@ class Kraken3DInspector(tk.Toplevel):
             "display_xy": (float(x), float(y)),
             "event": event,
         }
-        if context["row_index"] is None and context["step_label"] is None:
+        row_index = context["row_index"]
+        step_label = context["step_label"]
+        persistent_file_backed = False
+        if row_index is not None:
+            try:
+                persistent_file_backed = self.editor._file_backed_stl_row_at(int(row_index)) is not None
+            except Exception:
+                persistent_file_backed = False
+        if step_label is None and (row_index is None or not persistent_file_backed):
             fallback = self._right_click_face_ray_context((float(x), float(y)), event=event)
             if fallback is not None:
                 return fallback
@@ -11157,7 +11165,7 @@ class Kraken3DInspector(tk.Toplevel):
             return None
         return np.asarray(point[:3], dtype=float)
 
-    def _row_display_actor_center(self, row_index: int) -> np.ndarray | None:
+    def _row_display_actor_center(self, row_index: int, *, body_only: bool = False) -> np.ndarray | None:
         try:
             row_index = int(row_index)
         except Exception:
@@ -11208,6 +11216,8 @@ class Kraken3DInspector(tk.Toplevel):
         body_center = combined_center(require_body=True)
         if body_center is not None:
             return body_center
+        if bool(body_only):
+            return None
         return combined_center(require_body=False)
 
     def _scene_placements_for_3d(self, scene_bundle: SceneBundle | None) -> list[ScenePlacement3D]:
@@ -11320,8 +11330,12 @@ class Kraken3DInspector(tk.Toplevel):
             primary_row = int(primary.row_index)
         except Exception:
             primary_row = -1
-        if primary_row >= 0 and self.editor._file_backed_stl_row_at(primary_row) is not None:
-            display_center = self._row_display_actor_center(primary_row)
+        live_step_labels_by_row = self._live_trace_step_overlay_label_by_row()
+        if primary_row in live_step_labels_by_row:
+            label = str(live_step_labels_by_row.get(primary_row, "")).upper()
+            return 0, f"Placement handles: transient {label} STEP uses STEP carry/rotation handles."
+        if primary_row >= 0:
+            display_center = self._row_display_actor_center(primary_row, body_only=True)
             if display_center is not None:
                 center = display_center
         spacing = max(float(getattr(primary, "grid_spacing_mm", 10.0) or 10.0), 1e-6)
@@ -11826,6 +11840,22 @@ class Kraken3DInspector(tk.Toplevel):
             label = str(record.get("label", "") or "").strip().lower()
             if label in STEP_OVERLAY_LABEL_SET:
                 labels.add(label)
+        return labels
+
+    def _live_trace_step_overlay_label_by_row(self) -> dict[int, str]:
+        labels: dict[int, str] = {}
+        for record in list(getattr(self.editor, "_last_live_step_overlay_trace_records", []) or []):
+            if not isinstance(record, dict) or not bool(record.get("transient_live_trace", False)):
+                continue
+            label = str(record.get("label", "") or "").strip().lower()
+            if label not in STEP_OVERLAY_LABEL_SET:
+                continue
+            try:
+                row_index = int(record.get("row_index", -1))
+            except Exception:
+                continue
+            if row_index >= 0:
+                labels[row_index] = label
         return labels
 
     def _render_row_file_backed(self, rows: list[SurfaceRow], row_index: int) -> bool:

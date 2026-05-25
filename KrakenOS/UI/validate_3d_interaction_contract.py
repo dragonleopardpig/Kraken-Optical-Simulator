@@ -1496,6 +1496,7 @@ def main() -> int:
         (
             "Open 3D right-click face assignment falls back to display-ray CAD picking",
             "_right_click_face_ray_context((float(x), float(y)), event=event)" in right_click_context
+            and "persistent_file_backed" in right_click_context
             and "_step_face_ray_pick_for_display_xy(label, display_xy)" in right_click_face_ray_context
             and "_row_face_ray_pick_for_display_xy(int(row_index), display_xy)" in right_click_face_ray_context
             and "candidates.sort" in right_click_face_ray_context,
@@ -1803,10 +1804,17 @@ def main() -> int:
         ("Open 3D renders row-backed placement handle state", "self._scene_placements_for_3d(scene_bundle)" in placement_grid and "grid_spacing_mm" in placement_grid),
         (
             "Open 3D placement handles anchor to displayed optical-solid body center",
-            "_row_display_actor_center(primary_row)" in placement_grid
-            and "_file_backed_stl_row_at(primary_row)" in placement_grid
+            "_row_display_actor_center(primary_row, body_only=True)" in placement_grid
+            and "_live_trace_step_overlay_label_by_row()" in placement_grid
             and "_kraken_file_backed_row_body" in row_display_center
             and "actor.GetBounds()" in row_display_center,
+        ),
+        (
+            "Open 3D transient STEP render rows remain STEP-pickable and movable",
+            "_live_trace_step_overlay_label_by_row()" in refresh
+            and "pick_step_label=transient_step_label" in refresh
+            and "follow_step_label=transient_step_label" in refresh
+            and "live_trace_step_mesh_by_label" in refresh,
         ),
         ("Open 3D suppresses visible placement grid planes", "_scene_placement_grid_mesh(" not in placement_grid and "Placement handles:" in placement_grid),
         ("Open 3D placement handles are contextual or explicitly enabled", "_show_scene_placement_handles()" in refresh and "_stl_placement_panel_visible()" in show_scene_placement_handles),
