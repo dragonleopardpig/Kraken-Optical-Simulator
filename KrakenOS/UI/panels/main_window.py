@@ -326,7 +326,9 @@ class MainWindowBuilder:
         for column in range(2):
             source_panel.columnconfigure(column, weight=1, uniform="source_cols")
 
+        le = _layout_module()
         self.display_orientation_var = tk.StringVar(value="YZ")
+        self.projection_display_mode_var = tk.StringVar(value=le.PROJECTION_MODE_AXIS_FIELD)
         self.atmosphere_hidden_panel = ttk.Frame(control_stack)
         self._build_atmosphere_panel(self.atmosphere_hidden_panel)
 
@@ -540,6 +542,21 @@ class MainWindowBuilder:
         self._add_widget_tooltip(
             self.display_orientation_menu,
             "Choose the primary 2D projection plane for the editable layout plot",
+        )
+        ttk.Label(plot_toolbar_main, text="Projection").pack(side="left", padx=(10, 2))
+        self.projection_display_mode_menu = ttk.Combobox(
+            plot_toolbar_main,
+            textvariable=self.projection_display_mode_var,
+            state="readonly",
+            width=11,
+            values=list(le.PROJECTION_MODE_VALUES),
+        )
+        self.projection_display_mode_menu.pack(side="left")
+        self.projection_display_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
+        self.projection_display_mode_menu.bind("<<ComboboxSelected>>", self._on_projection_display_mode_changed)
+        self._add_widget_tooltip(
+            self.projection_display_mode_menu,
+            "Choose whether YZ/XZ show the axis-field family or the full collapsed 3D projection",
         )
         self._main_analysis_toolbar_panel().build(plot_toolbar_analysis)
         cardinal_button = ttk.Checkbutton(

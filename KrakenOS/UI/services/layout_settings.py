@@ -88,6 +88,7 @@ class LayoutSettingsService:
         return {
             "object_mode": self._left_mode_text("object_mode_var", "Finite"),
             "display_orientation": self._current_display_orientation(),
+            "projection_display_mode": self._current_projection_display_mode(),
             "wavelength": self.wavelength_var.get().strip(),
             "ray_count": self.ray_count_var.get().strip(),
             "ray_height_factor": self._left_mode_text("ray_height_factor_var", "0.8"),
@@ -213,6 +214,7 @@ class LayoutSettingsService:
         PROJECT_ROOT = le.PROJECT_ROOT
         ATTACHMENT_DIR = le.ATTACHMENT_DIR
         normalize_projection_plane = le.normalize_projection_plane
+        normalize_projection_display_mode = le.normalize_projection_display_mode
         SOURCE_MODEL_VALUES = le.SOURCE_MODEL_VALUES
         PUPIL_PATTERN_VALUES = le.PUPIL_PATTERN_VALUES
         GAUSSIAN_INPUT_MODE_VALUES = le.GAUSSIAN_INPUT_MODE_VALUES
@@ -305,6 +307,12 @@ class LayoutSettingsService:
         display_orientation = str(settings.get("display_orientation", "")).strip()
         if display_orientation in {"Vertical", "Horizontal", "YZ", "XZ", "XY"}:
             self.display_orientation_var.set(normalize_projection_plane(display_orientation))
+        if hasattr(self, "projection_display_mode_var"):
+            self.projection_display_mode_var.set(
+                normalize_projection_display_mode(
+                    settings.get("projection_display_mode", settings.get("projection_mode"))
+                )
+            )
 
         object_mode = str(settings.get("object_mode", "")).strip()
         if object_mode in {"Finite", "Infinity"}:

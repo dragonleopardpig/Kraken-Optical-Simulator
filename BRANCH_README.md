@@ -77,6 +77,7 @@ Current pipeline checkpoint:
 | Open 3D Trace Now sampling stability | Achieved | `██████████ 100%` | `Trace now` no longer switches a current Open 3D scene to the default 3D envelope sampler when Live Mode is off. It retraces the sampling mode already displayed in Open 3D, while still including transient optical STEP overlays if one is being placed. |
 | Fast validation contract runner | Achieved | `██████████ 100%` | `KrakenOS.UI.validate_fast_contracts` runs the lightweight no-display/no-CAD-fixture contracts first, including focused Open 3D sampling-stability checks. Display-backed CAD smoke tests remain explicit targeted commands for rendering, face-picking, and screenshot regressions. |
 | Canonical 2D/Open 3D physical scene sampling | Achieved | `██████████ 100%` | Default 2D YZ/XZ/XY projections and Open 3D now use the same physical `world_envelope`/full-pupil/source-cone SceneBundle. The canonical world-envelope sampler traces exactly `Ray Count` pupil samples per effective field bundle. YZ and XZ panes display the matching axis-field family from that traced 3D bundle instead of collapsing every off-plane field into one view, while XY keeps the full footprint. The dense `world_sections` bundle remains available for explicit diagnostics, but the ordinary layout plot no longer traces a separate section-only ray family. |
+| 2D projection mode transparency | Achieved | `██████████ 100%` | The 2D toolbar now exposes the projection policy beside the YZ/XZ/XY plane selector. `Axis field` remains the default for YZ/XZ so those panes show their matching field families from the canonical 3D bundle, while `Full 3D` intentionally collapses the complete traced 3D bundle into the selected plane for diagnostics. Live plots, saved layout plots, and headless render snapshots now route through the same projection controller and title the panes with the active policy. |
 | Folded mirror 2D/Open 3D surface parity | Achieved | `██████████ 100%` | Folded-preview mirror rows now render their Open 3D mirror surface from the same folded SceneBundle geometry that drives the traced ray display and 2D projection, instead of showing a raw sequential `TRANS_2A` mesh with the opposite YZ slant. `validate_folded_mirror_projection_parity` checks the Galvo F-Theta folded mirror mesh tangent against the SceneBundle mirror curve and is included in the fast contract runner. |
 | Open 3D galvo scan animation | Achieved | `██████████ 100%` | The Galvo F-Theta folded scan overlay now has one shared plan builder for 2D and Open 3D. The Open 3D `Orient -> Animate Galvo Scan` command cycles through the configured mirror TiltX overlay poses, drawing the same alternate reflected ray fans and moving mirror-line overlay used by 2D, while `Stop Galvo Scan`, scene refresh, and window close cancel the timer and remove transient actors. |
 | Tk teardown callback cleanup | Achieved | `██████████ 100%` | Custom table selection, table-grid, and active-cell-border callbacks now keep cancellable `after` ids and are cancelled during editor teardown. This prevents stale Tk callbacks such as `_update_active_cell_border`, `_emit_custom_table_selection_changed`, and `_update_table_grid` from firing after the root window has been destroyed. |
@@ -224,7 +225,11 @@ that many deterministic pupil samples per effective field bundle. The ordinary
 YZ/XZ panes now show the corresponding axis-field family from the traced 3D
 bundle, not every off-plane field collapsed into the same projection; XY remains
 the full footprint. Only explicit `world_sections` diagnostics apply the old
-near-plane section filter.
+near-plane section filter. The 2D plot toolbar now makes that policy explicit:
+`Axis field` is the default working view, and `Full 3D` is available when the
+user wants to intentionally inspect the collapsed full 3D trace. The same
+projection controller is used by live UI refresh, saved plots, and headless
+snapshot rendering.
 
 Earlier movement on 2026-05-25: Folded-preview mirror surfaces now use one
 display geometry contract across the SceneBundle, 2D projection, and Open 3D

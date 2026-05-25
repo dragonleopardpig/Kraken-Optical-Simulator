@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import KrakenOS as Kos
 import numpy as np
 
-from KrakenOS.UI.layout_editor import SurfaceRow, _build_system_from_specs
+from KrakenOS.UI.layout_editor import PROJECTION_MODE_FULL_3D, SurfaceRow, _build_system_from_specs
 from KrakenOS.UI.layout_plot_controller import project_scene_bundle
 from KrakenOS.UI.render_layout_snapshot import _snapshot_editor
 
@@ -94,6 +94,16 @@ def validate_infinity_field_launch() -> list[InfinityFieldLaunchCheck]:
         filter_projection_slice=editor._should_filter_projection_slice(world_bundle),
     )
     projected_world_count = len(list(getattr(world_yz_projection, "rays", []) or []))
+    axis_projection_filter_active = editor._should_filter_projection_axis_fields(world_bundle)
+    projection_slice_filter_active = editor._should_filter_projection_slice(world_bundle)
+    editor.projection_display_mode_var.set(PROJECTION_MODE_FULL_3D)
+    full_world_yz_projection = project_scene_bundle(
+        world_bundle,
+        "YZ",
+        filter_projection_axis_fields=editor._should_filter_projection_axis_fields(world_bundle),
+        filter_projection_slice=editor._should_filter_projection_slice(world_bundle),
+    )
+    full_projected_world_count = len(list(getattr(full_world_yz_projection, "rays", []) or []))
     bundles, rays_per_field = editor._build_world_section_bundles(pupil_radius, system=system)
     reference = editor._infinity_field_launch_reference_point(system=system)
     field_pairs = editor._field_cross_pairs_for_world_sections(editor._current_field_angle_deg())
@@ -140,13 +150,23 @@ def validate_infinity_field_launch() -> list[InfinityFieldLaunchCheck]:
         ),
         InfinityFieldLaunchCheck(
             "canonical YZ projection displays the YZ field family without geometric slice loss",
-            editor._should_filter_projection_axis_fields(world_bundle)
-            and not editor._should_filter_projection_slice(world_bundle)
+            axis_projection_filter_active
+            and not projection_slice_filter_active
             and 0 < projected_world_count < displayable_world_count,
             (
                 f"mode={editor._scene_bundle_launch_sampling_mode(world_bundle)}, "
                 f"projected={projected_world_count}, displayable={displayable_world_count}, "
                 f"traced={traced_world_count}"
+            ),
+        ),
+        InfinityFieldLaunchCheck(
+            "canonical YZ full-3D projection can display every displayable world-envelope ray",
+            not editor._should_filter_projection_axis_fields(world_bundle)
+            and not editor._should_filter_projection_slice(world_bundle)
+            and full_projected_world_count == displayable_world_count,
+            (
+                f"projection_mode={editor._current_projection_display_mode()}, "
+                f"projected={full_projected_world_count}, displayable={displayable_world_count}"
             ),
         ),
         InfinityFieldLaunchCheck(

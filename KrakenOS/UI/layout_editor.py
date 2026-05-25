@@ -427,6 +427,18 @@ def _preferred_existing_dir(*candidates: Path | str) -> Path:
     return paths[0]
 
 
+def normalize_projection_display_mode(value: object) -> str:
+    text = str(value or "").strip()
+    key = text.lower().replace("-", " ").replace("_", " ")
+    if key in {"full", "full 3d", "full 3 d", "full projection", "full 3d projection", "all fields"}:
+        return PROJECTION_MODE_FULL_3D
+    if key in {"axis", "axis field", "axis fields", "section", "plane", "field plane"}:
+        return PROJECTION_MODE_AXIS_FIELD
+    if text in PROJECTION_MODE_VALUES:
+        return text
+    return PROJECTION_MODE_AXIS_FIELD
+
+
 # Backward-compatible symbol names: the user-facing project scratch/import
 # directory was renamed from testing/ to attachment/.
 TESTING_DIR = ATTACHMENT_DIR
@@ -497,6 +509,9 @@ STEP_CARRY_GRID_CHOICES = (
 )
 STEP_OVERLAY_LABELS = ("lens", "optical", "led", "camera")
 STEP_OVERLAY_LABEL_SET = set(STEP_OVERLAY_LABELS)
+PROJECTION_MODE_AXIS_FIELD = "Axis field"
+PROJECTION_MODE_FULL_3D = "Full 3D"
+PROJECTION_MODE_VALUES = (PROJECTION_MODE_AXIS_FIELD, PROJECTION_MODE_FULL_3D)
 INSERTABLE_COMMON_LAYOUT_TITLES = {
     "Single Lens",
     "Doublet Lens",
@@ -3696,6 +3711,7 @@ def _load_zemax_zmx_data(path: Path) -> dict:
     settings = {
         "object_mode": "Infinity" if object_at_infinity else "Finite",
         "display_orientation": "YZ",
+        "projection_display_mode": PROJECTION_MODE_AXIS_FIELD,
         "wavelength": f"{primary_wavelength:g}",
         "ray_count": "21",
         "ray_height_factor": "0.8",
@@ -19453,6 +19469,20 @@ class KrakenLayoutEditor(tk.Tk):
         except Exception:
             self._mark_plot_update_pending()
 
+    def _on_projection_display_mode_changed(self, _event=None) -> None:
+        self._commit_history_capture()
+        if hasattr(self, "projection_display_mode_var"):
+            self.projection_display_mode_var.set(
+                normalize_projection_display_mode(self.projection_display_mode_var.get())
+            )
+        self._sync_trace_state_badge()
+        if hasattr(self, "status_var"):
+            self.status_var.set(f"2D projection set to {self._current_projection_display_mode()}. Refreshing layout.")
+        try:
+            self.after_idle(self.refresh_plot)
+        except Exception:
+            self._mark_plot_update_pending()
+
     def _apply_operand_control_visibility(self, label: str) -> None:
         spec = self._merit_spec_for_label(label)
         if spec is None:
@@ -24260,6 +24290,7 @@ class KrakenLayoutEditor(tk.Tk):
         self._set_optional_var("camera_model_var", CAMERA_NONE_LABEL)
         self._set_optional_var("external_camera_var", "None")
         self._set_optional_var("camera_overlay_mode_var", "Off")
+        self._set_optional_var("projection_display_mode_var", PROJECTION_MODE_AXIS_FIELD)
         self.layout_preview_mode = "none"
         self._set_optional_var("layout_preview_mode_var", "none")
         self.selected_analysis_modes = []
@@ -26519,6 +26550,8 @@ class KrakenLayoutEditor(tk.Tk):
     def _apply_initial_layout_view_defaults(self, name: str) -> None:
         if not hasattr(self, "display_orientation_var"):
             return
+        if hasattr(self, "projection_display_mode_var"):
+            self.projection_display_mode_var.set(PROJECTION_MODE_AXIS_FIELD)
         if name == FOLDED_STARTER_LAYOUT_TITLE:
             self.display_orientation_var.set("YZ")
             self.object_mode_var.set("Finite")
@@ -34115,10 +34148,10 @@ class KrakenLayoutEditor(tk.Tk):
                 orientation=str(plane),
                 use_drawn_data=True,
             )
-            x_label, y_label, title = projection_axis_labels(str(plane))
+            x_label, y_label, _title = projection_axis_labels(str(plane))
             axis.set_xlabel(x_label, fontsize=8)
             axis.set_ylabel(y_label, fontsize=8)
-            axis.set_title(title, fontsize=9)
+            axis.set_title(self._projection_display_title(str(plane), bundle), fontsize=9)
             axis.tick_params(axis="both", which="major", labelsize=8)
             axis.grid(True, alpha=0.2)
 
@@ -35994,21 +36027,43 @@ class KrakenLayoutEditor(tk.Tk):
         value = getattr(self, "display_orientation_var", None)
         if value is None:
             return "YZ"
-        mode = value.get().strip()
+        mode = value.get().strip() if hasattr(value, "get") else str(value).strip()
         return normalize_projection_plane(mode)
 
     def _current_display_slice_axis(self) -> str:
         return "x" if self._current_display_orientation() == "XZ" else "y"
+
+    def _current_projection_display_mode(self) -> str:
+        value = getattr(self, "projection_display_mode_var", None)
+        if value is None:
+            return PROJECTION_MODE_AXIS_FIELD
+        mode = value.get() if hasattr(value, "get") else str(value)
+        return normalize_projection_display_mode(mode)
 
     @staticmethod
     def _scene_bundle_launch_sampling_mode(bundle: SceneBundle | None) -> str:
         return scene_bundle_launch_sampling_mode(bundle)
 
     def _should_filter_projection_axis_fields(self, bundle: SceneBundle | None) -> bool:
-        return self._scene_bundle_launch_sampling_mode(bundle) == "world_envelope"
+        return (
+            self._current_projection_display_mode() == PROJECTION_MODE_AXIS_FIELD
+            and self._scene_bundle_launch_sampling_mode(bundle) == "world_envelope"
+        )
 
     def _should_filter_projection_slice(self, bundle: SceneBundle | None) -> bool:
         return self._scene_bundle_launch_sampling_mode(bundle) == "world_sections"
+
+    def _projection_display_title(self, orientation: str, bundle: SceneBundle | None = None) -> str:
+        plane = normalize_projection_plane(orientation)
+        _x_label, _y_label, title = projection_axis_labels(plane)
+        if self._scene_bundle_launch_sampling_mode(bundle) != "world_envelope":
+            return title
+        mode = self._current_projection_display_mode()
+        if mode == PROJECTION_MODE_FULL_3D:
+            return f"{title} full 3D"
+        if plane == "XY":
+            return f"{title} full footprint"
+        return f"{title} axis field"
 
     def _project_xy(self, z, y):
         z_arr = np.asarray(z, dtype=float)

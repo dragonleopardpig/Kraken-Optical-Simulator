@@ -128,6 +128,7 @@ class PlotRefreshService:
             self._analysis_axes = analysis_axes
             self._analysis_ax = analysis_axes[0] if analysis_axes else None
 
+        title_bundle = None
         try:
             wavelength = self._current_wavelength()
             scene_sampling_mode = self._preview_scene_sampling_mode()
@@ -163,6 +164,7 @@ class PlotRefreshService:
             self.update_idletasks()
             orientation = self._current_display_orientation()
             bundle = self._build_scene_bundle(system, rays, max_radius)
+            title_bundle = bundle
             self._last_scene_bundle = bundle
             self._refresh_3d_inspector_if_open(system=system, rays=rays, scene_bundle=bundle)
             self._refresh_arm_view_choices()
@@ -322,10 +324,16 @@ class PlotRefreshService:
             self.append_debug(traceback.format_exc())
 
         self.ax.grid(True, alpha=0.2)
-        x_label, y_label, title = projection_axis_labels(self._current_display_orientation())
+        x_label, y_label, _title = projection_axis_labels(self._current_display_orientation())
         self.ax.set_xlabel(x_label)
         self.ax.set_ylabel(y_label)
-        self.ax.set_title(title, fontsize=10)
+        self.ax.set_title(
+            self._projection_display_title(
+                self._current_display_orientation(),
+                title_bundle,
+            ),
+            fontsize=10,
+        )
         self.figure.subplots_adjust(left=0.07, right=0.98, bottom=0.15, top=0.92, wspace=0.28)
         self.figure.text(0.5, 0.035, "KrakenOS Layout", ha="center", va="center")
         self._sync_object_controls()

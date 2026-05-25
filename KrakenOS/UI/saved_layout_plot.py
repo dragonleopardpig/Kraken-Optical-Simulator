@@ -10,6 +10,7 @@ from KrakenOS.UI.layout_editor import (
     ATMOS_PLOT_MODE_DEFAULT,
     BRANCH_FIELD_PROPAGATION_MM_DEFAULT,
     DETECTOR_BINS_DEFAULT,
+    PROJECTION_MODE_AXIS_FIELD,
     PUPIL_PATTERN_DEFAULT,
     SOURCE_ANGULAR_WEIGHT_DEFAULT,
     SOURCE_MODEL_DEFAULT,
@@ -19,9 +20,10 @@ from KrakenOS.UI.layout_editor import (
     KrakenLayoutEditor,
     SurfaceRow,
     _normalize_metal_catalog_specs,
+    normalize_projection_display_mode,
 )
+from KrakenOS.UI.layout_plot_controller import project_scene_bundle
 from KrakenOS.UI.scene_projector import (
-    SceneProjector2D,
     auxiliary_projection_planes,
     normalize_projection_plane,
     projection_axis_labels,
@@ -93,6 +95,11 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.show_path_labels_var = _Var(editor.show_path_labels)
     editor.ray_display_mode_var = _Var(editor._normalize_ray_display_mode(settings.get("ray_display_mode", "All rays")))
     editor.display_orientation_var = _Var(normalize_projection_plane(str(settings.get("display_orientation", "YZ"))))
+    editor.projection_display_mode_var = _Var(
+        normalize_projection_display_mode(
+            settings.get("projection_display_mode", settings.get("projection_mode", PROJECTION_MODE_AXIS_FIELD))
+        )
+    )
     editor.object_mode_var = _Var(str(settings.get("object_mode", "Finite")))
     editor.wavelength_var = _Var(str(settings.get("wavelength", "0.55")))
     editor.ray_count_var = _Var(str(settings.get("ray_count", "5")))
@@ -273,10 +280,15 @@ def build_saved_layout_figure(
 
     bundle = editor._build_scene_bundle(system, display_rays, max_radius)
     editor._last_scene_bundle = bundle
-    projected = SceneProjector2D(editor._current_display_orientation()).project_bundle(bundle)
-    editor._refresh_auto_leg_graph(projected)
-    projected = editor._filter_projected_scene_for_arm_view(projected)
-    projected = editor._filter_projected_scene_for_ray_display(projected)
+    projected = project_scene_bundle(
+        bundle,
+        editor._current_display_orientation(),
+        filter_projection_axis_fields=editor._should_filter_projection_axis_fields(bundle),
+        filter_projection_slice=editor._should_filter_projection_slice(bundle),
+        refresh_auto_leg_graph=editor._refresh_auto_leg_graph,
+        filter_arm_view=editor._filter_projected_scene_for_arm_view,
+        filter_ray_display=editor._filter_projected_scene_for_ray_display,
+    )
 
     fig = plt.figure(figsize=(16, 9))
     layout_gs = fig.add_gridspec(
@@ -304,9 +316,14 @@ def build_saved_layout_figure(
         ray_count_hint=max(1, int(editor._preview_field_ray_count)),
     )
     for plane, aux_ax in aux_axes.items():
-        aux_projected = SceneProjector2D(plane).project_bundle(bundle)
-        aux_projected = editor._filter_projected_scene_for_arm_view(aux_projected)
-        aux_projected = editor._filter_projected_scene_for_ray_display(aux_projected)
+        aux_projected = project_scene_bundle(
+            bundle,
+            plane,
+            filter_projection_axis_fields=editor._should_filter_projection_axis_fields(bundle),
+            filter_projection_slice=editor._should_filter_projection_slice(bundle),
+            filter_arm_view=editor._filter_projected_scene_for_arm_view,
+            filter_ray_display=editor._filter_projected_scene_for_ray_display,
+        )
         aux_render = editor._projected_scene_for_layout_render(aux_projected, suppress_scene_labels=True)
         render_scene_2d(
             aux_render,
@@ -323,10 +340,10 @@ def build_saved_layout_figure(
             orientation=plane,
             use_drawn_data=True,
         )
-        aux_x_label, aux_y_label, aux_title = projection_axis_labels(plane)
+        aux_x_label, aux_y_label, _aux_title = projection_axis_labels(plane)
         aux_ax.set_xlabel(aux_x_label, fontsize=8)
         aux_ax.set_ylabel(aux_y_label, fontsize=8)
-        aux_ax.set_title(aux_title, fontsize=9)
+        aux_ax.set_title(editor._projection_display_title(plane, bundle), fontsize=9)
         aux_ax.tick_params(axis="both", which="major", labelsize=8)
         aux_ax.grid(True, alpha=0.2)
     gaussian_extent = editor._draw_gaussian_beam_overlay(system, wavelength)
@@ -344,10 +361,10 @@ def build_saved_layout_figure(
         use_drawn_data=not scan_bounds.is_empty or not tolerance_bounds.is_empty,
     )
     editor._draw_arm_labels(projected)
-    x_label, y_label, title = projection_axis_labels(editor._current_display_orientation())
+    x_label, y_label, _title = projection_axis_labels(editor._current_display_orientation())
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
-    ax.set_title(title, fontsize=10)
+    ax.set_title(editor._projection_display_title(editor._current_display_orientation(), bundle), fontsize=10)
     ax.grid(True, alpha=0.2)
     fig.text(0.5, 0.035, "KrakenOS Layout", ha="center", va="center")
     return fig, ax
