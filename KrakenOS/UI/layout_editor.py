@@ -282,6 +282,7 @@ from KrakenOS.UI.services.legacy_3d_scene import Legacy3DSceneService
 from KrakenOS.UI.services.layout_file_writer import LayoutFileWriterService
 from KrakenOS.UI.services.layout_settings import LayoutSettingsService
 from KrakenOS.UI.services.nonseq_scene_graph_records import NonSequentialSceneGraphRecordService
+from KrakenOS.UI.services.open3d_carry_grip import Open3DCarryGripService
 from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
 from KrakenOS.UI.services.open3d_face_pick import FaceRayPick, pick_face_from_ray
 from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
@@ -5423,7 +5424,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._row_carry_hold_press_xy: tuple[int, int] | None = None
         self._row_carry_hold_pick_world: tuple[float, float, float] | None = None
         self._row_carry_drag_state: dict[str, object] | None = None
-        self._step_carry_grip_actor = None
+        self._open3d_carry_grip_service = Open3DCarryGripService(self)
         self._selected_step_feature: StepFeatureSelection | None = None
         self._selected_step_feature_label: str | None = None
         self._selected_step_feature_center_world: tuple[float, float, float] | None = None
@@ -6632,113 +6633,6 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception as exc:
             self.editor.append_debug(f"STEP carry hold timer failed: {exc}")
 
-    def _clear_step_carry_grip_marker(self, *, render: bool = True) -> None:
-        actor = self._step_carry_grip_actor
-        self._step_carry_grip_actor = None
-        if actor is None or self._renderer is None:
-            return
-        try:
-            self._renderer.RemoveActor(actor)
-        except Exception:
-            pass
-        if render:
-            self.render()
-
-    def _step_carry_grip_mesh(self, center):
-        if pv is None:
-            return None
-        try:
-            point = np.asarray(center, dtype=float).reshape(-1)[:3]
-        except Exception:
-            return None
-        if point.size < 3 or not np.all(np.isfinite(point[:3])):
-            return None
-        _scene_center, scene_span = self._scene_bounds()
-        radius = max(min(float(scene_span) * 0.018, 3.0), 0.35)
-        parts = []
-        try:
-            parts.append(
-                pv.Sphere(
-                    radius=radius,
-                    center=tuple(float(value) for value in point[:3]),
-                    theta_resolution=16,
-                    phi_resolution=8,
-                )
-            )
-        except Exception:
-            pass
-        for axis in np.eye(3):
-            try:
-                start = point[:3] - axis * radius * 2.8
-                end = point[:3] + axis * radius * 2.8
-                parts.append(pv.Line(tuple(start), tuple(end)))
-            except Exception:
-                pass
-        if not parts:
-            return None
-        mesh = parts[0]
-        for part in parts[1:]:
-            try:
-                mesh = mesh.merge(part)
-            except Exception:
-                pass
-        return mesh
-
-    def _show_step_carry_grip_marker(self, center) -> None:
-        self._clear_step_carry_grip_marker(render=False)
-        mesh = self._step_carry_grip_mesh(center)
-        if mesh is None:
-            return
-        actor = self._add_mesh_actor(
-            mesh,
-            color=(1.0, 0.82, 0.06),
-            opacity=0.98,
-            line_width=4.0,
-            flat_shading=True,
-        )
-        if actor is None:
-            return
-        try:
-            actor.PickableOff()
-        except Exception:
-            pass
-        self._step_carry_grip_actor = actor
-        self.render()
-
-    def _translate_step_carry_grip_marker(self, delta_xyz) -> None:
-        actor = self._step_carry_grip_actor
-        if actor is None:
-            return
-        try:
-            delta = np.asarray(delta_xyz, dtype=float).reshape(-1)[:3]
-        except Exception:
-            return
-        if delta.size < 3 or not np.all(np.isfinite(delta[:3])):
-            return
-        try:
-            actor.AddPosition(float(delta[0]), float(delta[1]), float(delta[2]))
-        except Exception:
-            pass
-
-    def _update_step_carry_grip_after_delta(self, state: dict[str, object], delta_xyz) -> None:
-        try:
-            delta = np.asarray(delta_xyz, dtype=float).reshape(-1)[:3]
-            grip = np.asarray(state.get("grip_world"), dtype=float).reshape(-1)[:3]
-            center = np.asarray(state.get("center_world"), dtype=float).reshape(-1)[:3]
-        except Exception:
-            return
-        if delta.size < 3 or grip.size < 3 or not np.all(np.isfinite(delta[:3])) or not np.all(np.isfinite(grip[:3])):
-            return
-        grip = grip[:3] + delta[:3]
-        state["grip_world"] = tuple(float(value) for value in grip[:3])
-        if center.size >= 3 and np.all(np.isfinite(center[:3])):
-            center = center[:3] + delta[:3]
-            state["center_world"] = tuple(float(value) for value in center[:3])
-        if self._step_carry_grip_actor is None:
-            self._show_step_carry_grip_marker(grip[:3])
-        else:
-            self._translate_step_carry_grip_marker(delta[:3])
-
     def _activate_step_carry_hold(self) -> None:
         self._step_carry_hold_after_id = None
         request = self.editor._open3d_step_state_service().consume_carry_hold_request(
@@ -6791,7 +6685,7 @@ class Kraken3DInspector(tk.Toplevel):
         self.show_step_rotation_handler(label)
         self._set_step_carry_cursor(True)
         if transition.has_grip_world:
-            self._show_step_carry_grip_marker(transition.grip_world)
+            self._open3d_carry_grip_service.show(transition.grip_world)
         self._update_mode_badge()
         if transition.status:
             self.status_var.set(transition.status)
@@ -6846,7 +6740,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._update_hover_status("", render=False)
         self._set_step_carry_cursor(True)
         if transition.has_grip_world:
-            self._show_step_carry_grip_marker(transition.grip_world)
+            self._open3d_carry_grip_service.show(transition.grip_world)
         self.editor._select_table_row(int(row_index))
         self.highlight_row(int(row_index))
         self._update_mode_badge()
@@ -6929,7 +6823,7 @@ class Kraken3DInspector(tk.Toplevel):
             return
         if self._translate_row_actors(row_index, delta[:3]) <= 0:
             self.refresh_from_editor()
-        self._update_step_carry_grip_after_delta(state, delta[:3])
+        self._open3d_carry_grip_service.update_after_delta(state, delta[:3])
         self.editor._open3d_step_state_service().apply_row_carry_motion_delta(state, movement)
 
     def _finish_row_carry_drag(self, state: dict[str, object]) -> None:
@@ -6945,7 +6839,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_step_carry_cursor(False)
         self._set_step_hover_outline(None, None, render=False)
         self._update_hover_status("", render=False)
-        self._clear_step_carry_grip_marker(render=False)
+        self._open3d_carry_grip_service.clear(render=False)
         self._update_mode_badge()
         if row_index >= 0:
             self._stl_placement_row_index = row_index
@@ -7040,7 +6934,7 @@ class Kraken3DInspector(tk.Toplevel):
             try:
                 grip = np.asarray(state.get("grip_world"), dtype=float).reshape(-1)[:3]
                 if grip.size >= 3 and np.all(np.isfinite(grip[:3])):
-                    self._show_step_carry_grip_marker(grip[:3])
+                    self._open3d_carry_grip_service.show(grip[:3])
             except Exception:
                 pass
         self._update_mode_badge()
@@ -7074,7 +6968,7 @@ class Kraken3DInspector(tk.Toplevel):
                     self.editor.translate_step_overlay(label, delta, grid_spacing_mm=None, refresh=False, record_history=False)
                     if self._translate_step_overlay_actors(label, delta) <= 0:
                         self.refresh_from_editor()
-                    self._update_step_carry_grip_after_delta(state, delta)
+                    self._open3d_carry_grip_service.update_after_delta(state, delta)
                 state["center_world"] = tuple(float(value) for value in np.asarray(cursor_world, dtype=float).reshape(-1)[:3])
                 state["start_center_world"] = tuple(float(value) for value in np.asarray(cursor_world, dtype=float).reshape(-1)[:3])
                 state["drag_plane_origin"] = tuple(float(value) for value in np.asarray(cursor_world, dtype=float).reshape(-1)[:3])
@@ -7576,7 +7470,7 @@ class Kraken3DInspector(tk.Toplevel):
         )
         if self._translate_step_overlay_actors(label, delta) <= 0:
             self.refresh_from_editor(force_retrace=bool(getattr(movement, "force_refresh", False)))
-        self._update_step_carry_grip_after_delta(state, delta)
+        self._open3d_carry_grip_service.update_after_delta(state, delta)
         live_message = str(getattr(movement, "live_refresh_message", "") or "")
         if live_message:
             self.schedule_live_refresh(live_message)
@@ -7639,7 +7533,7 @@ class Kraken3DInspector(tk.Toplevel):
             pass
         self._step_carry_active_label = None
         self._set_step_carry_cursor(False)
-        self._clear_step_carry_grip_marker(render=False)
+        self._open3d_carry_grip_service.clear(render=False)
         self._update_mode_badge()
         if transition.moved:
             try:
@@ -8621,7 +8515,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._selected_step_feature_center_world = None
         self._selected_step_feature_surface_center_world = None
         self._selected_step_feature_normal_world = None
-        self._clear_step_carry_grip_marker(render=False)
+        self._open3d_carry_grip_service.clear(render=False)
         self._set_step_carry_cursor(False)
         self.refresh_from_editor()
         self.status_var.set("Camera/lens/optical/LED STEP imports cleared.")
@@ -8674,7 +8568,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._selected_step_feature_center_world = None
             self._selected_step_feature_surface_center_world = None
             self._selected_step_feature_normal_world = None
-            self._clear_step_carry_grip_marker(render=False)
+            self._open3d_carry_grip_service.clear(render=False)
             self._set_step_carry_cursor(False)
             self.editor._live_step_overlay_trace_plan_cache = {}
             self.refresh_from_editor(force_retrace=True)
@@ -9317,7 +9211,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
         self._set_step_carry_cursor(False)
-        self._clear_step_carry_grip_marker(render=False)
+        self._open3d_carry_grip_service.clear(render=False)
         self._set_axis_pick_cursor(False)
         self._update_mode_badge()
         self.refresh_from_editor()
@@ -9416,7 +9310,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_step_hover_outline(None, None)
         self._set_optical_axis_highlight(None)
         self._set_step_carry_cursor(False)
-        self._clear_step_carry_grip_marker(render=False)
+        self._open3d_carry_grip_service.clear(render=False)
         self._set_axis_pick_cursor(False)
         self._update_mode_badge()
 
@@ -9535,7 +9429,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_step_hover_outline(None, None)
         self._set_step_carry_cursor(False)
         self._set_axis_pick_cursor(False)
-        self._clear_step_carry_grip_marker(render=False)
+        self._open3d_carry_grip_service.clear(render=False)
         if label_text:
             try:
                 if getattr(self.editor, "_selected_step_label", None) == label_text:

@@ -57,6 +57,7 @@ from KrakenOS.UI.services.legacy_3d_scene import Legacy3DSceneService
 from KrakenOS.UI.services.layout_file_writer import LayoutFileWriterService
 from KrakenOS.UI.services.layout_settings import LayoutSettingsService
 from KrakenOS.UI.services.nonseq_scene_graph_records import NonSequentialSceneGraphRecordService
+from KrakenOS.UI.services.open3d_carry_grip import Open3DCarryGripService
 from KrakenOS.UI.services.open3d_face_pick import pick_face_from_ray
 from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
 from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
@@ -256,10 +257,7 @@ def main() -> int:
     step_carry_hold_cancel = inspect.getsource(Kraken3DInspector._cancel_step_carry_hold_timer)
     step_carry_cursor = inspect.getsource(Kraken3DInspector._set_step_carry_cursor)
     step_carry_center = inspect.getsource(Kraken3DInspector._step_overlay_center_world)
-    step_carry_grip_show = inspect.getsource(Kraken3DInspector._show_step_carry_grip_marker)
-    step_carry_grip_translate = inspect.getsource(Kraken3DInspector._translate_step_carry_grip_marker)
-    step_carry_grip_update = inspect.getsource(Kraken3DInspector._update_step_carry_grip_after_delta)
-    step_carry_grip_clear = inspect.getsource(Kraken3DInspector._clear_step_carry_grip_marker)
+    open3d_carry_grip_service = inspect.getsource(Open3DCarryGripService)
     step_promote = inspect.getsource(Kraken3DInspector.promote_selected_step_to_optical_solid_row)
     step_promote_helper = inspect.getsource(Kraken3DInspector._promote_step_overlay_to_optical_solid_row)
     delete_step = inspect.getsource(Kraken3DInspector.delete_selected_step)
@@ -798,7 +796,7 @@ def main() -> int:
         (
             "Open 3D STEP carry avoids pointer warping while gripping center",
             "_step_overlay_center_world(label)" in step_carry_hold_activate
-            and "_show_step_carry_grip_marker(transition.grip_world)" in step_carry_hold_activate
+            and "_open3d_carry_grip_service.show(transition.grip_world)" in step_carry_hold_activate
             and "center_world" in step_carry_hold_activate
             and "_sync_pointer_to_step_carry_center" not in step_carry_hold_activate
             and "_sync_pointer_to_step_carry_center" not in step_carry_drag
@@ -810,13 +808,14 @@ def main() -> int:
         ),
         (
             "Open 3D STEP carry shows an in-scene grip cursor",
-            "_show_step_carry_grip_marker(transition.grip_world)" in step_carry_hold_activate
+            "_open3d_carry_grip_service.show(transition.grip_world)" in step_carry_hold_activate
             and "center_world" in step_carry_hold_activate
-            and "_step_carry_grip_actor" in step_carry_grip_show
-            and "actor.AddPosition" in step_carry_grip_translate
-            and "_update_step_carry_grip_after_delta(state, delta)" in step_carry_motion_delta
-            and "_show_step_carry_grip_marker(grip[:3])" in step_carry_grip_update
-            and "RemoveActor(actor)" in step_carry_grip_clear,
+            and "_open3d_carry_grip_service = Open3DCarryGripService(self)" in init
+            and "self.actor" in open3d_carry_grip_service
+            and "actor.AddPosition" in open3d_carry_grip_service
+            and "_open3d_carry_grip_service.update_after_delta(state, delta)" in step_carry_motion_delta
+            and "self.show(grip[:3])" in open3d_carry_grip_service
+            and "RemoveActor(actor)" in open3d_carry_grip_service,
         ),
         (
             "Open 3D STEP carry only starts from STEP body picks",
