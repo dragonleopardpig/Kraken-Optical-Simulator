@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import inspect
 from pathlib import Path
 from types import MethodType
@@ -314,7 +315,7 @@ def _validate_world_envelope_keeps_splitter_branch_bundles() -> None:
         raise AssertionError("World-envelope branch path does not preserve the full launch bundle.")
 
 
-def main() -> int:
+def _run_focused_checks() -> None:
     _validate_forced_refresh_preserves_active_mode()
     _validate_explicit_mode_still_wins()
     _validate_missing_mode_falls_back_to_3d_default()
@@ -324,8 +325,27 @@ def main() -> int:
     _validate_done_2d_and_close_preserve_open3d_sampling()
     _validate_focus_and_vtk_teardown_are_guarded()
     _validate_face_role_save_forces_stale_trace_rebuild()
-    _validate_world_envelope_survives_off_axis_step_promotion()
     _validate_world_envelope_keeps_splitter_branch_bundles()
+
+
+def _run_full_checks() -> None:
+    _run_focused_checks()
+    _validate_world_envelope_survives_off_axis_step_promotion()
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--focused",
+        action="store_true",
+        help="Run only fixture-free sampling contract checks.",
+    )
+    args = parser.parse_args(argv)
+    if args.focused:
+        _run_focused_checks()
+        print("Focused Open 3D face assignment sampling stability validation passed.")
+        return 0
+    _run_full_checks()
     print("Open 3D face assignment sampling stability validation passed.")
     return 0
 
