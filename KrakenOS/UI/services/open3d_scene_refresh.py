@@ -207,6 +207,8 @@ class Open3DSceneRefreshService:
         self._actor_placement_rotate_map.clear()
         self._actor_thickness_dimension_map.clear()
         self._thickness_dimension_actor_map.clear()
+        self._thickness_dimension_drag_map.clear()
+        self._thickness_drag_state = None
         self._step_feature_cache.clear()
         self._hover_rotation_handle_key = None
         self._picked_step_label = None

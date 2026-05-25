@@ -418,6 +418,9 @@ def main() -> int:
     thickness_label = inspect.getsource(Open3DThicknessDimensionService.add_label_actor)
     thickness_edit = inspect.getsource(Open3DThicknessDimensionService.edit_dimension)
     thickness_apply = inspect.getsource(Open3DThicknessDimensionService.apply_dimension_value)
+    thickness_drag_state = inspect.getsource(Open3DThicknessDimensionService.drag_state_from_current_pick)
+    thickness_drag_motion = inspect.getsource(Open3DThicknessDimensionService.apply_drag_motion)
+    thickness_drag_finish = inspect.getsource(Open3DThicknessDimensionService.finish_drag)
     thickness_service_source = inspect.getsource(Open3DThicknessDimensionService)
     step_admin_source = inspect.getsource(Open3DStepAdminPanel).replace("self.inspector.", "self.")
     step_admin_overlay_select = inspect.getsource(Kraken3DInspector.select_step_overlay_from_admin)
@@ -1183,6 +1186,9 @@ def main() -> int:
             and "pv.Cone" in thickness_arrow
             and "billboard_text_actor_cls" in inspect.getsource(Open3DThicknessDimensionService.__init__)
             and "_register_thickness_dimension_actor" in thickness_label
+            and "_register_drag_actor" in thickness_service_source
+            and "drag_start" in thickness_label
+            and "_thickness_dimension_drag_map" in init
             and "Thickness" in top_controls_source
             and "show_physical_distances_var" in top_controls_source,
         ),
@@ -1219,6 +1225,24 @@ def main() -> int:
             and "_select_table_row(row_index)" in thickness_apply
             and "Other table thickness values are unchanged" in thickness_apply
             and "refresh_from_editor(force_retrace=True)" in thickness_apply,
+        ),
+        (
+            "Open 3D Thickness dimensions support drag-to-adjust on release",
+            "_thickness_drag_state_from_current_pick" in bindings
+            and "_apply_thickness_drag_motion" in bindings
+            and "_finish_thickness_drag" in bindings
+            and "drag_state_from_current_pick" in inspect.getsource(Kraken3DInspector._thickness_drag_state_from_current_pick)
+            and "apply_drag_motion" in inspect.getsource(Kraken3DInspector._apply_thickness_drag_motion)
+            and "finish_drag" in inspect.getsource(Kraken3DInspector._finish_thickness_drag)
+            and "GetViewProp" in thickness_drag_state
+            and "display_direction" in thickness_drag_state
+            and "mm_per_pixel" in thickness_drag_state
+            and "pending_thickness" in thickness_drag_motion
+            and "Release to apply" in thickness_drag_motion
+            and "self.apply_dimension_value(row_index, pending)" in thickness_drag_finish
+            and "_thickness_dimension_drag_map.clear()" in refresh
+            and "thickness drag" in active_operation_labels
+            and "self._thickness_drag_state = None" in operation_cancel,
         ),
         (
             "Open 3D STEP promotion refreshes and highlights the created row",

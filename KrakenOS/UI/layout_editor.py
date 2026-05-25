@@ -5360,6 +5360,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._actor_placement_rotate_map: dict[str, tuple[int, str, float]] = {}
         self._actor_thickness_dimension_map: dict[str, int] = {}
         self._thickness_dimension_actor_map: dict[int, list[str]] = {}
+        self._thickness_dimension_drag_map: dict[str, dict[str, object]] = {}
         self._step_feature_cache: dict[tuple[str, int], tuple[np.ndarray, object | None, np.ndarray | None] | None] = {}
         self._picked_step_label: str | None = None
         self._picked_ray_index: int | None = None
@@ -5410,6 +5411,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._mouse_move_last_ts = 0.0
         self._mouse_move_min_interval_s = 0.035
         self._placement_drag_state: dict[str, object] | None = None
+        self._thickness_drag_state: dict[str, object] | None = None
         self._step_carry_active_label: str | None = None
         self._step_carry_drag_state: dict[str, object] | None = None
         self._step_carry_follow_state: dict[str, object] | None = None
@@ -5999,6 +6001,7 @@ class Kraken3DInspector(tk.Toplevel):
             "step_carry": self._step_carry_label(),
             "step_follow": self._step_carry_follow_state is not None,
             "step_drag": self._step_carry_drag_state is not None,
+            "thickness_drag": self._thickness_drag_state is not None,
             "step_snap_ray": bool(self._step_carry_snap_ray_mode),
             "step_snap_target": bool(self._step_carry_snap_target_mode),
             "cad_axis_pick": bool(getattr(self.editor, "_cad_axis_pick_any", False)),
@@ -6028,6 +6031,7 @@ class Kraken3DInspector(tk.Toplevel):
             "placement_move_handles": len(getattr(self, "_actor_placement_move_map", {}) or {}),
             "placement_rotate_handles": len(getattr(self, "_actor_placement_rotate_map", {}) or {}),
             "thickness_dimension_actors": len(getattr(self, "_actor_thickness_dimension_map", {}) or {}),
+            "thickness_dimension_drag_actors": len(getattr(self, "_thickness_dimension_drag_map", {}) or {}),
             "show_rays": bool(self.show_rays_var.get()),
             "selected_step": getattr(self.editor, "_selected_step_label", None),
             "picked_row": self._picked_row_index,
@@ -9243,6 +9247,8 @@ class Kraken3DInspector(tk.Toplevel):
             labels.append("orient row to ray")
         if self._placement_drag_state is not None:
             labels.append("placement drag")
+        if self._thickness_drag_state is not None:
+            labels.append("thickness drag")
         if self._step_carry_drag_state is not None:
             labels.append("STEP carry drag")
         if self._row_carry_drag_state is not None:
@@ -9297,6 +9303,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._placement_orient_ray_row_index = None
         self._placement_orient_ray_face_id = ""
         self._placement_drag_state = None
+        self._thickness_drag_state = None
         self._step_carry_active_label = None
         self._step_carry_drag_state = None
         self._step_carry_follow_state = None
@@ -12634,6 +12641,15 @@ class Kraken3DInspector(tk.Toplevel):
 
     def _edit_open3d_thickness_dimension(self, row_index: int) -> None:
         self._open3d_thickness_dimension_service().edit_dimension(int(row_index))
+
+    def _thickness_drag_state_from_current_pick(self) -> dict[str, object] | None:
+        return self._open3d_thickness_dimension_service().drag_state_from_current_pick()
+
+    def _apply_thickness_drag_motion(self, dx: int | float, dy: int | float) -> None:
+        self._open3d_thickness_dimension_service().apply_drag_motion(self._thickness_drag_state, dx, dy)
+
+    def _finish_thickness_drag(self, state: dict[str, object]) -> None:
+        self._open3d_thickness_dimension_service().finish_drag(state)
 
     def _interaction_service(self) -> Open3DInteractionService:
         service = self.__dict__.get("_interaction_service_instance")

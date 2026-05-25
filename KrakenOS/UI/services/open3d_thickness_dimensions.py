@@ -99,7 +99,39 @@ class Open3DThicknessDimensionService:
             return np.asarray((1.0, 0.0, 0.0), dtype=float)
         return side / side_norm
 
-    def add_label_actor(self, row_index: int, position: np.ndarray, text: str) -> bool:
+    def _register_drag_actor(self, actor: Any, row_index: int, start: np.ndarray, end: np.ndarray) -> None:
+        actor_key = self.inspector._actor_key(actor)
+        if actor_key is None:
+            return
+        try:
+            start_values = np.asarray(start, dtype=float).reshape(-1)[:3]
+            end_values = np.asarray(end, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return
+        if start_values.size < 3 or end_values.size < 3:
+            return
+        if not (np.all(np.isfinite(start_values[:3])) and np.all(np.isfinite(end_values[:3]))):
+            return
+        try:
+            initial = float(getattr(self.editor.rows[int(row_index)], "thickness", 0.0) or 0.0)
+        except Exception:
+            initial = 0.0
+        self.inspector._thickness_dimension_drag_map[actor_key] = {
+            "row_index": int(row_index),
+            "start": tuple(float(value) for value in start_values[:3]),
+            "end": tuple(float(value) for value in end_values[:3]),
+            "initial_thickness": float(initial),
+        }
+
+    def add_label_actor(
+        self,
+        row_index: int,
+        position: np.ndarray,
+        text: str,
+        *,
+        drag_start: np.ndarray | None = None,
+        drag_end: np.ndarray | None = None,
+    ) -> bool:
         actor_cls = self.billboard_text_actor_cls
         if self.inspector._renderer is None or actor_cls is None:
             return False
@@ -119,6 +151,8 @@ class Open3DThicknessDimensionService:
             except Exception:
                 pass
             self.inspector._register_thickness_dimension_actor(actor, int(row_index))
+            if drag_start is not None and drag_end is not None:
+                self._register_drag_actor(actor, int(row_index), drag_start, drag_end)
             self.inspector._add_renderer_view_prop(actor)
             return True
         except Exception as exc:
@@ -177,6 +211,7 @@ class Open3DThicknessDimensionService:
             )
             if actor is None:
                 continue
+            self._register_drag_actor(actor, row_index, p0, p1)
             count += 1
             try:
                 self.inspector._add_mesh_actor(
@@ -197,9 +232,133 @@ class Open3DThicknessDimensionService:
                 pass
             label = f"S{row_index} Thickness = {thickness:.6g} mm"
             label_position = 0.5 * (start + end) + side * max(base_offset * 0.22, 0.8)
-            if self.add_label_actor(row_index, label_position, label):
+            if self.add_label_actor(row_index, label_position, label, drag_start=p0, drag_end=p1):
                 count += 1
         return count
+
+    def _display_direction_for_drag(self, start: np.ndarray, end: np.ndarray) -> tuple[np.ndarray, float]:
+        try:
+            start_display = self.inspector._world_to_display_2d(start)
+            end_display = self.inspector._world_to_display_2d(end)
+        except Exception:
+            start_display = None
+            end_display = None
+        if start_display is not None and end_display is not None:
+            delta = np.asarray(end_display, dtype=float).reshape(-1)[:2] - np.asarray(start_display, dtype=float).reshape(-1)[:2]
+            display_length = float(np.linalg.norm(delta))
+            if np.isfinite(display_length) and display_length > 1e-6:
+                return delta / display_length, display_length
+        segment = np.asarray(end, dtype=float).reshape(-1)[:3] - np.asarray(start, dtype=float).reshape(-1)[:3]
+        axis = int(np.nanargmax(np.abs(segment[:3]))) if segment.size >= 3 else 2
+        fallback = {
+            0: np.asarray((1.0, 0.0), dtype=float),
+            1: np.asarray((0.0, 1.0), dtype=float),
+            2: np.asarray((1.0, 1.0), dtype=float) / np.sqrt(2.0),
+        }.get(axis, np.asarray((1.0, 0.0), dtype=float))
+        return fallback, 80.0
+
+    def drag_state_from_current_pick(self) -> dict[str, object] | None:
+        if self.inspector._picker is None or self.inspector._renderer is None or self.inspector._vtk_interactor is None:
+            return None
+        try:
+            if int(self.inspector._vtk_interactor.GetControlKey()):
+                return None
+        except Exception:
+            pass
+        try:
+            x, y = self.inspector._vtk_interactor.GetEventPosition()
+            self.inspector._picker.Pick(x, y, 0.0, self.inspector._renderer)
+            actor = self.inspector._picker.GetActor()
+            if actor is None:
+                get_view_prop = getattr(self.inspector._picker, "GetViewProp", None)
+                if callable(get_view_prop):
+                    actor = get_view_prop()
+            actor_key = self.inspector._actor_key(actor)
+        except Exception:
+            return None
+        if actor_key is None:
+            return None
+        record = self.inspector._thickness_dimension_drag_map.get(actor_key)
+        if not isinstance(record, dict):
+            return None
+        try:
+            row_index = int(record.get("row_index", -1))
+        except Exception:
+            return None
+        if not (0 <= row_index < len(self.editor.rows) - 1):
+            return None
+        try:
+            start = np.asarray(record.get("start"), dtype=float).reshape(-1)[:3]
+            end = np.asarray(record.get("end"), dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if start.size < 3 or end.size < 3 or not (np.all(np.isfinite(start[:3])) and np.all(np.isfinite(end[:3]))):
+            return None
+        segment_length = float(np.linalg.norm(end[:3] - start[:3]))
+        if not np.isfinite(segment_length) or segment_length <= 1e-12:
+            return None
+        display_direction, display_length = self._display_direction_for_drag(start[:3], end[:3])
+        try:
+            initial = float(getattr(self.editor.rows[row_index], "thickness", record.get("initial_thickness", 0.0)) or 0.0)
+        except Exception:
+            initial = 0.0
+        mm_per_pixel = segment_length / max(float(display_length), 1.0)
+        if not np.isfinite(mm_per_pixel) or mm_per_pixel <= 1e-12:
+            mm_per_pixel = max(abs(float(initial)), 1.0) / 80.0
+        self.inspector.status_var.set(
+            f"Drag S{row_index} Thickness along the dimension arrow; release to apply, click to edit numerically."
+        )
+        return {
+            "row_index": row_index,
+            "initial_thickness": float(initial),
+            "pending_thickness": float(initial),
+            "display_direction": tuple(float(value) for value in display_direction[:2]),
+            "mm_per_pixel": float(mm_per_pixel),
+            "signed_pixels": 0.0,
+            "moved": False,
+        }
+
+    def apply_drag_motion(self, state: dict[str, object] | None, dx: int | float, dy: int | float) -> None:
+        if state is None:
+            return
+        try:
+            cursor_delta = np.asarray((float(dx), -float(dy)), dtype=float)
+            direction = np.asarray(state.get("display_direction"), dtype=float).reshape(-1)[:2]
+            signed_pixels = float(np.dot(cursor_delta, direction))
+            mm_per_pixel = float(state.get("mm_per_pixel", 0.0))
+            initial = float(state.get("initial_thickness", 0.0))
+        except Exception:
+            return
+        if not np.isfinite(signed_pixels) or not np.isfinite(mm_per_pixel) or mm_per_pixel <= 0.0:
+            return
+        total_pixels = float(state.get("signed_pixels", 0.0)) + signed_pixels
+        pending = initial + total_pixels * mm_per_pixel
+        if not np.isfinite(pending):
+            return
+        state["signed_pixels"] = float(total_pixels)
+        state["pending_thickness"] = float(pending)
+        state["moved"] = bool(abs(float(pending) - initial) > 1e-9)
+        try:
+            row_index = int(state.get("row_index", -1))
+        except Exception:
+            row_index = -1
+        self.inspector.status_var.set(
+            f"S{row_index} Thickness drag: {initial:.6g} -> {pending:.6g} mm. Release to apply."
+        )
+
+    def finish_drag(self, state: dict[str, object] | None) -> None:
+        if state is None:
+            return
+        try:
+            row_index = int(state.get("row_index", -1))
+            pending = float(state.get("pending_thickness", state.get("initial_thickness", 0.0)))
+            initial = float(state.get("initial_thickness", 0.0))
+        except Exception:
+            return
+        if not bool(state.get("moved", False)) or abs(pending - initial) <= 1e-9:
+            self.inspector.status_var.set(f"S{row_index} Thickness drag: no change.")
+            return
+        self.apply_dimension_value(row_index, pending)
 
     def _destroy_inline_editor(self) -> None:
         window = self._inline_editor_window

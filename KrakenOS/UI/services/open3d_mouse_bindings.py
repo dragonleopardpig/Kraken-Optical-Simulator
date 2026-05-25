@@ -52,12 +52,16 @@ class Open3DMouseBindingsService:
             self._ctrl_left_camera_active = ctrl_pressed
             if ctrl_pressed:
                 self._placement_drag_state = None
+                self._thickness_drag_state = None
                 self._step_carry_drag_state = None
             else:
                 self._placement_drag_state = self._placement_drag_state_from_current_pick()
+                self._thickness_drag_state = None
                 self._step_carry_drag_state = None
                 self._row_carry_drag_state = None
                 if self._placement_drag_state is None:
+                    self._thickness_drag_state = self._thickness_drag_state_from_current_pick()
+                if self._placement_drag_state is None and self._thickness_drag_state is None:
                     step_label = self._step_carry_label_from_current_pick()
                     if step_label is not None:
                         self._arm_step_carry_hold(step_label, (int(event.x), int(event.y)))
@@ -89,6 +93,10 @@ class Open3DMouseBindingsService:
                 elif self._placement_drag_state is not None:
                     self._cancel_step_carry_hold_timer()
                     self._apply_placement_drag_motion(dx, dy)
+                elif self._thickness_drag_state is not None:
+                    self._cancel_step_carry_hold_timer()
+                    self._cancel_row_carry_hold_timer()
+                    self._apply_thickness_drag_motion(dx, dy)
                 elif self._step_carry_drag_state is not None:
                     self._apply_step_carry_drag_motion(dx, dy, current_xy=current)
                     # This branch returns early to suppress camera rotation, so
@@ -135,6 +143,7 @@ class Open3DMouseBindingsService:
             should_pick = self._left_drag_active and not self._left_drag_moved
             ctrl_active = self._ctrl_left_camera_active or control_pressed(event)
             placement_drag_state = self._placement_drag_state
+            thickness_drag_state = self._thickness_drag_state
             step_carry_drag_state = self._step_carry_drag_state
             step_carry_follow_state = self._step_carry_follow_state
             row_carry_drag_state = self._row_carry_drag_state
@@ -145,6 +154,7 @@ class Open3DMouseBindingsService:
             self._left_drag_last_xy = None
             self._left_drag_moved = False
             self._placement_drag_state = None
+            self._thickness_drag_state = None
             self._step_carry_drag_state = None
             self._row_carry_drag_state = None
             self._ctrl_left_camera_active = False
@@ -158,6 +168,8 @@ class Open3DMouseBindingsService:
                 self._finish_step_carry_drag(step_carry_drag_state)
             elif row_carry_drag_state is not None:
                 self._finish_row_carry_drag(row_carry_drag_state)
+            elif thickness_drag_state is not None and not should_pick and not ctrl_active:
+                self._finish_thickness_drag(thickness_drag_state)
             elif should_pick and not ctrl_active:
                 self._on_left_button_press(None, None)
             elif should_pick and ctrl_active:
