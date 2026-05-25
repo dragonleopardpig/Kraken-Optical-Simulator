@@ -64,6 +64,7 @@ from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
 from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
+from KrakenOS.UI.services.open3d_step_rotation_handles import Open3DStepRotationHandleService
 from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.plot_refresh import PlotRefreshService
@@ -218,12 +219,13 @@ def main() -> int:
     interaction_factory = inspect.getsource(Kraken3DInspector._interaction_service)
     handler = inspect.getsource(Kraken3DInspector.show_step_rotation_handler)
     handler_rotate = inspect.getsource(Kraken3DInspector._rotate_step_from_handler)
-    ensure_step_handles = inspect.getsource(Kraken3DInspector._ensure_step_rotation_handles_for_label)
-    step_rotate_handles = inspect.getsource(Kraken3DInspector._add_step_rotation_handles)
+    step_rotation_service_factory = inspect.getsource(Kraken3DInspector._open3d_step_rotation_handle_service)
+    ensure_step_handles = inspect.getsource(Open3DStepRotationHandleService.ensure_for_label)
+    step_rotate_handles = inspect.getsource(Open3DStepRotationHandleService.add_handles)
     rotation_arc_mesh = inspect.getsource(Kraken3DInspector._scene_placement_rotation_arc_mesh)
     rotation_arrowhead_mesh = inspect.getsource(Kraken3DInspector._scene_placement_rotation_arrowhead_mesh)
     rotation_toggle = inspect.getsource(Kraken3DInspector._toggle_rotation_handles)
-    rotation_hover = inspect.getsource(Kraken3DInspector._set_rotation_handle_hover)
+    rotation_hover = inspect.getsource(Open3DStepRotationHandleService.set_hover)
     debug_trace = inspect.getsource(Kraken3DInspector._debug_trace)
     show_rays_changed = inspect.getsource(Kraken3DInspector._on_show_rays_changed)
     ray_pick_enabled = inspect.getsource(Kraken3DInspector._ray_pick_enabled)
@@ -235,7 +237,7 @@ def main() -> int:
     face_assignment_factory = inspect.getsource(Kraken3DInspector._face_assignment_service)
     hover_status = inspect.getsource(Kraken3DInspector._update_hover_status)
     face_hover_status = inspect.getsource(Kraken3DInspector._face_hover_status_text)
-    step_rotate_pick = inspect.getsource(Kraken3DInspector._apply_step_rotation_handle)
+    step_rotate_pick = inspect.getsource(Open3DStepRotationHandleService.apply_handle)
     step_import = inspect.getsource(Kraken3DInspector.import_step_overlay)
     optical_step_import = inspect.getsource(Kraken3DInspector.import_optical_step_overlay)
     step_carry_grid = inspect.getsource(Kraken3DInspector._add_step_carry_grid_overlay)
@@ -290,7 +292,7 @@ def main() -> int:
     step_carry_drop = inspect.getsource(Kraken3DInspector.stop_step_carry)
     operation_cancel = inspect.getsource(Kraken3DInspector.cancel_active_3d_operation)
     clear_selection = inspect.getsource(Kraken3DInspector._clear_open3d_selection)
-    remove_step_handles = inspect.getsource(Kraken3DInspector._remove_step_rotation_handle_actors)
+    remove_step_handles = inspect.getsource(Open3DStepRotationHandleService.remove_actors)
     key_press = inspect.getsource(Kraken3DInspector._on_key_press)
     refresh = inspect.getsource(Open3DSceneRefreshService.refresh_scene)
     refresh_factory = inspect.getsource(Kraken3DInspector._scene_refresh_service)
@@ -609,8 +611,9 @@ def main() -> int:
         (
             "STEP reselect rebuilds rotation handles after blank deselect",
             "_ensure_step_rotation_handles_for_label(label)" in handler
-            and "_add_step_rotation_handles(label, mesh)" in ensure_step_handles
-            and "_step_rotation_handle_count_for_label(label)" in ensure_step_handles,
+            and "Open3DStepRotationHandleService" in step_rotation_service_factory
+            and "return self.add_handles(label, mesh)" in ensure_step_handles
+            and "handle_count_for_label(label)" in ensure_step_handles,
         ),
         (
             "plain STEP face click keeps rotation handles usable",
