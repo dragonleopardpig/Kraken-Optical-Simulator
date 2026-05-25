@@ -526,6 +526,7 @@ def main() -> int:
     right_click_menu = inspect.getsource(Open3DFaceAssignmentService._show_surface_function_context_menu)
     assign_row_face_context = inspect.getsource(Open3DFaceAssignmentService._assign_row_face_function_from_context)
     row_carry_pick = inspect.getsource(Kraken3DInspector._row_carry_index_from_current_pick)
+    row_carry_new = inspect.getsource(Kraken3DInspector._new_row_carry_motion_state)
     row_carry_activate = inspect.getsource(Kraken3DInspector._activate_row_carry_hold)
     row_carry_apply = inspect.getsource(Kraken3DInspector._apply_row_carry_drag_motion)
     row_carry_finish = inspect.getsource(Kraken3DInspector._finish_row_carry_drag)
@@ -1636,6 +1637,13 @@ def main() -> int:
             "_row_carry_index_from_current_pick" in bindings
             and "_row_carry_drag_state" in bindings
             and "_file_backed_stl_row_at" in row_carry_pick
+            and "row_carry_motion_state" in row_carry_new
+            and "prepare_row_carry_hold_state" in row_carry_activate
+            and "row_carry_plane_motion_delta" in row_carry_apply
+            and "apply_row_carry_motion_delta" in row_carry_apply
+            and "row_carry_finish_transition" in row_carry_finish
+            and "row_carry_motion_state" in open3d_step_state_service
+            and "row_carry_plane_motion_delta" in open3d_step_state_service
             and "translate_scene_row_pose_vector" in row_carry_apply
             and "record_history=False" in row_carry_apply
             and "_set_step_hover_outline(None, None, render=False)" in row_carry_activate

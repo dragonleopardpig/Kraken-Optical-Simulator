@@ -12,6 +12,9 @@ from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 @dataclass
 class _Row:
     advanced: dict[str, object] = field(default_factory=dict)
+    desp_x: float = 0.0
+    desp_y: float = 0.0
+    desp_z: float = 0.0
 
 
 class _Editor:
@@ -32,6 +35,13 @@ class _Editor:
     @staticmethod
     def _is_open3d_promoted_optical_solid_row(row: _Row) -> bool:
         return isinstance(dict(row.advanced or {}).get("StepOverlayPromotion"), dict)
+
+    def _file_backed_stl_row_at(self, row_index: int):
+        try:
+            row = self.rows[int(row_index)]
+        except Exception:
+            return None
+        return row if self._is_open3d_promoted_optical_solid_row(row) else None
 
     def promote_imported_step_to_optical_solid_row(
         self,
@@ -263,6 +273,70 @@ def main() -> int:
                     "drag_anchor_world": (0.0, 0.0, 0.0),
                     "applied_steps": 0,
                 },
+            ),
+        ),
+        (
+            "row-backed carry state and deltas are service-owned",
+            (
+                lambda state: (
+                    (
+                        lambda transition, movement: (
+                            state is not None
+                            and state["row_index"] == 1
+                            and state["center_world"] == (1.0, 2.0, 3.0)
+                            and transition.has_state
+                            and transition.row_index == 1
+                            and transition.grip_world == (1.0, 2.0, 3.0)
+                            and state["drag_anchor_world"] == (2.0, 2.0, 3.0)
+                            and movement is not None
+                            and movement.has_delta
+                            and movement.row_index == 1
+                            and movement.delta_xyz == (1.0, 0.0, 0.0)
+                            and movement.target_center_world == (2.0, 2.0, 3.0)
+                            and (
+                                service.apply_row_carry_motion_delta(state, movement) is None
+                                and state["center_world"] == (2.0, 2.0, 3.0)
+                                and state["applied_steps"] == 1
+                            )
+                            and (
+                                lambda moved, still: (
+                                    moved is not None
+                                    and moved.row_index == 1
+                                    and moved.moved is True
+                                    and moved.status == "S1 dropped after free promoted-solid movement."
+                                    and still is not None
+                                    and still.row_index == 1
+                                    and still.moved is False
+                                    and still.status == "S1 dropped: no movement."
+                                )
+                            )(
+                                service.row_carry_finish_transition(state),
+                                service.row_carry_finish_transition({"row_index": 1, "applied_steps": 0}),
+                            )
+                        )
+                    )(
+                        service.prepare_row_carry_hold_state(
+                            1,
+                            state,
+                            left_drag_active=True,
+                            press_xy=(3, 4),
+                            last_xy=(5, 6),
+                            pick_world=(9.0, 9.0, 9.0),
+                            anchor_world=(2.0, 2.0, 3.0),
+                        ),
+                        service.row_carry_plane_motion_delta(
+                            state,
+                            cursor_world=(3.0, 2.0, 3.0),
+                            scene_span=50.0,
+                        ),
+                    )
+                )
+            )(
+                service.row_carry_motion_state(
+                    1,
+                    center_world=(1.0, 2.0, 3.0),
+                    plane_normal=(0.0, 0.0, 1.0),
+                )
             ),
         ),
         (

@@ -6797,37 +6797,13 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set(transition.status)
 
     def _new_row_carry_motion_state(self, row_index: int) -> dict[str, object] | None:
-        try:
-            row_index = int(row_index)
-        except Exception:
-            return None
-        if self.editor._file_backed_stl_row_at(row_index) is None:
-            return None
         center_world = self._row_actor_center_world(row_index)
-        if center_world is None:
-            try:
-                row = self.editor.rows[row_index]
-                center_world = np.asarray((float(row.desp_x), float(row.desp_y), float(row.desp_z)), dtype=float)
-            except Exception:
-                center_world = None
         plane_normal = self._camera_view_normal()
-        if center_world is None or plane_normal is None:
-            return None
-        center_world = np.asarray(center_world, dtype=float).reshape(-1)[:3]
-        plane_normal = np.asarray(plane_normal, dtype=float).reshape(-1)[:3]
-        if center_world.size < 3 or plane_normal.size < 3:
-            return None
-        if not (np.all(np.isfinite(center_world[:3])) and np.all(np.isfinite(plane_normal[:3]))):
-            return None
-        return {
-            "row_index": row_index,
-            "center_world": tuple(float(value) for value in center_world[:3]),
-            "start_center_world": tuple(float(value) for value in center_world[:3]),
-            "drag_plane_origin": tuple(float(value) for value in center_world[:3]),
-            "drag_plane_normal": tuple(float(value) for value in plane_normal[:3]),
-            "applied_steps": 0,
-            "history_started": False,
-        }
+        return self.editor._open3d_step_state_service().row_carry_motion_state(
+            row_index,
+            center_world=center_world,
+            plane_normal=plane_normal,
+        )
 
     def _activate_row_carry_hold(self) -> None:
         self._row_carry_hold_after_id = None
@@ -6849,26 +6825,33 @@ class Kraken3DInspector(tk.Toplevel):
         anchor_world = None
         if anchor_xy is not None:
             anchor_world = self._cursor_plane_point(anchor_xy, center_world[:3], plane_normal[:3])
-        if anchor_world is None and pick_world is not None:
-            try:
-                anchor_world = np.asarray(pick_world, dtype=float).reshape(-1)[:3]
-            except Exception:
-                anchor_world = None
-        if anchor_world is None:
-            anchor_world = center_world[:3]
-        state["drag_anchor_world"] = tuple(float(value) for value in np.asarray(anchor_world, dtype=float).reshape(-1)[:3])
-        state["grip_world"] = tuple(float(value) for value in center_world[:3])
+        transition = self.editor._open3d_step_state_service().prepare_row_carry_hold_state(
+            row_index,
+            state,
+            left_drag_active=self._left_drag_active,
+            press_xy=press_xy,
+            last_xy=self._left_drag_last_xy,
+            pick_world=pick_world,
+            anchor_world=anchor_world,
+        )
+        if not transition.has_state:
+            if transition.status:
+                self.status_var.set(transition.status)
+            return
+        state = transition.state
         self._row_carry_drag_state = state
         self._step_carry_drag_state = None
         self._step_carry_follow_state = None
         self._set_step_hover_outline(None, None, render=False)
         self._update_hover_status("", render=False)
         self._set_step_carry_cursor(True)
-        self._show_step_carry_grip_marker(center_world[:3])
+        if transition.has_grip_world:
+            self._show_step_carry_grip_marker(transition.grip_world)
         self.editor._select_table_row(int(row_index))
         self.highlight_row(int(row_index))
         self._update_mode_badge()
-        self.status_var.set(f"S{int(row_index)} gripped: drag the promoted optical solid freely; release to drop.")
+        if transition.status:
+            self.status_var.set(transition.status)
 
     def _translate_row_actors(self, row_index: int, delta_xyz) -> int:
         try:
@@ -6900,27 +6883,11 @@ class Kraken3DInspector(tk.Toplevel):
         if state is None or current_xy is None:
             return
         try:
-            row_index = int(state.get("row_index", -1))
-            current_center = np.asarray(state.get("center_world"), dtype=float).reshape(-1)[:3]
-            start_center = np.asarray(state.get("start_center_world"), dtype=float).reshape(-1)[:3]
             plane_origin = np.asarray(state.get("drag_plane_origin"), dtype=float).reshape(-1)[:3]
             plane_normal = np.asarray(state.get("drag_plane_normal"), dtype=float).reshape(-1)[:3]
-            anchor_world = np.asarray(state.get("drag_anchor_world"), dtype=float).reshape(-1)[:3]
         except Exception:
             return
-        if (
-            row_index < 0
-            or current_center.size < 3
-            or start_center.size < 3
-            or plane_origin.size < 3
-            or plane_normal.size < 3
-            or anchor_world.size < 3
-            or not np.all(np.isfinite(current_center[:3]))
-            or not np.all(np.isfinite(start_center[:3]))
-            or not np.all(np.isfinite(plane_origin[:3]))
-            or not np.all(np.isfinite(plane_normal[:3]))
-            or not np.all(np.isfinite(anchor_world[:3]))
-        ):
+        if plane_origin.size < 3 or plane_normal.size < 3:
             return
         cursor_world = self._cursor_plane_point(current_xy, plane_origin[:3], plane_normal[:3])
         if cursor_world is None:
@@ -6928,20 +6895,18 @@ class Kraken3DInspector(tk.Toplevel):
         if self._hover_step_outline_actor is not None or self._hover_step_cell_key is not None:
             self._set_step_hover_outline(None, None, render=False)
             self._update_hover_status("", render=False)
-        target_center = start_center[:3] + (np.asarray(cursor_world[:3], dtype=float) - anchor_world[:3])
-        delta = np.asarray(target_center[:3] - current_center[:3], dtype=float)
-        if not np.all(np.isfinite(delta[:3])) or not np.any(np.abs(delta[:3]) > 1e-12):
-            return
         _scene_center, scene_span = self._scene_bounds()
-        max_delta = max(float(scene_span) * 4.0, 100.0)
-        delta_norm = float(np.linalg.norm(delta[:3]))
-        if not np.isfinite(delta_norm) or delta_norm > max_delta:
-            self.editor.append_debug(
-                f"Open 3D row carry ignored implausible drag-plane jump for S{row_index}: "
-                f"|delta|={delta_norm:.6g} mm, limit={max_delta:.6g} mm."
-            )
-            state["drag_anchor_world"] = tuple(float(value) for value in cursor_world[:3])
-            state["start_center_world"] = tuple(float(value) for value in current_center[:3])
+        movement = self.editor._open3d_step_state_service().row_carry_plane_motion_delta(
+            state,
+            cursor_world=cursor_world,
+            scene_span=float(scene_span),
+        )
+        if movement is None:
+            return
+        if movement.debug_message:
+            self.editor.append_debug(movement.debug_message)
+            return
+        if not movement.has_delta:
             return
         if not bool(state.get("history_started", False)):
             try:
@@ -6949,6 +6914,8 @@ class Kraken3DInspector(tk.Toplevel):
                 state["history_started"] = True
             except Exception:
                 pass
+        row_index = int(movement.row_index)
+        delta = np.asarray(movement.delta_xyz, dtype=float).reshape(-1)[:3]
         try:
             self.editor.translate_scene_row_pose_vector(
                 row_index,
@@ -6963,19 +6930,17 @@ class Kraken3DInspector(tk.Toplevel):
         if self._translate_row_actors(row_index, delta[:3]) <= 0:
             self.refresh_from_editor()
         self._update_step_carry_grip_after_delta(state, delta[:3])
-        state["center_world"] = tuple(float(value) for value in target_center[:3])
-        state["applied_steps"] = int(state.get("applied_steps", 0)) + 1
+        self.editor._open3d_step_state_service().apply_row_carry_motion_delta(state, movement)
 
     def _finish_row_carry_drag(self, state: dict[str, object]) -> None:
-        try:
-            row_index = int(state.get("row_index", -1))
-            applied_steps = int(state.get("applied_steps", 0))
-        except Exception:
+        transition = self.editor._open3d_step_state_service().row_carry_finish_transition(state)
+        if transition is None:
             return
         try:
             self.editor._commit_history_capture()
         except Exception:
             pass
+        row_index = int(transition.row_index)
         self._row_carry_drag_state = None
         self._set_step_carry_cursor(False)
         self._set_step_hover_outline(None, None, render=False)
@@ -6990,15 +6955,15 @@ class Kraken3DInspector(tk.Toplevel):
                 self.editor._select_table_row(row_index)
             except Exception:
                 pass
-        if applied_steps <= 0:
-            self.status_var.set(f"S{row_index} dropped: no movement.")
+        if not transition.moved:
+            self.status_var.set(transition.status)
             return
         try:
             self.refresh_from_editor()
             self.highlight_row(row_index)
         except Exception as exc:
             self.editor.append_debug(f"Open 3D row carry final refresh failed: {exc}")
-        self.status_var.set(f"S{row_index} dropped after free promoted-solid movement.")
+        self.status_var.set(transition.status)
 
     def _current_widget_pointer_xy(self) -> tuple[int, int] | None:
         if self._vtk_widget is not None:

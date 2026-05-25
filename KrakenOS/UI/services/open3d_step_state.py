@@ -155,6 +155,53 @@ class StepCarryHoldRequest:
         return len(self.pick_world) == 3
 
 
+@dataclass(frozen=True, slots=True)
+class RowCarryHoldTransition:
+    """Prepared row-backed optical-solid carry state for the inspector."""
+
+    row_index: int = -1
+    state: dict[str, object] | None = None
+    grip_world: tuple[float, float, float] = ()
+    status: str = ""
+
+    @property
+    def has_state(self) -> bool:
+        return self.state is not None and self.row_index >= 0
+
+    @property
+    def has_grip_world(self) -> bool:
+        return len(self.grip_world) == 3
+
+
+@dataclass(frozen=True, slots=True)
+class RowCarryMotionDelta:
+    """Computed row-backed optical-solid carry movement."""
+
+    row_index: int = -1
+    delta_xyz: tuple[float, float, float] = ()
+    target_center_world: tuple[float, float, float] = ()
+    applied_steps: int = 0
+    debug_message: str = ""
+
+    @property
+    def has_delta(self) -> bool:
+        return self.row_index >= 0 and len(self.delta_xyz) == 3 and any(abs(value) > 1e-12 for value in self.delta_xyz)
+
+    @property
+    def has_target_center(self) -> bool:
+        return len(self.target_center_world) == 3
+
+
+@dataclass(frozen=True, slots=True)
+class RowCarryFinishTransition:
+    """Row-backed optical-solid carry finish/drop state."""
+
+    row_index: int = -1
+    applied_steps: int = 0
+    moved: bool = False
+    status: str = ""
+
+
 class Open3DStepStateService:
     """Resolve Open 3D STEP state transitions outside the widget layer."""
 
@@ -311,6 +358,33 @@ class Open3DStepStateService:
             "last_xy": None,
         }
 
+    def row_carry_motion_state(
+        self,
+        row_index: object,
+        *,
+        center_world: object = None,
+        plane_normal: object = None,
+    ) -> dict[str, object] | None:
+        """Build mutable carry state for a row-backed optical solid."""
+        index = self._file_backed_row_index(row_index)
+        if index is None:
+            return None
+        center = self._finite_xyz(center_world)
+        if center is None:
+            center = self._row_center_from_table(index)
+        normal = self._finite_xyz(plane_normal)
+        if center is None or normal is None:
+            return None
+        return {
+            "row_index": int(index),
+            "center_world": tuple(float(value) for value in center[:3]),
+            "start_center_world": tuple(float(value) for value in center[:3]),
+            "drag_plane_origin": tuple(float(value) for value in center[:3]),
+            "drag_plane_normal": tuple(float(value) for value in normal[:3]),
+            "applied_steps": 0,
+            "history_started": False,
+        }
+
     def prepare_carry_follow_state(
         self,
         state: dict[str, object] | None,
@@ -402,6 +476,54 @@ class Open3DStepStateService:
             state=state,
             grip_world=tuple(float(value) for value in grip[:3]) if grip is not None else (),
             status=self._carry_hold_status(label_text, state),
+        )
+
+    def prepare_row_carry_hold_state(
+        self,
+        row_index: object,
+        state: dict[str, object] | None,
+        *,
+        left_drag_active: bool,
+        press_xy: object = None,
+        last_xy: object = None,
+        pick_world: object = None,
+        anchor_world: object = None,
+    ) -> RowCarryHoldTransition:
+        """Populate row-backed carry state when a press-hold lift becomes active."""
+        index = self._file_backed_row_index(row_index)
+        if not bool(left_drag_active) or index is None:
+            return RowCarryHoldTransition(row_index=index if index is not None else -1)
+        if state is None:
+            return RowCarryHoldTransition(
+                row_index=index,
+                status=f"Carry S{index}: selected row is not a movable promoted optical solid.",
+            )
+        try:
+            center = np.asarray(state.get("center_world"), dtype=float).reshape(-1)[:3]
+        except Exception:
+            center = np.asarray([], dtype=float)
+        if center.size < 3 or not np.all(np.isfinite(center[:3])):
+            return RowCarryHoldTransition(
+                row_index=index,
+                status=f"Carry S{index}: selected row is not a movable promoted optical solid.",
+            )
+        anchor = self._finite_xyz(anchor_world)
+        if anchor is None:
+            anchor = self._finite_xyz(pick_world)
+        if anchor is None:
+            anchor = np.asarray(center[:3], dtype=float)
+        state["drag_anchor_world"] = tuple(float(value) for value in anchor[:3])
+        state["grip_world"] = tuple(float(value) for value in center[:3])
+        xy = self._finite_xy(last_xy)
+        if xy is None:
+            xy = self._finite_xy(press_xy)
+        if xy is not None:
+            state["last_xy"] = xy
+        return RowCarryHoldTransition(
+            row_index=index,
+            state=state,
+            grip_world=tuple(float(value) for value in center[:3]),
+            status=f"S{index} gripped: drag the promoted optical solid freely; release to drop.",
         )
 
     def carry_pixel_motion_delta(
@@ -543,6 +665,94 @@ class Open3DStepStateService:
         )
 
     @staticmethod
+    def row_carry_plane_motion_delta(
+        state: dict[str, object] | None,
+        *,
+        cursor_world: object,
+        scene_span: float,
+    ) -> RowCarryMotionDelta | None:
+        """Compute row-backed optical-solid carry movement from a drag-plane cursor point."""
+        if state is None:
+            return None
+        try:
+            row_index = int(state.get("row_index", -1))
+            current_center = np.asarray(state.get("center_world"), dtype=float).reshape(-1)[:3]
+            start_center = np.asarray(state.get("start_center_world"), dtype=float).reshape(-1)[:3]
+            anchor_world = np.asarray(state.get("drag_anchor_world"), dtype=float).reshape(-1)[:3]
+            cursor = np.asarray(cursor_world, dtype=float).reshape(-1)[:3]
+            span = float(scene_span)
+        except Exception:
+            return None
+        if (
+            row_index < 0
+            or current_center.size < 3
+            or start_center.size < 3
+            or anchor_world.size < 3
+            or cursor.size < 3
+            or not np.isfinite(span)
+            or not np.all(np.isfinite(current_center[:3]))
+            or not np.all(np.isfinite(start_center[:3]))
+            or not np.all(np.isfinite(anchor_world[:3]))
+            or not np.all(np.isfinite(cursor[:3]))
+        ):
+            return None
+        target_center = np.asarray(start_center[:3] + (cursor[:3] - anchor_world[:3]), dtype=float)
+        delta = np.asarray(target_center[:3] - current_center[:3], dtype=float)
+        if not np.all(np.isfinite(delta[:3])) or not np.any(np.abs(delta[:3]) > 1e-12):
+            return RowCarryMotionDelta(row_index=row_index)
+        max_delta = max(float(span) * 4.0, 100.0)
+        delta_norm = float(np.linalg.norm(delta[:3]))
+        if not np.isfinite(delta_norm) or delta_norm > max_delta:
+            state["drag_anchor_world"] = tuple(float(value) for value in cursor[:3])
+            state["start_center_world"] = tuple(float(value) for value in current_center[:3])
+            return RowCarryMotionDelta(
+                row_index=row_index,
+                debug_message=(
+                    f"Open 3D row carry ignored implausible drag-plane jump for S{row_index}: "
+                    f"|delta|={delta_norm:.6g} mm, limit={max_delta:.6g} mm."
+                ),
+            )
+        return RowCarryMotionDelta(
+            row_index=row_index,
+            delta_xyz=tuple(float(value) for value in delta[:3]),
+            target_center_world=tuple(float(value) for value in target_center[:3]),
+            applied_steps=1,
+        )
+
+    @staticmethod
+    def apply_row_carry_motion_delta(state: dict[str, object] | None, movement: RowCarryMotionDelta | None) -> None:
+        """Record successful row-backed carry movement back into mutable state."""
+        if state is None or movement is None or not movement.has_delta:
+            return
+        if movement.has_target_center:
+            state["center_world"] = tuple(float(value) for value in movement.target_center_world[:3])
+        state["applied_steps"] = int(state.get("applied_steps", 0)) + max(int(movement.applied_steps), 1)
+
+    @staticmethod
+    def row_carry_finish_transition(state: dict[str, object] | None) -> RowCarryFinishTransition | None:
+        """Return the finish/drop status for a row-backed optical-solid carry drag."""
+        if state is None:
+            return None
+        try:
+            row_index = int(state.get("row_index", -1))
+            applied_steps = int(state.get("applied_steps", 0))
+        except Exception:
+            return None
+        if applied_steps <= 0:
+            return RowCarryFinishTransition(
+                row_index=row_index,
+                applied_steps=applied_steps,
+                moved=False,
+                status=f"S{row_index} dropped: no movement.",
+            )
+        return RowCarryFinishTransition(
+            row_index=row_index,
+            applied_steps=applied_steps,
+            moved=True,
+            status=f"S{row_index} dropped after free promoted-solid movement.",
+        )
+
+    @staticmethod
     def carry_finish_transition(state: dict[str, object] | None) -> StepCarryFinishTransition | None:
         """Return the finish/drop status for an imported STEP carry drag."""
         if state is None:
@@ -577,6 +787,28 @@ class Open3DStepStateService:
         if array.size < 3 or not np.all(np.isfinite(array[:3])):
             return None
         return np.asarray(array[:3], dtype=float)
+
+    def _file_backed_row_index(self, row_index: object) -> int | None:
+        try:
+            index = int(row_index)
+        except Exception:
+            return None
+        try:
+            if self.editor._file_backed_stl_row_at(index) is None:
+                return None
+        except Exception:
+            return None
+        return index
+
+    def _row_center_from_table(self, row_index: int) -> np.ndarray | None:
+        try:
+            row = self.editor.rows[int(row_index)]
+            center = np.asarray((float(row.desp_x), float(row.desp_y), float(row.desp_z)), dtype=float)
+        except Exception:
+            return None
+        if center.size < 3 or not np.all(np.isfinite(center[:3])):
+            return None
+        return np.asarray(center[:3], dtype=float)
 
     @staticmethod
     def _finite_xy(values: object) -> tuple[int, int] | None:
