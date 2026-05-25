@@ -33,7 +33,7 @@ class _StatusVar:
 class _FakeEditor:
     def __init__(self) -> None:
         self.status_var = _StatusVar()
-        self._active_preview_sampling_mode = "world_sections"
+        self._active_preview_sampling_mode = "world_envelope"
         self.build_sampling_modes: list[str | None] = []
         self.build_update_states: list[bool] = []
         self.build_include_live_step_overlays: list[bool] = []
@@ -76,7 +76,7 @@ def _inspector_with_fake_editor(editor: _FakeEditor) -> Kraken3DInspector:
     inspector = object.__new__(Kraken3DInspector)
     inspector.editor = editor
     inspector.status_var = _StatusVar()
-    inspector._last_refresh_sampling_mode = "world_sections"
+    inspector._last_refresh_sampling_mode = "world_envelope"
     inspector.refresh_calls = []
 
     def refresh_scene(self, system, rays, row_names, *, scene_bundle=None, reset_camera=False):
@@ -98,14 +98,14 @@ def _validate_forced_refresh_preserves_active_mode() -> None:
     editor = _FakeEditor()
     inspector = _inspector_with_fake_editor(editor)
     Kraken3DInspector.refresh_from_editor(inspector, force_retrace=True)
-    if editor.build_sampling_modes != ["world_sections"]:
+    if editor.build_sampling_modes != ["world_envelope"]:
         raise AssertionError(
             "Forced Open 3D edit refresh should reuse the sampling mode already on screen; "
             f"got {editor.build_sampling_modes!r}."
         )
     if editor.preview_3d_calls:
         raise AssertionError("Preserved edit refresh should not recompute the default 3D sampling mode.")
-    if inspector._last_refresh_sampling_mode != "world_sections":
+    if inspector._last_refresh_sampling_mode != "world_envelope":
         raise AssertionError(f"Inspector did not remember preserved mode: {inspector._last_refresh_sampling_mode!r}")
 
 
@@ -129,6 +129,24 @@ def _validate_missing_mode_falls_back_to_3d_default() -> None:
         raise AssertionError(f"Expected one 3D sampling-mode fallback call, got {editor.preview_3d_calls}.")
 
 
+def _validate_forced_world_sections_mode_falls_back_to_3d_default() -> None:
+    editor = _FakeEditor()
+    editor._active_preview_sampling_mode = "world_sections"
+    inspector = _inspector_with_fake_editor(editor)
+    inspector._last_refresh_sampling_mode = "world_sections"
+    Kraken3DInspector.refresh_from_editor(inspector, force_retrace=True)
+    if editor.build_sampling_modes != ["source_cone_world"]:
+        raise AssertionError(
+            "Forced Open 3D refresh should reject section-only 2D sampling and fall back to the 3D sampler; "
+            f"got {editor.build_sampling_modes!r}."
+        )
+    if inspector._last_refresh_sampling_mode != "source_cone_world":
+        raise AssertionError(
+            "Forced Open 3D refresh did not remember the fallback 3D sampling mode: "
+            f"{inspector._last_refresh_sampling_mode!r}."
+        )
+
+
 def _validate_current_trace_records_active_mode() -> None:
     editor = _FakeEditor()
     editor._active_preview_sampling_mode = "source_cone_world"
@@ -142,28 +160,28 @@ def _validate_current_trace_records_active_mode() -> None:
         raise AssertionError("Current SceneBundle refresh did not remember the active sampling mode.")
 
 
-def _validate_3d_compatible_projection_trace_seeds_open3d() -> None:
+def _validate_world_sections_trace_does_not_seed_open3d() -> None:
     editor = _FakeEditor()
     editor._active_preview_sampling_mode = "world_sections"
     editor.current_trace = (object(), object(), object())
     inspector = _inspector_with_fake_editor(editor)
     inspector._last_refresh_sampling_mode = None
     Kraken3DInspector.refresh_from_editor(inspector)
-    if editor.build_sampling_modes:
+    if editor.build_sampling_modes != ["source_cone_world"]:
         raise AssertionError(
-            "Initial Open 3D refresh should reuse a current 3D-compatible world_sections trace; "
+            "Initial Open 3D refresh should rebuild section-only 2D traces with the Open 3D sampler; "
             f"got {editor.build_sampling_modes!r}."
         )
-    if inspector._last_refresh_sampling_mode != "world_sections":
+    if inspector._last_refresh_sampling_mode != "source_cone_world":
         raise AssertionError(
-            "Initial Open 3D refresh did not remember the reused 3D-compatible sampling mode: "
+            "Initial Open 3D refresh did not remember the rebuilt Open 3D sampling mode: "
             f"{inspector._last_refresh_sampling_mode!r}."
         )
-    if not inspector.refresh_calls or inspector.refresh_calls[0]["scene_bundle"] is not editor.current_trace[2]:
-        raise AssertionError("Initial Open 3D refresh did not render the current world_sections SceneBundle.")
+    if not inspector.refresh_calls or inspector.refresh_calls[0]["scene_bundle"] is editor.current_trace[2]:
+        raise AssertionError("Initial Open 3D refresh rendered the current world_sections SceneBundle.")
 
 
-def _validate_machine_vision_open3d_reuses_projection_scene_after_2d_refresh() -> None:
+def _validate_machine_vision_open3d_rebuilds_from_projection_scene_after_2d_refresh() -> None:
     app = KrakenLayoutEditor(headless=True)
     try:
         app.load_layouts()
@@ -186,22 +204,19 @@ def _validate_machine_vision_open3d_reuses_projection_scene_after_2d_refresh() -
             inspector,
             update_state=False,
         )
-        if result.sampling_mode != "world_sections":
-            raise AssertionError(f"Open 3D did not keep the projection-synced world_sections trace, got {result.sampling_mode!r}.")
-        if result.scene_bundle is not getattr(app, "_last_scene_bundle", None):
-            raise AssertionError("Open 3D Machine Vision did not reuse the current 2D/3D SceneBundle.")
+        if result.sampling_mode != "world_envelope":
+            raise AssertionError(f"Open 3D did not rebuild with the 3D sampler, got {result.sampling_mode!r}.")
+        if result.scene_bundle is getattr(app, "_last_scene_bundle", None):
+            raise AssertionError("Open 3D Machine Vision reused the current section-only 2D SceneBundle.")
         paths = list(getattr(result.scene_bundle, "ray_paths", []) or [])
-        if len(paths) != 365:
-            raise AssertionError(f"Open 3D Machine Vision projection bundle should keep 365 traced paths, got {len(paths)}.")
+        if not paths:
+            raise AssertionError("Open 3D Machine Vision rebuild produced no traced paths.")
         visible_records = app._iter_3d_scene_ray_records(result.rays, result.scene_bundle)
-        if len(visible_records) != 281:
-            raise AssertionError(
-                "Open 3D Machine Vision should hide clipped world-section paths when Show clipped rays is off; "
-                f"got {len(visible_records)} visible records."
-            )
+        if not visible_records:
+            raise AssertionError("Open 3D Machine Vision rebuild produced no visible ray records.")
         visible_colors = {tuple(round(float(channel), 6) for channel in record[1]) for record in visible_records}
-        if len(visible_colors) < 3:
-            raise AssertionError(f"Open 3D Machine Vision should preserve field colors, got {visible_colors!r}.")
+        if len(visible_colors) < 1:
+            raise AssertionError(f"Open 3D Machine Vision produced no ray colors, got {visible_colors!r}.")
     finally:
         app.destroy()
 
@@ -210,9 +225,9 @@ def _validate_trace_now_preserves_active_mode_with_transient_step_support() -> N
     editor = _FakeEditor()
     inspector = _inspector_with_fake_editor(editor)
     result = editor._open3d_trace_refresh_service().build_trace_now_preview(inspector)
-    if result.sampling_mode != "world_sections":
+    if result.sampling_mode != "world_envelope":
         raise AssertionError(f"Trace Now did not report preserved mode: {result.sampling_mode!r}.")
-    if editor.build_sampling_modes != ["world_sections"]:
+    if editor.build_sampling_modes != ["world_envelope"]:
         raise AssertionError(
             "Trace Now should retrace the sampling mode already shown in Open 3D; "
             f"got {editor.build_sampling_modes!r}."
@@ -223,6 +238,18 @@ def _validate_trace_now_preserves_active_mode_with_transient_step_support() -> N
         raise AssertionError("Trace Now should still include transient optical STEP overlays when present.")
     if editor.preview_3d_calls:
         raise AssertionError("Trace Now should not fall back to the default 3D sampler when an active mode exists.")
+
+
+def _validate_trace_now_rejects_world_sections_mode() -> None:
+    editor = _FakeEditor()
+    editor._active_preview_sampling_mode = "world_sections"
+    inspector = _inspector_with_fake_editor(editor)
+    inspector._last_refresh_sampling_mode = "world_sections"
+    result = editor._open3d_trace_refresh_service().build_trace_now_preview(inspector)
+    if result.sampling_mode != "source_cone_world":
+        raise AssertionError(f"Trace Now did not fall back to 3D sampling: {result.sampling_mode!r}.")
+    if editor.build_sampling_modes != ["source_cone_world"]:
+        raise AssertionError(f"Trace Now built the wrong sampling mode: {editor.build_sampling_modes!r}.")
 
 
 def _validate_face_assignment_handlers_capture_mode_before_mutation() -> None:
@@ -397,11 +424,13 @@ def _run_focused_checks(*, include_layout_smoke: bool = False) -> None:
     _validate_forced_refresh_preserves_active_mode()
     _validate_explicit_mode_still_wins()
     _validate_missing_mode_falls_back_to_3d_default()
+    _validate_forced_world_sections_mode_falls_back_to_3d_default()
     _validate_current_trace_records_active_mode()
-    _validate_3d_compatible_projection_trace_seeds_open3d()
+    _validate_world_sections_trace_does_not_seed_open3d()
     if include_layout_smoke:
-        _validate_machine_vision_open3d_reuses_projection_scene_after_2d_refresh()
+        _validate_machine_vision_open3d_rebuilds_from_projection_scene_after_2d_refresh()
     _validate_trace_now_preserves_active_mode_with_transient_step_support()
+    _validate_trace_now_rejects_world_sections_mode()
     _validate_face_assignment_handlers_capture_mode_before_mutation()
     _validate_done_2d_and_close_preserve_open3d_sampling()
     _validate_focus_and_vtk_teardown_are_guarded()
@@ -425,7 +454,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--layout-smoke",
         action="store_true",
-        help="Also load Machine Vision 150 mm measured and verify Open 3D keeps the projection-synced scene after a 2D refresh.",
+        help="Also load Machine Vision 150 mm measured and verify Open 3D rebuilds section-only 2D traces after a 2D refresh.",
     )
     args = parser.parse_args(argv)
     if args.focused:

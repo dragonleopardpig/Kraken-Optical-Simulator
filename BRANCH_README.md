@@ -76,7 +76,7 @@ Current pipeline checkpoint:
 | Open 3D STEP rotation-handle service extraction | Achieved | `██████████ 100%` | Imported STEP rotation-handle actor removal, rebuild, half-arc/arrow generation, hover highlighting, and world-axis write-through now live in `Open3DStepRotationHandleService`; `layout_editor.py` keeps only compatibility wrappers and status coordination. |
 | Open 3D Trace Now sampling stability | Achieved | `██████████ 100%` | `Trace now` no longer switches a current Open 3D scene to the default 3D envelope sampler when Live Mode is off. It retraces the sampling mode already displayed in Open 3D, while still including transient optical STEP overlays if one is being placed. |
 | Fast validation contract runner | Achieved | `██████████ 100%` | `KrakenOS.UI.validate_fast_contracts` runs the lightweight no-display/no-CAD-fixture contracts first, including focused Open 3D sampling-stability checks. Display-backed CAD smoke tests remain explicit targeted commands for rendering, face-picking, and screenshot regressions. |
-| Open 3D projection-synced sequential sampling | Achieved | `██████████ 100%` | Opening Open 3D after a sequential 2D plot refresh now reuses the current 3D-compatible `world_sections` SceneBundle instead of silently replacing it with a smaller `world_envelope` bundle. Machine Vision 150 mm measured keeps its 365 traced section paths, hides the 84 clipped entrance-lens paths when Show clipped rays is off, and preserves field colors in Open 3D. Incompatible legacy display-only sampling still falls back to the Open 3D sampler. |
+| Open 3D physical scene sampling | Achieved | `██████████ 100%` | Opening or syncing Open 3D after a sequential 2D plot refresh no longer inherits the `world_sections` bundle used by YZ/XZ/XY projection plots. Section bundles remain valid 2D projection data, but Open 3D rebuilds with the physical `world_envelope`/full-pupil/source-cone sampler so infinity fields appear as 3D collimated bundles instead of flat ray sheets. |
 | Folded mirror 2D/Open 3D surface parity | Achieved | `██████████ 100%` | Folded-preview mirror rows now render their Open 3D mirror surface from the same folded SceneBundle geometry that drives the traced ray display and 2D projection, instead of showing a raw sequential `TRANS_2A` mesh with the opposite YZ slant. `validate_folded_mirror_projection_parity` checks the Galvo F-Theta folded mirror mesh tangent against the SceneBundle mirror curve and is included in the fast contract runner. |
 | Open 3D galvo scan animation | Achieved | `██████████ 100%` | The Galvo F-Theta folded scan overlay now has one shared plan builder for 2D and Open 3D. The Open 3D `Orient -> Animate Galvo Scan` command cycles through the configured mirror TiltX overlay poses, drawing the same alternate reflected ray fans and moving mirror-line overlay used by 2D, while `Stop Galvo Scan`, scene refresh, and window close cancel the timer and remove transient actors. |
 | Tk teardown callback cleanup | Achieved | `██████████ 100%` | Custom table selection, table-grid, and active-cell-border callbacks now keep cancellable `after` ids and are cancelled during editor teardown. This prevents stale Tk callbacks such as `_update_active_cell_border`, `_emit_custom_table_selection_changed`, and `_update_table_grid` from firing after the root window has been destroyed. |
@@ -213,14 +213,13 @@ poses. Each frame renders the same alternate reflected ray fans, moving mirror
 line, and theta label that the 2D plot uses, with timer cleanup on refresh and
 window close.
 
-Earlier movement on 2026-05-25: Open 3D now treats sequential `world_sections`
-as a real 3D scene bundle, not as a disposable 2D-only cache. Machine Vision
-150 mm measured no longer opens Open 3D as a 9-ray `world_envelope` substitute
-when the 2D plot is already showing the correct field-fan section trace. The
-Open 3D refresh service reuses the current `world_sections` SceneBundle,
-Open 3D ray rendering hides non-detector clipped paths when Show clipped rays
-is off, and ray colors now come from the SceneBundle field color so 2D and 3D
-use the same field grouping.
+Earlier movement on 2026-05-25: Open 3D physical scene sampling was corrected
+after the Machine Vision and Double Gauss screenshots showed flat section
+ray sheets in the 3D viewport. Sequential 2D plots still use `world_sections`
+to make YZ/XZ/XY projections from traced 3D points, but Open 3D now rejects
+that section-only cache and rebuilds with an Open 3D sampler. This keeps
+infinity fields as physical collimated 3D bundles instead of displaying the
+2D slice families as planes.
 
 Earlier movement on 2026-05-25: Folded-preview mirror surfaces now use one
 display geometry contract across the SceneBundle, 2D projection, and Open 3D
@@ -233,8 +232,9 @@ contract in the fast validation runner.
 
 Earlier movement on 2026-05-25: Open 3D initial refresh was hardened to avoid
 using incompatible legacy display-only traces as if they were native 3D launch
-bundles. The follow-up above narrows that rule so compatible `world_sections`
-projection bundles remain valid Open 3D scene data.
+bundles. The follow-up above keeps that rule strict for `world_sections`, which
+is projection data for 2D panes rather than the default physical Open 3D ray
+family.
 
 Earlier movement on 2026-05-25: Open 3D `Trace now` now preserves the currently
 displayed sampling mode when Live Mode is off. This keeps layouts such as

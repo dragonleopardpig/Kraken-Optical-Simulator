@@ -37,11 +37,17 @@ class Open3DTraceRefreshService:
         return normalized in {
             "full_pupil",
             "world_envelope",
-            "world_sections",
             "source_cone_world",
             "world_source_cone",
             "point_cone_world",
         }
+
+    def _active_trace_can_feed_open3d(self) -> bool:
+        mode = self.normalize_sampling_mode_label(getattr(self.editor, "_active_preview_sampling_mode", None))
+        return self.sampling_mode_is_open3d_scene(mode)
+
+    def _open3d_sampling_mode(self) -> str | None:
+        return self.normalize_sampling_mode_label(self.editor._preview_3d_sampling_mode())
 
     def inspector_active_sampling_mode(self, inspector: Any) -> str | None:
         mode = self.normalize_sampling_mode_label(getattr(inspector, "_last_refresh_sampling_mode", None))
@@ -83,10 +89,12 @@ class Open3DTraceRefreshService:
         current = None
         include_live_step_overlays = self.has_traceable_step_overlays()
         requires_open3d_retrace = include_live_step_overlays or self.has_promoted_step_optical_solid_rows()
+        if resolved_sampling_mode is not None and not self.sampling_mode_is_open3d_scene(resolved_sampling_mode):
+            resolved_sampling_mode = self._open3d_sampling_mode()
         if not requires_open3d_retrace and not force_retrace and resolved_sampling_mode is None:
-            open3d_sampling_mode = self.normalize_sampling_mode_label(self.editor._preview_3d_sampling_mode())
+            open3d_sampling_mode = self._open3d_sampling_mode()
             current_mode = self.normalize_sampling_mode_label(getattr(self.editor, "_active_preview_sampling_mode", None))
-            if current_mode == open3d_sampling_mode or self.sampling_mode_is_open3d_scene(current_mode):
+            if self.sampling_mode_is_open3d_scene(current_mode):
                 current = self.editor._current_preview_scene_trace()
         if current is not None:
             system, rays, scene_bundle = current
@@ -96,9 +104,11 @@ class Open3DTraceRefreshService:
         else:
             if resolved_sampling_mode is None and force_retrace:
                 resolved_sampling_mode = self.inspector_active_sampling_mode(inspector)
+            if resolved_sampling_mode is not None and not self.sampling_mode_is_open3d_scene(resolved_sampling_mode):
+                resolved_sampling_mode = self._open3d_sampling_mode()
             if resolved_sampling_mode is None:
                 if open3d_sampling_mode is None:
-                    open3d_sampling_mode = self.normalize_sampling_mode_label(self.editor._preview_3d_sampling_mode())
+                    open3d_sampling_mode = self._open3d_sampling_mode()
                 resolved_sampling_mode = open3d_sampling_mode
             system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
                 sampling_mode=resolved_sampling_mode,
@@ -134,8 +144,8 @@ class Open3DTraceRefreshService:
 
     def build_trace_now_preview(self, inspector: Any) -> Open3DRefreshResult:
         sampling_mode = self.inspector_active_sampling_mode(inspector)
-        if sampling_mode is None:
-            sampling_mode = self.editor._preview_3d_sampling_mode()
+        if sampling_mode is None or not self.sampling_mode_is_open3d_scene(sampling_mode):
+            sampling_mode = self._open3d_sampling_mode()
         system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
             sampling_mode=sampling_mode,
             update_state=False,
@@ -160,19 +170,25 @@ class Open3DTraceRefreshService:
     ) -> Open3DRefreshResult:
         include_live_step_overlays = self.has_traceable_step_overlays()
         requires_open3d_retrace = include_live_step_overlays or self.has_promoted_step_optical_solid_rows()
+        if not self._active_trace_can_feed_open3d():
+            system = None
+            rays = None
+            scene_bundle = None
         if requires_open3d_retrace:
             system = None
             rays = None
             scene_bundle = None
         if system is None or rays is None or scene_bundle is None:
-            current = None if requires_open3d_retrace else self.editor._current_preview_scene_trace()
+            current = None
+            if not requires_open3d_retrace and self._active_trace_can_feed_open3d():
+                current = self.editor._current_preview_scene_trace()
             if current is not None:
                 system, rays, scene_bundle = current
                 sampling_mode = self.normalize_sampling_mode_label(
                     getattr(self.editor, "_active_preview_sampling_mode", None)
                 )
             else:
-                sampling_mode = self.editor._preview_3d_sampling_mode()
+                sampling_mode = self._open3d_sampling_mode()
                 system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
                     sampling_mode=sampling_mode,
                     update_state=False,
