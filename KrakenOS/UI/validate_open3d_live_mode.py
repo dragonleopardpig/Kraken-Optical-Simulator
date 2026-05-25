@@ -72,10 +72,19 @@ def validate_open3d_live_mode() -> list[Open3DLiveModeCheck]:
         ),
         Open3DLiveModeCheck(
             "3D STEP carry and manual refresh route through the live scheduler",
-            'self.schedule_live_refresh(f"{label} STEP carry moved")' in inspector_source
-            and 'self.schedule_live_refresh(f"{label} STEP carry dropped", delay_ms=0)' in inspector_source
+            "live_refresh_message" in inspector_source
+            and "self.schedule_live_refresh(live_message)" in inspector_source
+            and "self.schedule_live_refresh(transition.live_refresh_message, delay_ms=0)" in inspector_source
             and "def _trace_live_now" in inspector_source,
             "STEP movement has a live-refresh hook; trace-now can refresh the 3D sampling path even with Live Mode off.",
+        ),
+        Open3DLiveModeCheck(
+            "Trace Now preserves the displayed Open 3D sampling mode",
+            "def build_trace_now_preview" in open3d_refresh_service
+            and "self.inspector_active_sampling_mode(inspector)" in open3d_refresh_service
+            and "include_live_step_overlays=True" in open3d_refresh_service
+            and "def _refresh_trace_now_scene" in inspector_source,
+            "Manual Trace Now retraces the current Open 3D ray family instead of silently switching samplers.",
         ),
     ]
     return checks

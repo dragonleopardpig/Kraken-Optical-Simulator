@@ -95,6 +95,25 @@ class Open3DTraceRefreshService:
             row_names=row_names,
         )
 
+    def build_trace_now_preview(self, inspector: Any) -> Open3DRefreshResult:
+        sampling_mode = self.inspector_active_sampling_mode(inspector)
+        if sampling_mode is None:
+            sampling_mode = self.editor._preview_3d_sampling_mode()
+        system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
+            sampling_mode=sampling_mode,
+            update_state=False,
+            include_live_step_overlays=True,
+        )
+        self.remember_inspector_sampling_mode(inspector, sampling_mode)
+        row_names = self.editor._preview_render_row_names(scene_bundle)
+        return Open3DRefreshResult(
+            sampling_mode=self.normalize_sampling_mode_label(sampling_mode),
+            system=system,
+            rays=rays,
+            scene_bundle=scene_bundle,
+            row_names=row_names,
+        )
+
     def current_or_rebuild_scene(
         self,
         *,

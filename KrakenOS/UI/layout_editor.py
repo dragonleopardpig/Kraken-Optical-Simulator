@@ -5685,8 +5685,12 @@ class Kraken3DInspector(tk.Toplevel):
             self.schedule_live_refresh("manual", delay_ms=0)
             return
         try:
-            self._refresh_live_preview_scene("manual")
-            self.status_var.set("3D scene traced from Live Controls.")
+            try:
+                self.editor._sync_object_controls()
+                self.editor._sync_left_mode_controls()
+            except Exception:
+                pass
+            self._refresh_trace_now_scene("manual")
         except Exception as exc:
             self.status_var.set(f"3D trace failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"Open 3D trace-now failed: {exc}")
@@ -5767,6 +5771,28 @@ class Kraken3DInspector(tk.Toplevel):
         self._debug_trace(
             "live_mode_refresh",
             reason=reason,
+            transient_step_overlays=len(live_records),
+        )
+
+    def _refresh_trace_now_scene(self, reason: str) -> None:
+        result = self.editor._open3d_trace_refresh_service().build_trace_now_preview(self)
+        self.refresh_scene(
+            result.system,
+            result.rays,
+            result.row_names,
+            scene_bundle=result.scene_bundle,
+            reset_camera=False,
+        )
+        live_records = list(getattr(self.editor, "_last_live_step_overlay_trace_records", []) or [])
+        suffix = " with transient optical STEP" if live_records else ""
+        mode = str(result.sampling_mode or self._active_refresh_sampling_mode() or "default")
+        status = f"Open 3D Trace Now updated{suffix} ({reason}, {mode})."
+        self.status_var.set(status)
+        self.editor.status_var.set(status)
+        self._debug_trace(
+            "trace_now_refresh",
+            reason=reason,
+            sampling_mode=mode,
             transient_step_overlays=len(live_records),
         )
 

@@ -38,6 +38,8 @@ class _FakeEditor:
         self.status_var = _StatusVar()
         self._active_preview_sampling_mode = "world_sections"
         self.build_sampling_modes: list[str | None] = []
+        self.build_update_states: list[bool] = []
+        self.build_include_live_step_overlays: list[bool] = []
         self.preview_3d_calls = 0
         self.debug_messages: list[str] = []
         self.current_trace = None
@@ -58,8 +60,11 @@ class _FakeEditor:
         *,
         sampling_mode: str | None = None,
         update_state: bool = True,
+        include_live_step_overlays: bool = False,
     ):
         self.build_sampling_modes.append(sampling_mode)
+        self.build_update_states.append(bool(update_state))
+        self.build_include_live_step_overlays.append(bool(include_live_step_overlays))
         self._active_preview_sampling_mode = str(sampling_mode or "")
         return object(), object(), object()
 
@@ -138,6 +143,25 @@ def _validate_current_trace_records_active_mode() -> None:
         raise AssertionError(f"Current SceneBundle refresh should not rebuild, got {editor.build_sampling_modes!r}.")
     if inspector._last_refresh_sampling_mode != "world_envelope":
         raise AssertionError("Current SceneBundle refresh did not remember the active sampling mode.")
+
+
+def _validate_trace_now_preserves_active_mode_with_transient_step_support() -> None:
+    editor = _FakeEditor()
+    inspector = _inspector_with_fake_editor(editor)
+    result = editor._open3d_trace_refresh_service().build_trace_now_preview(inspector)
+    if result.sampling_mode != "world_sections":
+        raise AssertionError(f"Trace Now did not report preserved mode: {result.sampling_mode!r}.")
+    if editor.build_sampling_modes != ["world_sections"]:
+        raise AssertionError(
+            "Trace Now should retrace the sampling mode already shown in Open 3D; "
+            f"got {editor.build_sampling_modes!r}."
+        )
+    if editor.build_update_states != [False]:
+        raise AssertionError(f"Trace Now should not overwrite the 2D preview state, got {editor.build_update_states!r}.")
+    if editor.build_include_live_step_overlays != [True]:
+        raise AssertionError("Trace Now should still include transient optical STEP overlays when present.")
+    if editor.preview_3d_calls:
+        raise AssertionError("Trace Now should not fall back to the default 3D sampler when an active mode exists.")
 
 
 def _validate_face_assignment_handlers_capture_mode_before_mutation() -> None:
@@ -295,6 +319,7 @@ def main() -> int:
     _validate_explicit_mode_still_wins()
     _validate_missing_mode_falls_back_to_3d_default()
     _validate_current_trace_records_active_mode()
+    _validate_trace_now_preserves_active_mode_with_transient_step_support()
     _validate_face_assignment_handlers_capture_mode_before_mutation()
     _validate_done_2d_and_close_preserve_open3d_sampling()
     _validate_focus_and_vtk_teardown_are_guarded()
