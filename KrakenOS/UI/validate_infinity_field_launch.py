@@ -90,6 +90,7 @@ def validate_infinity_field_launch() -> list[InfinityFieldLaunchCheck]:
     world_yz_projection = project_scene_bundle(
         world_bundle,
         "YZ",
+        filter_projection_axis_fields=editor._should_filter_projection_axis_fields(world_bundle),
         filter_projection_slice=editor._should_filter_projection_slice(world_bundle),
     )
     projected_world_count = len(list(getattr(world_yz_projection, "rays", []) or []))
@@ -138,9 +139,10 @@ def validate_infinity_field_launch() -> list[InfinityFieldLaunchCheck]:
             ),
         ),
         InfinityFieldLaunchCheck(
-            "canonical YZ projection displays all traced world-envelope rays",
-            not editor._should_filter_projection_slice(world_bundle)
-            and projected_world_count == displayable_world_count,
+            "canonical YZ projection displays the YZ field family without geometric slice loss",
+            editor._should_filter_projection_axis_fields(world_bundle)
+            and not editor._should_filter_projection_slice(world_bundle)
+            and 0 < projected_world_count < displayable_world_count,
             (
                 f"mode={editor._scene_bundle_launch_sampling_mode(world_bundle)}, "
                 f"projected={projected_world_count}, displayable={displayable_world_count}, "

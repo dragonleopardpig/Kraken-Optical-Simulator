@@ -175,6 +175,7 @@ class PlotRefreshService:
             projected = project_scene_bundle(
                 bundle,
                 orientation,
+                filter_projection_axis_fields=self._should_filter_projection_axis_fields(bundle),
                 filter_projection_slice=self._should_filter_projection_slice(bundle),
                 refresh_auto_leg_graph=self._refresh_auto_leg_graph,
                 refresh_arm_view_choices=self._refresh_arm_view_choices,

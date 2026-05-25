@@ -276,6 +276,46 @@ def main() -> None:
         [ray.ray_index for ray in nonseq_yz.rays] == [1, 2, 3],
         "non-sequential YZ projection should keep the full traced 3D ray set",
     )
+    axis_field_scene = SceneBundle(
+        ray_paths=[
+            RayPath3D(
+                ray_index=10,
+                source_direction=np.asarray([0.0, -0.2, 0.98], dtype=float),
+                points_world=np.asarray([[0.0, -2.0, 0.0], [2.0, 2.0, 10.0]], dtype=float),
+            ),
+            RayPath3D(
+                ray_index=11,
+                source_direction=np.asarray([0.2, 0.0, 0.98], dtype=float),
+                points_world=np.asarray([[-2.0, 0.0, 0.0], [2.0, 2.0, 10.0]], dtype=float),
+            ),
+            RayPath3D(
+                ray_index=12,
+                source_direction=np.asarray([0.0, 0.0, 1.0], dtype=float),
+                points_world=np.asarray([[0.0, 0.0, 0.0], [2.0, 2.0, 10.0]], dtype=float),
+            ),
+            RayPath3D(
+                ray_index=13,
+                source_direction=np.asarray([0.2, 0.2, 0.96], dtype=float),
+                points_world=np.asarray([[1.0, 1.0, 0.0], [2.0, 2.0, 10.0]], dtype=float),
+            ),
+        ],
+        ray_events=[RayEvent3D(ray_index=10, launch_sampling_mode="world_envelope")],
+    )
+    yz_axis_fields = project_scene_bundle(axis_field_scene, "YZ", filter_projection_axis_fields=True)
+    xz_axis_fields = project_scene_bundle(axis_field_scene, "XZ", filter_projection_axis_fields=True)
+    xy_axis_fields = project_scene_bundle(axis_field_scene, "XY", filter_projection_axis_fields=True)
+    _require(
+        [ray.ray_index for ray in yz_axis_fields.rays] == [10, 12],
+        "YZ world-envelope projection should keep the YZ field family, not every off-plane field",
+    )
+    _require(
+        [ray.ray_index for ray in xz_axis_fields.rays] == [11, 12],
+        "XZ world-envelope projection should keep the XZ field family, not every off-plane field",
+    )
+    _require(
+        [ray.ray_index for ray in xy_axis_fields.rays] == [10, 11, 12, 13],
+        "XY world-envelope projection should keep the full 3D footprint",
+    )
     nonseq_folded_override = SceneBundle(
         ray_paths=[
             RayPath3D(

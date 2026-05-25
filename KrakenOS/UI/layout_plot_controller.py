@@ -178,12 +178,15 @@ def project_scene_bundle(
     *,
     projector_factory: Callable[[str], object] = SceneProjector2D,
     filter_projection_slice: bool = False,
+    filter_projection_axis_fields: bool = False,
     slice_tolerance: float | None = None,
     refresh_auto_leg_graph: Callable[[object], object] | None = None,
     refresh_arm_view_choices: Callable[[], object] | None = None,
     filter_arm_view: Callable[[object], object] | None = None,
     filter_ray_display: Callable[[object], object] | None = None,
 ) -> object:
+    if filter_projection_axis_fields:
+        bundle = scene_bundle_for_projection_axis_fields(bundle, orientation)
     if filter_projection_slice:
         bundle = scene_bundle_for_projection_slice(bundle, orientation, tolerance=slice_tolerance)
     projector = projector_factory(orientation)
@@ -199,6 +202,21 @@ def project_scene_bundle(
     return projected
 
 
+def scene_bundle_launch_sampling_mode(bundle: object | None) -> str:
+    if bundle is None:
+        return ""
+    for path in list(getattr(bundle, "ray_paths", []) or []):
+        for event in list(getattr(path, "events", []) or []):
+            mode = str(getattr(event, "launch_sampling_mode", "") or "").strip().lower()
+            if mode:
+                return mode
+    for event in list(getattr(bundle, "ray_events", []) or []):
+        mode = str(getattr(event, "launch_sampling_mode", "") or "").strip().lower()
+        if mode:
+            return mode
+    return ""
+
+
 def _projection_slice_axis(orientation: str) -> int | None:
     plane = SceneProjector2D(orientation).plane
     if plane == "YZ":
@@ -206,6 +224,70 @@ def _projection_slice_axis(orientation: str) -> int | None:
     if plane == "XZ":
         return 1
     return None
+
+
+def _path_source_axis_value(path: object, axis: int, *, kind: str) -> float | None:
+    attr = "source_direction" if kind == "direction" else "source_position"
+    values = np.asarray(getattr(path, attr, []), dtype=float).reshape(-1)
+    if values.size <= axis:
+        return None
+    value = float(values[axis])
+    if not np.isfinite(value):
+        return None
+    return value
+
+
+def _select_paths_near_axis_plane(paths: list[object], axis: int, *, kind: str) -> list[object]:
+    pairs: list[tuple[object, float]] = []
+    for path in paths:
+        value = _path_source_axis_value(path, axis, kind=kind)
+        if value is not None:
+            pairs.append((path, abs(float(value))))
+    if not pairs:
+        return []
+    values = np.asarray([value for _path, value in pairs], dtype=float)
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return []
+    zero_limit = max(1e-9, 1e-7 * max(float(np.nanmax(finite)), 1.0))
+    selected = [path for path, value in pairs if value <= zero_limit]
+    if selected:
+        return selected
+    return []
+
+
+def scene_bundle_for_projection_axis_fields(bundle: object, orientation: str) -> object:
+    """Return *bundle* filtered to the field family visible in a 2-D plane.
+
+    Canonical ``world_envelope`` traces carry the full 3-D pupil for every
+    sampled field point.  A raw YZ/XZ projection of that entire 3-D grid is
+    faithful but visually misleading because off-plane fields collapse into the
+    selected plane.  For ordinary 2-D layout panes, keep the traced rays whose
+    launch family belongs to that axis plane: YZ uses near-zero launch X angle,
+    XZ uses near-zero launch Y angle, and XY remains the full footprint.
+    """
+    axis = _projection_slice_axis(orientation)
+    if axis is None or not isinstance(bundle, SceneBundle):
+        return bundle
+    if scene_bundle_launch_sampling_mode(bundle) != "world_envelope":
+        return bundle
+    if _bundle_uses_native_nonsequential_projection(bundle):
+        return bundle
+    paths = list(getattr(bundle, "ray_paths", []) or [])
+    if len(paths) <= 1:
+        return bundle
+    selected = _select_paths_near_axis_plane(paths, axis, kind="direction")
+    if not selected:
+        selected = _select_paths_near_axis_plane(paths, axis, kind="position")
+    if not selected or len(selected) == len(paths):
+        return bundle
+    selected_ray_indices = {int(getattr(path, "ray_index", -1)) for path in selected}
+    ray_events = [
+        event
+        for event in list(getattr(bundle, "ray_events", []) or [])
+        if int(getattr(event, "ray_index", -1)) in selected_ray_indices
+    ]
+    return replace(bundle, ray_paths=selected, ray_events=ray_events)
 
 
 def _ray_path_slice_distance(path: object, axis: int) -> float | None:

@@ -166,6 +166,7 @@ from KrakenOS.UI.layout_plot_controller import (
     preview_trace_signature_matches,
     ray_event_display_label,
     representative_projected_rays_by_branch,
+    scene_bundle_launch_sampling_mode,
     sequential_focus_diagnostic,
     thin_lens_glyph_polyline,
     trace_mode_summary_from_bundle,
@@ -34093,6 +34094,7 @@ class KrakenLayoutEditor(tk.Tk):
             projected = project_scene_bundle(
                 bundle,
                 str(plane),
+                filter_projection_axis_fields=self._should_filter_projection_axis_fields(bundle),
                 filter_projection_slice=self._should_filter_projection_slice(bundle),
                 filter_arm_view=self._filter_projected_scene_for_arm_view,
                 filter_ray_display=self._filter_projected_scene_for_ray_display,
@@ -36000,18 +36002,10 @@ class KrakenLayoutEditor(tk.Tk):
 
     @staticmethod
     def _scene_bundle_launch_sampling_mode(bundle: SceneBundle | None) -> str:
-        if bundle is None:
-            return ""
-        for path in list(getattr(bundle, "ray_paths", []) or []):
-            for event in list(getattr(path, "events", []) or []):
-                mode = str(getattr(event, "launch_sampling_mode", "") or "").strip().lower()
-                if mode:
-                    return mode
-        for event in list(getattr(bundle, "ray_events", []) or []):
-            mode = str(getattr(event, "launch_sampling_mode", "") or "").strip().lower()
-            if mode:
-                return mode
-        return ""
+        return scene_bundle_launch_sampling_mode(bundle)
+
+    def _should_filter_projection_axis_fields(self, bundle: SceneBundle | None) -> bool:
+        return self._scene_bundle_launch_sampling_mode(bundle) == "world_envelope"
 
     def _should_filter_projection_slice(self, bundle: SceneBundle | None) -> bool:
         return self._scene_bundle_launch_sampling_mode(bundle) == "world_sections"
