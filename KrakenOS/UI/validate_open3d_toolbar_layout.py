@@ -49,6 +49,8 @@ _MENU_EXPECTATIONS: dict[str, tuple[str, ...]] = {
         "Orient Row->Path",
         "Orient Row->CAD Axis",
         "Orient Row->Scene Source",
+        "Animate Galvo Scan",
+        "Stop Galvo Scan",
         "Preview Normal",
         "Orient Row->Normal",
     ),
@@ -176,6 +178,19 @@ def main() -> int:
             'ttk.Button(carry_toolbar, text="Snap ray"' not in toolbar_source
             and 'ttk.Button(carry_toolbar, text="Snap target"' not in toolbar_source,
             "STEP carry should not expose the old ray/target center snap buttons",
+        ),
+        (
+            "Open 3D galvo scan animation has inspector lifecycle hooks",
+            all(
+                hasattr(Kraken3DInspector, name)
+                for name in (
+                    "start_galvo_scan_animation",
+                    "stop_galvo_scan_animation",
+                    "_show_galvo_scan_frame",
+                    "_clear_galvo_scan_animation",
+                )
+            ),
+            "the Animate/Stop Galvo Scan menu items need matching inspector methods",
         ),
     ]
 

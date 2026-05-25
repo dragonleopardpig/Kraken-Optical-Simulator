@@ -136,6 +136,9 @@ class Open3DTopControlsPanel:
         orientation_menu.add_command(label="Orient Row->CAD Axis", command=self.inspector.orient_selected_row_to_local_axis)
         orientation_menu.add_command(label="Orient Row->Scene Source", command=self.inspector.orient_selected_row_to_scene_source)
         orientation_menu.add_separator()
+        orientation_menu.add_command(label="Animate Galvo Scan", command=self.inspector.start_galvo_scan_animation)
+        orientation_menu.add_command(label="Stop Galvo Scan", command=self.inspector.stop_galvo_scan_animation)
+        orientation_menu.add_separator()
         orientation_menu.add_command(label="Preview Normal", command=self.inspector.preview_selected_row_normal_target)
         orientation_menu.add_command(label="Orient Row->Normal", command=self.inspector.orient_selected_row_to_named_normal_target)
         orientation_button["menu"] = orientation_menu

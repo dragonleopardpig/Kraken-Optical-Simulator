@@ -186,6 +186,7 @@ class Open3DSceneRefreshService:
             except Exception:
                 camera_state = None
 
+        self._clear_galvo_scan_animation(cancel_timer=True, render=False)
         self._renderer.RemoveAllViewProps()
         self._actor_row_map.clear()
         self._row_actor_map.clear()

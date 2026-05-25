@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 from KrakenOS.common_optical_layouts import f_theta_lens_50mm_figure8 as ftheta
 from KrakenOS.common_optical_layouts import galvo_f_theta_laser_scanner as scanner
+from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -91,9 +93,33 @@ def _validate_docs_and_assets() -> None:
         _require(_asset_ok(STATIC_DIR / asset), f"missing or tiny tutorial asset: {asset}")
 
 
+def _validate_open3d_scan_animation_contract() -> None:
+    plan_source = inspect.getsource(KrakenLayoutEditor._folded_scan_overlay_plans)
+    draw_source = inspect.getsource(KrakenLayoutEditor._draw_folded_scan_overlay)
+    animation_source = inspect.getsource(Kraken3DInspector.start_galvo_scan_animation)
+    frame_source = inspect.getsource(Kraken3DInspector._add_galvo_scan_frame_actors)
+    _require(
+        "folded_scan_overlay_plan" in plan_source and "field_theta" in plan_source,
+        "folded scan overlay plan builder should remain the shared 2D/Open 3D source",
+    )
+    _require(
+        "_folded_scan_overlay_plans" in draw_source,
+        "2D galvo overlay should draw from the shared folded scan plan builder",
+    )
+    _require(
+        "_folded_scan_overlay_plans" in animation_source,
+        "Open 3D galvo animation should animate the shared folded scan plans",
+    )
+    _require(
+        "_folded_scan_display_points_to_3d" in frame_source and "_ray_segment_mesh_for_3d_display" in frame_source,
+        "Open 3D galvo animation should render scan plans as physical 3D line segments",
+    )
+
+
 def main() -> None:
     _validate_common_layout_contract()
     _validate_docs_and_assets()
+    _validate_open3d_scan_animation_contract()
     print("Galvo F-theta case-study validation passed.")
 
 

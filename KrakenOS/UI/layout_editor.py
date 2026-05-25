@@ -5366,6 +5366,10 @@ class Kraken3DInspector(tk.Toplevel):
         self._current_scene_bundle: SceneBundle | None = None
         self._last_refresh_sampling_mode: str | None = None
         self._ray_event_label_actors: list[object] = []
+        self._galvo_scan_after_id: str | None = None
+        self._galvo_scan_actors: list[object] = []
+        self._galvo_scan_frames: list[dict[str, object]] = []
+        self._galvo_scan_frame_index = 0
         self._picked_optical_axis_id: str | None = None
         self._hover_rotation_handle_key: str | None = None
         self._hover_step_actor = None
@@ -10569,6 +10573,179 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             pass
 
+    def _clear_galvo_scan_animation(self, *, cancel_timer: bool = True, render: bool = False) -> None:
+        if cancel_timer:
+            after_id = self._galvo_scan_after_id
+            self._galvo_scan_after_id = None
+            if after_id is not None:
+                try:
+                    self.after_cancel(after_id)
+                except Exception:
+                    pass
+            self._galvo_scan_frames = []
+            self._galvo_scan_frame_index = 0
+        if self._renderer is not None:
+            for actor in list(self._galvo_scan_actors):
+                try:
+                    actor_key = self._actor_key(actor)
+                    if actor_key is not None:
+                        self._actor_by_key.pop(actor_key, None)
+                except Exception:
+                    pass
+                self._remove_renderer_view_prop(actor)
+        self._galvo_scan_actors = []
+        if render:
+            self.render()
+
+    def stop_galvo_scan_animation(self) -> None:
+        self._clear_galvo_scan_animation(cancel_timer=True, render=True)
+        self.status_var.set("Galvo scan animation stopped.")
+
+    @staticmethod
+    def _folded_scan_display_points_to_3d(points, *, orientation: str = "YZ") -> np.ndarray:
+        try:
+            pts = np.asarray(points, dtype=float)
+        except Exception:
+            return np.empty((0, 3), dtype=float)
+        if pts.ndim != 2 or pts.shape[0] == 0 or pts.shape[1] < 2:
+            return np.empty((0, 3), dtype=float)
+        pts = pts[:, :2]
+        if not np.all(np.isfinite(pts)):
+            return np.empty((0, 3), dtype=float)
+        if str(orientation or "").strip() == "Horizontal":
+            return np.column_stack((np.zeros(pts.shape[0]), -pts[:, 0], -pts[:, 1]))
+        return np.column_stack((np.zeros(pts.shape[0]), pts[:, 1], pts[:, 0]))
+
+    def _add_galvo_scan_label_actor(self, frame: dict[str, object], color: tuple[float, float, float]) -> None:
+        if self._renderer is None or vtkBillboardTextActor3D is None:
+            return
+        label_point = frame.get("label_point")
+        if label_point is None:
+            return
+        orientation = str(frame.get("orientation", self.editor._current_display_orientation()) or "YZ")
+        point = self._folded_scan_display_points_to_3d([label_point], orientation=orientation)
+        if point.shape != (1, 3):
+            return
+        _center, scene_radius = self._scene_bounds()
+        label_position = point[0].copy()
+        label_position[0] += max(float(scene_radius) * 0.016, 0.45)
+        try:
+            actor = vtkBillboardTextActor3D()
+            actor.SetInput(str(frame.get("label", "galvo scan")))
+            actor.SetPosition(float(label_position[0]), float(label_position[1]), float(label_position[2]))
+            try:
+                actor.PickableOff()
+            except Exception:
+                pass
+            try:
+                text_prop = actor.GetTextProperty()
+                text_prop.SetFontSize(13)
+                text_prop.SetColor(*color)
+                text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
+                text_prop.SetBackgroundOpacity(0.76)
+                text_prop.SetFrame(1)
+                text_prop.SetFrameColor(*color)
+            except Exception:
+                pass
+            self._add_renderer_view_prop(actor)
+            self._galvo_scan_actors.append(actor)
+        except Exception as exc:
+            self.editor.append_debug(f"3D galvo scan label skipped: {exc}")
+
+    def _add_galvo_scan_frame_actors(self, frame: dict[str, object]) -> int:
+        if self._renderer is None or pv is None:
+            return 0
+        color = _color_to_rgb_tuple(frame.get("color", "#f97316"))
+        orientation = str(frame.get("orientation", self.editor._current_display_orientation()) or "YZ")
+        _center, scene_radius = self._scene_bounds()
+        ray_inset = KrakenLayoutEditor._ray_vertex_display_inset(scene_radius)
+        count = 0
+        for path in list(frame.get("paths", []) or []):
+            points_3d = self._folded_scan_display_points_to_3d(path, orientation=orientation)
+            mesh = KrakenLayoutEditor._ray_segment_mesh_for_3d_display(points_3d, vertex_inset=ray_inset)
+            if mesh is None or int(getattr(mesh, "n_points", 0)) < 2:
+                continue
+            actor = self._add_mesh_actor(
+                mesh,
+                color=color,
+                opacity=float(frame.get("alpha", 0.9) or 0.9),
+                line_width=max(float(frame.get("linewidth", 1.1) or 1.1) * 2.4, 3.0),
+                backface_culling=False,
+            )
+            if actor is not None:
+                self._galvo_scan_actors.append(actor)
+                count += 1
+        mirror_line = frame.get("mirror_line")
+        if mirror_line is not None:
+            points_3d = self._folded_scan_display_points_to_3d(mirror_line, orientation=orientation)
+            if points_3d.shape[0] >= 2:
+                try:
+                    mesh = pv.lines_from_points(points_3d[:, :3])
+                except Exception:
+                    mesh = None
+                if mesh is not None and int(getattr(mesh, "n_points", 0)) >= 2:
+                    actor = self._add_mesh_actor(
+                        mesh,
+                        color=color,
+                        opacity=0.95,
+                        line_width=6.0,
+                        backface_culling=False,
+                    )
+                    if actor is not None:
+                        self._galvo_scan_actors.append(actor)
+                        count += 1
+        self._add_galvo_scan_label_actor(frame, color)
+        return count
+
+    def start_galvo_scan_animation(self) -> None:
+        if self._renderer is None or pv is None:
+            self.status_var.set("Galvo scan animation unavailable: Open 3D renderer is not ready.")
+            return
+        try:
+            max_half = max((max(float(row.diameter) * 0.5, 0.5) for row in self.editor.rows), default=1.0)
+            frames = self.editor._folded_scan_overlay_plans(
+                max_half,
+                system=self.__dict__.get("_current_system"),
+            )
+        except Exception as exc:
+            self.status_var.set(f"Galvo scan animation failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"3D galvo scan animation failed: {exc}")
+            return
+        if not frames:
+            self.status_var.set("Galvo scan animation unavailable: no folded galvo scan overlay is configured.")
+            return
+        self._clear_galvo_scan_animation(cancel_timer=True, render=False)
+        self._galvo_scan_frames = list(frames)
+        self._galvo_scan_frame_index = 0
+        self._show_galvo_scan_frame()
+
+    def _show_galvo_scan_frame(self) -> None:
+        self._galvo_scan_after_id = None
+        if not self._galvo_scan_frames:
+            return
+        frame_count = len(self._galvo_scan_frames)
+        frame_index = int(self._galvo_scan_frame_index) % frame_count
+        frame = self._galvo_scan_frames[frame_index]
+        self._clear_galvo_scan_animation(cancel_timer=False, render=False)
+        actor_count = self._add_galvo_scan_frame_actors(frame)
+        label = str(frame.get("label", "") or "").strip()
+        tilt = frame.get("tilt_x", None)
+        tilt_text = ""
+        try:
+            tilt_text = f" | TiltX={float(tilt):g} deg"
+        except Exception:
+            pass
+        self.status_var.set(
+            f"Galvo scan animation {frame_index + 1}/{frame_count}{tilt_text}"
+            f"{' | ' + label if label else ''} | overlay actors={actor_count}"
+        )
+        self.render()
+        self._galvo_scan_frame_index = (frame_index + 1) % frame_count
+        try:
+            self._galvo_scan_after_id = self.after(720, self._show_galvo_scan_frame)
+        except Exception:
+            self._galvo_scan_after_id = None
+
     def save_snapshot(self) -> Path | None:
         if self._vtk_widget is None:
             self.status_var.set("Snapshot unavailable: 3D window is not ready.")
@@ -13177,6 +13354,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._stl_placement_dirty = False
         self.editor._three_d_inspector = None
         self._cancel_live_refresh()
+        self._clear_galvo_scan_animation(cancel_timer=True, render=False)
         self._close_step_rotation_handler()
         self._close_stl_placement_handler()
         self._destroy_vtk_render_window()
@@ -36773,9 +36951,9 @@ class KrakenLayoutEditor(tk.Tk):
             )
         return BoundsRect.from_points(points)
 
-    def _draw_folded_scan_overlay(self, max_half: float, *, system=None) -> BoundsRect:
+    def _folded_scan_overlay_plans(self, max_half: float, *, system=None) -> list[dict[str, object]]:
         if not self.rows or not self._can_build_folded_layout():
-            return BoundsRect()
+            return []
         scan_rows = [
             (index, self._galvo_scan_overlay_values(row))
             for index, row in enumerate(self.rows)
@@ -36783,11 +36961,11 @@ class KrakenLayoutEditor(tk.Tk):
         ]
         scan_rows = [(index, values) for index, values in scan_rows if values]
         if not scan_rows:
-            return BoundsRect()
+            return []
         orientation = self._current_display_orientation()
         palette = ("#f97316", "#0ea5e9", "#e11d48", "#8b5cf6", "#14b8a6")
         ray_count_hint = max(1, int(getattr(self, "_preview_field_ray_count", 5) or 5))
-        bounds_points: list[np.ndarray] = []
+        plans: list[dict[str, object]] = []
         try:
             # A galvo scan changes the reflected ray direction, not the fixed
             # downstream F-theta lens and detector geometry.
@@ -36797,7 +36975,7 @@ class KrakenLayoutEditor(tk.Tk):
             )
         except Exception as exc:
             self.append_debug(f"Galvo scan overlay geometry failed: {_short_error_message(exc)}")
-            return BoundsRect()
+            return []
         for mirror_index, values in scan_rows:
             display_values = self._mirror_overlay_display_slants_for_rows(self.rows, mirror_index)
             nominal_display_tilt = self._mirror_display_slant_deg_for_rows(self.rows, mirror_index)
@@ -36865,43 +37043,61 @@ class KrakenLayoutEditor(tk.Tk):
                     color=color,
                     ray_count_hint=ray_count_hint,
                 )
-                bounds_points.extend(np.asarray(points, dtype=float) for points in list(plan.get("bounds_points", []) or []))
-                for path in list(plan.get("paths", []) or []):
-                    pts = np.asarray(path, dtype=float)
-                    self.ax.plot(
-                        pts[:, 0],
-                        pts[:, 1],
-                        color=str(plan.get("color", color) or color),
-                        linewidth=float(plan.get("linewidth", 1.1) or 1.1),
-                        alpha=float(plan.get("alpha", 0.92) or 0.92),
-                        zorder=24.0,
-                    )
-                line = plan.get("mirror_line")
-                if line is not None:
-                    line = np.asarray(line, dtype=float)
-                    self.ax.plot(
-                        line[:, 0],
-                        line[:, 1],
-                        color=str(plan.get("color", color) or color),
-                        linewidth=1.5,
-                        linestyle=(0, (4, 2)),
-                        alpha=0.78,
-                        zorder=58.0,
-                    )
-                label_point = plan.get("label_point")
-                if label_point is not None:
-                    label_point = np.asarray(label_point, dtype=float)
-                    self.ax.text(
-                        float(label_point[0]),
-                        float(label_point[1]),
-                        str(plan.get("label", f"theta={field_theta:g} deg")),
-                        fontsize=7,
-                        color=str(plan.get("color", color) or color),
-                        ha="center",
-                        va="center",
-                        zorder=62.0,
-                        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.72, "pad": 0.25},
-                    )
+                enriched_plan = dict(plan)
+                enriched_plan.update(
+                    {
+                        "mirror_row_index": int(mirror_index),
+                        "tilt_x": float(tilt_x),
+                        "display_tilt": float(display_tilt),
+                        "field_theta": float(field_theta),
+                        "orientation": orientation,
+                    }
+                )
+                plans.append(enriched_plan)
+        return plans
+
+    def _draw_folded_scan_overlay(self, max_half: float, *, system=None) -> BoundsRect:
+        plans = self._folded_scan_overlay_plans(max_half, system=system)
+        bounds_points: list[np.ndarray] = []
+        for plan in plans:
+            color = str(plan.get("color", "#f97316") or "#f97316")
+            bounds_points.extend(np.asarray(points, dtype=float) for points in list(plan.get("bounds_points", []) or []))
+            for path in list(plan.get("paths", []) or []):
+                pts = np.asarray(path, dtype=float)
+                self.ax.plot(
+                    pts[:, 0],
+                    pts[:, 1],
+                    color=color,
+                    linewidth=float(plan.get("linewidth", 1.1) or 1.1),
+                    alpha=float(plan.get("alpha", 0.92) or 0.92),
+                    zorder=24.0,
+                )
+            line = plan.get("mirror_line")
+            if line is not None:
+                line = np.asarray(line, dtype=float)
+                self.ax.plot(
+                    line[:, 0],
+                    line[:, 1],
+                    color=color,
+                    linewidth=1.5,
+                    linestyle=(0, (4, 2)),
+                    alpha=0.78,
+                    zorder=58.0,
+                )
+            label_point = plan.get("label_point")
+            if label_point is not None:
+                label_point = np.asarray(label_point, dtype=float)
+                self.ax.text(
+                    float(label_point[0]),
+                    float(label_point[1]),
+                    str(plan.get("label", f"theta={float(plan.get('field_theta', 0.0)):g} deg")),
+                    fontsize=7,
+                    color=color,
+                    ha="center",
+                    va="center",
+                    zorder=62.0,
+                    bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.72, "pad": 0.25},
+                )
         return BoundsRect.from_points(bounds_points)
 
     # _build_current_display_ray_paths removed — now in scene_builder + scene_projector
