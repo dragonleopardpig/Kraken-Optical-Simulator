@@ -1283,6 +1283,7 @@ Production refactor progress:
 | Layout shell/control mixin/service | Complete | `██████████ 100%` | `services/layout_shell_controls.py` now owns main panel accessors, source/field/trace/analysis control synchronization, left-sidebar reflow, source-model UI applicability, menu refresh, layout/example menu population, analysis/preview-mode switching, trace-mode resolution badges, non-sequential trace settings, source-model change handling, scene-source manager launch, and manual display-update dispatch. `layout_editor.py` now drops to about 6,605 lines. |
 | Layout analysis display mixin/service | Complete | `██████████ 100%` | `services/layout_analysis_display.py` now owns PSF/MTF benchmarking entry points, KrakenOS system build orchestration, current wavelength/aperture/MTF/field/object/detector/wavefront settings, plot refresh service access, preview reset/autosave hooks, atmosphere residual display, interferogram sample/data/plot helpers, wavefront quality/reference/function plots, infinity-field centering helpers, and equal-axis/field-metric utilities. `layout_editor.py` now drops to about 4,859 lines. |
 | Layout plot interaction mixin/service | Complete | `██████████ 100%` | `services/layout_plot_interaction.py` now owns 2D plot hover hints, row/ray picking, selected-ray overlay drawing, layout selection overlay refresh, hover highlight artists, system-viewer command discovery, and high-resolution plot image export/open actions. `layout_editor.py` now drops to about 4,443 lines. |
+| Layout scene-bundle display mixin/service | Complete | `██████████ 100%` | `services/layout_scene_bundle_display.py` now owns field metrics, finite/infinity paraxial estimates, folded-surface output overrides, reference-plane and optical-solid image-plane overrides, source/branch output display frames, scene-bundle construction, physical-distance result dispatch, input/Gaussian overlays, example display defaults, and fallback trace diagnostics. `layout_editor.py` now drops to about 3,136 lines. |
 | `panels/` boundary for Open 3D controls | Complete | `██████████ 100%` | `MainWindowBuilder` owns the main Tk menu and window shell construction, `Open3DLiveControlsPanel` owns the left-docked Live Controls UI, `Open3DTopControlsPanel` owns the View, Scene, and Carry toolbar rows, and `MainSourceControlsPanel`, `MainFieldControlsPanel`, `MainTraceDisplayControlsPanel`, `MainToleranceReportDialogs`, `MainNonSequentialSceneGraphDialog`, `MainPathDetectorAnalysis`, `MainAnalysisToolbarPanel`/`MainInformationPanel`, `MainBranchGaussianQDialog`, `MainBranchThroughputReportDialog`, `MainRayTraceInspectorDialogs`, `MainDetectorApertureReportDialog`, `MainSourceIlluminationReportDialog`, `MainOptimizationPanel`, `MainParaxialAnalysisDialogs`, `MainGlassCatalogBrowserDialog`, `MainOpticalSolidDialogs`, `MainOpticalSolidFaceRolesDialog`, `MainPathComponentPlacementDialog`, `MainLensDrawingDialogs`, `MainAtmospherePanel`, `MainCoatingMaterialDialog`, `MainDiffuseScatterDialog`, `MainSurfaceShapeBuilderDialog`, `MainBeamSplitterDialog`, `MainErrorMapDialog`, `MainAdvancedSurfaceDialog`, `MainSurfaceSettingsDialogs`, `MainContextMenu`, `MainSceneElementDialogs`, `MainSceneSourceManagerDialog`, `MainStockLensImporterDialog`, and `OpticalStlPlacementDialog` own the main window shell, Source, Field, Trace/Display, tolerance report, Non-Sequential Scene Graph, path detector map/PSF/MTF/coherent/branch-field/diffraction analysis orchestration, analysis-toolbar, Information, Branch Gaussian Q report, Path Throughput report, Ray Inspector/Trace Path Inspector, Detector Aperture report, Source Illumination report, Optimization panel and bounds dialog, Paraxial Matrix/Gaussian analysis dialogs and paraxial solve confirmations, Glass Catalog Browser, optical CAD/STL diagnostics, numeric placement, face-role assignment, traced path component placement, Lens Drawing Surface Properties/export dialogs, Atmosphere, Coating/Material, Diffuse/BRDF, Surface Shape Builder, Beam Splitter, Error Map, Advanced Surface, Galvo overlay, Grating settings, main table context-menu, Detector, Scene Target, Path-Local Pose, Element Settings, Scene Source Manager, stock-lens importer, and visual CAD/STL placement preview surfaces without moving analysis math, branch Gaussian q report, path throughput report, ray/trace-path inspector, detector aperture report, source illumination report, tolerance report, non-sequential scene graph, optimization, paraxial matrix/Gaussian dialog, glass-catalog browser, optical-solid utility dialog, optical-solid face-role editor, path-component insertion, lens drawing dialog, coating, scatter, shape, splitter, error-map, advanced-surface, galvo, grating, detector, scene-target, path-pose, element, source-manager, stock-lens importer, CAD/STL placement preview, or menu action execution out of the editor model. Remaining UI reductions should move services/widgets rather than grow this panel slice. |
 | `widgets/` reusable Tk controls | Started | `█░░░░░░░░░ 10%` | `KrakenOS/UI/widgets/tooltips.py` now owns the reusable compact Tk tooltip used by toolbar and dialog controls. Validated entries, combobox commit helpers, projection selectors, menus, and table cell widgets still live mostly in `layout_editor.py`. |
 | Fast validation contract runner | Complete | `██████████ 100%` | `KrakenOS.UI.validate_fast_contracts` runs the lightweight no-display/no-CAD-fixture contracts first, including focused Open 3D sampling-stability checks. Display-backed CAD smoke tests remain explicit targeted commands for rendering, face-picking, and screenshot regressions. |
@@ -1309,7 +1310,9 @@ now lives in `services/layout_plot_interaction.py`. Remaining table-edit and
 optimization marker helpers also moved into
 `services/layout_table_workbench.py`. The main editor coordinator is now about
 4,053 lines, while validators continue to access the same inherited public
-method names through `KrakenLayoutEditor`.
+method names through `KrakenLayoutEditor`. Scene-bundle display/default helpers
+now live in `services/layout_scene_bundle_display.py`, reducing the main
+editor coordinator to about 3,136 lines in the latest slice.
 Element, detector, and scene-target metadata normalization now lives in
 `services/element_scene_metadata.py`. Metal and stock-lens catalog helpers now
 live in `services/catalog_metadata.py`. Zemax `.zmx` sequential prescription
@@ -1658,13 +1661,12 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Continue the production-readiness refactor by splitting the remaining
-scene-bundle override helpers and example-display defaults out of
-`layout_editor.py`. The next large slice should move scene-bundle override,
-field-metric, input/Gaussian overlay, fallback preview, and example-display
-helpers into focused display/default services. Replace transitional late-bound
-sync points with dedicated constants/helper modules. Keep `layout_editor.py` as
-the application coordinator instead of a behavior warehouse.
+Continue the production-readiness refactor by reviewing the remaining
+`layout_editor.py` coordinator responsibilities, then either stop extraction at
+the thin application shell or move lifecycle/bootstrap helpers into a small
+application shell mixin. Replace transitional late-bound sync points with
+dedicated constants/helper modules. Keep `layout_editor.py` as the application
+coordinator instead of a behavior warehouse.
 
 Before that larger extraction resumes, run a focused Open 3D correction pass:
 
