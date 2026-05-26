@@ -5,6 +5,22 @@ from __future__ import annotations
 from typing import Any
 
 
+DEFAULT_LIVE_REFRESH_DELAY_MS = 180
+MAIN_PANEL_LIVE_REFRESH_DELAY_MS = 220
+PENDING_LIVE_REFRESH_RETRY_MS = 40
+MAX_LIVE_REFRESH_DELAY_MS = 1000
+
+
+def normalized_live_refresh_delay(delay_ms: int | float | str | None) -> int:
+    """Clamp live refresh delays to the interactive budget."""
+
+    try:
+        delay = int(delay_ms) if delay_ms is not None else DEFAULT_LIVE_REFRESH_DELAY_MS
+    except (TypeError, ValueError):
+        delay = DEFAULT_LIVE_REFRESH_DELAY_MS
+    return max(0, min(delay, MAX_LIVE_REFRESH_DELAY_MS))
+
+
 class Open3DLiveRefreshService:
     """Own debounced Live Mode refresh state for an Open 3D inspector."""
 
@@ -25,7 +41,7 @@ class Open3DLiveRefreshService:
                 pass
         self.pending = False
 
-    def schedule(self, reason: str = "", *, delay_ms: int = 180) -> bool:
+    def schedule(self, reason: str = "", *, delay_ms: int = DEFAULT_LIVE_REFRESH_DELAY_MS) -> bool:
         inspector = self.inspector
         if not inspector._live_mode_enabled():
             return False
@@ -40,7 +56,7 @@ class Open3DLiveRefreshService:
                 inspector.after_cancel(self.after_id)
             except Exception:
                 pass
-        delay = max(0, int(delay_ms))
+        delay = normalized_live_refresh_delay(delay_ms)
         self.after_id = inspector.after(delay, self.run)
         inspector.status_var.set(f"Live Mode: scheduled trace ({self.reason}).")
         return True
@@ -70,4 +86,4 @@ class Open3DLiveRefreshService:
             self.busy = False
             if self.pending and inspector._live_mode_enabled():
                 self.pending = False
-                self.schedule("pending scene change", delay_ms=40)
+                self.schedule("pending scene change", delay_ms=PENDING_LIVE_REFRESH_RETRY_MS)

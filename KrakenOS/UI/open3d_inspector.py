@@ -28,7 +28,7 @@ from KrakenOS.UI.services.open3d_carry_grip import Open3DCarryGripService
 from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
 from KrakenOS.UI.services.open3d_face_pick import FaceRayPick, pick_face_from_ray
 from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
-from KrakenOS.UI.services.open3d_live_refresh import Open3DLiveRefreshService
+from KrakenOS.UI.services.open3d_live_refresh import DEFAULT_LIVE_REFRESH_DELAY_MS, Open3DLiveRefreshService
 from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_step_rotation_handles import Open3DStepRotationHandleService
@@ -583,7 +583,7 @@ class Kraken3DInspector(tk.Toplevel):
     def _cancel_live_refresh(self) -> None:
         self._open3d_live_refresh_service().cancel()
 
-    def schedule_live_refresh(self, reason: str = "", *, delay_ms: int = 180) -> bool:
+    def schedule_live_refresh(self, reason: str = "", *, delay_ms: int = DEFAULT_LIVE_REFRESH_DELAY_MS) -> bool:
         return self._open3d_live_refresh_service().schedule(reason, delay_ms=delay_ms)
 
     def _run_live_refresh(self) -> None:

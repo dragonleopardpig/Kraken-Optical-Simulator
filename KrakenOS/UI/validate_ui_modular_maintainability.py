@@ -39,6 +39,7 @@ FAST_CONTRACT_ALIASES = (
     '"ui-install-metadata"',
     '"widget-commit-bindings"',
     '"open3d-toolbar"',
+    '"open3d-live-budget"',
 )
 
 

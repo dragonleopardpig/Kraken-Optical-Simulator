@@ -46,6 +46,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Open 3D Live Mode integration by source-level contract checks.",
     ),
     ValidationTarget(
+        "open3d-live-budget",
+        "KrakenOS.UI.validate_open3d_live_performance_budget",
+        reason="Open 3D Live Mode debounce, cancellation, pending-retry, and delay-clamp budgets.",
+    ),
+    ValidationTarget(
         "open3d-live-transient-step",
         "KrakenOS.UI.validate_open3d_live_transient_step",
         reason="Transient STEP live-trace routing without VTK screenshot capture.",

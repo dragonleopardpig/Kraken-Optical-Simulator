@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
+from KrakenOS.UI.services.open3d_live_refresh import MAIN_PANEL_LIVE_REFRESH_DELAY_MS
 from KrakenOS.UI.widgets import bind_entry_commit
 
 
@@ -752,7 +753,7 @@ class LayoutShellControlsMixin:
             self.status_var.set("Display settings changed. Click Update.")
         self._schedule_open3d_live_refresh("left panel edit")
 
-    def _schedule_open3d_live_refresh(self, reason: str, *, delay_ms: int = 220) -> bool:
+    def _schedule_open3d_live_refresh(self, reason: str, *, delay_ms: int = MAIN_PANEL_LIVE_REFRESH_DELAY_MS) -> bool:
         inspector = getattr(self, "_three_d_inspector", None)
         if inspector is None:
             return False
