@@ -35,7 +35,45 @@ SOURCE_MODEL_VALUES = (
     SOURCE_MODEL_ZEMAX_RAYFILE,
 )
 SOURCE_ANGULAR_WEIGHT_DEFAULT = "Uniform solid angle"
+SOURCE_ANGULAR_WEIGHT_VALUES = (
+    SOURCE_ANGULAR_WEIGHT_DEFAULT,
+    "Cosine-weighted",
+    "Gaussian center",
+    "Edge-weighted",
+)
+SOURCE_DIRECTION_PRESET_CUSTOM = "Custom LMN"
+SOURCE_DIRECTION_PRESETS: tuple[tuple[str, tuple[float, float, float]], ...] = (
+    ("Horizontal +Z (right)", (0.0, 0.0, 1.0)),
+    ("Horizontal -Z (left)", (0.0, 0.0, -1.0)),
+    ("Vertical +Y (up)", (0.0, 1.0, 0.0)),
+    ("Vertical -Y (down)", (0.0, -1.0, 0.0)),
+    ("+X out of YZ plane", (1.0, 0.0, 0.0)),
+    ("-X into YZ plane", (-1.0, 0.0, 0.0)),
+)
+SOURCE_DIRECTION_PRESET_VALUES = (SOURCE_DIRECTION_PRESET_CUSTOM,) + tuple(label for label, _direction in SOURCE_DIRECTION_PRESETS)
+SOURCE_MERIDIONAL_PREVIEW_MAX_RADIUS_FRACTION = 2.0 / 3.0
+GAUSSIAN_INPUT_MODE_DEFAULT = "Waist + offset"
+GAUSSIAN_INPUT_MODE_VALUES = (
+    GAUSSIAN_INPUT_MODE_DEFAULT,
+    "Diameter + divergence",
+)
+GAUSSIAN_WAIST_SIDE_DEFAULT = "Waist before source"
+GAUSSIAN_WAIST_SIDE_VALUES = (
+    GAUSSIAN_WAIST_SIDE_DEFAULT,
+    "Waist after source",
+)
 PUPIL_PATTERN_DEFAULT = "Meridional fan"
+PUPIL_PATTERN_VALUES = (
+    PUPIL_PATTERN_DEFAULT,
+    "Cross fan",
+    "Fan X",
+    "Fan Y",
+    "Hexapolar",
+    "Square",
+    "Random disk",
+    "Chief ray",
+    "R-theta",
+)
 PUPIL_PATTERN_TO_KRAKEN = {
     "Cross fan": "fan",
     "Fan X": "fanx",
@@ -46,6 +84,11 @@ PUPIL_PATTERN_TO_KRAKEN = {
     "Chief ray": "chief",
     "R-theta": "rtheta",
 }
+ATMOS_PLOT_MODE_DEFAULT = "Refraction / dispersion"
+ATMOS_PLOT_MODE_VALUES = (
+    ATMOS_PLOT_MODE_DEFAULT,
+    "Image residual (current optics)",
+)
 
 
 def _settings_float(settings: dict[str, Any], key: str, default: float, *, minimum: float | None = None) -> float:
