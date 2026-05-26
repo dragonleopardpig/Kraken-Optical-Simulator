@@ -102,8 +102,6 @@ class LayoutPlotInteractionMixin:
             self.append_debug(f"Plot viewer dispatch failed: {exc}")
         return None
 
-    @staticmethod
-
     def _find_layout_pick_row(self, x_display: float, y_display: float) -> int | None:
         if self.ax is None or not self._layout_pick_regions:
             return None
@@ -446,4 +444,3 @@ class LayoutPlotInteractionMixin:
                     pass
             if previous_hover_axis is not None:
                 self._set_hover_axis(previous_hover_axis)
-
