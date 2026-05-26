@@ -106,6 +106,16 @@ infinity-field bundle so its chief ray passes through the selected
 aperture/analysis surface. `validate_infinity_field_launch` guards the
 Zemax Double Gauss 28 degree case and is part of the fast contract suite.
 
+Latest movement on 2026-05-26: saved row-backed 3D STEP export now recovers
+native vendor STEP solids and ray-envelope geometry from row metadata instead
+of depending on the transient Open 3D import session state. Reopened `.py`
+layouts such as the five-penta cascade therefore export smooth native B-rep
+prism bodies again, even after attachment fixture directories are renamed, and
+the exported STEP once again includes visible ray-envelope solids for mechanical
+review. `validate_five_penta_native_step_export` now loads the saved cascade,
+exports it through the native CAD + ray path, and fails if the export falls
+back to faceted shell geometry or drops the rays.
+
 Earlier movement on 2026-05-25: the non-sequential near-hit rules have been
 extracted into `NonSequentialIntersectionPolicy`. The policy is now the single
 kernel-level owner of scene-scaled generic near-hit rejection and the wider

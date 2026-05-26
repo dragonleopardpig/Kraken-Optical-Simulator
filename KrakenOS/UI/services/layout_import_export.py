@@ -573,7 +573,10 @@ class LayoutImportExportMixin:
                 def cad_progress(label, done, total):
                     self._update_analysis_progress(label, 1 + int(done), 8)
 
-                cad_shapes = self._collect_native_step_export_shapes(progress_callback=cad_progress)
+                cad_shapes = self._collect_native_step_export_shapes(
+                    system,
+                    progress_callback=cad_progress,
+                )
                 self._update_analysis_progress("Tracing ray envelope", 5, 8)
                 ray_polylines = self._step_export_ray_polylines(system)
                 rows_snapshot = [SurfaceRow(**asdict(row)) for row in self.rows]

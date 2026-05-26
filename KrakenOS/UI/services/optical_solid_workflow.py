@@ -879,7 +879,7 @@ class LayoutOpticalSolidWorkflowMixin:
         self._refresh_open_3d_views()
 
     def _has_imported_step_cad(self) -> bool:
-        return any(
+        if any(
             path is not None
             for path in (
                 self.imported_lens_step_path,
@@ -887,7 +887,12 @@ class LayoutOpticalSolidWorkflowMixin:
                 self.imported_led_step_path,
                 self.imported_camera_step_path,
             )
-        )
+        ):
+            return True
+        for row in getattr(self, "rows", ()):
+            if self._resolve_row_saved_step_source_path(row) is not None:
+                return True
+        return False
 
     def _step_export_alignment_params(self, label: str) -> dict[str, object] | None:
         label = str(label).strip().lower()
@@ -985,7 +990,163 @@ class LayoutOpticalSolidWorkflowMixin:
         )
         return matrix
 
-    def _collect_native_step_export_shapes(self, progress_callback=None) -> list[tuple[str, object]]:
+    def _resolve_row_saved_step_source_path(self, row) -> Path | None:
+        advanced = getattr(row, "advanced", {})
+        if not isinstance(advanced, dict):
+            return None
+        source_path_text = str(advanced.get("OpticalSolidSourcePath", "") or "").strip()
+        if not source_path_text:
+            return None
+        source_format = str(advanced.get("OpticalSolidSourceFormat", "") or "").strip().upper()
+        source_suffix = Path(source_path_text).suffix.lower()
+        if source_format not in {"STEP", "STP"} and source_suffix not in {".step", ".stp"}:
+            return None
+        candidates: list[Path] = []
+        try:
+            candidates.append(Path(source_path_text).expanduser())
+        except Exception:
+            pass
+        try:
+            candidates.append(_resolve_project_file_path(source_path_text))
+        except Exception:
+            pass
+        try:
+            basename = Path(source_path_text).name
+        except Exception:
+            basename = ""
+        if basename:
+            for root in (
+                PROJECT_ROOT / "attachment" / "prisms",
+                PROJECT_ROOT / "attachment",
+                PROJECT_ROOT,
+            ):
+                try:
+                    if not root.exists():
+                        continue
+                except Exception:
+                    continue
+                try:
+                    candidates.extend(sorted(root.rglob(basename)))
+                except Exception:
+                    continue
+        seen: set[str] = set()
+        for candidate in candidates:
+            try:
+                resolved = Path(candidate).expanduser()
+            except Exception:
+                continue
+            key = str(resolved)
+            if key in seen:
+                continue
+            seen.add(key)
+            try:
+                if resolved.exists():
+                    return resolved.resolve()
+            except Exception:
+                continue
+        return None
+
+    def _row_native_step_alignment_affine(self, source_path: Path, row_index: int, system) -> np.ndarray | None:
+        transforms = getattr(system, "TRANS_2A", None)
+        if transforms is None or not (0 <= int(row_index) < len(transforms)):
+            return None
+        try:
+            matrix = np.asarray(transforms[row_index], dtype=float)
+        except Exception:
+            matrix = None
+        if matrix is not None and matrix.shape == (4, 4) and np.all(np.isfinite(matrix)):
+            return matrix
+        _load_3d_backends()
+        if pv is None:
+            return None
+        surfaces = getattr(system, "AAA", None)
+        if surfaces is None:
+            return None
+        try:
+            local_mesh = pv.wrap(surfaces[row_index]).extract_surface(
+                algorithm="dataset_surface"
+            ).copy(deep=True)
+            world_mesh = Kraken3DInspector._mesh_with_transform(surfaces[row_index], transforms[row_index])
+        except Exception:
+            return None
+        try:
+            source_mesh = self._load_step_mesh(source_path, largest_component=False)
+        except Exception:
+            return None
+        matrix = _affine_from_point_sets(
+            np.asarray(source_mesh.points, dtype=float),
+            np.asarray(world_mesh.points, dtype=float),
+        )
+        if matrix is not None:
+            return matrix
+        local_to_world = _affine_from_point_sets(
+            np.asarray(local_mesh.points, dtype=float),
+            np.asarray(world_mesh.points, dtype=float),
+        )
+        if local_to_world is None:
+            return None
+        bridge_mesh = None
+        try:
+            advanced = getattr(self.rows[row_index], "advanced", {})
+            bridge_path_text = str(advanced.get("Solid_3d_stl", "") or "").strip()
+            if bridge_path_text:
+                bridge_path = _resolve_project_file_path(bridge_path_text)
+                if bridge_path.exists():
+                    bridge_mesh = pv.read(str(bridge_path)).extract_surface(
+                        algorithm="dataset_surface"
+                    ).copy(deep=True)
+        except Exception:
+            bridge_mesh = None
+        if bridge_mesh is not None:
+            source_to_bridge = _affine_from_point_sets(
+                np.asarray(source_mesh.points, dtype=float),
+                np.asarray(bridge_mesh.points, dtype=float),
+            )
+            if source_to_bridge is not None:
+                return local_to_world @ source_to_bridge
+        source_to_local = _affine_from_point_sets(
+            np.asarray(source_mesh.points, dtype=float),
+            np.asarray(local_mesh.points, dtype=float),
+        )
+        if source_to_local is not None:
+            return local_to_world @ source_to_local
+        return None
+
+    def _collect_row_native_step_export_shapes(self, system, progress_callback=None) -> list[tuple[str, object]]:
+        shape_items: list[tuple[str, object]] = []
+        surfaces = getattr(system, "AAA", None)
+        transforms = getattr(system, "TRANS_2A", None)
+        if surfaces is None or transforms is None:
+            return shape_items
+        block_count = min(len(self.rows), getattr(surfaces, "n_blocks", 0), len(transforms))
+        for row_index in range(block_count):
+            row = self.rows[row_index]
+            if getattr(row, "surface", "") in {"Object", "Image"}:
+                continue
+            source_path = self._resolve_row_saved_step_source_path(row)
+            if source_path is None:
+                continue
+            if progress_callback is not None:
+                progress_callback(
+                    f"Preparing S{row_index} {(row.name or row.surface or 'STEP solid')}",
+                    row_index + 1,
+                    block_count,
+                )
+            try:
+                matrix = self._row_native_step_alignment_affine(source_path, row_index, system)
+                if matrix is None:
+                    raise RuntimeError("could not compute saved-row CAD placement affine")
+                shape = _read_step_shape(source_path)
+                label = f"S{row_index} {row.name or row.element or row.surface or 'STEP solid'}"
+                shape_items.append((label, _shape_with_affine(shape, matrix)))
+            except Exception as exc:
+                self.append_debug(
+                    f"3D STEP native row export skipped for S{row_index} "
+                    f"{row.name or row.surface}: {exc}"
+                )
+        return shape_items
+
+    def _collect_native_step_export_shapes(self, system=None, progress_callback=None) -> list[tuple[str, object]]:
         shape_items: list[tuple[str, object]] = []
         labels = STEP_OVERLAY_LABELS
         for index, label in enumerate(labels, start=1):
@@ -1006,6 +1167,13 @@ class LayoutOpticalSolidWorkflowMixin:
                 shape_items.append((str(params.get("label", label)), _shape_with_affine(shape, matrix)))
             except Exception as exc:
                 self.append_debug(f"3D STEP native {label} export skipped: {exc}")
+        if system is not None:
+            shape_items.extend(
+                self._collect_row_native_step_export_shapes(
+                    system,
+                    progress_callback=progress_callback,
+                )
+            )
         return shape_items
 
     def _step_export_ray_polylines(self, system) -> list[np.ndarray]:
@@ -1391,4 +1559,3 @@ class LayoutOpticalSolidWorkflowMixin:
                     f"edge ref={reference_text}"
                 )
         return refreshed
-
