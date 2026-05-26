@@ -13,7 +13,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
+
 from KrakenOS.UI.layout_editor import _write_step_with_cad_shapes_and_rays
+from KrakenOS.UI.optical_solid_metadata import rotation_matrix_from_kraken_tilts
+from KrakenOS.UI.services.cad_step_export import _read_step_shape, _shape_with_affine
 from KrakenOS.UI.validate_open3d_five_penta_initial_visual import DEFAULT_LAYOUT_PATH, _load_saved_layout
 from KrakenOS.UI.validate_step_native_export import _topology_counts
 from KrakenOS.UI.layout_editor import KrakenLayoutEditor
@@ -21,6 +25,36 @@ from KrakenOS.UI.layout_editor import KrakenLayoutEditor
 
 OUTPUT_PATH = Path("/tmp/kraken_five_penta_native_export.step")
 MAX_REASONABLE_FACE_COUNT = 1000
+MAX_ALIGNMENT_ERROR_MM = 0.75
+
+
+def _sample_points(points: np.ndarray, limit: int = 600) -> np.ndarray:
+    pts = np.asarray(points, dtype=float)
+    if pts.ndim != 2 or pts.shape[0] <= limit:
+        return pts
+    indices = np.linspace(0, pts.shape[0] - 1, limit, dtype=int)
+    return pts[indices]
+
+
+def _nearest_distance_stats(source_points: np.ndarray, target_points: np.ndarray) -> dict[str, float]:
+    source = _sample_points(source_points, 600)
+    target = _sample_points(target_points, 2000)
+    if source.ndim != 2 or target.ndim != 2 or source.shape[0] == 0 or target.shape[0] == 0:
+        return {"max": float("inf"), "p95": float("inf"), "mean": float("inf")}
+    deltas = source[:, None, :3] - target[None, :, :3]
+    distances = np.linalg.norm(deltas, axis=2)
+    nearest = np.min(distances, axis=1)
+    return {
+        "max": float(np.max(nearest)),
+        "p95": float(np.percentile(nearest, 95.0)),
+        "mean": float(np.mean(nearest)),
+    }
+
+
+def _mesh_with_affine_copy(mesh, matrix: np.ndarray):
+    transformed = mesh.copy(deep=True)
+    transformed.transform(np.asarray(matrix, dtype=float), inplace=True)
+    return transformed
 
 
 def main() -> int:
@@ -34,6 +68,106 @@ def main() -> int:
         system = app.build_system()
         cad_shapes = app._collect_native_step_export_shapes(system)
         ray_polylines = app._step_export_ray_polylines(system)
+        alignment: list[dict[str, object]] = []
+        try:
+            import pyvista as pv
+        except Exception:
+            pv = None
+        surfaces = getattr(system, "AAA", None)
+        transforms = getattr(system, "TRANS_2A", None)
+        if pv is not None and surfaces is not None and transforms is not None:
+            block_count = min(len(app.rows), getattr(surfaces, "n_blocks", 0), len(transforms))
+            for row_index in range(block_count):
+                row = app.rows[row_index]
+                source_path = app._resolve_row_saved_step_source_path(row)
+                if source_path is None:
+                    continue
+                matrix = app._row_native_step_alignment_affine(source_path, row_index, system)
+                if matrix is None:
+                    try:
+                        source_mesh = app._load_step_mesh(source_path, largest_component=False)
+                        target_mesh = _mesh_with_affine_copy(surfaces[row_index], transforms[row_index])
+                        matrix = app._mesh_icp_affine(source_mesh, target_mesh)
+                    except Exception:
+                        matrix = None
+                if matrix is None:
+                    debug_entry = {"row_index": row_index, "name": row.name, "error": "missing_alignment_matrix"}
+                    try:
+                        source_mesh = app._load_step_mesh(source_path, largest_component=False)
+                        debug_entry["source_points"] = int(getattr(source_mesh, "n_points", 0))
+                        debug_entry["source_cells"] = int(getattr(source_mesh, "n_cells", 0))
+                        target_mesh = _mesh_with_affine_copy(surfaces[row_index], transforms[row_index])
+                        debug_entry["world_points"] = int(getattr(target_mesh, "n_points", 0))
+                        debug_entry["world_cells"] = int(getattr(target_mesh, "n_cells", 0))
+                        debug_entry["icp_world_available"] = bool(app._mesh_icp_affine(source_mesh, target_mesh) is not None)
+                    except Exception as exc:
+                        debug_entry["debug_error"] = str(exc)
+                    alignment.append(
+                        debug_entry
+                    )
+                    continue
+                source_mesh = app._load_step_mesh(source_path, largest_component=False)
+                world_mesh = _mesh_with_affine_copy(source_mesh, matrix)
+                target_mesh = _mesh_with_affine_copy(surfaces[row_index], transforms[row_index])
+                stats = _nearest_distance_stats(
+                    np.asarray(world_mesh.points, dtype=float),
+                    np.asarray(target_mesh.points, dtype=float),
+                )
+                stats.update({"row_index": row_index, "name": row.name})
+                alignment.append(stats)
+        native_row_export: list[dict[str, object]] = []
+        if surfaces is not None and transforms is not None:
+            block_count = min(len(app.rows), getattr(surfaces, "n_blocks", 0), len(transforms))
+            for row_index in range(block_count):
+                row = app.rows[row_index]
+                source_path = app._resolve_row_saved_step_source_path(row)
+                if source_path is None:
+                    continue
+                entry = {
+                    "row_index": row_index,
+                    "name": row.name,
+                    "source_path": str(source_path),
+                }
+                try:
+                    source_mesh = app._load_step_mesh(source_path, largest_component=False)
+                    target_mesh = _mesh_with_affine_copy(surfaces[row_index], transforms[row_index])
+                    z_station = sum(float(getattr(previous_row, "thickness", 0.0) or 0.0) for previous_row in app.rows[:row_index])
+                    source_to_local = np.eye(4, dtype=float)
+                    source_to_local[:3, :3] = np.asarray(
+                        rotation_matrix_from_kraken_tilts(
+                            float(getattr(row, "tilt_x", 0.0) or 0.0),
+                            float(getattr(row, "tilt_y", 0.0) or 0.0),
+                            float(getattr(row, "tilt_z", 0.0) or 0.0),
+                        ),
+                        dtype=float,
+                    )
+                    source_to_local[:3, 3] = np.asarray(
+                        [
+                            float(getattr(row, "desp_x", 0.0) or 0.0),
+                            float(getattr(row, "desp_y", 0.0) or 0.0),
+                            float(z_station) + float(getattr(row, "desp_z", 0.0) or 0.0),
+                        ],
+                        dtype=float,
+                    )
+                    forward = np.asarray(transforms[row_index], dtype=float) @ source_to_local
+                    reverse = source_to_local @ np.asarray(transforms[row_index], dtype=float)
+                    entry["direct_forward_stats"] = _nearest_distance_stats(
+                        np.asarray(_mesh_with_affine_copy(source_mesh, forward).points, dtype=float),
+                        np.asarray(target_mesh.points, dtype=float),
+                    )
+                    entry["direct_reverse_stats"] = _nearest_distance_stats(
+                        np.asarray(_mesh_with_affine_copy(source_mesh, reverse).points, dtype=float),
+                        np.asarray(target_mesh.points, dtype=float),
+                    )
+                    matrix = app._row_native_step_alignment_affine(source_path, row_index, system)
+                    entry["matrix_ok"] = bool(matrix is not None)
+                    if matrix is not None:
+                        shape = _read_step_shape(source_path)
+                        transformed = _shape_with_affine(shape, matrix)
+                        entry["shape_null"] = bool(transformed.IsNull())
+                except Exception as exc:
+                    entry["error"] = str(exc)
+                native_row_export.append(entry)
         analytic_count, cad_count, ray_count = _write_step_with_cad_shapes_and_rays(
             system,
             app.rows,
@@ -48,11 +182,16 @@ def main() -> int:
             "output": str(OUTPUT_PATH),
             "analytic_count": int(analytic_count),
             "cad_count": int(cad_count),
+            "cad_shape_items": int(len(cad_shapes)),
+            "cad_shape_labels": [str(label) for label, _shape in cad_shapes],
             "ray_count": int(ray_count),
             "manifold_solid_brep": int(text.count("MANIFOLD_SOLID_BREP")),
             "advanced_face": int(text.count("ADVANCED_FACE")),
             "topology": topology,
             "bytes": int(OUTPUT_PATH.stat().st_size if OUTPUT_PATH.exists() else 0),
+            "alignment": alignment,
+            "native_row_export": native_row_export,
+            "debug_tail": list(getattr(app, "debug_messages", [])[-20:]),
         }
         print("Five-penta native STEP export validation")
         print(json.dumps(report, indent=2, sort_keys=True))
@@ -64,6 +203,10 @@ def main() -> int:
             ("face count stayed well below faceted fallback", report["advanced_face"] < MAX_REASONABLE_FACE_COUNT),
             ("reader transferred shape", topology.get("status") == 1 and topology.get("transferred", 0) >= 1),
             ("reader saw multiple solids", topology.get("solids", 0) >= 10),
+            (
+                "native cad alignment stayed on traced bodies",
+                bool(alignment) and all(float(item.get("p95", float("inf"))) <= MAX_ALIGNMENT_ERROR_MM for item in alignment),
+            ),
         ]
         failed = False
         for label, passed in checks:
