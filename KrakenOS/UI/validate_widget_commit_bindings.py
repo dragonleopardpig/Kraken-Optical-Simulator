@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import inspect
 from tkinter import ttk
 
-from KrakenOS.UI.widgets import CommitEntry, bind_combobox_commit, bind_entry_commit
+from KrakenOS.UI.widgets import (
+    CommitEntry,
+    bind_combobox_commit,
+    bind_entry_commit,
+    grid_labeled_commit_entry,
+)
 
 
 class FakeWidget:
@@ -67,6 +73,14 @@ def main() -> int:
     assert returned_commit_entry is commit_entry
     assert _binding_sequences(commit_entry) == ["<FocusIn>", "<FocusOut>", "<Return>", "<KP_Enter>"]
     assert issubclass(CommitEntry, ttk.Entry)
+
+    helper_signature = inspect.signature(grid_labeled_commit_entry)
+    assert "textvariable" in helper_signature.parameters
+    assert "on_commit" in helper_signature.parameters
+    helper_source = inspect.getsource(grid_labeled_commit_entry)
+    assert "ttk.Label" in helper_source
+    assert "CommitEntry" in helper_source
+    assert "entry.grid" in helper_source
 
     print("Widget commit binding validation: PASS")
     return 0

@@ -7,7 +7,7 @@ from collections.abc import Callable, Sequence
 from tkinter import ttk
 from typing import Any
 
-from KrakenOS.UI.widgets import CommitEntry, bind_combobox_commit
+from KrakenOS.UI.widgets import bind_combobox_commit, grid_labeled_commit_entry
 
 
 class Open3DLiveControlsPanel:
@@ -100,16 +100,16 @@ class Open3DLiveControlsPanel:
         sync_fields: bool = False,
         width: int = 10,
     ) -> ttk.Entry:
-        ttk.Label(parent, text=label).grid(row=row, column=column, sticky="w", pady=(0, 2), padx=(8 if column else 0, 0))
-        entry = CommitEntry(
+        return grid_labeled_commit_entry(
             parent,
-            textvariable=self.editor_var(var_name),
-            width=width,
+            row,
+            column,
+            label,
+            self.editor_var(var_name),
             on_commit=lambda _event: self.inspector._commit_live_control_update(sync_fields=sync_fields),
             on_focus_in=self.editor._begin_history_capture,
+            width=width,
         )
-        entry.grid(row=row + 1, column=column, sticky="ew", pady=(0, 8), padx=(8 if column else 0, 0))
-        return entry
 
     def live_labeled_combo(
         self,
