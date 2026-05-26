@@ -7,7 +7,7 @@ from collections.abc import Callable, Sequence
 from tkinter import ttk
 from typing import Any
 
-from KrakenOS.UI.widgets import grid_labeled_commit_entry
+from KrakenOS.UI.widgets import grid_labeled_commit_combobox, grid_labeled_commit_entry
 
 
 class MainFieldControlsPanel:
@@ -39,18 +39,18 @@ class MainFieldControlsPanel:
         for column in range(2):
             parent.columnconfigure(column, weight=1)
 
-        ttk.Label(parent, text="Field type").grid(row=0, column=0, sticky="w", pady=(0, 2))
         self.field_type_var = tk.StringVar(value=self._field_type_display_label("Angle"))
-        self.field_type_menu = ttk.Combobox(
+        self.field_type_menu = grid_labeled_commit_combobox(
             parent,
-            textvariable=self.field_type_var,
-            state="readonly",
-            width=12,
+            0,
+            0,
+            "Field type",
+            self.field_type_var,
             values=[self._field_type_display_label(value) for value in self.field_type_values],
+            on_commit=self._on_field_type_changed,
+            on_focus_in=self._begin_history_capture,
+            width=12,
         )
-        self.field_type_menu.grid(row=1, column=0, sticky="ew", pady=(0, 8))
-        self.field_type_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.field_type_menu.bind("<<ComboboxSelected>>", self._on_field_type_changed)
 
         self.field_mode_note_var = tk.StringVar(value="")
 
@@ -83,37 +83,32 @@ class MainFieldControlsPanel:
         self.field_count_entry = field_count_entry
         self.field_count_label = field_count_entry.label_widget
 
-        ttk.Label(parent, text="Image dia mode").grid(
-            row=2,
-            column=1,
-            sticky="w",
-            pady=(0, 2),
-            padx=(8, 0),
-        )
         self.image_diameter_mode_var = tk.StringVar(value="Auto")
-        self.image_diameter_mode_menu = ttk.Combobox(
+        self.image_diameter_mode_menu = grid_labeled_commit_combobox(
             parent,
-            textvariable=self.image_diameter_mode_var,
-            state="readonly",
-            width=12,
+            2,
+            1,
+            "Image dia mode",
+            self.image_diameter_mode_var,
             values=["Auto", "Manual"],
-        )
-        self.image_diameter_mode_menu.grid(row=3, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
-        self.image_diameter_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.image_diameter_mode_menu.bind("<<ComboboxSelected>>", self._on_image_diameter_mode_changed)
-
-        ttk.Label(parent, text="Camera").grid(row=4, column=0, sticky="w", pady=(0, 2))
-        self.camera_model_var = tk.StringVar(value=self.camera_none_label)
-        self.camera_model_menu = ttk.Combobox(
-            parent,
-            textvariable=self.camera_model_var,
-            state="readonly",
+            on_commit=self._on_image_diameter_mode_changed,
+            on_focus_in=self._begin_history_capture,
             width=12,
-            values=[self.camera_none_label, *self.camera_names()],
         )
-        self.camera_model_menu.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        self.camera_model_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.camera_model_menu.bind("<<ComboboxSelected>>", self._on_camera_model_changed)
+
+        self.camera_model_var = tk.StringVar(value=self.camera_none_label)
+        self.camera_model_menu = grid_labeled_commit_combobox(
+            parent,
+            4,
+            0,
+            "Camera",
+            self.camera_model_var,
+            values=[self.camera_none_label, *self.camera_names()],
+            on_commit=self._on_camera_model_changed,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+            combo_columnspan=2,
+        )
 
         self.field_warning_var = tk.StringVar(value="")
         self.field_summary_var = tk.StringVar(value="")

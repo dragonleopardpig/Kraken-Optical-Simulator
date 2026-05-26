@@ -6,9 +6,11 @@ import inspect
 from tkinter import ttk
 
 from KrakenOS.UI.widgets import (
+    CommitCombobox,
     CommitEntry,
     bind_combobox_commit,
     bind_entry_commit,
+    grid_labeled_commit_combobox,
     grid_labeled_commit_entry,
 )
 
@@ -74,15 +76,37 @@ def main() -> int:
     assert _binding_sequences(commit_entry) == ["<FocusIn>", "<FocusOut>", "<Return>", "<KP_Enter>"]
     assert issubclass(CommitEntry, ttk.Entry)
 
-    helper_signature = inspect.signature(grid_labeled_commit_entry)
-    assert "textvariable" in helper_signature.parameters
-    assert "on_commit" in helper_signature.parameters
-    assert "label_textvariable" in helper_signature.parameters
-    helper_source = inspect.getsource(grid_labeled_commit_entry)
-    assert "ttk.Label" in helper_source
-    assert "CommitEntry" in helper_source
-    assert "label_widget" in helper_source
-    assert "entry.grid" in helper_source
+    commit_combo = FakeWidget()
+    returned_commit_combo = CommitCombobox.bind_commit(commit_combo, _commit, on_focus_in=_focus)
+    assert returned_commit_combo is commit_combo
+    assert _binding_sequences(commit_combo) == [
+        "<FocusIn>",
+        "<<ComboboxSelected>>",
+        "<Return>",
+        "<KP_Enter>",
+    ]
+    assert issubclass(CommitCombobox, ttk.Combobox)
+
+    entry_helper_signature = inspect.signature(grid_labeled_commit_entry)
+    assert "textvariable" in entry_helper_signature.parameters
+    assert "on_commit" in entry_helper_signature.parameters
+    assert "label_textvariable" in entry_helper_signature.parameters
+    entry_helper_source = inspect.getsource(grid_labeled_commit_entry)
+    assert "ttk.Label" in entry_helper_source
+    assert "CommitEntry" in entry_helper_source
+    assert "label_widget" in entry_helper_source
+    assert "entry.grid" in entry_helper_source
+
+    combo_helper_signature = inspect.signature(grid_labeled_commit_combobox)
+    assert "textvariable" in combo_helper_signature.parameters
+    assert "values" in combo_helper_signature.parameters
+    assert "on_commit" in combo_helper_signature.parameters
+    assert "combo_columnspan" in combo_helper_signature.parameters
+    combo_helper_source = inspect.getsource(grid_labeled_commit_combobox)
+    assert "ttk.Label" in combo_helper_source
+    assert "CommitCombobox" in combo_helper_source
+    assert "label_widget" in combo_helper_source
+    assert "combo.grid" in combo_helper_source
 
     print("Widget commit binding validation: PASS")
     return 0
