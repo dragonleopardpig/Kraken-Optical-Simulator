@@ -15,8 +15,10 @@ def main() -> int:
         frame_bg = str(style.lookup("TFrame", "background") or "")
         button_bg = str(style.lookup("TButton", "background") or "")
         heading_bg = str(style.lookup("Treeview.Heading", "background") or "")
+        backend = getattr(style, "kraken_theme_backend", "")
         checks = [
             ("modern palette defines accent color", MODERN_TTK_PALETTE.get("accent") == "#2563eb"),
+            ("theme backend is recorded", backend.startswith("sv-ttk") or backend == "ttk-clam"),
             ("TFrame background uses modern palette", frame_bg == MODERN_TTK_PALETTE["background"]),
             ("TButton background is styled", bool(button_bg)),
             ("Treeview heading background is styled", bool(heading_bg)),

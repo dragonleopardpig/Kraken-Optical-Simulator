@@ -20,7 +20,7 @@ setup(
     install_requires=['pyvista','PyVTK','vtk','numpy','scipy','matplotlib', 'csv342', 'pandas' ],
     extras_require={
         'optimization': ['cloudpickle', 'pybind11', 'pygmo>=2.19.8'],
-        'ui': ['cloudpickle', 'ipykernel', 'ipython', 'packaging', 'pybind11', 'pygmo>=2.19.8', 'pyzmq'],
+        'ui': ['cloudpickle', 'ipykernel', 'ipython', 'packaging', 'pybind11', 'pygmo>=2.19.8', 'pyzmq', 'sv-ttk>=2.6.0'],
     },
     package_data={'': ['LICENSE.txt', '../*.AGF', '../*.agf', '../*.stl', '../*.scad', '../*.pdf', '../*.zmx', '../*.ZMX', '../*.csv']},
     include_package_data=True,

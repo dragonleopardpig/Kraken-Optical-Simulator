@@ -71,6 +71,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Reusable Tk entry/combobox commit binding contracts without opening a display.",
     ),
     ValidationTarget(
+        "ui-install-metadata",
+        "KrakenOS.UI.validate_ui_install_metadata",
+        reason="Public kraken-os[ui] optional dependency metadata stays aligned across packaging files.",
+    ),
+    ValidationTarget(
         "open3d-axis-guides",
         "KrakenOS.UI.validate_open3d_optical_axis_guides",
         reason="Centered sequential scenes keep one global optical axis; off-axis scenes keep traced guides.",

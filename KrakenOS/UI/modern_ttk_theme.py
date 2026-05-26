@@ -42,6 +42,25 @@ def _safe_map(style: ttk.Style, name: str, **options: Any) -> None:
         pass
 
 
+def _apply_sv_ttk_if_available(style: ttk.Style, selected_mode: str) -> bool:
+    """Apply sv-ttk when installed, returning whether it became the backend."""
+
+    try:
+        import sv_ttk  # type: ignore[import-not-found]
+    except Exception:
+        return False
+
+    requested_theme = "light"
+    if selected_mode in {"dark", "sv-dark", "sv_ttk_dark"}:
+        requested_theme = "dark"
+    try:
+        sv_ttk.set_theme(requested_theme)
+    except Exception:
+        return False
+    setattr(style, "kraken_theme_backend", f"sv-ttk:{requested_theme}")
+    return True
+
+
 def apply_modern_ttk_theme(root: tk.Misc, *, mode: str | None = None) -> ttk.Style:
     """Apply the KrakenOS ttk style layer and return the active style object.
 
@@ -52,13 +71,17 @@ def apply_modern_ttk_theme(root: tk.Misc, *, mode: str | None = None) -> ttk.Sty
     selected_mode = (mode or os.getenv("KRAKEN_UI_TTK_THEME", "modern")).strip().lower()
     style = ttk.Style(root)
     if selected_mode in {"", "0", "false", "off", "native", "classic"}:
+        setattr(style, "kraken_theme_backend", "native")
         return style
 
-    try:
-        if "clam" in style.theme_names():
-            style.theme_use("clam")
-    except tk.TclError:
-        pass
+    sv_ttk_active = _apply_sv_ttk_if_available(style, selected_mode)
+    if not sv_ttk_active:
+        try:
+            if "clam" in style.theme_names():
+                style.theme_use("clam")
+        except tk.TclError:
+            pass
+        setattr(style, "kraken_theme_backend", "ttk-clam")
 
     palette = MODERN_TTK_PALETTE
     try:

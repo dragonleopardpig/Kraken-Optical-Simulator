@@ -46,7 +46,8 @@ ui = [
   "packaging",
   "pybind11",
   "pygmo>=2.19.8",
-  "pyzmq"
+  "pyzmq",
+  "sv-ttk>=2.6.0"
 ]
 
 [project.urls]

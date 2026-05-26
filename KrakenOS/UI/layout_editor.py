@@ -193,6 +193,7 @@ from KrakenOS.UI.nonseq_output_ports import (
     optical_solid_output_port_runtime_transform_override,
     select_optical_solid_output_face,
 )
+from KrakenOS.UI.modern_ttk_theme import apply_modern_ttk_theme
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI.services import layout_analysis_display as _layout_analysis_display_module
 from KrakenOS.UI.services import layout_plot_interaction as _layout_plot_interaction_module
@@ -2688,6 +2689,7 @@ _layout_scene_bundle_display_module._sync_layout_globals(globals())
 class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlacementMixin, LayoutOpticalSolidWorkflowMixin, LayoutShellControlsMixin, LayoutPlotInteractionMixin, GeometricAnalysisMixin, LayoutAnalysisDisplayMixin, LayoutSceneBundleDisplayMixin, LayoutPolylineDisplayMixin, LayoutSceneProjectionMixin, ParaxialToolsMixin, AnalysisReportsMixin, ThreeDSceneToolsMixin, LayoutImportExportMixin, TracePreviewSamplingMixin, AnalysisComputeWorkflowMixin, LayoutTableWorkbenchMixin, tk.Tk):
     def __init__(self, *, headless: bool = False) -> None:
         super().__init__()
+        self._kraken_ttk_style = apply_modern_ttk_theme(self)
         self.headless = headless
         self.title("KrakenOS Layout Editor")
         self.geometry("1400x850")
