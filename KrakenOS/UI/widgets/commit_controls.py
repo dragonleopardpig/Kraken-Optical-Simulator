@@ -47,6 +47,7 @@ def grid_labeled_commit_entry(
     on_commit: TkEventCallback,
     on_focus_in: TkEventCallback | None = None,
     width: int = 10,
+    label_textvariable: tk.Variable | None = None,
     label_padx: tuple[int, int] | None = None,
     entry_padx: tuple[int, int] | None = None,
     label_pady: tuple[int, int] = (0, 2),
@@ -60,7 +61,13 @@ def grid_labeled_commit_entry(
     left_pad = (8, 0) if column else (0, 0)
     label_padding = left_pad if label_padx is None else label_padx
     entry_padding = left_pad if entry_padx is None else entry_padx
-    ttk.Label(parent, text=label, **(label_kwargs or {})).grid(
+    label_options = dict(label_kwargs or {})
+    if label_textvariable is None:
+        label_options["text"] = label
+    else:
+        label_options["textvariable"] = label_textvariable
+    label_widget = ttk.Label(parent, **label_options)
+    label_widget.grid(
         row=row,
         column=column,
         sticky=label_sticky,
@@ -75,6 +82,7 @@ def grid_labeled_commit_entry(
         on_focus_in=on_focus_in,
         **(entry_kwargs or {}),
     )
+    entry.label_widget = label_widget
     entry.grid(
         row=row + 1,
         column=column,

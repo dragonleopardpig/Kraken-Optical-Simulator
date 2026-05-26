@@ -77,9 +77,11 @@ def main() -> int:
     helper_signature = inspect.signature(grid_labeled_commit_entry)
     assert "textvariable" in helper_signature.parameters
     assert "on_commit" in helper_signature.parameters
+    assert "label_textvariable" in helper_signature.parameters
     helper_source = inspect.getsource(grid_labeled_commit_entry)
     assert "ttk.Label" in helper_source
     assert "CommitEntry" in helper_source
+    assert "label_widget" in helper_source
     assert "entry.grid" in helper_source
 
     print("Widget commit binding validation: PASS")

@@ -7,6 +7,8 @@ from collections.abc import Callable, Sequence
 from tkinter import ttk
 from typing import Any
 
+from KrakenOS.UI.widgets import grid_labeled_commit_entry
+
 
 class MainFieldControlsPanel:
     """Build field controls while keeping state on the owning editor."""
@@ -53,24 +55,33 @@ class MainFieldControlsPanel:
         self.field_mode_note_var = tk.StringVar(value="")
 
         self.field_value_label_var = tk.StringVar(value=self._field_type_value_label("Angle"))
-        ttk.Label(parent, textvariable=self.field_value_label_var).grid(
-            row=0,
-            column=1,
-            sticky="w",
-            pady=(0, 2),
-            padx=(8, 0),
-        )
         self.field_value_var = tk.StringVar(value="5.0")
-        field_value_entry = ttk.Entry(parent, textvariable=self.field_value_var, width=12)
+        field_value_entry = grid_labeled_commit_entry(
+            parent,
+            0,
+            1,
+            "",
+            self.field_value_var,
+            on_commit=self._commit_field_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+            label_textvariable=self.field_value_label_var,
+        )
         self.field_value_entry = field_value_entry
-        field_value_entry.grid(row=1, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
 
-        self.field_count_label = ttk.Label(parent, text="Field samples")
-        self.field_count_label.grid(row=2, column=0, sticky="w", pady=(0, 2))
         self.field_count_var = tk.StringVar(value="1")
-        field_count_entry = ttk.Entry(parent, textvariable=self.field_count_var, width=12)
+        field_count_entry = grid_labeled_commit_entry(
+            parent,
+            2,
+            0,
+            "Field samples",
+            self.field_count_var,
+            on_commit=self._commit_field_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
         self.field_count_entry = field_count_entry
-        field_count_entry.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+        self.field_count_label = field_count_entry.label_widget
 
         ttk.Label(parent, text="Image dia mode").grid(
             row=2,
@@ -107,6 +118,8 @@ class MainFieldControlsPanel:
         self.field_warning_var = tk.StringVar(value="")
         self.field_summary_var = tk.StringVar(value="")
 
-        self._bind_deferred_manual_update(field_value_entry, sync_fields=True)
-        self._bind_deferred_manual_update(field_count_entry, sync_fields=True)
         self._sync_field_mode_ui()
+
+    def _commit_field_controls(self, _event=None) -> None:
+        self._sync_object_controls()
+        self._mark_plot_update_pending()
