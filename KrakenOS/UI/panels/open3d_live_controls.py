@@ -7,6 +7,8 @@ from collections.abc import Callable, Sequence
 from tkinter import ttk
 from typing import Any
 
+from KrakenOS.UI.widgets import CommitEntry, bind_combobox_commit
+
 
 class Open3DLiveControlsPanel:
     """Build the left-docked Open 3D controls without owning trace policy."""
@@ -99,24 +101,14 @@ class Open3DLiveControlsPanel:
         width: int = 10,
     ) -> ttk.Entry:
         ttk.Label(parent, text=label).grid(row=row, column=column, sticky="w", pady=(0, 2), padx=(8 if column else 0, 0))
-        entry = ttk.Entry(parent, textvariable=self.editor_var(var_name), width=width)
+        entry = CommitEntry(
+            parent,
+            textvariable=self.editor_var(var_name),
+            width=width,
+            on_commit=lambda _event: self.inspector._commit_live_control_update(sync_fields=sync_fields),
+            on_focus_in=self.editor._begin_history_capture,
+        )
         entry.grid(row=row + 1, column=column, sticky="ew", pady=(0, 8), padx=(8 if column else 0, 0))
-        entry.bind("<FocusIn>", self.editor._begin_history_capture, add="+")
-        entry.bind(
-            "<FocusOut>",
-            lambda _event: self.inspector._commit_live_control_update(sync_fields=sync_fields),
-            add="+",
-        )
-        entry.bind(
-            "<Return>",
-            lambda _event: self.inspector._commit_live_control_update(sync_fields=sync_fields),
-            add="+",
-        )
-        entry.bind(
-            "<KP_Enter>",
-            lambda _event: self.inspector._commit_live_control_update(sync_fields=sync_fields),
-            add="+",
-        )
         return entry
 
     def live_labeled_combo(
@@ -140,11 +132,10 @@ class Open3DLiveControlsPanel:
             values=tuple(values),
         )
         combo.grid(row=row + 1, column=column, sticky="ew", pady=(0, 8), padx=(8 if column else 0, 0))
-        combo.bind("<FocusIn>", self.editor._begin_history_capture, add="+")
-        combo.bind(
-            "<<ComboboxSelected>>",
+        bind_combobox_commit(
+            combo,
             lambda _event: self.inspector._commit_live_control_update(handler=handler),
-            add="+",
+            on_focus_in=self.editor._begin_history_capture,
         )
         return combo
 

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from KrakenOS.UI.widgets import bind_combobox_commit, bind_entry_commit
+from tkinter import ttk
+
+from KrakenOS.UI.widgets import CommitEntry, bind_combobox_commit, bind_entry_commit
 
 
 class FakeWidget:
@@ -59,6 +61,12 @@ def main() -> int:
         ("commit", "event"),
         ("commit", "event"),
     ]
+
+    commit_entry = FakeWidget()
+    returned_commit_entry = CommitEntry.bind_commit(commit_entry, _commit, on_focus_in=_focus)
+    assert returned_commit_entry is commit_entry
+    assert _binding_sequences(commit_entry) == ["<FocusIn>", "<FocusOut>", "<Return>", "<KP_Enter>"]
+    assert issubclass(CommitEntry, ttk.Entry)
 
     print("Widget commit binding validation: PASS")
     return 0
