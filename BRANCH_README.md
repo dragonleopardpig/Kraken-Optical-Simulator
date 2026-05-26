@@ -1272,6 +1272,7 @@ Production refactor progress:
 | Layout polyline display mixin/service | Complete | `██████████ 100%` | `services/layout_polyline_display.py` now owns 2D CAD/STEP mesh loading for layout overlays, external camera and lens mechanical overlay polylines, row/stl/optical-solid projected outline generation, and layout-pick distance helpers. Dynamic CAD cache, STEP conversion, PyVista, and legacy display-helper lookups resolve through the editor module at runtime so existing validators keep their monkeypatch points while the display projection logic leaves the main editor coordinator. |
 | Paraxial/docs/focus tools mixin/service | Complete | `██████████ 100%` | `services/paraxial_tools.py` now owns paraxial cardinal calculations, 2F/object/image solve helpers, variable-thickness and folded-mirror solves, best-image focus search, formula/help docs launchers, and shared dialog-centering/popup cleanup utilities. System-build and row-spec signatures are still late-bound through `layout_editor.py` so multiprocessing/cache compatibility stays intact while solve orchestration leaves the main editor coordinator. |
 | Analysis reports mixin/service | Complete | `██████████ 100%` | `services/analysis_reports.py` now owns Ray Inspector collection wrappers, Branch Gaussian Q, path throughput, source illumination, detector aperture, path detector map/PSF/MTF/coherent/branch-field/diffraction analysis helpers, branch-tree records, and Non-Sequential Scene Graph dialog/export orchestration. Existing panel/service classes still own widgets and pure record assembly, while the editor coordinator keeps the same public method surface through the mixin. |
+| Open 3D inspector module | Complete | `██████████ 100%` | `KrakenOS/UI/open3d_inspector.py` now owns the embedded `Kraken3DInspector` Tk/VTK window, actor lifecycle, Open 3D panel wiring, camera controls, STEP/row carry interactions, face picking, rotation/placement handles, snapshots, live refresh hooks, and 3D scene refresh pass-throughs. `layout_editor.py` imports the inspector class instead of embedding the full window implementation, reducing the main file by more than eight thousand lines while keeping the existing `from KrakenOS.UI.layout_editor import Kraken3DInspector` compatibility path. |
 | `panels/` boundary for Open 3D controls | Complete | `██████████ 100%` | `MainWindowBuilder` owns the main Tk menu and window shell construction, `Open3DLiveControlsPanel` owns the left-docked Live Controls UI, `Open3DTopControlsPanel` owns the View, Scene, and Carry toolbar rows, and `MainSourceControlsPanel`, `MainFieldControlsPanel`, `MainTraceDisplayControlsPanel`, `MainToleranceReportDialogs`, `MainNonSequentialSceneGraphDialog`, `MainPathDetectorAnalysis`, `MainAnalysisToolbarPanel`/`MainInformationPanel`, `MainBranchGaussianQDialog`, `MainBranchThroughputReportDialog`, `MainRayTraceInspectorDialogs`, `MainDetectorApertureReportDialog`, `MainSourceIlluminationReportDialog`, `MainOptimizationPanel`, `MainParaxialAnalysisDialogs`, `MainGlassCatalogBrowserDialog`, `MainOpticalSolidDialogs`, `MainOpticalSolidFaceRolesDialog`, `MainPathComponentPlacementDialog`, `MainLensDrawingDialogs`, `MainAtmospherePanel`, `MainCoatingMaterialDialog`, `MainDiffuseScatterDialog`, `MainSurfaceShapeBuilderDialog`, `MainBeamSplitterDialog`, `MainErrorMapDialog`, `MainAdvancedSurfaceDialog`, `MainSurfaceSettingsDialogs`, `MainContextMenu`, `MainSceneElementDialogs`, `MainSceneSourceManagerDialog`, `MainStockLensImporterDialog`, and `OpticalStlPlacementDialog` own the main window shell, Source, Field, Trace/Display, tolerance report, Non-Sequential Scene Graph, path detector map/PSF/MTF/coherent/branch-field/diffraction analysis orchestration, analysis-toolbar, Information, Branch Gaussian Q report, Path Throughput report, Ray Inspector/Trace Path Inspector, Detector Aperture report, Source Illumination report, Optimization panel and bounds dialog, Paraxial Matrix/Gaussian analysis dialogs and paraxial solve confirmations, Glass Catalog Browser, optical CAD/STL diagnostics, numeric placement, face-role assignment, traced path component placement, Lens Drawing Surface Properties/export dialogs, Atmosphere, Coating/Material, Diffuse/BRDF, Surface Shape Builder, Beam Splitter, Error Map, Advanced Surface, Galvo overlay, Grating settings, main table context-menu, Detector, Scene Target, Path-Local Pose, Element Settings, Scene Source Manager, stock-lens importer, and visual CAD/STL placement preview surfaces without moving analysis math, branch Gaussian q report, path throughput report, ray/trace-path inspector, detector aperture report, source illumination report, tolerance report, non-sequential scene graph, optimization, paraxial matrix/Gaussian dialog, glass-catalog browser, optical-solid utility dialog, optical-solid face-role editor, path-component insertion, lens drawing dialog, coating, scatter, shape, splitter, error-map, advanced-surface, galvo, grating, detector, scene-target, path-pose, element, source-manager, stock-lens importer, CAD/STL placement preview, or menu action execution out of the editor model. Remaining UI reductions should move services/widgets rather than grow this panel slice. |
 | `widgets/` reusable Tk controls | Started | `█░░░░░░░░░ 10%` | `KrakenOS/UI/widgets/tooltips.py` now owns the reusable compact Tk tooltip used by toolbar and dialog controls. Validated entries, combobox commit helpers, projection selectors, menus, and table cell widgets still live mostly in `layout_editor.py`. |
 | Fast validation contract runner | Complete | `██████████ 100%` | `KrakenOS.UI.validate_fast_contracts` runs the lightweight no-display/no-CAD-fixture contracts first, including focused Open 3D sampling-stability checks. Display-backed CAD smoke tests remain explicit targeted commands for rendering, face-picking, and screenshot regressions. |
@@ -1304,14 +1305,15 @@ projected polyline display helpers now live in
 `services/layout_polyline_display.py`. Paraxial solve, folded-mirror solve,
 formula/docs launching, and best-image focus tools now live in
 `services/paraxial_tools.py`. Ray/report/scene-graph UI orchestration now lives
-in `services/analysis_reports.py`. Together these remove more than 15,200
+in `services/analysis_reports.py`. The embedded Open 3D inspector window now
+lives in `open3d_inspector.py`. Together these remove more than 23,400
 source lines of non-Tk CAD/STL, ray-envelope, STEP-export, surface-metrology
 parsing, optical-interaction metadata, source-launch modeling,
 tolerance-report logic, placement-command logic, geometric-analysis logic, and
-layout-projection CAD display/solve-tool/report-orchestration logic from the
-editor coordinator while keeping backward-compatible symbols available from
-`layout_editor.py` for existing validators and panels. The main editor
-coordinator is now 31,383 lines before
+layout-projection CAD display/solve-tool/report-orchestration/Open-3D-window
+logic from the editor coordinator while keeping backward-compatible symbols
+available from `layout_editor.py` for existing validators and panels. The main
+editor coordinator is now 23,129 lines before
 the next extraction slice.
 
 Earlier movement on 2026-05-25: the Open 3D service boundary reached 100% for
@@ -1634,14 +1636,14 @@ documentation tree remain separate on purpose.
 
 ## Next Pipeline Step
 
-Continue the production-readiness refactor by moving the remaining Open 3D STEP
-overlay carry/drop/promotion transitions behind service-owned state. The target
-is one state machine for transient STEP overlays and promoted optical solid rows,
-so stale actors, duplicate visible solids, and display-only solids cannot
-diverge from the traced physics state. The next validator should drive import,
-carry/drop, accept/promote, face assignment, reassignment, and Trace Ray through
-service-owned transition records rather than direct widget fields inside
-`Kraken3DInspector`.
+Continue the production-readiness refactor inside the extracted Open 3D module:
+move the remaining STEP overlay carry/drop/promotion transitions behind
+service-owned state. The target is one state machine for transient STEP overlays
+and promoted optical solid rows, so stale actors, duplicate visible solids, and
+display-only solids cannot diverge from the traced physics state. The next
+validator should drive import, carry/drop, accept/promote, face assignment,
+reassignment, and Trace Ray through service-owned transition records rather than
+direct widget fields inside `Kraken3DInspector`.
 
 Before that larger extraction resumes, run a focused Open 3D correction pass:
 
