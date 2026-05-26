@@ -238,6 +238,23 @@ def _numpy_mat_to_occ_gtrsf(mat_4x4):
     return trsf
 
 
+def _is_rigid_affine_matrix(mat_4x4, *, atol: float = 1e-6) -> bool:
+    m = np.asarray(mat_4x4, dtype=float)
+    if m.shape != (4, 4) or not np.all(np.isfinite(m)):
+        return False
+    if not np.allclose(m[3, :], np.array([0.0, 0.0, 0.0, 1.0], dtype=float), atol=atol):
+        return False
+    rotation = np.asarray(m[:3, :3], dtype=float)
+    try:
+        orthogonality = rotation.T @ rotation
+        determinant = float(np.linalg.det(rotation))
+    except Exception:
+        return False
+    if not np.allclose(orthogonality, np.eye(3, dtype=float), atol=atol):
+        return False
+    return abs(abs(determinant) - 1.0) <= 1e-5
+
+
 def _affine_from_point_sets(source_points: np.ndarray, target_points: np.ndarray, *, max_samples: int = 5000) -> np.ndarray | None:
     source = np.asarray(source_points, dtype=float)
     target = np.asarray(target_points, dtype=float)
@@ -283,12 +300,18 @@ def _read_step_shape(path: Path):
 
 
 def _shape_with_affine(shape, mat_4x4):
-    from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_GTransform
+    from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_GTransform, BRepBuilderAPI_Transform
 
-    gtrsf = _numpy_mat_to_occ_gtrsf(mat_4x4)
-    if gtrsf is None:
-        raise RuntimeError("Could not build OpenCascade affine transform")
-    transformed = BRepBuilderAPI_GTransform(shape, gtrsf, True)
+    if _is_rigid_affine_matrix(mat_4x4):
+        trsf = _numpy_mat_to_occ_trsf(mat_4x4)
+        if trsf is None:
+            raise RuntimeError("Could not build OpenCascade rigid transform")
+        transformed = BRepBuilderAPI_Transform(shape, trsf, True)
+    else:
+        gtrsf = _numpy_mat_to_occ_gtrsf(mat_4x4)
+        if gtrsf is None:
+            raise RuntimeError("Could not build OpenCascade affine transform")
+        transformed = BRepBuilderAPI_GTransform(shape, gtrsf, True)
     if not transformed.IsDone():
         raise RuntimeError("OpenCascade shape transform failed")
     result = transformed.Shape()

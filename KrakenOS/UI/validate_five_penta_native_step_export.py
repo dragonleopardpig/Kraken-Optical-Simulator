@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
 
@@ -57,6 +58,108 @@ def _mesh_with_affine_copy(mesh, matrix: np.ndarray):
     return transformed
 
 
+def _roundtrip_export_body_alignment(export_path: Path, target_meshes: list[dict[str, object]]) -> list[dict[str, object]]:
+    try:
+        import pyvista as pv
+        from OCC.Core.Bnd import Bnd_Box
+        from OCC.Core.BRepBndLib import brepbndlib
+        from OCC.Core.BRepMesh import BRepMesh_IncrementalMesh
+        from OCC.Core.STEPControl import STEPControl_Reader
+        from OCC.Core.StlAPI import StlAPI_Writer
+        from OCC.Core.TopAbs import TopAbs_SOLID
+        from OCC.Core.TopExp import TopExp_Explorer
+        from OCC.Core.TopoDS import topods
+    except Exception as exc:
+        return [{"error": f"roundtrip_unavailable: {exc}"}]
+
+    reader = STEPControl_Reader()
+    status = reader.ReadFile(str(export_path))
+    if int(status) != 1:
+        return [{"error": f"step_read_failed: status={status}"}]
+    reader.TransferRoots()
+    shape = reader.OneShape()
+    if shape.IsNull():
+        return [{"error": "step_read_failed: null_shape"}]
+
+    candidates: list[dict[str, object]] = []
+    explorer = TopExp_Explorer(shape, TopAbs_SOLID)
+    with TemporaryDirectory() as temp_dir:
+        temp_root = Path(temp_dir)
+        solid_index = 0
+        while explorer.More():
+            solid_index += 1
+            solid = topods.Solid(explorer.Current())
+            box = Bnd_Box()
+            brepbndlib.Add(solid, box)
+            xmin, ymin, zmin, xmax, ymax, zmax = box.Get()
+            span = np.asarray((xmax - xmin, ymax - ymin, zmax - zmin), dtype=float)
+            explorer.Next()
+            if float(np.min(span)) <= 5.0 or float(np.max(span)) <= 20.0:
+                continue
+            stl_path = temp_root / f"solid_{solid_index}.stl"
+            BRepMesh_IncrementalMesh(solid, 0.5, False, 0.5, True).Perform()
+            StlAPI_Writer().Write(solid, str(stl_path))
+            try:
+                mesh = pv.read(stl_path)
+            except Exception:
+                continue
+            candidates.append(
+                {
+                    "solid_index": int(solid_index),
+                    "span": [float(value) for value in span],
+                    "mesh": mesh,
+                }
+            )
+
+        if not candidates:
+            return [{"error": "no_roundtrip_body_candidates"}]
+
+        remaining = list(candidates)
+        alignment: list[dict[str, object]] = []
+        for target in target_meshes:
+            target_points = np.asarray(target["mesh"].points, dtype=float)
+            best_index = -1
+            best_stats: dict[str, float] | None = None
+            for candidate_index, candidate in enumerate(remaining):
+                stats = _nearest_distance_stats(
+                    np.asarray(candidate["mesh"].points, dtype=float),
+                    target_points,
+                )
+                if best_stats is None or (
+                    float(stats["p95"]),
+                    float(stats["mean"]),
+                    float(stats["max"]),
+                ) < (
+                    float(best_stats["p95"]),
+                    float(best_stats["mean"]),
+                    float(best_stats["max"]),
+                ):
+                    best_index = candidate_index
+                    best_stats = stats
+            if best_index < 0 or best_stats is None:
+                alignment.append(
+                    {
+                        "row_index": int(target["row_index"]),
+                        "name": str(target["name"]),
+                        "error": "no_matching_roundtrip_solid",
+                    }
+                )
+                continue
+            candidate = remaining.pop(best_index)
+            alignment.append(
+                {
+                    "row_index": int(target["row_index"]),
+                    "name": str(target["name"]),
+                    "solid_index": int(candidate["solid_index"]),
+                    "span": list(candidate["span"]),
+                    "max": float(best_stats["max"]),
+                    "p95": float(best_stats["p95"]),
+                    "mean": float(best_stats["mean"]),
+                }
+            )
+        return alignment
+
+
 def main() -> int:
     if not DEFAULT_LAYOUT_PATH.exists():
         print(f"missing saved five-penta layout: {DEFAULT_LAYOUT_PATH}")
@@ -69,6 +172,7 @@ def main() -> int:
         cad_shapes = app._collect_native_step_export_shapes(system)
         ray_polylines = app._step_export_ray_polylines(system)
         alignment: list[dict[str, object]] = []
+        runtime_target_meshes: list[dict[str, object]] = []
         try:
             import pyvista as pv
         except Exception:
@@ -115,6 +219,20 @@ def main() -> int:
                 )
                 stats.update({"row_index": row_index, "name": row.name})
                 alignment.append(stats)
+        if surfaces is not None and transforms is not None and pv is not None:
+            block_count = min(len(app.rows), getattr(surfaces, "n_blocks", 0), len(transforms))
+            for row_index in range(block_count):
+                row = app.rows[row_index]
+                source_path = app._resolve_row_saved_step_source_path(row)
+                if source_path is None:
+                    continue
+                runtime_target_meshes.append(
+                    {
+                        "row_index": int(row_index),
+                        "name": str(row.name),
+                        "mesh": _mesh_with_affine_copy(surfaces[row_index], transforms[row_index]),
+                    }
+                )
         native_row_export: list[dict[str, object]] = []
         if surfaces is not None and transforms is not None:
             block_count = min(len(app.rows), getattr(surfaces, "n_blocks", 0), len(transforms))
@@ -177,6 +295,7 @@ def main() -> int:
         )
         text = OUTPUT_PATH.read_text(encoding="utf-8", errors="ignore")
         topology = _topology_counts(OUTPUT_PATH)
+        roundtrip_alignment = _roundtrip_export_body_alignment(OUTPUT_PATH, runtime_target_meshes)
         report = {
             "layout": str(DEFAULT_LAYOUT_PATH),
             "output": str(OUTPUT_PATH),
@@ -190,6 +309,7 @@ def main() -> int:
             "topology": topology,
             "bytes": int(OUTPUT_PATH.stat().st_size if OUTPUT_PATH.exists() else 0),
             "alignment": alignment,
+            "roundtrip_alignment": roundtrip_alignment,
             "native_row_export": native_row_export,
             "debug_tail": list(getattr(app, "debug_messages", [])[-20:]),
         }
@@ -206,6 +326,11 @@ def main() -> int:
             (
                 "native cad alignment stayed on traced bodies",
                 bool(alignment) and all(float(item.get("p95", float("inf"))) <= MAX_ALIGNMENT_ERROR_MM for item in alignment),
+            ),
+            (
+                "serialized step bodies stayed on traced bodies",
+                bool(roundtrip_alignment)
+                and all(float(item.get("p95", float("inf"))) <= MAX_ALIGNMENT_ERROR_MM for item in roundtrip_alignment),
             ),
         ]
         failed = False
