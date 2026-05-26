@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Any
 
-from KrakenOS.UI.widgets import grid_labeled_commit_combobox, grid_labeled_commit_entry
+from KrakenOS.UI.widgets import grid_command_button, grid_labeled_commit_combobox, grid_labeled_commit_entry
 
 
 class MainSourceControlsPanel:
@@ -394,12 +394,15 @@ class MainSourceControlsPanel:
         )
         source_summary_label.grid(row=27, column=0, columnspan=2, sticky="ew", pady=(4, 0))
 
-        source_manager_button = ttk.Button(
+        source_manager_button = grid_command_button(
             parent,
+            28,
+            0,
             text="Scene Source Manager...",
             command=self.open_scene_source_manager,
+            columnspan=2,
+            pady=(8, 0),
         )
-        source_manager_button.grid(row=28, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
         for var in (
             self.source_model_var,

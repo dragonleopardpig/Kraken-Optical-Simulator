@@ -7,7 +7,11 @@ from collections.abc import Sequence
 from tkinter import ttk
 from typing import Any
 
-from KrakenOS.UI.widgets import grid_labeled_commit_combobox, grid_labeled_commit_entry
+from KrakenOS.UI.widgets import (
+    grid_commit_checkbutton,
+    grid_labeled_commit_combobox,
+    grid_labeled_commit_entry,
+)
 
 
 class MainTraceDisplayControlsPanel:
@@ -246,14 +250,17 @@ class MainTraceDisplayControlsPanel:
             combo_columnspan=2,
         )
 
-        nonseq_energy_check = ttk.Checkbutton(
+        nonseq_energy_check = grid_commit_checkbutton(
             parent,
+            14,
+            0,
             text="NS probabilistic coating split",
             variable=self.nonseq_energy_probability_var,
             command=self._mark_plot_update_pending,
+            on_press=self._begin_history_capture,
+            columnspan=2,
+            pady=(8, 0),
         )
-        nonseq_energy_check.grid(row=14, column=0, columnspan=2, sticky="w", pady=(8, 0))
-        nonseq_energy_check.bind("<ButtonPress-1>", self._begin_history_capture, add="+")
 
         self.wavefront_style_var = tk.StringVar(value=wavefront_style_default)
         self.wavefront_style_menu = grid_labeled_commit_combobox(
@@ -289,14 +296,17 @@ class MainTraceDisplayControlsPanel:
             combo_columnspan=2,
         )
 
-        clipped_check = ttk.Checkbutton(
+        clipped_check = grid_commit_checkbutton(
             parent,
+            19,
+            0,
             text="Show clipped rays",
             variable=self.show_clipped_rays_var,
             command=self._mark_plot_update_pending,
+            on_press=self._begin_history_capture,
+            columnspan=2,
+            pady=(8, 0),
         )
-        clipped_check.grid(row=19, column=0, columnspan=2, sticky="w", pady=(8, 0))
-        clipped_check.bind("<ButtonPress-1>", self._begin_history_capture, add="+")
 
         self.analysis_branch_filter_var = tk.StringVar(value=analysis_path_filter_default)
         self.analysis_branch_filter_menu = grid_labeled_commit_combobox(

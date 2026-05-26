@@ -4,6 +4,8 @@ from KrakenOS.UI.widgets.commit_bindings import bind_combobox_commit, bind_entry
 from KrakenOS.UI.widgets.commit_controls import (
     CommitCombobox,
     CommitEntry,
+    grid_command_button,
+    grid_commit_checkbutton,
     grid_labeled_commit_combobox,
     grid_labeled_commit_entry,
 )
@@ -15,6 +17,8 @@ __all__ = [
     "WidgetTooltip",
     "bind_combobox_commit",
     "bind_entry_commit",
+    "grid_command_button",
+    "grid_commit_checkbutton",
     "grid_labeled_commit_combobox",
     "grid_labeled_commit_entry",
 ]

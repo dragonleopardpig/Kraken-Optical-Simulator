@@ -197,3 +197,77 @@ def grid_labeled_commit_combobox(
         padx=combo_padding,
     )
     return combo
+
+
+def grid_commit_checkbutton(
+    parent: tk.Widget,
+    row: int,
+    column: int,
+    text: str,
+    variable: tk.Variable,
+    *,
+    command: TkEventCallback | None = None,
+    on_press: TkEventCallback | None = None,
+    columnspan: int = 1,
+    sticky: str = "w",
+    padx: tuple[int, int] | None = None,
+    pady: tuple[int, int] = (0, 0),
+    width: int | None = None,
+    check_kwargs: dict[str, Any] | None = None,
+) -> ttk.Checkbutton:
+    """Grid a checkbutton with the standard history-capture press binding."""
+    left_pad = (8, 0) if column else (0, 0)
+    check_padding = left_pad if padx is None else padx
+    options = dict(check_kwargs or {})
+    if width is not None:
+        options["width"] = width
+    checkbutton = ttk.Checkbutton(
+        parent,
+        text=text,
+        variable=variable,
+        command=command,
+        **options,
+    )
+    checkbutton.grid(
+        row=row,
+        column=column,
+        columnspan=columnspan,
+        sticky=sticky,
+        padx=check_padding,
+        pady=pady,
+    )
+    if on_press is not None:
+        checkbutton.bind("<ButtonPress-1>", on_press, add="+")
+    return checkbutton
+
+
+def grid_command_button(
+    parent: tk.Widget,
+    row: int,
+    column: int,
+    text: str,
+    *,
+    command: Any,
+    columnspan: int = 1,
+    sticky: str = "ew",
+    padx: tuple[int, int] | None = None,
+    pady: tuple[int, int] = (0, 0),
+    width: int | None = None,
+    button_kwargs: dict[str, Any] | None = None,
+) -> ttk.Button:
+    """Grid a command button using the compact control-panel layout."""
+    left_pad = (8, 0) if column else (0, 0)
+    button_padding = left_pad if padx is None else padx
+    options = dict(button_kwargs or {})
+    if width is not None:
+        options["width"] = width
+    button = ttk.Button(parent, text=text, command=command, **options)
+    button.grid(
+        row=row,
+        column=column,
+        columnspan=columnspan,
+        sticky=sticky,
+        padx=button_padding,
+        pady=pady,
+    )
+    return button

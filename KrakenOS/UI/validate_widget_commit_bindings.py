@@ -10,6 +10,8 @@ from KrakenOS.UI.widgets import (
     CommitEntry,
     bind_combobox_commit,
     bind_entry_commit,
+    grid_command_button,
+    grid_commit_checkbutton,
     grid_labeled_commit_combobox,
     grid_labeled_commit_entry,
 )
@@ -107,6 +109,22 @@ def main() -> int:
     assert "CommitCombobox" in combo_helper_source
     assert "label_widget" in combo_helper_source
     assert "combo.grid" in combo_helper_source
+
+    check_helper_signature = inspect.signature(grid_commit_checkbutton)
+    assert "variable" in check_helper_signature.parameters
+    assert "on_press" in check_helper_signature.parameters
+    assert "columnspan" in check_helper_signature.parameters
+    check_helper_source = inspect.getsource(grid_commit_checkbutton)
+    assert "ttk.Checkbutton" in check_helper_source
+    assert '"<ButtonPress-1>"' in check_helper_source
+    assert "checkbutton.grid" in check_helper_source
+
+    button_helper_signature = inspect.signature(grid_command_button)
+    assert "command" in button_helper_signature.parameters
+    assert "columnspan" in button_helper_signature.parameters
+    button_helper_source = inspect.getsource(grid_command_button)
+    assert "ttk.Button" in button_helper_source
+    assert "button.grid" in button_helper_source
 
     print("Widget commit binding validation: PASS")
     return 0
