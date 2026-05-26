@@ -74,11 +74,17 @@ def _direct_widget_count(source: str, container_name: str) -> int:
 def _contains_widget_text(source: str, widget: str, container_name: str, label: str) -> bool:
     double_quoted = f'ttk.{widget}({container_name}, text="{label}"'
     single_quoted = f"ttk.{widget}({container_name}, text='{label}'"
-    return double_quoted in source or single_quoted in source
+    helper_quoted = f'pack_command_button({container_name}, "{label}"'
+    return double_quoted in source or single_quoted in source or helper_quoted in source
 
 
 def _contains_menu_label(source: str, label: str) -> bool:
-    return f'add_command(label="{label}"' in source or f"add_command(label='{label}'" in source
+    return (
+        f'add_command(label="{label}"' in source
+        or f"add_command(label='{label}'" in source
+        or f'MenuCommand("{label}"' in source
+        or f"MenuCommand('{label}'" in source
+    )
 
 
 def main() -> int:
@@ -161,7 +167,7 @@ def main() -> int:
         ),
         (
             "Open 3D view row gates passive ray picking behind an explicit toggle",
-            'text="Pick rays"' in toolbar_source
+            '"Pick rays"' in toolbar_source
             and "ray_pick_enabled_var" in toolbar_source
             and "_on_ray_pick_changed" in toolbar_source,
             "ray clicks should not open Ray Inspector unless the user enables the Pick rays toggle",
@@ -198,7 +204,8 @@ def main() -> int:
         checks.append(
             (
                 f"Open 3D scene toolbar exposes {menu_label} menu",
-                f'text="{menu_label}"' in toolbar_source,
+                f'text="{menu_label}"' in toolbar_source
+                or f'pack_menubutton(scene_toolbar, "{menu_label}"' in toolbar_source,
                 f"missing {menu_label} Menubutton",
             )
         )

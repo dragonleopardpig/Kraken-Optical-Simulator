@@ -8,8 +8,13 @@ from tkinter import ttk
 from KrakenOS.UI.widgets import (
     CommitCombobox,
     CommitEntry,
+    MenuCheckbutton,
+    MenuCommand,
+    add_menu_checkbuttons,
+    add_menu_commands,
     bind_combobox_commit,
     bind_entry_commit,
+    create_popup_menu,
     grid_command_button,
     grid_commit_checkbutton,
     grid_labeled_commit_combobox,
@@ -18,6 +23,7 @@ from KrakenOS.UI.widgets import (
     pack_commit_checkbutton,
     pack_commit_combobox,
     pack_commit_radiobutton,
+    pack_menubutton,
     place_commit_cell_entry,
 )
 
@@ -167,6 +173,24 @@ def main() -> int:
     assert "CommitEntry" in cell_entry_source
     assert "editor.place" in cell_entry_source
     assert '"<Escape>"' in cell_entry_source
+
+    menu_command_signature = inspect.signature(MenuCommand)
+    assert "label" in menu_command_signature.parameters
+    assert "command" in menu_command_signature.parameters
+    assert "state" in menu_command_signature.parameters
+    menu_check_signature = inspect.signature(MenuCheckbutton)
+    assert "variable" in menu_check_signature.parameters
+    menu_source = inspect.getsource(add_menu_commands)
+    assert "menu.add_command" in menu_source
+    assert "menu.add_separator" in menu_source
+    check_menu_source = inspect.getsource(add_menu_checkbuttons)
+    assert "menu.add_checkbutton" in check_menu_source
+    create_menu_source = inspect.getsource(create_popup_menu)
+    assert "tk.Menu" in create_menu_source
+    menu_button_source = inspect.getsource(pack_menubutton)
+    assert "ttk.Menubutton" in menu_button_source
+    assert 'button["menu"]' in menu_button_source
+    assert "button.pack" in menu_button_source
 
     print("Widget commit binding validation: PASS")
     return 0
