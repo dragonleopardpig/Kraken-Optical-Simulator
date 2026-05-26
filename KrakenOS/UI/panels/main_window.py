@@ -9,6 +9,14 @@ from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
+from KrakenOS.UI.widgets import (
+    grid_command_button,
+    pack_command_button,
+    pack_commit_checkbutton,
+    pack_commit_combobox,
+    pack_commit_radiobutton,
+)
+
 
 def _layout_module():
     from KrakenOS.UI import layout_editor as layout_editor_module
@@ -256,12 +264,15 @@ class MainWindowBuilder:
         self.body_frame = body
 
         self.left_restore_frame = ttk.Frame(body, padding=(2, 8, 2, 8))
-        ttk.Button(
+        grid_command_button(
             self.left_restore_frame,
+            0,
+            0,
             text="▶",
             width=2,
             command=self.toggle_left_sidebar,
-        ).grid(row=0, column=0, sticky="n")
+            sticky="n",
+        )
         self.left_restore_frame.grid(row=0, column=0, sticky="ns")
         self.left_restore_frame.grid_remove()
 
@@ -270,12 +281,15 @@ class MainWindowBuilder:
         self.main_pane = main
 
         self.right_restore_frame = ttk.Frame(body, padding=(2, 8, 2, 8))
-        ttk.Button(
+        grid_command_button(
             self.right_restore_frame,
+            0,
+            0,
             text="◀",
             width=2,
             command=self.toggle_right_sidebar,
-        ).grid(row=0, column=0, sticky="n")
+            sticky="n",
+        )
         self.right_restore_frame.grid(row=0, column=2, sticky="ns")
         self.right_restore_frame.grid_remove()
 
@@ -289,12 +303,15 @@ class MainWindowBuilder:
         control_header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
         control_header.columnconfigure(0, weight=1)
         ttk.Label(control_header, text="Controls").grid(row=0, column=0, sticky="w")
-        ttk.Button(
+        grid_command_button(
             control_header,
+            0,
+            1,
             text="◀",
             width=2,
             command=self.toggle_left_sidebar,
-        ).grid(row=0, column=1, sticky="e")
+            sticky="e",
+        )
 
         self.control_canvas = tk.Canvas(control_host, highlightthickness=0, borderwidth=0)
         self.control_canvas.grid(row=1, column=0, sticky="nsew")
@@ -357,12 +374,15 @@ class MainWindowBuilder:
         right_header.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         right_header.columnconfigure(0, weight=1)
         ttk.Label(right_header, text="Panels").grid(row=0, column=0, sticky="w")
-        ttk.Button(
+        grid_command_button(
             right_header,
+            0,
+            1,
             text="▶",
             width=2,
             command=self.toggle_right_sidebar,
-        ).grid(row=0, column=1, sticky="e")
+            sticky="e",
+        )
 
         right_panel = ttk.Panedwindow(right_host, orient=tk.VERTICAL)
         right_panel.grid(row=1, column=0, sticky="nsew")
@@ -396,26 +416,26 @@ class MainWindowBuilder:
 
         table_toolbar = ttk.Frame(table_frame)
         table_toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        ttk.Button(table_toolbar, text="Add surface", command=self.add_surface).pack(side="left")
-        ttk.Button(table_toolbar, text="Delete", command=self.delete_selected).pack(side="left", padx=(6, 0))
-        ttk.Button(table_toolbar, text="Duplicate", command=self.duplicate_selected).pack(side="left", padx=(6, 0))
-        ttk.Button(table_toolbar, text="Advanced...", command=self.open_advanced_surface_editor).pack(side="left", padx=(6, 0))
-        ttk.Button(table_toolbar, text="Shape...", command=self.open_surface_shape_builder).pack(side="left", padx=(6, 0))
-        ttk.Button(table_toolbar, text="Coating...", command=self.open_coating_material_editor).pack(side="left", padx=(6, 0))
-        ttk.Button(table_toolbar, text="Error Map...", command=self.open_error_map_editor).pack(side="left", padx=(6, 0))
-        ttk.Button(table_toolbar, text="Flip", command=self.flip_selected).pack(side="left", padx=(6, 0))
-        ttk.Button(table_toolbar, text="▲", width=3, command=self.move_up).pack(side="left", padx=(10, 0))
-        ttk.Button(table_toolbar, text="▼", width=3, command=self.move_down).pack(side="left", padx=(4, 0))
-        arm_view_menu = ttk.Combobox(
+        pack_command_button(table_toolbar, "Add surface", command=self.add_surface)
+        pack_command_button(table_toolbar, "Delete", command=self.delete_selected, padx=(6, 0))
+        pack_command_button(table_toolbar, "Duplicate", command=self.duplicate_selected, padx=(6, 0))
+        pack_command_button(table_toolbar, "Advanced...", command=self.open_advanced_surface_editor, padx=(6, 0))
+        pack_command_button(table_toolbar, "Shape...", command=self.open_surface_shape_builder, padx=(6, 0))
+        pack_command_button(table_toolbar, "Coating...", command=self.open_coating_material_editor, padx=(6, 0))
+        pack_command_button(table_toolbar, "Error Map...", command=self.open_error_map_editor, padx=(6, 0))
+        pack_command_button(table_toolbar, "Flip", command=self.flip_selected, padx=(6, 0))
+        pack_command_button(table_toolbar, "▲", command=self.move_up, width=3, padx=(10, 0))
+        pack_command_button(table_toolbar, "▼", command=self.move_down, width=3, padx=(4, 0))
+        arm_view_menu = pack_commit_combobox(
             table_toolbar,
             textvariable=self.arm_view_var,
             values=(ARM_VIEW_DEFAULT,),
-            state="readonly",
+            on_commit=self.set_arm_view,
             width=22,
+            side="right",
+            padx=(10, 0),
         )
         self.arm_view_menu = arm_view_menu
-        arm_view_menu.pack(side="right", padx=(10, 0))
-        arm_view_menu.bind("<<ComboboxSelected>>", self.set_arm_view)
         ttk.Label(table_toolbar, text="Path view").pack(side="right", padx=(12, 4))
 
         self.table = ttk.Treeview(
@@ -511,35 +531,31 @@ class MainWindowBuilder:
         plot_toolbar_analysis.grid(row=1, column=0, sticky="w", pady=(4, 0))
         self.external_camera_var = tk.StringVar(value="None")
         self.camera_overlay_mode_var = tk.StringVar(value="Off")
-        open_3d_button = ttk.Button(plot_toolbar_main, text="Open 3D", command=self.open_3d_view)
-        open_3d_button.pack(side="left")
+        open_3d_button = pack_command_button(plot_toolbar_main, "Open 3D", command=self.open_3d_view)
         self._add_widget_tooltip(open_3d_button, "Open 3D optical layout view")
         self.layout_preview_mode_var = tk.StringVar(value=self.layout_preview_mode)
         preview_buttons = (
             ("2D", "none", "2D optical layout view"),
         )
         for text, mode, tooltip in preview_buttons:
-            preview_button = ttk.Radiobutton(
+            preview_button = pack_commit_radiobutton(
                 plot_toolbar_main,
                 text=text,
-                style="Toolbutton",
                 variable=self.layout_preview_mode_var,
                 value=mode,
                 command=lambda m=mode: self.set_layout_preview_mode(m),
+                padx=(6, 0),
             )
-            preview_button.pack(side="left", padx=(6, 0))
             self._add_widget_tooltip(preview_button, tooltip)
         ttk.Label(plot_toolbar_main, text="Plane").pack(side="left", padx=(10, 2))
-        self.display_orientation_menu = ttk.Combobox(
+        self.display_orientation_menu = pack_commit_combobox(
             plot_toolbar_main,
             textvariable=self.display_orientation_var,
-            state="readonly",
             width=5,
             values=["YZ", "XZ", "XY"],
+            on_commit=self._on_display_plane_changed,
+            on_focus_in=self._begin_history_capture,
         )
-        self.display_orientation_menu.pack(side="left")
-        self.display_orientation_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.display_orientation_menu.bind("<<ComboboxSelected>>", self._on_display_plane_changed)
         self._add_widget_tooltip(
             self.display_orientation_menu,
             "Choose the primary 2D projection plane for the editable layout plot",
@@ -559,65 +575,60 @@ class MainWindowBuilder:
         )
         self.projection_display_mode_buttons = []
         for index, (text, mode, tooltip) in enumerate(projection_buttons):
-            button = ttk.Radiobutton(
+            button = pack_commit_radiobutton(
                 plot_toolbar_main,
                 text=text,
-                style="Toolbutton",
                 variable=self.projection_display_mode_var,
                 value=mode,
                 command=self._on_projection_display_mode_changed,
+                on_focus_in=self._begin_history_capture,
+                padx=((6 if index == 0 else 4), 0),
             )
-            button.pack(side="left", padx=((6 if index == 0 else 4), 0))
-            button.bind("<FocusIn>", self._begin_history_capture, add="+")
             self._add_widget_tooltip(button, tooltip)
             self.projection_display_mode_buttons.append(button)
         self._main_analysis_toolbar_panel().build(plot_toolbar_analysis)
-        cardinal_button = ttk.Checkbutton(
+        cardinal_button = pack_commit_checkbutton(
             plot_toolbar_main,
             text="Show PP / EP / XP",
             variable=self.show_cardinals_var,
             command=self._on_toggle_cardinal_markers,
+            padx=(12, 0),
         )
-        cardinal_button.pack(side="left", padx=(12, 0))
         self._add_widget_tooltip(cardinal_button, "Show principal plane, entrance pupil, and exit pupil markers")
-        label_button = ttk.Checkbutton(
+        label_button = pack_commit_checkbutton(
             plot_toolbar_main,
             text="Show labels",
             variable=self.show_path_labels_var,
             command=self._on_toggle_path_labels,
+            padx=(6, 0),
         )
-        label_button.pack(side="left", padx=(6, 0))
         self._add_widget_tooltip(
             label_button,
             "Show or hide path, source, and surface labels in the 2D layout plot",
         )
         ttk.Label(plot_toolbar_main, text="Rays").pack(side="left", padx=(8, 2))
-        ray_display_menu = ttk.Combobox(
+        ray_display_menu = pack_commit_combobox(
             plot_toolbar_main,
             textvariable=self.ray_display_mode_var,
-            state="readonly",
             width=18,
             values=RAY_DISPLAY_VALUES,
+            on_commit=self._on_ray_display_mode_changed,
         )
-        ray_display_menu.pack(side="left")
-        ray_display_menu.bind("<<ComboboxSelected>>", self._on_ray_display_mode_changed)
         self._add_widget_tooltip(
             ray_display_menu,
             "Choose whether the 2D plot shows every traced ray, detector-hit rays, or representative non-primary beam-splitter paths",
         )
-        physical_distance_button = ttk.Checkbutton(
+        physical_distance_button = pack_commit_checkbutton(
             plot_toolbar_main,
             text="Physical Distance",
             variable=self.show_physical_distances_var,
             command=self._on_toggle_physical_distances,
+            padx=(6, 0),
         )
-        physical_distance_button.pack(side="left", padx=(6, 0))
         self._add_widget_tooltip(physical_distance_button, "Annotate physical distances in the 2D layout and Open 3D views")
-        trace_button = ttk.Button(plot_toolbar_main, text="Trace", command=self.open_ray_inspector)
-        trace_button.pack(side="right", padx=(0, 6))
+        trace_button = pack_command_button(plot_toolbar_main, "Trace", command=self.open_ray_inspector, side="right", padx=(0, 6))
         self._add_widget_tooltip(trace_button, "Inspect ray / surface physics")
-        update_button = ttk.Button(plot_toolbar_main, text="Update", command=self._manual_update_plot)
-        update_button.pack(side="right")
+        update_button = pack_command_button(plot_toolbar_main, "Update", command=self._manual_update_plot, side="right")
         self._add_widget_tooltip(update_button, "Trace rays and refresh the plot")
 
         self.figure = Figure(figsize=(7, 5), dpi=100)
@@ -636,8 +647,17 @@ class MainWindowBuilder:
         self._bind_text_copy_shortcuts(self.debug_text)
         debug_actions = ttk.Frame(debug_frame)
         debug_actions.grid(row=1, column=0, sticky="w", pady=(6, 0))
-        ttk.Button(debug_actions, text="Copy Selected", command=lambda: self._copy_selection_from_text_widget(self.debug_text)).pack(side="left")
-        ttk.Button(debug_actions, text="Copy All", command=lambda: self._copy_all_from_text_widget(self.debug_text)).pack(side="left", padx=(6, 0))
+        pack_command_button(
+            debug_actions,
+            "Copy Selected",
+            command=lambda: self._copy_selection_from_text_widget(self.debug_text),
+        )
+        pack_command_button(
+            debug_actions,
+            "Copy All",
+            command=lambda: self._copy_all_from_text_widget(self.debug_text),
+            padx=(6, 0),
+        )
 
         status_bar = ttk.Frame(progress_frame)
         status_bar.grid(row=0, column=0, sticky="ew", pady=(0, 6))

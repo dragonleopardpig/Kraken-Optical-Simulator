@@ -14,6 +14,10 @@ from KrakenOS.UI.widgets import (
     grid_commit_checkbutton,
     grid_labeled_commit_combobox,
     grid_labeled_commit_entry,
+    pack_command_button,
+    pack_commit_checkbutton,
+    pack_commit_combobox,
+    pack_commit_radiobutton,
 )
 
 
@@ -125,6 +129,34 @@ def main() -> int:
     button_helper_source = inspect.getsource(grid_command_button)
     assert "ttk.Button" in button_helper_source
     assert "button.grid" in button_helper_source
+
+    pack_button_signature = inspect.signature(pack_command_button)
+    assert "command" in pack_button_signature.parameters
+    pack_button_source = inspect.getsource(pack_command_button)
+    assert "ttk.Button" in pack_button_source
+    assert "button.pack" in pack_button_source
+
+    pack_check_signature = inspect.signature(pack_commit_checkbutton)
+    assert "variable" in pack_check_signature.parameters
+    assert "on_press" in pack_check_signature.parameters
+    pack_check_source = inspect.getsource(pack_commit_checkbutton)
+    assert "ttk.Checkbutton" in pack_check_source
+    assert "checkbutton.pack" in pack_check_source
+    assert '"<ButtonPress-1>"' in pack_check_source
+
+    pack_combo_signature = inspect.signature(pack_commit_combobox)
+    assert "textvariable" in pack_combo_signature.parameters
+    assert "on_commit" in pack_combo_signature.parameters
+    pack_combo_source = inspect.getsource(pack_commit_combobox)
+    assert "CommitCombobox" in pack_combo_source
+    assert "combo.pack" in pack_combo_source
+
+    pack_radio_signature = inspect.signature(pack_commit_radiobutton)
+    assert "variable" in pack_radio_signature.parameters
+    assert "value" in pack_radio_signature.parameters
+    pack_radio_source = inspect.getsource(pack_commit_radiobutton)
+    assert "ttk.Radiobutton" in pack_radio_source
+    assert "radio.pack" in pack_radio_source
 
     print("Widget commit binding validation: PASS")
     return 0

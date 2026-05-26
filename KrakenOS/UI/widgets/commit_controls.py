@@ -271,3 +271,112 @@ def grid_command_button(
         pady=pady,
     )
     return button
+
+
+def pack_command_button(
+    parent: tk.Widget,
+    text: str,
+    *,
+    command: Any,
+    side: str = "left",
+    padx: tuple[int, int] = (0, 0),
+    pady: tuple[int, int] = (0, 0),
+    width: int | None = None,
+    button_kwargs: dict[str, Any] | None = None,
+) -> ttk.Button:
+    """Pack a command button using compact toolbar defaults."""
+    options = dict(button_kwargs or {})
+    if width is not None:
+        options["width"] = width
+    button = ttk.Button(parent, text=text, command=command, **options)
+    button.pack(side=side, padx=padx, pady=pady)
+    return button
+
+
+def pack_commit_checkbutton(
+    parent: tk.Widget,
+    text: str,
+    variable: tk.Variable,
+    *,
+    command: TkEventCallback | None = None,
+    on_press: TkEventCallback | None = None,
+    side: str = "left",
+    padx: tuple[int, int] = (0, 0),
+    pady: tuple[int, int] = (0, 0),
+    check_kwargs: dict[str, Any] | None = None,
+) -> ttk.Checkbutton:
+    """Pack a checkbutton with the optional history-capture press binding."""
+    checkbutton = ttk.Checkbutton(
+        parent,
+        text=text,
+        variable=variable,
+        command=command,
+        **(check_kwargs or {}),
+    )
+    checkbutton.pack(side=side, padx=padx, pady=pady)
+    if on_press is not None:
+        checkbutton.bind("<ButtonPress-1>", on_press, add="+")
+    return checkbutton
+
+
+def pack_commit_combobox(
+    parent: tk.Widget,
+    textvariable: tk.Variable,
+    *,
+    values: Any = (),
+    on_commit: TkEventCallback,
+    on_focus_in: TkEventCallback | None = None,
+    include_focus_out: bool = False,
+    width: int = 10,
+    state: str = "readonly",
+    side: str = "left",
+    padx: tuple[int, int] = (0, 0),
+    pady: tuple[int, int] = (0, 0),
+    combo_kwargs: dict[str, Any] | None = None,
+) -> CommitCombobox:
+    """Pack a CommitCombobox using compact toolbar defaults."""
+    combo = CommitCombobox(
+        parent,
+        textvariable=textvariable,
+        state=state,
+        width=width,
+        values=values,
+        on_commit=on_commit,
+        on_focus_in=on_focus_in,
+        include_focus_out=include_focus_out,
+        **(combo_kwargs or {}),
+    )
+    combo.pack(side=side, padx=padx, pady=pady)
+    return combo
+
+
+def pack_commit_radiobutton(
+    parent: tk.Widget,
+    text: str,
+    variable: tk.Variable,
+    value: Any,
+    *,
+    command: Any,
+    on_focus_in: TkEventCallback | None = None,
+    side: str = "left",
+    padx: tuple[int, int] = (0, 0),
+    pady: tuple[int, int] = (0, 0),
+    style: str | None = "Toolbutton",
+    radio_kwargs: dict[str, Any] | None = None,
+) -> ttk.Radiobutton:
+    """Pack a radiobutton with the optional standard focus capture."""
+    options = dict(radio_kwargs or {})
+    if style is not None:
+        options["style"] = style
+    radio = ttk.Radiobutton(
+        parent,
+        text=text,
+        variable=variable,
+        value=value,
+        command=command,
+        **options,
+    )
+    radio.pack(side=side, padx=padx, pady=pady)
+    if on_focus_in is not None:
+        radio.bind("<FocusIn>", on_focus_in, add="+")
+    return radio
