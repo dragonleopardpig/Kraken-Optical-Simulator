@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Any
 
-from KrakenOS.UI.widgets import grid_labeled_commit_entry
+from KrakenOS.UI.widgets import grid_labeled_commit_combobox, grid_labeled_commit_entry
 
 
 class MainSourceControlsPanel:
@@ -77,33 +77,33 @@ class MainSourceControlsPanel:
         for column in range(2):
             parent.columnconfigure(column, weight=1)
 
-        self.source_model_label = ttk.Label(parent, text="Source model")
-        self.source_model_label.grid(row=0, column=0, sticky="w", pady=(0, 2))
         self.source_model_var = tk.StringVar(value=source_model_default)
-        self.source_model_menu = ttk.Combobox(
+        self.source_model_menu = grid_labeled_commit_combobox(
             parent,
-            textvariable=self.source_model_var,
-            state="readonly",
-            width=16,
+            0,
+            0,
+            "Source model",
+            self.source_model_var,
             values=source_model_values,
-        )
-        self.source_model_menu.grid(row=1, column=0, sticky="ew", pady=(0, 8))
-        self.source_model_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.source_model_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
-
-        self.pupil_pattern_label = ttk.Label(parent, text="Pupil pattern")
-        self.pupil_pattern_label.grid(row=0, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
-        self.pupil_pattern_var = tk.StringVar(value=pupil_pattern_default)
-        self.pupil_pattern_menu = ttk.Combobox(
-            parent,
-            textvariable=self.pupil_pattern_var,
-            state="readonly",
+            on_commit=self._on_source_model_changed,
+            on_focus_in=self._begin_history_capture,
             width=16,
-            values=pupil_pattern_values,
         )
-        self.pupil_pattern_menu.grid(row=1, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
-        self.pupil_pattern_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.pupil_pattern_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
+        self.source_model_label = self.source_model_menu.label_widget
+
+        self.pupil_pattern_var = tk.StringVar(value=pupil_pattern_default)
+        self.pupil_pattern_menu = grid_labeled_commit_combobox(
+            parent,
+            0,
+            1,
+            "Pupil pattern",
+            self.pupil_pattern_var,
+            values=pupil_pattern_values,
+            on_commit=self._on_source_model_changed,
+            on_focus_in=self._begin_history_capture,
+            width=16,
+        )
+        self.pupil_pattern_label = self.pupil_pattern_menu.label_widget
 
         self.source_radius_var = tk.StringVar(value="5.0")
         source_radius_entry = grid_labeled_commit_entry(
@@ -133,18 +133,20 @@ class MainSourceControlsPanel:
             "Angular half-angle for physical cone sources and non-sequential source-cone previews.",
         )
 
-        ttk.Label(parent, text="GB input mode").grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 2))
         self.gaussian_input_mode_var = tk.StringVar(value=gaussian_input_mode_default)
-        gaussian_input_mode_menu = ttk.Combobox(
+        gaussian_input_mode_menu = grid_labeled_commit_combobox(
             parent,
-            textvariable=self.gaussian_input_mode_var,
-            state="readonly",
-            width=16,
+            4,
+            0,
+            "GB input mode",
+            self.gaussian_input_mode_var,
             values=gaussian_input_mode_values,
+            on_commit=self._on_source_model_changed,
+            on_focus_in=self._begin_history_capture,
+            width=16,
+            label_columnspan=2,
+            combo_columnspan=2,
         )
-        gaussian_input_mode_menu.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        gaussian_input_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        gaussian_input_mode_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
 
         self.gaussian_waist_radius_var = tk.StringVar(value="0.5")
         gaussian_waist_entry = grid_labeled_commit_entry(
@@ -210,18 +212,18 @@ class MainSourceControlsPanel:
             width=12,
         )
 
-        ttk.Label(parent, text="GB waist side").grid(row=10, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.gaussian_waist_side_var = tk.StringVar(value=gaussian_waist_side_default)
-        gaussian_waist_side_menu = ttk.Combobox(
+        gaussian_waist_side_menu = grid_labeled_commit_combobox(
             parent,
-            textvariable=self.gaussian_waist_side_var,
-            state="readonly",
-            width=16,
+            10,
+            1,
+            "GB waist side",
+            self.gaussian_waist_side_var,
             values=gaussian_waist_side_values,
+            on_commit=self._on_source_model_changed,
+            on_focus_in=self._begin_history_capture,
+            width=16,
         )
-        gaussian_waist_side_menu.grid(row=11, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
-        gaussian_waist_side_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        gaussian_waist_side_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
 
         self.pupil_rad_var = tk.StringVar(value="0.0")
         pupil_rad_entry = grid_labeled_commit_entry(
@@ -343,31 +345,35 @@ class MainSourceControlsPanel:
             width=12,
         )
 
-        ttk.Label(parent, text="Direction preset").grid(row=22, column=0, columnspan=2, sticky="w", pady=(0, 2))
         self.source_direction_preset_var = tk.StringVar(value="Horizontal +Z (right)")
-        source_direction_preset_menu = ttk.Combobox(
+        source_direction_preset_menu = grid_labeled_commit_combobox(
             parent,
-            textvariable=self.source_direction_preset_var,
-            state="readonly",
-            width=16,
+            22,
+            0,
+            "Direction preset",
+            self.source_direction_preset_var,
             values=source_direction_preset_values,
-        )
-        source_direction_preset_menu.grid(row=23, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        source_direction_preset_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        source_direction_preset_menu.bind("<<ComboboxSelected>>", self._on_source_direction_preset_changed)
-
-        ttk.Label(parent, text="SourceRnd angular weight").grid(row=24, column=0, columnspan=2, sticky="w", pady=(0, 2))
-        self.source_angular_weight_var = tk.StringVar(value=source_angular_weight_default)
-        source_angular_weight_menu = ttk.Combobox(
-            parent,
-            textvariable=self.source_angular_weight_var,
-            state="readonly",
+            on_commit=self._on_source_direction_preset_changed,
+            on_focus_in=self._begin_history_capture,
             width=16,
-            values=source_angular_weight_values,
+            label_columnspan=2,
+            combo_columnspan=2,
         )
-        source_angular_weight_menu.grid(row=25, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        source_angular_weight_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        source_angular_weight_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
+
+        self.source_angular_weight_var = tk.StringVar(value=source_angular_weight_default)
+        source_angular_weight_menu = grid_labeled_commit_combobox(
+            parent,
+            24,
+            0,
+            "SourceRnd angular weight",
+            self.source_angular_weight_var,
+            values=source_angular_weight_values,
+            on_commit=self._on_source_model_changed,
+            on_focus_in=self._begin_history_capture,
+            width=16,
+            label_columnspan=2,
+            combo_columnspan=2,
+        )
 
         source_physical_note = ttk.Label(
             parent,

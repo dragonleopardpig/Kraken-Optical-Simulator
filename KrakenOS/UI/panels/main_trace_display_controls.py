@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from tkinter import ttk
 from typing import Any
 
-from KrakenOS.UI.widgets import grid_labeled_commit_entry
+from KrakenOS.UI.widgets import grid_labeled_commit_combobox, grid_labeled_commit_entry
 
 
 class MainTraceDisplayControlsPanel:
@@ -81,18 +81,18 @@ class MainTraceDisplayControlsPanel:
         for column in range(2):
             parent.columnconfigure(column, weight=1)
 
-        ttk.Label(parent, text="Object mode").grid(row=0, column=0, sticky="w", pady=(0, 2))
         self.object_mode_var = tk.StringVar(value="Infinity")
-        self.object_mode_menu = ttk.Combobox(
+        self.object_mode_menu = grid_labeled_commit_combobox(
             parent,
-            textvariable=self.object_mode_var,
-            state="readonly",
-            width=12,
+            0,
+            0,
+            "Object mode",
+            self.object_mode_var,
             values=["Finite", "Infinity"],
+            on_commit=self._on_object_mode_changed,
+            on_focus_in=self._begin_history_capture,
+            width=12,
         )
-        self.object_mode_menu.grid(row=1, column=0, sticky="ew", pady=(0, 8))
-        self.object_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.object_mode_menu.bind("<<ComboboxSelected>>", self._on_object_mode_changed)
 
         self.wavelength_var = tk.StringVar(value="0.55")
         wavelength_entry = grid_labeled_commit_entry(
@@ -130,31 +130,32 @@ class MainTraceDisplayControlsPanel:
             width=12,
         )
 
-        ttk.Label(parent, text="Analysis stop surface").grid(row=4, column=0, sticky="w", pady=(0, 2))
         self.analysis_surface_var = tk.StringVar(value="Auto")
-        self.analysis_surface_menu = ttk.Combobox(
+        self.analysis_surface_menu = grid_labeled_commit_combobox(
             parent,
-            textvariable=self.analysis_surface_var,
-            state="readonly",
-            width=12,
+            4,
+            0,
+            "Analysis stop surface",
+            self.analysis_surface_var,
             values=["Auto"],
-        )
-        self.analysis_surface_menu.grid(row=5, column=0, sticky="ew", pady=(0, 8))
-        self.analysis_surface_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.analysis_surface_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
-
-        ttk.Label(parent, text="Aperture type").grid(row=6, column=0, sticky="w", pady=(0, 2))
-        self.aperture_type_var = tk.StringVar(value="EPD")
-        self.aperture_type_menu = ttk.Combobox(
-            parent,
-            textvariable=self.aperture_type_var,
-            state="readonly",
+            on_commit=self._mark_plot_update_pending,
+            on_focus_in=self._begin_history_capture,
             width=12,
-            values=["STOP", "EPD", "FNO"],
         )
-        self.aperture_type_menu.grid(row=7, column=0, sticky="ew")
-        self.aperture_type_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.aperture_type_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
+
+        self.aperture_type_var = tk.StringVar(value="EPD")
+        self.aperture_type_menu = grid_labeled_commit_combobox(
+            parent,
+            6,
+            0,
+            "Aperture type",
+            self.aperture_type_var,
+            values=["STOP", "EPD", "FNO"],
+            on_commit=self._mark_plot_update_pending,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+            combo_pady=(0, 0),
+        )
 
         self.aperture_value_var = tk.StringVar(value="4.0")
         aperture_value_entry = grid_labeled_commit_entry(
@@ -169,44 +170,50 @@ class MainTraceDisplayControlsPanel:
             entry_pady=(0, 0),
         )
 
-        ttk.Label(parent, text="Spot view").grid(row=8, column=0, sticky="w", pady=(8, 2))
         self.spot_view_mode_var = tk.StringVar(value="Grid")
-        self.spot_view_mode_menu = ttk.Combobox(
+        self.spot_view_mode_menu = grid_labeled_commit_combobox(
             parent,
-            textvariable=self.spot_view_mode_var,
-            state="readonly",
-            width=12,
+            8,
+            0,
+            "Spot view",
+            self.spot_view_mode_var,
             values=["Grid", "Absolute", "Centroid"],
+            on_commit=self._mark_plot_update_pending,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+            label_pady=(8, 2),
+            combo_pady=(0, 0),
         )
-        self.spot_view_mode_menu.grid(row=9, column=0, sticky="ew")
-        self.spot_view_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.spot_view_mode_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
-        ttk.Label(parent, text="Scene trace").grid(row=8, column=1, sticky="w", pady=(8, 2), padx=(8, 0))
         self.trace_mode_var = tk.StringVar(value=self.trace_mode)
-        self.trace_mode_menu = ttk.Combobox(
+        self.trace_mode_menu = grid_labeled_commit_combobox(
             parent,
-            textvariable=self.trace_mode_var,
-            state="readonly",
-            width=12,
+            8,
+            1,
+            "Scene trace",
+            self.trace_mode_var,
             values=["Auto", "Non-Sequential Preview", "Sequential", "Folded Preview"],
-        )
-        self.trace_mode_menu.grid(row=9, column=1, sticky="ew", padx=(8, 0))
-        self.trace_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.trace_mode_menu.bind("<<ComboboxSelected>>", self._on_trace_mode_changed)
-
-        ttk.Label(parent, text="NS target").grid(row=10, column=0, sticky="w", pady=(8, 2))
-        self.nonseq_target_surface_var = tk.StringVar(value="Auto")
-        self.nonseq_target_surface_menu = ttk.Combobox(
-            parent,
-            textvariable=self.nonseq_target_surface_var,
-            state="readonly",
+            on_commit=self._on_trace_mode_changed,
+            on_focus_in=self._begin_history_capture,
             width=12,
-            values=["Auto"],
+            label_pady=(8, 2),
+            combo_pady=(0, 0),
         )
-        self.nonseq_target_surface_menu.grid(row=11, column=0, sticky="ew")
-        self.nonseq_target_surface_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.nonseq_target_surface_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
+
+        self.nonseq_target_surface_var = tk.StringVar(value="Auto")
+        self.nonseq_target_surface_menu = grid_labeled_commit_combobox(
+            parent,
+            10,
+            0,
+            "NS target",
+            self.nonseq_target_surface_var,
+            values=["Auto"],
+            on_commit=self._mark_plot_update_pending,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+            label_pady=(8, 2),
+            combo_pady=(0, 0),
+        )
 
         self.nonseq_ns_limit_var = tk.StringVar(value="200")
         nonseq_limit_entry = grid_labeled_commit_entry(
@@ -222,18 +229,22 @@ class MainTraceDisplayControlsPanel:
             entry_pady=(0, 0),
         )
 
-        ttk.Label(parent, text="Folded reach").grid(row=12, column=0, columnspan=2, sticky="w", pady=(8, 2))
         self.folded_detector_policy_var = tk.StringVar(value=folded_detector_policy_default)
-        self.folded_detector_policy_menu = ttk.Combobox(
+        self.folded_detector_policy_menu = grid_labeled_commit_combobox(
             parent,
-            textvariable=self.folded_detector_policy_var,
-            state="readonly",
-            width=18,
+            12,
+            0,
+            "Folded reach",
+            self.folded_detector_policy_var,
             values=folded_detector_policy_values,
+            on_commit=self._mark_plot_update_pending,
+            on_focus_in=self._begin_history_capture,
+            width=18,
+            label_pady=(8, 2),
+            combo_pady=(0, 0),
+            label_columnspan=2,
+            combo_columnspan=2,
         )
-        self.folded_detector_policy_menu.grid(row=13, column=0, columnspan=2, sticky="ew")
-        self.folded_detector_policy_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.folded_detector_policy_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
         nonseq_energy_check = ttk.Checkbutton(
             parent,
@@ -244,31 +255,39 @@ class MainTraceDisplayControlsPanel:
         nonseq_energy_check.grid(row=14, column=0, columnspan=2, sticky="w", pady=(8, 0))
         nonseq_energy_check.bind("<ButtonPress-1>", self._begin_history_capture, add="+")
 
-        ttk.Label(parent, text="Wavefront style").grid(row=15, column=0, columnspan=2, sticky="w", pady=(8, 2))
         self.wavefront_style_var = tk.StringVar(value=wavefront_style_default)
-        self.wavefront_style_menu = ttk.Combobox(
+        self.wavefront_style_menu = grid_labeled_commit_combobox(
             parent,
-            textvariable=self.wavefront_style_var,
-            state="readonly",
-            width=18,
+            15,
+            0,
+            "Wavefront style",
+            self.wavefront_style_var,
             values=wavefront_style_values,
-        )
-        self.wavefront_style_menu.grid(row=16, column=0, columnspan=2, sticky="ew")
-        self.wavefront_style_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.wavefront_style_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
-
-        ttk.Label(parent, text="Tolerance compare").grid(row=17, column=0, columnspan=2, sticky="w", pady=(8, 2))
-        self.tolerance_compare_view_var = tk.StringVar(value=tolerance_compare_view_default)
-        self.tolerance_compare_view_menu = ttk.Combobox(
-            parent,
-            textvariable=self.tolerance_compare_view_var,
-            state="readonly",
+            on_commit=self._mark_plot_update_pending,
+            on_focus_in=self._begin_history_capture,
             width=18,
-            values=tolerance_compare_view_values,
+            label_pady=(8, 2),
+            combo_pady=(0, 0),
+            label_columnspan=2,
+            combo_columnspan=2,
         )
-        self.tolerance_compare_view_menu.grid(row=18, column=0, columnspan=2, sticky="ew")
-        self.tolerance_compare_view_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.tolerance_compare_view_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
+
+        self.tolerance_compare_view_var = tk.StringVar(value=tolerance_compare_view_default)
+        self.tolerance_compare_view_menu = grid_labeled_commit_combobox(
+            parent,
+            17,
+            0,
+            "Tolerance compare",
+            self.tolerance_compare_view_var,
+            values=tolerance_compare_view_values,
+            on_commit=self._mark_plot_update_pending,
+            on_focus_in=self._begin_history_capture,
+            width=18,
+            label_pady=(8, 2),
+            combo_pady=(0, 0),
+            label_columnspan=2,
+            combo_columnspan=2,
+        )
 
         clipped_check = ttk.Checkbutton(
             parent,
@@ -279,18 +298,22 @@ class MainTraceDisplayControlsPanel:
         clipped_check.grid(row=19, column=0, columnspan=2, sticky="w", pady=(8, 0))
         clipped_check.bind("<ButtonPress-1>", self._begin_history_capture, add="+")
 
-        ttk.Label(parent, text="Analysis path").grid(row=20, column=0, columnspan=2, sticky="w", pady=(8, 2))
         self.analysis_branch_filter_var = tk.StringVar(value=analysis_path_filter_default)
-        self.analysis_branch_filter_menu = ttk.Combobox(
+        self.analysis_branch_filter_menu = grid_labeled_commit_combobox(
             parent,
-            textvariable=self.analysis_branch_filter_var,
-            state="readonly",
-            width=18,
+            20,
+            0,
+            "Analysis path",
+            self.analysis_branch_filter_var,
             values=[analysis_path_filter_default],
+            on_commit=self._mark_plot_update_pending,
+            on_focus_in=self._begin_history_capture,
+            width=18,
+            label_pady=(8, 2),
+            combo_pady=(0, 0),
+            label_columnspan=2,
+            combo_columnspan=2,
         )
-        self.analysis_branch_filter_menu.grid(row=21, column=0, columnspan=2, sticky="ew")
-        self.analysis_branch_filter_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.analysis_branch_filter_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
         self.detector_bins_var = tk.StringVar(value=detector_bins_default)
         detector_bins_entry = grid_labeled_commit_entry(
@@ -307,18 +330,22 @@ class MainTraceDisplayControlsPanel:
         )
         detector_bins_hint = ttk.Label(parent, text="Auto or 4-512")
         detector_bins_hint.grid(row=23, column=1, sticky="w", padx=(8, 0))
-        ttk.Label(parent, text="Coherent sum").grid(row=24, column=0, columnspan=2, sticky="w", pady=(8, 2))
         self.coherent_sum_mode_var = tk.StringVar(value=coherent_sum_mode_default)
-        self.coherent_sum_mode_menu = ttk.Combobox(
+        self.coherent_sum_mode_menu = grid_labeled_commit_combobox(
             parent,
-            textvariable=self.coherent_sum_mode_var,
-            state="readonly",
-            width=18,
+            24,
+            0,
+            "Coherent sum",
+            self.coherent_sum_mode_var,
             values=coherent_sum_mode_values,
+            on_commit=self._mark_plot_update_pending,
+            on_focus_in=self._begin_history_capture,
+            width=18,
+            label_pady=(8, 2),
+            combo_pady=(0, 0),
+            label_columnspan=2,
+            combo_columnspan=2,
         )
-        self.coherent_sum_mode_menu.grid(row=25, column=0, columnspan=2, sticky="ew")
-        self.coherent_sum_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
-        self.coherent_sum_mode_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
         self.branch_field_propagation_mm_var = tk.StringVar(value=branch_field_propagation_mm_default)
         branch_field_propagation_entry = grid_labeled_commit_entry(
