@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import tkinter as tk
 
+from KrakenOS.UI.widgets import bind_entry_commit
+
 
 _PROTECTED_GLOBALS = {
     "LayoutShellControlsMixin",
@@ -690,10 +692,11 @@ class LayoutShellControlsMixin:
         self._main_information_panel().build(parent)
 
     def _bind_deferred_refresh(self, widget: tk.Widget) -> None:
-        widget.bind("<FocusIn>", self._begin_history_capture, add="+")
-        widget.bind("<FocusOut>", self._mark_plot_update_pending, add="+")
-        widget.bind("<Return>", self._mark_plot_update_pending, add="+")
-        widget.bind("<KP_Enter>", self._mark_plot_update_pending, add="+")
+        bind_entry_commit(
+            widget,
+            self._mark_plot_update_pending,
+            on_focus_in=self._begin_history_capture,
+        )
 
     def _bind_deferred_manual_update(self, widget: tk.Widget, *, sync_fields: bool = False) -> None:
         def _on_commit(_event=None):
@@ -703,10 +706,7 @@ class LayoutShellControlsMixin:
                 self._sync_left_mode_controls()
             self._mark_plot_update_pending()
 
-        widget.bind("<FocusIn>", self._begin_history_capture, add="+")
-        widget.bind("<FocusOut>", _on_commit, add="+")
-        widget.bind("<Return>", _on_commit, add="+")
-        widget.bind("<KP_Enter>", _on_commit, add="+")
+        bind_entry_commit(widget, _on_commit, on_focus_in=self._begin_history_capture)
 
     def _invalidate_preview_scene_trace(self, reason: str = "") -> None:
         self._preview_scene_trace_dirty = True
@@ -1383,4 +1383,3 @@ class LayoutShellControlsMixin:
         self.refresh_plot()
         self._update_analysis_progress("Rendering", 2, 2)
         self._finish_analysis_progress("Display update", success=True)
-

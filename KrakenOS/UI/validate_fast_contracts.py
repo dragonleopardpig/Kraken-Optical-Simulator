@@ -66,6 +66,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Toolbar grouping and camera/control layout contract.",
     ),
     ValidationTarget(
+        "widget-commit-bindings",
+        "KrakenOS.UI.validate_widget_commit_bindings",
+        reason="Reusable Tk entry/combobox commit binding contracts without opening a display.",
+    ),
+    ValidationTarget(
         "open3d-axis-guides",
         "KrakenOS.UI.validate_open3d_optical_axis_guides",
         reason="Centered sequential scenes keep one global optical axis; off-axis scenes keep traced guides.",
