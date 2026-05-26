@@ -66,6 +66,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Toolbar grouping and camera/control layout contract.",
     ),
     ValidationTarget(
+        "open3d-axis-guides",
+        "KrakenOS.UI.validate_open3d_optical_axis_guides",
+        reason="Centered sequential scenes keep one global optical axis; off-axis scenes keep traced guides.",
+    ),
+    ValidationTarget(
         "step-carry-lightweight",
         "KrakenOS.UI.validate_step_carry_lightweight",
         reason="No-rebuild STEP carry persistence path.",

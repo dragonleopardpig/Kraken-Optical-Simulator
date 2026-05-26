@@ -279,6 +279,8 @@ def scene_bundle_for_projection_axis_fields(bundle: object, orientation: str) ->
     selected = _select_paths_near_axis_plane(paths, axis, kind="direction")
     if not selected:
         selected = _select_paths_near_axis_plane(paths, axis, kind="position")
+    if selected and not bool(getattr(bundle, "has_off_axis", False)):
+        selected = _select_representative_axis_slice_paths(selected, axis)
     if not selected or len(selected) == len(paths):
         return bundle
     selected_ray_indices = {int(getattr(path, "ray_index", -1)) for path in selected}
@@ -288,6 +290,98 @@ def scene_bundle_for_projection_axis_fields(bundle: object, orientation: str) ->
         if int(getattr(event, "ray_index", -1)) in selected_ray_indices
     ]
     return replace(bundle, ray_paths=selected, ray_events=ray_events)
+
+
+def _path_launch_plane_coordinates(path: object, axis: int) -> tuple[float, float] | None:
+    try:
+        source = np.asarray(getattr(path, "source_position", np.full(3, np.nan)), dtype=float).reshape(-1)
+    except Exception:
+        source = np.full(3, np.nan)
+    if source.size >= 3 and np.all(np.isfinite(source[:3])):
+        anchor = source[:3]
+    else:
+        points = np.asarray(getattr(path, "points_world", []), dtype=float)
+        if points.ndim != 2 or points.shape[0] < 1 or points.shape[1] < 3:
+            return None
+        anchor = np.asarray(points[0, :3], dtype=float)
+        if not np.all(np.isfinite(anchor)):
+            return None
+    along_axis = 1 if int(axis) == 0 else 0
+    return float(anchor[along_axis]), float(anchor[int(axis)])
+
+
+def _representative_axis_slice_target_count(group_size: int) -> int:
+    size = max(1, int(group_size))
+    if size <= 9:
+        return size
+    return min(size, max(9, 2 * int(np.ceil(np.sqrt(size))) + 1))
+
+
+def _select_representative_axis_slice_paths(paths: list[object], axis: int) -> list[object]:
+    """Keep an ordered, near-plane subset for readable YZ/XZ axis-field layouts.
+
+    The 3-D world-envelope trace remains unchanged. This only chooses a
+    representative meridional-looking subset from the traced family for the
+    2-D axis-field display of centered sequential systems.
+    """
+    grouped: dict[tuple[int, str], list[tuple[int, object, float, float]]] = {}
+    for ordinal, path in enumerate(paths):
+        coordinates = _path_launch_plane_coordinates(path, axis)
+        if coordinates is None:
+            continue
+        along_value, perpendicular_value = coordinates
+        try:
+            field_index = int(getattr(path, "field_index", 0))
+        except Exception:
+            field_index = 0
+        source_id = str(getattr(path, "source_id", "") or "")
+        grouped.setdefault((field_index, source_id), []).append(
+            (ordinal, path, float(along_value), abs(float(perpendicular_value)))
+        )
+    if not grouped:
+        return paths
+
+    selected_ordinals: set[int] = set()
+    for items in grouped.values():
+        if len(items) <= 2:
+            selected_ordinals.update(ordinal for ordinal, _path, _along, _perp in items)
+            continue
+        target_count = _representative_axis_slice_target_count(len(items))
+        if len(items) <= target_count:
+            selected_ordinals.update(ordinal for ordinal, _path, _along, _perp in items)
+            continue
+        along_values = np.asarray([item[2] for item in items], dtype=float)
+        lower = float(np.min(along_values))
+        upper = float(np.max(along_values))
+        if not np.isfinite(lower) or not np.isfinite(upper):
+            selected_ordinals.update(ordinal for ordinal, _path, _along, _perp in items[:target_count])
+            continue
+        if abs(upper - lower) <= 1e-9:
+            ranked = sorted(items, key=lambda item: (item[3], abs(item[2]), item[0]))
+            selected_ordinals.update(ordinal for ordinal, _path, _along, _perp in ranked[:target_count])
+            continue
+        targets = np.linspace(lower, upper, target_count)
+        remaining = list(items)
+        chosen: list[tuple[int, object, float, float]] = []
+        for target in targets:
+            if not remaining:
+                break
+            best = min(
+                remaining,
+                key=lambda item: (
+                    abs(item[2] - float(target)),
+                    item[3],
+                    abs(item[2]),
+                    item[0],
+                ),
+            )
+            chosen.append(best)
+            remaining.remove(best)
+        selected_ordinals.update(ordinal for ordinal, _path, _along, _perp in chosen)
+
+    if not selected_ordinals or len(selected_ordinals) >= len(paths):
+        return paths
+    return [path for ordinal, path in enumerate(paths) if ordinal in selected_ordinals]
 
 
 def _ray_path_slice_distance(path: object, axis: int) -> float | None:

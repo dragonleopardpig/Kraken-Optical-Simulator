@@ -4637,6 +4637,11 @@ class Kraken3DInspector(tk.Toplevel):
                 "points": np.asarray(((0.0, 0.0, z0), (0.0, 0.0, z1)), dtype=float),
             }
         ]
+        allow_traced_axis_guides = bool(getattr(scene_bundle, "has_off_axis", False)) or bool(
+            list(getattr(scene_bundle, "optical_volumes", []) or [])
+        ) or bool(list(getattr(scene_bundle, "boundary_faces", []) or []))
+        if not allow_traced_axis_guides:
+            return records
         paths = [
             path
             for path in list(getattr(scene_bundle, "ray_paths", []) or [])

@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from KrakenOS.UI.layout_plot_controller import (
+    _select_representative_axis_slice_paths,
     active_plot_modes,
     analysis_mode_label,
     arm_ray_label_plan,
@@ -315,6 +316,36 @@ def main() -> None:
     _require(
         [ray.ray_index for ray in xy_axis_fields.rays] == [10, 11, 12, 13],
         "XY world-envelope projection should keep the full 3D footprint",
+    )
+    representative_candidates = [
+        RayPath3D(
+            ray_index=index,
+            field_index=0,
+            source_position=np.asarray([x_value, y_value, 0.0], dtype=float),
+            points_world=np.asarray([[x_value, y_value, 0.0], [x_value, y_value + 0.1, 10.0]], dtype=float),
+        )
+        for index, (x_value, y_value) in enumerate(
+            zip(
+                np.linspace(-4.0, 4.0, 21),
+                np.linspace(-10.0, 10.0, 21),
+                strict=True,
+            ),
+            start=100,
+        )
+    ]
+    representative_yz = _select_representative_axis_slice_paths(representative_candidates, 0)
+    representative_y = [float(np.asarray(path.source_position, dtype=float)[1]) for path in representative_yz]
+    _require(
+        len(representative_yz) == 11,
+        f"YZ representative axis-field subset should reduce a 21-ray field family to 11 readable rays, got {len(representative_yz)}",
+    )
+    _require(
+        representative_y == sorted(representative_y),
+        f"YZ representative axis-field rays should remain ordered across the pupil, got {representative_y}",
+    )
+    _require(
+        abs(representative_y[0] + 10.0) <= 1e-9 and abs(representative_y[-1] - 10.0) <= 1e-9,
+        f"YZ representative axis-field subset should keep the pupil extremes, got {representative_y[:1]} .. {representative_y[-1:]}",
     )
     nonseq_folded_override = SceneBundle(
         ray_paths=[
