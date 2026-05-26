@@ -7,6 +7,8 @@ from collections.abc import Sequence
 from tkinter import ttk
 from typing import Any
 
+from KrakenOS.UI.widgets import grid_labeled_commit_entry
+
 
 class MainTraceDisplayControlsPanel:
     """Build trace/display controls while keeping state on the owning editor."""
@@ -57,6 +59,10 @@ class MainTraceDisplayControlsPanel:
             return
         setattr(self.editor, name, value)
 
+    def _commit_trace_controls(self, _event=None) -> None:
+        self._sync_left_mode_controls()
+        self._mark_plot_update_pending()
+
     def build(self, parent: tk.Widget) -> None:
         cfg = self._config
         source_model_default = cfg["source_model_default"]
@@ -88,20 +94,41 @@ class MainTraceDisplayControlsPanel:
         self.object_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.object_mode_menu.bind("<<ComboboxSelected>>", self._on_object_mode_changed)
 
-        ttk.Label(parent, text="Wavelength [um]").grid(row=0, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.wavelength_var = tk.StringVar(value="0.55")
-        wavelength_entry = ttk.Entry(parent, textvariable=self.wavelength_var, width=12)
-        wavelength_entry.grid(row=1, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        wavelength_entry = grid_labeled_commit_entry(
+            parent,
+            0,
+            1,
+            "Wavelength [um]",
+            self.wavelength_var,
+            on_commit=self._commit_trace_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
-        ttk.Label(parent, text="Ray fan count").grid(row=2, column=0, sticky="w", pady=(0, 2))
         self.ray_count_var = tk.StringVar(value="31")
-        ray_count_entry = ttk.Entry(parent, textvariable=self.ray_count_var, width=12)
-        ray_count_entry.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+        ray_count_entry = grid_labeled_commit_entry(
+            parent,
+            2,
+            0,
+            "Ray fan count",
+            self.ray_count_var,
+            on_commit=self._commit_trace_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
-        ttk.Label(parent, text="Pupil factor").grid(row=2, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.ray_height_factor_var = tk.StringVar(value="0.8")
-        ray_height_entry = ttk.Entry(parent, textvariable=self.ray_height_factor_var, width=12)
-        ray_height_entry.grid(row=3, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        ray_height_entry = grid_labeled_commit_entry(
+            parent,
+            2,
+            1,
+            "Pupil factor",
+            self.ray_height_factor_var,
+            on_commit=self._commit_trace_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
         ttk.Label(parent, text="Analysis stop surface").grid(row=4, column=0, sticky="w", pady=(0, 2))
         self.analysis_surface_var = tk.StringVar(value="Auto")
@@ -129,10 +156,18 @@ class MainTraceDisplayControlsPanel:
         self.aperture_type_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.aperture_type_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
-        ttk.Label(parent, text="Aperture value").grid(row=6, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.aperture_value_var = tk.StringVar(value="4.0")
-        aperture_value_entry = ttk.Entry(parent, textvariable=self.aperture_value_var, width=12)
-        aperture_value_entry.grid(row=7, column=1, sticky="ew", padx=(8, 0))
+        aperture_value_entry = grid_labeled_commit_entry(
+            parent,
+            6,
+            1,
+            "Aperture value",
+            self.aperture_value_var,
+            on_commit=self._commit_trace_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+            entry_pady=(0, 0),
+        )
 
         ttk.Label(parent, text="Spot view").grid(row=8, column=0, sticky="w", pady=(8, 2))
         self.spot_view_mode_var = tk.StringVar(value="Grid")
@@ -173,10 +208,19 @@ class MainTraceDisplayControlsPanel:
         self.nonseq_target_surface_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.nonseq_target_surface_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
-        ttk.Label(parent, text="NS hit limit").grid(row=10, column=1, sticky="w", pady=(8, 2), padx=(8, 0))
         self.nonseq_ns_limit_var = tk.StringVar(value="200")
-        nonseq_limit_entry = ttk.Entry(parent, textvariable=self.nonseq_ns_limit_var, width=12)
-        nonseq_limit_entry.grid(row=11, column=1, sticky="ew", padx=(8, 0))
+        nonseq_limit_entry = grid_labeled_commit_entry(
+            parent,
+            10,
+            1,
+            "NS hit limit",
+            self.nonseq_ns_limit_var,
+            on_commit=self._commit_trace_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+            label_pady=(8, 2),
+            entry_pady=(0, 0),
+        )
 
         ttk.Label(parent, text="Folded reach").grid(row=12, column=0, columnspan=2, sticky="w", pady=(8, 2))
         self.folded_detector_policy_var = tk.StringVar(value=folded_detector_policy_default)
@@ -248,10 +292,19 @@ class MainTraceDisplayControlsPanel:
         self.analysis_branch_filter_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.analysis_branch_filter_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
-        ttk.Label(parent, text="Detector bins").grid(row=22, column=0, sticky="w", pady=(8, 2))
         self.detector_bins_var = tk.StringVar(value=detector_bins_default)
-        detector_bins_entry = ttk.Entry(parent, textvariable=self.detector_bins_var, width=12)
-        detector_bins_entry.grid(row=23, column=0, sticky="ew")
+        detector_bins_entry = grid_labeled_commit_entry(
+            parent,
+            22,
+            0,
+            "Detector bins",
+            self.detector_bins_var,
+            on_commit=self._commit_trace_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+            label_pady=(8, 2),
+            entry_pady=(0, 0),
+        )
         detector_bins_hint = ttk.Label(parent, text="Auto or 4-512")
         detector_bins_hint.grid(row=23, column=1, sticky="w", padx=(8, 0))
         ttk.Label(parent, text="Coherent sum").grid(row=24, column=0, columnspan=2, sticky="w", pady=(8, 2))
@@ -267,27 +320,25 @@ class MainTraceDisplayControlsPanel:
         self.coherent_sum_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.coherent_sum_mode_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
 
-        ttk.Label(parent, text="BField z [mm]").grid(row=26, column=0, sticky="w", pady=(8, 2))
         self.branch_field_propagation_mm_var = tk.StringVar(value=branch_field_propagation_mm_default)
-        branch_field_propagation_entry = ttk.Entry(
+        branch_field_propagation_entry = grid_labeled_commit_entry(
             parent,
-            textvariable=self.branch_field_propagation_mm_var,
+            26,
+            0,
+            "BField z [mm]",
+            self.branch_field_propagation_mm_var,
+            on_commit=self._commit_trace_controls,
+            on_focus_in=self._begin_history_capture,
             width=12,
+            label_pady=(8, 2),
+            entry_pady=(0, 0),
         )
-        branch_field_propagation_entry.grid(row=27, column=0, sticky="ew")
         branch_field_propagation_hint = ttk.Label(parent, text="0 = detector plane")
         branch_field_propagation_hint.grid(row=27, column=1, sticky="w", padx=(8, 0))
 
         self.show_cardinals_var = tk.BooleanVar(value=True)
         self.show_physical_distances_var = tk.BooleanVar(value=False)
 
-        self._bind_deferred_manual_update(wavelength_entry)
-        self._bind_deferred_manual_update(ray_count_entry)
-        self._bind_deferred_manual_update(ray_height_entry)
-        self._bind_deferred_manual_update(aperture_value_entry)
-        self._bind_deferred_manual_update(nonseq_limit_entry)
-        self._bind_deferred_manual_update(detector_bins_entry)
-        self._bind_deferred_manual_update(branch_field_propagation_entry)
         self._register_left_mode_control(
             "object_mode_var",
             self.object_mode_menu,
