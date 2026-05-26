@@ -6,6 +6,8 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Any
 
+from KrakenOS.UI.widgets import grid_labeled_commit_entry
+
 
 class MainSourceControlsPanel:
     """Build source controls while keeping state on the owning editor."""
@@ -54,6 +56,10 @@ class MainSourceControlsPanel:
             return
         setattr(self.editor, name, value)
 
+    def _commit_source_controls(self, _event=None) -> None:
+        self._sync_left_mode_controls()
+        self._mark_plot_update_pending()
+
     def build(self, parent: tk.Widget) -> None:
         cfg = self._config
         source_model_default = cfg["source_model_default"]
@@ -99,15 +105,29 @@ class MainSourceControlsPanel:
         self.pupil_pattern_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         self.pupil_pattern_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
 
-        ttk.Label(parent, text="Source radius [mm]").grid(row=2, column=0, sticky="w", pady=(0, 2))
         self.source_radius_var = tk.StringVar(value="5.0")
-        source_radius_entry = ttk.Entry(parent, textvariable=self.source_radius_var, width=12)
-        source_radius_entry.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+        source_radius_entry = grid_labeled_commit_entry(
+            parent,
+            2,
+            0,
+            "Source radius [mm]",
+            self.source_radius_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
-        ttk.Label(parent, text="Cone half-angle [deg]").grid(row=2, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.source_cone_angle_var = tk.StringVar(value="0.0")
-        source_cone_angle_entry = ttk.Entry(parent, textvariable=self.source_cone_angle_var, width=12)
-        source_cone_angle_entry.grid(row=3, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        source_cone_angle_entry = grid_labeled_commit_entry(
+            parent,
+            2,
+            1,
+            "Cone half-angle [deg]",
+            self.source_cone_angle_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
         self._add_widget_tooltip(
             source_cone_angle_entry,
             "Angular half-angle for physical cone sources and non-sequential source-cone previews.",
@@ -126,34 +146,69 @@ class MainSourceControlsPanel:
         gaussian_input_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         gaussian_input_mode_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
 
-        ttk.Label(parent, text="GB waist [mm]").grid(row=6, column=0, sticky="w", pady=(0, 2))
         self.gaussian_waist_radius_var = tk.StringVar(value="0.5")
-        gaussian_waist_entry = ttk.Entry(parent, textvariable=self.gaussian_waist_radius_var, width=12)
-        gaussian_waist_entry.grid(row=7, column=0, sticky="ew", pady=(0, 8))
+        gaussian_waist_entry = grid_labeled_commit_entry(
+            parent,
+            6,
+            0,
+            "GB waist [mm]",
+            self.gaussian_waist_radius_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
-        ttk.Label(parent, text="GB waist offset [mm]").grid(row=6, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.gaussian_waist_offset_var = tk.StringVar(value="0.0")
-        gaussian_offset_entry = ttk.Entry(parent, textvariable=self.gaussian_waist_offset_var, width=12)
-        gaussian_offset_entry.grid(row=7, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        gaussian_offset_entry = grid_labeled_commit_entry(
+            parent,
+            6,
+            1,
+            "GB waist offset [mm]",
+            self.gaussian_waist_offset_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
-        ttk.Label(parent, text="GB diameter [mm]").grid(row=8, column=0, sticky="w", pady=(0, 2))
         self.gaussian_beam_diameter_var = tk.StringVar(value="1.0")
-        gaussian_diameter_entry = ttk.Entry(parent, textvariable=self.gaussian_beam_diameter_var, width=12)
-        gaussian_diameter_entry.grid(row=9, column=0, sticky="ew", pady=(0, 8))
+        gaussian_diameter_entry = grid_labeled_commit_entry(
+            parent,
+            8,
+            0,
+            "GB diameter [mm]",
+            self.gaussian_beam_diameter_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
-        ttk.Label(parent, text="GB full div [mrad]").grid(row=8, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.gaussian_full_divergence_var = tk.StringVar(value="1.0")
-        gaussian_divergence_entry = ttk.Entry(parent, textvariable=self.gaussian_full_divergence_var, width=12)
-        gaussian_divergence_entry.grid(row=9, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        gaussian_divergence_entry = grid_labeled_commit_entry(
+            parent,
+            8,
+            1,
+            "GB full div [mrad]",
+            self.gaussian_full_divergence_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
         self._add_widget_tooltip(
             gaussian_divergence_entry,
             "Gaussian laser datasheet divergence: full far-field angle in milliradians.",
         )
 
-        ttk.Label(parent, text="GB M2").grid(row=10, column=0, sticky="w", pady=(0, 2))
         self.gaussian_m2_var = tk.StringVar(value="1.0")
-        gaussian_m2_entry = ttk.Entry(parent, textvariable=self.gaussian_m2_var, width=12)
-        gaussian_m2_entry.grid(row=11, column=0, sticky="ew", pady=(0, 8))
+        gaussian_m2_entry = grid_labeled_commit_entry(
+            parent,
+            10,
+            0,
+            "GB M2",
+            self.gaussian_m2_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
         ttk.Label(parent, text="GB waist side").grid(row=10, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.gaussian_waist_side_var = tk.StringVar(value=gaussian_waist_side_default)
@@ -168,55 +223,125 @@ class MainSourceControlsPanel:
         gaussian_waist_side_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
         gaussian_waist_side_menu.bind("<<ComboboxSelected>>", self._on_source_model_changed)
 
-        ttk.Label(parent, text="Pupil r [0..1]").grid(row=12, column=0, sticky="w", pady=(0, 2))
         self.pupil_rad_var = tk.StringVar(value="0.0")
-        pupil_rad_entry = ttk.Entry(parent, textvariable=self.pupil_rad_var, width=12)
-        pupil_rad_entry.grid(row=13, column=0, sticky="ew", pady=(0, 8))
+        pupil_rad_entry = grid_labeled_commit_entry(
+            parent,
+            12,
+            0,
+            "Pupil r [0..1]",
+            self.pupil_rad_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
-        ttk.Label(parent, text="Pupil theta [deg]").grid(row=12, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.pupil_theta_var = tk.StringVar(value="0.0")
-        pupil_theta_entry = ttk.Entry(parent, textvariable=self.pupil_theta_var, width=12)
-        pupil_theta_entry.grid(row=13, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        pupil_theta_entry = grid_labeled_commit_entry(
+            parent,
+            12,
+            1,
+            "Pupil theta [deg]",
+            self.pupil_theta_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
-        ttk.Label(parent, text="Source power [arb]").grid(row=14, column=0, sticky="w", pady=(0, 2))
         self.source_power_var = tk.StringVar(value="1.0")
-        source_power_entry = ttk.Entry(parent, textvariable=self.source_power_var, width=12)
-        source_power_entry.grid(row=15, column=0, sticky="ew", pady=(0, 8))
+        source_power_entry = grid_labeled_commit_entry(
+            parent,
+            14,
+            0,
+            "Source power [arb]",
+            self.source_power_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
-        ttk.Label(parent, text="Random seed").grid(row=14, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.source_seed_var = tk.StringVar(value="1")
-        source_seed_entry = ttk.Entry(parent, textvariable=self.source_seed_var, width=12)
-        source_seed_entry.grid(row=15, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        source_seed_entry = grid_labeled_commit_entry(
+            parent,
+            14,
+            1,
+            "Random seed",
+            self.source_seed_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
-        ttk.Label(parent, text="Source X [mm]").grid(row=16, column=0, sticky="w", pady=(0, 2))
         self.source_x_var = tk.StringVar(value="0.0")
-        source_x_entry = ttk.Entry(parent, textvariable=self.source_x_var, width=12)
-        source_x_entry.grid(row=17, column=0, sticky="ew", pady=(0, 8))
+        source_x_entry = grid_labeled_commit_entry(
+            parent,
+            16,
+            0,
+            "Source X [mm]",
+            self.source_x_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
-        ttk.Label(parent, text="Source Y [mm]").grid(row=16, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.source_y_var = tk.StringVar(value="0.0")
-        source_y_entry = ttk.Entry(parent, textvariable=self.source_y_var, width=12)
-        source_y_entry.grid(row=17, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        source_y_entry = grid_labeled_commit_entry(
+            parent,
+            16,
+            1,
+            "Source Y [mm]",
+            self.source_y_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
-        ttk.Label(parent, text="Source Z [mm]").grid(row=18, column=0, sticky="w", pady=(0, 2))
         self.source_z_var = tk.StringVar(value="0.0")
-        source_z_entry = ttk.Entry(parent, textvariable=self.source_z_var, width=12)
-        source_z_entry.grid(row=19, column=0, sticky="ew", pady=(0, 8))
+        source_z_entry = grid_labeled_commit_entry(
+            parent,
+            18,
+            0,
+            "Source Z [mm]",
+            self.source_z_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
-        ttk.Label(parent, text="Source L").grid(row=18, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.source_l_var = tk.StringVar(value="0.0")
-        source_l_entry = ttk.Entry(parent, textvariable=self.source_l_var, width=12)
-        source_l_entry.grid(row=19, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        source_l_entry = grid_labeled_commit_entry(
+            parent,
+            18,
+            1,
+            "Source L",
+            self.source_l_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
-        ttk.Label(parent, text="Source M").grid(row=20, column=0, sticky="w", pady=(0, 2))
         self.source_m_var = tk.StringVar(value="0.0")
-        source_m_entry = ttk.Entry(parent, textvariable=self.source_m_var, width=12)
-        source_m_entry.grid(row=21, column=0, sticky="ew", pady=(0, 8))
+        source_m_entry = grid_labeled_commit_entry(
+            parent,
+            20,
+            0,
+            "Source M",
+            self.source_m_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
-        ttk.Label(parent, text="Source N").grid(row=20, column=1, sticky="w", pady=(0, 2), padx=(8, 0))
         self.source_n_var = tk.StringVar(value="1.0")
-        source_n_entry = ttk.Entry(parent, textvariable=self.source_n_var, width=12)
-        source_n_entry.grid(row=21, column=1, sticky="ew", pady=(0, 8), padx=(8, 0))
+        source_n_entry = grid_labeled_commit_entry(
+            parent,
+            20,
+            1,
+            "Source N",
+            self.source_n_var,
+            on_commit=self._commit_source_controls,
+            on_focus_in=self._begin_history_capture,
+            width=12,
+        )
 
         ttk.Label(parent, text="Direction preset").grid(row=22, column=0, columnspan=2, sticky="w", pady=(0, 2))
         self.source_direction_preset_var = tk.StringVar(value="Horizontal +Z (right)")
@@ -270,23 +395,6 @@ class MainSourceControlsPanel:
         )
         source_manager_button.grid(row=28, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
-        self._bind_deferred_manual_update(source_radius_entry)
-        self._bind_deferred_manual_update(source_cone_angle_entry)
-        self._bind_deferred_manual_update(gaussian_waist_entry)
-        self._bind_deferred_manual_update(gaussian_offset_entry)
-        self._bind_deferred_manual_update(gaussian_diameter_entry)
-        self._bind_deferred_manual_update(gaussian_divergence_entry)
-        self._bind_deferred_manual_update(gaussian_m2_entry)
-        self._bind_deferred_manual_update(pupil_rad_entry)
-        self._bind_deferred_manual_update(pupil_theta_entry)
-        self._bind_deferred_manual_update(source_power_entry)
-        self._bind_deferred_manual_update(source_seed_entry)
-        self._bind_deferred_manual_update(source_x_entry)
-        self._bind_deferred_manual_update(source_y_entry)
-        self._bind_deferred_manual_update(source_z_entry)
-        self._bind_deferred_manual_update(source_l_entry)
-        self._bind_deferred_manual_update(source_m_entry)
-        self._bind_deferred_manual_update(source_n_entry)
         for var in (
             self.source_model_var,
             self.pupil_pattern_var,
