@@ -1229,22 +1229,13 @@ class LayoutOpticalSolidWorkflowMixin:
             from KrakenOS.UI.optical_solid_metadata import rotation_matrix_from_kraken_tilts
         except Exception:
             rotation_matrix_from_kraken_tilts = None
-        transforms = getattr(system, "TRANS_2A", None)
-        if transforms is None or not (0 <= int(row_index) < len(transforms)):
-            return None
-        try:
-            local_to_world = np.asarray(transforms[row_index], dtype=float)
-        except Exception:
-            local_to_world = None
-        if local_to_world is None or local_to_world.shape != (4, 4) or not np.all(np.isfinite(local_to_world)):
-            return None
         if rotation_matrix_from_kraken_tilts is not None:
             try:
                 z_station = 0.0
                 for previous_row in self.rows[: int(row_index)]:
                     z_station += float(getattr(previous_row, "thickness", 0.0) or 0.0)
-                source_to_local = np.eye(4, dtype=float)
-                source_to_local[:3, :3] = np.asarray(
+                source_to_trace = np.eye(4, dtype=float)
+                source_to_trace[:3, :3] = np.asarray(
                     rotation_matrix_from_kraken_tilts(
                         float(getattr(self.rows[row_index], "tilt_x", 0.0) or 0.0),
                         float(getattr(self.rows[row_index], "tilt_y", 0.0) or 0.0),
@@ -1252,7 +1243,7 @@ class LayoutOpticalSolidWorkflowMixin:
                     ),
                     dtype=float,
                 )
-                source_to_local[:3, 3] = np.asarray(
+                source_to_trace[:3, 3] = np.asarray(
                     [
                         float(getattr(self.rows[row_index], "desp_x", 0.0) or 0.0),
                         float(getattr(self.rows[row_index], "desp_y", 0.0) or 0.0),
@@ -1260,9 +1251,8 @@ class LayoutOpticalSolidWorkflowMixin:
                     ],
                     dtype=float,
                 )
-                direct_matrix = local_to_world @ source_to_local
-                if direct_matrix.shape == (4, 4) and np.all(np.isfinite(direct_matrix)):
-                    return direct_matrix
+                if source_to_trace.shape == (4, 4) and np.all(np.isfinite(source_to_trace)):
+                    return source_to_trace
             except Exception:
                 pass
         if _runtime_optical_solid_transform is not None:
@@ -1281,13 +1271,11 @@ class LayoutOpticalSolidWorkflowMixin:
         if surfaces is None:
             return None
         try:
-            local_mesh = pv.wrap(surfaces[row_index]).copy(deep=True)
-            if int(getattr(local_mesh, "n_points", 0)) <= 0:
-                local_mesh = pv.wrap(surfaces[row_index]).extract_surface(
+            target_mesh = pv.wrap(surfaces[row_index]).copy(deep=True)
+            if int(getattr(target_mesh, "n_points", 0)) <= 0:
+                target_mesh = pv.wrap(surfaces[row_index]).extract_surface(
                     algorithm="dataset_surface"
                 ).copy(deep=True)
-            world_mesh = local_mesh.copy(deep=True)
-            world_mesh.transform(np.asarray(transforms[row_index], dtype=float), inplace=True)
         except Exception:
             return None
         if _source_to_runtime_world_transform is not None:
@@ -1296,7 +1284,7 @@ class LayoutOpticalSolidWorkflowMixin:
                 runtime_mesh = (
                     runtime_meshes[int(row_index)]
                     if runtime_meshes is not None and 0 <= int(row_index) < len(runtime_meshes)
-                    else world_mesh
+                    else target_mesh
                 )
                 matrix = _source_to_runtime_world_transform(self.rows[row_index], runtime_mesh)
             except Exception:
@@ -1327,7 +1315,7 @@ class LayoutOpticalSolidWorkflowMixin:
                 bridge_mesh = None
         if bridge_mesh is not None:
             source_centroids = self._mesh_face_centroids_from_metadata(bridge_mesh, metadata)
-            target_centroids = self._mesh_face_centroids_from_metadata(world_mesh, metadata)
+            target_centroids = self._mesh_face_centroids_from_metadata(target_mesh, metadata)
         else:
             source_centroids = None
             target_centroids = None
@@ -1339,11 +1327,11 @@ class LayoutOpticalSolidWorkflowMixin:
                 [
                     self._rigid_affine_from_point_sets(
                         np.asarray(bridge_mesh.points, dtype=float),
-                        np.asarray(world_mesh.points, dtype=float),
+                        np.asarray(target_mesh.points, dtype=float),
                     ),
                     _affine_from_point_sets(
                         np.asarray(bridge_mesh.points, dtype=float),
-                        np.asarray(world_mesh.points, dtype=float),
+                        np.asarray(target_mesh.points, dtype=float),
                     ),
                 ]
             )
@@ -1353,43 +1341,43 @@ class LayoutOpticalSolidWorkflowMixin:
             [
                 _affine_from_point_sets(
                     np.asarray(source_mesh.points, dtype=float),
-                    np.asarray(world_mesh.points, dtype=float),
+                    np.asarray(target_mesh.points, dtype=float),
                 ),
                 self._rigid_affine_from_point_sets(
                     np.asarray(source_mesh.points, dtype=float),
-                    np.asarray(world_mesh.points, dtype=float),
+                    np.asarray(target_mesh.points, dtype=float),
                 ),
-                self._mesh_icp_affine(source_mesh, world_mesh),
+                self._mesh_icp_affine(source_mesh, target_mesh),
             ]
         )
-        matrix = _affine_from_point_sets(
-            np.asarray(source_mesh.points, dtype=float),
-            np.asarray(local_mesh.points, dtype=float),
+        candidates.append(
+            _affine_from_point_sets(
+                np.asarray(source_mesh.points, dtype=float),
+                np.asarray(target_mesh.points, dtype=float),
+            )
         )
-        if matrix is not None:
-            candidates.append(local_to_world @ matrix)
         if bridge_mesh is not None:
             source_to_bridge = _affine_from_point_sets(
                 np.asarray(source_mesh.points, dtype=float),
                 np.asarray(bridge_mesh.points, dtype=float),
             )
             if source_to_bridge is not None:
-                bridge_to_local = _affine_from_point_sets(
+                bridge_to_trace = _affine_from_point_sets(
                     np.asarray(bridge_mesh.points, dtype=float),
-                    np.asarray(local_mesh.points, dtype=float),
+                    np.asarray(target_mesh.points, dtype=float),
                 )
-                if bridge_to_local is not None:
-                    candidates.append(local_to_world @ bridge_to_local @ source_to_bridge)
-        source_to_local = self._mesh_icp_affine(source_mesh, local_mesh)
-        if source_to_local is not None:
-            candidates.append(local_to_world @ source_to_local)
+                if bridge_to_trace is not None:
+                    candidates.append(bridge_to_trace @ source_to_bridge)
+        source_to_trace = self._mesh_icp_affine(source_mesh, target_mesh)
+        if source_to_trace is not None:
+            candidates.append(source_to_trace)
         if bridge_mesh is not None:
             source_to_bridge = self._mesh_icp_affine(source_mesh, bridge_mesh)
             if source_to_bridge is not None:
-                bridge_to_local = self._mesh_icp_affine(bridge_mesh, local_mesh)
-                if bridge_to_local is not None:
-                    candidates.append(local_to_world @ bridge_to_local @ source_to_bridge)
-        return self._best_alignment_affine(source_mesh, world_mesh, candidates)
+                bridge_to_trace = self._mesh_icp_affine(bridge_mesh, target_mesh)
+                if bridge_to_trace is not None:
+                    candidates.append(bridge_to_trace @ source_to_bridge)
+        return self._best_alignment_affine(source_mesh, target_mesh, candidates)
 
     def _collect_row_native_step_export_shapes(self, system, progress_callback=None) -> list[tuple[str, object]]:
         shape_items: list[tuple[str, object]] = []
@@ -1422,7 +1410,6 @@ class LayoutOpticalSolidWorkflowMixin:
                     if pv is not None:
                         source_mesh = self._load_step_mesh(source_path, largest_component=False)
                         target_mesh = pv.wrap(surfaces[row_index]).copy(deep=True)
-                        target_mesh.transform(np.asarray(transforms[row_index], dtype=float), inplace=True)
                         matrix = self._mesh_icp_affine(source_mesh, target_mesh)
                 if matrix is None:
                     raise RuntimeError("could not compute saved-row CAD placement affine")

@@ -115,13 +115,15 @@ the exported STEP once again includes visible ray-envelope solids for mechanical
 review. `validate_five_penta_native_step_export` now loads the saved cascade,
 exports it through the native CAD + ray path, and fails if the export falls
 back to faceted shell geometry or drops the rays. The same guard now also
-checks that each saved native STEP body is placed with the exact row-backed
-`TRANS_2A @ source_to_local` pose rather than a mesh-fit guess; the five-penta
-FreeCAD detachment case now fails unless every exported prism body remains
-coincident with the traced runtime mesh to within sub-millimetre tolerance
-after the STEP file is written and read back again. The checked-in
-`attachment/five_penta_prism_cascade_3d.step` fixture has been regenerated
-from that validated native export so FreeCAD/OpenCASCADE review uses the same
+checks that each saved native STEP body is placed in the trace/display frame
+from the row-backed source-to-trace transform. `TRANS_2A` is intentionally not
+applied a second time because `SYSTEM.AAA` optical-solid meshes are already in
+the same coordinate frame as traced raykeeper points. The five-penta FreeCAD
+detachment case now fails unless every exported prism body remains coincident
+with the traced runtime mesh to within sub-millimetre tolerance after the STEP
+file is written and read back again. The local
+`attachment/five_penta_prism_cascade_3d.step` fixture has been regenerated from
+that validated native export so FreeCAD/OpenCASCADE review uses the same
 body/ray geometry that the guard verifies.
 
 Earlier movement on 2026-05-25: the non-sequential near-hit rules have been

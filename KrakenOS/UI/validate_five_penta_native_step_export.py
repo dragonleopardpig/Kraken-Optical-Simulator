@@ -5,7 +5,9 @@ through the same native CAD + ray-envelope path used by the UI, and fails if:
 
 1. the exporter falls back to faceted shell geometry;
 2. the saved row metadata does not recover the original vendor STEP solids;
-3. the exported STEP omits the ray envelope.
+3. the exported native bodies are written in a coordinate frame detached from
+   the traced raykeeper paths;
+4. the exported STEP omits the ray envelope.
 """
 
 from __future__ import annotations
@@ -190,7 +192,7 @@ def main() -> int:
                 if matrix is None:
                     try:
                         source_mesh = app._load_step_mesh(source_path, largest_component=False)
-                        target_mesh = _mesh_with_affine_copy(surfaces[row_index], transforms[row_index])
+                        target_mesh = surfaces[row_index].copy(deep=True)
                         matrix = app._mesh_icp_affine(source_mesh, target_mesh)
                     except Exception:
                         matrix = None
@@ -200,7 +202,7 @@ def main() -> int:
                         source_mesh = app._load_step_mesh(source_path, largest_component=False)
                         debug_entry["source_points"] = int(getattr(source_mesh, "n_points", 0))
                         debug_entry["source_cells"] = int(getattr(source_mesh, "n_cells", 0))
-                        target_mesh = _mesh_with_affine_copy(surfaces[row_index], transforms[row_index])
+                        target_mesh = surfaces[row_index].copy(deep=True)
                         debug_entry["world_points"] = int(getattr(target_mesh, "n_points", 0))
                         debug_entry["world_cells"] = int(getattr(target_mesh, "n_cells", 0))
                         debug_entry["icp_world_available"] = bool(app._mesh_icp_affine(source_mesh, target_mesh) is not None)
@@ -212,7 +214,7 @@ def main() -> int:
                     continue
                 source_mesh = app._load_step_mesh(source_path, largest_component=False)
                 world_mesh = _mesh_with_affine_copy(source_mesh, matrix)
-                target_mesh = _mesh_with_affine_copy(surfaces[row_index], transforms[row_index])
+                target_mesh = surfaces[row_index].copy(deep=True)
                 stats = _nearest_distance_stats(
                     np.asarray(world_mesh.points, dtype=float),
                     np.asarray(target_mesh.points, dtype=float),
@@ -230,7 +232,7 @@ def main() -> int:
                     {
                         "row_index": int(row_index),
                         "name": str(row.name),
-                        "mesh": _mesh_with_affine_copy(surfaces[row_index], transforms[row_index]),
+                        "mesh": surfaces[row_index].copy(deep=True),
                     }
                 )
         native_row_export: list[dict[str, object]] = []
@@ -248,10 +250,10 @@ def main() -> int:
                 }
                 try:
                     source_mesh = app._load_step_mesh(source_path, largest_component=False)
-                    target_mesh = _mesh_with_affine_copy(surfaces[row_index], transforms[row_index])
+                    target_mesh = surfaces[row_index].copy(deep=True)
                     z_station = sum(float(getattr(previous_row, "thickness", 0.0) or 0.0) for previous_row in app.rows[:row_index])
-                    source_to_local = np.eye(4, dtype=float)
-                    source_to_local[:3, :3] = np.asarray(
+                    source_to_trace = np.eye(4, dtype=float)
+                    source_to_trace[:3, :3] = np.asarray(
                         rotation_matrix_from_kraken_tilts(
                             float(getattr(row, "tilt_x", 0.0) or 0.0),
                             float(getattr(row, "tilt_y", 0.0) or 0.0),
@@ -259,7 +261,7 @@ def main() -> int:
                         ),
                         dtype=float,
                     )
-                    source_to_local[:3, 3] = np.asarray(
+                    source_to_trace[:3, 3] = np.asarray(
                         [
                             float(getattr(row, "desp_x", 0.0) or 0.0),
                             float(getattr(row, "desp_y", 0.0) or 0.0),
@@ -267,14 +269,13 @@ def main() -> int:
                         ],
                         dtype=float,
                     )
-                    forward = np.asarray(transforms[row_index], dtype=float) @ source_to_local
-                    reverse = source_to_local @ np.asarray(transforms[row_index], dtype=float)
-                    entry["direct_forward_stats"] = _nearest_distance_stats(
-                        np.asarray(_mesh_with_affine_copy(source_mesh, forward).points, dtype=float),
+                    double_transform = np.asarray(transforms[row_index], dtype=float) @ source_to_trace
+                    entry["direct_trace_frame_stats"] = _nearest_distance_stats(
+                        np.asarray(_mesh_with_affine_copy(source_mesh, source_to_trace).points, dtype=float),
                         np.asarray(target_mesh.points, dtype=float),
                     )
-                    entry["direct_reverse_stats"] = _nearest_distance_stats(
-                        np.asarray(_mesh_with_affine_copy(source_mesh, reverse).points, dtype=float),
+                    entry["legacy_double_transform_stats"] = _nearest_distance_stats(
+                        np.asarray(_mesh_with_affine_copy(source_mesh, double_transform).points, dtype=float),
                         np.asarray(target_mesh.points, dtype=float),
                     )
                     matrix = app._row_native_step_alignment_affine(source_path, row_index, system)
