@@ -11,5 +11,6 @@ real sensor.
 
    rules_of_thumb
    cardinal_points
+   pupil_sampling
    lens_design_intro
    ir_subpixel_detection

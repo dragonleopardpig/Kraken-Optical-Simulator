@@ -168,6 +168,7 @@ class MainWindowBuilder:
         _add_doc_group(help_menu, "Knowledge Base  (Theory)", [
             ("Rules of Thumb  (Optics · Imaging · Laser)", "rules_of_thumb"),
             ("Cardinal Points  (EP / XP / PP)",            "cardinal_points"),
+            ("Pupil Sampling  (Fans · Hexapolar · Vogel)", "pupil_sampling"),
             ("Lens Design Families  (Photo / Machine Vision)", "lens_design_intro"),
             ("IR Sub-pixel Hot-Spot Detection",            "ir_subpixel_detection"),
         ], section="knowledge_base")

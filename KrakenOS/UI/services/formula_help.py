@@ -46,6 +46,7 @@ class FormulaHelpService:
         kb_links_html = _doc_list([
             ("Rules of Thumb — Optics · Imaging · Laser",          "rules_of_thumb",       "knowledge_base"),
             ("Cardinal Points (EP, XP, PP) walkthrough",           "cardinal_points",      "knowledge_base"),
+            ("Pupil Sampling — fans, hexapolar, Vogel/Fibonacci",  "pupil_sampling",       "knowledge_base"),
             ("Lens Design Families — Photographic & Machine Vision", "lens_design_intro",  "knowledge_base"),
             ("IR Sub-pixel Hot-Spot Detection",                    "ir_subpixel_detection", "knowledge_base"),
         ])
