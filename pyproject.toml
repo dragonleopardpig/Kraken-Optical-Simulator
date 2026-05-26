@@ -34,6 +34,20 @@ dependencies = [
 dev = [
   "pytest"
 ]
+optimization = [
+  "cloudpickle",
+  "pybind11",
+  "pygmo>=2.19.8"
+]
+ui = [
+  "cloudpickle",
+  "ipykernel",
+  "ipython",
+  "packaging",
+  "pybind11",
+  "pygmo>=2.19.8",
+  "pyzmq"
+]
 
 [project.urls]
 Homepage = "https://github.com/Garchupiter/Kraken-Optical-Simulator"

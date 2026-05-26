@@ -18,6 +18,10 @@ setup(
     ],
 
     install_requires=['pyvista','PyVTK','vtk','numpy','scipy','matplotlib', 'csv342', 'pandas' ],
+    extras_require={
+        'optimization': ['cloudpickle', 'pybind11', 'pygmo>=2.19.8'],
+        'ui': ['cloudpickle', 'ipykernel', 'ipython', 'packaging', 'pybind11', 'pygmo>=2.19.8', 'pyzmq'],
+    },
     package_data={'': ['LICENSE.txt', '../*.AGF', '../*.agf', '../*.stl', '../*.scad', '../*.pdf', '../*.zmx', '../*.ZMX', '../*.csv']},
     include_package_data=True,
     url='https://github.com/Garchupiter/Kraken-Optical-Simulator',

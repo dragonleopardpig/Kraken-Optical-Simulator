@@ -47,7 +47,7 @@ let
     fi
   '';
   installCoreDeps = ''
-    KRAKEN_REQ_HASH="krakenos-core-v20-pygmo"
+    KRAKEN_REQ_HASH="krakenos-core-v21-pygmo-check"
     REQ_HASH_FILE="$PWD/.devenv/state/kraken-requirements.hash"
 
     "$VENV_DIR/bin/python" -m pip install --upgrade pip "setuptools<82" wheel
@@ -118,7 +118,7 @@ in
       fi
     done
 
-    if ! "$VENV_DIR/bin/python" -c 'import numpy, scipy, matplotlib, pyvista, vtk' >/dev/null 2>&1; then
+    if ! "$VENV_DIR/bin/python" -c 'import numpy, scipy, matplotlib, pyvista, vtk, pygmo' >/dev/null 2>&1; then
       echo "KrakenOS Python deps are not installed in $VENV_DIR."
       echo "Run: kraken-install"
     fi

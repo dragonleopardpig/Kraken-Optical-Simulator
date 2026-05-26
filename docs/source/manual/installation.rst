@@ -21,11 +21,25 @@ editable package into its virtual environment:
 .. code-block:: bash
 
    direnv allow
-   devenv shell devenv run install
+   devenv shell kraken-install
 
 The development environment installs the package in editable mode together with
 the numerical, plotting, VTK/PyVista, Qt, and analysis dependencies used by the
-layout editor.
+layout editor, including the ``pygmo`` optimizer backend used by the
+Optimization panel.
+
+For a normal Python virtual environment on this branch, install the UI extra:
+
+.. code-block:: bash
+
+   python -m pip install --upgrade pip "setuptools<82" wheel
+   python -m pip install -e ".[ui]"
+
+If the Optimization panel reports that the backend is unavailable, run:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_optimization_backend
 
 Running the layout editor
 -------------------------

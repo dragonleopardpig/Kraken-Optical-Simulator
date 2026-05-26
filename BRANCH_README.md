@@ -561,8 +561,7 @@ git checkout nonseq-display-refactor
 python -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip "setuptools<82" wheel
-python -m pip install -e .
-python -m pip install numpy scipy matplotlib pandas pyvista PyVTK vtk csv342
+python -m pip install -e ".[ui]"
 python -m KrakenOS.UI.layout_editor
 ```
 
@@ -570,6 +569,10 @@ Notes:
 
 - The desktop UI uses Tkinter. If `import tkinter` fails, install the Tk package
   for your operating system, then recreate or refresh the virtual environment.
+- The `ui` extra installs the optimizer runtime dependencies, including
+  `pygmo`. If the Optimization panel reports that the backend is unavailable,
+  confirm the active environment with
+  `python -m KrakenOS.UI.validate_optimization_backend`.
 - STEP/IGES CAD import benefits from `pythonocc-core`; many users will find it
   easiest through conda-forge. STL import and cached STL workflows do not require
   STEP/IGES support.
@@ -1320,7 +1323,7 @@ Production refactor progress:
 | Live Mode performance service | Started | `██░░░░░░░░ 20%` | `Open3DLiveRefreshService` now owns debouncing, cancellation, busy/pending stale-request handling, and delayed retry scheduling. Mesh reuse/throttling and measured heavy-CAD refresh budgets remain before enabling Live Mode by default on large STEP scenes. |
 | CadQuery CAD-topology study | Planned | `░░░░░░░░░░ 0%` | Study CadQuery/OCP patterns for STEP import/export, assembly traversal, face/edge selectors, tessellation, face center/normal handling, and tagged STEP metadata. Treat CadQuery as an optional reference and fixture-generation tool first; do not add it as a runtime UI dependency until Python-version support, package weight, and KrakenOS topology/metadata preservation are proven. |
 | `sv-ttk` theme adapter | Pending | `░░░░░░░░░░ 0%` | Theme work waits until panels/widgets/services are split enough that styling is a thin layer instead of another responsibility inside `layout_editor.py`. |
-| Public `kraken-os[ui]` install path | Pending | `░░░░░░░░░░ 0%` | The intended branch install command is documented below; packaging metadata and clean-venv validation are still needed. |
+| Public `kraken-os[ui]` install path | Started | `███░░░░░░░ 30%` | `pyproject.toml` and legacy `setup.py` now expose `ui` and `optimization` extras that include the `pygmo` optimizer backend dependencies, and the branch README regular-Python install path now uses `python -m pip install -e ".[ui]"`. A clean-venv install validation and final package-name normalization remain before this is marked complete. |
 
 Latest movement on 2026-05-26: the embedded Open 3D inspector class moved out
 of `layout_editor.py` into `KrakenOS/UI/open3d_inspector.py`, the editor-side
