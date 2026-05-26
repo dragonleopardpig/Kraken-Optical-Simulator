@@ -13,6 +13,7 @@ from KrakenOS.UI.widgets.commit_controls import (
     pack_commit_combobox,
     pack_commit_radiobutton,
 )
+from KrakenOS.UI.widgets.table_cell_editor import place_commit_cell_entry
 from KrakenOS.UI.widgets.tooltips import WidgetTooltip
 
 __all__ = [
@@ -29,4 +30,5 @@ __all__ = [
     "pack_commit_checkbutton",
     "pack_commit_combobox",
     "pack_commit_radiobutton",
+    "place_commit_cell_entry",
 ]

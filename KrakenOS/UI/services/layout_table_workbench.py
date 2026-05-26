@@ -9,6 +9,8 @@ modules.
 
 from __future__ import annotations
 
+from KrakenOS.UI.widgets import place_commit_cell_entry
+
 
 _PROTECTED_GLOBALS = {
     "LayoutTableWorkbenchMixin",
@@ -4746,7 +4748,6 @@ class LayoutTableWorkbenchMixin:
         bbox = self.table.bbox(row_id, column_id)
         if not bbox or len(bbox) != 4:
             return
-        x, y, width, height = bbox
         current_value = self.table.set(row_id, field)
         if field in {"rc", "thickness"}:
             current_value = current_value.replace("*", "").strip()
@@ -4770,15 +4771,13 @@ class LayoutTableWorkbenchMixin:
             )
             return
         else:
-            editor = ttk.Entry(self.table)
-            editor.insert(0, current_value)
-            editor.bind("<FocusOut>", lambda e: self._finish_edit(row_id, field), add="+")
-            editor.bind("<Return>", lambda e: self._finish_edit(row_id, field), add="+")
-            editor.bind("<KP_Enter>", lambda e: self._finish_edit(row_id, field), add="+")
-
-        editor.place(x=x, y=y, width=width, height=height)
-        editor.focus_set()
-        editor.bind("<Escape>", lambda e: self._cancel_edit(), add="+")
+            editor = place_commit_cell_entry(
+                self.table,
+                value=current_value,
+                bbox=tuple(int(value) for value in bbox),
+                on_commit=lambda: self._finish_edit(row_id, field),
+                on_cancel=self._cancel_edit,
+            )
         self.editor = editor
         self._editor_row_id = row_id
         self._editor_field = field

@@ -18,6 +18,7 @@ from KrakenOS.UI.widgets import (
     pack_commit_checkbutton,
     pack_commit_combobox,
     pack_commit_radiobutton,
+    place_commit_cell_entry,
 )
 
 
@@ -157,6 +158,15 @@ def main() -> int:
     pack_radio_source = inspect.getsource(pack_commit_radiobutton)
     assert "ttk.Radiobutton" in pack_radio_source
     assert "radio.pack" in pack_radio_source
+
+    cell_entry_signature = inspect.signature(place_commit_cell_entry)
+    assert "bbox" in cell_entry_signature.parameters
+    assert "on_commit" in cell_entry_signature.parameters
+    assert "on_cancel" in cell_entry_signature.parameters
+    cell_entry_source = inspect.getsource(place_commit_cell_entry)
+    assert "CommitEntry" in cell_entry_source
+    assert "editor.place" in cell_entry_source
+    assert '"<Escape>"' in cell_entry_source
 
     print("Widget commit binding validation: PASS")
     return 0
