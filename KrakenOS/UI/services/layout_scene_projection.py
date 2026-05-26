@@ -1287,6 +1287,11 @@ class LayoutSceneProjectionMixin:
             for value_index, tilt_x in enumerate(values[:25]):
                 display_tilt = display_values[value_index] if value_index < len(display_values) else float(tilt_x)
                 field_theta = 2.0 * (float(display_tilt) - float(nominal_display_tilt))
+                if abs(float(field_theta)) <= 1.0e-9:
+                    # The nominal mirror pose is already covered by the traced
+                    # folded preview. Drawing the same path again as a scan
+                    # overlay makes the center bundle look like a special ray.
+                    continue
                 paths = []
                 try:
                     for previous, ray_dir in incoming_states:
@@ -1342,8 +1347,9 @@ class LayoutSceneProjectionMixin:
                     pts[:, 0],
                     pts[:, 1],
                     color=color,
-                    linewidth=float(plan.get("linewidth", 1.1) or 1.1),
-                    alpha=float(plan.get("alpha", 0.92) or 0.92),
+                    linewidth=max(0.85, float(plan.get("linewidth", 1.1) or 1.1) * 0.9),
+                    alpha=min(0.72, float(plan.get("alpha", 0.92) or 0.92)),
+                    linestyle=(0, (4, 2)),
                     zorder=24.0,
                 )
             line = plan.get("mirror_line")
@@ -2436,4 +2442,3 @@ class LayoutSceneProjectionMixin:
             self._cardinal_marker_artists.extend((*artists, text))
             drawn += 1
         return drawn > 0
-

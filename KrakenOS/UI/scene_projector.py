@@ -71,8 +71,9 @@ class SceneProjector2D:
         """Project all geometry in *bundle* to 2-D display coordinates."""
         curves = self._project_curves(bundle)
         curves.extend(self._project_mesh_outlines(bundle))
-        curves.extend(self._project_detector_footprints(bundle))
-        curves.extend(self._project_detector_miss_crosshairs(bundle))
+        if not _bundle_uses_folded_display_projection(bundle, self.plane):
+            curves.extend(self._project_detector_footprints(bundle))
+            curves.extend(self._project_detector_miss_crosshairs(bundle))
         rays = self._project_rays(bundle)
         bounds = self._compute_bounds(curves, rays)
         pick_regions = _pick_regions_from_curves(curves)
@@ -300,6 +301,7 @@ class SceneProjector2D:
                     folded_pts = candidate
             if folded_pts is not None and self.plane == "YZ":
                 display_points = folded_pts
+                draw_behind_surfaces = True
             else:
                 pts = np.asarray(path.points_world, dtype=float)
                 if pts.ndim != 2 or pts.shape[0] < 2:
@@ -317,12 +319,14 @@ class SceneProjector2D:
                 if pts.shape[0] < 2:
                     continue
                 display_points = self.project_xyz_points(pts)
+                draw_behind_surfaces = False
             events_2d = self._project_ray_events(path, np.asarray(display_points, dtype=float))
             projected.append(ProjectedRay2D(
                 ray_index=path.ray_index,
                 field_index=path.field_index,
                 color=path.color,
                 points_2d=np.asarray(display_points, dtype=float),
+                draw_behind_surfaces=draw_behind_surfaces,
                 reaches_image=ray_path_reaches_image_from_events(path),
                 terminal_status=ray_path_terminal_status_from_events(path),
                 surface_ids=np.asarray(path.surface_ids, dtype=int),
@@ -405,6 +409,22 @@ def _bundle_uses_native_nonsequential_projection(bundle: SceneBundle) -> bool:
     if list(getattr(bundle, "boundary_faces", []) or []):
         return True
     return False
+
+
+def _bundle_uses_folded_display_projection(bundle: SceneBundle, plane: str) -> bool:
+    if normalize_projection_plane(plane) != "YZ":
+        return False
+    if _bundle_uses_native_nonsequential_projection(bundle):
+        return False
+    extra = dict(getattr(bundle, "extra", {}) or {})
+    folded_paths = list(extra.get("folded_ray_display_paths") or [])
+    if not folded_paths:
+        return False
+    mode_text = " ".join(
+        str(extra.get(key, "") or "").strip().lower()
+        for key in ("trace_mode_requested", "trace_mode_active", "trace_mode_note")
+    )
+    return "folded" in mode_text
 
 
 def _terminal_display_direction_from_path(path: object) -> np.ndarray | None:

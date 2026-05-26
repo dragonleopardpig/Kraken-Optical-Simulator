@@ -211,11 +211,11 @@ def _draw_rays(
             alpha=alpha,
             capstyle="butt",
             joinstyle="round",
-            # Keep rays above CAD/prism outlines so exits do not look broken
-            # where a surface edge crosses the traced polyline.  Segment-wise
-            # drawing with butt caps avoids miter/cap overhang at mirror hits,
-            # which can otherwise look like a false transmitted ray.
-            zorder=42.0 + (10.0 * draw_order / total_rays),
+            zorder=(
+                18.0 + (4.0 * draw_order / total_rays)
+                if bool(getattr(ray, "draw_behind_surfaces", False))
+                else 42.0 + (10.0 * draw_order / total_rays)
+            ),
         )
         ax.add_collection(collection)
         if show_direction_markers:
@@ -224,7 +224,11 @@ def _draw_rays(
                 ax,
                 color=ray.color,
                 alpha=alpha,
-                zorder=28.0 + (5.0 * draw_order / total_rays),
+                zorder=(
+                    14.0 + (2.0 * draw_order / total_rays)
+                    if bool(getattr(ray, "draw_behind_surfaces", False))
+                    else 28.0 + (5.0 * draw_order / total_rays)
+                ),
             )
     _draw_ray_endpoint_markers(endpoint_points, ax, ray_count_hint=ray_count_hint)
 

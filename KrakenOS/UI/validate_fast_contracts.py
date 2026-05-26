@@ -96,6 +96,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Folded mirror 2D/Open 3D surface geometry parity.",
     ),
     ValidationTarget(
+        "folded-scanner-display",
+        "KrakenOS.UI.validate_folded_scanner_display_contract",
+        reason="Folded galvo/F-theta YZ display keeps rays behind optics and hides unfurled detector footprints.",
+    ),
+    ValidationTarget(
         "selected-ray-labels",
         "KrakenOS.UI.validate_selected_ray_event_labels",
         reason="Ray event labels and inspector-facing selection records.",

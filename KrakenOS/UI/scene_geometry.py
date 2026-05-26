@@ -830,6 +830,7 @@ class ProjectedRay2D:
     field_index: int = 0
     color: str = "#39FF14"
     points_2d: np.ndarray = field(default_factory=lambda: np.empty((0, 2)))
+    draw_behind_surfaces: bool = False
     reaches_image: bool = False
     terminal_status: str = ""
     surface_ids: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=int))
