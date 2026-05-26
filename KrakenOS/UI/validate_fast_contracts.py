@@ -76,6 +76,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Public kraken-os[ui] optional dependency metadata stays aligned across packaging files.",
     ),
     ValidationTarget(
+        "ui-modular-maintainability",
+        "KrakenOS.UI.validate_ui_modular_maintainability",
+        reason="Source-structure budgets keep the UI split across coordinator, panels, widgets, services, and validators.",
+    ),
+    ValidationTarget(
         "open3d-axis-guides",
         "KrakenOS.UI.validate_open3d_optical_axis_guides",
         reason="Centered sequential scenes keep one global optical axis; off-axis scenes keep traced guides.",
