@@ -1277,7 +1277,7 @@ Production refactor progress:
 | Layout import/export mixin/service | Complete | `██████████ 100%` | `services/layout_import_export.py` now owns Glass Catalog Browser pass-throughs, Zemax prescription/rayfile/wavefront import workflows, stock-lens import insertion, File Open/Save/Save As, 3D STEP export orchestration and worker polling, Lens Fabrication Drawing export pass-throughs, layout-file writer access, example-script surface capture, example feature-gap reporting, row reconstruction from KrakenOS surfaces/layout dictionaries, special-row normalization, and flipped-name helpers. `layout_editor.py` keeps the same inherited file/import/export API while dropping below 20,000 lines. |
 | Trace preview sampling mixin/service | Complete | `██████████ 100%` | `services/trace_preview_sampling.py` now owns finite fan samples, field samples, image-diameter preview helpers, default finite-cone/source-cone/world-envelope bundle builders, pupil disk/rim/sparse/full-grid sampling, infinity field bundle centering, selected through-envelope tracing, and source/pupil/gaussian accessors. `TracePreviewService` still owns dispatch, while `layout_editor.py` no longer embeds the launch-sampling implementation. |
 | Analysis compute workflow mixin/service | Complete | `██████████ 100%` | `services/analysis_compute_workflow.py` now owns debug/progress text utilities, clipboard/CSV report exports, analysis progress indicators, backend reporting, analysis ray construction, serializable row-spec snapshots, worker-count capping, process-pool lifecycle, optimization backend preflight, merit operand resolution, optimization variable/value mapping, and optimization worker polling/finish handling. Multiprocessing worker entry points remain late-bound through `layout_editor.py` for spawn compatibility. |
-| Layout table/workbench mixin/service | Complete | `██████████ 100%` | `services/layout_table_workbench.py` now owns custom border-only table selection, row border/focus state, layout reset/load runtime-state hydration, table undo/redo snapshots, table formatting/synchronization, row insert/delete/duplicate/paste/group/ungroup actions, arm/path workbench helpers, path-component row creation, scene target/source/editor actions, table editing/choice menus, surface defaults, material/coating/context actions, and object/image diameter coupling. The service currently uses a transitional late-bound compatibility sync for editor constants and helpers; the next cleanup should move those constants into dedicated modules. `layout_editor.py` is now about 11,739 lines. |
+| Layout table/workbench mixin/service | Complete | `██████████ 100%` | `services/layout_table_workbench.py` now owns custom border-only table selection, row border/focus state, layout reset/load runtime-state hydration, table undo/redo snapshots, table formatting/synchronization, row insert/delete/duplicate/paste/group/ungroup actions, arm/path workbench helpers, path-component row creation, scene target/source/editor actions, table editing/choice menus, surface defaults, material/coating/context actions, object/image diameter coupling, pending edit commit/cancel, popup choice menus, and optimization/tolerance marker toggles. The service currently uses a transitional late-bound compatibility sync for editor constants and helpers; the next cleanup should move those constants into dedicated modules. `layout_editor.py` is now about 4,053 lines. |
 | Layout scene projection mixin/service | Complete | `██████████ 100%` | `services/layout_scene_projection.py` now owns 2D projection orientation/slice helpers, folded-layout preview geometry, world folded geometry, branch/path display overrides, galvo and pose-tolerance overlays, folded scan overlays, cardinal markers, optics/arm/ray labels, projected scene filtering, folded optics markers, and related 2D display-path helpers. It is still a transitional inherited mixin with late-bound compatibility access to editor constants, but the scene-display responsibility is no longer embedded in the main coordinator. `layout_editor.py` is now about 9,329 lines. |
 | Optical-solid workflow mixin/service | Complete | `██████████ 100%` | `services/optical_solid_workflow.py` now owns optical CAD/STL row construction/import/convert actions, default uncoated face metadata, face-role dialog dispatch, row-backed and transient STEP face-record lookup, Open 3D face-function assignment, STL pose commands, explicit STEP axis/offset clearing, native STEP export shape collection, STEP ray/polyline export collection, 3D export mesh collection, STEP file prompting, Open 3D refresh fan-out, face-hover metadata clearing, and legacy 3D STEP actor refresh. The service keeps the same editor method names through inheritance while `layout_editor.py` drops to about 7,965 lines. |
 | Layout shell/control mixin/service | Complete | `██████████ 100%` | `services/layout_shell_controls.py` now owns main panel accessors, source/field/trace/analysis control synchronization, left-sidebar reflow, source-model UI applicability, menu refresh, layout/example menu population, analysis/preview-mode switching, trace-mode resolution badges, non-sequential trace settings, source-model change handling, scene-source manager launch, and manual display-update dispatch. `layout_editor.py` now drops to about 6,605 lines. |
@@ -1305,9 +1305,11 @@ lives in `services/optical_solid_workflow.py`. Main shell/control
 synchronization now lives in `services/layout_shell_controls.py`. Analysis
 display and system-build orchestration now lives in
 `services/layout_analysis_display.py`. Plot hover/picking/viewer interaction
-now lives in `services/layout_plot_interaction.py`. The main editor coordinator
-is now about 4,443 lines, while validators continue to access the same
-inherited public method names through `KrakenLayoutEditor`.
+now lives in `services/layout_plot_interaction.py`. Remaining table-edit and
+optimization marker helpers also moved into
+`services/layout_table_workbench.py`. The main editor coordinator is now about
+4,053 lines, while validators continue to access the same inherited public
+method names through `KrakenLayoutEditor`.
 Element, detector, and scene-target metadata normalization now lives in
 `services/element_scene_metadata.py`. Metal and stock-lens catalog helpers now
 live in `services/catalog_metadata.py`. Zemax `.zmx` sequential prescription
@@ -1657,13 +1659,12 @@ documentation tree remain separate on purpose.
 ## Next Pipeline Step
 
 Continue the production-readiness refactor by splitting the remaining
-table editing leftovers, scene-bundle override helpers, and example-display
-defaults out of `layout_editor.py`. The next large slice should move the
-remaining table edit/optimization marker helpers into the table/workbench
-service and then split scene-bundle override/default-display helpers. Replace
-transitional late-bound sync points with dedicated constants/helper modules.
-Keep `layout_editor.py` as the application coordinator instead of a behavior
-warehouse.
+scene-bundle override helpers and example-display defaults out of
+`layout_editor.py`. The next large slice should move scene-bundle override,
+field-metric, input/Gaussian overlay, fallback preview, and example-display
+helpers into focused display/default services. Replace transitional late-bound
+sync points with dedicated constants/helper modules. Keep `layout_editor.py` as
+the application coordinator instead of a behavior warehouse.
 
 Before that larger extraction resumes, run a focused Open 3D correction pass:
 

@@ -5702,3 +5702,395 @@ class LayoutTableWorkbenchMixin:
             status_var.set(
                 f"{source} diameter applied; paired diameter updated with |m|={mag:.6g}. Click Update to redraw."
             )
+
+    def _sync_object_diameter_from_manual_image(self) -> bool:
+        if len(self.rows) < 2 or self.rows[0].surface != "Object" or self.rows[-1].surface != "Image":
+            return False
+        if self._current_object_mode() != "Finite" or self._current_image_diameter_mode() != "Manual":
+            return False
+        magnification = self._current_finite_paraxial_magnification()
+        if magnification is None or not np.isfinite(magnification) or abs(float(magnification)) <= 1e-12:
+            return False
+        image_diameter = max(float(self.rows[-1].diameter), 0.0)
+        self.rows[0].diameter = max(image_diameter / abs(float(magnification)), 1e-6)
+        self._sync_field_value_from_diameter_pair()
+        return True
+
+    def _sync_field_value_from_diameter_pair(self) -> None:
+        if self.__dict__.get("field_value_var") is None or self.__dict__.get("field_type_var") is None or not self.rows:
+            return
+        field_type = self._current_field_type()
+        object_half = max(float(self.rows[0].diameter) * 0.5, 0.0)
+        image_half = max(float(self.rows[-1].diameter) * 0.5, 0.0)
+        if field_type == "Object Height":
+            value = object_half
+        elif field_type in {"Paraxial Image Height", "Real Image Height"}:
+            value = image_half
+        elif field_type == "Angle":
+            value = float(np.rad2deg(np.arctan2(object_half, max(self._current_object_distance(), 1e-9))))
+        else:
+            return
+        self.field_value_var.set(self._format_table_float(value))
+
+    def _set_image_diameter_mode(self, mode: str) -> None:
+        image_diameter_mode_var = self.__dict__.get("image_diameter_mode_var")
+        if image_diameter_mode_var is not None and mode in {"Auto", "Manual"}:
+            image_diameter_mode_var.set(mode)
+
+    def _cancel_edit(self) -> None:
+        if self.editor is None:
+            return
+        self.editor.destroy()
+        self.editor = None
+        self._editor_row_id = None
+        self._editor_field = None
+
+    def _commit_pending_table_edit(self) -> None:
+        if self.editor is None or self._editor_row_id is None or self._editor_field is None:
+            return
+        self._finish_edit(self._editor_row_id, self._editor_field, quiet=True)
+
+    def _show_choice_menu(
+        self,
+        row_id: str,
+        field: str,
+        values: tuple[str, ...],
+        x_root: int,
+        y_root: int,
+    ) -> None:
+        self._cleanup_current_popup_menu()
+        menu = tk.Menu(self, tearoff=0)
+        for value in values:
+            menu.add_command(
+                label=value,
+                command=lambda selected=value: self._apply_choice(row_id, field, selected),
+            )
+        self._post_popup_menu(menu, x_root, y_root)
+
+    def _post_popup_menu(self, menu: tk.Menu, x_root: int, y_root: int) -> None:
+        self.popup_menu = menu
+        try:
+            menu.tk_popup(x_root, y_root)
+        finally:
+            try:
+                menu.grab_release()
+            except tk.TclError:
+                pass
+
+    def _apply_choice(self, row_id: str, field: str, value: str) -> None:
+        self._begin_history_capture()
+        self.table.set(row_id, field, value)
+        self._read_rows_from_table()
+        if field == "surface":
+            index = self._table_item_row_index(row_id)
+            if index is None:
+                return
+            row = self.rows[index]
+            self._apply_surface_type_defaults(index, row, value)
+        self._normalize_special_rows()
+        self._sync_table()
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        self._cleanup_current_popup_menu()
+
+    def _apply_surface_type_defaults(self, index: int, row: SurfaceRow, surface_type: str) -> None:
+        prev_row = self.rows[index - 1] if index > 0 else None
+        next_row = self.rows[index + 1] if index + 1 < len(self.rows) else None
+        neighbor_diameters = [
+            float(candidate.diameter)
+            for candidate in (prev_row, next_row)
+            if candidate is not None and candidate.surface not in {"Object", "Image"}
+        ]
+        fallback_diameter = min(neighbor_diameters) if neighbor_diameters else max(float(row.diameter), 10.0)
+
+        if surface_type in REFLECTIVE_PROXY_SURFACES:
+            default_name = (
+                "Object target"
+                if surface_type == OBJECT_TARGET_SURFACE
+                else "Diffuse object"
+                if surface_type == DIFFUSE_OBJECT_SURFACE
+                else "Mirror"
+            )
+            row.name = default_name if row.name in {"", "Surface", "Standard", "Aperture", "Mirror", "Object target", "Diffuse object"} else row.name
+            row.glass = "MIRROR"
+            row.rc = 0.0
+            if surface_type == "Mirror" and abs(row.tilt_x) < 1e-9 and abs(row.tilt_y) < 1e-9 and abs(row.tilt_z) < 1e-9:
+                row.tilt_x = 45.0
+            if abs(row.axis_move) < 1e-9:
+                row.axis_move = 2.0
+            advanced = dict(row.advanced or {})
+            if surface_type == OBJECT_TARGET_SURFACE:
+                display = dict(advanced.get("Display2D", {}) or {})
+                display.setdefault("label", "Object target")
+                advanced["Display2D"] = display
+                note = (
+                    "Object Target currently traces as a specular reflective proxy so source/object split "
+                    "fixtures can return rays. Use a Diffuse Object row when rough/diffuse BRDF scattering is needed."
+                )
+                existing_note = str(advanced.get("Note", "") or "").strip()
+                if note not in existing_note:
+                    advanced["Note"] = f"{note} {existing_note}".strip()
+                row.element = row.element or "Object target"
+            elif surface_type == DIFFUSE_OBJECT_SURFACE:
+                display = dict(advanced.get("Display2D", {}) or {})
+                display.setdefault("label", "Diffuse object")
+                advanced["Display2D"] = display
+                advanced[DIFFUSE_SCATTER_ADVANCED_ATTR] = _normalize_diffuse_scatter_settings(
+                    advanced.get(DIFFUSE_SCATTER_ADVANCED_ATTR, DIFFUSE_SCATTER_DEFAULT_SETTINGS)
+                )
+                note = (
+                    "Diffuse Object spawns deterministic built-in scatter branches in Non-Sequential Preview. "
+                    "Use Diffuse/BRDF settings to control model, reflectance, samples, scatter cone, and target guidance."
+                )
+                existing_note = str(advanced.get("Note", "") or "").strip()
+                if note not in existing_note:
+                    advanced["Note"] = f"{note} {existing_note}".strip()
+                row.element = row.element or "Diffuse object"
+            else:
+                display = dict(advanced.get("Display2D", {}) or {})
+                if display.get("label") in {"Object target", "Diffuse object"}:
+                    display.pop("label", None)
+                if display:
+                    advanced["Display2D"] = display
+                else:
+                    advanced.pop("Display2D", None)
+                advanced.pop(DIFFUSE_SCATTER_ADVANCED_ATTR, None)
+            row.advanced = advanced
+            self._clear_disabled_surface_type_fields(row)
+            return
+
+        if surface_type == BEAM_SPLITTER_SURFACE:
+            row.name = "50/50 Beam Splitter" if row.name in {"", "Surface", "Standard", "Aperture", "Mirror", "Object target"} else row.name
+            if row.glass == "MIRROR":
+                row.glass = "AIR"
+            row.rc = 0.0
+            if abs(row.tilt_x) < 1e-9 and abs(row.tilt_y) < 1e-9 and abs(row.tilt_z) < 1e-9:
+                row.tilt_x = 45.0
+            advanced = dict(row.advanced or {})
+            splitter_settings = _normalize_beam_splitter_settings(advanced.get(BEAM_SPLITTER_ADVANCED_ATTR))
+            advanced[BEAM_SPLITTER_ADVANCED_ATTR] = splitter_settings
+            advanced["Coating"] = _beam_splitter_coating_for_settings(splitter_settings, advanced.get("Coating"))
+            note = (
+                "Beam Splitter rows spawn deterministic reflected/transmitted paths in Non-Sequential Preview. "
+                "Use Glass + Thickness plus a following rear AIR surface for finite plate deviation; "
+                "use the same rear TiltX for a parallel plate."
+            )
+            existing_note = str(advanced.get("Note", "") or "").strip()
+            if note not in existing_note:
+                advanced["Note"] = f"{note} {existing_note}".strip()
+            row.advanced = advanced
+            self._clear_disabled_surface_type_fields(row)
+            return
+
+        if surface_type == "Aperture":
+            row.name = "Aperture"
+            row.glass = "AIR"
+            row.rc = 0.0
+            row.diameter = max(0.1, min(float(self._current_aperture_value()), fallback_diameter))
+            self._clear_disabled_surface_type_fields(row)
+            return
+
+        if surface_type == "Thin Lens":
+            row.name = "Thin Lens" if row.name in {"", "Surface", "Standard"} else row.name
+            if row.glass == "MIRROR":
+                row.glass = "AIR"
+            if abs(row.rc) < 1e-9:
+                row.rc = 100.0
+            self._clear_disabled_surface_type_fields(row)
+            return
+
+        if surface_type == "Grating":
+            row.name = "Grating" if row.name in {"", "Surface", "Standard"} else row.name
+            row.rc = 0.0
+            if abs(row.diff_ord) < 1e-9:
+                row.diff_ord = 1.0
+            if abs(row.grating_d) < 1e-9:
+                row.grating_d = 1.0
+            self._clear_disabled_surface_type_fields(row)
+            return
+
+        if surface_type == "Standard":
+            row.name = "Surface" if row.name in {"", "Mirror", "Object target", "Diffuse object", "Aperture", "Thin Lens", "Grating", "50/50 Beam Splitter"} else row.name
+            if row.glass == "MIRROR":
+                row.glass = "AIR"
+            row.advanced = dict(row.advanced or {})
+            row.advanced.pop(BEAM_SPLITTER_ADVANCED_ATTR, None)
+            row.advanced.pop(DIFFUSE_SCATTER_ADVANCED_ATTR, None)
+        self._clear_disabled_surface_type_fields(row)
+
+    def _clear_disabled_surface_type_fields(self, row: SurfaceRow) -> None:
+        disabled = (set(FIELDS) | set(GRATING_SETTING_FIELDS)) - self._surface_type_enabled_fields(row.surface)
+        if "glass" in disabled:
+            row.glass = "MIRROR" if row.surface in REFLECTIVE_PROXY_SURFACES else "AIR"
+        numeric_attrs = {
+            "rc": "rc",
+            "k": "k",
+            "axicon": "axicon",
+            "diff_ord": "diff_ord",
+            "grating_d": "grating_d",
+            "grating_angle": "grating_angle",
+            "thickness": "thickness",
+            "in_diameter": "in_diameter",
+            "tilt_x": "tilt_x",
+            "tilt_y": "tilt_y",
+            "tilt_z": "tilt_z",
+            "desp_x": "desp_x",
+            "desp_y": "desp_y",
+            "desp_z": "desp_z",
+            "axis_move": "axis_move",
+        }
+        for field, attr in numeric_attrs.items():
+            if field in disabled:
+                setattr(row, attr, 0.0)
+
+    @staticmethod
+    def _row_has_optimization(row: SurfaceRow) -> bool:
+        return row.optimize_rc or row.optimize_thickness or bool(_row_native_variable_names(row))
+
+    @staticmethod
+    def _row_native_variable_enabled(row: SurfaceRow, parameter: str) -> bool:
+        return any(
+            _native_variable_matches(candidate, parameter)
+            for candidate in _row_native_variable_names(row)
+        )
+
+    @classmethod
+    def _variable_enabled_for_row(cls, row: SurfaceRow, spec) -> bool:
+        return bool(spec.is_enabled(row) or cls._row_native_variable_enabled(row, spec.parameter))
+
+    @classmethod
+    def _optimization_marker_fields_for_row(cls, row: SurfaceRow) -> tuple[str, ...]:
+        marker_fields: list[str] = []
+        for field in FIELDS:
+            spec = VARIABLE_REGISTRY.get(field)
+            if spec is None or not spec.is_supported(row):
+                continue
+            if cls._variable_enabled_for_row(row, spec):
+                marker_fields.append(field)
+        return tuple(marker_fields)
+
+    @staticmethod
+    def _remove_native_variable_from_row(row: SurfaceRow, parameter: str) -> None:
+        names = [
+            candidate
+            for candidate in _row_native_variable_names(row)
+            if not _native_variable_matches(candidate, parameter)
+        ]
+        row.advanced = dict(row.advanced or {})
+        if names:
+            row.advanced["Var"] = names
+        else:
+            row.advanced.pop("Var", None)
+        bounds = row.advanced.get("VarBounds")
+        if isinstance(bounds, dict):
+            for key in list(bounds):
+                if _native_variable_matches(key, parameter):
+                    bounds.pop(key, None)
+            if bounds:
+                row.advanced["VarBounds"] = bounds
+            else:
+                row.advanced.pop("VarBounds", None)
+
+    def toggle_current_optimization_cell(self) -> None:
+        if self.current_menu_row_id is None or self.current_menu_field is None:
+            return
+        index = self._table_item_row_index(self.current_menu_row_id)
+        if index is None:
+            return
+        row = self.rows[index]
+        spec = self._variable_spec_for_field(self.current_menu_field)
+        if spec is None:
+            return
+        self._begin_history_capture()
+        enabled = self._variable_enabled_for_row(row, spec)
+        spec.set_enabled(row, not enabled)
+        if enabled:
+            self._remove_native_variable_from_row(row, spec.parameter)
+        self._sync_table()
+        self._commit_history_capture()
+        self.refresh_plot()
+        self._cleanup_current_popup_menu()
+
+    def toggle_current_tolerance_compensator(self) -> None:
+        if self.current_menu_row_id is None or self.current_menu_field is None:
+            return
+        index = self._table_item_row_index(self.current_menu_row_id)
+        if index is None:
+            return
+        row = self.rows[index]
+        spec = self._variable_spec_for_field(self.current_menu_field)
+        if spec is None or not self._variable_enabled_for_row(row, spec):
+            return
+        enabled = self._tolerance_variable_compensator_enabled(
+            OpticalVariable(index, spec.parameter, 0.0, 1.0, name=f"{row.name} {spec.label}")
+        )
+        self._begin_history_capture()
+        self.set_tolerance_compensator_enabled(index, spec.parameter, not enabled)
+        self._commit_history_capture()
+        role = "compensator" if not enabled else "tolerance-only"
+        self.append_progress(f"Row {index} {spec.label} set to {role}.")
+        self._cleanup_current_popup_menu()
+
+    def edit_current_bounds(self) -> None:
+        self._main_optimization_panel().edit_current_bounds()
+
+    def _show_centered_dialog(self, dialog: tk.Toplevel) -> None:
+        def place_dialog() -> None:
+            if not dialog.winfo_exists():
+                return
+            dialog.update_idletasks()
+            dialog_width = max(dialog.winfo_reqwidth(), dialog.winfo_width(), 1)
+            dialog_height = max(dialog.winfo_reqheight(), dialog.winfo_height(), 1)
+            screen_width = max(dialog.winfo_screenwidth(), 1)
+            screen_height = max(dialog.winfo_screenheight(), 1)
+            pos_x = max((screen_width - dialog_width) // 2, 0)
+            pos_y = max((screen_height - dialog_height) // 2, 0)
+            dialog.geometry(f"{dialog_width}x{dialog_height}+{pos_x}+{pos_y}")
+
+        place_dialog()
+        dialog.deiconify()
+        dialog.lift()
+        dialog.focus_force()
+        dialog.after_idle(place_dialog)
+        dialog.after(80, place_dialog)
+
+    @staticmethod
+
+    def open_paraxial_matrix_report(self) -> None:
+        self._main_paraxial_analysis_dialogs().open_paraxial_matrix_report()
+
+    def _main_paraxial_analysis_dialogs(self) -> MainParaxialAnalysisDialogs:
+        dialog = self.__dict__.get("_main_paraxial_analysis_dialogs_instance")
+        if dialog is None:
+            dialog = MainParaxialAnalysisDialogs(self, short_error_message=_short_error_message)
+            self._main_paraxial_analysis_dialogs_instance = dialog
+        return dialog
+
+    def open_gaussian_beam_report(self) -> None:
+        self._main_paraxial_analysis_dialogs().open_gaussian_beam_report()
+
+    def clear_current_bounds(self) -> None:
+        if self.current_menu_row_id is None or self.current_menu_field is None:
+            return
+        index = self._table_item_row_index(self.current_menu_row_id)
+        if index is None:
+            return
+        row = self.rows[index]
+        spec = self._variable_spec_for_field(self.current_menu_field)
+        if spec is None:
+            return
+        self._begin_history_capture()
+        spec.set_bounds(row, None)
+        self._commit_history_capture()
+        self.append_progress(f"Bounds cleared for row {index} {spec.label}.")
+        self._cleanup_current_popup_menu()
+
+
+    def clear_optimization_marks(self) -> None:
+        for row in self.rows:
+            row.optimize_rc = False
+            row.optimize_thickness = False
+            row.advanced = dict(row.advanced or {})
+            row.advanced.pop("Var", None)
+            row.advanced.pop("VarBounds", None)
+        self._sync_table()
