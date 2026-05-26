@@ -19,9 +19,17 @@ class Open3DLiveTransientStepCheck:
     detail: str
 
 
+def _editor_contract_source() -> str:
+    return "\n".join(
+        inspect.getsource(cls)
+        for cls in KrakenLayoutEditor.__mro__
+        if getattr(cls, "__module__", "").startswith("KrakenOS.UI")
+    )
+
+
 def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
     inspector_source = inspect.getsource(Kraken3DInspector)
-    editor_source = inspect.getsource(KrakenLayoutEditor)
+    editor_source = _editor_contract_source()
     open3d_scene_refresh_service = inspect.getsource(Open3DSceneRefreshService)
     open3d_step_state_service = inspect.getsource(Open3DStepStateService)
     open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)

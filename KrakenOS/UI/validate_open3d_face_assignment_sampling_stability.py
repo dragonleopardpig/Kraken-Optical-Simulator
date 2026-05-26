@@ -19,6 +19,14 @@ from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
 
 
+def _editor_contract_source() -> str:
+    return "\n".join(
+        inspect.getsource(cls)
+        for cls in KrakenLayoutEditor.__mro__
+        if getattr(cls, "__module__", "").startswith("KrakenOS.UI")
+    )
+
+
 class _StatusVar:
     def __init__(self) -> None:
         self.value = ""
@@ -280,7 +288,7 @@ def _validate_done_2d_and_close_preserve_open3d_sampling() -> None:
 
 
 def _validate_focus_and_vtk_teardown_are_guarded() -> None:
-    editor_source = inspect.getsource(KrakenLayoutEditor)
+    editor_source = _editor_contract_source()
     close_source = inspect.getsource(Kraken3DInspector._on_close)
     destroy_source = inspect.getsource(Kraken3DInspector._destroy_vtk_render_window)
     if "def _safe_focus_get" not in editor_source or "except (KeyError, tk.TclError)" not in editor_source:

@@ -18,9 +18,17 @@ class Open3DLiveModeCheck:
     detail: str
 
 
+def _editor_contract_source() -> str:
+    return "\n".join(
+        inspect.getsource(cls)
+        for cls in KrakenLayoutEditor.__mro__
+        if getattr(cls, "__module__", "").startswith("KrakenOS.UI")
+    )
+
+
 def validate_open3d_live_mode() -> list[Open3DLiveModeCheck]:
     inspector_source = inspect.getsource(Kraken3DInspector)
-    editor_source = inspect.getsource(KrakenLayoutEditor)
+    editor_source = _editor_contract_source()
     open3d_live_controls_panel_source = inspect.getsource(Open3DLiveControlsPanel)
     open3d_live_refresh_service = inspect.getsource(Open3DLiveRefreshService)
     open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)

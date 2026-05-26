@@ -1,0 +1,2453 @@
+"""3D scene preview, legacy PyVista plotter, and Open 3D bridge helpers.
+
+This mixin owns the editor-facing 3D scene/display coordination that still
+belongs to the main window rather than the embedded Open 3D inspector widget.
+It keeps 3D mesh/ray geometry helpers available on ``KrakenLayoutEditor`` while
+moving the bulky legacy plotter and shared 3D display logic out of
+``layout_editor.py``.
+"""
+
+from __future__ import annotations
+
+from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import asdict
+import io
+from pathlib import Path
+import time
+import tkinter as tk
+from tkinter import filedialog
+import warnings
+
+import numpy as np
+
+import KrakenOS as Kos
+from KrakenOS.UI.open3d_inspector import Kraken3DInspector
+from KrakenOS.UI.scene_geometry import (
+    SceneBundle,
+    SceneTarget3D,
+    SurfaceMesh3D,
+    ray_path_reaches_image_from_events,
+    ray_path_terminal_event,
+    ray_path_terminal_metadata,
+    ray_path_terminal_status_from_events,
+    scene_target_active_footprint_polylines,
+    scene_target_detector_miss_crosshair_polylines,
+)
+from KrakenOS.UI.scene_projector import (
+    bounded_ray_points_for_scene_display,
+    normalize_projection_plane,
+    scene_display_center_radius,
+)
+from KrakenOS.UI.layout_plot_controller import preview_trace_signature_matches
+from KrakenOS.UI.nonseq_output_ports import (
+    optical_solid_output_port_pose_overrides,
+    optical_solid_output_port_runtime_transform_override,
+)
+from KrakenOS.UI.services.legacy_3d_scene import Legacy3DSceneService
+from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
+from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
+from KrakenOS.UI.services.optical_solid_geometry import (
+    _read_stl_triangle_vertices,
+    _rotation_matrix_from_kraken_tilts,
+)
+from KrakenOS.UI.surface_table_model import SurfaceRow
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+SCREENSHOT_DIR = PROJECT_ROOT / "attachment"
+STEP_OVERLAY_LABELS = ("lens", "optical", "led", "camera")
+STEP_OVERLAY_LABEL_SET = set(STEP_OVERLAY_LABELS)
+
+pv = None
+vtkTkRenderWindowInteractor = None
+vtkCellPicker = None
+
+
+def _layout_module():
+    from KrakenOS.UI import layout_editor as layout_editor_module
+
+    return layout_editor_module
+
+
+def _load_3d_backends() -> None:
+    _sync_3d_backend_globals(load=True)
+
+
+def _sync_3d_backend_globals(*, load: bool = False) -> None:
+    global pv, vtkTkRenderWindowInteractor, vtkCellPicker
+    layout_editor_module = _layout_module()
+    if load:
+        layout_editor_module._load_3d_backends()
+    pv = layout_editor_module.pv
+    vtkTkRenderWindowInteractor = layout_editor_module.vtkTkRenderWindowInteractor
+    vtkCellPicker = layout_editor_module.vtkCellPicker
+
+
+def _ensure_pv() -> None:
+    if pv is None:
+        _sync_3d_backend_globals(load=True)
+
+
+def _short_error_message(exc: Exception, limit: int = 220) -> str:
+    return _layout_module()._short_error_message(exc, limit=limit)
+
+
+def _row_specs_signature(row_specs: list[dict]):
+    return _layout_module()._row_specs_signature(row_specs)
+
+
+def _wavelength_to_rgb(wavelength_nm: float) -> tuple[float, float, float]:
+    return _layout_module()._wavelength_to_rgb(wavelength_nm)
+
+
+def _color_to_rgb_tuple(color: object) -> tuple[float, float, float]:
+    return _layout_module()._color_to_rgb_tuple(color)
+
+
+class ThreeDSceneToolsMixin:
+    def open_3d_view(self) -> None:
+        try:
+            _load_3d_backends()
+            if vtkTkRenderWindowInteractor is not None:
+                try:
+                    if self._three_d_inspector is None or not self._three_d_inspector.winfo_exists():
+                        self._three_d_inspector = Kraken3DInspector(self)
+                    if self._three_d_inspector.available:
+                        self._three_d_inspector.deiconify()
+                        self._three_d_inspector.lift()
+                        self._three_d_inspector.focus_force()
+                        self._three_d_inspector.refresh_from_editor()
+                        self.status_var.set("Opened Kraken 3D inspector")
+                        self.append_debug("Opened Kraken 3D inspector")
+                        return
+                    reason = self._three_d_inspector.unavailable_reason or "VTK/Tk unavailable"
+                    try:
+                        self._three_d_inspector.destroy()
+                    except Exception:
+                        pass
+                    self._three_d_inspector = None
+                    self.append_debug(f"Embedded 3D inspector unavailable: {reason}. Falling back to legacy PyVista viewer.")
+                except Exception as exc:
+                    self.append_debug(f"Embedded 3D inspector failed: {exc}. Falling back to legacy PyVista viewer.")
+                    if self._three_d_inspector is not None:
+                        try:
+                            self._three_d_inspector.destroy()
+                        except Exception:
+                            pass
+                        self._three_d_inspector = None
+
+            self._close_legacy_3d_plotter()
+            current = self._current_preview_scene_trace()
+            if current is not None:
+                system, rays, scene_bundle = current
+            else:
+                system, rays, scene_bundle = self._build_preview_system_rays_bundle(
+                    sampling_mode=self._preview_2d_sampling_mode(),
+                    update_state=False,
+                )
+            plotter = self._build_legacy_3d_plotter(system, rays, scene_bundle=scene_bundle)
+            plotter.show(auto_close=False, interactive=True, interactive_update=True)
+            self._legacy_3d_plotter = plotter
+            self._schedule_legacy_3d_poll()
+            self.status_var.set("Opened legacy Kraken 3D view")
+            self.append_debug("Opened legacy Kraken 3D view")
+        except Exception as exc:
+            self.append_debug(f"3D view error: {exc}")
+            self.status_var.set(f"3D view failed: {exc}")
+
+    def _schedule_legacy_3d_poll(self) -> None:
+        if self._legacy_3d_after_id is not None:
+            return
+        try:
+            self._legacy_3d_after_id = self.after(20, self._poll_legacy_3d_plotter)
+        except Exception:
+            self._legacy_3d_after_id = None
+
+    def _poll_legacy_3d_plotter(self) -> None:
+        self._legacy_3d_after_id = None
+        plotter = self._legacy_3d_plotter
+        if plotter is None:
+            return
+        if bool(getattr(plotter, "_closed", False)):
+            self._legacy_3d_plotter = None
+            self.status_var.set("Closed legacy Kraken 3D view")
+            return
+        try:
+            plotter.update(stime=1, force_redraw=True)
+        except Exception as exc:
+            self.append_debug(f"Legacy 3D update failed: {exc}")
+            self._close_legacy_3d_plotter()
+            self.status_var.set(f"3D view closed: {_short_error_message(exc)}")
+            return
+        self._schedule_legacy_3d_poll()
+
+    def _close_legacy_3d_plotter(self) -> None:
+        if self._legacy_3d_after_id is not None:
+            try:
+                self.after_cancel(self._legacy_3d_after_id)
+            except Exception:
+                pass
+            self._legacy_3d_after_id = None
+        plotter = self._legacy_3d_plotter
+        self._legacy_3d_plotter = None
+        if plotter is None:
+            return
+        stl_placement_dirty = bool(getattr(plotter, "_kraken_stl_placement_dirty", False))
+        # VTK's GLX teardown segfaults on Wayland / XWayland, so hide the
+        # window and detach references instead of calling plotter.close().
+        try:
+            iren = getattr(plotter, "iren", None)
+            if iren is not None:
+                iren.terminate_app()
+        except Exception:
+            pass
+        try:
+            rw = getattr(plotter, "render_window", None)
+            if rw is not None:
+                rw.SetShowWindow(False)
+        except Exception:
+            pass
+        if stl_placement_dirty:
+            def refresh_2d_after_legacy_close() -> None:
+                try:
+                    self.refresh_plot(suppress_analysis=True)
+                except Exception as exc:
+                    self.status_var.set(f"CAD/STL placement saved; 2D refresh failed: {_short_error_message(exc)}")
+                    self.append_debug(f"Legacy CAD/STL placement close refresh failed: {exc}")
+
+            try:
+                self.after(50, refresh_2d_after_legacy_close)
+                self.status_var.set("Legacy 3D CAD/STL placement closed; refreshing 2D layout.")
+            except Exception as exc:
+                self.append_debug(f"Legacy CAD/STL placement close refresh failed: {exc}")
+
+    def _build_preview_system_rays_bundle(
+        self,
+        *,
+        sampling_mode: str | None = None,
+        update_state: bool = True,
+        include_live_step_overlays: bool = False,
+    ):
+        wavelength = self._current_wavelength()
+        capture = io.StringIO()
+        active_rows = self.rows
+        live_step_records: list[dict[str, object]] = []
+        if include_live_step_overlays:
+            active_rows, live_step_records = self._live_step_overlay_trace_rows()
+        else:
+            self._last_live_step_overlay_trace_rows = None
+            self._last_live_step_overlay_trace_records = []
+            self._last_live_step_overlay_scene_bundle = None
+        original_rows: list[SurfaceRow] | None = None
+        scene_bundle = None
+        try:
+            if active_rows is not self.rows:
+                original_rows = self.rows
+                self.rows = active_rows
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                with redirect_stdout(capture), redirect_stderr(capture):
+                    system = self.build_system(
+                        require_solids=True,
+                        force_rebuild=bool(live_step_records),
+                    )
+                    rays = Kos.raykeeper(system)
+                    max_radius = max((max(row.diameter / 2.0, 0.5) for row in self.rows), default=1.0)
+                    mode = sampling_mode
+                    if mode is None:
+                        mode = self._preview_scene_sampling_mode()
+                    self._trace_preview_rays(
+                        system,
+                        rays,
+                        wavelength,
+                        max_radius,
+                        sampling_mode=mode,
+                    )
+            scene_bundle = self._build_scene_bundle(system, rays, max_radius)
+            if include_live_step_overlays:
+                self._last_live_step_overlay_trace_rows = list(self.rows)
+                self._last_live_step_overlay_trace_records = list(live_step_records)
+                self._last_live_step_overlay_scene_bundle = scene_bundle
+        finally:
+            if original_rows is not None:
+                self.rows = original_rows
+        self.append_debug(capture.getvalue())
+        if update_state and not include_live_step_overlays:
+            self.last_system = system
+            self.last_rays = rays
+            self._last_preview_trace_signature = self._preview_trace_signature()
+            self._last_scene_bundle = scene_bundle
+            self._preview_scene_trace_dirty = False
+        return system, rays, scene_bundle
+
+    def _live_step_overlay_trace_rows(self) -> tuple[list[SurfaceRow], list[dict[str, object]]]:
+        if self._step_path_for_label("optical") is None:
+            return self.rows, []
+        base_rows = [SurfaceRow(**asdict(row)) for row in self.rows]
+        cache_key = self._live_step_overlay_trace_cache_key("optical", base_rows)
+        cached_plan = self._cached_live_step_overlay_trace_plan(cache_key)
+        if cached_plan is not None:
+            row = cached_plan.get("row")
+            if isinstance(row, SurfaceRow):
+                row_index = int(cached_plan.get("row_index", len(base_rows)))
+                base_rows.insert(max(1, min(row_index, len(base_rows))), row)
+                return base_rows, [cached_plan]
+        original_rows = self.rows
+        try:
+            self.rows = base_rows
+            plan = self._step_overlay_optical_solid_row_plan(
+                "optical",
+                cache_subdir="live_step_overlays",
+                transient_live_trace=True,
+                use_current_selection=False,
+                quiet=True,
+            )
+            if plan is None:
+                return original_rows, []
+            row = plan.get("row")
+            if not isinstance(row, SurfaceRow):
+                return original_rows, []
+            row_index = int(plan.get("row_index", len(base_rows)))
+            base_rows.insert(max(1, min(row_index, len(base_rows))), row)
+            self._remember_live_step_overlay_trace_plan(cache_key, plan)
+            return base_rows, [plan]
+        finally:
+            self.rows = original_rows
+
+    def _live_step_overlay_trace_cache_key(self, label: str, rows: list[SurfaceRow]) -> object | None:
+        label = str(label).strip().lower()
+        source_path = self._step_path_for_label(label)
+        if source_path is None:
+            return None
+        try:
+            row_signature = _row_specs_signature(self._serializable_specs_for_rows(rows))
+        except Exception:
+            row_signature = tuple(
+                (
+                    str(getattr(row, "surface", "") or ""),
+                    float(getattr(row, "thickness", 0.0) or 0.0),
+                    float(getattr(row, "diameter", 0.0) or 0.0),
+                    float(getattr(row, "desp_x", 0.0) or 0.0),
+                    float(getattr(row, "desp_y", 0.0) or 0.0),
+                    float(getattr(row, "desp_z", 0.0) or 0.0),
+                )
+                for row in rows
+            )
+        return (
+            label,
+            str(Path(source_path).resolve()),
+            float(self._step_x_rotation_deg(label)),
+            float(self._step_y_rotation_deg(label)),
+            float(self._step_roll_deg(label)),
+            tuple(float(value) for value in self._step_axis_offset_xy(label)),
+            tuple(float(value) for value in self._step_placement_offset_xyz(label)),
+            bool(getattr(self, "lens_step_largest_component_only", True)) if label == "lens" else None,
+            row_signature,
+        )
+
+    def _cached_live_step_overlay_trace_plan(self, cache_key: object | None) -> dict[str, object] | None:
+        if cache_key is None:
+            return None
+        cache = getattr(self, "_live_step_overlay_trace_plan_cache", {}) or {}
+        cached = cache.get(cache_key)
+        if not isinstance(cached, dict):
+            return None
+        row = cached.get("row")
+        if not isinstance(row, SurfaceRow):
+            return None
+        copied = dict(cached)
+        copied["row"] = SurfaceRow(**asdict(row))
+        copied["cache_hit"] = True
+        return copied
+
+    def _remember_live_step_overlay_trace_plan(self, cache_key: object | None, plan: dict[str, object]) -> None:
+        if cache_key is None or not isinstance(plan, dict):
+            return
+        row = plan.get("row")
+        if not isinstance(row, SurfaceRow):
+            return
+        cache = dict(getattr(self, "_live_step_overlay_trace_plan_cache", {}) or {})
+        cached = dict(plan)
+        cached["row"] = SurfaceRow(**asdict(row))
+        cache[cache_key] = cached
+        while len(cache) > 4:
+            try:
+                cache.pop(next(iter(cache)))
+            except Exception:
+                break
+        self._live_step_overlay_trace_plan_cache = cache
+
+    def _preview_render_rows(self, scene_bundle: SceneBundle | None = None) -> list[SurfaceRow]:
+        if (
+            scene_bundle is not None
+            and scene_bundle is self.__dict__.get("_last_live_step_overlay_scene_bundle")
+        ):
+            rows = self.__dict__.get("_last_live_step_overlay_trace_rows")
+            if rows:
+                return list(rows)
+        return list(self.rows)
+
+    def _preview_render_row_names(self, scene_bundle: SceneBundle | None = None) -> list[str]:
+        return [str(getattr(row, "name", "") or "") for row in self._preview_render_rows(scene_bundle)]
+
+    def _preview_scene_sampling_mode(self) -> str:
+        """Sampling mode for the shared traced scene used by 2D and Open 3D."""
+        if self._is_full_pupil_mode():
+            return "full_pupil"
+        try:
+            trace_state = self._resolved_trace_mode(system=self.__dict__.get("last_system"))
+        except Exception:
+            trace_state = {}
+        if bool(trace_state.get("use_nonseq")) or bool(trace_state.get("use_folded")):
+            return "world_envelope"
+        return "display_slice"
+
+    def _preview_2d_sampling_mode(self) -> str:
+        """Sampling mode for editable 2D projections.
+
+        2D panes are projections of the same physical 3D launch family used by
+        Open 3D.  The denser ``world_sections`` sampler remains available for
+        explicit diagnostics, but it is no longer the default 2D scene trace.
+        """
+        return self._preview_3d_sampling_mode()
+
+    def _preview_3d_sampling_mode(self) -> str:
+        """Sampling mode for Open 3D.
+
+        Open 3D should show the physical 3D launch whenever the user has not
+        explicitly requested a filled full-pupil trace. The default Pupil/field
+        sampler remains a prescription reference; use a physical source model
+        for point-cone illumination.
+        """
+        if self._is_full_pupil_mode():
+            return "full_pupil"
+        return "world_envelope"
+
+    def _current_preview_scene_trace(self):
+        if bool(getattr(self, "_preview_scene_trace_dirty", False)):
+            return None
+        if self.last_system is None or self.last_rays is None or self._last_scene_bundle is None:
+            return None
+        if not preview_trace_signature_matches(self._last_preview_trace_signature, self._preview_trace_signature()):
+            return None
+        return self.last_system, self.last_rays, self._last_scene_bundle
+
+    def _build_preview_system_and_rays(self):
+        system, rays, _scene_bundle = self._build_preview_system_rays_bundle(update_state=True)
+        return system, rays
+
+    def _folded_preview_mirror_mesh_for_row(
+        self,
+        row_index: int,
+        row: SurfaceRow,
+        *,
+        system=None,
+    ):
+        """Return a 3-D mirror mesh congruent with folded-preview ray geometry."""
+        _ensure_pv()
+        if pv is None or row.surface != "Mirror":
+            return None
+        try:
+            folded_geometry = self._current_folded_surface_geometry(system=system)
+        except Exception:
+            folded_geometry = None
+        if folded_geometry is None:
+            return None
+        try:
+            _point, _direction, _max_half, _extent_points, elements = folded_geometry
+        except Exception:
+            return None
+        mirror_tangent = None
+        center = None
+        for element_index, element in enumerate(list(elements or []), start=1):
+            if element_index != int(row_index):
+                continue
+            try:
+                surface_type, element_center = element[0], element[1]
+            except Exception:
+                return None
+            if surface_type != "Mirror":
+                return None
+            center = np.asarray(element_center, dtype=float).reshape(-1)[:2]
+            mirror_tangent = element[4] if len(element) > 4 else None
+            break
+        if center is None or center.size < 2 or not np.all(np.isfinite(center[:2])):
+            return None
+        tangent = np.asarray(mirror_tangent, dtype=float).reshape(-1)[:2] if mirror_tangent is not None else None
+        if tangent is None or tangent.size < 2 or not np.all(np.isfinite(tangent[:2])):
+            angle = np.deg2rad(self._mirror_display_slant_deg_for_rows(self.rows, int(row_index)))
+            tangent = np.asarray((np.cos(angle), np.sin(angle)), dtype=float)
+        norm = float(np.linalg.norm(tangent))
+        if norm <= 1e-12:
+            return None
+        tangent = tangent / norm
+        try:
+            half_line = max(float(row.diameter) * 0.5, 0.5)
+        except Exception:
+            half_line = 0.5
+        try:
+            half_width = max(min(float(row.diameter) * 0.5, half_line), 0.5)
+        except Exception:
+            half_width = half_line
+        p0 = center[:2] - tangent * half_line
+        p1 = center[:2] + tangent * half_line
+        points = np.asarray(
+            (
+                (-half_width, p0[1], p0[0]),
+                (half_width, p0[1], p0[0]),
+                (half_width, p1[1], p1[0]),
+                (-half_width, p1[1], p1[0]),
+            ),
+            dtype=float,
+        )
+        faces = np.asarray((4, 0, 1, 2, 3), dtype=np.int64)
+        try:
+            return pv.PolyData(points, faces)
+        except Exception:
+            return None
+
+    def _iter_3d_optical_surface_meshes(
+        self,
+        system,
+        *,
+        include_reference_surfaces: bool,
+    ) -> list[SurfaceMesh3D]:
+        transforms = getattr(system, "TRANS_2A", None)
+        surfaces = getattr(system, "AAA", None)
+        if transforms is None or surfaces is None:
+            return []
+        surface_descriptors = getattr(system, "SDT_0", None)
+        try:
+            surface_count = len(surface_descriptors)
+        except Exception:
+            surface_count = 0
+        block_count = min(len(self.rows), getattr(surfaces, "n_blocks", 0), len(transforms), surface_count)
+        mesh_items: list[SurfaceMesh3D] = []
+        pose_overrides = optical_solid_output_port_pose_overrides(system, self.rows)
+        for index in range(block_count):
+            row = self.rows[index]
+            if not include_reference_surfaces and row.surface in {"Object", "Image"}:
+                continue
+            row_transform = optical_solid_output_port_runtime_transform_override(system, self.rows, index)
+            mesh = None
+            advanced = row.advanced if isinstance(row.advanced, dict) else {}
+            file_backed_optical_solid = self._scene_graph_value_present(advanced.get("Solid_3d_stl"))
+            if row.surface == "Mirror":
+                mesh = self._folded_preview_mirror_mesh_for_row(index, row, system=system)
+            if mesh is None and (file_backed_optical_solid or index in pose_overrides):
+                mesh = ThreeDSceneToolsMixin._runtime_trace_surface_mesh(system, index)
+            if row_transform is None:
+                row_transform = transforms[index]
+            if file_backed_optical_solid and row_transform is not None and mesh is None:
+                solid_mesh = self._stl_mesh_with_world_transform(row, row_transform)
+                if solid_mesh is not None and int(getattr(solid_mesh, "n_points", 0)) > 0:
+                    mesh = solid_mesh
+            if mesh is None:
+                mesh = Kraken3DInspector._mesh_with_transform(surfaces[index], row_transform)
+            if mesh is None and row_transform is not None:
+                mesh = self._stl_mesh_with_world_transform(row, row_transform)
+            if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
+                continue
+            mesh = ThreeDSceneToolsMixin._reference_mesh_with_row_diameter(mesh, row)
+            surface = surface_descriptors[index]
+            mesh_color = (0.10, 0.62, 0.72) if file_backed_optical_solid else Kraken3DInspector._surface_color(surface)
+            mesh_opacity = 0.30 if file_backed_optical_solid else (0.88 if row.surface == "Mirror" else 0.68)
+            mesh_items.append(
+                SurfaceMesh3D(
+                    row_index=index,
+                    kind=str(row.surface or "standard").lower().replace(" ", "_"),
+                    row=row,
+                    surface=surface,
+                    mesh=mesh,
+                    color=mesh_color,
+                    opacity=mesh_opacity,
+                    is_stop=self._legacy_3d_is_stop_plane(row),
+                )
+            )
+        return mesh_items
+
+    @staticmethod
+    def _runtime_trace_surface_mesh(system, row_index: int) -> pv.DataSet | None:
+        _ensure_pv()
+        if pv is None or system is None:
+            return None
+        meshes = getattr(system, "EEE", None)
+        try:
+            if meshes is None or not (0 <= int(row_index) < len(meshes)):
+                return None
+            mesh = pv.wrap(meshes[int(row_index)])
+        except Exception:
+            return None
+        try:
+            mesh = mesh.extract_surface(algorithm="dataset_surface")
+        except Exception:
+            pass
+        try:
+            mesh = mesh.copy(deep=True)
+        except Exception:
+            return None
+        try:
+            pts = np.asarray(mesh.points, dtype=float)
+        except Exception:
+            return None
+        if pts.ndim != 2 or pts.shape[0] < 1 or not np.any(np.all(np.isfinite(pts[:, :3]), axis=1)):
+            return None
+        return mesh
+
+    @staticmethod
+    def _reference_mesh_with_row_diameter(mesh, row: SurfaceRow):
+        _ensure_pv()
+        if pv is None or mesh is None:
+            return mesh
+        surface = str(getattr(row, "surface", "") or "").strip()
+        if surface not in {"Object", "Image"}:
+            return mesh
+        try:
+            target_radius = max(float(getattr(row, "diameter", 0.0) or 0.0) * 0.5, 0.0)
+        except Exception:
+            return mesh
+        if target_radius <= 1e-12:
+            return mesh
+        try:
+            scaled = mesh.copy(deep=True)
+            pts = np.asarray(scaled.points, dtype=float)
+        except Exception:
+            return mesh
+        if pts.ndim != 2 or pts.shape[0] < 1 or pts.shape[1] < 3:
+            return mesh
+        finite = np.all(np.isfinite(pts[:, :3]), axis=1)
+        if not np.any(finite):
+            return mesh
+        center = np.mean(pts[finite, :3], axis=0)
+        radii = np.linalg.norm(pts[finite, :3] - center, axis=1)
+        current_radius = float(np.max(radii)) if radii.size else 0.0
+        if current_radius <= 1e-12:
+            return mesh
+        pts[:, :3] = center + (pts[:, :3] - center) * (target_radius / current_radius)
+        try:
+            scaled.points = pts
+            return scaled
+        except Exception:
+            return mesh
+
+    def _stl_mesh_with_world_transform(self, row: SurfaceRow, transform: np.ndarray) -> pv.DataSet | None:
+        _ensure_pv()
+        if pv is None:
+            return None
+        path = self._stl_path_from_row(row)
+        if path is None:
+            return None
+        try:
+            _fmt, triangles = _read_stl_triangle_vertices(path)
+            triangles = np.asarray(triangles, dtype=float)
+            if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or triangles.shape[0] == 0:
+                return None
+            points = triangles.reshape((-1, 3))
+            local_h = np.column_stack(
+                (
+                    points[:, 0],
+                    points[:, 1],
+                    points[:, 2],
+                    np.ones(points.shape[0], dtype=float),
+                )
+            )
+            matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+            world = (matrix @ local_h.T).T[:, :3]
+            faces = np.column_stack(
+                (
+                    np.full(triangles.shape[0], 3, dtype=np.int64),
+                    np.arange(points.shape[0], dtype=np.int64).reshape((-1, 3)),
+                )
+            ).ravel()
+            return pv.PolyData(world, faces)
+        except Exception:
+            return None
+
+    def _iter_3d_side_body_meshes(
+        self,
+        system,
+        *,
+        include_reference_surfaces: bool,
+    ) -> list[SurfaceMesh3D]:
+        _ensure_pv()
+        surface_descriptors = getattr(system, "SDT_0", None)
+        try:
+            surface_count = len(surface_descriptors)
+        except Exception:
+            surface_count = 0
+        mesh_items: list[SurfaceMesh3D] = []
+        side_index = 0
+        for row_index in getattr(system, "side_number", []):
+            try:
+                row_index_int = int(row_index)
+            except Exception:
+                side_index += 1
+                continue
+            if row_index_int >= len(self.rows) or row_index_int >= surface_count:
+                side_index += 1
+                continue
+            row = self.rows[row_index_int]
+            if not include_reference_surfaces and row.surface in {"Object", "Image"}:
+                side_index += 1
+                continue
+            advanced = row.advanced if isinstance(row.advanced, dict) else {}
+            if self._geometry_value_present(advanced.get("Solid_3d_stl")):
+                side_index += 1
+                continue
+            try:
+                body = pv.wrap(system.BBB[side_index]).extract_surface(algorithm="dataset_surface").copy(deep=True)
+            except Exception:
+                side_index += 1
+                continue
+            side_index += 1
+            if int(getattr(body, "n_points", 0)) == 0:
+                continue
+            surface = surface_descriptors[row_index_int]
+            mesh_items.append(
+                SurfaceMesh3D(
+                    row_index=row_index_int,
+                    kind=f"{str(row.surface or 'standard').lower().replace(' ', '_')}_solid",
+                    row=row,
+                    surface=surface,
+                    mesh=body,
+                    color=Kraken3DInspector._surface_color(surface),
+                    opacity=0.18,
+                    is_stop=self._legacy_3d_is_stop_plane(row),
+                    is_body=True,
+                )
+            )
+        return mesh_items
+
+    def _iter_3d_surface_meshes(
+        self,
+        system,
+        *,
+        include_reference_surfaces: bool,
+    ) -> list[SurfaceMesh3D]:
+        return [
+            *self._iter_3d_optical_surface_meshes(system, include_reference_surfaces=include_reference_surfaces),
+            *self._iter_3d_side_body_meshes(system, include_reference_surfaces=include_reference_surfaces),
+        ]
+
+    def _scene_surface_meshes(
+        self,
+        system,
+        scene_bundle: SceneBundle | None = None,
+        *,
+        include_reference_surfaces: bool,
+    ) -> list[SurfaceMesh3D]:
+        bundle = scene_bundle if scene_bundle is not None else self._last_scene_bundle
+        mesh_items = list(getattr(bundle, "surface_meshes", []) or []) if bundle is not None else []
+        if not mesh_items and system is not None:
+            mesh_items = self._iter_3d_surface_meshes(system, include_reference_surfaces=True)
+            if bundle is not None:
+                bundle.surface_meshes = list(mesh_items)
+        if include_reference_surfaces:
+            return mesh_items
+        return [
+            mesh_item
+            for mesh_item in mesh_items
+            if getattr(mesh_item.row, "surface", "") not in {"Object", "Image"}
+        ]
+
+    def _build_legacy_3d_plotter(self, system, rays, *, scene_bundle: SceneBundle | None = None):
+        _load_3d_backends()
+        if pv is None:
+            raise RuntimeError("PyVista is required for legacy 3D view")
+        plotter = pv.Plotter(shape=(1, 1), title="KrakenOS 3D", notebook=False)
+        plotter.set_background("white", top="white")
+        plotter.enable_anti_aliasing()
+        try:
+            plotter.render_window.SetStereoTypeToFake()
+            plotter.render_window.StereoRenderOff()
+            plotter.render_window.StereoCapableWindowOff()
+        except Exception:
+            pass
+        plotter.add_axes(line_width=3)
+        plotter.show_grid(font_size=6, color="black", n_xlabels=2, n_ylabels=2, n_zlabels=2, fmt="%.0f", bold=False)
+        scene_bundle = scene_bundle if scene_bundle is not None else self._last_scene_bundle
+        scene_info = self._populate_legacy_3d_plotter_scene(
+            plotter,
+            system,
+            rays,
+            scene_bundle=scene_bundle,
+            add_clip_plane=False,
+            add_labels=True,
+        )
+        self._configure_legacy_3d_plotter(
+            plotter,
+            ray_actors=scene_info["ray_actors"],
+            mirror_actors=scene_info["mirror_actors"],
+            lens_actors=scene_info["lens_actors"],
+            helper_actors=scene_info["helper_actors"],
+        )
+        self._enable_legacy_3d_close_handling(plotter)
+        setattr(plotter, "_kraken_scene", scene_info)
+        setattr(plotter, "_kraken_scene_bundle", scene_bundle)
+        setattr(plotter, "_kraken_system", system)
+        setattr(plotter, "_kraken_rays", rays)
+        return plotter
+
+    def _legacy_3d_scene_service(self) -> Legacy3DSceneService:
+        service = self.__dict__.get("_legacy_3d_scene_service_instance")
+        if service is None:
+            service = Legacy3DSceneService(self)
+            self._legacy_3d_scene_service_instance = service
+        return service
+
+    def _populate_legacy_3d_plotter_scene(
+        self,
+        plotter,
+        system,
+        rays,
+        *,
+        scene_bundle: SceneBundle | None = None,
+        add_clip_plane: bool,
+        add_labels: bool,
+    ) -> dict[str, list]:
+        return self._legacy_3d_scene_service()._populate_legacy_3d_plotter_scene(
+            plotter,
+            system,
+            rays,
+            scene_bundle=scene_bundle,
+            add_clip_plane=add_clip_plane,
+            add_labels=add_labels,
+        )
+
+    def _build_clean_legacy_3d_plotter(self, system, rays):
+        _load_3d_backends()
+        if pv is None:
+            raise RuntimeError("PyVista is required for 3D screenshot export")
+        plotter = pv.Plotter(off_screen=True, window_size=(2200, 1400), notebook=False)
+        plotter.set_background("white", top="white")
+        plotter.enable_anti_aliasing()
+        try:
+            plotter.render_window.SetStereoTypeToFake()
+            plotter.render_window.StereoRenderOff()
+            plotter.render_window.StereoCapableWindowOff()
+        except Exception:
+            pass
+        plotter.add_axes(line_width=3)
+        plotter.show_grid(font_size=6, color="black", n_xlabels=2, n_ylabels=2, n_zlabels=2, fmt="%.0f", bold=False)
+        scene_bundle = self._last_scene_bundle
+        scene_info = self._populate_legacy_3d_plotter_scene(
+            plotter,
+            system,
+            rays,
+            scene_bundle=scene_bundle,
+            add_clip_plane=False,
+            add_labels=False,
+        )
+        setattr(plotter, "_kraken_scene", scene_info)
+        setattr(plotter, "_kraken_scene_bundle", scene_bundle)
+        return plotter
+
+    @staticmethod
+    def _legacy_3d_is_stop_plane(row: SurfaceRow) -> bool:
+        name = (row.name or "").strip().lower()
+        return "stop" in name or "aperture" in name
+
+    @staticmethod
+    def _legacy_3d_stop_ring_mesh(mesh, row: SurfaceRow):
+        _ensure_pv()
+        try:
+            pts = np.asarray(mesh.points, dtype=float)
+        except Exception:
+            return None
+        if pts.size == 0:
+            return None
+        center = np.mean(pts, axis=0)
+        centered = pts - center
+        try:
+            _u, _s, vh = np.linalg.svd(centered, full_matrices=False)
+            normal = np.asarray(vh[-1], dtype=float)
+        except Exception:
+            normal = np.array([0.0, 0.0, 1.0], dtype=float)
+        norm = max(float(np.linalg.norm(normal)), 1e-12)
+        normal = normal / norm
+        outer = max(float(row.diameter) * 0.5, 0.5)
+        inner = max(outer * 0.82, outer - 0.8)
+        if inner >= outer:
+            inner = outer * 0.9
+        try:
+            return pv.Disc(center=center, inner=inner, outer=outer, normal=normal, r_res=1, c_res=96)
+        except Exception:
+            return None
+
+    def _legacy_3d_ray_radius(self, system, rays) -> float:
+        try:
+            bounds = np.asarray(system.AAA.bounds, dtype=float)
+        except Exception:
+            bounds = np.array([0.0, 100.0, -25.0, 25.0, -25.0, 25.0], dtype=float)
+        span = max(
+            float(bounds[1] - bounds[0]) if bounds.size >= 2 else 0.0,
+            float(bounds[3] - bounds[2]) if bounds.size >= 4 else 0.0,
+            float(bounds[5] - bounds[4]) if bounds.size >= 6 else 0.0,
+            1.0,
+        )
+        ray_count = max(len(getattr(rays, "CC", [])), 1)
+        return max(span * 0.0009 / max(np.sqrt(ray_count), 1.0), 0.05)
+
+    def _physical_dimension_values(self) -> tuple[float, float, float, float, float] | None:
+        if not self.rows or len(self.rows) < 3:
+            return None
+        housing_front_z = self._lens_front_datum_z()
+        object_z = 0.0
+        image_z = self._current_image_plane_z()
+        camera_front_z = image_z - self._current_camera_front_to_sensor_mm()
+        if not all(np.isfinite(value) for value in (object_z, housing_front_z, camera_front_z)):
+            return None
+        return (
+            float(object_z),
+            float(housing_front_z),
+            float(camera_front_z),
+            abs(float(housing_front_z - object_z)),
+            abs(float(camera_front_z - housing_front_z)),
+        )
+
+    def _add_legacy_3d_physical_dimensions(self, plotter, helper_actors: list) -> None:
+        self._legacy_3d_scene_service()._add_legacy_3d_physical_dimensions(plotter, helper_actors)
+
+    def _iter_3d_display_rays(self, rays):
+        return [(wave, path) for _index, wave, path in self._iter_3d_display_ray_items(rays)]
+
+    def _iter_3d_display_ray_items(self, rays):
+        waves = list(getattr(rays, "RayWave", []))
+        paths = list(getattr(rays, "CC", []))
+        total = min(len(waves), len(paths))
+        if total <= 0:
+            return []
+        waves = waves[:total]
+        paths = paths[:total]
+        if total <= 300:
+            return [(index, waves[index], paths[index]) for index in range(total)]
+        step = max(total // 300, 1)
+        return [(index, waves[index], paths[index]) for index in range(0, total, step)]
+
+    def _iter_3d_scene_ray_items(
+        self,
+        rays=None,
+        scene_bundle: SceneBundle | None = None,
+    ) -> list[tuple[int, tuple[float, float, float], np.ndarray]]:
+        return [
+            (ray_index, color, points)
+            for ray_index, color, points, _terminal_status in self._iter_3d_scene_ray_records(rays, scene_bundle)
+        ]
+
+    def _iter_3d_scene_ray_records(
+        self,
+        rays=None,
+        scene_bundle: SceneBundle | None = None,
+    ) -> list[tuple[int, tuple[float, float, float], np.ndarray, str]]:
+        bundle = scene_bundle if scene_bundle is not None else self._last_scene_bundle
+        scene_paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
+        if scene_paths:
+            if not bool(self.show_clipped_rays_var.get()):
+                scene_paths = [path for path in scene_paths if ray_path_reaches_image_from_events(path)]
+            total = len(scene_paths)
+            step = max(total // 300, 1) if total > 300 else 1
+            rendered: list[tuple[int, tuple[float, float, float], np.ndarray, str]] = []
+            for fallback_index, path in enumerate(scene_paths[0:total:step]):
+                points = np.asarray(path.points_world, dtype=float)
+                if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+                    continue
+                path_color = str(getattr(path, "color", "") or "").strip()
+                if path_color:
+                    color = _color_to_rgb_tuple(path_color)
+                else:
+                    wavelength = getattr(path, "wavelength", None)
+                    if wavelength is not None:
+                        color = tuple(_wavelength_to_rgb(float(wavelength) * 1000.0))
+                    else:
+                        color = _color_to_rgb_tuple("#39FF14")
+                try:
+                    ray_index = int(getattr(path, "ray_index"))
+                except Exception:
+                    ray_index = int(fallback_index * step)
+                rendered.append((ray_index, color, points[:, :3], ray_path_terminal_status_from_events(path)))
+            return rendered
+
+        fallback_rays = rays if rays is not None else self.last_rays
+        return [
+            (int(ray_index), tuple(_wavelength_to_rgb(float(wave) * 1000.0)), np.asarray(ray_pts, dtype=float), "")
+            for ray_index, wave, ray_pts in self._iter_3d_display_ray_items(fallback_rays)
+        ]
+
+    @staticmethod
+    def _scene_center_radius_from_bounds(bounds) -> tuple[np.ndarray, float]:
+        try:
+            values = np.asarray(bounds, dtype=float).reshape(-1)[:6]
+        except Exception:
+            values = np.asarray([], dtype=float)
+        if values.size != 6 or not np.all(np.isfinite(values)) or values[0] > values[1]:
+            return np.zeros(3, dtype=float), 1.0
+        center = np.array(
+            [
+                0.5 * (values[0] + values[1]),
+                0.5 * (values[2] + values[3]),
+                0.5 * (values[4] + values[5]),
+            ],
+            dtype=float,
+        )
+        radius = max(values[1] - values[0], values[3] - values[2], values[5] - values[4], 1.0)
+        return center, float(radius)
+
+    @staticmethod
+    def _scene_ray_path_by_index(scene_bundle: SceneBundle | None) -> dict[int, object]:
+        if scene_bundle is None:
+            return {}
+        paths: dict[int, object] = {}
+        for path in list(getattr(scene_bundle, "ray_paths", []) or []):
+            try:
+                paths[int(getattr(path, "ray_index"))] = path
+            except Exception:
+                continue
+        return paths
+
+    @staticmethod
+    def _missed_detector_target_for_path(scene_bundle: SceneBundle | None, path: object | None) -> SceneTarget3D | None:
+        if scene_bundle is None or path is None:
+            return None
+        if ray_path_terminal_status_from_events(path) != "missed_detector":
+            return None
+        metadata = ray_path_terminal_metadata(path)
+        surface = metadata.get("detector_miss_surface")
+        if surface in (None, ""):
+            event = ray_path_terminal_event(path)
+            if event is not None:
+                surface = getattr(event, "surface_id", None)
+        try:
+            surface_index = int(surface)
+        except Exception:
+            return None
+        for target in list(getattr(scene_bundle, "targets", []) or []):
+            trace_surface = getattr(target, "trace_surface", None)
+            try:
+                if trace_surface is not None and int(trace_surface) == surface_index:
+                    return target
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _terminal_display_direction_for_path(path: object | None) -> np.ndarray | None:
+        if path is None:
+            return None
+        event = ray_path_terminal_event(path)
+        if event is not None:
+            for attribute in ("outgoing_direction", "incoming_direction"):
+                direction = ThreeDSceneToolsMixin._unit_3d_vector_or_none(getattr(event, attribute, None))
+                if direction is not None:
+                    return direction
+        try:
+            points = np.asarray(getattr(path, "points_world", []), dtype=float)
+        except Exception:
+            return None
+        if points.ndim == 2 and points.shape[0] >= 2 and points.shape[1] >= 3:
+            return ThreeDSceneToolsMixin._unit_3d_vector_or_none(points[-1, :3] - points[-2, :3])
+        return None
+
+    @staticmethod
+    def _unit_3d_vector_or_none(value) -> np.ndarray | None:
+        try:
+            vector = np.asarray(value, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if vector.size < 3 or not np.all(np.isfinite(vector[:3])):
+            return None
+        norm = float(np.linalg.norm(vector[:3]))
+        if not np.isfinite(norm) or norm <= 1.0e-12:
+            return None
+        return vector[:3] / norm
+
+    @staticmethod
+    def _target_frame_axes_for_display(target: SceneTarget3D | None) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+        if target is None:
+            return None
+        try:
+            center = np.asarray(getattr(target, "center_world", ()), dtype=float).reshape(-1)[:3]
+            normal = np.asarray(getattr(target, "normal_world", ()), dtype=float).reshape(-1)[:3]
+            tangent = np.asarray(getattr(target, "tangent_world", ()), dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if (
+            center.size < 3
+            or normal.size < 3
+            or tangent.size < 3
+            or not np.all(np.isfinite(center[:3]))
+            or not np.all(np.isfinite(normal[:3]))
+            or not np.all(np.isfinite(tangent[:3]))
+        ):
+            return None
+        normal_norm = float(np.linalg.norm(normal[:3]))
+        if not np.isfinite(normal_norm) or normal_norm <= 1.0e-12:
+            return None
+        normal = normal[:3] / normal_norm
+        tangent = tangent[:3] - normal * float(np.dot(tangent[:3], normal))
+        tangent_norm = float(np.linalg.norm(tangent))
+        if not np.isfinite(tangent_norm) or tangent_norm <= 1.0e-12:
+            for candidate in (
+                np.asarray((1.0, 0.0, 0.0), dtype=float),
+                np.asarray((0.0, 1.0, 0.0), dtype=float),
+                np.asarray((0.0, 0.0, 1.0), dtype=float),
+            ):
+                tangent = candidate - normal * float(np.dot(candidate, normal))
+                tangent_norm = float(np.linalg.norm(tangent))
+                if np.isfinite(tangent_norm) and tangent_norm > 1.0e-12:
+                    break
+        if not np.isfinite(tangent_norm) or tangent_norm <= 1.0e-12:
+            return None
+        tangent = tangent / tangent_norm
+        bitangent = np.cross(normal, tangent)
+        bitangent_norm = float(np.linalg.norm(bitangent))
+        if not np.isfinite(bitangent_norm) or bitangent_norm <= 1.0e-12:
+            return None
+        return center[:3], tangent, bitangent / bitangent_norm
+
+    @staticmethod
+    def _target_active_dimensions_for_display(target: SceneTarget3D | None) -> tuple[float, float] | None:
+        if target is None:
+            return None
+        try:
+            diameter = max(float(getattr(target, "diameter", 0.0) or 0.0), 0.0)
+        except Exception:
+            diameter = 0.0
+        try:
+            width = max(float(getattr(target, "active_width_mm", 0.0) or 0.0), 0.0)
+        except Exception:
+            width = 0.0
+        try:
+            height = max(float(getattr(target, "active_height_mm", 0.0) or 0.0), 0.0)
+        except Exception:
+            height = 0.0
+        if width <= 1.0e-12:
+            width = diameter
+        if height <= 1.0e-12:
+            height = diameter
+        if width <= 1.0e-12 or height <= 1.0e-12:
+            return None
+        return float(width), float(height)
+
+    @staticmethod
+    def _display_detector_miss_limit(target: SceneTarget3D | None, radius: float) -> float:
+        try:
+            scene_radius = float(radius)
+        except Exception:
+            scene_radius = 1.0
+        if not np.isfinite(scene_radius) or scene_radius <= 0.0:
+            scene_radius = 1.0
+        dimensions = ThreeDSceneToolsMixin._target_active_dimensions_for_display(target)
+        aperture_span = max(dimensions) if dimensions is not None else 1.0
+        scene_limit = max(25.0, min(scene_radius * 0.35, 250.0))
+        return float(max(aperture_span * 1.25, scene_limit))
+
+    @staticmethod
+    def _display_detector_miss_point_on_plane(
+        point,
+        target: SceneTarget3D | None,
+        radius: float,
+    ) -> tuple[np.ndarray | None, bool]:
+        try:
+            terminal = np.asarray(point, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None, False
+        if terminal.size < 3 or not np.all(np.isfinite(terminal[:3])):
+            return None, False
+        axes = ThreeDSceneToolsMixin._target_frame_axes_for_display(target)
+        if axes is None:
+            return terminal[:3], False
+        center, tangent, bitangent = axes
+        rel = terminal[:3] - center
+        u = float(np.dot(rel, tangent))
+        v = float(np.dot(rel, bitangent))
+        limit = ThreeDSceneToolsMixin._display_detector_miss_limit(target, radius)
+        radial = float(np.hypot(u, v))
+        capped = False
+        if np.isfinite(radial) and radial > limit > 0.0:
+            scale = limit / radial
+            u *= scale
+            v *= scale
+            capped = True
+        display_point = center + tangent * u + bitangent * v
+        if not np.allclose(display_point, terminal[:3], rtol=0.0, atol=1.0e-9):
+            capped = True
+        return display_point, capped
+
+    @staticmethod
+    def _detector_miss_crosshair_polylines_for_display(
+        path: object,
+        target: SceneTarget3D | None,
+        *,
+        display_center=None,
+        display_radius: float = 1.0,
+        cap_to_scene: bool = False,
+    ) -> list[np.ndarray]:
+        if not bool(cap_to_scene):
+            return scene_target_detector_miss_crosshair_polylines(path, target)
+        if ray_path_terminal_status_from_events(path) != "missed_detector":
+            return []
+        event = ray_path_terminal_event(path)
+        if event is None:
+            return []
+        point, _capped = ThreeDSceneToolsMixin._display_detector_miss_point_on_plane(
+            getattr(event, "point_world", None),
+            target,
+            display_radius,
+        )
+        axes = ThreeDSceneToolsMixin._target_frame_axes_for_display(target)
+        dimensions = ThreeDSceneToolsMixin._target_active_dimensions_for_display(target)
+        if point is None or axes is None or dimensions is None:
+            return []
+        _center, tangent, bitangent = axes
+        width, height = dimensions
+        arm = max(min(float(min(width, height)) * 0.18, float(max(width, height)) * 0.35), 0.35)
+        return [
+            np.vstack((point - tangent * arm, point + tangent * arm)),
+            np.vstack((point - bitangent * arm, point + bitangent * arm)),
+        ]
+
+    @staticmethod
+    def _bounded_3d_ray_points_for_display(
+        points,
+        center,
+        radius: float,
+        *,
+        terminal_status: str = "",
+        terminal_target: SceneTarget3D | None = None,
+        terminal_direction=None,
+    ) -> tuple[np.ndarray, bool]:
+        return bounded_ray_points_for_scene_display(
+            points,
+            center,
+            radius,
+            terminal_status=terminal_status,
+            terminal_target=terminal_target,
+            terminal_direction=terminal_direction,
+        )
+
+    @staticmethod
+    def _ray_vertex_display_inset(radius: float) -> float:
+        try:
+            scene_radius = float(radius)
+        except Exception:
+            scene_radius = 1.0
+        if not np.isfinite(scene_radius) or scene_radius <= 0.0:
+            scene_radius = 1.0
+        return float(max(min(scene_radius * 0.0015, 0.18), 0.035))
+
+    @staticmethod
+    def _ray_segment_mesh_for_3d_display(points, *, vertex_inset: float = 0.0):
+        """Build disconnected VTK line segments for physical ray events.
+
+        Rendering a reflected ray as one connected polyline can let the line
+        join/cap project through a mirror-hit vertex and mimic transmission.
+        Open 3D should draw each physical segment independently.
+        """
+        if pv is None:
+            try:
+                _load_3d_backends()
+            except Exception:
+                pass
+        if pv is None:
+            return None
+        try:
+            pts = np.asarray(points, dtype=float)
+        except Exception:
+            return None
+        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+            return None
+        finite = np.all(np.isfinite(pts[:, :3]), axis=1)
+        pts = pts[finite, :3]
+        if pts.shape[0] < 2:
+            return None
+        try:
+            inset = max(float(vertex_inset), 0.0)
+        except Exception:
+            inset = 0.0
+        out_points: list[np.ndarray] = []
+        lines: list[int] = []
+        last_segment_index = pts.shape[0] - 2
+        for segment_index, (start, end) in enumerate(zip(pts[:-1], pts[1:])):
+            start = np.asarray(start, dtype=float)
+            end = np.asarray(end, dtype=float)
+            delta = end - start
+            length = float(np.linalg.norm(delta))
+            if not np.isfinite(length) or length <= 1.0e-12:
+                continue
+            a = start.copy()
+            b = end.copy()
+            local_inset = min(inset, length * 0.20)
+            if local_inset > 0.0:
+                unit = delta / length
+                if segment_index > 0:
+                    a = a + unit * local_inset
+                if segment_index < last_segment_index:
+                    b = b - unit * local_inset
+            if float(np.linalg.norm(b - a)) <= 1.0e-12:
+                continue
+            base = len(out_points)
+            out_points.extend((a, b))
+            lines.extend((2, base, base + 1))
+        if not out_points:
+            return None
+        try:
+            mesh = pv.PolyData(np.asarray(out_points, dtype=float))
+            mesh.lines = np.asarray(lines, dtype=np.int64)
+            return mesh
+        except Exception:
+            return None
+
+    @staticmethod
+    def _should_draw_3d_terminal_endpoint(
+        terminal_status: str,
+        *,
+        show_terminal_diagnostics: bool = False,
+    ) -> bool:
+        status = str(terminal_status or "").strip().lower()
+        if status == "hit_detector":
+            return bool(show_terminal_diagnostics)
+        if status in {"absorbed", "stopped"}:
+            return bool(show_terminal_diagnostics)
+        return False
+
+    @staticmethod
+    def _ray_terminal_3d_style(
+        color: tuple[float, float, float],
+        terminal_status: str,
+    ) -> dict[str, object]:
+        status = str(terminal_status or "").strip().lower()
+        status_colors = {
+            "hit_detector": (0.02, 0.48, 0.35),
+            "missed_detector": (0.98, 0.45, 0.05),
+            "absorbed": (0.35, 0.11, 0.55),
+            "escaped": (0.36, 0.42, 0.50),
+            "stopped": (0.50, 0.11, 0.11),
+        }
+        # Escaped rays are ordinary physical exits from the modeled scene. Keep
+        # their source/wavelength color so prism output bundles do not look like
+        # a different class of ray; reserve full-line diagnostic recoloring for
+        # absorption and true stop conditions.
+        diagnostic_line_color = status_colors.get(status, color) if status in {"absorbed", "stopped"} else color
+        return {
+            "line_color": diagnostic_line_color,
+            "line_opacity": 0.80 if status == "escaped" else 0.74 if status == "missed_detector" else 0.88,
+            "line_width": 1.5 if status == "missed_detector" else 1.0,
+            "endpoint_color": status_colors.get(status, color),
+            "endpoint_scale": 4.2 if status == "missed_detector" else 2.8,
+        }
+
+    def _scene_detector_overlay_specs(
+        self,
+        scene_bundle: SceneBundle | None,
+        *,
+        include_footprints: bool = True,
+        include_miss_crosshairs: bool = True,
+        cap_miss_crosshairs_to_scene: bool = False,
+        display_center=None,
+        display_radius: float = 1.0,
+    ) -> list[dict[str, object]]:
+        if scene_bundle is None:
+            return []
+        specs: list[dict[str, object]] = []
+        targets = list(getattr(scene_bundle, "targets", []) or [])
+        if bool(include_footprints):
+            for target in targets:
+                try:
+                    row_index = int(getattr(target, "row_index", -1))
+                except Exception:
+                    row_index = -1
+                for index, points in enumerate(scene_target_active_footprint_polylines(target)):
+                    specs.append(
+                        {
+                            "kind": "detector_active_footprint" if index == 0 else "detector_active_center",
+                            "row_index": row_index,
+                            "points": np.asarray(points, dtype=float),
+                            "color": (0.98, 0.45, 0.05),
+                            "opacity": 0.92 if index == 0 else 0.72,
+                            "line_width": 2.2 if index == 0 else 1.2,
+                            "pickable": index == 0,
+                        }
+                    )
+
+        if bool(include_miss_crosshairs):
+            targets_by_surface = {}
+            for target in targets:
+                trace_surface = getattr(target, "trace_surface", None)
+                if trace_surface is None:
+                    continue
+                try:
+                    targets_by_surface[int(trace_surface)] = target
+                except Exception:
+                    continue
+            for path in list(getattr(scene_bundle, "ray_paths", []) or []):
+                metadata = ray_path_terminal_metadata(path)
+                surface = metadata.get("detector_miss_surface")
+                event = ray_path_terminal_event(path)
+                if surface in (None, "") and event is not None:
+                    surface = getattr(event, "surface_id", None)
+                try:
+                    target = targets_by_surface.get(int(surface))
+                except Exception:
+                    target = None
+                if target is None:
+                    continue
+                try:
+                    row_index = int(getattr(target, "row_index", -1))
+                except Exception:
+                    row_index = -1
+                for points in self._detector_miss_crosshair_polylines_for_display(
+                    path,
+                    target,
+                    display_center=display_center,
+                    display_radius=display_radius,
+                    cap_to_scene=bool(cap_miss_crosshairs_to_scene),
+                ):
+                    specs.append(
+                        {
+                            "kind": "detector_miss_crosshair",
+                            "row_index": row_index,
+                            "points": np.asarray(points, dtype=float),
+                            "color": (0.92, 0.25, 0.05),
+                            "opacity": 0.98,
+                            "line_width": 2.4,
+                            "pickable": False,
+                        }
+                    )
+        return specs
+
+    def _iter_3d_scene_rays(
+        self,
+        rays=None,
+        scene_bundle: SceneBundle | None = None,
+    ) -> list[tuple[tuple[float, float, float], np.ndarray]]:
+        return [(color, points) for _ray_index, color, points in self._iter_3d_scene_ray_items(rays, scene_bundle)]
+
+    def _configure_legacy_3d_plotter(
+        self,
+        plotter,
+        *,
+        ray_actors=None,
+        mirror_actors=None,
+        lens_actors=None,
+        helper_actors=None,
+    ) -> None:
+        self._legacy_3d_scene_service()._configure_legacy_3d_plotter(
+            plotter,
+            ray_actors=ray_actors,
+            mirror_actors=mirror_actors,
+            lens_actors=lens_actors,
+            helper_actors=helper_actors,
+        )
+
+    def _add_legacy_stl_placement_controls(self, plotter, positions: dict[str, object]) -> None:
+        controls = (
+            ("Fit+Z", lambda _state: self._legacy_3d_stl_fit_axis(plotter, "+Z")),
+            ("Fit+X", lambda _state: self._legacy_3d_stl_fit_axis(plotter, "+X")),
+            ("Fit+Y", lambda _state: self._legacy_3d_stl_fit_axis(plotter, "+Y")),
+            ("X-90", lambda _state: self._legacy_3d_stl_rotate(plotter, "x", -90.0)),
+            ("X+90", lambda _state: self._legacy_3d_stl_rotate(plotter, "x", 90.0)),
+            ("Y-90", lambda _state: self._legacy_3d_stl_rotate(plotter, "y", -90.0)),
+            ("Y+90", lambda _state: self._legacy_3d_stl_rotate(plotter, "y", 90.0)),
+            ("Center", lambda _state: self._legacy_3d_stl_center_xy(plotter)),
+            ("Front", lambda _state: self._legacy_3d_stl_front_on_row(plotter)),
+            ("Done2D", lambda _state: self._legacy_3d_finish_stl_placement(plotter)),
+        )
+        for label, callback in controls:
+            if label not in positions:
+                continue
+            self._add_legacy_3d_action_button(
+                plotter,
+                label=label,
+                position=positions[label],
+                callback=callback,
+                color="#0891b2" if label != "Done2D" else "#0f766e",
+            )
+
+    def _legacy_3d_start_stl_placement(self, plotter, row_index: int) -> None:
+        if plotter is None:
+            return
+        try:
+            row_index = int(row_index)
+        except Exception:
+            self.status_var.set("Select an optical CAD/STL row first.")
+            return
+        if self._file_backed_stl_row_at(row_index) is None:
+            self.status_var.set("Selected row is not a file-backed optical CAD/STL solid.")
+            return
+        setattr(plotter, "_kraken_stl_placement_row", row_index)
+        self._select_table_row(row_index)
+        self._legacy_3d_set_selected_row(plotter, row_index)
+        self.status_var.set(f"Legacy 3D CAD/STL placement target S{row_index}. Use the placement buttons, then Done2D or close.")
+
+    def _legacy_3d_active_stl_row(self, plotter) -> int | None:
+        if plotter is None:
+            self.status_var.set("Open 3D view before CAD/STL placement.")
+            return None
+        for candidate in (
+            getattr(plotter, "_kraken_stl_placement_row", None),
+            getattr(plotter, "_kraken_selected_row", None),
+            self._current_selected_row_index(),
+        ):
+            if candidate is None:
+                continue
+            try:
+                row_index = int(candidate)
+            except Exception:
+                continue
+            if self._file_backed_stl_row_at(row_index) is not None:
+                setattr(plotter, "_kraken_stl_placement_row", row_index)
+                return row_index
+        self.status_var.set("Select an optical CAD/STL row before using placement controls.")
+        return None
+
+    def _legacy_3d_stl_fit_axis(self, plotter, axis: str) -> None:
+        row_index = self._legacy_3d_active_stl_row(plotter)
+        if row_index is None:
+            return
+        try:
+            self.apply_stl_axis_fit(row_index, axis)
+            self._legacy_3d_update_stl_row_actor(plotter, row_index)
+            self.status_var.set(f"STL S{row_index}: fitted {axis} to layout +Z.")
+        except Exception as exc:
+            self.status_var.set(f"STL fit failed: {_short_error_message(exc)}")
+            self.append_debug(f"Legacy STL fit failed: {exc}")
+
+    def _legacy_3d_stl_rotate(self, plotter, axis: str, delta_deg: float) -> None:
+        row_index = self._legacy_3d_active_stl_row(plotter)
+        if row_index is None:
+            return
+        try:
+            self.rotate_stl_row_pose(row_index, axis, delta_deg)
+            self._legacy_3d_update_stl_row_actor(plotter, row_index)
+            self.status_var.set(f"STL S{row_index}: rotated {axis.upper()} {float(delta_deg):+.0f} deg.")
+        except Exception as exc:
+            self.status_var.set(f"STL rotation failed: {_short_error_message(exc)}")
+            self.append_debug(f"Legacy STL rotation failed: {exc}")
+
+    def _legacy_3d_stl_center_xy(self, plotter) -> None:
+        row_index = self._legacy_3d_active_stl_row(plotter)
+        if row_index is None:
+            return
+        try:
+            self.center_stl_row_xy(row_index)
+            self._legacy_3d_update_stl_row_actor(plotter, row_index)
+            self.status_var.set(f"STL S{row_index}: centered X/Y.")
+        except Exception as exc:
+            self.status_var.set(f"STL centering failed: {_short_error_message(exc)}")
+            self.append_debug(f"Legacy STL centering failed: {exc}")
+
+    def _legacy_3d_stl_front_on_row(self, plotter) -> None:
+        row_index = self._legacy_3d_active_stl_row(plotter)
+        if row_index is None:
+            return
+        try:
+            self.place_stl_row_front_on_station(row_index)
+            self._legacy_3d_update_stl_row_actor(plotter, row_index)
+            self.status_var.set(f"STL S{row_index}: min Z placed on row plane.")
+        except Exception as exc:
+            self.status_var.set(f"STL front placement failed: {_short_error_message(exc)}")
+            self.append_debug(f"Legacy STL front placement failed: {exc}")
+
+    def _legacy_3d_finish_stl_placement(self, plotter) -> None:
+        if plotter is not None:
+            setattr(plotter, "_kraken_stl_placement_dirty", False)
+        try:
+            self.refresh_plot(suppress_analysis=True)
+            self.status_var.set("CAD/STL placement applied to 2D layout.")
+        except Exception as exc:
+            self.status_var.set(f"CAD/STL placement saved; 2D refresh failed: {_short_error_message(exc)}")
+            self.append_debug(f"Legacy STL Done2D failed: {exc}")
+
+    def _legacy_3d_update_stl_row_actor(self, plotter, row_index: int) -> None:
+        _ensure_pv()
+        if plotter is None or pv is None:
+            return
+        selected = self._file_backed_stl_row_at(row_index)
+        if selected is None:
+            raise RuntimeError("Selected row is not a file-backed optical STL solid")
+        row, path = selected
+        mesh = pv.read(path).extract_surface(algorithm="dataset_surface").copy(deep=True)
+        pts = np.asarray(mesh.points, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] == 0 or pts.shape[1] < 3:
+            raise RuntimeError("STL mesh has no previewable points")
+        rotation = _rotation_matrix_from_kraken_tilts(row.tilt_x, row.tilt_y, row.tilt_z)
+        transformed = pts[:, :3] @ rotation.T
+        transformed[:, 0] += float(row.desp_x)
+        transformed[:, 1] += float(row.desp_y)
+        transformed[:, 2] += self._stl_row_z_station(row_index) + float(row.desp_z)
+        mesh.points = transformed
+
+        scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
+        row_actor_map = scene_info.setdefault("row_actor_map", {})
+        actor_row_map = scene_info.setdefault("actor_row_map", {})
+        for actor in list(row_actor_map.get(int(row_index), []) or []):
+            try:
+                actor_key = Kraken3DInspector._actor_key(actor)
+                if actor_key is not None:
+                    actor_row_map.pop(actor_key, None)
+                plotter.remove_actor(actor, render=False)
+            except Exception:
+                try:
+                    actor.SetVisibility(False)
+                except Exception:
+                    pass
+
+        new_actors = []
+        actor = plotter.add_mesh(
+            mesh,
+            color="#0ccfe8",
+            opacity=0.68,
+            smooth_shading=True,
+            show_edges=False,
+            pickable=True,
+        )
+        self._legacy_3d_register_row_actor(actor, int(row_index), actor_row_map, new_actors)
+        try:
+            edges = mesh.extract_feature_edges(
+                feature_angle=15,
+                boundary_edges=True,
+                feature_edges=True,
+                manifold_edges=False,
+            )
+            if int(getattr(edges, "n_points", 0)) > 0:
+                edge_actor = plotter.add_mesh(edges, color="#1f2937", line_width=1.0, pickable=False)
+                self._legacy_3d_register_row_actor(edge_actor, int(row_index), actor_row_map, new_actors)
+        except Exception:
+            pass
+        row_actor_map[int(row_index)] = new_actors
+        setattr(plotter, "_kraken_scene", scene_info)
+        setattr(plotter, "_kraken_stl_placement_row", int(row_index))
+        setattr(plotter, "_kraken_stl_placement_dirty", True)
+        setattr(plotter, "_kraken_selected_row", None)
+        self._legacy_3d_set_selected_row(plotter, int(row_index))
+        try:
+            plotter.render()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _legacy_3d_register_row_actor(actor, row_index: int, actor_row_map: dict, row_actors: list) -> None:
+        if actor is None:
+            return
+        try:
+            actor.SetPickable(True)
+        except Exception:
+            pass
+        actor_key = Kraken3DInspector._actor_key(actor)
+        if actor_key is not None:
+            actor_row_map[actor_key] = int(row_index)
+        try:
+            prop = actor.GetProperty()
+            if prop is not None:
+                actor._kraken_base_style = {
+                    "edge_visibility": int(prop.GetEdgeVisibility()),
+                    "line_width": float(prop.GetLineWidth()),
+                    "edge_color": tuple(float(v) for v in prop.GetEdgeColor()),
+                    "opacity": float(prop.GetOpacity()),
+                    "ambient": float(prop.GetAmbient()),
+                    "diffuse": float(prop.GetDiffuse()),
+                }
+        except Exception:
+            pass
+        row_actors.append(actor)
+
+    @staticmethod
+    def _legacy_3d_control_positions(plotter) -> dict[str, object]:
+        try:
+            width = int(plotter.window_size[0])
+        except Exception:
+            width = 1200
+        # Use the full lower edge and reserve a left gutter for category names.
+        category_x = 18
+        start_x = 118 if width >= 900 else 96
+        right_margin = 110
+        rows = [
+            ("View", ["Save", "Close", "Iso", "YZ", "XZ", "Top", "Bottom", "Home"], "#334155"),
+            ("Show/CAD", ["Rays", "Mirrors", "Lenses", "Helpers", "Full Pupil", "Lens CAD", "LED CAD", "Cam CAD"], "#0f766e"),
+            (
+                "STEP",
+                ["X -90", "X +90", "Y -90", "Y +90", "Z -90", "Z +90", "Center STEP", "Obj-LED", "Clear Axis"],
+                "#7c3aed",
+            ),
+            ("STL", ["Fit+Z", "Fit+X", "Fit+Y", "X-90", "X+90", "Y-90", "Y+90", "Center", "CenterRay", "Front", "Done2D"], "#0891b2"),
+        ]
+        y_positions = [12, 50, 88, 126]
+        positions: dict[str, object] = {"__categories__": []}
+        usable = max(width - start_x - right_margin, 480)
+        for (category, row, color), y_pos in zip(rows, y_positions):
+            positions["__categories__"].append((category, (category_x, y_pos + 4), color))
+            step_x = max(int(usable / max(len(row) - 1, 1)), 96)
+            for index, label in enumerate(row):
+                positions[label] = (start_x + int(index * step_x), y_pos)
+        return positions
+
+    def _enable_legacy_3d_close_handling(self, plotter) -> None:
+        def request_close(*_args):
+            try:
+                self.after(0, self._close_legacy_3d_plotter)
+            except Exception:
+                self._close_legacy_3d_plotter()
+
+        try:
+            if getattr(plotter, "iren", None) is not None:
+                plotter.iren.add_observer("ExitEvent", request_close)
+        except Exception as exc:
+            self.append_debug(f"Legacy 3D close observer unavailable: {exc}")
+        try:
+            if getattr(plotter, "render_window", None) is not None:
+                plotter.render_window.AddObserver("DeleteEvent", request_close)
+        except Exception:
+            pass
+
+    def _enable_legacy_3d_picking(self, plotter) -> None:
+        if vtkCellPicker is None or getattr(plotter, "iren", None) is None:
+            return
+        try:
+            picker = vtkCellPicker()
+            picker.SetTolerance(0.0015)
+            setattr(plotter, "_kraken_picker", picker)
+            setattr(plotter, "_kraken_selected_row", None)
+            setattr(plotter, "_kraken_selected_ray", None)
+            setattr(plotter, "_kraken_center_row_to_ray_mode", False)
+            setattr(plotter, "_kraken_center_row_to_ray_index", None)
+            plotter.iren.add_observer(
+                "LeftButtonPressEvent",
+                lambda *_args: self._legacy_3d_pick_click(plotter),
+            )
+            plotter.iren.add_observer(
+                "MouseMoveEvent",
+                lambda *_args: self._legacy_3d_hover_move(plotter),
+            )
+        except Exception as exc:
+            self.append_debug(f"Legacy 3D picking unavailable: {exc}")
+
+    def _legacy_3d_hover_move(self, plotter) -> None:
+        requested_label = self._cad_axis_pick_label
+        axis_pick_any = bool(getattr(self, "_cad_axis_pick_any", False))
+        led_edge_pick = bool(getattr(self, "_cad_led_object_edge_pick", False))
+        target_label = "led" if led_edge_pick else requested_label
+        if target_label is None and not axis_pick_any:
+            self._legacy_3d_set_step_hover_outline(plotter, None, None)
+            self._legacy_3d_set_cursor(plotter, False)
+            return
+        picker = getattr(plotter, "_kraken_picker", None)
+        if picker is None or getattr(plotter, "iren", None) is None:
+            return
+        try:
+            x, y = plotter.iren.get_event_position()
+            renderer = plotter.iren.get_poked_renderer(x, y)
+            if renderer is None:
+                renderer = getattr(plotter, "renderer", None)
+            if renderer is None:
+                return
+            picker.Pick(x, y, 0.0, renderer)
+            actor = picker.GetActor()
+        except Exception:
+            actor = None
+        actor_key = Kraken3DInspector._actor_key(actor)
+        scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
+        step_label = scene_info.get("cad_step_actor_map", {}).get(actor_key) if actor_key is not None else None
+        if step_label is not None and (axis_pick_any or step_label == target_label):
+            try:
+                cell_id = int(picker.GetCellId())
+            except Exception:
+                cell_id = -1
+            hover_key = (actor_key, cell_id)
+            outline = None
+            if hover_key != getattr(plotter, "_kraken_step_hover_key", None):
+                feature = Kraken3DInspector._picked_feature_info(actor, picker)
+                outline = Kraken3DInspector._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
+            self._legacy_3d_set_step_hover_outline(plotter, outline, hover_key)
+            self._legacy_3d_set_cursor(plotter, True)
+            if led_edge_pick:
+                self.status_var.set("Click orange LED edge used for Object-to-LED distance.")
+            elif axis_pick_any:
+                self.status_var.set(f"Click orange {step_label} feature to center it on the optical axis.")
+            else:
+                self.status_var.set(f"Click orange {step_label} feature to center it on the optical axis.")
+            return
+        self._legacy_3d_set_step_hover_outline(plotter, None, None)
+        self._legacy_3d_set_cursor(plotter, False)
+
+    def _legacy_3d_set_step_hover_outline(self, plotter, outline_mesh, hover_key) -> None:
+        if hover_key is not None and hover_key == getattr(plotter, "_kraken_step_hover_key", None):
+            return
+        previous = getattr(plotter, "_kraken_step_hover_outline_actor", None)
+        if previous is not None:
+            try:
+                plotter.remove_actor(previous, render=False)
+            except Exception:
+                try:
+                    previous.SetVisibility(False)
+                except Exception:
+                    pass
+        setattr(plotter, "_kraken_step_hover_outline_actor", None)
+        setattr(plotter, "_kraken_step_hover_key", hover_key)
+        if outline_mesh is not None and int(getattr(outline_mesh, "n_points", 0)) > 0:
+            try:
+                actor = plotter.add_mesh(
+                    outline_mesh,
+                    color="#ff2d00",
+                    line_width=9.0,
+                    opacity=1.0,
+                    lighting=False,
+                    ambient=1.0,
+                    render_lines_as_tubes=True,
+                    pickable=False,
+                )
+                try:
+                    actor.SetPickable(False)
+                except Exception:
+                    pass
+                setattr(plotter, "_kraken_step_hover_outline_actor", actor)
+            except Exception as exc:
+                self.append_debug(f"3D STEP hover outline failed: {exc}")
+        try:
+            plotter.render()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _legacy_3d_set_cursor(plotter, hand: bool) -> None:
+        try:
+            if getattr(plotter, "iren", None) is not None and getattr(plotter.iren, "interactor", None) is not None:
+                cursor = 9 if hand else 0
+                plotter.iren.interactor.SetCurrentCursor(cursor)
+                try:
+                    render_window = plotter.iren.interactor.GetRenderWindow()
+                    if render_window is not None:
+                        render_window.SetCurrentCursor(cursor)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _legacy_3d_pick_click(self, plotter) -> None:
+        picker = getattr(plotter, "_kraken_picker", None)
+        if picker is None or getattr(plotter, "iren", None) is None:
+            return
+        try:
+            x, y = plotter.iren.get_event_position()
+            renderer = plotter.iren.get_poked_renderer(x, y)
+            if renderer is None:
+                renderer = getattr(plotter, "renderer", None)
+            if renderer is None:
+                return
+            picker.Pick(x, y, 0.0, renderer)
+            actor = picker.GetActor()
+        except Exception as exc:
+            self.append_debug(f"Legacy 3D pick failed: {exc}")
+            return
+        actor_key = Kraken3DInspector._actor_key(actor)
+        scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
+        step_label = scene_info.get("cad_step_actor_map", {}).get(actor_key) if actor_key is not None else None
+        axis_pick_any = bool(getattr(self, "_cad_axis_pick_any", False))
+        if step_label is not None:
+            if self._cad_led_object_edge_pick:
+                if step_label != "led":
+                    self.status_var.set("Pick an edge on the LED STEP for Object-to-LED distance.")
+                    return
+                feature = Kraken3DInspector._picked_feature_info(actor, picker)
+                if feature is None:
+                    try:
+                        center = np.asarray(picker.GetPickPosition(), dtype=float)
+                    except Exception:
+                        center = None
+                else:
+                    center = feature[0]
+                if center is None or center.size < 3 or not np.all(np.isfinite(center[:3])):
+                    self.status_var.set("Could not detect LED object-edge center.")
+                    return
+                self._legacy_3d_set_step_hover_outline(plotter, None, None)
+                self._legacy_3d_set_cursor(plotter, False)
+                self.apply_led_object_edge_pick(center[:3])
+                return
+            requested_label = self._cad_axis_pick_label
+            if requested_label is None and not axis_pick_any:
+                self.select_step_component(step_label)
+                self._legacy_3d_set_selected_step(plotter, step_label)
+                return
+            if requested_label is not None and requested_label != step_label:
+                self.status_var.set(f"CAD STEP picked: {step_label}. Center mode is armed for {str(requested_label).upper()}.")
+                return
+            feature = Kraken3DInspector._picked_feature_info(actor, picker)
+            if feature is None:
+                try:
+                    center = np.asarray(picker.GetPickPosition(), dtype=float)
+                except Exception:
+                    center = None
+            else:
+                center = feature[0]
+            if center is None or center.size < 3 or not np.all(np.isfinite(center[:3])):
+                self.status_var.set(f"Could not detect {step_label} feature center.")
+                return
+            self._legacy_3d_set_step_hover_outline(plotter, None, None)
+            self._legacy_3d_set_cursor(plotter, False)
+            self._cad_axis_pick_any = False
+            self.apply_step_axis_pick(step_label, center[:3])
+            return
+        row_index = scene_info.get("actor_row_map", {}).get(actor_key) if actor_key is not None else None
+        ray_index = scene_info.get("actor_ray_map", {}).get(actor_key) if actor_key is not None else None
+        requested_label = self._cad_axis_pick_label
+        surface_target_label = requested_label
+        if surface_target_label is None and axis_pick_any:
+            selected_label = getattr(self, "_selected_step_label", None)
+            if selected_label in STEP_OVERLAY_LABEL_SET and self._step_path_for_label(str(selected_label)) is not None:
+                surface_target_label = str(selected_label)
+        if surface_target_label is not None and row_index is not None:
+            if bool(getattr(self, "_cad_led_object_edge_pick", False)):
+                self.status_var.set("Pick an edge on the LED STEP for Object-to-LED distance.")
+                return
+            try:
+                result = self.center_step_axis_on_surface(str(surface_target_label), int(row_index))
+            except Exception as exc:
+                self.status_var.set(f"Axis {str(surface_target_label).upper()} failed: {_short_error_message(exc)}")
+                self.append_debug(f"Legacy 3D STEP surface-axis pick failed: {exc}")
+                return
+            self._legacy_3d_set_step_hover_outline(plotter, None, None)
+            self._legacy_3d_set_cursor(plotter, False)
+            self._legacy_3d_set_selected_row(plotter, int(row_index))
+            self._legacy_3d_set_selected_ray(plotter, None)
+            row_name = self.rows[int(row_index)].name if 0 <= int(row_index) < len(self.rows) else "Surface"
+            if result is not None:
+                target = result.get("target", (float("nan"), float("nan"), float("nan")))
+                self.status_var.set(
+                    f"{str(surface_target_label).upper()} STEP axis centered on S{int(row_index)}: {row_name} "
+                    f"at X/Y=({float(target[0]):.6g}, {float(target[1]):.6g}) mm."
+                )
+            return
+        if axis_pick_any and row_index is not None:
+            self.status_var.set("Center STEP Axis: click a STEP feature, or select a STEP component before clicking a KrakenOS surface.")
+            return
+        if ray_index is not None:
+            if bool(getattr(plotter, "_kraken_center_row_to_ray_mode", False)):
+                self._legacy_3d_apply_center_row_to_ray(plotter, int(ray_index))
+                return
+            self._legacy_3d_set_selected_row(plotter, None)
+            self._legacy_3d_set_selected_ray(plotter, int(ray_index))
+            self._select_ray_inspector_ray(int(ray_index))
+            self.status_var.set(self._ray_terminal_hint_text(int(ray_index), label=f"3D selected ray {int(ray_index)} in Ray Inspector"))
+            return
+        if row_index is None:
+            self._legacy_3d_set_selected_row(plotter, None)
+            self._legacy_3d_set_selected_ray(plotter, None)
+            self.status_var.set("3D view ready")
+            return
+        self._legacy_3d_set_selected_row(plotter, int(row_index))
+        self._legacy_3d_set_selected_ray(plotter, None)
+        self._select_table_row(int(row_index))
+        row_name = self.rows[int(row_index)].name if 0 <= int(row_index) < len(self.rows) else "Surface"
+        if bool(getattr(plotter, "_kraken_center_row_to_ray_mode", False)):
+            if 0 <= int(row_index) < len(self.rows) and self.rows[int(row_index)].surface in {"Object", "Image"}:
+                self.status_var.set("CenterRay: choose a physical surface/CAD row, not Object/Image.")
+                return
+            setattr(plotter, "_kraken_center_row_to_ray_index", int(row_index))
+            self.status_var.set(f"CenterRay: selected S{int(row_index)}: {row_name}. Now click the target ray.")
+            return
+        if self._file_backed_stl_row_at(int(row_index)) is not None:
+            setattr(plotter, "_kraken_stl_placement_row", int(row_index))
+            self.status_var.set(f"3D selected CAD/STL row {int(row_index)}: {row_name}. Use the placement buttons, then Done2D or close.")
+        else:
+            self.status_var.set(f"3D selected row {int(row_index)}: {row_name}")
+
+    def _legacy_3d_start_center_row_to_ray(self, plotter) -> None:
+        if plotter is None:
+            return
+        row_index = getattr(plotter, "_kraken_selected_row", None)
+        if row_index is None:
+            row_index = self._current_selected_row_index()
+        setattr(plotter, "_kraken_center_row_to_ray_mode", True)
+        if row_index is not None:
+            try:
+                row_index = int(row_index)
+            except Exception:
+                row_index = None
+        if row_index is not None and 0 <= row_index < len(self.rows) and self.rows[row_index].surface not in {"Object", "Image"}:
+            setattr(plotter, "_kraken_center_row_to_ray_index", row_index)
+            self._legacy_3d_set_selected_row(plotter, row_index)
+            self.status_var.set(f"CenterRay: selected S{row_index}. Click the ray that should pass through its center.")
+            return
+        setattr(plotter, "_kraken_center_row_to_ray_index", None)
+        self.status_var.set("CenterRay: click the surface/CAD row to move, then click the target ray.")
+
+    def _legacy_3d_apply_center_row_to_ray(self, plotter, ray_index: int) -> None:
+        row_index = getattr(plotter, "_kraken_center_row_to_ray_index", None)
+        if row_index is None:
+            self.status_var.set("CenterRay: click a surface/CAD row first, then click the target ray.")
+            return
+        try:
+            row_index = int(row_index)
+            ray_index = int(ray_index)
+            result = self.center_surface_row_on_ray(row_index, ray_index)
+        except Exception as exc:
+            self.status_var.set(f"CenterRay failed: {_short_error_message(exc)}")
+            self.append_debug(f"Legacy CenterRay failed: {exc}")
+            return
+        setattr(plotter, "_kraken_center_row_to_ray_mode", False)
+        setattr(plotter, "_kraken_center_row_to_ray_index", None)
+        try:
+            if self._file_backed_stl_row_at(row_index) is not None:
+                self._legacy_3d_update_stl_row_actor(plotter, row_index)
+            self._legacy_3d_replace_rays(plotter)
+            self._legacy_3d_set_selected_row(plotter, row_index)
+            self._legacy_3d_set_selected_ray(plotter, ray_index)
+        except Exception as exc:
+            self.append_debug(f"Legacy CenterRay refresh failed: {exc}")
+        target = result.get("target", (float("nan"), float("nan"), float("nan")))
+        self.status_var.set(
+            "Centered S{row} on ray {ray} at ({x:.6g}, {y:.6g}, {z:.6g}) mm. "
+            "Click Done2D or Update to refresh 2D.".format(
+                row=row_index,
+                ray=ray_index,
+                x=float(target[0]),
+                y=float(target[1]),
+                z=float(target[2]),
+            )
+        )
+
+    def _legacy_3d_set_selected_row(self, plotter, row_index: int | None) -> None:
+        current = getattr(plotter, "_kraken_selected_row", None)
+        if current == row_index:
+            return
+        scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
+        row_actor_map = dict(scene_info.get("row_actor_map", {}) or {})
+        if current is not None:
+            for actor in row_actor_map.get(int(current), []):
+                self._legacy_3d_set_actor_highlight(actor, False)
+        if row_index is not None:
+            for actor in row_actor_map.get(int(row_index), []):
+                self._legacy_3d_set_actor_highlight(actor, True)
+        setattr(plotter, "_kraken_selected_row", row_index)
+        try:
+            plotter.render()
+        except Exception:
+            pass
+
+    def _legacy_3d_set_selected_ray(self, plotter, ray_index: int | None) -> None:
+        current = getattr(plotter, "_kraken_selected_ray", None)
+        if current == ray_index:
+            return
+        scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
+        ray_actor_map = dict(scene_info.get("ray_actor_map", {}) or {})
+        if current is not None:
+            for actor in ray_actor_map.get(int(current), []):
+                Kraken3DInspector._set_ray_actor_selected(actor, False)
+        if ray_index is not None:
+            for actor in ray_actor_map.get(int(ray_index), []):
+                Kraken3DInspector._set_ray_actor_selected(actor, True)
+        setattr(plotter, "_kraken_selected_ray", ray_index)
+        try:
+            plotter.render()
+        except Exception:
+            pass
+
+    def _legacy_3d_set_selected_step(self, plotter, label: str | None) -> None:
+        label = str(label).strip().lower() if label is not None else None
+        if label not in STEP_OVERLAY_LABEL_SET:
+            label = None
+        current = getattr(plotter, "_kraken_selected_step", None)
+        if current == label:
+            return
+        scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
+        cad_step_actors = dict(scene_info.get("cad_step_actors", {}) or {})
+        if current is not None:
+            for _kind, actor in list(cad_step_actors.get(current, []) or []):
+                Kraken3DInspector._set_step_actor_selected(actor, False)
+        if label is not None:
+            for _kind, actor in list(cad_step_actors.get(label, []) or []):
+                Kraken3DInspector._set_step_actor_selected(actor, True)
+        setattr(plotter, "_kraken_selected_step", label)
+        try:
+            plotter.render()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _legacy_3d_set_actor_highlight(actor, selected: bool) -> None:
+        if actor is None:
+            return
+        try:
+            prop = actor.GetProperty()
+        except Exception:
+            return
+        if prop is None:
+            return
+        base = getattr(actor, "_kraken_base_style", None)
+        if not isinstance(base, dict):
+            try:
+                base = {
+                    "edge_visibility": int(prop.GetEdgeVisibility()),
+                    "line_width": float(prop.GetLineWidth()),
+                    "edge_color": tuple(float(v) for v in prop.GetEdgeColor()),
+                    "opacity": float(prop.GetOpacity()),
+                    "ambient": float(prop.GetAmbient()),
+                    "diffuse": float(prop.GetDiffuse()),
+                }
+                actor._kraken_base_style = base
+            except Exception:
+                base = {}
+        if selected:
+            try:
+                prop.SetEdgeVisibility(1)
+                prop.SetEdgeColor(1.0, 0.45, 0.05)
+                prop.SetLineWidth(max(float(base.get("line_width", 1.0)), 2.5))
+                prop.SetOpacity(min(max(float(base.get("opacity", 1.0)), 0.3) + 0.08, 1.0))
+                prop.SetAmbient(max(float(base.get("ambient", 0.0)), 0.18))
+            except Exception:
+                return
+            return
+        try:
+            prop.SetEdgeVisibility(int(base.get("edge_visibility", 0)))
+            edge_color = tuple(base.get("edge_color", (0.0, 0.0, 0.0)))
+            if len(edge_color) == 3:
+                prop.SetEdgeColor(*edge_color)
+            prop.SetLineWidth(float(base.get("line_width", 1.0)))
+            prop.SetOpacity(float(base.get("opacity", 1.0)))
+            prop.SetAmbient(float(base.get("ambient", 0.0)))
+            prop.SetDiffuse(float(base.get("diffuse", 1.0)))
+        except Exception:
+            pass
+
+    def _add_legacy_3d_action_button(
+        self,
+        plotter,
+        *,
+        label: str,
+        position: tuple[int, int],
+        callback,
+        value: bool = False,
+        color: str = "#2563eb",
+    ) -> None:
+        plotter.add_checkbox_button_widget(
+            callback,
+            value=value,
+            position=position,
+            size=22,
+            border_size=3,
+            color_on=color,
+            color_off=color,
+            background_color="white",
+        )
+        plotter.add_text(
+            label,
+            position=(position[0] + 28, position[1] + 1),
+            font_size=9,
+            color="black",
+        )
+
+    def _legacy_3d_set_actor_visibility(self, actors, visible: bool, plotter, group: str | None = None) -> None:
+        if group:
+            state = dict(getattr(plotter, "_kraken_visibility", {}) or {})
+            state[group] = bool(visible)
+            setattr(plotter, "_kraken_visibility", state)
+        for actor in actors:
+            try:
+                actor.SetVisibility(bool(visible))
+            except Exception:
+                continue
+        plotter.render()
+
+    def _legacy_3d_set_scene_actor_visibility(self, plotter, actor_key: str, visible: bool, group: str) -> None:
+        scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
+        self._legacy_3d_set_actor_visibility(scene_info.get(actor_key, []) or [], visible, plotter, group)
+
+    def _legacy_3d_set_step_visibility(self, plotter, label: str, visible: bool) -> None:
+        label = str(label).strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET:
+            return
+        state = dict(getattr(plotter, "_kraken_visibility", {}) or {})
+        state[f"step_{label}"] = bool(visible)
+        setattr(plotter, "_kraken_visibility", state)
+        scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
+        actors = list(scene_info.get("cad_step_actors", {}).get(label, []) or [])
+        for _kind, actor in actors:
+            try:
+                actor.SetVisibility(bool(visible))
+            except Exception:
+                continue
+        if not visible and self._selected_step_label == label:
+            self._legacy_3d_set_selected_step(plotter, None)
+            self._selected_step_label = None
+        self.status_var.set(f"{label.upper()} STEP {'shown' if visible else 'hidden'}.")
+        try:
+            plotter.render()
+        except Exception:
+            pass
+
+    def _legacy_3d_toggle_full_pupil(self, plotter, state: bool) -> None:
+        """Toggle full-pupil ray mode and retrace.
+
+        Only the ray actors are swapped — buttons / lens / mirror actors stay
+        put. Rebuilding the entire scene used to stack a fresh Full Pupil
+        checkbox on top of the previous one each click, which made the toggle
+        appear to be one-way (ON → ON → ON…).
+        """
+        # PyVista fires the callback on widget creation with the initial value.
+        # Skip the no-op so we don't retrace on startup.
+        if bool(state) == self._is_full_pupil_mode():
+            return
+        self.emit_full_ray_var.set(bool(state))
+        try:
+            self._legacy_3d_replace_rays(plotter)
+        except Exception as exc:
+            self.append_debug(f"Full Pupil refresh failed: {exc}")
+
+    def _legacy_3d_replace_rays(self, plotter) -> None:
+        """Rebuild only the ray actors in the existing 3D scene, in place."""
+        scene_info = getattr(plotter, "_kraken_scene", None)
+        if not isinstance(scene_info, dict):
+            scene_info = {}
+            setattr(plotter, "_kraken_scene", scene_info)
+        ray_actors = scene_info.setdefault("ray_actors", [])
+        for actor in list(ray_actors):
+            try:
+                plotter.renderer.RemoveActor(actor)
+            except Exception:
+                pass
+        ray_actors.clear()
+        scene_info["actor_ray_map"] = {}
+        scene_info["ray_actor_map"] = {}
+        setattr(plotter, "_kraken_selected_ray", None)
+        system, rays = self._build_preview_system_and_rays()
+        scene_bundle = self._last_scene_bundle
+        setattr(plotter, "_kraken_system", system)
+        setattr(plotter, "_kraken_rays", rays)
+        setattr(plotter, "_kraken_scene_bundle", scene_bundle)
+        rays_visible = bool(dict(getattr(plotter, "_kraken_visibility", {}) or {}).get("rays", True))
+        ray_radius = self._legacy_3d_ray_radius(system, rays)
+        if scene_bundle is not None:
+            ray_center, ray_scene_radius = scene_display_center_radius(scene_bundle)
+        else:
+            ray_center, ray_scene_radius = self._scene_center_radius_from_bounds(plotter.bounds)
+        paths_by_ray_index = self._scene_ray_path_by_index(scene_bundle)
+        suppressed_endpoint_count = 0
+        for ray_index, color, ray_pts, terminal_status in self._iter_3d_scene_ray_records(rays, scene_bundle):
+            ray_path = paths_by_ray_index.get(int(ray_index))
+            terminal_target = self._missed_detector_target_for_path(scene_bundle, ray_path)
+            terminal_direction = self._terminal_display_direction_for_path(ray_path)
+            display_ray_pts, _was_bounded = self._bounded_3d_ray_points_for_display(
+                ray_pts,
+                ray_center,
+                ray_scene_radius,
+                terminal_status=terminal_status,
+                terminal_target=terminal_target,
+                terminal_direction=terminal_direction,
+            )
+            line = self._ray_segment_mesh_for_3d_display(
+                display_ray_pts,
+                vertex_inset=self._ray_vertex_display_inset(ray_scene_radius),
+            )
+            if line is None:
+                continue
+            if int(getattr(line, "n_points", 0)) < 2:
+                continue
+            style = ThreeDSceneToolsMixin._ray_terminal_3d_style(color, terminal_status)
+            actor = plotter.add_mesh(
+                line,
+                color=style["line_color"],
+                opacity=float(style["line_opacity"]),
+                line_width=float(style["line_width"]),
+                pickable=True,
+            )
+            actor_key = Kraken3DInspector._actor_key(actor)
+            if actor_key is not None:
+                scene_info["actor_ray_map"][actor_key] = int(ray_index)
+                scene_info["ray_actor_map"].setdefault(int(ray_index), []).append(actor)
+            try:
+                actor.SetPickable(True)
+                prop = actor.GetProperty()
+                if prop is not None:
+                    actor._kraken_ray_select_style = {
+                        "color": tuple(float(v) for v in prop.GetColor()),
+                        "line_width": float(prop.GetLineWidth()),
+                        "opacity": float(prop.GetOpacity()),
+                        "ambient": float(prop.GetAmbient()),
+                        "diffuse": float(prop.GetDiffuse()),
+                    }
+            except Exception:
+                pass
+            try:
+                actor.SetVisibility(rays_visible)
+            except Exception:
+                pass
+            ray_actors.append(actor)
+            if not self._should_draw_3d_terminal_endpoint(
+                terminal_status,
+                show_terminal_diagnostics=bool(self.show_terminal_diagnostics_var.get()),
+            ):
+                suppressed_endpoint_count += 1
+                continue
+            try:
+                endpoint = np.asarray(display_ray_pts[-1], dtype=float).reshape(-1)[:3]
+                if endpoint.size >= 3 and np.all(np.isfinite(endpoint)):
+                    marker = pv.Sphere(
+                        radius=max(float(ray_radius) * float(style["endpoint_scale"]), 0.08),
+                        center=tuple(endpoint[:3]),
+                        theta_resolution=16 if terminal_status == "missed_detector" else 12,
+                        phi_resolution=10 if terminal_status == "missed_detector" else 8,
+                    )
+                    marker_actor = plotter.add_mesh(
+                        marker,
+                        color=style["endpoint_color"],
+                        opacity=0.96,
+                        smooth_shading=False,
+                        pickable=True,
+                    )
+                    marker_key = Kraken3DInspector._actor_key(marker_actor)
+                    if marker_key is not None:
+                        scene_info["actor_ray_map"][marker_key] = int(ray_index)
+                        scene_info["ray_actor_map"].setdefault(int(ray_index), []).append(marker_actor)
+                    try:
+                        marker_actor.SetVisibility(rays_visible)
+                    except Exception:
+                        pass
+                    ray_actors.append(marker_actor)
+            except Exception:
+                pass
+        if suppressed_endpoint_count:
+            self.append_debug(f"Legacy 3D suppressed {suppressed_endpoint_count} non-physical escaped/missed terminal endpoint markers.")
+        try:
+            plotter.render()
+        except Exception:
+            pass
+
+    def _save_legacy_3d_screenshot(self, plotter) -> None:
+        try:
+            default_name = f"kraken_3d_{time.strftime('%Y%m%d_%H%M%S')}.png"
+            try:
+                SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+            selected_path = filedialog.asksaveasfilename(
+                parent=self,
+                title="Save 3D view as PNG",
+                initialdir=str(SCREENSHOT_DIR),
+                initialfile=default_name,
+                defaultextension=".png",
+                filetypes=[("PNG image", "*.png")],
+            )
+            if not selected_path:
+                self.status_var.set("3D PNG save cancelled")
+                return
+            image_path = Path(selected_path)
+            system = getattr(plotter, "_kraken_system", None)
+            rays = getattr(plotter, "_kraken_rays", None)
+            scene_bundle = getattr(plotter, "_kraken_scene_bundle", None)
+            if system is None or rays is None:
+                raise RuntimeError("3D scene data unavailable for clean screenshot")
+            self._last_scene_bundle = scene_bundle if isinstance(scene_bundle, SceneBundle) else self._last_scene_bundle
+            clean_plotter = self._build_clean_legacy_3d_plotter(system, rays)
+            clean_scene = dict(getattr(clean_plotter, "_kraken_scene", {}) or {})
+            visibility = dict(getattr(plotter, "_kraken_visibility", {}) or {})
+            if not visibility.get("rays", True):
+                self._legacy_3d_set_actor_visibility(clean_scene.get("ray_actors", []), False, clean_plotter)
+            if not visibility.get("mirrors", True):
+                self._legacy_3d_set_actor_visibility(clean_scene.get("mirror_actors", []), False, clean_plotter)
+            if not visibility.get("lenses", True):
+                self._legacy_3d_set_actor_visibility(clean_scene.get("lens_actors", []), False, clean_plotter)
+            if not visibility.get("helpers", True):
+                self._legacy_3d_set_actor_visibility(clean_scene.get("helper_actors", []), False, clean_plotter)
+            try:
+                clean_plotter.camera_position = plotter.camera_position
+                clean_plotter.camera.parallel_projection = bool(plotter.camera.parallel_projection)
+                clean_plotter.camera.parallel_scale = float(plotter.camera.parallel_scale)
+            except Exception:
+                self._set_legacy_3d_camera(clean_plotter, "iso")
+            clean_plotter.screenshot(str(image_path))
+            try:
+                rw = getattr(clean_plotter, "render_window", None)
+                if rw is not None:
+                    rw.Finalize()
+                clean_plotter.close()
+            except Exception:
+                pass
+            self.status_var.set(f"Saved 3D PNG: {image_path.name}")
+            self.append_progress(f"Saved 3D PNG: {image_path}")
+        except Exception as exc:
+            self.append_debug(f"3D screenshot failed: {exc}")
+            self.status_var.set(f"3D screenshot failed: {_short_error_message(exc)}")
+
+    @staticmethod
+    def _legacy_3d_camera_preset_from_display_orientation(orientation: str) -> str:
+        plane = normalize_projection_plane(orientation)
+        if plane == "XZ":
+            return "xz"
+        if plane == "XY":
+            return "top"
+        return "yz"
+
+    @staticmethod
+    def _set_legacy_3d_camera(plotter, preset: str) -> None:
+        cx, cy, cz = plotter.center
+        bounds = np.asarray(plotter.bounds, dtype=float)
+        span_x = float(bounds[1] - bounds[0]) if bounds.size >= 2 else 0.0
+        span_y = float(bounds[3] - bounds[2]) if bounds.size >= 4 else 0.0
+        span_z = float(bounds[5] - bounds[4]) if bounds.size >= 6 else 0.0
+        span = max(span_x, span_y, span_z, 1.0)
+        distance = max(span * 2.6, 180.0)
+        try:
+            width, height = plotter.window_size
+            aspect = max(float(width) / max(float(height), 1.0), 0.1)
+        except Exception:
+            aspect = 1.4
+
+        def orthographic_scale(horizontal_span: float, vertical_span: float) -> float:
+            horizontal_scale = float(horizontal_span) / (2.0 * aspect)
+            vertical_scale = float(vertical_span) * 0.5
+            return max(horizontal_scale, vertical_scale, 1.0) * 1.08
+
+        if preset == "yz":
+            position = (cx - distance, cy, cz)
+            view_up = (0.0, 1.0, 0.0)
+            parallel_scale = orthographic_scale(span_z, span_y)
+        elif preset == "top":
+            # Exact top view. This used to conflict only because VTK binds the numeric `3` key to stereo.
+            position = (cx, cy, cz + distance)
+            view_up = (0.0, 1.0, 0.0)
+            parallel_scale = orthographic_scale(span_x, span_y)
+        elif preset == "bottom":
+            position = (cx, cy, cz - distance)
+            view_up = (0.0, 1.0, 0.0)
+            parallel_scale = orthographic_scale(span_x, span_y)
+        elif preset == "xz":
+            position = (cx, cy + distance, cz)
+            view_up = (1.0, 0.0, 0.0)
+            parallel_scale = orthographic_scale(span_z, span_x)
+        else:
+            position = (cx - distance, cy + distance * 0.55, cz + distance * 0.75)
+            view_up = (0.0, 1.0, 0.0)
+            parallel_scale = None
+        plotter.camera_position = [position, (cx, cy, cz), view_up]
+        try:
+            plotter.camera.parallel_projection = parallel_scale is not None
+            if parallel_scale is not None:
+                plotter.camera.parallel_scale = float(parallel_scale)
+        except Exception:
+            pass
+        plotter.reset_camera_clipping_range()
+        plotter.set_background("white", top="white")
+        plotter.render()
+
+    def _open3d_trace_refresh_service(self) -> Open3DTraceRefreshService:
+        service = getattr(self, "_open3d_trace_refresh_service_instance", None)
+        if service is None:
+            service = Open3DTraceRefreshService(self)
+            self._open3d_trace_refresh_service_instance = service
+        return service
+
+    def _open3d_step_state_service(self) -> Open3DStepStateService:
+        service = getattr(self, "_open3d_step_state_service_instance", None)
+        if service is None:
+            service = Open3DStepStateService(self, valid_labels=STEP_OVERLAY_LABEL_SET)
+            self._open3d_step_state_service_instance = service
+        return service
+
+    def _refresh_3d_inspector_if_open(self, *, system=None, rays=None, scene_bundle: SceneBundle | None = None) -> None:
+        try:
+            self._open3d_trace_refresh_service().sync_open_inspector(
+                system=system,
+                rays=rays,
+                scene_bundle=scene_bundle,
+                reset_camera=False,
+            )
+        except Exception as exc:
+            self.append_debug(f"3D inspector sync failed: {exc}")
