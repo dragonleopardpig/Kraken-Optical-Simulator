@@ -8,6 +8,7 @@ import KrakenOS as Kos
 import numpy as np
 
 from KrakenOS.UI.scene_geometry import SceneSource3D
+from KrakenOS.UI.services.row_spec_contracts import _requires_scalar_trace
 
 
 def _layout_module():
@@ -367,7 +368,6 @@ class TracePreviewService:
     ) -> None:
         le = _layout_module()
         NonSequentialTracePreviewError = le.NonSequentialTracePreviewError
-        _requires_scalar_trace = le._requires_scalar_trace
         _short_error_message = le._short_error_message
         _trace_preview_chunk_batch = le._trace_preview_chunk_batch
         self._last_preview_trace_backend = "none"

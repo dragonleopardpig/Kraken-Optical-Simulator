@@ -21,6 +21,7 @@ from KrakenOS.UI.layout_plot_controller import (
 )
 from KrakenOS.UI.scene_geometry import SceneSource3D
 from KrakenOS.UI.services.ray_display_geometry import _raykeeper_has_non_primary_branch_paths
+from KrakenOS.UI.services.row_spec_contracts import _row_specs_signature
 from KrakenOS.UI.services.trace_preview import TracePreviewService
 from KrakenOS.UI.source_trace_helpers import (
     GAUSSIAN_INPUT_MODE_DEFAULT,
@@ -31,17 +32,6 @@ from KrakenOS.UI.source_trace_helpers import (
     SOURCE_MODEL_DEFAULT,
     SOURCE_MODEL_VALUES,
 )
-
-
-def _layout_module():
-    from KrakenOS.UI import layout_editor as layout_editor_module
-
-    return layout_editor_module
-
-
-def _row_specs_signature(row_specs: list[dict]):
-    return _layout_module()._row_specs_signature(row_specs)
-
 
 class TracePreviewSamplingMixin:
     def _sample_ray_heights(self, max_radius: float) -> list[float]:

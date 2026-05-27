@@ -42,6 +42,12 @@ FAST_CONTRACT_ALIASES = (
     '"open3d-live-budget"',
     '"open3d-thickness-dimensions"',
     '"open3d-step-face-direction"',
+    '"row-spec-contracts"',
+)
+
+REQUIRED_SERVICE_MODULES = (
+    "KrakenOS/UI/services/advanced_surface_attrs.py",
+    "KrakenOS/UI/services/row_spec_contracts.py",
 )
 
 
@@ -69,6 +75,10 @@ def main() -> int:
     for relative in REQUIRED_WIDGET_MODULES:
         if not (PROJECT_ROOT / relative).is_file():
             failures.append(f"Missing required reusable widget module: {relative}")
+
+    for relative in REQUIRED_SERVICE_MODULES:
+        if not (PROJECT_ROOT / relative).is_file():
+            failures.append(f"Missing required service contract module: {relative}")
 
     layout_source = (PROJECT_ROOT / "KrakenOS/UI/layout_editor.py").read_text(encoding="utf-8")
     if "class Kraken3DInspector" in layout_source:

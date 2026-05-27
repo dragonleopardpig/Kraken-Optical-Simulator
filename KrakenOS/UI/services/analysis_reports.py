@@ -66,6 +66,7 @@ from KrakenOS.UI.services.optical_solid_geometry import (
     short_stl_mesh_diagnostics,
 )
 from KrakenOS.UI.services.ray_inspector_records import RayInspectorRecordService
+from KrakenOS.UI.services.row_spec_contracts import _requires_scalar_trace
 from KrakenOS.UI.source_illumination_analysis import (
     collect_source_illumination_records,
     empty_source_illumination_samples,
@@ -100,11 +101,6 @@ def _layout_module():
     from KrakenOS.UI import layout_editor as layout_editor_module
 
     return layout_editor_module
-
-
-def _requires_scalar_trace(row_specs: list[dict]) -> bool:
-    return _layout_module()._requires_scalar_trace(row_specs)
-
 
 def _normalize_path_filter_label(value: object) -> str:
     return normalize_branch_throughput_filter_label(value)
@@ -2631,4 +2627,3 @@ class AnalysisReportsMixin:
 
     def export_nonseq_scene_graph_csv(self) -> None:
         self._main_nonseq_scene_graph_dialog().export_nonseq_scene_graph_csv()
-

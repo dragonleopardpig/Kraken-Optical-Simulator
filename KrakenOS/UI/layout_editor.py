@@ -14,7 +14,6 @@ import json
 import ast
 import atexit
 import csv
-import hashlib
 from itertools import product
 from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor
@@ -127,7 +126,6 @@ from KrakenOS.UI.detector_aperture_analysis import (
 from KrakenOS.UI.custom_surfaces import decode_custom_surface_value, encode_custom_surface_value
 from KrakenOS.UI.lens_drawing_export import export_lens_drawing, identify_elements
 from KrakenOS.UI.lens_drawing_properties import (
-    DRAWING_PROPERTIES_ATTR,
     DRAWING_PROPERTY_FIELDS,
     apply_surface_properties_payload,
     drawing_properties,
@@ -357,7 +355,12 @@ from KrakenOS.UI.scene_source_analysis import (
     source_spec_float,
     source_spec_vector,
 )
-from KrakenOS.UI.trace_intent import resolve_trace_intent
+from KrakenOS.UI.trace_intent import (
+    BEAM_SPLITTER_SURFACE,
+    DIFFUSE_OBJECT_SURFACE,
+    OBJECT_TARGET_SURFACE,
+    resolve_trace_intent,
+)
 from KrakenOS.UI.tolerance_constants import (
     TOLERANCE_COMPARE_VIEW_DEFAULT,
     TOLERANCE_COMPARE_VIEW_VALUES,
@@ -523,6 +526,20 @@ from KrakenOS.UI.services.catalog_metadata import (
     _catalog_surface_keys,
     _stock_lens_summary,
 )
+from KrakenOS.UI.services.advanced_surface_attrs import (
+    ADVANCED_SURFACE_ATTR_NAMES,
+    ADVANCED_SURFACE_FIELD_GROUPS,
+    DETECTOR_ADVANCED_ATTR,
+    DRAWING_PROPERTIES_ADVANCED_ATTR,
+    EXAMPLE_SUPPORTED_SURFACE_ATTRS,
+    REFLECTIVE_PROXY_SURFACES,
+    SCENE_TARGET_ADVANCED_ATTR,
+    _advanced_surface_attrs_from_spec,
+)
+from KrakenOS.UI.services.row_spec_contracts import (
+    _requires_scalar_trace,
+    _row_specs_signature,
+)
 # Project-side scratch directory for ad-hoc screenshots and exports. Not used by
 # auto-save (which stays in ~/.cache); only as the *initial* directory for
 # user-triggered Save dialogs.
@@ -531,9 +548,6 @@ DEFAULT_LAYOUT_TITLE = "Doublet Lens"
 FOLDED_STARTER_LAYOUT_TITLE = "Double Mirror Fold"
 DETECTOR_BINS_DEFAULT = "Auto"
 BRANCH_FIELD_PROPAGATION_MM_DEFAULT = "0.0"
-DETECTOR_ADVANCED_ATTR = "Detector"
-SCENE_TARGET_ADVANCED_ATTR = "SceneTarget"
-DRAWING_PROPERTIES_ADVANCED_ATTR = DRAWING_PROPERTIES_ATTR
 from KrakenOS.UI.services.element_scene_metadata import (
     DETECTOR_DEFAULT_SETTINGS,
     SCENE_TARGET_DEFAULT_SETTINGS,
@@ -703,72 +717,6 @@ FIELD_TYPE_ALIASES = {
     "Real Image Height": "Real Image Height",
     "Real Image Semi-Height": "Real Image Height",
 }
-ADVANCED_SURFACE_FIELD_GROUPS = (
-    (
-        "Shape",
-        (
-            ("AspherData", "Asphere coefficients"),
-            ("ZNK", "Zernike coefficients"),
-            ("Cylinder_Rxy_Ratio", "Cylinder Rxy ratio"),
-            ("ShiftX", "Shape shift X"),
-            ("ShiftY", "Shape shift Y"),
-            ("Surface_type", "Surface type"),
-            ("Res", "Resolution"),
-        ),
-    ),
-    (
-        "Aperture/Mask",
-        (
-            ("SubAperture", "Sub-aperture [scale, y, x]"),
-            ("Mask_Type", "Mask type"),
-            ("Mask_Shape", "Mask shape"),
-            ("Solid_3d_stl", "STL solid path/data"),
-        ),
-    ),
-    (
-        "Coating/Material",
-        (
-            ("Coating", "Coating table"),
-            ("CoatingMet", "Metal coating mode"),
-            ("BeamSplitter", "Beam splitter settings"),
-            ("DiffuseScatter", "Diffuse/BRDF scatter settings"),
-            ("Color", "Display color"),
-            ("Nm_Pos", "Name position"),
-        ),
-    ),
-    (
-        "Diagnostics/Native",
-        (
-            ("Element", "Element/path metadata"),
-            (DETECTOR_ADVANCED_ATTR, "Detector model settings"),
-            (SCENE_TARGET_ADVANCED_ATTR, "Scene target metadata"),
-            (SCENE_PLACEMENT_ADVANCED_ATTR, "3-D placement metadata"),
-            (DRAWING_PROPERTIES_ADVANCED_ATTR, "2-D drawing surface properties"),
-            ("Display2D", "2-D display settings"),
-            ("Interferogram", "Interferogram detector settings"),
-            ("OpticalSolidFaces", "CAD/STL optical face roles"),
-            ("OpticalSolidSourcePath", "Original CAD/STL source path"),
-            ("OpticalSolidSourceFormat", "Original CAD/STL source format"),
-            ("StepOverlayPromotion", "Open 3D STEP promotion metadata"),
-            ("LiveStepOverlayTrace", "Open 3D live STEP trace metadata"),
-            ("Note", "Note"),
-            ("Order", "Native order"),
-            ("Var", "Native optimization vars"),
-            ("VarBounds", "Native variable bounds"),
-            (TOLERANCE_COMPENSATORS_ADVANCED_ATTR, "Tolerance compensator variable names"),
-            (TOLERANCE_COUPLING_ADVANCED_ATTR, "Tolerance coupling groups"),
-            (TOLERANCE_MANUFACTURING_ADVANCED_ATTR, "Tolerance manufacturing metadata"),
-            ("Error_map", "Measured error map"),
-            ("DerPres", "Derivative precision"),
-            ("NumLabel", "Draw numeric label"),
-            ("SPECIAL_SURF_FUNC", "Special surface function"),
-            ("Const", "Native constants"),
-        ),
-    ),
-)
-ADVANCED_SURFACE_ATTR_NAMES = tuple(
-    attr for _group, fields in ADVANCED_SURFACE_FIELD_GROUPS for attr, _label in fields
-)
 ADVANCED_ROW_SHAPE_FIELDS = (
     (
         "k",
@@ -797,10 +745,6 @@ COATING_PRESETS = {
     ],
 }
 COATING_PRESET_NAMES = tuple(COATING_PRESETS.keys())
-BEAM_SPLITTER_SURFACE = "Beam Splitter"
-OBJECT_TARGET_SURFACE = "Object Target"
-DIFFUSE_OBJECT_SURFACE = "Diffuse Object"
-REFLECTIVE_PROXY_SURFACES = {"Mirror", OBJECT_TARGET_SURFACE, DIFFUSE_OBJECT_SURFACE}
 
 from KrakenOS.UI.services.beam_scatter_metadata import (
     BEAM_SPLITTER_ADVANCED_ATTR,
@@ -892,65 +836,6 @@ PATH_COMPONENT_LABEL_SUFFIXES = {
     PATH_COMPONENT_MIRROR: "mirror",
     PATH_COMPONENT_OBJECT_TARGET: "object target",
     PATH_COMPONENT_STOCK_LENS: "stock lens",
-}
-ADVANCED_SURFACE_ATTR_ALIASES = {
-    re.sub(r"[^a-z0-9]", "", attr.lower()): attr for attr in ADVANCED_SURFACE_ATTR_NAMES
-}
-ADVANCED_SURFACE_ATTR_ALIASES.update(
-    {
-        "aspherdata": "AspherData",
-        "aspherics": "AspherData",
-        "aspher": "AspherData",
-        "zernike": "ZNK",
-        "znk": "ZNK",
-        "subaperture": "SubAperture",
-        "masktype": "Mask_Type",
-        "maskshape": "Mask_Shape",
-        "coatingmet": "CoatingMet",
-        "beamsplitter": "BeamSplitter",
-        "beam splitter": "BeamSplitter",
-        "diffusescatter": "DiffuseScatter",
-        "diffuse scatter": "DiffuseScatter",
-        "brdf": "DiffuseScatter",
-        "bsdf": "DiffuseScatter",
-        "elementmetadata": "Element",
-        "element metadata": "Element",
-        "pathmetadata": "Element",
-        "path metadata": "Element",
-        "armmetadata": "Element",
-        "arm metadata": "Element",
-        "error map": "Error_map",
-        "errormap": "Error_map",
-        "solid3dstl": "Solid_3d_stl",
-        "cylinderrxyratio": "Cylinder_Rxy_Ratio",
-        "surfacetype": "Surface_type",
-        "specialsurffunc": "SPECIAL_SURF_FUNC",
-    }
-)
-EXAMPLE_SUPPORTED_SURFACE_ATTRS = {
-    "Name",
-    "Rc",
-    "InDiameter",
-    "k",
-    "Axicon",
-    "ExtraData",
-    "Diff_Ord",
-    "Grating_D",
-    "Grating_Angle",
-    "Thickness",
-    "Diameter",
-    "TiltX",
-    "TiltY",
-    "TiltZ",
-    "DespX",
-    "DespY",
-    "DespZ",
-    "AxisMove",
-    "Drawing",
-    "Glass",
-    "Thin_Lens",
-    "UDA",
-    *ADVANCED_SURFACE_ATTR_NAMES,
 }
 NUMERIC_FIELDS = {
     "rc",
@@ -1257,7 +1142,6 @@ from KrakenOS.UI.services.optical_solid_geometry import (
 from KrakenOS.UI.services.surface_value_parsing import (
     _coerce_opt_flag,
     _coerce_bounds,
-    _compact_surface_attr_name,
     _normalize_native_variable_name,
     _native_variable_names,
     _parse_float_sequence_text,
@@ -1266,29 +1150,6 @@ from KrakenOS.UI.services.surface_value_parsing import (
     _dedupe_preserve_order,
     _native_variable_matches,
 )
-
-
-def _canonical_advanced_surface_attr(value: object) -> str | None:
-    return ADVANCED_SURFACE_ATTR_ALIASES.get(_compact_surface_attr_name(value))
-
-
-def _advanced_surface_attrs_from_spec(spec: dict) -> dict[str, object]:
-    attrs: dict[str, object] = {}
-    for source_key in ("advanced", "advanced_attrs", "surface_attrs"):
-        source = spec.get(source_key)
-        if not isinstance(source, dict):
-            continue
-        for key, value in source.items():
-            attr = _canonical_advanced_surface_attr(key)
-            if attr is not None:
-                attrs[attr] = value
-    for key, value in spec.items():
-        if str(key).strip().lower() == "element":
-            continue
-        attr = _canonical_advanced_surface_attr(key)
-        if attr is not None:
-            attrs[attr] = value
-    return attrs
 
 
 def _normalize_advanced_surface_value(attr: str, value):
@@ -2150,35 +2011,6 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
     return system
 
 
-def _surface_signature_token(value):
-    if value is None or isinstance(value, (str, int, float, bool, np.floating, np.integer)):
-        return value
-    if isinstance(value, np.ndarray):
-        array = np.asarray(value)
-        return (
-            "ndarray",
-            array.shape,
-            str(array.dtype),
-            hashlib.sha1(array.tobytes()).hexdigest(),
-        )
-    if isinstance(value, dict):
-        return tuple(sorted((str(key), _surface_signature_token(item)) for key, item in value.items()))
-    if isinstance(value, (list, tuple)):
-        return tuple(_surface_signature_token(item) for item in value)
-    if callable(value):
-        return (
-            "callable",
-            getattr(value, "__module__", type(value).__module__),
-            getattr(value, "__qualname__", getattr(value, "__name__", type(value).__qualname__)),
-            id(value),
-        )
-    return (
-        type(value).__module__,
-        type(value).__qualname__,
-        id(value),
-    )
-
-
 def _layout_literal_value(value):
     encoded_custom = encode_custom_surface_value(value)
     if encoded_custom is not None and encoded_custom is not value:
@@ -2209,40 +2041,6 @@ def _layout_literal_value(value):
 _UNSERIALIZABLE_LAYOUT_VALUE = object()
 
 
-def _row_specs_signature(row_specs: list[dict]):
-    metal_signature = _metal_catalog_signature(_metal_catalogs_from_row_specs(row_specs))
-    signature = []
-    for spec in row_specs:
-        signature.append(
-            (
-                str(spec.get("surface", "")),
-                str(spec.get("name", "")),
-                float(spec.get("rc", 0.0)),
-                float(spec.get("k", spec.get("K", 0.0))),
-                float(spec.get("axicon", 0.0)),
-                float(spec.get("diff_ord", spec.get("Diff_Ord", 0.0))),
-                float(spec.get("grating_d", spec.get("Grating_D", 0.0))),
-                float(spec.get("grating_angle", spec.get("Grating_Angle", 0.0))),
-                float(spec.get("thickness", 0.0)),
-                float(spec.get("diameter", 0.0)),
-                float(spec.get("in_diameter", spec.get("InDiameter", 0.0))),
-                float(spec.get("drawing", spec.get("Drawing", 1.0))),
-                _surface_signature_token(spec.get("extra_data", spec.get("ExtraData", 0.0))),
-                _surface_signature_token(spec.get("uda", spec.get("UDA", "None"))),
-                _surface_signature_token(_advanced_surface_attrs_from_spec(spec)),
-                str(spec.get("glass", "AIR")),
-                float(spec.get("tilt_x", 0.0)),
-                float(spec.get("tilt_y", 0.0)),
-                float(spec.get("tilt_z", 0.0)),
-                float(spec.get("desp_x", 0.0)),
-                float(spec.get("desp_y", 0.0)),
-                float(spec.get("desp_z", 0.0)),
-                float(spec.get("axis_move", 0.0)),
-            )
-        )
-    return metal_signature, tuple(signature)
-
-
 def _build_cached_system_from_specs(row_specs: list[dict]) -> object:
     global _WORKER_SYSTEM_CACHE_SIGNATURE, _WORKER_SYSTEM_CACHE_SYSTEM
     signature = _row_specs_signature(row_specs)
@@ -2250,22 +2048,6 @@ def _build_cached_system_from_specs(row_specs: list[dict]) -> object:
         _WORKER_SYSTEM_CACHE_SYSTEM = _build_system_from_specs(row_specs, build=0)
         _WORKER_SYSTEM_CACHE_SIGNATURE = signature
     return _WORKER_SYSTEM_CACHE_SYSTEM
-
-
-def _requires_scalar_trace(row_specs: list[dict]) -> bool:
-    # Kraken's current batch path is fast, but it does not reproduce all
-    # scalar Trace() physics for thin-lens and tilted/folded elements.
-    for spec in row_specs:
-        if str(spec.get("surface", "")) in {"Thin Lens", "Mirror", "Grating", BEAM_SPLITTER_SURFACE}:
-            return True
-        if abs(float(spec.get("axicon", 0.0))) > 1e-12:
-            return True
-        if any(
-            abs(float(spec.get(field, 0.0))) > 1e-12
-            for field in ("tilt_x", "tilt_y", "tilt_z", "desp_x", "desp_y", "desp_z", "axis_move")
-        ):
-            return True
-    return False
 
 
 def _pick_image_plane_data_static(rays):

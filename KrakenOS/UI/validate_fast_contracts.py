@@ -96,6 +96,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Source-structure budgets keep the UI split across coordinator, panels, widgets, services, and validators.",
     ),
     ValidationTarget(
+        "row-spec-contracts",
+        "KrakenOS.UI.validate_row_spec_contracts",
+        reason="Row-spec signatures and scalar-trace decisions live outside layout_editor.py.",
+    ),
+    ValidationTarget(
         "open3d-axis-guides",
         "KrakenOS.UI.validate_open3d_optical_axis_guides",
         reason="Centered sequential scenes keep one global optical axis; off-axis scenes keep traced guides.",

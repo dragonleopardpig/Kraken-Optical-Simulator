@@ -4,6 +4,8 @@ import math
 
 import numpy as np
 
+from KrakenOS.UI.services.row_spec_contracts import _row_specs_signature
+
 
 _PROTECTED_GLOBALS = {
     "LayoutAnalysisDisplayMixin",

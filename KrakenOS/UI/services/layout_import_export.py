@@ -56,6 +56,13 @@ from KrakenOS.UI.services.catalog_metadata import (
     _load_stock_lens_catalog,
     _stock_lens_summary,
 )
+from KrakenOS.UI.services.advanced_surface_attrs import (
+    ADVANCED_SURFACE_ATTR_NAMES,
+    EXAMPLE_SUPPORTED_SURFACE_ATTRS,
+    REFLECTIVE_PROXY_SURFACES,
+    _advanced_surface_attrs_from_spec,
+    _canonical_advanced_surface_attr,
+)
 from KrakenOS.UI.services.layout_file_writer import LayoutFileWriterService
 from KrakenOS.UI.services.surface_value_parsing import _coerce_bounds, _coerce_opt_flag
 from KrakenOS.UI.source_trace_helpers import SOURCE_MODEL_ZEMAX_RAYFILE
@@ -83,7 +90,6 @@ def _preferred_existing_dir(*candidates: Path | str) -> Path:
 
 ATTACHMENT_LENS_DIR = _preferred_existing_dir(ATTACHMENT_DIR / "Lens", ATTACHMENT_DIR / "lens")
 ELEMENT_ADVANCED_ATTR = "Element"
-REFLECTIVE_PROXY_SURFACE_VALUES = {"Mirror", OBJECT_TARGET_SURFACE, DIFFUSE_OBJECT_SURFACE}
 
 
 class _CapturedExample(Exception):
@@ -114,24 +120,16 @@ def _stock_lens_trace_glass(glass: str, catalog_surface: dict) -> tuple[str, str
     return _layout_module()._stock_lens_trace_glass(glass, catalog_surface)
 
 
-def _advanced_surface_attrs_from_spec(spec: dict) -> dict[str, object]:
-    return _layout_module()._advanced_surface_attrs_from_spec(spec)
-
-
-def _canonical_advanced_surface_attr(value: object) -> str | None:
-    return _layout_module()._canonical_advanced_surface_attr(value)
-
-
 def _advanced_surface_attr_names() -> tuple[str, ...]:
-    return tuple(getattr(_layout_module(), "ADVANCED_SURFACE_ATTR_NAMES", ()))
+    return tuple(ADVANCED_SURFACE_ATTR_NAMES)
 
 
 def _example_supported_surface_attrs() -> set[str]:
-    return set(getattr(_layout_module(), "EXAMPLE_SUPPORTED_SURFACE_ATTRS", set()))
+    return set(EXAMPLE_SUPPORTED_SURFACE_ATTRS)
 
 
 def _reflective_proxy_surfaces() -> set[str]:
-    return set(getattr(_layout_module(), "REFLECTIVE_PROXY_SURFACES", REFLECTIVE_PROXY_SURFACE_VALUES))
+    return set(REFLECTIVE_PROXY_SURFACES)
 
 
 class LayoutImportExportMixin:

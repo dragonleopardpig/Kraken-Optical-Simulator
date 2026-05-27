@@ -24,6 +24,7 @@ import numpy as np
 
 import KrakenOS as Kos
 from KrakenOS.UI.services.formula_help import FormulaHelpService
+from KrakenOS.UI.services.row_spec_contracts import _row_specs_signature
 from KrakenOS.UI.surface_table_model import SurfaceRow
 from KrakenOS.UI.trace_intent import BEAM_SPLITTER_SURFACE
 
@@ -41,10 +42,6 @@ def _layout_module():
 
 def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=None) -> object:
     return _layout_module()._build_system_from_specs(row_specs, build=build, setup=setup)
-
-
-def _row_specs_signature(row_specs: list[dict]):
-    return _layout_module()._row_specs_signature(row_specs)
 
 
 def _short_error_message(exc: Exception, limit: int = 220) -> str:
@@ -1286,4 +1283,3 @@ class ParaxialToolsMixin:
             self.status_var.set(f"Best image solve failed: {error}")
         finally:
             self._cleanup_current_popup_menu()
-

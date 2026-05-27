@@ -50,6 +50,7 @@ from KrakenOS.UI.services.optical_solid_geometry import (
     _read_stl_triangle_vertices,
     _rotation_matrix_from_kraken_tilts,
 )
+from KrakenOS.UI.services.row_spec_contracts import _row_specs_signature
 from KrakenOS.UI.surface_table_model import SurfaceRow
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -89,10 +90,6 @@ def _ensure_pv() -> None:
 
 def _short_error_message(exc: Exception, limit: int = 220) -> str:
     return _layout_module()._short_error_message(exc, limit=limit)
-
-
-def _row_specs_signature(row_specs: list[dict]):
-    return _layout_module()._row_specs_signature(row_specs)
 
 
 def _wavelength_to_rgb(wavelength_nm: float) -> tuple[float, float, float]:
