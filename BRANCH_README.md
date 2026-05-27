@@ -273,6 +273,7 @@ python -m KrakenOS.UI.validate_optimization_backend
 python -m KrakenOS.UI.validate_native_nonseq_closure
 python -m KrakenOS.UI.validate_2d_3d_projection_sync
 python -m KrakenOS.UI.validate_infinity_field_launch
+python -m KrakenOS.UI.validate_open3d_step_face_direction
 python -m KrakenOS.UI.validate_open3d_thickness_dimensions
 python -m KrakenOS.UI.validate_lens_drawing_properties
 python -m KrakenOS.UI.validate_lens_drawing_pdf_case_study
@@ -320,9 +321,10 @@ The split now covers:
 - The optional `sv-ttk` theme adapter and public `.[ui]` install metadata.
 
 The refactor is protected by `validate_ui_modular_maintainability`, widget
-commit validators, install metadata validators, and the fast contract runner.
-The next maintainability work should remove transitional late-bound constants
-and helper lookups, not move behavior back into `layout_editor.py`.
+commit validators, STEP face-direction service validation, install metadata
+validators, and the fast contract runner. The next maintainability work should
+remove transitional late-bound constants and helper lookups, not move behavior
+back into `layout_editor.py`.
 
 ## Known Risks And Future Work
 

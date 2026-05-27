@@ -7,11 +7,7 @@ from typing import Any, Iterable
 
 import numpy as np
 
-
-def _layout_module():
-    from KrakenOS.UI import layout_editor as layout_editor_module
-
-    return layout_editor_module
+from KrakenOS.UI.services.cad_step_export import _affine_from_point_sets
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,7 +130,7 @@ class StepFaceDirectionService:
         if rotated_points is None:
             raise ValueError(f"{label.upper()} STEP rotated mesh unavailable for face-direction alignment.")
 
-        affine = _layout_module()._affine_from_point_sets(current_points, rotated_points)
+        affine = _affine_from_point_sets(current_points, rotated_points)
         if affine is not None:
             rotated_feature_center = (
                 affine @ np.asarray((feature_center[0], feature_center[1], feature_center[2], 1.0), dtype=float)

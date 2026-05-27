@@ -8,6 +8,7 @@ import numpy as np
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
 from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
+from KrakenOS.UI.services import step_face_direction as step_face_direction_module
 from KrakenOS.UI.services.step_face_direction import StepFaceDirectionService
 
 
@@ -20,6 +21,7 @@ def main() -> int:
     inspector_source = inspect.getsource(Kraken3DInspector.orient_selected_step_face_to_direction)
     editor_source = inspect.getsource(KrakenLayoutEditor.orient_step_feature_normal_to_direction)
     direction_source = inspect.getsource(KrakenLayoutEditor._step_orientation_direction_vector)
+    service_module_source = inspect.getsource(step_face_direction_module)
     service_class_source = inspect.getsource(StepFaceDirectionService)
     service_source = inspect.getsource(StepFaceDirectionService.plan_overlay_face_direction)
     checks = [
@@ -42,6 +44,11 @@ def main() -> int:
             and "placement_delta = feature_center[:3] - np.asarray(rotated_feature_center" in service_source
             and "_set_step_rotation_deg_tuple(label, next_angles)" in service_source
             and "_set_step_rotation_deg_tuple(label, current_angles)" in service_source,
+        ),
+        (
+            "service uses CAD/STEP affine helper without importing layout_editor",
+            "from KrakenOS.UI.services.cad_step_export import _affine_from_point_sets" in service_module_source
+            and "from KrakenOS.UI import layout_editor" not in service_module_source,
         ),
         (
             "editor applies service plan and refreshes Open 3D",

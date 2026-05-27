@@ -41,6 +41,7 @@ FAST_CONTRACT_ALIASES = (
     '"open3d-toolbar"',
     '"open3d-live-budget"',
     '"open3d-thickness-dimensions"',
+    '"open3d-step-face-direction"',
 )
 
 
