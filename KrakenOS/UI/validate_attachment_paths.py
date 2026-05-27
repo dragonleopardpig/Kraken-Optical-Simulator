@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -19,6 +20,9 @@ from KrakenOS.UI.layout_editor import (
     STOCK_LENS_CATALOG_SPECS,
     ZEMAX_ATTACHMENT_DIR,
 )
+from KrakenOS.UI.services.layout_import_export import LayoutImportExportMixin
+from KrakenOS.UI.services.optical_solid_workflow import LayoutOpticalSolidWorkflowMixin
+from KrakenOS.UI.services.step_overlay_import import StepOverlayImportService
 
 
 @dataclass
@@ -78,6 +82,27 @@ def validate_attachment_paths() -> list[AttachmentPathCheck]:
             "LED STEP default",
             _under(DEFAULT_LED_STEP_PATH, ATTACHMENT_DIR) and ATTACHMENT_LED_DIR.name.lower() == "led",
             str(DEFAULT_LED_STEP_PATH),
+        )
+    )
+    step_import_source = inspect.getsource(StepOverlayImportService)
+    ask_step_source = inspect.getsource(LayoutOpticalSolidWorkflowMixin._ask_step_file)
+    zemax_import_source = inspect.getsource(LayoutImportExportMixin.import_zemax_file)
+    checks.append(
+        AttachmentPathCheck(
+            "Open STEP dialogs start at attachment root",
+            'self._ask_step_file(title, le.ATTACHMENT_DIR' in step_import_source
+            and 'self._ask_step_file("Import optical STEP", le.ATTACHMENT_DIR' in step_import_source
+            and 'self._ask_step_file("Import camera STEP", le.ATTACHMENT_DIR' in step_import_source
+            and "initial_dir = le.ATTACHMENT_DIR" in step_import_source
+            and 'globals().get("ATTACHMENT_DIR", Path.home())' in ask_step_source,
+            "Lens, optical, camera, LED STEP import dialogs use attachment/ as the first browser directory.",
+        )
+    )
+    checks.append(
+        AttachmentPathCheck(
+            "Zemax open dialog starts at attachment root",
+            "initial_dirs = [\n            ATTACHMENT_DIR," in zemax_import_source,
+            "Import Zemax file opens at attachment/ before narrower fallback directories.",
         )
     )
 

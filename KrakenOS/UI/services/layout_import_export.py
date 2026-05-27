@@ -314,6 +314,7 @@ class LayoutImportExportMixin:
 
     def import_zemax_file(self) -> None:
         initial_dirs = [
+            ATTACHMENT_DIR,
             ZEMAX_ATTACHMENT_DIR,
             ATTACHMENT_LENS_DIR,
             LEGACY_TESTING_DIR / "zemax",

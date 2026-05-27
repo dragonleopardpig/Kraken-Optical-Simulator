@@ -123,7 +123,7 @@ def main() -> int:
             and "_clear_open3d_selection(render=True)" in diagnostic_source,
         ),
         (
-            "display-backed timing replay can profile the first Show Rays physics trace",
+            "display-backed timing replay can profile the first Show Rays refresh",
             "--trace-rays" in diagnostic_source
             and "trace_rays" in diagnostic_source
             and "show_rays_var.set(True)" in diagnostic_source,
@@ -140,11 +140,11 @@ def main() -> int:
             and "app.undo()" in diagnostic_source,
         ),
         (
-            "hidden-ray imported STEP placement defers transient physics trace",
+            "imported STEP placement defers transient physics trace unless explicitly live",
             "def inspector_should_trace_step_overlays" in trace_refresh_source
             and "def inspector_physics_requested" in trace_refresh_source
-            and "show_rays_var" in trace_refresh_source
             and "live_mode_var" in trace_refresh_source
+            and "show_rays_var" not in inspect.getsource(open3d_trace_refresh.Open3DTraceRefreshService.inspector_physics_requested)
             and "if bool(force_retrace):" not in trace_refresh_source
             and "include_live_step_overlays = self.inspector_should_trace_step_overlays(" in trace_refresh_source,
         ),

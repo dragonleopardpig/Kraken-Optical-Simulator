@@ -88,10 +88,11 @@ outline artifacts across ordinary Open 3D refreshes, ordinary Open 3D passive
 hover uses a rotation-handle actor pick list instead of dense CAD body picking,
 right-click CAD face assignment defers feature scans until an explicit user
 action, Open 3D-originated STEP imports refresh the 3D scene once instead of
-through both the editor and inspector, hidden-ray transient STEP placement/drop
-does not trigger a physics trace until the user enables rays, Live Mode, or
-Trace Now, repeated Show Rays toggles reuse the current traced scene instead of
-rebuilding transient STEP physics, first-trace timing now records live STEP row
+through both the editor and inspector, transient STEP import/carry/drop remains
+display-only and preserves the existing ray family until Live Mode, Trace Now,
+or row-backed promotion explicitly asks for physics, repeated Show Rays toggles
+reuse the current traced scene instead of rebuilding transient STEP physics,
+first-trace timing now records live STEP row
 planning, system build, ray tracing, SceneBundle projection, and per-bundle
 trace backend/ray-count durations, the world-envelope sampler keeps the first
 successful non-sequential trace instead of retracing the same bundle into the
@@ -122,8 +123,8 @@ python -m KrakenOS.UI.diagnose_open3d_action_timing --output /tmp/kraken_open3d_
 
 The replay loads the Machine Vision 150 mm measured layout, opens Open 3D,
 hides rays and thickness overlays, adds the optical STEP component, selects it,
-verifies hidden-ray imported STEP rotation without a full scene/physics
-rebuild, simulates a small display-only placement drop, applies Ctrl-Z undo,
+verifies imported STEP rotation without a full scene/physics rebuild, simulates
+a small display-only placement drop, applies Ctrl-Z undo,
 deselects it, and prints the slowest timed stages.
 
 ## KrakenOS Base Features
@@ -328,6 +329,7 @@ Frequently useful targeted checks:
 ```bash
 python -m KrakenOS.UI.validate_ui_modular_maintainability
 python -m KrakenOS.UI.validate_ui_install_metadata
+python -m KrakenOS.UI.validate_attachment_paths
 python -m KrakenOS.UI.validate_optimization_backend
 python -m KrakenOS.UI.validate_cad_scene_cache
 python -m KrakenOS.UI.validate_3d_interaction_contract

@@ -42,7 +42,7 @@ class StepOverlayImportService:
         refresh_open_3d: bool = True,
     ) -> Path | None:
         le = _layout_module()
-        path = self._ask_step_file(title, le.DEFAULT_LENS_STEP_PATH.parent, parent=dialog_parent)
+        path = self._ask_step_file(title, le.ATTACHMENT_DIR, parent=dialog_parent)
         if path is None:
             return None
         self._begin_history_capture()
@@ -125,7 +125,7 @@ class StepOverlayImportService:
         refresh_open_3d: bool = True,
     ) -> Path | None:
         le = _layout_module()
-        path = self._ask_step_file("Import optical STEP", le.DEFAULT_LENS_STEP_PATH.parent, parent=dialog_parent)
+        path = self._ask_step_file("Import optical STEP", le.ATTACHMENT_DIR, parent=dialog_parent)
         if path is None:
             return None
         self._preserve_unpromoted_step_overlay("optical")
@@ -160,7 +160,7 @@ class StepOverlayImportService:
         refresh_open_3d: bool = True,
     ) -> Path | None:
         le = _layout_module()
-        path = self._ask_step_file("Import camera STEP", le.DEFAULT_CAMERA_STEP_PATH.parent, parent=dialog_parent)
+        path = self._ask_step_file("Import camera STEP", le.ATTACHMENT_DIR, parent=dialog_parent)
         if path is None:
             return None
         self._begin_history_capture()
@@ -187,7 +187,7 @@ class StepOverlayImportService:
         refresh_open_3d: bool = True,
     ) -> Path | None:
         le = _layout_module()
-        initial_dir = le.DEFAULT_LED_STEP_PATH if le.DEFAULT_LED_STEP_PATH.is_dir() else le.DEFAULT_LED_STEP_PATH.parent
+        initial_dir = le.ATTACHMENT_DIR
         path = self._ask_step_file("Import LED STEP", initial_dir, parent=dialog_parent)
         if path is None:
             return None

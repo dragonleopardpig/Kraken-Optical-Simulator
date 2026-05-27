@@ -69,24 +69,24 @@ class Open3DTraceRefreshService:
 
     @staticmethod
     def inspector_physics_requested(inspector: Any) -> bool:
-        """Return True when the inspector is asking for live/visible physics."""
-        for attr_name in ("live_mode_var", "show_rays_var"):
-            var = getattr(inspector, attr_name, None)
-            try:
-                if var is not None and bool(var.get()):
-                    return True
-            except Exception:
-                pass
-        return False
+        """Return True when the inspector is explicitly asking for live physics."""
+        var = getattr(inspector, "live_mode_var", None)
+        try:
+            return bool(var.get()) if var is not None else False
+        except Exception:
+            return False
 
     def inspector_should_trace_step_overlays(self, inspector: Any, *, force_retrace: bool = False) -> bool:
         """Return True when imported STEP overlays must participate in tracing.
 
         Imported optical STEP geometry should remain cheap CAD display hardware
         while the user is only placing/selecting it with rays hidden. Physics
-        tracing is still forced by Live Mode, Trace Now, or visible rays.
+        tracing is still forced by Live Mode or Trace Now.  ``Show Rays`` alone
+        should keep the existing ray family visible while the user imports,
+        carries, or drops an unpromoted STEP overlay; promoted row-backed
+        optical solids participate through the normal row trace path.
         ``force_retrace`` rebuilds the active preview, but it must not turn a
-        hidden-ray CAD placement/drop action into a transient optical trace.
+        CAD placement/drop action into a transient optical trace.
         """
         if not self.has_traceable_step_overlays():
             return False
@@ -231,8 +231,8 @@ class Open3DTraceRefreshService:
         rays: Any = None,
         scene_bundle: Any = None,
     ) -> Open3DRefreshResult:
-        include_live_step_overlays = self.has_traceable_step_overlays()
-        requires_open3d_retrace = include_live_step_overlays or self.has_promoted_step_optical_solid_rows()
+        include_live_step_overlays = False
+        requires_open3d_retrace = self.has_promoted_step_optical_solid_rows()
         if not self._active_trace_can_feed_open3d():
             system = None
             rays = None

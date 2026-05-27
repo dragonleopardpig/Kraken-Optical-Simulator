@@ -1624,9 +1624,13 @@ class LayoutOpticalSolidWorkflowMixin:
         return mesh_items
 
     def _ask_step_file(self, title: str, initial_dir: Path, *, parent: tk.Misc | None = None) -> Path | None:
+        default_dir = Path(globals().get("ATTACHMENT_DIR", Path.home()))
+        preferred_dir = Path(initial_dir) if initial_dir is not None else default_dir
+        if not preferred_dir.exists():
+            preferred_dir = default_dir if default_dir.exists() else Path.home()
         path = filedialog.askopenfilename(
             title=title,
-            initialdir=str(initial_dir if initial_dir.exists() else Path.home()),
+            initialdir=str(preferred_dir),
             filetypes=[
                 ("STEP files", "*.step *.stp *.ste *.STEP *.STP *.STE"),
                 ("All files", "*"),

@@ -33,6 +33,7 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
     open3d_scene_refresh_service = inspect.getsource(Open3DSceneRefreshService)
     open3d_step_state_service = inspect.getsource(Open3DStepStateService)
     open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)
+    physics_requested_source = inspect.getsource(Open3DTraceRefreshService.inspector_physics_requested)
     step_promotion_service = inspect.getsource(StepOverlayPromotionService)
     checks = [
         Open3DLiveTransientStepCheck(
@@ -46,8 +47,8 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             "Open 3D traces transient optical STEP overlays only when physics is requested",
             "def has_traceable_step_overlays" in open3d_refresh_service
             and "def inspector_should_trace_step_overlays" in open3d_refresh_service
-            and "show_rays_var" in open3d_refresh_service
-            and "live_mode_var" in open3d_refresh_service
+            and "show_rays_var" not in physics_requested_source
+            and "live_mode_var" in physics_requested_source
             and "force_retrace" in open3d_refresh_service
             and "if bool(force_retrace):" not in open3d_refresh_service
             and "include_live_step_overlays = self.inspector_should_trace_step_overlays(" in open3d_refresh_service
@@ -55,7 +56,7 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             in open3d_refresh_service
             and "if not requires_open3d_retrace and not force_retrace" in open3d_refresh_service
             and "include_live_step_overlays=include_live_step_overlays" in open3d_refresh_service,
-            "Hidden-ray placement remains a CAD display workflow; Live Mode, Trace Now, or visible rays opt into physics.",
+            "Imported STEP carry/drop remains a CAD display workflow; Live Mode or Trace Now opt into transient physics.",
         ),
         Open3DLiveTransientStepCheck(
             "Transient optical STEP rows use the promoted-solid contract",
