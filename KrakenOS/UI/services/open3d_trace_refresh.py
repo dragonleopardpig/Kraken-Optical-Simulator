@@ -92,6 +92,41 @@ class Open3DTraceRefreshService:
             return False
         return self.inspector_physics_requested(inspector)
 
+    def current_scene_has_live_step_trace(self, inspector: Any) -> bool:
+        """Return True when the inspector cache still contains live STEP rows."""
+        labels_by_row = inspector._live_trace_step_overlay_label_by_row()
+        if not labels_by_row:
+            return False
+        row_names = list(getattr(inspector, "_current_row_names", []) or [])
+        if any(0 <= int(row_index) < len(row_names) for row_index in labels_by_row):
+            return True
+        scene_bundle = getattr(inspector, "_current_scene_bundle", None)
+        if scene_bundle is None:
+            return False
+        try:
+            rows = list(self.editor._preview_render_rows(scene_bundle) or [])
+        except Exception:
+            rows = []
+        return any(0 <= int(row_index) < len(rows) for row_index in labels_by_row)
+
+    def can_reuse_current_scene_for_show_rays(self, inspector: Any) -> bool:
+        """Return True when Show Rays can be a display-only refresh."""
+        for attr_name in ("_current_system", "_current_rays", "_current_scene_bundle"):
+            if getattr(inspector, attr_name, None) is None:
+                return False
+        if not list(getattr(inspector, "_current_row_names", []) or []):
+            return False
+        try:
+            showing_rays = bool(inspector.show_rays_var.get())
+        except Exception:
+            showing_rays = False
+        if showing_rays and self.has_traceable_step_overlays():
+            if not bool(inspector._live_trace_step_overlay_labels()):
+                return False
+            if not self.current_scene_has_live_step_trace(inspector):
+                return False
+        return True
+
     def has_promoted_step_optical_solid_rows(self) -> bool:
         """Return True when saved row-backed STEP solids need an Open 3D trace."""
         try:

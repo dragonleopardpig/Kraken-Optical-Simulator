@@ -10,6 +10,7 @@ from KrakenOS.UI.services import layout_polyline_display, layout_table_workbench
 from KrakenOS.UI.services import open3d_step_overlay_refresh
 from KrakenOS.UI.services import open3d_step_rotation_handles
 from KrakenOS.UI.services import open3d_timing, open3d_trace_refresh
+from KrakenOS.UI.services import three_d_scene_tools, trace_preview
 
 
 def main() -> int:
@@ -21,6 +22,8 @@ def main() -> int:
     step_overlay_refresh_source = inspect.getsource(open3d_step_overlay_refresh.Open3DStepOverlayRefreshService)
     step_rotation_source = inspect.getsource(open3d_step_rotation_handles.Open3DStepRotationHandleService)
     trace_refresh_source = inspect.getsource(open3d_trace_refresh.Open3DTraceRefreshService)
+    three_d_scene_source = inspect.getsource(three_d_scene_tools.ThreeDSceneToolsMixin._build_preview_system_rays_bundle)
+    trace_preview_source = inspect.getsource(trace_preview.TracePreviewService._trace_preview_bundles)
     polyline_source = inspect.getsource(layout_polyline_display.LayoutPolylineDisplayMixin._load_step_mesh)
     workbench_source = inspect.getsource(layout_table_workbench.LayoutTableWorkbenchMixin)
     diagnostic_source = inspect.getsource(diagnose_open3d_action_timing)
@@ -61,6 +64,22 @@ def main() -> int:
             and "convert_step_to_stl" in polyline_source
             and "read_step_stl_mesh" in polyline_source
             and "load_step_mesh_memory_cache_hit" in polyline_source,
+        ),
+        (
+            "Open 3D preview build records system/trace/scene bundle timings",
+            "preview_system_rays_bundle_start" in three_d_scene_source
+            and "preview_live_step_overlay_rows" in three_d_scene_source
+            and "preview_build_system" in three_d_scene_source
+            and "preview_trace_rays" in three_d_scene_source
+            and "preview_build_scene_bundle" in three_d_scene_source,
+        ),
+        (
+            "ray tracing records backend, bundle, and ray-count timings",
+            "trace_preview_bundles_start" in trace_preview_source
+            and "trace_preview_bundle_start" in trace_preview_source
+            and "trace_preview_bundle_done" in trace_preview_source
+            and "trace_preview_bundles_done" in trace_preview_source
+            and "trace_preview_parallel_chunk_done" in trace_preview_source,
         ),
         (
             "display-backed timing replay follows the reported user workflow",

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import KrakenOS as Kos
 import numpy as np
 
 from KrakenOS.UI.scene_geometry import SceneSource3D
+from KrakenOS.UI.services.open3d_timing import open3d_timing_event
 from KrakenOS.UI.services.row_spec_contracts import _requires_scalar_trace
 
 
@@ -370,158 +372,263 @@ class TracePreviewService:
         NonSequentialTracePreviewError = le.NonSequentialTracePreviewError
         _short_error_message = le._short_error_message
         _trace_preview_chunk_batch = le._trace_preview_chunk_batch
+        trace_start = time.perf_counter()
         self._last_preview_trace_backend = "none"
         self._last_preview_trace_note = ""
+        bundle_lengths = [int(len(np.asarray(bundle[0]))) for bundle in bundles]
+        total_rays = int(sum(bundle_lengths))
+        status = "ok"
+        trace_state: dict[str, object] | None = None
+        open3d_timing_event(
+            "trace_preview_bundles_start",
+            bundle_count=len(bundles),
+            total_rays=total_rays,
+            bundle_lengths=bundle_lengths[:16],
+            bundle_lengths_truncated=len(bundle_lengths) > 16,
+        )
         if not bundles:
             rays.clean()
-            return
-        row_specs = self._serializable_row_specs()
-        trace_state = self._resolved_trace_mode(system=system)
-        sampling_mode = str(self.editor.__dict__.get("_active_preview_sampling_mode", "") or "ui_preview")
-        launch_metadata = self._launch_metadata_for_trace(trace_state, sampling_mode=sampling_mode)
-
-        def _bundle_launch_metadata(source: SceneSource3D | None) -> dict[str, object]:
-            if source is None:
-                return dict(launch_metadata)
-            return {
-                **launch_metadata,
-                "launch_ray_count": int(
-                    getattr(source, "ray_count", launch_metadata.get("launch_ray_count", 1))
-                    or launch_metadata.get("launch_ray_count", 1)
-                ),
-            }
-
-        if bool(trace_state.get("use_nonseq")):
-            rays.clean()
-            clean = 1
-            restore_nonseq_settings = self._apply_nonseq_trace_settings(system)
-            terminal_policy = self._trace_terminal_policy_metadata(trace_state)
-            try:
-                for bundle_index, bundle in enumerate(bundles):
-                    source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
-                    metadata = self._source_metadata_for_bundle(
-                        bundle,
-                        wavelength,
-                        source=source,
-                        terminal_policy=terminal_policy,
-                        launch_metadata=_bundle_launch_metadata(source),
-                    )
-                    Kos.NsTraceLoop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
-                    clean = 0
-                self._last_preview_trace_backend = "NsTraceLoop"
-                return
-            except Exception as exc:
-                rays.clean()
-                reason_text = ", ".join(str(reason) for reason in trace_state.get("reasons", ()) or ()) or "non-sequential scene request"
-                detail = _short_error_message(exc)
-                message = f"NsTraceLoop failed for {reason_text}: {detail}"
-                self._last_preview_trace_backend = "NsTraceLoop failed"
-                self._last_preview_trace_note = f"{message}; sequential fallback suppressed."
-                raise NonSequentialTracePreviewError(message, trace_state=trace_state) from exc
-            finally:
-                restore_nonseq_settings()
-        preview_row_specs = row_specs
-        restore_image_catch = lambda: None
-        image_catch_diameter = self._sequential_preview_image_catch_diameter(trace_state)
-        if image_catch_diameter is not None:
-            preview_row_specs = [dict(spec) for spec in row_specs]
-            if preview_row_specs:
-                preview_row_specs[-1]["diameter"] = float(image_catch_diameter)
-                preview_row_specs[-1]["Diameter"] = float(image_catch_diameter)
-            restore_image_catch = self._temporarily_set_system_surface_diameter(
-                system,
-                len(preview_row_specs) - 1,
-                float(image_catch_diameter),
+            open3d_timing_event(
+                "trace_preview_bundles_done",
+                duration_ms=round(float((time.perf_counter() - trace_start) * 1000.0), 3),
+                status=status,
+                backend=self._last_preview_trace_backend,
+                bundle_count=0,
+                total_rays=0,
             )
-        total_rays = int(sum(len(np.asarray(bundle[0])) for bundle in bundles))
-        worker_count = max(1, min(self._optimization_worker_count(), total_rays))
-        if (
-            worker_count <= 1
-            or total_rays < 2
-            or _requires_scalar_trace(preview_row_specs)
-            or not hasattr(system, "BatchTrace")
-            or not hasattr(rays, "batch_push")
-        ):
-            trace_loop = Kos.TraceLoop if _requires_scalar_trace(preview_row_specs) else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
-            self._last_preview_trace_backend = "Scalar TraceLoop" if trace_loop is Kos.TraceLoop else "BatchTraceLoop"
-            try:
-                clean = 1
-                for bundle_index, bundle in enumerate(bundles):
-                    source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
-                    metadata = self._source_metadata_for_bundle(
-                        bundle,
-                        wavelength,
-                        source=source,
-                        launch_metadata=_bundle_launch_metadata(source),
-                    )
-                    trace_loop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
-                    clean = 0
-            finally:
-                restore_image_catch()
-            return
-
-        rays.clean()
-        executor = self._ensure_analysis_executor(worker_count)
-        if executor is None:
-            trace_loop = Kos.TraceLoop if _requires_scalar_trace(preview_row_specs) else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
-            self._last_preview_trace_backend = "Scalar TraceLoop" if trace_loop is Kos.TraceLoop else "BatchTraceLoop"
-            try:
-                clean = 1
-                for bundle_index, bundle in enumerate(bundles):
-                    source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
-                    metadata = self._source_metadata_for_bundle(
-                        bundle,
-                        wavelength,
-                        source=source,
-                        launch_metadata=_bundle_launch_metadata(source),
-                    )
-                    trace_loop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
-                    clean = 0
-            finally:
-                restore_image_catch()
-            return
-
-        merged_bundle = tuple(
-            np.concatenate([np.asarray(bundle[index], dtype=float) for bundle in bundles if len(np.asarray(bundle[0])) > 0])
-            for index in range(6)
-        )
-        merged_metadata: list[dict[str, object]] = []
-        for bundle_index, bundle in enumerate(bundles):
-            if len(np.asarray(bundle[0])) > 0:
-                source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
-                merged_metadata.extend(
-                    self._source_metadata_for_bundle(
-                        bundle,
-                        wavelength,
-                        source=source,
-                        launch_metadata=_bundle_launch_metadata(source),
-                    )
-                )
-        merged_total = len(np.asarray(merged_bundle[0]))
-        if merged_total <= 0:
-            self._shutdown_analysis_executor()
             return
         try:
-            self._last_preview_trace_backend = "Parallel Batch preview"
-            futures = []
-            for chunk in np.array_split(np.arange(merged_total), min(worker_count, merged_total)):
-                if chunk.size == 0:
-                    continue
-                chunk_bundle = tuple(np.asarray(values)[chunk] for values in merged_bundle)
-                chunk_metadata = [merged_metadata[int(index)] for index in chunk if int(index) < len(merged_metadata)]
-                future = executor.submit(
-                        _trace_preview_chunk_batch,
-                        preview_row_specs,
-                        wavelength,
-                        *chunk_bundle,
+            row_specs = self._serializable_row_specs()
+            trace_state = self._resolved_trace_mode(system=system)
+            sampling_mode = str(self.editor.__dict__.get("_active_preview_sampling_mode", "") or "ui_preview")
+            launch_metadata = self._launch_metadata_for_trace(trace_state, sampling_mode=sampling_mode)
+
+            def _bundle_launch_metadata(source: SceneSource3D | None) -> dict[str, object]:
+                if source is None:
+                    return dict(launch_metadata)
+                return {
+                    **launch_metadata,
+                    "launch_ray_count": int(
+                        getattr(source, "ray_count", launch_metadata.get("launch_ray_count", 1))
+                        or launch_metadata.get("launch_ray_count", 1)
+                    ),
+                }
+
+            if bool(trace_state.get("use_nonseq")):
+                rays.clean()
+                clean = 1
+                restore_nonseq_settings = self._apply_nonseq_trace_settings(system)
+                terminal_policy = self._trace_terminal_policy_metadata(trace_state)
+                try:
+                    for bundle_index, bundle in enumerate(bundles):
+                        bundle_start = time.perf_counter()
+                        bundle_ray_count = int(len(np.asarray(bundle[0])))
+                        open3d_timing_event(
+                            "trace_preview_bundle_start",
+                            backend="NsTraceLoop",
+                            bundle_index=int(bundle_index),
+                            ray_count=bundle_ray_count,
+                            clean=int(clean),
+                        )
+                        source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
+                        metadata = self._source_metadata_for_bundle(
+                            bundle,
+                            wavelength,
+                            source=source,
+                            terminal_policy=terminal_policy,
+                            launch_metadata=_bundle_launch_metadata(source),
+                        )
+                        Kos.NsTraceLoop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
+                        open3d_timing_event(
+                            "trace_preview_bundle_done",
+                            backend="NsTraceLoop",
+                            bundle_index=int(bundle_index),
+                            ray_count=bundle_ray_count,
+                            duration_ms=round(float((time.perf_counter() - bundle_start) * 1000.0), 3),
+                            ray_path_count=len(getattr(rays, "CC", []) or []),
+                        )
+                        clean = 0
+                    self._last_preview_trace_backend = "NsTraceLoop"
+                    return
+                except Exception as exc:
+                    status = "error"
+                    rays.clean()
+                    reason_text = ", ".join(str(reason) for reason in trace_state.get("reasons", ()) or ()) or "non-sequential scene request"
+                    detail = _short_error_message(exc)
+                    message = f"NsTraceLoop failed for {reason_text}: {detail}"
+                    self._last_preview_trace_backend = "NsTraceLoop failed"
+                    self._last_preview_trace_note = f"{message}; sequential fallback suppressed."
+                    raise NonSequentialTracePreviewError(message, trace_state=trace_state) from exc
+                finally:
+                    restore_nonseq_settings()
+            preview_row_specs = row_specs
+            restore_image_catch = lambda: None
+            image_catch_diameter = self._sequential_preview_image_catch_diameter(trace_state)
+            if image_catch_diameter is not None:
+                preview_row_specs = [dict(spec) for spec in row_specs]
+                if preview_row_specs:
+                    preview_row_specs[-1]["diameter"] = float(image_catch_diameter)
+                    preview_row_specs[-1]["Diameter"] = float(image_catch_diameter)
+                restore_image_catch = self._temporarily_set_system_surface_diameter(
+                    system,
+                    len(preview_row_specs) - 1,
+                    float(image_catch_diameter),
+                )
+            worker_count = max(1, min(self._optimization_worker_count(), total_rays))
+            scalar_required = bool(_requires_scalar_trace(preview_row_specs))
+            if (
+                worker_count <= 1
+                or total_rays < 2
+                or scalar_required
+                or not hasattr(system, "BatchTrace")
+                or not hasattr(rays, "batch_push")
+            ):
+                trace_loop = Kos.TraceLoop if scalar_required else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
+                self._last_preview_trace_backend = "Scalar TraceLoop" if trace_loop is Kos.TraceLoop else "BatchTraceLoop"
+                try:
+                    clean = 1
+                    for bundle_index, bundle in enumerate(bundles):
+                        bundle_start = time.perf_counter()
+                        bundle_ray_count = int(len(np.asarray(bundle[0])))
+                        open3d_timing_event(
+                            "trace_preview_bundle_start",
+                            backend=self._last_preview_trace_backend,
+                            bundle_index=int(bundle_index),
+                            ray_count=bundle_ray_count,
+                            clean=int(clean),
+                        )
+                        source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
+                        metadata = self._source_metadata_for_bundle(
+                            bundle,
+                            wavelength,
+                            source=source,
+                            launch_metadata=_bundle_launch_metadata(source),
+                        )
+                        trace_loop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
+                        open3d_timing_event(
+                            "trace_preview_bundle_done",
+                            backend=self._last_preview_trace_backend,
+                            bundle_index=int(bundle_index),
+                            ray_count=bundle_ray_count,
+                            duration_ms=round(float((time.perf_counter() - bundle_start) * 1000.0), 3),
+                            ray_path_count=len(getattr(rays, "CC", []) or []),
+                        )
+                        clean = 0
+                finally:
+                    restore_image_catch()
+                return
+
+            rays.clean()
+            executor = self._ensure_analysis_executor(worker_count)
+            if executor is None:
+                trace_loop = Kos.TraceLoop if scalar_required else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
+                self._last_preview_trace_backend = "Scalar TraceLoop" if trace_loop is Kos.TraceLoop else "BatchTraceLoop"
+                try:
+                    clean = 1
+                    for bundle_index, bundle in enumerate(bundles):
+                        bundle_start = time.perf_counter()
+                        bundle_ray_count = int(len(np.asarray(bundle[0])))
+                        open3d_timing_event(
+                            "trace_preview_bundle_start",
+                            backend=self._last_preview_trace_backend,
+                            bundle_index=int(bundle_index),
+                            ray_count=bundle_ray_count,
+                            clean=int(clean),
+                        )
+                        source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
+                        metadata = self._source_metadata_for_bundle(
+                            bundle,
+                            wavelength,
+                            source=source,
+                            launch_metadata=_bundle_launch_metadata(source),
+                        )
+                        trace_loop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
+                        open3d_timing_event(
+                            "trace_preview_bundle_done",
+                            backend=self._last_preview_trace_backend,
+                            bundle_index=int(bundle_index),
+                            ray_count=bundle_ray_count,
+                            duration_ms=round(float((time.perf_counter() - bundle_start) * 1000.0), 3),
+                            ray_path_count=len(getattr(rays, "CC", []) or []),
+                        )
+                        clean = 0
+                finally:
+                    restore_image_catch()
+                return
+
+            merged_bundle = tuple(
+                np.concatenate([np.asarray(bundle[index], dtype=float) for bundle in bundles if len(np.asarray(bundle[0])) > 0])
+                for index in range(6)
+            )
+            merged_metadata: list[dict[str, object]] = []
+            for bundle_index, bundle in enumerate(bundles):
+                if len(np.asarray(bundle[0])) > 0:
+                    source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
+                    merged_metadata.extend(
+                        self._source_metadata_for_bundle(
+                            bundle,
+                            wavelength,
+                            source=source,
+                            launch_metadata=_bundle_launch_metadata(source),
+                        )
                     )
-                futures.append((future, chunk_metadata))
-            for future, chunk_metadata in futures:
-                batch_results, batch_active = future.result()
-                rays.batch_push(batch_results, batch_active, wavelength, source_metadata=chunk_metadata)
+            merged_total = len(np.asarray(merged_bundle[0]))
+            if merged_total <= 0:
+                self._shutdown_analysis_executor()
+                return
+            try:
+                self._last_preview_trace_backend = "Parallel Batch preview"
+                futures = []
+                for chunk_index, chunk in enumerate(np.array_split(np.arange(merged_total), min(worker_count, merged_total))):
+                    if chunk.size == 0:
+                        continue
+                    chunk_bundle = tuple(np.asarray(values)[chunk] for values in merged_bundle)
+                    chunk_metadata = [merged_metadata[int(index)] for index in chunk if int(index) < len(merged_metadata)]
+                    chunk_start = time.perf_counter()
+                    future = executor.submit(
+                            _trace_preview_chunk_batch,
+                            preview_row_specs,
+                            wavelength,
+                            *chunk_bundle,
+                        )
+                    open3d_timing_event(
+                        "trace_preview_parallel_chunk_submitted",
+                        chunk_index=int(chunk_index),
+                        ray_count=int(chunk.size),
+                        submit_ms=round(float((time.perf_counter() - chunk_start) * 1000.0), 3),
+                    )
+                    futures.append((future, chunk_metadata, int(chunk_index), int(chunk.size)))
+                for future, chunk_metadata, chunk_index, chunk_size in futures:
+                    chunk_start = time.perf_counter()
+                    batch_results, batch_active = future.result()
+                    rays.batch_push(batch_results, batch_active, wavelength, source_metadata=chunk_metadata)
+                    open3d_timing_event(
+                        "trace_preview_parallel_chunk_done",
+                        chunk_index=int(chunk_index),
+                        ray_count=int(chunk_size),
+                        duration_ms=round(float((time.perf_counter() - chunk_start) * 1000.0), 3),
+                    )
+            finally:
+                restore_image_catch()
+                self._shutdown_analysis_executor()
+        except Exception:
+            status = "error"
+            raise
         finally:
-            restore_image_catch()
-            self._shutdown_analysis_executor()
+            reason_text = ""
+            if trace_state is not None:
+                reason_text = ", ".join(str(reason) for reason in trace_state.get("reasons", ()) or ())
+            open3d_timing_event(
+                "trace_preview_bundles_done",
+                duration_ms=round(float((time.perf_counter() - trace_start) * 1000.0), 3),
+                status=status,
+                backend=self._last_preview_trace_backend,
+                bundle_count=len(bundles),
+                total_rays=total_rays,
+                use_nonseq=bool(trace_state.get("use_nonseq")) if trace_state is not None else False,
+                trace_reasons=reason_text,
+                ray_path_count=len(getattr(rays, "CC", []) or []),
+            )
 
     def _build_pupilcalc_preview_bundles(self, system, wavelength: float, pattern: str):
         pupil = Kos.PupilCalc(

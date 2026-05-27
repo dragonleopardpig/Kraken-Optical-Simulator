@@ -113,8 +113,8 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
         ),
         Open3DLiveTransientStepCheck(
             "Show Rays toggles reuse the current Open 3D scene bundle",
-            "def _can_refresh_show_rays_from_current_scene" in inspector_source
-            and "def _current_scene_has_live_step_trace" in inspector_source
+            "def can_reuse_current_scene_for_show_rays" in open3d_refresh_service
+            and "def current_scene_has_live_step_trace" in open3d_refresh_service
             and "show_rays_fast_toggle_refresh" in inspector_source
             and "self._current_rays = rays" in open3d_scene_refresh_service
             and "self._current_row_names = list(row_names or [])" in open3d_scene_refresh_service,

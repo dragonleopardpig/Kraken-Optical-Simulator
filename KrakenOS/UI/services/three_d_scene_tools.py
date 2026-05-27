@@ -45,6 +45,7 @@ from KrakenOS.UI.nonseq_output_ports import (
 )
 from KrakenOS.UI.services.legacy_3d_scene import Legacy3DSceneService
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
+from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timing_span
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.optical_solid_geometry import (
     _read_stl_triangle_vertices,
@@ -223,49 +224,95 @@ class ThreeDSceneToolsMixin:
         update_state: bool = True,
         include_live_step_overlays: bool = False,
     ):
+        preview_start = time.perf_counter()
         wavelength = self._current_wavelength()
         capture = io.StringIO()
         active_rows = self.rows
         live_step_records: list[dict[str, object]] = []
-        if include_live_step_overlays:
-            active_rows, live_step_records = self._live_step_overlay_trace_rows()
-        else:
-            self._last_live_step_overlay_trace_rows = None
-            self._last_live_step_overlay_trace_records = []
-            self._last_live_step_overlay_scene_bundle = None
+        status = "ok"
+        mode = sampling_mode
+        open3d_timing_event(
+            "preview_system_rays_bundle_start",
+            sampling_mode=str(sampling_mode or ""),
+            update_state=bool(update_state),
+            include_live_step_overlays=bool(include_live_step_overlays),
+            row_count=len(self.rows),
+        )
         original_rows: list[SurfaceRow] | None = None
         scene_bundle = None
         try:
+            if include_live_step_overlays:
+                with open3d_timing_span(
+                    "preview_live_step_overlay_rows",
+                    row_count=len(self.rows),
+                ):
+                    active_rows, live_step_records = self._live_step_overlay_trace_rows()
+            else:
+                self._last_live_step_overlay_trace_rows = None
+                self._last_live_step_overlay_trace_records = []
+                self._last_live_step_overlay_scene_bundle = None
             if active_rows is not self.rows:
                 original_rows = self.rows
                 self.rows = active_rows
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
                 with redirect_stdout(capture), redirect_stderr(capture):
-                    system = self.build_system(
+                    with open3d_timing_span(
+                        "preview_build_system",
+                        row_count=len(self.rows),
                         require_solids=True,
                         force_rebuild=bool(live_step_records),
-                    )
+                        live_step_records=len(live_step_records),
+                    ):
+                        system = self.build_system(
+                            require_solids=True,
+                            force_rebuild=bool(live_step_records),
+                        )
                     rays = Kos.raykeeper(system)
                     max_radius = max((max(row.diameter / 2.0, 0.5) for row in self.rows), default=1.0)
-                    mode = sampling_mode
                     if mode is None:
                         mode = self._preview_scene_sampling_mode()
-                    self._trace_preview_rays(
-                        system,
-                        rays,
-                        wavelength,
-                        max_radius,
-                        sampling_mode=mode,
-                    )
-            scene_bundle = self._build_scene_bundle(system, rays, max_radius)
+                    with open3d_timing_span(
+                        "preview_trace_rays",
+                        sampling_mode=str(mode or ""),
+                        row_count=len(self.rows),
+                        wavelength_um=float(wavelength),
+                    ):
+                        self._trace_preview_rays(
+                            system,
+                            rays,
+                            wavelength,
+                            max_radius,
+                            sampling_mode=mode,
+                        )
+            ray_path_count = len(getattr(rays, "CC", []) or [])
+            with open3d_timing_span(
+                "preview_build_scene_bundle",
+                sampling_mode=str(mode or ""),
+                row_count=len(self.rows),
+                ray_path_count=int(ray_path_count),
+            ):
+                scene_bundle = self._build_scene_bundle(system, rays, max_radius)
             if include_live_step_overlays:
                 self._last_live_step_overlay_trace_rows = list(self.rows)
                 self._last_live_step_overlay_trace_records = list(live_step_records)
                 self._last_live_step_overlay_scene_bundle = scene_bundle
+        except Exception:
+            status = "error"
+            raise
         finally:
             if original_rows is not None:
                 self.rows = original_rows
+            open3d_timing_event(
+                "preview_system_rays_bundle_done",
+                duration_ms=round(float((time.perf_counter() - preview_start) * 1000.0), 3),
+                status=status,
+                sampling_mode=str(mode or sampling_mode or ""),
+                update_state=bool(update_state),
+                include_live_step_overlays=bool(include_live_step_overlays),
+                live_step_records=len(live_step_records),
+                ray_path_count=len(getattr(locals().get("rays", None), "CC", []) or []),
+            )
         self.append_debug(capture.getvalue())
         if update_state and not include_live_step_overlays:
             self.last_system = system

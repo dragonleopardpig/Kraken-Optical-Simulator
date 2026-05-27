@@ -1090,7 +1090,7 @@ class Kraken3DInspector(tk.Toplevel):
 
     def _on_show_rays_changed(self) -> None:
         self._debug_trace("show_rays_toggled", show_rays=bool(self.show_rays_var.get()), counts=self._debug_actor_counts())
-        if self._can_refresh_show_rays_from_current_scene():
+        if self.editor._open3d_trace_refresh_service().can_reuse_current_scene_for_show_rays(self):
             self._debug_trace(
                 "show_rays_fast_toggle_refresh",
                 show_rays=bool(self.show_rays_var.get()),
@@ -1105,47 +1105,6 @@ class Kraken3DInspector(tk.Toplevel):
             )
             return
         self.refresh_from_editor()
-
-    def _can_refresh_show_rays_from_current_scene(self) -> bool:
-        if self.__dict__.get("_current_system") is None:
-            return False
-        if self.__dict__.get("_current_rays") is None:
-            return False
-        if self.__dict__.get("_current_scene_bundle") is None:
-            return False
-        if not list(self.__dict__.get("_current_row_names", []) or []):
-            return False
-        showing_rays = False
-        try:
-            showing_rays = bool(self.show_rays_var.get())
-        except Exception:
-            showing_rays = False
-        try:
-            has_traceable_step = bool(self.editor._open3d_trace_refresh_service().has_traceable_step_overlays())
-        except Exception:
-            has_traceable_step = False
-        if showing_rays and has_traceable_step:
-            if not bool(self._live_trace_step_overlay_labels()):
-                return False
-            if not self._current_scene_has_live_step_trace():
-                return False
-        return True
-
-    def _current_scene_has_live_step_trace(self) -> bool:
-        labels_by_row = self._live_trace_step_overlay_label_by_row()
-        if not labels_by_row:
-            return False
-        row_names = list(self.__dict__.get("_current_row_names", []) or [])
-        if any(0 <= int(row_index) < len(row_names) for row_index in labels_by_row):
-            return True
-        scene_bundle = self.__dict__.get("_current_scene_bundle")
-        if scene_bundle is None:
-            return False
-        try:
-            rows = list(self.editor._preview_render_rows(scene_bundle) or [])
-        except Exception:
-            rows = []
-        return any(0 <= int(row_index) < len(rows) for row_index in labels_by_row)
 
     def _ray_pick_enabled(self) -> bool:
         try:
