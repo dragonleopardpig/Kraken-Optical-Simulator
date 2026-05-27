@@ -347,7 +347,7 @@ class Kraken3DInspector(tk.Toplevel):
             live_panel.rowconfigure(1, weight=1)
             self._build_live_left_panel(live_panel)
 
-            step_admin_panel = ttk.LabelFrame(self, text="STEP Elements", padding=8)
+            step_admin_panel = ttk.LabelFrame(self, text="Scene Components", padding=8)
             step_admin_panel.grid(row=1, column=2, sticky="nsew", padx=(0, 8), pady=8)
             step_admin_panel.columnconfigure(0, weight=1)
             step_admin_panel.rowconfigure(0, weight=1)
@@ -3402,6 +3402,38 @@ class Kraken3DInspector(tk.Toplevel):
         self.highlight_row(row_index)
         self.refresh_step_admin_panel()
         self.status_var.set(f"Selected promoted STEP row S{row_index}: {getattr(row, 'name', '') or 'optical solid'}.")
+        return True
+
+    def select_scene_row_from_admin(self, row_index: int) -> bool:
+        try:
+            row_index = int(row_index)
+        except Exception:
+            row_index = -1
+        rows = list(getattr(self.editor, "rows", []) or [])
+        if row_index < 0 or row_index >= len(rows):
+            self.status_var.set("No editable-table scene row is available.")
+            self.refresh_step_admin_panel()
+            return False
+        row_actor_map = getattr(self, "_row_actor_map", {}) or {}
+        if row_index not in row_actor_map and str(row_index) not in row_actor_map:
+            self.status_var.set(f"S{row_index} is not currently drawn in Open 3D.")
+            self.refresh_step_admin_panel()
+            return False
+        row = rows[row_index]
+        self.editor._selected_step_label = None
+        self._step_carry_active_label = None
+        self._step_carry_follow_state = None
+        self._step_normal_axis_pick_mode = False
+        self._step_surface_center_axis_pick_mode = False
+        self._step_rotation_active_label = None
+        self._close_step_rotation_handler()
+        self._set_step_highlight(None, render=False)
+        self.editor._select_table_indices([row_index], focus_index=row_index)
+        self.editor._sync_surface_selection(row_index)
+        self._stl_placement_row_index = row_index if self.editor._file_backed_stl_row_at(row_index) is not None else None
+        self.highlight_row(row_index)
+        self.refresh_step_admin_panel()
+        self.status_var.set(f"Selected scene row S{row_index}: {getattr(row, 'name', '') or getattr(row, 'surface', '') or 'surface'}.")
         return True
 
     def import_step_overlay(self, label: str) -> None:

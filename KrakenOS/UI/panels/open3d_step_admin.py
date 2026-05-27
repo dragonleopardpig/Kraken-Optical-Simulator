@@ -1,4 +1,4 @@
-"""Right-docked STEP element browser for the embedded Open 3D inspector."""
+"""Right-docked scene component browser for the embedded Open 3D inspector."""
 
 from __future__ import annotations
 
@@ -9,9 +9,10 @@ from typing import Any, Callable
 
 
 class Open3DStepAdminPanel:
-    """Build a CAD-style browser for imported and promoted STEP elements."""
+    """Build a CAD-style browser for Open 3D scene components."""
 
     CATEGORY_SPECS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+        ("layout", "Layout / Table Components", ()),
         ("optical", "Optical Element", ("optical",)),
         ("lens", "Imaging Lens", ("lens",)),
         ("camera_detector", "Camera / Detector", ("camera", "led")),
@@ -176,6 +177,65 @@ class Open3DStepAdminPanel:
             records.append((int(row_index), label, name))
         return records
 
+    def _visible_scene_row_indices(self) -> list[int]:
+        row_actor_map = getattr(self.inspector, "_row_actor_map", {}) or {}
+        indices: list[int] = []
+        for key, actor_keys in dict(row_actor_map).items():
+            try:
+                row_index = int(key)
+            except Exception:
+                continue
+            if actor_keys:
+                indices.append(row_index)
+        return sorted(set(indices))
+
+    def _scene_row_display_name(self, row_index: int, row: object) -> str:
+        surface = str(getattr(row, "surface", "") or "").strip()
+        name = str(getattr(row, "name", "") or "").strip()
+        element = ""
+        try:
+            element = str(self.editor._element_key(row) or "").strip()
+        except Exception:
+            element = str(getattr(row, "element", "") or "").strip()
+        label = name or surface or f"Surface {int(row_index)}"
+        if element and element != label:
+            label = f"{element}: {label}"
+        return label
+
+    def _scene_row_category(self, row_index: int, row: object) -> str:
+        try:
+            if self.editor._file_backed_stl_row_at(int(row_index)) is not None:
+                label = str(self.editor._open3d_step_label_for_optical_solid_row(row) or "optical")
+                return self._category_for_label(label)
+        except Exception:
+            pass
+        text = " ".join(
+            str(getattr(row, attr, "") or "")
+            for attr in ("surface", "name", "element", "glass")
+        ).strip().lower()
+        if any(token in text for token in ("camera", "detector", "sensor", "image")):
+            return "camera_detector"
+        if any(token in text for token in ("lens", "objective", "doublet", "gauss", "achromat")):
+            return "lens"
+        return "layout"
+
+    def _scene_row_records(self) -> list[tuple[int, str, str]]:
+        rows = list(getattr(self.editor, "rows", []) or [])
+        promoted = {row_index for row_index, _label, _name in self._promoted_step_rows()}
+        records: list[tuple[int, str, str]] = []
+        for row_index in self._visible_scene_row_indices():
+            if row_index in promoted or row_index < 0 or row_index >= len(rows):
+                continue
+            row = rows[row_index]
+            records.append(
+                (
+                    int(row_index),
+                    self._scene_row_category(int(row_index), row),
+                    self._scene_row_display_name(int(row_index), row),
+                )
+            )
+        return records
+
     def _current_browser_selection_iid(self) -> str:
         selected = str(getattr(self.editor, "_selected_step_label", "") or "").strip().lower()
         if selected and self.editor._step_path_for_label(selected) is not None:
@@ -197,7 +257,9 @@ class Open3DStepAdminPanel:
                 if self.editor._is_open3d_promoted_optical_solid_row(rows[row_index]):
                     return f"row:{row_index}"
             except Exception:
-                continue
+                pass
+            if row_index in self._visible_scene_row_indices():
+                return f"scene-row:{row_index}"
         return ""
 
     def refresh(self) -> None:
@@ -229,6 +291,10 @@ class Open3DStepAdminPanel:
                 category = self._category_for_label(label)
                 tree.insert(category_iids[category], "end", iid=f"row:{row_index}", text=f"S{row_index}: {name}")
                 category_counts[category] += 1
+            for row_index, category, name in self._scene_row_records():
+                parent = category_iids.get(category, category_iids["layout"])
+                tree.insert(parent, "end", iid=f"scene-row:{row_index}", text=f"S{row_index}: {name}")
+                category_counts[category if category in category_counts else "layout"] += 1
             for key, parent_iid in category_iids.items():
                 if category_counts.get(key, 0) <= 0:
                     tree.insert(parent_iid, "end", iid=f"empty:{key}", text="(empty)")
@@ -270,6 +336,12 @@ class Open3DStepAdminPanel:
             except Exception:
                 row_index = -1
             self.inspector.select_promoted_step_row_from_admin(row_index)
+        elif iid.startswith("scene-row:"):
+            try:
+                row_index = int(iid.split(":", 1)[1])
+            except Exception:
+                row_index = -1
+            self.inspector.select_scene_row_from_admin(row_index)
         self._update_properties(iid)
 
     def _current_kind_value(self) -> tuple[str, str]:
@@ -288,7 +360,9 @@ class Open3DStepAdminPanel:
             "faces": "-",
         }
         overlay_selected = False
-        row_selected = False
+        promoted_row_selected = False
+        file_backed_row_selected = False
+        centerable_row_selected = False
         if iid.startswith("overlay:"):
             label = iid.split(":", 1)[1]
             path = self.editor._step_path_for_label(label)
@@ -318,7 +392,8 @@ class Open3DStepAdminPanel:
             rows = list(getattr(self.editor, "rows", []) or [])
             if 0 <= row_index < len(rows):
                 row = rows[row_index]
-                row_selected = True
+                promoted_row_selected = True
+                file_backed_row_selected = True
                 advanced = getattr(row, "advanced", {}) if not isinstance(row, dict) else row.get("advanced", {})
                 promotion = advanced.get("StepOverlayPromotion", {}) if isinstance(advanced, dict) else {}
                 source_path = ""
@@ -348,15 +423,46 @@ class Open3DStepAdminPanel:
                         "faces": f"{assigned} assigned",
                     }
                 )
+        elif iid.startswith("scene-row:"):
+            try:
+                row_index = int(iid.split(":", 1)[1])
+            except Exception:
+                row_index = -1
+            rows = list(getattr(self.editor, "rows", []) or [])
+            if 0 <= row_index < len(rows):
+                row = rows[row_index]
+                try:
+                    file_backed_row_selected = self.editor._file_backed_stl_row_at(row_index) is not None
+                except Exception:
+                    file_backed_row_selected = False
+                surface = str(getattr(row, "surface", "") or "")
+                centerable_row_selected = surface not in {"Object", "Image"}
+                advanced = getattr(row, "advanced", {}) if not isinstance(row, dict) else row.get("advanced", {})
+                face_metadata = advanced.get("OpticalSolidFaces", {}) if isinstance(advanced, dict) else {}
+                assigned = len(face_metadata) if isinstance(face_metadata, dict) else 0
+                values.update(
+                    {
+                        "name": self._scene_row_display_name(row_index, row),
+                        "kind": f"Editable table row S{row_index}",
+                        "file": "CAD/STL row" if file_backed_row_selected else "Table",
+                        "pose": (
+                            f"T=({float(getattr(row, 'thickness', 0.0) or 0.0):.3g}) "
+                            f"D=({float(getattr(row, 'desp_x', 0.0) or 0.0):.3g},"
+                            f"{float(getattr(row, 'desp_y', 0.0) or 0.0):.3g},"
+                            f"{float(getattr(row, 'desp_z', 0.0) or 0.0):.3g})"
+                        ),
+                        "faces": f"{assigned} assigned" if file_backed_row_selected else str(surface or "-"),
+                    }
+                )
         for key, value in values.items():
             self._property_vars[key].set(value)
         button_states = {
             "carry": overlay_selected,
             "accept": overlay_selected,
             "promote": overlay_selected,
-            "delete": overlay_selected or row_selected,
-            "faces": row_selected,
-            "center": overlay_selected or row_selected,
+            "delete": overlay_selected or promoted_row_selected,
+            "faces": promoted_row_selected or file_backed_row_selected,
+            "center": overlay_selected or promoted_row_selected or centerable_row_selected,
             "normal": overlay_selected,
             "pick_normal": overlay_selected,
             "surface_center": overlay_selected,
@@ -382,6 +488,12 @@ class Open3DStepAdminPanel:
             except Exception:
                 return False
             return bool(self.inspector.select_promoted_step_row_from_admin(row_index))
+        if kind == "scene-row":
+            try:
+                row_index = int(value)
+            except Exception:
+                return False
+            return bool(self.inspector.select_scene_row_from_admin(row_index))
         return False
 
     def _import_step(self, label: str) -> None:
@@ -424,7 +536,7 @@ class Open3DStepAdminPanel:
         kind, _value = self._current_kind_value()
         if not self._select_current_for_action():
             return
-        if kind == "row":
+        if kind in {"row", "scene-row"}:
             self.inspector.start_center_row_to_ray()
         else:
             self.editor.start_any_step_axis_pick()

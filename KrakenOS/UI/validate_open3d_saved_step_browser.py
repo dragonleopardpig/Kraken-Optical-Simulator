@@ -60,6 +60,7 @@ class _Editor:
 class _Inspector:
     def __init__(self) -> None:
         self.editor = _Editor()
+        self._row_actor_map = {0: ["actor0"], 1: ["actor1"], 2: ["actor2"]}
 
 
 def main() -> int:
@@ -76,6 +77,7 @@ def main() -> int:
     reloaded_row = KrakenLayoutEditor._row_from_layout_item(saved_item)
     panel = Open3DStepAdminPanel(_Inspector())
     records = panel._promoted_step_rows()
+    scene_records = panel._scene_row_records()
     checks = [
         (
             "layout loader preserves STEP promotion metadata",
@@ -97,6 +99,10 @@ def main() -> int:
         (
             "Open 3D browser lists both saved STEP rows",
             records == [(0, "optical", "Saved penta prism"), (1, "lens", "Saved lens STEP")],
+        ),
+        (
+            "Open 3D browser also lists visible non-STEP editable-table rows",
+            scene_records == [(2, "layout", "Plain STL")],
         ),
     ]
     failed = [name for name, ok in checks if not ok]

@@ -1595,7 +1595,7 @@ def main() -> int:
         (
             "Open 3D has a right-docked STEP element browser",
             "_build_step_admin_right_panel" in init
-            and '"STEP Elements"' in init
+            and '"Scene Components"' in init
             and "columnconfigure(2, weight=0)" in init
             and "columnspan=3" in init_with_top_controls
             and "refresh_step_admin_panel" in refresh,
@@ -1610,9 +1610,17 @@ def main() -> int:
             and '"row:"' in step_admin_source,
         ),
         (
+            "Open 3D browser includes editable-table scene rows",
+            '"Layout / Table Components"' in step_admin_source
+            and '"scene-row:"' in step_admin_source
+            and "def _scene_row_records" in step_admin_source
+            and "select_scene_row_from_admin" in step_admin_source,
+        ),
+        (
             "STEP browser selection drives Open 3D highlight and table selection",
             "select_step_overlay_from_admin" in step_admin_source
             and "select_promoted_step_row_from_admin" in step_admin_source
+            and "select_scene_row_from_admin" in step_admin_source
             and "iid == self._selected_item_id" in step_admin_source
             and "iid == self._current_browser_selection_iid()" in step_admin_source
             and "_set_step_highlight(label, render=False)" in step_admin_overlay_select

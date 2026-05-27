@@ -153,8 +153,9 @@ simulation library and that this branch builds on:
 - Open 3D authoring with direct view buttons, live controls, ray visibility
   toggles, explicit ray-pick mode, bottom-status ray terminal summaries, optical
   axis guides, hover diagnostics, selectable STEP/CAD faces, and docked STEP
-  element browser categories for Optical Element, Imaging Lens, and
-  Camera/Detector.
+  scene component browser categories for editable-table rows, transient STEP
+  imports, promoted optical solids, Optical Element, Imaging Lens, and
+  Camera/Detector entries.
 - Direct STEP import from Open 3D, transient placement, hold-drag movement,
   Esc cancellation, blank-click deselection, middle-drag CAD-style pan,
   surface-normal-to-optical-axis snapping, centered surface-to-axis snapping,
@@ -395,7 +396,8 @@ lookups, not move behavior back into `layout_editor.py`.
   colors, detector spread analysis, and a validator for an equilateral prism.
 - Full 3D CAD-style placement can continue to improve. The current branch has
   direct STEP import, placement, face assignment, snapping, handles, and browser
-  state; CadQuery/OCP remains a long-horizon optional adapter if the current
+  state for both transient imports and row-backed editable-table components;
+  CadQuery/OCP remains a long-horizon optional adapter if the current
   OpenCascade/mesh cache boundary proves insufficient for exact topology tools.
 
 ## Historical Notes
