@@ -214,7 +214,10 @@ def main() -> int:
         step_carry_drag_branch = ""
     rotation = inspect.getsource(Kraken3DInspector._rotate_camera_fixed_drag)
     camera_pan = inspect.getsource(Kraken3DInspector._pan_camera_fixed_drag)
-    pick = inspect.getsource(Open3DInteractionService._on_left_button_press)
+    # _on_left_button_press is timing-decorated, so inspecting the bound
+    # method sees the wrapper. Use the service class source for interaction
+    # contract checks that need the real click handler body.
+    pick = inspect.getsource(Open3DInteractionService)
     mouse_move = inspect.getsource(Open3DInteractionService._on_mouse_move)
     passive_hover_pick = inspect.getsource(Open3DInteractionService._passive_hover_pick_rotation_handle)
     mouse_bindings_factory = inspect.getsource(Kraken3DInspector._mouse_bindings_service)
@@ -643,7 +646,14 @@ def main() -> int:
         ("Open 3D rotation handles expose selectable step size", "rotation_step_deg_var" in init and "15" in init_with_top_controls and "45" in init_with_top_controls and "180" in init_with_top_controls and "_on_rotation_step_changed" in init_with_top_controls),
         ("STEP rotation arcs show opposed start/end cone arrowheads", "pv.Cone" in rotation_arc_mesh and "point_array[0] - point_array[1]" in rotation_arc_mesh and "point_array[-1] - point_array[-2]" in rotation_arc_mesh),
         ("STEP rotation end arrows are scaled for CAD-style visibility", "float(radius) * 0.24" in rotation_arrowhead_mesh and "float(arrow_scale) * 0.15" in rotation_arrowhead_mesh),
-        ("STEP rotation handle rotates selected component around the visible world axis", "rotate_step_world_axis(label, axis" in step_rotate_pick),
+        (
+            "STEP rotation handle rotates selected component around the visible world axis",
+            "rotate_step_world_axis(" in step_rotate_pick
+            and "label," in step_rotate_pick
+            and "axis," in step_rotate_pick
+            and "float(delta_deg)" in step_rotate_pick
+            and "refresh=physics_requested" in step_rotate_pick,
+        ),
         (
             "Open 3D interaction trace captures clicks, face assignment, and refresh counts",
             "_open3d_debug_seq" in init

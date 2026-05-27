@@ -330,6 +330,7 @@ python -m KrakenOS.UI.validate_ui_modular_maintainability
 python -m KrakenOS.UI.validate_ui_install_metadata
 python -m KrakenOS.UI.validate_optimization_backend
 python -m KrakenOS.UI.validate_cad_scene_cache
+python -m KrakenOS.UI.validate_3d_interaction_contract
 python -m KrakenOS.UI.validate_native_nonseq_closure
 python -m KrakenOS.UI.validate_2d_3d_projection_sync
 python -m KrakenOS.UI.validate_infinity_field_launch
@@ -385,12 +386,16 @@ The split now covers:
 - A native ttk visual baseline, public `.[ui]` install metadata, and a dormant
   theme-adapter hook for the final polish milestone.
 
-The refactor is protected by `validate_ui_modular_maintainability`, widget
-commit validators, row-spec contract validation, saved-layout literal
-validation, CadQuery-readiness boundary validation, STEP face-direction service
-validation, install metadata validators, and the fast contract runner. The next
-maintainability work should remove transitional late-bound constants and helper
-lookups, not move behavior back into `layout_editor.py`.
+The refactor is protected by `validate_ui_modular_maintainability`,
+`validate_3d_interaction_contract`, widget commit validators, row-spec contract
+validation, saved-layout literal validation, CadQuery-readiness boundary
+validation, STEP face-direction service validation, install metadata
+validators, and the fast contract runner. The broad 3D interaction contract now
+audits the modular Open 3D services directly, including decorated click
+handlers, STEP rotation handles, placement handles, ray-pick gating, thickness
+editing, and center-to-axis workflows. The next maintainability work should
+remove transitional late-bound constants and helper lookups, not move behavior
+back into `layout_editor.py`.
 
 ## Known Risks And Future Work
 
