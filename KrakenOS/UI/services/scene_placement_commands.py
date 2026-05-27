@@ -1686,7 +1686,7 @@ class ScenePlacementMixin:
     def _clear_imported_step_overlay_state(self, label: str) -> None:
         self._step_overlay_import_service().clear_imported_step_overlay_state(label)
 
-    def rotate_step_axis(self, label: str, axis: str, delta_deg: float) -> None:
+    def rotate_step_axis(self, label: str, axis: str, delta_deg: float, *, refresh: bool = True) -> None:
         label = str(label).strip().lower()
         axis = str(axis).strip().lower()
         if label not in _step_overlay_label_set() or axis not in {"x", "y", "z"}:
@@ -1703,9 +1703,17 @@ class ScenePlacementMixin:
         self._selected_step_label = label
         self._commit_history_capture()
         self.status_var.set(f"{label.upper()} STEP {axis.upper()} rotation: {next_angle:.0f} deg")
-        self._refresh_open_3d_views(step_label=label)
+        if refresh:
+            self._refresh_open_3d_views(step_label=label)
 
-    def rotate_step_world_axis(self, label: str, axis: str, delta_deg: float) -> tuple[float, float, float] | None:
+    def rotate_step_world_axis(
+        self,
+        label: str,
+        axis: str,
+        delta_deg: float,
+        *,
+        refresh: bool = True,
+    ) -> tuple[float, float, float] | None:
         label = str(label).strip().lower()
         axis_key = str(axis).strip().lower()
         if label not in _step_overlay_label_set() or axis_key not in {"x", "y", "z"}:
@@ -1755,7 +1763,8 @@ class ScenePlacementMixin:
             f"{label.upper()} STEP world {axis_key.upper()}{delta:+.0f} deg -> "
             f"X={next_angles[0]:.0f}, Y={next_angles[1]:.0f}, Z={next_angles[2]:.0f} deg"
         )
-        self._refresh_open_3d_views(step_label=label)
+        if refresh:
+            self._refresh_open_3d_views(step_label=label)
         return next_angles
 
     def rotate_selected_step_axis(self, axis: str, delta_deg: float) -> None:

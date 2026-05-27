@@ -54,6 +54,7 @@ REQUIRED_SERVICE_MODULES = (
     "KrakenOS/UI/services/layout_literals.py",
     "KrakenOS/UI/services/cad_cache_paths.py",
     "KrakenOS/UI/services/cad_scene_cache.py",
+    "KrakenOS/UI/services/open3d_step_overlay_refresh.py",
     "KrakenOS/UI/services/step_overlay_labels.py",
 )
 

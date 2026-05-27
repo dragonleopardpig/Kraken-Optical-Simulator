@@ -173,10 +173,32 @@ class Open3DStepRotationHandleService:
             return
         inspector._step_rotation_active_label = label
         self.editor.select_step_component(label)
-        next_angles = self.editor.rotate_step_world_axis(label, axis, float(delta_deg))
+        try:
+            physics_requested = bool(
+                self.editor._open3d_trace_refresh_service().inspector_physics_requested(inspector)
+            )
+        except Exception:
+            physics_requested = True
+        next_angles = self.editor.rotate_step_world_axis(
+            label,
+            axis,
+            float(delta_deg),
+            refresh=physics_requested,
+        )
         if next_angles is None:
             inspector.status_var.set(self.editor.status_var.get())
             return
+        if not physics_requested:
+            try:
+                refreshed = bool(inspector.refresh_imported_step_overlay(label))
+            except Exception as exc:
+                refreshed = False
+                self.editor.append_debug(f"STEP rotation partial refresh failed for {label}: {exc}")
+            if not refreshed:
+                try:
+                    inspector.refresh_from_editor(force_retrace=False)
+                except Exception as exc:
+                    self.editor.append_debug(f"STEP rotation fallback refresh failed for {label}: {exc}")
         inspector.status_var.set(
             f"{label.upper()} STEP world {axis.upper()}{float(delta_deg):+.0f} deg -> "
             f"X={next_angles[0]:.0f}, "

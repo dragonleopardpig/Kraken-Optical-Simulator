@@ -77,7 +77,7 @@ and fast UI/non-sequential validators.
 
 | Area | Status | Progress | Next action |
 | --- | --- | --- | --- |
-| Open 3D CAD responsiveness hardening | In progress | `97% [#########.]` | The Aspherized Achromatic Lens STEP fixture is small and converts quickly, so the long import/deselect stall is an Open 3D refresh architecture issue. The branch now records structured Open 3D action timings, replays the Machine Vision 150 mm + imported optical STEP workflow, removes import double-refresh, preserves CAD caches, batches selection renders, keeps transient STEP imports and STEP drops display-only while rays are hidden, translates existing STEP actors for simple Ctrl-Z/Ctrl-Y placement undo instead of rebuilding the scene, lists every visible scene component in the right browser including grouped table elements, and groups smooth hover regions so curved lenses do not select individual tessellation facets. Remaining work is incremental actor updates for rotation/path changes or background import if larger vendor assemblies still stall. |
+| Open 3D CAD responsiveness hardening | In progress | `98% [#########.]` | The Aspherized Achromatic Lens STEP fixture is small and converts quickly, so the long import/deselect stall is an Open 3D refresh architecture issue. The branch now records structured Open 3D action timings, replays the Machine Vision 150 mm + imported optical STEP workflow, removes import double-refresh, preserves CAD caches, batches selection renders, keeps transient STEP imports and STEP drops display-only while rays are hidden, translates existing STEP actors for simple Ctrl-Z/Ctrl-Y placement undo instead of rebuilding the scene, redraws only the selected imported STEP overlay for hidden-ray rotation-handle changes, lists every visible scene component in the right browser including grouped table elements, and groups smooth hover regions so curved lenses do not select individual tessellation facets. Remaining work is background import or deeper partial-refresh coverage if larger vendor assemblies still stall. |
 | Final UI theming polish | Deferred outside this gate | `0% [..........]` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after upstream review, CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
 
 The CadQuery/OCP topology study milestone is now complete for this branch
@@ -109,8 +109,9 @@ python -m KrakenOS.UI.diagnose_open3d_action_timing --output /tmp/kraken_open3d_
 
 The replay loads the Machine Vision 150 mm measured layout, opens Open 3D,
 hides rays and thickness overlays, adds the optical STEP component, selects it,
-simulates a small display-only placement drop, applies Ctrl-Z undo, and
-deselects it, then prints the slowest timed stages.
+verifies hidden-ray imported STEP rotation without a full scene/physics
+rebuild, simulates a small display-only placement drop, applies Ctrl-Z undo,
+deselects it, and prints the slowest timed stages.
 
 ## KrakenOS Base Features
 

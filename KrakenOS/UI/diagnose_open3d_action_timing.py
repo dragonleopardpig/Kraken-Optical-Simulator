@@ -3,9 +3,10 @@
 This diagnostic is intended for Xvfb or a real display. It follows the same
 high-level path a user reported: load the Machine Vision 150 mm layout, open
 Open 3D, hide rays/thickness overlays, add an optical STEP component, select it,
-simulate a small hidden-ray STEP drop, undo that display-only placement, then
-deselect it. Structured timings are written to the Open 3D timing JSONL log and
-summarized at the end.
+rotate it once with the imported STEP rotation handle, simulate a small
+hidden-ray STEP drop, undo that display-only placement, then deselect it.
+Structured timings are written to the Open 3D timing JSONL log and summarized
+at the end.
 """
 
 from __future__ import annotations
@@ -54,10 +55,23 @@ def _timing_summary(path: Path) -> dict[str, object]:
         if isinstance(row.get("duration_ms"), (int, float))
     ]
     durations.sort(key=lambda row: float(row.get("duration_ms", 0.0)), reverse=True)
+    partial_step_overlay = [
+        {
+            "event": row.get("event"),
+            "duration_ms": row.get("duration_ms"),
+            "label": row.get("label"),
+            "status": row.get("status"),
+            "removed": row.get("removed"),
+            "actor_count": row.get("actor_count"),
+        }
+        for row in events
+        if str(row.get("event", "")).startswith("refresh_imported_step_overlay")
+    ]
     return {
         "log_path": str(path),
         "event_count": len(events),
         "duration_event_count": len(durations),
+        "partial_step_overlay_events": partial_step_overlay,
         "top_durations": [
             {
                 "event": row.get("event"),
@@ -103,6 +117,8 @@ def run_replay(layout_name: str, step_path: Path) -> dict[str, object]:
 
         inspector.refresh_from_editor()
         inspector.show_step_rotation_handler("optical")
+        _drain_tk(inspector, seconds=0.2)
+        inspector._apply_step_rotation_handle("optical", "z", 15.0)
         _drain_tk(inspector, seconds=0.2)
         drop_state = inspector._new_step_carry_motion_state("optical")
         if drop_state is not None:

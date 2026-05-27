@@ -7,6 +7,8 @@ import inspect
 from KrakenOS.UI import diagnose_open3d_action_timing
 from KrakenOS.UI.open3d_inspector import Kraken3DInspector
 from KrakenOS.UI.services import layout_polyline_display, layout_table_workbench, open3d_interaction, open3d_scene_refresh
+from KrakenOS.UI.services import open3d_step_overlay_refresh
+from KrakenOS.UI.services import open3d_step_rotation_handles
 from KrakenOS.UI.services import open3d_timing, open3d_trace_refresh
 
 
@@ -16,6 +18,8 @@ def main() -> int:
     interaction_source = inspect.getsource(open3d_interaction.Open3DInteractionService)
     interaction_module_source = inspect.getsource(open3d_interaction)
     refresh_source = inspect.getsource(open3d_scene_refresh.Open3DSceneRefreshService.refresh_scene)
+    step_overlay_refresh_source = inspect.getsource(open3d_step_overlay_refresh.Open3DStepOverlayRefreshService)
+    step_rotation_source = inspect.getsource(open3d_step_rotation_handles.Open3DStepRotationHandleService)
     trace_refresh_source = inspect.getsource(open3d_trace_refresh.Open3DTraceRefreshService)
     polyline_source = inspect.getsource(layout_polyline_display.LayoutPolylineDisplayMixin._load_step_mesh)
     workbench_source = inspect.getsource(layout_table_workbench.LayoutTableWorkbenchMixin)
@@ -63,6 +67,8 @@ def main() -> int:
             "Machine Vision 150Mm Measured" in diagnostic_source
             and "Aspherized_Achromatic_Lenses" in diagnostic_source
             and "show_rays_var.set(False)" in diagnostic_source
+            and "_apply_step_rotation_handle" in diagnostic_source
+            and "partial_step_overlay_events" in diagnostic_source
             and "_finish_step_carry_drag(drop_state)" in diagnostic_source
             and "_clear_open3d_selection(render=True)" in diagnostic_source,
         ),
@@ -91,6 +97,15 @@ def main() -> int:
             "physics_requested = self.editor._open3d_trace_refresh_service().inspector_physics_requested(self)"
             in inspector_source
             and "self.refresh_from_editor(force_retrace=physics_requested)" in inspector_source,
+        ),
+        (
+            "hidden-ray imported STEP rotation refreshes only the selected STEP overlay",
+            "def refresh_imported_step_overlay" in inspector_source
+            and "Open3DStepOverlayRefreshService" in inspector_source
+            and "refresh_imported_step_overlay" in step_rotation_source
+            and "rotate_step_world_axis(" in step_rotation_source
+            and "refresh=physics_requested" in step_rotation_source
+            and "refresh_imported_step_overlay_rebuilt" in step_overlay_refresh_source,
         ),
         (
             "STEP hover selection groups smooth CAD regions instead of raw mesh facets",

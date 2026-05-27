@@ -32,6 +32,7 @@ from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
 from KrakenOS.UI.services.open3d_live_refresh import DEFAULT_LIVE_REFRESH_DELAY_MS, Open3DLiveRefreshService
 from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
+from KrakenOS.UI.services.open3d_step_overlay_refresh import Open3DStepOverlayRefreshService
 from KrakenOS.UI.services.open3d_step_rotation_handles import Open3DStepRotationHandleService
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService, StepFeatureSelection
 from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
@@ -442,6 +443,13 @@ class Kraken3DInspector(tk.Toplevel):
                 valid_labels=STEP_OVERLAY_LABEL_SET,
             )
             self._open3d_step_rotation_handle_service_instance = service
+        return service
+
+    def _open3d_step_overlay_refresh_service(self) -> Open3DStepOverlayRefreshService:
+        service = getattr(self, "_open3d_step_overlay_refresh_service_instance", None)
+        if service is None:
+            service = Open3DStepOverlayRefreshService(self)
+            self._open3d_step_overlay_refresh_service_instance = service
         return service
 
     def _open3d_live_refresh_service(self) -> Open3DLiveRefreshService:
@@ -2071,6 +2079,12 @@ class Kraken3DInspector(tk.Toplevel):
                 pass
             self.render()
         return moved
+
+    def _remove_step_overlay_actors(self, label: str) -> int:
+        return self._open3d_step_overlay_refresh_service()._remove_step_overlay_actors(label)
+
+    def refresh_imported_step_overlay(self, label: str, *, render: bool = True) -> bool:
+        return self._open3d_step_overlay_refresh_service().refresh_imported_step_overlay(label, render=render)
 
     def _new_step_carry_motion_state(self, label: str) -> dict[str, object] | None:
         axes = self._camera_screen_world_axes()
@@ -4524,7 +4538,15 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set("STEP rotation: select a STEP component first.")
             return
         self.editor.select_step_component(str(label))
-        self.editor.rotate_selected_step_axis(axis, delta_deg)
+        try:
+            physics_requested = bool(
+                self.editor._open3d_trace_refresh_service().inspector_physics_requested(self)
+            )
+        except Exception:
+            physics_requested = True
+        self.editor.rotate_step_axis(str(label), axis, delta_deg, refresh=physics_requested)
+        if not physics_requested and not self.refresh_imported_step_overlay(str(label)):
+            self.refresh_from_editor(force_retrace=False)
         self._step_rotation_active_label = str(label)
         self._update_step_rotation_handler_state()
 
