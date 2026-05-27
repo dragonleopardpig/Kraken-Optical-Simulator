@@ -984,7 +984,15 @@ class ThreeDSceneToolsMixin:
         bundle = scene_bundle if scene_bundle is not None else self._last_scene_bundle
         scene_paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
         if scene_paths:
-            if not bool(self.show_clipped_rays_var.get()):
+            live_step_preview = (
+                bundle is self.__dict__.get("_last_live_step_overlay_scene_bundle")
+                and any(
+                    bool(record.get("transient_live_trace", False))
+                    for record in list(getattr(self, "_last_live_step_overlay_trace_records", []) or [])
+                    if isinstance(record, dict)
+                )
+            )
+            if not bool(self.show_clipped_rays_var.get()) and not live_step_preview:
                 scene_paths = [path for path in scene_paths if ray_path_reaches_image_from_events(path)]
             total = len(scene_paths)
             step = max(total // 300, 1) if total > 300 else 1

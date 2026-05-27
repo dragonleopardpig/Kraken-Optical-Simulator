@@ -140,6 +140,13 @@ def main() -> int:
             and "app.undo()" in diagnostic_source,
         ),
         (
+            "Ctrl-Z undo/redo clears stale transient STEP runtime state",
+            "def _clear_step_runtime_after_history_restore" in workbench_source
+            and "clear_step_overlay_physics_preview(label)" in workbench_source
+            and "_clear_step_overlay_interaction_state()" in workbench_source
+            and "self._clear_step_runtime_after_history_restore(set(changed_settings))" in workbench_source,
+        ),
+        (
             "imported STEP placement defers transient physics until live or placed-preview intent",
             "def inspector_should_trace_step_overlays" in trace_refresh_source
             and "def inspector_physics_requested" in trace_refresh_source

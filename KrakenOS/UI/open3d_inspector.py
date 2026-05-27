@@ -4106,7 +4106,7 @@ class Kraken3DInspector(tk.Toplevel):
         if result is None:
             self.status_var.set(self.editor.status_var.get())
             return
-        self._step_carry_active_label = label
+        self._step_carry_active_label = None
         self._step_carry_follow_state = None
         self._step_normal_axis_pick_mode = False
         self._step_normal_axis_anchor_mode = "surface_center"
@@ -4160,7 +4160,7 @@ class Kraken3DInspector(tk.Toplevel):
             self.status_var.set(f"Center Surface->Optical Axis failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"3D STEP surface-center axis snap failed: {exc}")
             return
-        self._step_carry_active_label = label
+        self._step_carry_active_label = None
         self._step_carry_follow_state = None
         self._step_surface_center_axis_pick_mode = False
         self._step_normal_axis_pick_mode = False

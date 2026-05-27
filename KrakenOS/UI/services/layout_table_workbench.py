@@ -743,6 +743,33 @@ class LayoutTableWorkbenchMixin:
         with open3d_timing_span("history_restore_plot_refresh"):
             self.refresh_plot()
 
+    def _clear_step_runtime_after_history_restore(self, changed_settings: set[str]) -> None:
+        labels_to_clear: set[str] = set()
+        for key in set(changed_settings or set()):
+            key_text = str(key or "").strip().lower()
+            for label in ("lens", "optical", "camera", "led"):
+                if key_text.startswith(f"{label}_step_"):
+                    labels_to_clear.add(label)
+        if labels_to_clear:
+            try:
+                service = self._open3d_trace_refresh_service()
+                for label in labels_to_clear:
+                    service.clear_step_overlay_physics_preview(label)
+            except Exception:
+                pass
+        inspector = self.__dict__.get("_three_d_inspector")
+        if inspector is None:
+            return
+        try:
+            if not inspector.winfo_exists():
+                return
+        except Exception:
+            return
+        try:
+            inspector._clear_step_overlay_interaction_state()
+        except Exception as exc:
+            self.append_debug(f"Open 3D history STEP interaction clear failed: {exc}")
+
     def _restore_history_state(
         self,
         state: dict[str, object],
@@ -797,6 +824,7 @@ class LayoutTableWorkbenchMixin:
             finally:
                 self._history_restoring = False
                 self._history_pending_state = None
+        self._clear_step_runtime_after_history_restore(set(changed_settings))
         self._refresh_history_restore_views(
             previous_state=previous_state,
             target_state=state,

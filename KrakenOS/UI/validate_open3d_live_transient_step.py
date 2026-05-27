@@ -34,6 +34,8 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
     open3d_step_state_service = inspect.getsource(Open3DStepStateService)
     open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)
     physics_requested_source = inspect.getsource(Open3DTraceRefreshService.inspector_physics_requested)
+    step_normal_axis_apply = inspect.getsource(Kraken3DInspector._apply_step_normal_axis_pick)
+    step_surface_center_axis_apply = inspect.getsource(Kraken3DInspector._apply_step_surface_center_axis_pick)
     step_promotion_service = inspect.getsource(StepOverlayPromotionService)
     checks = [
         Open3DLiveTransientStepCheck(
@@ -72,6 +74,14 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             and "self.show_rays_var.set(True)" in inspector_source
             and "self.refresh_from_editor(force_retrace=restore_rays)" in inspector_source,
             "Center-to-axis placement hides rays only during picking, then restores Show Rays and retraces the intentionally placed optical STEP.",
+        ),
+        Open3DLiveTransientStepCheck(
+            "Axis snap exits carry mode after the STEP is placed",
+            "_step_carry_active_label = None" in step_normal_axis_apply
+            and "_step_carry_active_label = None" in step_surface_center_axis_apply
+            and "_restore_rays_after_step_axis_pick(label)" in step_normal_axis_apply
+            and "_restore_rays_after_step_axis_pick(label)" in step_surface_center_axis_apply,
+            "A completed surface/axis snap leaves the STEP selected for rotation rather than still carrying it under the mouse.",
         ),
         Open3DLiveTransientStepCheck(
             "Trace Now makes hidden-ray results visible",
@@ -144,6 +154,16 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             and "self._current_rays = rays" in open3d_scene_refresh_service
             and "self._current_row_names = list(row_names or [])" in open3d_scene_refresh_service,
             "Expensive transient STEP tracing is paid once; subsequent ray visibility changes are display-only refreshes.",
+        ),
+        Open3DLiveTransientStepCheck(
+            "Transient STEP previews display the full traced launch family",
+            "def _iter_3d_scene_ray_records" in editor_source
+            and "_last_live_step_overlay_scene_bundle" in editor_source
+            and "_last_live_step_overlay_trace_records" in editor_source
+            and "transient_live_trace" in editor_source
+            and "and not live_step_preview" in editor_source
+            and "ray_path_reaches_image_from_events(path)" in editor_source,
+            "Defocused rays from a placed transient STEP are not filtered down to only detector-hit paths, so grid bundles do not collapse into a single cone.",
         ),
         Open3DLiveTransientStepCheck(
             "Live STEP row plans are cached across source-only refreshes",

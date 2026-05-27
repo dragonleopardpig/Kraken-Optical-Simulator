@@ -1548,6 +1548,13 @@ def main() -> int:
             "_set_optical_axis_highlight(axis_id)" in step_normal_axis_apply,
         ),
         (
+            "Open 3D axis snap exits STEP carry state after placement",
+            "_step_carry_active_label = None" in step_normal_axis_apply
+            and "_step_carry_active_label = None" in step_surface_center_axis_apply
+            and "_restore_rays_after_step_axis_pick(label)" in step_normal_axis_apply
+            and "_restore_rays_after_step_axis_pick(label)" in step_surface_center_axis_apply,
+        ),
+        (
             "Open 3D optical-axis highlight is a solid overlay",
             "pv.lines_from_points" in optical_axis_highlight
             and "line_width=7.0" in optical_axis_highlight
@@ -1774,6 +1781,14 @@ def main() -> int:
         ),
         ("non-sequential scene bundles do not install YZ-only branch display overrides", 'not bool(trace_state.get("use_nonseq"))' in editor_build_scene_bundle and "_branch_output_display_path_overrides(rays)" in editor_build_scene_bundle),
         ("Open 3D ray records preserve terminal status", "ray_path_terminal_status_from_events(path)" in scene_ray_records),
+        (
+            "Open 3D transient STEP previews keep the full launch family visible",
+            "_last_live_step_overlay_scene_bundle" in scene_ray_records
+            and "_last_live_step_overlay_trace_records" in scene_ray_records
+            and "transient_live_trace" in scene_ray_records
+            and "and not live_step_preview" in scene_ray_records
+            and "ray_path_reaches_image_from_events(path)" in scene_ray_records,
+        ),
         (
             "Open 3D viewport reports ray terminal status groups",
             "_trace_summary_actor" in init
