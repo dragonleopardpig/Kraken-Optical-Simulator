@@ -319,8 +319,15 @@ def _dotted_axis_records_from_ray_path(path, bounds, *, max_segments: int = 6) -
         if not np.isfinite(length) or length <= 1e-6:
             continue
         direction = direction / length
+        from_face = str(getattr(event_before, "mesh_face_id", "") or "") if event_before is not None else ""
+        to_face = str(getattr(event_after, "mesh_face_id", "") or "") if event_after is not None else ""
         if float(np.hypot(direction[0], direction[1])) <= 1e-4:
-            continue
+            keep_axial_solid_exit = (
+                (axis_role == "between_surfaces" and bool(from_face or to_face))
+                or (axis_role == "post_surface" and bool(from_face))
+            )
+            if not keep_axial_solid_exit:
+                continue
         axis_origin = 0.5 * (start + end)
         if axis_role == "post_surface":
             span = _bounds_span(bounds)
@@ -340,8 +347,6 @@ def _dotted_axis_records_from_ray_path(path, bounds, *, max_segments: int = 6) -
         seen.add(key)
         from_surface = getattr(event_before, "surface_id", None) if event_before is not None else None
         to_surface = getattr(event_after, "surface_id", None) if event_after is not None else None
-        from_face = str(getattr(event_before, "mesh_face_id", "") or "") if event_before is not None else ""
-        to_face = str(getattr(event_after, "mesh_face_id", "") or "") if event_after is not None else ""
         from_action = str(getattr(event_before, "event_type", "") or "") if event_before is not None else ""
         to_action = str(getattr(event_after, "event_type", "") or "") if event_after is not None else ""
         records.append(

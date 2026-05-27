@@ -1159,6 +1159,16 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
         finally:
             le.CAD_CACHE_DIR = original_cache
     layout_editor_source = Path(le.__file__).read_text(encoding="utf-8")
+    service_root = Path(le.__file__).resolve().parent / "services"
+    ui_implementation_source = "\n".join(
+        [
+            layout_editor_source,
+            (service_root / "optical_solid_workflow.py").read_text(encoding="utf-8"),
+            (service_root / "layout_polyline_display.py").read_text(encoding="utf-8"),
+            (service_root / "three_d_scene_tools.py").read_text(encoding="utf-8"),
+            (Path(le.__file__).resolve().parent / "open3d_inspector.py").read_text(encoding="utf-8"),
+        ]
+    )
     face_roles_dialog_source = (
         Path(le.__file__).resolve().parent / "panels" / "main_optical_solid_face_roles_dialog.py"
     ).read_text(encoding="utf-8")
@@ -1331,7 +1341,7 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             ),
             VendorPrism42779Check(
                 "vendor prism 3D preview skips the duplicate side-body mesh",
-                'if self._geometry_value_present(advanced.get("Solid_3d_stl")):' in layout_editor_source,
+                'if self._geometry_value_present(advanced.get("Solid_3d_stl")):' in ui_implementation_source,
                 "3D body-mesh collector skips Solid_3d_stl rows so imported optical solids are not drawn twice",
             ),
             VendorPrism42779Check(
@@ -1346,16 +1356,16 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             ),
             VendorPrism42779Check(
                 "2D follower CAD/STL drawing honors output-port pose override",
-                "runtime_transform" in layout_editor_source
-                and "optical_solid_output_port_runtime_transform_override(system, self.rows, row_index)" in layout_editor_source,
+                "runtime_transform" in ui_implementation_source
+                and "optical_solid_output_port_runtime_transform_override(system, self.rows, row_index)" in ui_implementation_source,
                 "layout polylines use the shared runtime output-port transform resolver for follower optical solids",
             ),
             VendorPrism42779Check(
                 "2D and Open 3D share the CAD/STL output-port pose resolver",
                 open3d_layout_bounds_match
                 and "def optical_solid_output_port_runtime_transform_override" in nonseq_output_ports_source
-                and "optical_solid_output_port_runtime_transform_override(system, self.rows, index)" in layout_editor_source
-                and "optical_solid_output_port_runtime_transform_override(system, self.editor.rows, row_index)" in layout_editor_source,
+                and "optical_solid_output_port_runtime_transform_override(system, self.rows, index)" in ui_implementation_source
+                and "optical_solid_output_port_runtime_transform_override(system, self.editor.rows, row_index)" in ui_implementation_source,
                 open3d_layout_bounds_detail,
             ),
             VendorPrism42779Check(
@@ -1428,8 +1438,8 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             ),
             VendorPrism42779Check(
                 "CAD/STL import opens face assignment workflow",
-                "Opening CAD/STL face assignment" in layout_editor_source
-                and "open_optical_solid_face_role_editor(idx)" in layout_editor_source,
+                "Opening CAD/STL face assignment" in ui_implementation_source
+                and "open_optical_solid_face_role_editor(idx)" in ui_implementation_source,
                 "import/convert schedules the face-role dialog after inserting the optical solid row",
             ),
             VendorPrism42779Check(

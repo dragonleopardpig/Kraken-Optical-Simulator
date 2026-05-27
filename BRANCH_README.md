@@ -98,7 +98,8 @@ successful non-sequential trace instead of retracing the same bundle into the
 display raykeeper, optical-solid mesh face metadata is cached inside the built
 non-sequential system, the chooser skips a second identical ray trace on the
 selected mesh, intersection-normal lookup reuses the chooser's selected mesh
-ray result for the same segment, and
+ray result for the same segment, axial external optical-solid exit segments
+remain pickable as Open 3D optical axes for prism cascades, and
 `python -m KrakenOS.UI.diagnose_open3d_hover_latency` reports the cache and
 passive-hover contract for large vendor STEP-derived STL files.
 
