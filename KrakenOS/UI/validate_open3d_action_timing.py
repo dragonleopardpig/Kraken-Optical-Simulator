@@ -140,13 +140,25 @@ def main() -> int:
             and "app.undo()" in diagnostic_source,
         ),
         (
-            "imported STEP placement defers transient physics trace unless explicitly live",
+            "imported STEP placement defers transient physics until live or placed-preview intent",
             "def inspector_should_trace_step_overlays" in trace_refresh_source
             and "def inspector_physics_requested" in trace_refresh_source
+            and "def inspector_step_overlay_preview_requested" in trace_refresh_source
+            and "def mark_step_overlay_physics_preview_ready" in trace_refresh_source
+            and "_step_normal_axis_pick_mode" in trace_refresh_source
             and "live_mode_var" in trace_refresh_source
             and "show_rays_var" not in inspect.getsource(open3d_trace_refresh.Open3DTraceRefreshService.inspector_physics_requested)
             and "if bool(force_retrace):" not in trace_refresh_source
             and "include_live_step_overlays = self.inspector_should_trace_step_overlays(" in trace_refresh_source,
+        ),
+        (
+            "Trace Now and axis snap make placed optical STEP previews visible",
+            "def _refresh_trace_now_scene" in inspector_source
+            and "self.show_rays_var.set(True)" in inspector_source
+            and "mark_step_overlay_physics_preview_ready(\"optical\")" in inspector_source
+            and "def _restore_rays_after_step_axis_pick" in inspector_source
+            and "mark_step_overlay_physics_preview_ready(label)" in inspector_source
+            and "self.refresh_from_editor(force_retrace=restore_rays)" in inspector_source,
         ),
         (
             "hidden-ray STEP drop does not force physics retrace",

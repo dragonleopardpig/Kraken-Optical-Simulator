@@ -55,6 +55,7 @@ class StepOverlayImportService:
         self.lens_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self._selected_step_label = "lens"
         self._cad_axis_pick_any = False
+        self._open3d_trace_refresh_service().clear_step_overlay_physics_preview("lens")
         self._commit_history_capture()
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
@@ -138,6 +139,7 @@ class StepOverlayImportService:
         self.optical_step_placement_offset_xyz = self._default_optical_step_import_offset()
         self._selected_step_label = "optical"
         self._cad_axis_pick_any = False
+        self._open3d_trace_refresh_service().clear_step_overlay_physics_preview("optical")
         self._commit_history_capture()
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
@@ -172,6 +174,7 @@ class StepOverlayImportService:
         self.camera_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self._selected_step_label = "camera"
         self._cad_axis_pick_any = False
+        self._open3d_trace_refresh_service().clear_step_overlay_physics_preview("camera")
         self._commit_history_capture()
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
@@ -209,6 +212,7 @@ class StepOverlayImportService:
         self._selected_step_label = "led"
         self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
+        self._open3d_trace_refresh_service().clear_step_overlay_physics_preview("led")
         self.led_object_edge_distance_mm = float(edge_distance)
         self._commit_history_capture()
         self._live_step_overlay_trace_plan_cache = {}
@@ -277,6 +281,7 @@ class StepOverlayImportService:
             self.led_step_object_edge_local_z = None
         if label == "lens":
             self.lens_step_largest_component_only = True
+        self._open3d_trace_refresh_service().clear_step_overlay_physics_preview(label)
         if self._selected_step_label == label:
             self._selected_step_label = None
         self._invalidate_preview_scene_trace()

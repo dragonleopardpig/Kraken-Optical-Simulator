@@ -89,10 +89,13 @@ hover uses a rotation-handle actor pick list instead of dense CAD body picking,
 right-click CAD face assignment defers feature scans until an explicit user
 action, Open 3D-originated STEP imports refresh the 3D scene once instead of
 through both the editor and inspector, transient STEP import/carry/drop remains
-display-only and preserves the existing ray family until Live Mode, Trace Now,
-or row-backed promotion explicitly asks for physics, repeated Show Rays toggles
-reuse the current traced scene instead of rebuilding transient STEP physics,
-first-trace timing now records live STEP row
+display-only and preserves the existing ray family while the component is being
+placed, and an explicit optical-axis snap marks the transient optical STEP as a
+physics-preview solid so Show Rays and Trace Now include it without requiring
+row promotion first. Trace Now also turns ray visibility on before rendering so
+an Undo or hidden-ray placement state cannot leave a successful trace invisible.
+Repeated Show Rays toggles reuse the current traced scene instead of rebuilding
+transient STEP physics, first-trace timing now records live STEP row
 planning, system build, ray tracing, SceneBundle projection, and per-bundle
 trace backend/ray-count durations, the world-envelope sampler keeps the first
 successful non-sequential trace instead of retracing the same bundle into the

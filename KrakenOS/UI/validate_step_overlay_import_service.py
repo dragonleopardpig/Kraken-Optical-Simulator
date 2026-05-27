@@ -31,10 +31,20 @@ class _Editor:
         self.led_step_object_edge_local_z = 8.0
         self._selected_step_label = "lens"
         self._live_step_overlay_trace_plan_cache = {"stale": True}
+        self._cleared_step_physics_preview_labels: list[str] = []
         self.invalidated = False
 
     def _invalidate_preview_scene_trace(self) -> None:
         self.invalidated = True
+
+    def _open3d_trace_refresh_service(self):
+        editor = self
+
+        class _TraceRefresh:
+            def clear_step_overlay_physics_preview(self, label=None) -> None:
+                editor._cleared_step_physics_preview_labels.append(str(label or ""))
+
+        return _TraceRefresh()
 
 
 def main() -> int:
@@ -78,6 +88,10 @@ def main() -> int:
                 and editor._selected_step_label is None
                 and editor._live_step_overlay_trace_plan_cache == {}
                 and editor.invalidated is True,
+            ),
+            (
+                "clear removes transient STEP physics-preview readiness",
+                "lens" in editor._cleared_step_physics_preview_labels,
             ),
         ]
     )

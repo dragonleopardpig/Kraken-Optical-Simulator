@@ -67,6 +67,33 @@ class Open3DTraceRefreshService:
         except Exception:
             return False
 
+    def step_overlay_physics_preview_labels(self) -> set[str]:
+        """Return imported STEP overlays that are ready for visible physics preview."""
+        labels = getattr(self.editor, "_open3d_step_overlay_physics_preview_labels", set()) or set()
+        try:
+            iterable = set(labels)
+        except Exception:
+            iterable = set()
+        return {str(label or "").strip().lower() for label in iterable if str(label or "").strip()}
+
+    def mark_step_overlay_physics_preview_ready(self, label: str) -> None:
+        """Mark an imported STEP overlay as intentionally placed for Show Rays preview."""
+        label = str(label or "").strip().lower()
+        if not label:
+            return
+        labels = self.step_overlay_physics_preview_labels()
+        labels.add(label)
+        self.editor._open3d_step_overlay_physics_preview_labels = labels
+
+    def clear_step_overlay_physics_preview(self, label: str | None = None) -> None:
+        """Clear transient STEP physics-preview readiness after import/delete/reset."""
+        labels = self.step_overlay_physics_preview_labels()
+        if label is None:
+            labels.clear()
+        else:
+            labels.discard(str(label or "").strip().lower())
+        self.editor._open3d_step_overlay_physics_preview_labels = labels
+
     @staticmethod
     def inspector_physics_requested(inspector: Any) -> bool:
         """Return True when the inspector is explicitly asking for live physics."""
@@ -76,21 +103,48 @@ class Open3DTraceRefreshService:
         except Exception:
             return False
 
+    def inspector_step_overlay_preview_requested(self, inspector: Any) -> bool:
+        """Return True when Show Rays should trace a placed transient STEP overlay."""
+        if "optical" not in self.step_overlay_physics_preview_labels():
+            return False
+        try:
+            if not bool(inspector.show_rays_var.get()):
+                return False
+        except Exception:
+            return False
+        blocked_attrs = (
+            "_step_carry_drag_state",
+            "_step_carry_follow_state",
+            "_step_normal_axis_pick_mode",
+            "_step_surface_center_axis_pick_mode",
+            "_step_carry_snap_ray_mode",
+            "_step_carry_snap_target_mode",
+        )
+        for attr_name in blocked_attrs:
+            try:
+                if bool(getattr(inspector, attr_name, None)):
+                    return False
+            except Exception:
+                continue
+        return True
+
     def inspector_should_trace_step_overlays(self, inspector: Any, *, force_retrace: bool = False) -> bool:
         """Return True when imported STEP overlays must participate in tracing.
 
         Imported optical STEP geometry should remain cheap CAD display hardware
         while the user is only placing/selecting it with rays hidden. Physics
         tracing is still forced by Live Mode or Trace Now.  ``Show Rays`` alone
-        should keep the existing ray family visible while the user imports,
-        carries, or drops an unpromoted STEP overlay; promoted row-backed
-        optical solids participate through the normal row trace path.
+        should keep the existing ray family visible while the user imports or
+        carries an unpromoted STEP overlay.  After an explicit optical-axis
+        snap marks the overlay as physics-preview-ready, Show Rays can trace it
+        as a transient optical solid; promoted row-backed optical solids
+        participate through the normal row trace path.
         ``force_retrace`` rebuilds the active preview, but it must not turn a
         CAD placement/drop action into a transient optical trace.
         """
         if not self.has_traceable_step_overlays():
             return False
-        return self.inspector_physics_requested(inspector)
+        return self.inspector_physics_requested(inspector) or self.inspector_step_overlay_preview_requested(inspector)
 
     def current_scene_has_live_step_trace(self, inspector: Any) -> bool:
         """Return True when the inspector cache still contains live STEP rows."""

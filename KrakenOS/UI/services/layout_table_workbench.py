@@ -311,6 +311,7 @@ class LayoutTableWorkbenchMixin:
         self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
         self._selected_step_label = None
+        self._open3d_step_overlay_physics_preview_labels = set()
 
     def _close_scene_viewers_for_layout_replacement(self) -> None:
         inspector = self.__dict__.get("_three_d_inspector")

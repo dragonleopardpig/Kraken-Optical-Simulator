@@ -313,6 +313,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._open3d_debug_seq = 0
         self._open3d_timing_slow_ms = 100.0
         self._open3d_timing_log_path = reset_open3d_timing_log(reason="inspector_init")
+        self._show_rays_before_axis_pick = False
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.orient_axis_var = tk.StringVar(value="+Z")
         self.normal_target_var = tk.StringVar(value=SCENE_NORMAL_TARGET_LABELS["detector"])
@@ -634,6 +635,9 @@ class Kraken3DInspector(tk.Toplevel):
         )
 
     def _refresh_trace_now_scene(self, reason: str) -> None:
+        if not bool(self.show_rays_var.get()):
+            self.show_rays_var.set(True)
+        self.editor._open3d_trace_refresh_service().mark_step_overlay_physics_preview_ready("optical")
         result = self.editor._open3d_trace_refresh_service().build_trace_now_preview(self)
         self.refresh_scene(
             result.system,
@@ -4113,7 +4117,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_axis_pick_cursor(False)
         self._set_optical_axis_highlight(None)
         try:
-            self.refresh_from_editor()
+            restore_rays = self._restore_rays_after_step_axis_pick(label)
+            self.refresh_from_editor(force_retrace=restore_rays)
             self.show_step_rotation_handler(label)
             axis_id = str(axis_info.get("axis_id", "") or "").strip()
             if axis_id:
@@ -4165,7 +4170,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._set_axis_pick_cursor(False)
         self._set_optical_axis_highlight(None)
         try:
-            self.refresh_from_editor()
+            restore_rays = self._restore_rays_after_step_axis_pick(label)
+            self.refresh_from_editor(force_retrace=restore_rays)
             self.show_step_rotation_handler(label)
             axis_id = str(axis_info.get("axis_id", "") or "").strip()
             if axis_id:
@@ -4195,11 +4201,22 @@ class Kraken3DInspector(tk.Toplevel):
 
     def _hide_regular_rays_for_center_axis_pick(self) -> None:
         try:
-            if bool(self.show_rays_var.get()):
+            showing_rays = bool(self.show_rays_var.get())
+            self._show_rays_before_axis_pick = showing_rays
+            if showing_rays:
                 self.show_rays_var.set(False)
             self.refresh_from_editor()
         except Exception as exc:
             self.editor.append_debug(f"Center Row->Optical Axis ray-hide refresh failed: {exc}")
+
+    def _restore_rays_after_step_axis_pick(self, label: str) -> bool:
+        """Restore ray visibility after an axis pick and mark STEP physics-ready."""
+        self.editor._open3d_trace_refresh_service().mark_step_overlay_physics_preview_ready(label)
+        restore_rays = bool(getattr(self, "_show_rays_before_axis_pick", False))
+        self._show_rays_before_axis_pick = False
+        if restore_rays:
+            self.show_rays_var.set(True)
+        return restore_rays
 
     def _mouse_move_due(self) -> bool:
         now = time.monotonic()

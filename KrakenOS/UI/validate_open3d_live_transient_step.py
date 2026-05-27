@@ -44,11 +44,17 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             "Live Mode builds a render-only trace bundle without overwriting the persistent 2D preview state.",
         ),
         Open3DLiveTransientStepCheck(
-            "Open 3D traces transient optical STEP overlays only when physics is requested",
+            "Open 3D traces transient optical STEP overlays only after explicit physics intent",
             "def has_traceable_step_overlays" in open3d_refresh_service
             and "def inspector_should_trace_step_overlays" in open3d_refresh_service
+            and "def step_overlay_physics_preview_labels" in open3d_refresh_service
+            and "def mark_step_overlay_physics_preview_ready" in open3d_refresh_service
+            and "def clear_step_overlay_physics_preview" in open3d_refresh_service
+            and "def inspector_step_overlay_preview_requested" in open3d_refresh_service
             and "show_rays_var" not in physics_requested_source
             and "live_mode_var" in physics_requested_source
+            and "_step_normal_axis_pick_mode" in open3d_refresh_service
+            and "_step_surface_center_axis_pick_mode" in open3d_refresh_service
             and "force_retrace" in open3d_refresh_service
             and "if bool(force_retrace):" not in open3d_refresh_service
             and "include_live_step_overlays = self.inspector_should_trace_step_overlays(" in open3d_refresh_service
@@ -56,7 +62,24 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             in open3d_refresh_service
             and "if not requires_open3d_retrace and not force_retrace" in open3d_refresh_service
             and "include_live_step_overlays=include_live_step_overlays" in open3d_refresh_service,
-            "Imported STEP carry/drop remains a CAD display workflow; Live Mode or Trace Now opt into transient physics.",
+            "Imported STEP carry/drop remains a CAD display workflow; Live Mode, Trace Now, or a placed optical-axis STEP preview opt into transient physics.",
+        ),
+        Open3DLiveTransientStepCheck(
+            "Axis snap restores visible placed STEP physics preview",
+            "_show_rays_before_axis_pick" in inspector_source
+            and "def _restore_rays_after_step_axis_pick" in inspector_source
+            and "mark_step_overlay_physics_preview_ready(label)" in inspector_source
+            and "self.show_rays_var.set(True)" in inspector_source
+            and "self.refresh_from_editor(force_retrace=restore_rays)" in inspector_source,
+            "Center-to-axis placement hides rays only during picking, then restores Show Rays and retraces the intentionally placed optical STEP.",
+        ),
+        Open3DLiveTransientStepCheck(
+            "Trace Now makes hidden-ray results visible",
+            "def _refresh_trace_now_scene" in inspector_source
+            and "self.show_rays_var.set(True)" in inspector_source
+            and "mark_step_overlay_physics_preview_ready(\"optical\")" in inspector_source
+            and "build_trace_now_preview(self)" in inspector_source,
+            "Trace Now no longer computes a transient STEP trace while leaving the Open 3D ray layer hidden.",
         ),
         Open3DLiveTransientStepCheck(
             "Transient optical STEP rows use the promoted-solid contract",
