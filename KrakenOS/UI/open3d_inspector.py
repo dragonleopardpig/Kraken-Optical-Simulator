@@ -35,6 +35,12 @@ from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_step_rotation_handles import Open3DStepRotationHandleService
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService, StepFeatureSelection
 from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
+from KrakenOS.UI.services.open3d_timing import (
+    open3d_timing_event,
+    open3d_timing_log_path,
+    open3d_timing_span,
+    reset_open3d_timing_log,
+)
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.optical_solid_geometry import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
@@ -300,6 +306,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._last_valid_surface_mesh_items: list[SurfaceMesh3D] = []
         self._last_valid_surface_mesh_row_count = 0
         self._open3d_debug_seq = 0
+        self._open3d_timing_slow_ms = 100.0
+        self._open3d_timing_log_path = reset_open3d_timing_log(reason="inspector_init")
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.orient_axis_var = tk.StringVar(value="+Z")
         self.normal_target_var = tk.StringVar(value=SCENE_NORMAL_TARGET_LABELS["detector"])
@@ -994,6 +1002,51 @@ class Kraken3DInspector(tk.Toplevel):
             self.editor.append_debug(f"Open3DTrace {text}")
         except Exception:
             pass
+
+    def _timing_event(self, event: str, **fields: object) -> None:
+        try:
+            open3d_timing_event(
+                event,
+                counts=self._debug_actor_counts(),
+                modes=self._debug_mode_state(),
+                **fields,
+            )
+        except Exception:
+            pass
+
+    def _timing_start(self, event: str, **fields: object) -> dict[str, object]:
+        token = {"event": str(event), "start": time.perf_counter(), "fields": dict(fields)}
+        self._timing_event(f"{event}_start", **fields)
+        return token
+
+    def _timing_finish(self, token: dict[str, object] | None, **fields: object) -> None:
+        if not isinstance(token, dict):
+            return
+        try:
+            duration_ms = (time.perf_counter() - float(token.get("start", time.perf_counter()))) * 1000.0
+        except Exception:
+            duration_ms = 0.0
+        base_fields = token.get("fields", {})
+        if not isinstance(base_fields, dict):
+            base_fields = {}
+        event = str(token.get("event", "open3d_action"))
+        payload = {**base_fields, **fields, "duration_ms": round(float(duration_ms), 3)}
+        self._timing_event(f"{event}_done", **payload)
+        try:
+            slow_ms = float(getattr(self, "_open3d_timing_slow_ms", 100.0) or 100.0)
+        except Exception:
+            slow_ms = 100.0
+        if duration_ms >= slow_ms:
+            try:
+                self.editor.append_debug(
+                    f"Open3DTiming slow {event}: {duration_ms:.1f} ms "
+                    f"(log: {open3d_timing_log_path()})"
+                )
+            except Exception:
+                pass
+
+    def _timing_span(self, event: str, **fields: object):
+        return open3d_timing_span(event, **fields)
 
     def _debug_pick_payload(self, actor_key: str | None, *, x: int | None = None, y: int | None = None) -> dict[str, object]:
         cell_id = None
@@ -3221,44 +3274,48 @@ class Kraken3DInspector(tk.Toplevel):
         self.status_var.set(f"Rotation handles set to +/-{step:.6g} deg.")
 
     def _clear_open3d_selection(self, *, render: bool = True) -> bool:
+        token = self._timing_start("clear_open3d_selection", render=bool(render))
         changed = False
         try:
-            if getattr(self.editor, "_selected_step_label", None) is not None:
-                self.editor._selected_step_label = None
+            try:
+                if getattr(self.editor, "_selected_step_label", None) is not None:
+                    self.editor._selected_step_label = None
+                    changed = True
+            except Exception:
+                pass
+            for attr_name in (
+                "_selected_step_feature",
+                "_selected_step_feature_label",
+                "_selected_step_feature_center_world",
+                "_selected_step_feature_surface_center_world",
+                "_selected_step_feature_normal_world",
+            ):
+                if getattr(self, attr_name, None) is not None:
+                    setattr(self, attr_name, None)
+                    changed = True
+            if self._step_rotation_active_label is not None:
+                self._close_step_rotation_handler()
                 changed = True
-        except Exception:
-            pass
-        for attr_name in (
-            "_selected_step_feature",
-            "_selected_step_feature_label",
-            "_selected_step_feature_center_world",
-            "_selected_step_feature_surface_center_world",
-            "_selected_step_feature_normal_world",
-        ):
-            if getattr(self, attr_name, None) is not None:
-                setattr(self, attr_name, None)
+            self._set_step_hover_outline(None, None, render=False)
+            if self._picked_step_label is not None:
+                self._set_step_highlight(None, render=False)
                 changed = True
-        if self._step_rotation_active_label is not None:
-            self._close_step_rotation_handler()
-            changed = True
-        self._set_step_hover_outline(None, None, render=False)
-        if self._picked_step_label is not None:
-            self._set_step_highlight(None, render=False)
-            changed = True
-        if self._picked_row_index is not None:
-            self._set_row_highlight(None)
-            changed = True
-        if self._picked_ray_index is not None:
-            self._set_ray_highlight(None)
-            changed = True
-        if self._picked_optical_axis_id is not None:
-            self._set_optical_axis_highlight(None)
-            changed = True
-        if self._remove_step_rotation_handle_actors():
-            changed = True
-        if changed and render:
-            self.render()
-        return changed
+            if self._picked_row_index is not None:
+                self._set_row_highlight(None)
+                changed = True
+            if self._picked_ray_index is not None:
+                self._set_ray_highlight(None)
+                changed = True
+            if self._picked_optical_axis_id is not None:
+                self._set_optical_axis_highlight(None)
+                changed = True
+            if self._remove_step_rotation_handle_actors():
+                changed = True
+            if changed and render:
+                self.render()
+            return changed
+        finally:
+            self._timing_finish(token, changed=bool(changed))
 
     def clear_face_metadata_hover_state(self, row_index: int | None = None) -> None:
         """Drop transient hover/selection state after CAD face metadata changes."""
@@ -3348,6 +3405,7 @@ class Kraken3DInspector(tk.Toplevel):
 
     def import_step_overlay(self, label: str) -> None:
         label = str(label).strip().lower()
+        token = self._timing_start("import_step_overlay", label=label)
         importers = {
             "lens": self.editor.import_lens_step,
             "camera": self.editor.import_camera_step,
@@ -3355,69 +3413,85 @@ class Kraken3DInspector(tk.Toplevel):
         }
         importer = importers.get(label)
         if importer is None:
+            self._timing_finish(token, status="no_importer")
             return
-        path = importer(dialog_parent=self, refresh_open_3d=False)
-        if path is None:
-            self.status_var.set(self.editor.status_var.get())
-            return
-        self.editor.select_step_component(label)
-        self._step_rotation_active_label = label
-        self._step_carry_active_label = label
-        self._step_carry_follow_state = None
-        self._step_carry_snap_ray_mode = False
-        self._step_carry_snap_target_mode = False
-        self._step_normal_axis_pick_mode = False
-        self._step_surface_center_axis_pick_mode = False
-        self._step_carry_grid_label = None
-        self._step_carry_grid_spacing_mm = None
-        self._selected_step_feature = None
-        self._selected_step_feature_label = None
-        self._selected_step_feature_center_world = None
-        self._selected_step_feature_surface_center_world = None
-        self._selected_step_feature_normal_world = None
-        self.refresh_from_editor()
-        self.show_step_rotation_handler(label)
-        self.status_var.set(
-            f"{label.upper()} STEP imported: {path.name}. Hold the STEP briefly to lift; "
-            "drag freely, release to drop. Click a face and use Snap STEP Normal->Optical Axis for alignment."
-        )
-        self.refresh_step_admin_panel()
+        try:
+            path = importer(dialog_parent=self, refresh_open_3d=False)
+            if path is None:
+                self.status_var.set(self.editor.status_var.get())
+                self._timing_finish(token, status="cancelled")
+                return
+            self.editor.select_step_component(label)
+            self._step_rotation_active_label = label
+            self._step_carry_active_label = label
+            self._step_carry_follow_state = None
+            self._step_carry_snap_ray_mode = False
+            self._step_carry_snap_target_mode = False
+            self._step_normal_axis_pick_mode = False
+            self._step_surface_center_axis_pick_mode = False
+            self._step_carry_grid_label = None
+            self._step_carry_grid_spacing_mm = None
+            self._selected_step_feature = None
+            self._selected_step_feature_label = None
+            self._selected_step_feature_center_world = None
+            self._selected_step_feature_surface_center_world = None
+            self._selected_step_feature_normal_world = None
+            self.refresh_from_editor()
+            self.show_step_rotation_handler(label)
+            self.status_var.set(
+                f"{label.upper()} STEP imported: {path.name}. Hold the STEP briefly to lift; "
+                "drag freely, release to drop. Click a face and use Snap STEP Normal->Optical Axis for alignment."
+            )
+            self.refresh_step_admin_panel()
+        except Exception as exc:
+            self._timing_finish(token, status="error", error=_short_error_message(exc))
+            raise
+        else:
+            self._timing_finish(token, status="ok", path=str(path))
 
     def import_optical_step_overlay(self) -> None:
         had_existing_overlay = self.editor._step_path_for_label("optical") is not None
-        path = self.editor.import_optical_step(dialog_parent=self, refresh_open_3d=False)
-        if path is None:
-            self.status_var.set(self.editor.status_var.get())
-            return
-        label = "optical"
-        self.editor.select_step_component(label)
-        self._step_rotation_active_label = label
-        self._step_carry_active_label = None
-        self._step_carry_follow_state = None
-        self._step_carry_snap_ray_mode = False
-        self._step_carry_snap_target_mode = False
-        self._step_normal_axis_pick_mode = False
-        self._step_surface_center_axis_pick_mode = False
-        self._step_carry_grid_label = None
-        self._step_carry_grid_spacing_mm = None
-        self._selected_step_feature = None
-        self._selected_step_feature_label = None
-        self._selected_step_feature_center_world = None
-        self._selected_step_feature_surface_center_world = None
-        self._selected_step_feature_normal_world = None
-        self.refresh_from_editor()
-        self.show_step_rotation_handler(label)
-        self._start_step_carry_follow(label)
-        kept_note = (
-            " The previous optical STEP was kept as a promoted optical-solid row."
-            if had_existing_overlay
-            else ""
-        )
-        self.status_var.set(
-            f"Optical STEP imported: {path.name}. Move the cursor to carry it, click to drop.{kept_note} "
-            "Click a face and use Snap STEP Normal->Optical Axis for alignment."
-        )
-        self.refresh_step_admin_panel()
+        token = self._timing_start("import_optical_step_overlay", had_existing_overlay=bool(had_existing_overlay))
+        try:
+            path = self.editor.import_optical_step(dialog_parent=self, refresh_open_3d=False)
+            if path is None:
+                self.status_var.set(self.editor.status_var.get())
+                self._timing_finish(token, status="cancelled")
+                return
+            label = "optical"
+            self.editor.select_step_component(label)
+            self._step_rotation_active_label = label
+            self._step_carry_active_label = None
+            self._step_carry_follow_state = None
+            self._step_carry_snap_ray_mode = False
+            self._step_carry_snap_target_mode = False
+            self._step_normal_axis_pick_mode = False
+            self._step_surface_center_axis_pick_mode = False
+            self._step_carry_grid_label = None
+            self._step_carry_grid_spacing_mm = None
+            self._selected_step_feature = None
+            self._selected_step_feature_label = None
+            self._selected_step_feature_center_world = None
+            self._selected_step_feature_surface_center_world = None
+            self._selected_step_feature_normal_world = None
+            self.refresh_from_editor()
+            self.show_step_rotation_handler(label)
+            self._start_step_carry_follow(label)
+            kept_note = (
+                " The previous optical STEP was kept as a promoted optical-solid row."
+                if had_existing_overlay
+                else ""
+            )
+            self.status_var.set(
+                f"Optical STEP imported: {path.name}. Move the cursor to carry it, click to drop.{kept_note} "
+                "Click a face and use Snap STEP Normal->Optical Axis for alignment."
+            )
+            self.refresh_step_admin_panel()
+        except Exception as exc:
+            self._timing_finish(token, status="error", error=_short_error_message(exc))
+            raise
+        else:
+            self._timing_finish(token, status="ok", path=str(path))
 
     def clear_step_imports(self) -> None:
         self.editor.clear_step_imports()
@@ -4298,28 +4372,37 @@ class Kraken3DInspector(tk.Toplevel):
 
     def show_step_rotation_handler(self, label: str) -> None:
         label = str(label).strip().lower()
+        token = self._timing_start("show_step_rotation_handler", label=label)
         if label not in STEP_OVERLAY_LABEL_SET:
+            self._timing_finish(token, status="invalid_label")
             return
         if self.editor._step_path_for_label(label) is None:
+            self._timing_finish(token, status="missing_step_path")
             return
-        self._step_rotation_active_label = label
-        if self._step_carry_active_label is not None:
-            self._step_carry_active_label = label
-            self._step_carry_follow_state = None
-            self._step_carry_snap_ray_mode = False
-            self._step_carry_snap_target_mode = False
-            self._step_carry_grid_label = None
-            self._step_carry_grid_spacing_mm = None
-        self.editor.select_step_component(label)
-        self._set_step_highlight(label, render=False)
-        handle_count = self._ensure_step_rotation_handles_for_label(label)
-        handle_text = "Use the colored STEP rotation handles, or Center STEP Axis."
-        if not self._show_rotation_handles():
-            handle_text = "Rotation handles are hidden; enable the toolbar checkbox or use Center STEP Axis."
-        elif handle_count <= 0:
-            handle_text = "Rotation handles could not be rebuilt for this STEP mesh; use Center STEP Axis or re-open Open 3D."
-        self.status_var.set(f"{self._step_rotation_status_text(label)}. {handle_text}")
-        self.render()
+        try:
+            self._step_rotation_active_label = label
+            if self._step_carry_active_label is not None:
+                self._step_carry_active_label = label
+                self._step_carry_follow_state = None
+                self._step_carry_snap_ray_mode = False
+                self._step_carry_snap_target_mode = False
+                self._step_carry_grid_label = None
+                self._step_carry_grid_spacing_mm = None
+            self.editor.select_step_component(label)
+            self._set_step_highlight(label, render=False)
+            handle_count = self._ensure_step_rotation_handles_for_label(label)
+            handle_text = "Use the colored STEP rotation handles, or Center STEP Axis."
+            if not self._show_rotation_handles():
+                handle_text = "Rotation handles are hidden; enable the toolbar checkbox or use Center STEP Axis."
+            elif handle_count <= 0:
+                handle_text = "Rotation handles could not be rebuilt for this STEP mesh; use Center STEP Axis or re-open Open 3D."
+            self.status_var.set(f"{self._step_rotation_status_text(label)}. {handle_text}")
+            self.render()
+        except Exception as exc:
+            self._timing_finish(token, status="error", error=_short_error_message(exc))
+            raise
+        else:
+            self._timing_finish(token, status="ok", handle_count=int(handle_count))
 
     def _update_step_rotation_handler_state(self) -> None:
         label = self._step_rotation_active_label
@@ -5511,10 +5594,14 @@ class Kraken3DInspector(tk.Toplevel):
     def render(self) -> None:
         if self._vtk_widget is None:
             return
+        token = self._timing_start("render")
         try:
             self._vtk_widget.GetRenderWindow().Render()
-        except Exception:
+        except Exception as exc:
+            self._timing_finish(token, status="error", error=_short_error_message(exc))
             pass
+        else:
+            self._timing_finish(token, status="ok")
 
     def _clear_galvo_scan_animation(self, *, cancel_timer: bool = True, render: bool = False) -> None:
         if cancel_timer:
@@ -6801,13 +6888,19 @@ class Kraken3DInspector(tk.Toplevel):
         return self.editor._open3d_trace_refresh_service().inspector_active_sampling_mode(self)
 
     def refresh_from_editor(self, *, sampling_mode: str | None = None, force_retrace: bool = False) -> None:
+        token = self._timing_start(
+            "refresh_from_editor",
+            sampling_mode=sampling_mode,
+            force_retrace=bool(force_retrace),
+        )
         try:
-            result = self.editor._open3d_trace_refresh_service().build_inspector_refresh(
-                self,
-                sampling_mode=sampling_mode,
-                force_retrace=force_retrace,
-                update_state=True,
-            )
+            with self._timing_span("build_inspector_refresh", sampling_mode=sampling_mode, force_retrace=bool(force_retrace)):
+                result = self.editor._open3d_trace_refresh_service().build_inspector_refresh(
+                    self,
+                    sampling_mode=sampling_mode,
+                    force_retrace=force_retrace,
+                    update_state=True,
+                )
             self.refresh_scene(
                 result.system,
                 result.rays,
@@ -6819,6 +6912,9 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception as exc:
             self.status_var.set(f"3D refresh failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"3D inspector refresh error: {exc}")
+            self._timing_finish(token, status="error", error=_short_error_message(exc))
+        else:
+            self._timing_finish(token, status="ok")
 
     def open_selected_optical_faces(self) -> None:
         row_index = self._picked_row_index

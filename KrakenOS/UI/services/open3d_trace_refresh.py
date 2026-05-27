@@ -67,6 +67,27 @@ class Open3DTraceRefreshService:
         except Exception:
             return False
 
+    def inspector_should_trace_step_overlays(self, inspector: Any, *, force_retrace: bool = False) -> bool:
+        """Return True when imported STEP overlays must participate in tracing.
+
+        Imported optical STEP geometry should remain cheap CAD display hardware
+        while the user is only placing/selecting it with rays hidden. Physics
+        tracing is still forced by Live Mode, Trace Now, explicit force-retrace,
+        or visible rays.
+        """
+        if not self.has_traceable_step_overlays():
+            return False
+        if bool(force_retrace):
+            return True
+        for attr_name in ("live_mode_var", "show_rays_var"):
+            var = getattr(inspector, attr_name, None)
+            try:
+                if var is not None and bool(var.get()):
+                    return True
+            except Exception:
+                pass
+        return False
+
     def has_promoted_step_optical_solid_rows(self) -> bool:
         """Return True when saved row-backed STEP solids need an Open 3D trace."""
         try:
@@ -87,7 +108,10 @@ class Open3DTraceRefreshService:
         resolved_sampling_mode = self.normalize_sampling_mode_label(sampling_mode)
         open3d_sampling_mode = None
         current = None
-        include_live_step_overlays = self.has_traceable_step_overlays()
+        include_live_step_overlays = self.inspector_should_trace_step_overlays(
+            inspector,
+            force_retrace=bool(force_retrace),
+        )
         requires_open3d_retrace = include_live_step_overlays or self.has_promoted_step_optical_solid_rows()
         if resolved_sampling_mode is not None and not self.sampling_mode_is_open3d_scene(resolved_sampling_mode):
             resolved_sampling_mode = self._open3d_sampling_mode()

@@ -1,0 +1,85 @@
+"""Validate Open 3D action timing instrumentation contracts."""
+
+from __future__ import annotations
+
+import inspect
+
+from KrakenOS.UI import diagnose_open3d_action_timing
+from KrakenOS.UI.open3d_inspector import Kraken3DInspector
+from KrakenOS.UI.services import layout_polyline_display, open3d_interaction, open3d_scene_refresh
+from KrakenOS.UI.services import open3d_timing, open3d_trace_refresh
+
+
+def main() -> int:
+    timing_source = inspect.getsource(open3d_timing)
+    inspector_source = inspect.getsource(Kraken3DInspector)
+    interaction_source = inspect.getsource(open3d_interaction.Open3DInteractionService)
+    interaction_module_source = inspect.getsource(open3d_interaction)
+    refresh_source = inspect.getsource(open3d_scene_refresh.Open3DSceneRefreshService.refresh_scene)
+    trace_refresh_source = inspect.getsource(open3d_trace_refresh.Open3DTraceRefreshService)
+    polyline_source = inspect.getsource(layout_polyline_display.LayoutPolylineDisplayMixin._load_step_mesh)
+    diagnostic_source = inspect.getsource(diagnose_open3d_action_timing)
+    checks = [
+        (
+            "timing service writes JSONL to a stable cache path",
+            "open3d_timing_latest.jsonl" in timing_source
+            and "open3d_timing_event" in timing_source
+            and "open3d_timing_span" in timing_source,
+        ),
+        (
+            "Open 3D inspector resets timing log on startup",
+            "reset_open3d_timing_log(reason=\"inspector_init\")" in inspector_source,
+        ),
+        (
+            "Open 3D render and refresh are timed",
+            "_timing_start(\"render\")" in inspector_source
+            and "_timing_start(" in inspect.getsource(Kraken3DInspector.refresh_from_editor)
+            and "build_inspector_refresh" in inspect.getsource(Kraken3DInspector.refresh_from_editor),
+        ),
+        (
+            "Open 3D interaction handlers record user-action timing",
+            "_timed_open3d_interaction" in interaction_module_source
+            and "left_click_vtk_pick" in interaction_source
+            and "mouse_move_processed" in interaction_source,
+        ),
+        (
+            "Open 3D scene refresh reports stage durations",
+            "mesh_collect_ms" in refresh_source
+            and "actor_clear_ms" in refresh_source
+            and "surface_actor_ms" in refresh_source
+            and "ray_actor_ms" in refresh_source
+            and "refresh_scene_timing" in refresh_source,
+        ),
+        (
+            "STEP mesh import records cache/conversion/read timings",
+            "load_step_mesh" in polyline_source
+            and "convert_step_to_stl" in polyline_source
+            and "read_step_stl_mesh" in polyline_source
+            and "load_step_mesh_memory_cache_hit" in polyline_source,
+        ),
+        (
+            "display-backed timing replay follows the reported user workflow",
+            "Machine Vision 150Mm Measured" in diagnostic_source
+            and "Aspherized_Achromatic_Lenses" in diagnostic_source
+            and "show_rays_var.set(False)" in diagnostic_source
+            and "_clear_open3d_selection(render=True)" in diagnostic_source,
+        ),
+        (
+            "hidden-ray imported STEP placement defers transient physics trace",
+            "def inspector_should_trace_step_overlays" in trace_refresh_source
+            and "show_rays_var" in trace_refresh_source
+            and "include_live_step_overlays = self.inspector_should_trace_step_overlays(" in trace_refresh_source,
+        ),
+    ]
+    failures = [name for name, ok in checks if not ok]
+    if failures:
+        print("Open 3D action timing validation failed:")
+        for failure in failures:
+            print(f"- {failure}")
+        return 1
+    print("Open 3D action timing validation passed.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

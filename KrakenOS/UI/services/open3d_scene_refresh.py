@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import numpy as np
@@ -42,6 +43,7 @@ class Open3DSceneRefreshService:
         scene_bundle: Any = None,
         reset_camera: bool = False,
     ) -> None:
+        refresh_start = time.perf_counter()
         le = _layout_module()
         KrakenLayoutEditor = le.KrakenLayoutEditor
         STEP_OVERLAY_LABEL_SET = le.STEP_OVERLAY_LABEL_SET
@@ -57,6 +59,7 @@ class Open3DSceneRefreshService:
         show_launch_reference_surface = bool(
             self.editor._should_show_open3d_launch_reference_surface(system=system)
         )
+        mesh_collect_start = time.perf_counter()
         mesh_items = list(
             self.editor._scene_surface_meshes(
                 system,
@@ -64,6 +67,7 @@ class Open3DSceneRefreshService:
                 include_reference_surfaces=show_reference_surfaces or show_launch_reference_surface,
             )
         )
+        mesh_collect_ms = (time.perf_counter() - mesh_collect_start) * 1000.0
         if show_launch_reference_surface and not show_reference_surfaces:
             mesh_items = [
                 mesh_item
@@ -117,6 +121,7 @@ class Open3DSceneRefreshService:
             show_thickness_dimensions = False
         self._debug_trace(
             "refresh_scene_start",
+            mesh_collect_ms=round(float(mesh_collect_ms), 3),
             rows=len(rows),
             expected_physical_rows=sorted(expected_physical_rows),
             mesh_items=len(mesh_items),
@@ -163,7 +168,16 @@ class Open3DSceneRefreshService:
             message = "3D refresh kept previous scene: rebuilt trace produced no surface meshes."
             self.status_var.set(message)
             self.editor.append_debug(message)
-            self._debug_trace("refresh_scene_abort_no_meshes", previous_actor_count=previous_actor_count)
+            self._debug_trace(
+                "refresh_scene_abort_no_meshes",
+                previous_actor_count=previous_actor_count,
+                duration_ms=round(float((time.perf_counter() - refresh_start) * 1000.0), 3),
+            )
+            self._timing_event(
+                "refresh_scene_abort_no_meshes",
+                previous_actor_count=previous_actor_count,
+                duration_ms=round(float((time.perf_counter() - refresh_start) * 1000.0), 3),
+            )
             return
         if physical_mesh_rows:
             self._last_valid_surface_mesh_items = list(mesh_items)
@@ -192,6 +206,7 @@ class Open3DSceneRefreshService:
                 camera_state = None
 
         self._clear_galvo_scan_animation(cancel_timer=True, render=False)
+        actor_clear_start = time.perf_counter()
         self._renderer.RemoveAllViewProps()
         self._actor_row_map.clear()
         self._row_actor_map.clear()
@@ -229,8 +244,10 @@ class Open3DSceneRefreshService:
         self._hover_status_actor = None
         self._step_carry_grip_actor = None
         self._picked_row_index = None
+        actor_clear_ms = (time.perf_counter() - actor_clear_start) * 1000.0
 
         drew_surfaces = 0
+        surface_actor_start = time.perf_counter()
         step_carry_label = self._step_carry_label()
         ray_visibility_requested = bool(self.show_rays_var.get())
         ray_surface_edge_overlays: list[tuple[object, tuple[float, float, float], float, int | None]] = []
@@ -354,6 +371,8 @@ class Open3DSceneRefreshService:
                     pass
             drew_surfaces += 1
 
+        surface_actor_ms = (time.perf_counter() - surface_actor_start) * 1000.0
+        overlay_start = time.perf_counter()
         assigned_face_overlays = self._add_optical_solid_assigned_face_overlays(system)
         face_role_markers = 0
         virtual_plane_markers = self._add_optical_solid_virtual_plane_overlays(system)
@@ -367,7 +386,9 @@ class Open3DSceneRefreshService:
             include_miss_crosshairs=bool(self.show_terminal_diagnostics_var.get()),
         )
         thickness_dimensions = self._add_thickness_dimension_overlays(system, scene_bundle)
+        overlay_ms = (time.perf_counter() - overlay_start) * 1000.0
 
+        ray_actor_start = time.perf_counter()
         if self.show_rays_var.get():
             if scene_bundle is not None:
                 center, radius = scene_display_center_radius(scene_bundle)
@@ -460,12 +481,15 @@ class Open3DSceneRefreshService:
             terminal_counts = {}
             terminal_face_counts = {}
             terminal_sequence_counts = {}
+        ray_actor_ms = (time.perf_counter() - ray_actor_start) * 1000.0
 
+        axis_start = time.perf_counter()
         optical_axis_overlays = 0
         if self._should_draw_optical_axis_overlays():
             optical_axis_overlays = self._add_optical_axis_pick_overlays(scene_bundle)
             if selected_axis_id:
                 self._set_optical_axis_highlight(selected_axis_id)
+        axis_ms = (time.perf_counter() - axis_start) * 1000.0
 
         selected_step = getattr(self.editor, "_selected_step_label", None)
         step_rotation_handles = 0
@@ -577,6 +601,13 @@ class Open3DSceneRefreshService:
         )
         self._debug_trace(
             "refresh_scene_done",
+            duration_ms=round(float((time.perf_counter() - refresh_start) * 1000.0), 3),
+            mesh_collect_ms=round(float(mesh_collect_ms), 3),
+            actor_clear_ms=round(float(actor_clear_ms), 3),
+            surface_actor_ms=round(float(surface_actor_ms), 3),
+            overlay_ms=round(float(overlay_ms), 3),
+            ray_actor_ms=round(float(ray_actor_ms), 3),
+            axis_ms=round(float(axis_ms), 3),
             surfaces=drew_surfaces,
             rays=ray_count,
             optical_axes=optical_axis_overlays,
@@ -589,6 +620,20 @@ class Open3DSceneRefreshService:
             step_carry_active=step_carry_active,
             step_rotation_handles=step_rotation_handles,
             counts=self._debug_actor_counts(),
+        )
+        self._timing_event(
+            "refresh_scene_timing",
+            duration_ms=round(float((time.perf_counter() - refresh_start) * 1000.0), 3),
+            mesh_collect_ms=round(float(mesh_collect_ms), 3),
+            actor_clear_ms=round(float(actor_clear_ms), 3),
+            surface_actor_ms=round(float(surface_actor_ms), 3),
+            overlay_ms=round(float(overlay_ms), 3),
+            ray_actor_ms=round(float(ray_actor_ms), 3),
+            axis_ms=round(float(axis_ms), 3),
+            surfaces=drew_surfaces,
+            rays=ray_count,
+            optical_axes=optical_axis_overlays,
+            step_rotation_handles=step_rotation_handles,
         )
         grid_summary = " | ".join(part for part in (placement_grid_summary, step_carry_grid_summary) if part)
         self._update_placement_grid_status(grid_summary, render=False)

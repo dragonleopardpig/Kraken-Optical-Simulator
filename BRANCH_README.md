@@ -70,10 +70,10 @@ deferred.
 
 | Area | Status | Progress | Next action |
 | --- | --- | --- | --- |
-| Upstream main integration gate | Complete | `100%` | Direct merge was audited and intentionally avoided because it would delete branch UI/CAD tooling. The safe replay now includes upstream-compatible public API aliases, deterministic catalog ordering, `extract_ray_result`, pytest smoke/API/invalid-trace/build-mode contracts, and ignore/attribute hygiene while preserving branch packaging extras. |
-| External merge readiness | Complete | `100%` | Branch README, validation commands, upstream-derived pytest checks, and fast UI/non-sequential validators are aligned as merge-review evidence. Continue using the checklist below for every future change. |
-| Open 3D CAD responsiveness hardening | In progress | `85%` | The Aspherized Achromatic Lens STEP fixture is small and converts quickly, so the long import/deselect stall is an Open 3D refresh architecture issue. The current branch removes Open 3D import double-refresh, preserves CAD scene caches across full actor rebuilds, and batches selection renders. Remaining work is incremental actor updates or background import if larger vendor assemblies still stall. |
-| Final UI theming polish | Deferred outside this gate | `0%` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after upstream review, CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
+| Upstream main integration gate | Complete | `100% [##########]` | Direct merge was audited and intentionally avoided because it would delete branch UI/CAD tooling. The safe replay now includes upstream-compatible public API aliases, deterministic catalog ordering, `extract_ray_result`, pytest smoke/API/invalid-trace/build-mode contracts, and ignore/attribute hygiene while preserving branch packaging extras. |
+| External merge readiness | Complete | `100% [##########]` | Branch README, validation commands, upstream-derived pytest checks, and fast UI/non-sequential validators are aligned as merge-review evidence. Continue using the checklist below for every future change. |
+| Open 3D CAD responsiveness hardening | In progress | `92% [#########.]` | The Aspherized Achromatic Lens STEP fixture is small and converts quickly, so the long import/deselect stall is an Open 3D refresh architecture issue. The branch now records structured Open 3D action timings, replays the Machine Vision 150 mm + imported optical STEP workflow, removes import double-refresh, preserves CAD caches, batches selection renders, and keeps transient STEP imports display-only while rays are hidden. Remaining work is incremental actor updates or background import if larger vendor assemblies still stall. |
+| Final UI theming polish | Deferred outside this gate | `0% [..........]` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after upstream review, CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
 
 The CadQuery/OCP topology study milestone is now complete for this branch
 (`100%`). The branch keeps CadQuery/OCP as an optional future adapter, not a
@@ -83,9 +83,28 @@ outline artifacts across ordinary Open 3D refreshes, ordinary Open 3D passive
 hover uses a rotation-handle actor pick list instead of dense CAD body picking,
 right-click CAD face assignment defers feature scans until an explicit user
 action, Open 3D-originated STEP imports refresh the 3D scene once instead of
-through both the editor and inspector, and
+through both the editor and inspector, hidden-ray transient STEP placement does
+not trigger a physics trace until the user enables rays, Live Mode, Trace Now,
+or force-retrace, and
 `python -m KrakenOS.UI.diagnose_open3d_hover_latency` reports the cache and
 passive-hover contract for large vendor STEP-derived STL files.
+
+Open 3D responsiveness timing is written to:
+
+```text
+~/.cache/krakenos/logs/open3d_timing_latest.jsonl
+```
+
+The reported Machine Vision 150 mm / Aspherized Achromatic Lens workflow can be
+replayed under Xvfb or a real display:
+
+```bash
+python -m KrakenOS.UI.diagnose_open3d_action_timing --output /tmp/kraken_open3d_action_timing_report.json
+```
+
+The replay loads the Machine Vision 150 mm measured layout, opens Open 3D,
+hides rays and thickness overlays, adds the optical STEP component, selects it,
+and deselects it, then prints the slowest timed stages.
 
 ## KrakenOS Base Features
 
@@ -253,6 +272,7 @@ Test-plan tiers:
 | Upstream-compatible pytest | Public API, package data, invalid traces, and build-zero contracts from upstream main adapted to the branch. | `python -m pytest tests/test_public_api.py tests/test_smoke.py tests/test_invalid_trace_results.py tests/test_build_modes.py` |
 | Focused contracts | Single-risk checks during development or review. | `python -m KrakenOS.UI.validate_fast_contracts --only ui-modular-maintainability` |
 | Display-backed smoke | Open 3D, VTK, screenshots, STEP face picking, and visual regressions. | `python -m KrakenOS.UI.validate_step_carry_open3d_smoke` |
+| Open 3D responsiveness replay | Timed replay of Machine Vision 150 mm + imported optical STEP import/select/deselect. | `python -m KrakenOS.UI.diagnose_open3d_action_timing --output /tmp/kraken_open3d_action_timing_report.json` |
 | CAD/prism physics | Real STEP/STL geometry, prism cascades, face roles, and ray-event audits. | `python -m KrakenOS.UI.validate_five_penta_prism_cascade` |
 | Install/package | Public `.[ui]` metadata and runtime dependency checks. | `python -m KrakenOS.UI.validate_ui_install_runtime` |
 | Docs/tutorials | Sphinx pages and generated tutorial assets. | `sphinx-build -b html docs/source docs/build/html` |

@@ -13,6 +13,32 @@ def _layout_module():
     return layout_editor_module
 
 
+def _timed_open3d_interaction(method):
+    def wrapper(self, *args, **kwargs):
+        token = None
+        fields: dict[str, object] = {"handler": method.__name__}
+        try:
+            if getattr(self, "_vtk_interactor", None) is not None:
+                x, y = self._vtk_interactor.GetEventPosition()
+                fields["x"] = int(x)
+                fields["y"] = int(y)
+        except Exception:
+            pass
+        try:
+            token = self._timing_start("interaction_handler", **fields)
+        except Exception:
+            token = None
+        try:
+            return method(self, *args, **kwargs)
+        finally:
+            try:
+                self._timing_finish(token, handler=method.__name__)
+            except Exception:
+                pass
+
+    return wrapper
+
+
 class Open3DInteractionService:
     """Handle Open 3D pick and hover interactions for the inspector."""
 
@@ -28,6 +54,7 @@ class Open3DInteractionService:
             return
         setattr(self._inspector, name, value)
 
+    @_timed_open3d_interaction
     def _on_left_button_press(self, obj, _event) -> None:
         le = _layout_module()
         STEP_OVERLAY_LABEL_SET = le.STEP_OVERLAY_LABEL_SET
@@ -43,15 +70,20 @@ class Open3DInteractionService:
         except Exception:
             pass
         x, y = self._vtk_interactor.GetEventPosition()
-        self._picker.Pick(x, y, 0.0, self._renderer)
-        actor = self._picker.GetActor()
-        if actor is None:
-            get_view_prop = getattr(self._picker, "GetViewProp", None)
-            if callable(get_view_prop):
-                try:
-                    actor = get_view_prop()
-                except Exception:
-                    actor = None
+        pick_start = self._timing_start("left_click_vtk_pick", x=int(x), y=int(y))
+        actor = None
+        try:
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor = self._picker.GetActor()
+            if actor is None:
+                get_view_prop = getattr(self._picker, "GetViewProp", None)
+                if callable(get_view_prop):
+                    try:
+                        actor = get_view_prop()
+                    except Exception:
+                        actor = None
+        finally:
+            self._timing_finish(pick_start, actor_found=actor is not None)
         actor_key = self._actor_key(actor)
         self._debug_trace(
             "left_click_pick",
@@ -592,6 +624,11 @@ class Open3DInteractionService:
             and not self._mouse_move_due()
         ):
             return
+        try:
+            x, y = self._vtk_interactor.GetEventPosition() if self._vtk_interactor is not None else (-1, -1)
+            self._timing_event("mouse_move_processed", x=int(x), y=int(y), hover_critical=hover_critical)
+        except Exception:
+            pass
         if self._placement_target_pick_mode:
             self._set_rotation_handle_hover(None)
             self._update_hover_status("", render=False)

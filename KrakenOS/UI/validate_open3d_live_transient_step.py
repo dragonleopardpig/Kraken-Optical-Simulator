@@ -43,14 +43,18 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             "Live Mode builds a render-only trace bundle without overwriting the persistent 2D preview state.",
         ),
         Open3DLiveTransientStepCheck(
-            "Initial Open 3D refresh includes transient optical STEP overlays",
+            "Open 3D traces transient optical STEP overlays only when physics is requested",
             "def has_traceable_step_overlays" in open3d_refresh_service
-            and "include_live_step_overlays = self.has_traceable_step_overlays()" in open3d_refresh_service
+            and "def inspector_should_trace_step_overlays" in open3d_refresh_service
+            and "show_rays_var" in open3d_refresh_service
+            and "live_mode_var" in open3d_refresh_service
+            and "force_retrace" in open3d_refresh_service
+            and "include_live_step_overlays = self.inspector_should_trace_step_overlays(" in open3d_refresh_service
             and "requires_open3d_retrace = include_live_step_overlays or self.has_promoted_step_optical_solid_rows()"
             in open3d_refresh_service
             and "if not requires_open3d_retrace and not force_retrace" in open3d_refresh_service
             and "include_live_step_overlays=include_live_step_overlays" in open3d_refresh_service,
-            "Opening or syncing Open 3D must not reuse a 2D preview trace that omitted an unpromoted optical STEP solid.",
+            "Hidden-ray placement remains a CAD display workflow; Live Mode, Trace Now, visible rays, or force-retrace still opt into physics.",
         ),
         Open3DLiveTransientStepCheck(
             "Transient optical STEP rows use the promoted-solid contract",

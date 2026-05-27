@@ -37,6 +37,7 @@ from KrakenOS.UI.services.optical_solid_geometry import (
     normalize_optical_solid_face_metadata,
     optical_solid_face_world_records,
 )
+from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timing_span
 from KrakenOS.UI.trace_intent import BEAM_SPLITTER_SURFACE
 
 pv = None
@@ -304,25 +305,50 @@ class LayoutPolylineDisplayMixin:
         return 0.0
 
     def _load_step_mesh(self, source_path: Path, *, largest_component: bool = False):
-        _load_3d_backends()
-        if pv is None:
-            raise RuntimeError("PyVista is required for STEP import")
         source_path = Path(source_path).expanduser()
-        if not source_path.exists():
-            raise FileNotFoundError(f"STEP file not found: {source_path}")
-        cache_prefix = "step-largest" if largest_component else "step"
-        cache_key = f"{cache_prefix}:{source_path.resolve()}"
-        cached = self._external_cad_mesh_cache.get(cache_key)
-        if cached is not None:
-            return cached.copy(deep=True)
-        stl_path = _cached_cad_mesh_path(source_path)
-        if not stl_path.exists() or stl_path.stat().st_size <= 0:
-            _convert_step_to_stl(source_path, stl_path)
-        mesh = pv.read(stl_path).extract_surface(algorithm="dataset_surface").copy(deep=True)
-        if largest_component:
-            mesh = self._largest_connected_step_component(mesh)
-        self._external_cad_mesh_cache[cache_key] = mesh.copy(deep=True)
-        return mesh
+        with open3d_timing_span(
+            "load_step_mesh",
+            source_path=str(source_path),
+            source_size=int(source_path.stat().st_size) if source_path.exists() else None,
+            largest_component=bool(largest_component),
+        ):
+            _load_3d_backends()
+            if pv is None:
+                raise RuntimeError("PyVista is required for STEP import")
+            if not source_path.exists():
+                raise FileNotFoundError(f"STEP file not found: {source_path}")
+            cache_prefix = "step-largest" if largest_component else "step"
+            cache_key = f"{cache_prefix}:{source_path.resolve()}"
+            cached = self._external_cad_mesh_cache.get(cache_key)
+            if cached is not None:
+                open3d_timing_event(
+                    "load_step_mesh_memory_cache_hit",
+                    source_path=str(source_path),
+                    points=int(getattr(cached, "n_points", 0)),
+                    cells=int(getattr(cached, "n_cells", 0)),
+                )
+                return cached.copy(deep=True)
+            stl_path = _cached_cad_mesh_path(source_path)
+            converted = False
+            if not stl_path.exists() or stl_path.stat().st_size <= 0:
+                with open3d_timing_span("convert_step_to_stl", source_path=str(source_path), stl_path=str(stl_path)):
+                    _convert_step_to_stl(source_path, stl_path)
+                converted = True
+            with open3d_timing_span("read_step_stl_mesh", stl_path=str(stl_path), converted=converted):
+                mesh = pv.read(stl_path).extract_surface(algorithm="dataset_surface").copy(deep=True)
+            if largest_component:
+                with open3d_timing_span("largest_step_component", source_path=str(source_path)):
+                    mesh = self._largest_connected_step_component(mesh)
+            self._external_cad_mesh_cache[cache_key] = mesh.copy(deep=True)
+            open3d_timing_event(
+                "load_step_mesh_cached",
+                source_path=str(source_path),
+                stl_path=str(stl_path),
+                converted=converted,
+                points=int(getattr(mesh, "n_points", 0)),
+                cells=int(getattr(mesh, "n_cells", 0)),
+            )
+            return mesh
 
     def _largest_connected_step_component(self, mesh):
         if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:

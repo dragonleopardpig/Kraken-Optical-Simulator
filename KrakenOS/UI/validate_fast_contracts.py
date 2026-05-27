@@ -116,6 +116,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Open 3D STEP hover/pick paths reuse cached CAD triangle and face-outline artifacts.",
     ),
     ValidationTarget(
+        "open3d-action-timing",
+        "KrakenOS.UI.validate_open3d_action_timing",
+        reason="Open 3D import, refresh, render, pick, and selection actions emit structured timing diagnostics.",
+    ),
+    ValidationTarget(
         "open3d-axis-guides",
         "KrakenOS.UI.validate_open3d_optical_axis_guides",
         reason="Centered sequential scenes keep one global optical axis; off-axis scenes keep traced guides.",
