@@ -68,11 +68,16 @@ Completed work is no longer listed as 100% progress rows. The active status
 table is reserved for items that are still incomplete or intentionally
 deferred.
 
+The upstream main integration gate and external merge readiness are complete.
+Direct upstream merge was audited and intentionally avoided where it would
+delete branch UI/CAD tooling; the safe replay now includes upstream-compatible
+public API aliases, deterministic catalog ordering, `extract_ray_result`, pytest
+smoke/API/invalid-trace/build-mode contracts, branch README validation commands,
+and fast UI/non-sequential validators.
+
 | Area | Status | Progress | Next action |
 | --- | --- | --- | --- |
-| Upstream main integration gate | Complete | `100% [##########]` | Direct merge was audited and intentionally avoided because it would delete branch UI/CAD tooling. The safe replay now includes upstream-compatible public API aliases, deterministic catalog ordering, `extract_ray_result`, pytest smoke/API/invalid-trace/build-mode contracts, and ignore/attribute hygiene while preserving branch packaging extras. |
-| External merge readiness | Complete | `100% [##########]` | Branch README, validation commands, upstream-derived pytest checks, and fast UI/non-sequential validators are aligned as merge-review evidence. Continue using the checklist below for every future change. |
-| Open 3D CAD responsiveness hardening | In progress | `94% [#########.]` | The Aspherized Achromatic Lens STEP fixture is small and converts quickly, so the long import/deselect stall is an Open 3D refresh architecture issue. The branch now records structured Open 3D action timings, replays the Machine Vision 150 mm + imported optical STEP workflow, removes import double-refresh, preserves CAD caches, batches selection renders, keeps transient STEP imports and STEP drops display-only while rays are hidden, and groups smooth hover regions so curved lenses do not select individual tessellation facets. Remaining work is incremental actor updates or background import if larger vendor assemblies still stall. |
+| Open 3D CAD responsiveness hardening | In progress | `96% [#########.]` | The Aspherized Achromatic Lens STEP fixture is small and converts quickly, so the long import/deselect stall is an Open 3D refresh architecture issue. The branch now records structured Open 3D action timings, replays the Machine Vision 150 mm + imported optical STEP workflow, removes import double-refresh, preserves CAD caches, batches selection renders, keeps transient STEP imports and STEP drops display-only while rays are hidden, translates existing STEP actors for simple Ctrl-Z/Ctrl-Y placement undo instead of rebuilding the scene, and groups smooth hover regions so curved lenses do not select individual tessellation facets. Remaining work is incremental actor updates for rotation/path changes or background import if larger vendor assemblies still stall. |
 | Final UI theming polish | Deferred outside this gate | `0% [..........]` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after upstream review, CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
 
 The CadQuery/OCP topology study milestone is now complete for this branch
@@ -104,7 +109,8 @@ python -m KrakenOS.UI.diagnose_open3d_action_timing --output /tmp/kraken_open3d_
 
 The replay loads the Machine Vision 150 mm measured layout, opens Open 3D,
 hides rays and thickness overlays, adds the optical STEP component, selects it,
-and deselects it, then prints the slowest timed stages.
+simulates a small display-only placement drop, applies Ctrl-Z undo, and
+deselects it, then prints the slowest timed stages.
 
 ## KrakenOS Base Features
 

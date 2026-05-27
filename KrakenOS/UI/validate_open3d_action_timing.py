@@ -6,7 +6,7 @@ import inspect
 
 from KrakenOS.UI import diagnose_open3d_action_timing
 from KrakenOS.UI.open3d_inspector import Kraken3DInspector
-from KrakenOS.UI.services import layout_polyline_display, open3d_interaction, open3d_scene_refresh
+from KrakenOS.UI.services import layout_polyline_display, layout_table_workbench, open3d_interaction, open3d_scene_refresh
 from KrakenOS.UI.services import open3d_timing, open3d_trace_refresh
 
 
@@ -18,6 +18,7 @@ def main() -> int:
     refresh_source = inspect.getsource(open3d_scene_refresh.Open3DSceneRefreshService.refresh_scene)
     trace_refresh_source = inspect.getsource(open3d_trace_refresh.Open3DTraceRefreshService)
     polyline_source = inspect.getsource(layout_polyline_display.LayoutPolylineDisplayMixin._load_step_mesh)
+    workbench_source = inspect.getsource(layout_table_workbench.LayoutTableWorkbenchMixin)
     diagnostic_source = inspect.getsource(diagnose_open3d_action_timing)
     checks = [
         (
@@ -64,6 +65,17 @@ def main() -> int:
             and "show_rays_var.set(False)" in diagnostic_source
             and "_finish_step_carry_drag(drop_state)" in diagnostic_source
             and "_clear_open3d_selection(render=True)" in diagnostic_source,
+        ),
+        (
+            "Ctrl-Z undo/redo restore path is timed and has a hidden-ray STEP display-only fast path",
+            "history_undo" in workbench_source
+            and "history_redo" in workbench_source
+            and "history_restore" in workbench_source
+            and "def _history_restore_is_open3d_step_display_only" in workbench_source
+            and "history_restore_skip_plot_refresh" in workbench_source
+            and "history_restore_actor_translate" in workbench_source
+            and "self._refresh_open_3d_views(force_retrace=False)" in workbench_source
+            and "app.undo()" in diagnostic_source,
         ),
         (
             "hidden-ray imported STEP placement defers transient physics trace",

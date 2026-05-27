@@ -9,6 +9,7 @@ modules.
 
 from __future__ import annotations
 
+from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timing_span
 from KrakenOS.UI.widgets import place_commit_cell_entry
 
 
@@ -26,6 +27,38 @@ _PROTECTED_GLOBALS = {
 }
 
 PATH_COMPONENT_DETECTOR = "Detector plane"
+
+_STEP_DISPLAY_HISTORY_SETTING_KEYS = frozenset(
+    {
+        "camera_step_path",
+        "camera_step_rotation_x_deg",
+        "camera_step_rotation_y_deg",
+        "camera_step_rotation_z_deg",
+        "camera_step_axis_offset_xy",
+        "camera_step_placement_offset_xyz",
+        "lens_step_path",
+        "lens_step_largest_component_only",
+        "lens_step_rotation_x_deg",
+        "lens_step_rotation_y_deg",
+        "lens_step_rotation_z_deg",
+        "lens_step_axis_offset_xy",
+        "lens_step_placement_offset_xyz",
+        "optical_step_path",
+        "optical_step_rotation_x_deg",
+        "optical_step_rotation_y_deg",
+        "optical_step_rotation_z_deg",
+        "optical_step_axis_offset_xy",
+        "optical_step_placement_offset_xyz",
+        "led_step_path",
+        "led_step_rotation_x_deg",
+        "led_step_rotation_y_deg",
+        "led_step_rotation_z_deg",
+        "led_object_edge_distance_mm",
+        "led_step_object_edge_local_z",
+        "led_step_axis_offset_xy",
+        "led_step_placement_offset_xyz",
+    }
+)
 
 
 def _sync_layout_globals(source: dict[str, object]) -> None:
@@ -585,41 +618,190 @@ class LayoutTableWorkbenchMixin:
         self._history_pending_state = self._capture_editor_state()
         self._commit_history_capture()
 
-    def _restore_history_state(self, state: dict[str, object]) -> None:
-        self._history_restoring = True
+    @staticmethod
+    def _history_rows_equal(left: dict[str, object] | None, right: dict[str, object] | None) -> bool:
+        if not isinstance(left, dict) or not isinstance(right, dict):
+            return False
+        return left.get("rows", []) == right.get("rows", [])
+
+    @staticmethod
+    def _history_settings_delta_keys(left: dict[str, object] | None, right: dict[str, object] | None) -> set[str]:
+        if not isinstance(left, dict) or not isinstance(right, dict):
+            return set()
+        left_settings = left.get("settings", {})
+        right_settings = right.get("settings", {})
+        if not isinstance(left_settings, dict) or not isinstance(right_settings, dict):
+            return set()
+        keys = set(left_settings) | set(right_settings)
+        return {key for key in keys if left_settings.get(key) != right_settings.get(key)}
+
+    def _history_restore_is_open3d_step_display_only(
+        self,
+        previous_state: dict[str, object] | None,
+        target_state: dict[str, object],
+    ) -> bool:
+        if self.__dict__.get("_three_d_inspector") is None:
+            return False
+        if not self._history_rows_equal(previous_state, target_state):
+            return False
+        if not isinstance(previous_state, dict):
+            return False
+        if previous_state.get("current_layout_file") != target_state.get("current_layout_file"):
+            return False
+        changed_settings = self._history_settings_delta_keys(previous_state, target_state)
+        if not changed_settings or not changed_settings <= _STEP_DISPLAY_HISTORY_SETTING_KEYS:
+            return False
+        inspector = self.__dict__.get("_three_d_inspector")
         try:
-            rows = state.get("rows", [])
-            restored_rows = [SurfaceRow(**dict(item)) for item in rows if isinstance(item, dict)]
-            self.rows = self._normalized_rows_copy(restored_rows)
-            layout_path = state.get("current_layout_file")
-            self.current_layout_file = Path(layout_path) if isinstance(layout_path, str) and layout_path else None
-            self._sync_table()
-            self._apply_layout_settings(state.get("settings", {}))
-            self._normalize_special_rows()
-            self._sync_table()
-            selected_indices = [int(index) for index in state.get("selected_indices", []) if isinstance(index, int)]
-            items = list(self.table.get_children())
-            selected_items = [items[index] for index in selected_indices if 0 <= index < len(items)]
-            if selected_items:
-                self.table.selection_set(selected_items)
-                self.table.focus(selected_items[0])
-                self.table.see(selected_items[0])
-            else:
-                self.table.selection_remove(*items)
-            active_cell = state.get("active_cell")
-            self._active_cell = None
-            if isinstance(active_cell, dict):
-                row_index = int(active_cell.get("row", -1))
-                field = str(active_cell.get("field", ""))
-                if 0 <= row_index < len(items) and field in FIELDS:
-                    self._active_cell = (items[row_index], field)
-            self._update_active_cell_border()
-            self._refresh_analysis_surface_choices()
-            self._refresh_operand_surface_choices()
-        finally:
-            self._history_restoring = False
-            self._history_pending_state = None
-        self.refresh_plot()
+            if inspector is None or not inspector.winfo_exists():
+                return False
+        except Exception:
+            return False
+        try:
+            return not bool(inspector.show_rays_var.get())
+        except Exception:
+            return False
+
+    @staticmethod
+    def _history_setting_vector(
+        state: dict[str, object] | None,
+        key: str,
+        *,
+        length: int,
+    ) -> tuple[float, ...] | None:
+        if not isinstance(state, dict):
+            return None
+        settings = state.get("settings", {})
+        if not isinstance(settings, dict):
+            return None
+        value = settings.get(key)
+        if not isinstance(value, (list, tuple)) or len(value) < length:
+            return None
+        try:
+            vector = tuple(float(value[index]) for index in range(length))
+        except Exception:
+            return None
+        return vector
+
+    def _history_step_placement_delta(
+        self,
+        previous_state: dict[str, object] | None,
+        target_state: dict[str, object],
+        changed_settings: set[str],
+    ) -> tuple[str, tuple[float, float, float]] | None:
+        if len(changed_settings) != 1:
+            return None
+        key = next(iter(changed_settings))
+        suffix = "_step_placement_offset_xyz"
+        if not key.endswith(suffix):
+            return None
+        label = key[: -len(suffix)]
+        if label not in {"camera", "lens", "optical", "led"}:
+            return None
+        previous = self._history_setting_vector(previous_state, key, length=3)
+        target = self._history_setting_vector(target_state, key, length=3)
+        if previous is None or target is None:
+            return None
+        delta = tuple(float(target[index] - previous[index]) for index in range(3))
+        if not any(abs(value) > 1e-12 for value in delta):
+            return None
+        return label, delta
+
+    def _refresh_history_restore_views(
+        self,
+        *,
+        previous_state: dict[str, object] | None,
+        target_state: dict[str, object],
+        changed_settings: set[str],
+        display_only_open3d_step: bool,
+    ) -> None:
+        if display_only_open3d_step:
+            open3d_timing_event("history_restore_skip_plot_refresh", reason="open3d_step_display_only")
+            placement_delta = self._history_step_placement_delta(previous_state, target_state, changed_settings)
+            inspector = self.__dict__.get("_three_d_inspector")
+            if placement_delta is not None and inspector is not None:
+                label, delta = placement_delta
+                try:
+                    moved = int(inspector._translate_step_overlay_actors(label, delta))
+                except Exception as exc:
+                    moved = 0
+                    self.append_debug(f"Open 3D history actor translate failed: {exc}")
+                open3d_timing_event(
+                    "history_restore_actor_translate",
+                    label=label,
+                    moved=moved,
+                    delta_xyz=list(delta),
+                )
+                if moved > 0:
+                    return
+            try:
+                self._refresh_open_3d_views(force_retrace=False)
+            except Exception as exc:
+                self.append_debug(f"Open 3D history display-only refresh failed: {exc}")
+            return
+        with open3d_timing_span("history_restore_plot_refresh"):
+            self.refresh_plot()
+
+    def _restore_history_state(
+        self,
+        state: dict[str, object],
+        *,
+        previous_state: dict[str, object] | None = None,
+        action: str = "restore",
+    ) -> None:
+        display_only_open3d_step = self._history_restore_is_open3d_step_display_only(previous_state, state)
+        changed_settings = sorted(self._history_settings_delta_keys(previous_state, state))
+        open3d_timing_event(
+            "history_restore_requested",
+            action=action,
+            display_only_open3d_step=display_only_open3d_step,
+            changed_settings=",".join(changed_settings[:32]),
+            changed_setting_count=len(changed_settings),
+        )
+        with open3d_timing_span(
+            "history_restore",
+            action=action,
+            display_only_open3d_step=display_only_open3d_step,
+        ):
+            self._history_restoring = True
+            try:
+                rows = state.get("rows", [])
+                restored_rows = [SurfaceRow(**dict(item)) for item in rows if isinstance(item, dict)]
+                self.rows = self._normalized_rows_copy(restored_rows)
+                layout_path = state.get("current_layout_file")
+                self.current_layout_file = Path(layout_path) if isinstance(layout_path, str) and layout_path else None
+                self._sync_table()
+                self._apply_layout_settings(state.get("settings", {}))
+                self._normalize_special_rows()
+                self._sync_table()
+                selected_indices = [int(index) for index in state.get("selected_indices", []) if isinstance(index, int)]
+                items = list(self.table.get_children())
+                selected_items = [items[index] for index in selected_indices if 0 <= index < len(items)]
+                if selected_items:
+                    self.table.selection_set(selected_items)
+                    self.table.focus(selected_items[0])
+                    self.table.see(selected_items[0])
+                else:
+                    self.table.selection_remove(*items)
+                active_cell = state.get("active_cell")
+                self._active_cell = None
+                if isinstance(active_cell, dict):
+                    row_index = int(active_cell.get("row", -1))
+                    field = str(active_cell.get("field", ""))
+                    if 0 <= row_index < len(items) and field in FIELDS:
+                        self._active_cell = (items[row_index], field)
+                self._update_active_cell_border()
+                self._refresh_analysis_surface_choices()
+                self._refresh_operand_surface_choices()
+            finally:
+                self._history_restoring = False
+                self._history_pending_state = None
+        self._refresh_history_restore_views(
+            previous_state=previous_state,
+            target_state=state,
+            changed_settings=set(changed_settings),
+            display_only_open3d_step=display_only_open3d_step,
+        )
         self._update_undo_redo_buttons()
 
     def _update_undo_redo_buttons(self) -> None:
@@ -639,20 +821,22 @@ class LayoutTableWorkbenchMixin:
     def undo(self) -> None:
         if not self._undo_stack:
             return
-        current = self._capture_editor_state()
-        state = self._undo_stack.pop()
-        self._redo_stack.append(current)
-        self._restore_history_state(state)
-        self.status_var.set("Undo applied.")
+        with open3d_timing_span("history_undo", undo_depth=len(self._undo_stack), redo_depth=len(self._redo_stack)):
+            current = self._capture_editor_state()
+            state = self._undo_stack.pop()
+            self._redo_stack.append(current)
+            self._restore_history_state(state, previous_state=current, action="undo")
+            self.status_var.set("Undo applied.")
 
     def redo(self) -> None:
         if not self._redo_stack:
             return
-        current = self._capture_editor_state()
-        state = self._redo_stack.pop()
-        self._undo_stack.append(current)
-        self._restore_history_state(state)
-        self.status_var.set("Redo applied.")
+        with open3d_timing_span("history_redo", undo_depth=len(self._undo_stack), redo_depth=len(self._redo_stack)):
+            current = self._capture_editor_state()
+            state = self._redo_stack.pop()
+            self._undo_stack.append(current)
+            self._restore_history_state(state, previous_state=current, action="redo")
+            self.status_var.set("Redo applied.")
 
     def _undo_event(self, _event=None) -> str:
         self.undo()
