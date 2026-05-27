@@ -438,7 +438,21 @@ class AnalysisComputeWorkflowMixin:
         else:
             self.append_debug("GPU backend: CuPy import succeeded, but no CUDA devices were detected.")
 
+    def _update_optimization_button_state(self) -> None:
+        button = getattr(self, "optimization_start_stop_button", None)
+        if button is None:
+            return
+        running = bool(getattr(self, "optimization_running", False))
+        try:
+            button.configure(
+                text="Stop Optimization" if running else "Start Optimization",
+                command=self.stop_optimization if running else self.start_optimization,
+            )
+        except Exception:
+            pass
+
     def _update_progress_indicators(self) -> None:
+        self._update_optimization_button_state()
         if not self.optimization_running or self.optimization_context is None:
             self.progress_spinner_var.set("idle")
             self.progress_percent_var.set("0%")
@@ -1405,6 +1419,7 @@ class AnalysisComputeWorkflowMixin:
             self.optimization_running = False
             self.optimization_cancel_requested = False
             self._stop_progress_spinner()
+            self._update_progress_indicators()
             return
 
         ctx = self.optimization_context

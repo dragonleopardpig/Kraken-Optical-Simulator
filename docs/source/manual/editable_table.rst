@@ -197,12 +197,11 @@ variables include radius, thickness, tilt, decenter, and grating pitch. Hidden
 advanced variables such as conic ``k`` can still be enabled from their
 specialized dialog, but they do not reappear as main table columns.
 
-The Optimization panel also has a ``Check Backend`` button. Use it before a
-long solve to confirm that the active Python environment can import ``pygmo``,
-which is the global optimizer backend used by the UI. ``Start Optimization``
-runs the same preflight automatically and aborts before spawning the worker if
-``pygmo`` is missing; in the devenv workflow, run ``devenv shell
-kraken-install`` to reinstall the expected optimizer dependency set.
+``Start Optimization`` runs the optimizer backend preflight automatically and
+aborts before spawning the worker if the active Python environment cannot
+import ``pygmo``. While a run is active, the same button changes to ``Stop
+Optimization``. In the devenv workflow, run ``devenv shell kraken-install`` to
+reinstall the expected optimizer dependency set.
 Developer builds that need a non-wheel pagmo2 library can set
 ``KRAKEN_PAGMO2_LIB`` to the shared-library path, or to ``auto`` for the
 historical ``~/Projects/pagmo2/_install/lib64/libpagmo.so`` location.

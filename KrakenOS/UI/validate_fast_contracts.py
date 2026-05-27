@@ -86,6 +86,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Round achromat-like STEP bodies pick a grouped optical face and do not expose raw STL triangles when selected.",
     ),
     ValidationTarget(
+        "five-penta-with-lens-layout",
+        "KrakenOS.UI.validate_five_penta_with_lens_layout",
+        reason="Saved five-penta cascade with imported lens STEP stays loadable and keeps row-backed optical-solid metadata.",
+    ),
+    ValidationTarget(
         "widget-commit-bindings",
         "KrakenOS.UI.validate_widget_commit_bindings",
         reason="Reusable Tk entry/combobox commit binding contracts without opening a display.",
@@ -94,6 +99,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         "ui-install-metadata",
         "KrakenOS.UI.validate_ui_install_metadata",
         reason="Public kraken-os[ui] optional dependency metadata stays aligned across packaging files.",
+    ),
+    ValidationTarget(
+        "optimization-controls",
+        "KrakenOS.UI.validate_optimization_controls",
+        reason="Optimization panel uses one stateful Start/Stop button and preflights the backend on start.",
     ),
     ValidationTarget(
         "ui-modular-maintainability",

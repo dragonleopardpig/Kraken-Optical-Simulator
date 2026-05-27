@@ -3131,7 +3131,7 @@ class Kraken3DInspector(tk.Toplevel):
                 prop.SetInterpolationToPhong()
                 prop.SetSpecular(0.18)
                 prop.SetSpecularPower(12.0)
-        if pick_step_label is not None:
+        if pick_step_label is not None or pick_row_index is not None or track_row_index is not None:
             try:
                 actor._kraken_round_lens_like_step_body = bool(self._mesh_round_lens_axis(mesh) is not None)
             except Exception:

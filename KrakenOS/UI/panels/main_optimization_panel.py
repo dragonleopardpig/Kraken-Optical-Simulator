@@ -91,12 +91,16 @@ class MainOptimizationPanel:
 
         button_row = ttk.Frame(parent)
         button_row.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        ttk.Button(button_row, text="Start Optimization", command=self.start_optimization).pack(side="left")
-        ttk.Button(button_row, text="Stop", command=self.stop_optimization).pack(side="left", padx=(8, 0))
-        ttk.Button(button_row, text="Check Backend", command=self.check_optimization_backend).pack(
-            side="left",
-            padx=(8, 0),
+        self.optimization_start_stop_button = ttk.Button(
+            button_row,
+            text="Start Optimization",
+            command=self.start_optimization,
         )
+        self.optimization_start_stop_button.pack(side="left")
+        try:
+            self._update_optimization_button_state()
+        except Exception:
+            pass
         cpu_total = max(1, int(os.cpu_count() or 1))
         worker_choices = ["Auto", "1"]
         for candidate in (2, 4, 6, 8, 12, 16, cpu_total):

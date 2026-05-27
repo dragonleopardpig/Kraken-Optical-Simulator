@@ -51,6 +51,7 @@ from KrakenOS.UI.saved_layout_plot import build_saved_layout_figure
 from KrakenOS.UI.scene_builder import _sync_path_display_geometry_from_events
 from KrakenOS.UI.scene_geometry import RayEvent3D, RayPath3D
 from KrakenOS.UI.scene_projector import bounded_ray_points_for_scene_display, scene_display_center_radius
+from KrakenOS.UI.services.analysis_compute_workflow import AnalysisComputeWorkflowMixin
 from KrakenOS.UI.services.analysis_plot import AnalysisPlotService
 from KrakenOS.UI.services.formula_help import FormulaHelpService
 from KrakenOS.UI.services.legacy_3d_scene import Legacy3DSceneService
@@ -309,6 +310,7 @@ def main() -> int:
     main_information_panel = inspect.getsource(MainInformationPanel)
     main_information_factory = inspect.getsource(KrakenLayoutEditor._main_information_panel)
     build_results_panel = inspect.getsource(KrakenLayoutEditor._build_results_panel)
+    analysis_compute_workflow = inspect.getsource(AnalysisComputeWorkflowMixin)
     main_atmosphere_panel = inspect.getsource(MainAtmospherePanel)
     main_atmosphere_factory = inspect.getsource(KrakenLayoutEditor._main_atmosphere_panel)
     build_atmosphere_panel = inspect.getsource(KrakenLayoutEditor._build_atmosphere_panel)
@@ -920,8 +922,11 @@ def main() -> int:
             "MainOptimizationPanel(self, operand_specs=OPERAND_REGISTRY.values())" in main_optimization_factory
             and "self._main_optimization_panel().build(parent)" in build_optimization_panel
             and "self._main_optimization_panel().edit_current_bounds()" in edit_current_bounds
+            and "optimization_start_stop_button" in main_optimization_panel
             and "Start Optimization" in main_optimization_panel
-            and "Check Backend" in main_optimization_panel
+            and "Check Backend" not in main_optimization_panel
+            and "Stop Optimization" in analysis_compute_workflow
+            and "_update_optimization_button_state" in analysis_compute_workflow
             and "Bounds for" in main_optimization_panel
             and "optimization_workers_var" in main_optimization_panel
             and "merit_mode_list" in main_optimization_panel

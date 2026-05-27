@@ -10,7 +10,7 @@ import numpy as np
 
 from KrakenOS.UI import cad_import_service
 from KrakenOS.UI.open3d_inspector import Kraken3DInspector
-from KrakenOS.UI.services import open3d_step_overlay_refresh
+from KrakenOS.UI.services import open3d_scene_refresh, open3d_step_overlay_refresh
 from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
 from KrakenOS.UI.services.step_overlay_import import StepOverlayImportService
 
@@ -106,6 +106,8 @@ def main() -> int:
     inspector_source = __import__("inspect").getsource(Kraken3DInspector)
     if "_kraken_round_lens_like_step_body" not in inspector_source or "prop.SetEdgeVisibility(0)" not in inspector_source:
         failures.append("Round lens-like STEP selection must suppress raw polygon edge visibility.")
+    if "pick_row_index is not None" not in inspector_source or "track_row_index is not None" not in inspector_source:
+        failures.append("Round lens-like row-backed optical solids must suppress raw polygon edge visibility too.")
     if "_step_label_is_round_lens_like" not in inspector_source:
         failures.append("Round lens-like STEP labels must bypass tiny-facet metadata picking.")
     if "if self._step_label_is_round_lens_like(label):" not in inspector_source:
@@ -115,6 +117,9 @@ def main() -> int:
     refresh_source = __import__("inspect").getsource(open3d_step_overlay_refresh)
     if "boundary_edges=not round_lens_like" not in refresh_source:
         failures.append("Round lens-like STEP rendering must suppress tessellation patch-boundary edge overlays.")
+    scene_refresh_source = __import__("inspect").getsource(open3d_scene_refresh)
+    if "row_round_lens_like" not in scene_refresh_source or "boundary_edges=row_edge_boundary_edges" not in scene_refresh_source:
+        failures.append("Row-backed round lens-like optical solids must suppress tessellation patch-boundary edge overlays.")
     interaction_source = __import__("inspect").getsource(Open3DInteractionService._on_mouse_move)
     if "carry_label = self._step_carry_label()" not in interaction_source or "target_label = str(carry_label)" not in interaction_source:
         failures.append("Carry-mode imported STEP hover must pick the active STEP face, not only rotation handles.")

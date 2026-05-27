@@ -77,7 +77,7 @@ and fast UI/non-sequential validators.
 
 | Area | Status | Progress | Next action |
 | --- | --- | --- | --- |
-| Open 3D CAD responsiveness hardening | In progress | `99% [##########]` | The Aspherized Achromatic Lens STEP fixture is small and converts quickly, so the long import/deselect stall is an Open 3D refresh architecture issue. The branch now records structured Open 3D action timings, replays the Machine Vision 150 mm + imported optical STEP workflow, removes import double-refresh, preserves CAD caches, batches selection renders, keeps transient STEP imports and STEP drops display-only while rays are hidden, translates existing STEP actors for simple Ctrl-Z/Ctrl-Y placement undo instead of rebuilding the scene, redraws only the selected imported STEP overlay for hidden-ray rotation-handle changes, lists every visible scene component in the right browser including grouped table elements, groups smooth hover regions so curved lenses do not select individual tessellation facets, treats round achromat-like STEP surfaces as grouped optical faces with axis-normal snapping instead of raw triangle facets, bypasses tiny-facet metadata picks for round lens bodies, keeps active carry-mode STEP face hover available without restoring whole-scene CAD hover, suppresses round-lens tessellation patch-boundary edge overlays, rejects empty gmsh STL conversions so achromat imports cannot silently become mesh debris, and warns when a lens STEP has sidecar prescription files because STEP CAD alone does not encode designed glass prescription/focus. Remaining work is background import if larger vendor assemblies still stall on first load. |
+| Open 3D CAD responsiveness hardening | In progress | `99% [##########]` | The Aspherized Achromatic Lens STEP fixture is small and converts quickly, so the long import/deselect stall is an Open 3D refresh architecture issue. The branch now records structured Open 3D action timings, replays the Machine Vision 150 mm + imported optical STEP workflow, removes import double-refresh, preserves CAD caches, batches selection renders, keeps transient STEP imports and STEP drops display-only while rays are hidden, translates existing STEP actors for simple Ctrl-Z/Ctrl-Y placement undo instead of rebuilding the scene, redraws only the selected imported STEP overlay for hidden-ray rotation-handle changes, lists every visible scene component in the right browser including grouped table elements, groups smooth hover regions so curved lenses do not select individual tessellation facets, treats round achromat-like STEP surfaces as grouped optical faces with axis-normal snapping instead of raw triangle facets, bypasses tiny-facet metadata picks for round lens bodies, keeps active carry-mode STEP face hover available without restoring whole-scene CAD hover, suppresses round-lens tessellation patch-boundary edge overlays for imported overlays and row-backed/transient live-trace solids, rejects empty gmsh STL conversions so achromat imports cannot silently become mesh debris, and warns when a lens STEP has sidecar prescription files because STEP CAD alone does not encode designed glass prescription/focus. Remaining work is background import if larger vendor assemblies still stall on first load. |
 | Final UI theming polish | Deferred outside this gate | `0% [..........]` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after upstream review, CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
 
 The CadQuery/OCP topology study milestone is now complete for this branch
@@ -239,8 +239,10 @@ Notes:
 - The `ui` extra installs UI/runtime dependencies and the optional optimizer
   backend dependency `pygmo`. The custom ttk visual theme is deferred to the
   final polish milestone and is not part of the current `ui` extra.
-- If the Optimization panel reports that the backend is unavailable, confirm the
-  active environment with `python -m KrakenOS.UI.validate_optimization_backend`.
+- `Start Optimization` performs the optimizer backend preflight automatically.
+  While running the same button changes to `Stop Optimization`; if the backend
+  is unavailable, confirm the active environment with
+  `python -m KrakenOS.UI.validate_optimization_backend`.
 - STEP/IGES CAD import benefits from an OpenCascade/pythonocc-style backend.
   STL import and cached STL workflows remain available without STEP/IGES
   support.
@@ -278,7 +280,7 @@ Test-plan tiers:
 | --- | --- | --- |
 | Fast contracts | Fixture-light, no-display checks for normal code changes. | `python -m KrakenOS.UI.validate_fast_contracts` |
 | Upstream-compatible pytest | Public API, package data, invalid traces, and build-zero contracts from upstream main adapted to the branch. | `python -m pytest tests/test_public_api.py tests/test_smoke.py tests/test_invalid_trace_results.py tests/test_build_modes.py` |
-| Focused contracts | Single-risk checks during development or review. | `python -m KrakenOS.UI.validate_fast_contracts --only ui-modular-maintainability` or `python -m KrakenOS.UI.validate_fast_contracts --only open3d-lens-step-face-pick` |
+| Focused contracts | Single-risk checks during development or review. | `python -m KrakenOS.UI.validate_fast_contracts --only ui-modular-maintainability`, `python -m KrakenOS.UI.validate_fast_contracts --only optimization-controls`, `python -m KrakenOS.UI.validate_fast_contracts --only open3d-lens-step-face-pick`, or `python -m KrakenOS.UI.validate_fast_contracts --only five-penta-with-lens-layout` |
 | Display-backed smoke | Open 3D, VTK, screenshots, STEP face picking, and visual regressions. | `python -m KrakenOS.UI.validate_step_carry_open3d_smoke` |
 | Open 3D responsiveness replay | Timed replay of Machine Vision 150 mm + imported optical STEP import/select/deselect. | `python -m KrakenOS.UI.diagnose_open3d_action_timing --output /tmp/kraken_open3d_action_timing_report.json` |
 | CAD/prism physics | Real STEP/STL geometry, prism cascades, face roles, and ray-event audits. | `python -m KrakenOS.UI.validate_five_penta_prism_cascade` |

@@ -286,6 +286,14 @@ class Open3DSceneRefreshService:
                 file_backed_silhouette_color = self._solid_silhouette_edge_color()
             if show_launch_reference_surface and not show_reference_surfaces and row_surface == "Object":
                 mesh_opacity = min(mesh_opacity, 0.18)
+            row_round_lens_like = False
+            if row_index in file_backed_rows:
+                try:
+                    row_round_lens_like = bool(self._mesh_round_lens_axis(mesh) is not None)
+                except Exception:
+                    row_round_lens_like = False
+            row_edge_feature_angle = 75 if row_round_lens_like else 24
+            row_edge_boundary_edges = not row_round_lens_like
             if ray_visibility_requested and row_index >= 0:
                 if row_surface in {"Object", "Image"}:
                     mesh_opacity = min(mesh_opacity, 0.22)
@@ -315,7 +323,11 @@ class Open3DSceneRefreshService:
             if not mesh_item.is_body:
                 if row_index in file_backed_rows:
                     try:
-                        edges = self._display_feature_edges(mesh, feature_angle=24)
+                        edges = self._display_feature_edges(
+                            mesh,
+                            feature_angle=row_edge_feature_angle,
+                            boundary_edges=row_edge_boundary_edges,
+                        )
                         if edges is not None and int(getattr(edges, "n_points", 0)) > 0:
                             self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0, track_row_index=row_index, follow_step_label=transient_step_label)
                             self._add_mesh_actor(edges, color=file_backed_edge_color, opacity=1.0, line_width=3.2, track_row_index=row_index, follow_step_label=transient_step_label)
@@ -361,7 +373,11 @@ class Open3DSceneRefreshService:
                     pass
             elif row_index in file_backed_rows:
                 try:
-                    edges = self._display_feature_edges(mesh, feature_angle=24)
+                    edges = self._display_feature_edges(
+                        mesh,
+                        feature_angle=row_edge_feature_angle,
+                        boundary_edges=row_edge_boundary_edges,
+                    )
                     if int(getattr(edges, "n_points", 0)) > 0:
                         if ray_visibility_requested:
                             ray_surface_edge_overlays.append((edges, file_backed_silhouette_color, 5.8, row_index))
