@@ -2551,7 +2551,8 @@ class Kraken3DInspector(tk.Toplevel):
         self._update_mode_badge()
         if transition.moved:
             try:
-                self.refresh_from_editor(force_retrace=True)
+                physics_requested = self.editor._open3d_trace_refresh_service().inspector_physics_requested(self)
+                self.refresh_from_editor(force_retrace=physics_requested)
             except Exception as exc:
                 self.editor.append_debug(f"STEP carry final refresh failed: {exc}")
             if transition.live_refresh_message:
@@ -7886,7 +7887,20 @@ class Kraken3DInspector(tk.Toplevel):
             for index in range(ids.GetNumberOfIds()):
                 point_to_cells.setdefault(int(ids.GetId(index)), []).append(candidate_id)
         if cell_id not in coplanar_cells:
-            return seed_center, Kraken3DInspector._outline_for_cells(data, {cell_id}), normal.copy()
+            smooth_component = Kraken3DInspector._smooth_component_for_cell(data, cell_id)
+            if smooth_component:
+                try:
+                    point_ids: set[int] = set()
+                    for candidate_id in smooth_component:
+                        ids = data.GetCell(candidate_id).GetPointIds()
+                        for index in range(ids.GetNumberOfIds()):
+                            point_ids.add(int(ids.GetId(index)))
+                    points = np.asarray([data.GetPoint(point_id) for point_id in point_ids], dtype=float)
+                    center = 0.5 * (np.min(points, axis=0) + np.max(points, axis=0))
+                    return center, Kraken3DInspector._outline_for_cells(data, smooth_component, feature_edges=False), normal.copy()
+                except Exception:
+                    pass
+            return seed_center, Kraken3DInspector._outline_for_cells(data, {cell_id}, feature_edges=False), normal.copy()
         component: set[int] = set()
         queue = [cell_id]
         while queue:
@@ -7910,11 +7924,23 @@ class Kraken3DInspector(tk.Toplevel):
                     point_ids.add(int(ids.GetId(index)))
             except Exception:
                 continue
+        if len(component) <= 2:
+            smooth_component = Kraken3DInspector._smooth_component_for_cell(data, cell_id)
+            if len(smooth_component) > len(component):
+                component = smooth_component
+                point_ids = set()
+                for candidate_id in component:
+                    try:
+                        ids = data.GetCell(candidate_id).GetPointIds()
+                        for index in range(ids.GetNumberOfIds()):
+                            point_ids.add(int(ids.GetId(index)))
+                    except Exception:
+                        continue
         if not point_ids:
-            return seed_center, Kraken3DInspector._outline_for_cells(data, component), normal.copy()
+            return seed_center, Kraken3DInspector._outline_for_cells(data, component, feature_edges=False), normal.copy()
         points = np.asarray([data.GetPoint(point_id) for point_id in point_ids], dtype=float)
         center = 0.5 * (np.min(points, axis=0) + np.max(points, axis=0))
-        return center, Kraken3DInspector._outline_for_cells(data, component), normal.copy()
+        return center, Kraken3DInspector._outline_for_cells(data, component, feature_edges=False), normal.copy()
 
     def _picked_feature_info_cached(
         self,
@@ -7968,7 +7994,7 @@ class Kraken3DInspector(tk.Toplevel):
         return True
 
     @staticmethod
-    def _outline_for_cells(data, cell_ids: set[int]):
+    def _outline_for_cells(data, cell_ids: set[int], *, feature_edges: bool = True):
         if pv is None or data is None or not cell_ids:
             return None
         try:
@@ -7977,7 +8003,7 @@ class Kraken3DInspector(tk.Toplevel):
             outline = surface.extract_feature_edges(
                 feature_angle=12,
                 boundary_edges=True,
-                feature_edges=True,
+                feature_edges=bool(feature_edges),
                 manifold_edges=False,
             )
             if int(getattr(outline, "n_points", 0)) <= 0:
@@ -7987,6 +8013,67 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             return None
         return None
+
+    @staticmethod
+    def _smooth_component_for_cell(data, seed_cell_id: int, *, max_neighbor_angle_deg: float = 35.0) -> set[int]:
+        if data is None:
+            return set()
+        try:
+            seed_cell_id = int(seed_cell_id)
+            cell_count = int(data.GetNumberOfCells())
+        except Exception:
+            return set()
+        if seed_cell_id < 0 or seed_cell_id >= cell_count:
+            return set()
+        cell_normals: dict[int, np.ndarray] = {}
+        cell_point_ids: dict[int, tuple[int, ...]] = {}
+        point_to_cells: dict[int, list[int]] = {}
+        for candidate_id in range(cell_count):
+            try:
+                cell = data.GetCell(candidate_id)
+                ids = cell.GetPointIds()
+                point_ids = tuple(int(ids.GetId(index)) for index in range(ids.GetNumberOfIds()))
+                pts = np.asarray([data.GetPoint(point_id) for point_id in point_ids], dtype=float)
+            except Exception:
+                continue
+            if pts.ndim != 2 or pts.shape[0] < 3:
+                continue
+            normal = np.cross(pts[1] - pts[0], pts[2] - pts[0])
+            norm = float(np.linalg.norm(normal))
+            if not np.isfinite(norm) or norm <= 1e-12:
+                continue
+            normal = np.asarray(normal / norm, dtype=float)
+            cell_normals[candidate_id] = normal
+            cell_point_ids[candidate_id] = point_ids
+            for point_id in point_ids:
+                point_to_cells.setdefault(int(point_id), []).append(candidate_id)
+        seed_normal = cell_normals.get(seed_cell_id)
+        if seed_normal is None:
+            return set()
+        neighbor_cos = float(np.cos(np.deg2rad(max(float(max_neighbor_angle_deg), 1.0))))
+        seed_cos = float(np.cos(np.deg2rad(72.0)))
+        component: set[int] = set()
+        queue = [seed_cell_id]
+        while queue:
+            candidate_id = queue.pop()
+            if candidate_id in component:
+                continue
+            candidate_normal = cell_normals.get(candidate_id)
+            if candidate_normal is None:
+                continue
+            if abs(float(np.dot(candidate_normal, seed_normal))) < seed_cos:
+                continue
+            component.add(candidate_id)
+            for point_id in cell_point_ids.get(candidate_id, ()):
+                for neighbor_id in point_to_cells.get(int(point_id), []):
+                    if neighbor_id in component:
+                        continue
+                    neighbor_normal = cell_normals.get(neighbor_id)
+                    if neighbor_normal is None:
+                        continue
+                    if abs(float(np.dot(neighbor_normal, candidate_normal))) >= neighbor_cos:
+                        queue.append(neighbor_id)
+        return component
 
     @staticmethod
     def _planar_outline_from_points(points, normal_world=None):
@@ -8252,6 +8339,35 @@ class Kraken3DInspector(tk.Toplevel):
             all_points=triangles.reshape((-1, 3)) if triangles.ndim == 3 else None,
             prefer_internal=True,
         )
+
+    def _step_face_ray_pick_is_tessellation_patch(self, label: str, pick: FaceRayPick | None) -> bool:
+        if pick is None:
+            return False
+        try:
+            metadata = self.editor._step_overlay_face_metadata(str(label).strip().lower())
+            face_count = len([face for face in list(metadata.get("faces", []) or []) if isinstance(face, dict)])
+        except Exception:
+            face_count = 0
+        if face_count < 40:
+            return False
+        try:
+            triangle_count = len(tuple(pick.face.get("triangle_indices", pick.face.get("cell_indices", ())) or ()))
+        except Exception:
+            triangle_count = 0
+        return triangle_count <= 4
+
+    def _coarse_step_face_ray_pick_for_display_xy(self, label: str, display_xy) -> FaceRayPick | None:
+        """Return a face pick unless STEP->STL degraded it to a tiny facet.
+
+        Optical lenses often arrive as curved BREP faces but are displayed from
+        an STL tessellation. The planar metadata then contains many tiny facets.
+        Axis-alignment selection should fall back to a smooth connected display
+        region for those cases instead of highlighting one little triangle.
+        """
+        pick = self._step_face_ray_pick_for_display_xy(label, display_xy)
+        if self._step_face_ray_pick_is_tessellation_patch(label, pick):
+            return None
+        return pick
 
     def _row_face_ray_pick_for_display_xy(self, row_index: int, display_xy) -> FaceRayPick | None:
         ray = self._display_pick_ray(display_xy)

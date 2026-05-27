@@ -49,12 +49,13 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             and "show_rays_var" in open3d_refresh_service
             and "live_mode_var" in open3d_refresh_service
             and "force_retrace" in open3d_refresh_service
+            and "if bool(force_retrace):" not in open3d_refresh_service
             and "include_live_step_overlays = self.inspector_should_trace_step_overlays(" in open3d_refresh_service
             and "requires_open3d_retrace = include_live_step_overlays or self.has_promoted_step_optical_solid_rows()"
             in open3d_refresh_service
             and "if not requires_open3d_retrace and not force_retrace" in open3d_refresh_service
             and "include_live_step_overlays=include_live_step_overlays" in open3d_refresh_service,
-            "Hidden-ray placement remains a CAD display workflow; Live Mode, Trace Now, visible rays, or force-retrace still opt into physics.",
+            "Hidden-ray placement remains a CAD display workflow; Live Mode, Trace Now, or visible rays opt into physics.",
         ),
         Open3DLiveTransientStepCheck(
             "Transient optical STEP rows use the promoted-solid contract",

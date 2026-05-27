@@ -67,18 +67,9 @@ class Open3DTraceRefreshService:
         except Exception:
             return False
 
-    def inspector_should_trace_step_overlays(self, inspector: Any, *, force_retrace: bool = False) -> bool:
-        """Return True when imported STEP overlays must participate in tracing.
-
-        Imported optical STEP geometry should remain cheap CAD display hardware
-        while the user is only placing/selecting it with rays hidden. Physics
-        tracing is still forced by Live Mode, Trace Now, explicit force-retrace,
-        or visible rays.
-        """
-        if not self.has_traceable_step_overlays():
-            return False
-        if bool(force_retrace):
-            return True
+    @staticmethod
+    def inspector_physics_requested(inspector: Any) -> bool:
+        """Return True when the inspector is asking for live/visible physics."""
         for attr_name in ("live_mode_var", "show_rays_var"):
             var = getattr(inspector, attr_name, None)
             try:
@@ -87,6 +78,19 @@ class Open3DTraceRefreshService:
             except Exception:
                 pass
         return False
+
+    def inspector_should_trace_step_overlays(self, inspector: Any, *, force_retrace: bool = False) -> bool:
+        """Return True when imported STEP overlays must participate in tracing.
+
+        Imported optical STEP geometry should remain cheap CAD display hardware
+        while the user is only placing/selecting it with rays hidden. Physics
+        tracing is still forced by Live Mode, Trace Now, or visible rays.
+        ``force_retrace`` rebuilds the active preview, but it must not turn a
+        hidden-ray CAD placement/drop action into a transient optical trace.
+        """
+        if not self.has_traceable_step_overlays():
+            return False
+        return self.inspector_physics_requested(inspector)
 
     def has_promoted_step_optical_solid_rows(self) -> bool:
         """Return True when saved row-backed STEP solids need an Open 3D trace."""

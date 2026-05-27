@@ -62,13 +62,31 @@ def main() -> int:
             "Machine Vision 150Mm Measured" in diagnostic_source
             and "Aspherized_Achromatic_Lenses" in diagnostic_source
             and "show_rays_var.set(False)" in diagnostic_source
+            and "_finish_step_carry_drag(drop_state)" in diagnostic_source
             and "_clear_open3d_selection(render=True)" in diagnostic_source,
         ),
         (
             "hidden-ray imported STEP placement defers transient physics trace",
             "def inspector_should_trace_step_overlays" in trace_refresh_source
+            and "def inspector_physics_requested" in trace_refresh_source
             and "show_rays_var" in trace_refresh_source
+            and "live_mode_var" in trace_refresh_source
+            and "if bool(force_retrace):" not in trace_refresh_source
             and "include_live_step_overlays = self.inspector_should_trace_step_overlays(" in trace_refresh_source,
+        ),
+        (
+            "hidden-ray STEP drop does not force physics retrace",
+            "physics_requested = self.editor._open3d_trace_refresh_service().inspector_physics_requested(self)"
+            in inspector_source
+            and "self.refresh_from_editor(force_retrace=physics_requested)" in inspector_source,
+        ),
+        (
+            "STEP hover selection groups smooth CAD regions instead of raw mesh facets",
+            "def _smooth_component_for_cell" in inspector_source
+            and "def _coarse_step_face_ray_pick_for_display_xy" in inspector_source
+            and "_coarse_step_face_ray_pick_for_display_xy" in interaction_source
+            and "feature_edges=False" in inspector_source
+            and "_outline_for_cells(data, smooth_component" in inspector_source,
         ),
     ]
     failures = [name for name, ok in checks if not ok]

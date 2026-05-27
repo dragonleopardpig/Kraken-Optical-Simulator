@@ -72,7 +72,7 @@ deferred.
 | --- | --- | --- | --- |
 | Upstream main integration gate | Complete | `100% [##########]` | Direct merge was audited and intentionally avoided because it would delete branch UI/CAD tooling. The safe replay now includes upstream-compatible public API aliases, deterministic catalog ordering, `extract_ray_result`, pytest smoke/API/invalid-trace/build-mode contracts, and ignore/attribute hygiene while preserving branch packaging extras. |
 | External merge readiness | Complete | `100% [##########]` | Branch README, validation commands, upstream-derived pytest checks, and fast UI/non-sequential validators are aligned as merge-review evidence. Continue using the checklist below for every future change. |
-| Open 3D CAD responsiveness hardening | In progress | `92% [#########.]` | The Aspherized Achromatic Lens STEP fixture is small and converts quickly, so the long import/deselect stall is an Open 3D refresh architecture issue. The branch now records structured Open 3D action timings, replays the Machine Vision 150 mm + imported optical STEP workflow, removes import double-refresh, preserves CAD caches, batches selection renders, and keeps transient STEP imports display-only while rays are hidden. Remaining work is incremental actor updates or background import if larger vendor assemblies still stall. |
+| Open 3D CAD responsiveness hardening | In progress | `94% [#########.]` | The Aspherized Achromatic Lens STEP fixture is small and converts quickly, so the long import/deselect stall is an Open 3D refresh architecture issue. The branch now records structured Open 3D action timings, replays the Machine Vision 150 mm + imported optical STEP workflow, removes import double-refresh, preserves CAD caches, batches selection renders, keeps transient STEP imports and STEP drops display-only while rays are hidden, and groups smooth hover regions so curved lenses do not select individual tessellation facets. Remaining work is incremental actor updates or background import if larger vendor assemblies still stall. |
 | Final UI theming polish | Deferred outside this gate | `0% [..........]` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after upstream review, CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
 
 The CadQuery/OCP topology study milestone is now complete for this branch
@@ -83,9 +83,9 @@ outline artifacts across ordinary Open 3D refreshes, ordinary Open 3D passive
 hover uses a rotation-handle actor pick list instead of dense CAD body picking,
 right-click CAD face assignment defers feature scans until an explicit user
 action, Open 3D-originated STEP imports refresh the 3D scene once instead of
-through both the editor and inspector, hidden-ray transient STEP placement does
-not trigger a physics trace until the user enables rays, Live Mode, Trace Now,
-or force-retrace, and
+through both the editor and inspector, hidden-ray transient STEP placement/drop
+does not trigger a physics trace until the user enables rays, Live Mode, or
+Trace Now, and
 `python -m KrakenOS.UI.diagnose_open3d_hover_latency` reports the cache and
 passive-hover contract for large vendor STEP-derived STL files.
 

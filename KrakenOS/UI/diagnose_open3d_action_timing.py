@@ -3,8 +3,8 @@
 This diagnostic is intended for Xvfb or a real display. It follows the same
 high-level path a user reported: load the Machine Vision 150 mm layout, open
 Open 3D, hide rays/thickness overlays, add an optical STEP component, select it,
-then deselect it. Structured timings are written to the Open 3D timing JSONL log
-and summarized at the end.
+simulate a small hidden-ray STEP drop, then deselect it. Structured timings are
+written to the Open 3D timing JSONL log and summarized at the end.
 """
 
 from __future__ import annotations
@@ -103,6 +103,12 @@ def run_replay(layout_name: str, step_path: Path) -> dict[str, object]:
         inspector.refresh_from_editor()
         inspector.show_step_rotation_handler("optical")
         _drain_tk(inspector, seconds=0.2)
+        drop_state = inspector._new_step_carry_motion_state("optical")
+        if drop_state is not None:
+            drop_state["applied_steps"] = 1
+            app.optical_step_placement_offset_xyz = (1.0, 0.0, 0.0)
+            inspector._finish_step_carry_drag(drop_state)
+            _drain_tk(inspector, seconds=0.2)
         inspector._clear_open3d_selection(render=True)
         _drain_tk(inspector, seconds=0.2)
 

@@ -529,7 +529,7 @@ class Open3DSceneRefreshService:
                     flat_shading=True,
                 )
                 try:
-                    cad_edges = self._display_feature_edges(cad_mesh, feature_angle=24)
+                    cad_edges = self._display_feature_edges(cad_mesh, feature_angle=55)
                     if int(getattr(cad_edges, "n_points", 0)) > 0:
                         edge_color = _OPTICAL_STEP_EDGE_COLOR if label == "optical" else self._solid_edge_color_from_body(color)
                         silhouette_color = _OPTICAL_STEP_SILHOUETTE_COLOR if label == "optical" else self._solid_silhouette_edge_color()

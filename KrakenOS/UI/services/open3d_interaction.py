@@ -205,7 +205,7 @@ class Open3DInteractionService:
                 except Exception:
                     cell_id = -1
                 step_label = str(step_label)
-                through_pick = self._step_face_ray_pick_for_display_xy(step_label, (x, y))
+                through_pick = self._coarse_step_face_ray_pick_for_display_xy(step_label, (x, y))
                 if through_pick is not None:
                     feature = self._feature_from_face_ray_pick(
                         through_pick,
@@ -330,7 +330,7 @@ class Open3DInteractionService:
                 return
             requested_label = self.editor._cad_axis_pick_label
             if requested_label is None and not axis_pick_any:
-                through_pick = self._step_face_ray_pick_for_display_xy(str(step_label), (x, y))
+                through_pick = self._coarse_step_face_ray_pick_for_display_xy(str(step_label), (x, y))
                 if through_pick is not None:
                     feature = self._feature_from_face_ray_pick(
                         through_pick,
@@ -357,7 +357,7 @@ class Open3DInteractionService:
             if requested_label is not None and requested_label != step_label:
                 self.status_var.set(f"CAD STEP picked: {step_label}. Center mode is armed for {str(requested_label).upper()}.")
                 return
-            through_pick = self._step_face_ray_pick_for_display_xy(str(step_label), (x, y))
+            through_pick = self._coarse_step_face_ray_pick_for_display_xy(str(step_label), (x, y))
             if through_pick is not None:
                 feature = self._feature_from_face_ray_pick(
                     through_pick,
@@ -895,7 +895,7 @@ class Open3DInteractionService:
                 cell_id = int(self._picker.GetCellId())
             except Exception:
                 cell_id = -1
-            through_pick = self._step_face_ray_pick_for_display_xy(str(step_label), (x, y))
+            through_pick = self._coarse_step_face_ray_pick_for_display_xy(str(step_label), (x, y))
             outline = None
             if through_pick is not None:
                 face = through_pick.face
