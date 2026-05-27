@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 
 
@@ -15,6 +17,100 @@ MISSING_FACE_METHOD_WARNING = "Optical solid mesh hit has no face-match provenan
 
 class MeshRayTraceError(RuntimeError):
     """Raised when a scene mesh cannot satisfy KrakenOS ray-intersection needs."""
+
+
+_MESH_TRACE_STATS = {"active": False}
+_RAYTRACE_COMPATIBLE_MESH_IDS = set()
+
+
+def reset_mesh_trace_stats(*, active=True):
+    """Start or stop lightweight mesh ray-trace counters for one trace window."""
+    _MESH_TRACE_STATS.clear()
+    _MESH_TRACE_STATS.update(
+        {
+            "active": bool(active),
+            "call_count": 0,
+            "total_ms": 0.0,
+            "hit_count": 0,
+            "error_count": 0,
+            "contexts": {},
+        }
+    )
+
+
+def mesh_trace_stats_snapshot(*, reset=False, top_n=12):
+    """Return a JSON-safe summary of the active mesh ray-trace counters."""
+    contexts = _MESH_TRACE_STATS.get("contexts", {}) if isinstance(_MESH_TRACE_STATS, dict) else {}
+    top_contexts = []
+    if isinstance(contexts, dict):
+        rows = sorted(
+            contexts.items(),
+            key=lambda item: float(item[1].get("total_ms", 0.0)) if isinstance(item[1], dict) else 0.0,
+            reverse=True,
+        )
+        for context, data in rows[: max(0, int(top_n))]:
+            if not isinstance(data, dict):
+                continue
+            top_contexts.append(
+                {
+                    "context": str(context),
+                    "call_count": int(data.get("call_count", 0) or 0),
+                    "total_ms": round(float(data.get("total_ms", 0.0) or 0.0), 3),
+                    "hit_count": int(data.get("hit_count", 0) or 0),
+                    "error_count": int(data.get("error_count", 0) or 0),
+                    "max_cells": int(data.get("max_cells", 0) or 0),
+                }
+            )
+    summary = {
+        "mesh_ray_call_count": int(_MESH_TRACE_STATS.get("call_count", 0) or 0),
+        "mesh_ray_total_ms": round(float(_MESH_TRACE_STATS.get("total_ms", 0.0) or 0.0), 3),
+        "mesh_ray_hit_count": int(_MESH_TRACE_STATS.get("hit_count", 0) or 0),
+        "mesh_ray_error_count": int(_MESH_TRACE_STATS.get("error_count", 0) or 0),
+        "mesh_ray_contexts": top_contexts,
+    }
+    if reset:
+        reset_mesh_trace_stats(active=False)
+    return summary
+
+
+def _record_mesh_trace_stat(context, duration_ms, hit_count=0, cell_count=0, error=False):
+    if not bool(_MESH_TRACE_STATS.get("active", False)):
+        return
+    context_key = str(context or "mesh")
+    try:
+        duration = float(duration_ms)
+    except Exception:
+        duration = 0.0
+    try:
+        hits = int(hit_count)
+    except Exception:
+        hits = 0
+    try:
+        cells = int(cell_count)
+    except Exception:
+        cells = 0
+    _MESH_TRACE_STATS["call_count"] = int(_MESH_TRACE_STATS.get("call_count", 0) or 0) + 1
+    _MESH_TRACE_STATS["total_ms"] = float(_MESH_TRACE_STATS.get("total_ms", 0.0) or 0.0) + duration
+    _MESH_TRACE_STATS["hit_count"] = int(_MESH_TRACE_STATS.get("hit_count", 0) or 0) + max(hits, 0)
+    if error:
+        _MESH_TRACE_STATS["error_count"] = int(_MESH_TRACE_STATS.get("error_count", 0) or 0) + 1
+    contexts = _MESH_TRACE_STATS.setdefault("contexts", {})
+    row = contexts.setdefault(
+        context_key,
+        {
+            "call_count": 0,
+            "total_ms": 0.0,
+            "hit_count": 0,
+            "error_count": 0,
+            "max_cells": 0,
+        },
+    )
+    row["call_count"] = int(row.get("call_count", 0) or 0) + 1
+    row["total_ms"] = float(row.get("total_ms", 0.0) or 0.0) + duration
+    row["hit_count"] = int(row.get("hit_count", 0) or 0) + max(hits, 0)
+    row["max_cells"] = max(int(row.get("max_cells", 0) or 0), max(cells, 0))
+    if error:
+        row["error_count"] = int(row.get("error_count", 0) or 0) + 1
 
 
 def _mesh_type_name(mesh):
@@ -298,6 +394,12 @@ def raytrace_compatible_mesh(mesh, context="mesh"):
     if mesh is None:
         raise MeshRayTraceError(f"{context}: missing mesh; cannot trace intersections.")
 
+    try:
+        if id(mesh) in _RAYTRACE_COMPATIBLE_MESH_IDS and hasattr(mesh, "ray_trace"):
+            return mesh
+    except Exception:
+        pass
+
     candidate = _ensure_original_cell_ids(mesh)
     converted = False
     if not hasattr(candidate, "ray_trace"):
@@ -324,14 +426,41 @@ def raytrace_compatible_mesh(mesh, context="mesh"):
             f"{context}: {_mesh_type_name(mesh)} could not be converted to ray-traceable PolyData."
         )
 
-    return _with_cell_normals(candidate)
+    candidate = _with_cell_normals(candidate)
+    try:
+        _RAYTRACE_COMPATIBLE_MESH_IDS.add(id(candidate))
+    except Exception:
+        pass
+    return candidate
 
 
 def trace_mesh_ray(mesh, start, stop, context="mesh"):
+    stats_active = bool(_MESH_TRACE_STATS.get("active", False))
+    started = time.perf_counter() if stats_active else 0.0
     tracer = raytrace_compatible_mesh(mesh, context=context)
     try:
-        return tracer, tracer.ray_trace(start, stop)
+        result = tracer.ray_trace(start, stop)
+        if stats_active:
+            try:
+                hit_count = len(result[1])
+            except Exception:
+                hit_count = 0
+            _record_mesh_trace_stat(
+                context,
+                (time.perf_counter() - started) * 1000.0,
+                hit_count=hit_count,
+                cell_count=getattr(tracer, "n_cells", 0),
+            )
+        return tracer, result
     except Exception as exc:
+        if stats_active:
+            _record_mesh_trace_stat(
+                context,
+                (time.perf_counter() - started) * 1000.0,
+                hit_count=0,
+                cell_count=getattr(tracer, "n_cells", 0),
+                error=True,
+            )
         raise MeshRayTraceError(
             f"{context}: ray_trace failed on {_mesh_type_name(tracer)}: {exc}"
         ) from exc

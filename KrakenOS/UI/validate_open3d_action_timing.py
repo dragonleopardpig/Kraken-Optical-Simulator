@@ -5,6 +5,9 @@ from __future__ import annotations
 import inspect
 
 from KrakenOS.UI import diagnose_open3d_action_timing
+from KrakenOS import MeshRayTrace
+from KrakenOS import TraceLoopTool
+import KrakenOS as Kos
 from KrakenOS.UI.open3d_inspector import Kraken3DInspector
 from KrakenOS.UI.services import layout_polyline_display, layout_table_workbench, open3d_interaction, open3d_scene_refresh
 from KrakenOS.UI.services import open3d_step_overlay_refresh
@@ -24,6 +27,9 @@ def main() -> int:
     trace_refresh_source = inspect.getsource(open3d_trace_refresh.Open3DTraceRefreshService)
     three_d_scene_source = inspect.getsource(three_d_scene_tools.ThreeDSceneToolsMixin._build_preview_system_rays_bundle)
     trace_preview_source = inspect.getsource(trace_preview.TracePreviewService._trace_preview_bundles)
+    mesh_ray_trace_source = inspect.getsource(MeshRayTrace)
+    system_source = inspect.getsource(Kos.system)
+    trace_loop_source = inspect.getsource(TraceLoopTool.NsTraceLoop)
     trace_sampling_source = inspect.getsource(trace_preview_sampling.TracePreviewSamplingMixin._trace_selected_through_envelope)
     polyline_source = inspect.getsource(layout_polyline_display.LayoutPolylineDisplayMixin._load_step_mesh)
     workbench_source = inspect.getsource(layout_table_workbench.LayoutTableWorkbenchMixin)
@@ -81,6 +87,23 @@ def main() -> int:
             and "trace_preview_bundle_done" in trace_preview_source
             and "trace_preview_bundles_done" in trace_preview_source
             and "trace_preview_parallel_chunk_done" in trace_preview_source,
+        ),
+        (
+            "non-sequential mesh ray intersection timing is summarized per trace bundle",
+            "reset_mesh_trace_stats(active=True)" in trace_preview_source
+            and "trace_preview_mesh_ray_stats" in trace_preview_source
+            and "mesh_trace_stats_snapshot(reset=True)" in trace_preview_source
+            and "def mesh_trace_stats_snapshot" in mesh_ray_trace_source
+            and "mesh_ray_contexts" in mesh_ray_trace_source,
+        ),
+        (
+            "non-sequential loop timing separates system tracing from raykeeper push",
+            "EnableNsTraceTiming(True)" in trace_preview_source
+            and "trace_preview_ns_loop_stats" in trace_preview_source
+            and "NsTraceTimingSnapshot(reset=True)" in trace_preview_source
+            and "def NsTraceTimingRecord" in system_source
+            and "system.NsTrace" in trace_loop_source
+            and "raykeeper.push" in trace_loop_source,
         ),
         (
             "world envelope keeps the first successful trace instead of retracing it",

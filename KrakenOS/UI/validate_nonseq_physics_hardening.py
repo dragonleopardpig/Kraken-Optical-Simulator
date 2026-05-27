@@ -8,6 +8,7 @@ import inspect
 import numpy as np
 
 import KrakenOS as Kos
+from KrakenOS import MeshRayTrace
 from KrakenOS.PhysicsClass import snell_refraction_vector_physics
 
 
@@ -149,6 +150,15 @@ def validate_nonseq_physics_hardening() -> list[NonSeqPhysicsHardeningCheck]:
             and "cached = self.__PopTraceMeshRayCache" in inter_normal_source
             and "set_trace_mesh_ray_cache(" in system_source,
             "The selected mesh is not ray-traced again immediately after the chooser already found its intersections.",
+        )
+    )
+    checks.append(
+        NonSeqPhysicsHardeningCheck(
+            "raytrace-compatible meshes skip repeated normal extraction checks",
+            "_RAYTRACE_COMPATIBLE_MESH_IDS" in inspect.getsource(MeshRayTrace)
+            and "id(mesh) in _RAYTRACE_COMPATIBLE_MESH_IDS" in inspect.getsource(MeshRayTrace)
+            and "_RAYTRACE_COMPATIBLE_MESH_IDS.add(id(candidate))" in inspect.getsource(MeshRayTrace),
+            "Prepared PyVista meshes keep the fast path for repeated non-sequential chooser intersections.",
         )
     )
     return checks

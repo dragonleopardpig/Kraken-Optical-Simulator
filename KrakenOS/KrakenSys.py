@@ -311,6 +311,8 @@ class system():
         self.SETUP = KN_Setup
 
         self.BUILD = build
+        self._ns_trace_timing_active = False
+        self._ns_trace_timing = {}
         self.build()
 
 
@@ -397,6 +399,76 @@ class system():
             self._scene_boundary_faces_by_surface = {}
         if not hasattr(self, "_scene_optical_volumes_by_surface"):
             self._scene_optical_volumes_by_surface = {}
+
+    def EnableNsTraceTiming(self, enabled=True):
+        """Enable lightweight non-sequential loop timing until snapshot/reset."""
+        self._ns_trace_timing_active = bool(enabled)
+        self._ns_trace_timing = {}
+
+    def NsTraceTimingStart(self):
+        if not bool(getattr(self, "_ns_trace_timing_active", False)):
+            return None
+        return timeit.default_timer()
+
+    def NsTraceTimingRecord(self, section, started):
+        if started is None or not bool(getattr(self, "_ns_trace_timing_active", False)):
+            return None
+        try:
+            duration_ms = (timeit.default_timer() - float(started)) * 1000.0
+        except Exception:
+            return None
+        key = str(section or "unknown")
+        timings = getattr(self, "_ns_trace_timing", None)
+        if not isinstance(timings, dict):
+            timings = {}
+            self._ns_trace_timing = timings
+        row = timings.setdefault(
+            key,
+            {
+                "call_count": 0,
+                "total_ms": 0.0,
+                "max_ms": 0.0,
+            },
+        )
+        row["call_count"] = int(row.get("call_count", 0) or 0) + 1
+        row["total_ms"] = float(row.get("total_ms", 0.0) or 0.0) + float(duration_ms)
+        row["max_ms"] = max(float(row.get("max_ms", 0.0) or 0.0), float(duration_ms))
+        return None
+
+    def NsTraceTimingSnapshot(self, reset=False, top_n=16):
+        timings = getattr(self, "_ns_trace_timing", {})
+        sections = []
+        if isinstance(timings, dict):
+            rows = sorted(
+                timings.items(),
+                key=lambda item: float(item[1].get("total_ms", 0.0)) if isinstance(item[1], dict) else 0.0,
+                reverse=True,
+            )
+            for section, row in rows[: max(0, int(top_n))]:
+                if not isinstance(row, dict):
+                    continue
+                sections.append(
+                    {
+                        "section": str(section),
+                        "call_count": int(row.get("call_count", 0) or 0),
+                        "total_ms": round(float(row.get("total_ms", 0.0) or 0.0), 3),
+                        "max_ms": round(float(row.get("max_ms", 0.0) or 0.0), 3),
+                    }
+                )
+        outer_total = 0.0
+        for row in sections:
+            if row.get("section") in {"system.NsTrace", "raykeeper.push"}:
+                outer_total += float(row.get("total_ms", 0.0) or 0.0)
+        if outer_total <= 0.0:
+            outer_total = sum(float(row.get("total_ms", 0.0) or 0.0) for row in sections)
+        summary = {
+            "ns_loop_section_count": len(sections),
+            "ns_loop_total_ms": round(float(outer_total), 3),
+            "ns_loop_sections": sections,
+        }
+        if reset:
+            self.EnableNsTraceTiming(False)
+        return summary
 
 
     def __SurFuncSuscrip(self):
@@ -4492,11 +4564,15 @@ class system():
         while True:
             if (j == self.Targ_Surf):
                 break
+            timing_started = self.NsTraceTimingStart()
             (a, b, c, PreSurfHit) = self.__NonSequentialChooser(SIGN, RayOrig, ResVec, j, skip_surface_once)
+            self.NsTraceTimingRecord("NsTrace.chooser", timing_started)
             skip_surface_once = None
 
             if (PreSurfHit == 0):
+                timing_started = self.NsTraceTimingStart()
                 self.__AppendNsTerminalSegment(RayOrig, ResVec, SIGN)
+                self.NsTraceTimingRecord("NsTrace.terminal_segment", timing_started)
                 break
             if (a < b):
                 j_gg = b
@@ -4518,10 +4594,14 @@ class system():
                 break
             if (self.Glass[j] != 'NULL'):
                 Proto_pTarget = (np.asarray(RayOrig) + ((np.asarray(ResVec) * 999999999.9) * SIGN))
+                timing_started = self.NsTraceTimingStart()
                 Output = self.INORM.InterNormal(RayOrig, Proto_pTarget, j, jj)
+                self.NsTraceTimingRecord("NsTrace.inter_normal", timing_started)
                 (SurfHit, SurfNorm, pTarget, GooveVect, HitObjSpace, LMNObjSpace, j) = Output
                 if (SurfHit == 0):
+                    timing_started = self.NsTraceTimingStart()
                     self.__AppendNsTerminalSegment(RayOrig, ResVec, SIGN)
+                    self.NsTraceTimingRecord("NsTrace.terminal_segment", timing_started)
                     break
                 ImpVec = np.asarray(ResVec)
                 (CurrN, alpha) = (self.N_Prec[j_gg], self.AlphaPrecal[j_gg])
@@ -4534,6 +4614,7 @@ class system():
                 R = np.asarray(SurfNorm)
                 N = PrevN
                 Np = CurrN
+                timing_started = self.NsTraceTimingStart()
                 Glass, alpha, CurrN, N, Np, face_override = self.__NsTraceHitMedia(
                     j,
                     jj,
@@ -4545,7 +4626,10 @@ class system():
                     SurfNorm,
                     ray_state,
                 )
+                self.NsTraceTimingRecord("NsTrace.hit_media", timing_started)
+                timing_started = self.NsTraceTimingStart()
                 incident_state_diagnostic = self.__NsRayStateIncidentIndexDiagnostic(ray_state, PrevN)
+                self.NsTraceTimingRecord("NsTrace.incident_media_diagnostic", timing_started)
                 D = GooveVect
 
                 Ord = self.SDT[j].Diff_Ord
@@ -4558,8 +4642,11 @@ class system():
                 terminal_event = self.__NsTraceTerminalEvent(j, face_override)
                 Secuent = 1 if isinstance(face_override, dict) and bool(face_override.get("force_reflection")) else 0
                 ResVec_N, R_N, N_N, Np_N = ResVec, R, N, Np
+                timing_started = self.NsTraceTimingStart()
                 (ResVec, CurrN, sign ,ang) = self.SDT[j].PHYSICS.calculate(ResVec_N, R_N, N_N, Np_N, D, Ord, GrSpa, self.Wave, Secuent)
+                self.NsTraceTimingRecord("NsTrace.physics_calculate", timing_started)
                 self.ang = ang
+                timing_started = self.NsTraceTimingStart()
                 if terminal_event:
                     self.__ApplyNsTerminalEventOverride(terminal_event)
                 elif isinstance(face_override, dict) and bool(face_override.get("force_reflection")):
@@ -4574,8 +4661,10 @@ class system():
                     self._collect_bulk_override = 1.0
                 else:
                     self.__ApplySnellReflectionInteractionOverride(sign, Glass, N, Np, j)
+                self.NsTraceTimingRecord("NsTrace.interaction_override", timing_started)
 
                 # Coating
+                timing_started = self.NsTraceTimingStart()
                 mtl = self.SDT[j].CoatingMet
                 (Rp0, Rs0, Tp0, Ts0) = FresnelEnergy(self.Glass[j], N, Np, ImpVec, R, ResVec, self.SETUP, self.Wave, mtl)
                 Rp2, Rs2, Tp2, Ts2, V = self.CoatingFun(self.SDT[j].Coating, ang, self.Wave)
@@ -4594,8 +4683,10 @@ class system():
                         Secuent = 1
                         (ResVec, CurrN, sign ,ang) = self.SDT[j].PHYSICS.calculate(ResVec_N, R_N, N_N, Np_N, D, Ord, GrSpa, self.Wave, Secuent)
                         self.ang = ang
+                self.NsTraceTimingRecord("NsTrace.coating_probability", timing_started)
 
                 SIGN = (SIGN * sign)
+                timing_started = self.NsTraceTimingStart()
                 next_ray_state, media_event = self.__NsRayMediaEvent(
                     ray_state,
                     face_override,
@@ -4606,11 +4697,14 @@ class system():
                     diagnostic=incident_state_diagnostic,
                 )
                 self._collect_media_state_override = media_event
+                self.NsTraceTimingRecord("NsTrace.media_event", timing_started)
 
                 Name = self.SDT[j].Name
                 RayTraceType = 1
                 ValToSav = [Glass, alpha, RayOrig, pTarget, HitObjSpace,LMNObjSpace, SurfNorm, ImpVec, ResVec, N, CurrN, WaveLength, D, Ord, GrSpa, Name, j, RayTraceType]
+                timing_started = self.NsTraceTimingStart()
                 self.__CollectData(ValToSav)
+                self.NsTraceTimingRecord("NsTrace.collect_data", timing_started)
                 if terminal_event and bool(terminal_event.get("stop", True)):
                     RayOrig = pTarget
                     self.RAY.append(RayOrig)
@@ -4621,6 +4715,7 @@ class system():
                 stl_boundary_continuation = self.__NsTraceBoundaryContinuationMode(j, jj, N, CurrN, sign, face_override)
                 stl_exit_continuation = stl_boundary_continuation == "exit"
                 stl_solid_continuation = stl_boundary_continuation or self.__NsTraceIsStlSolidHit(j, jj)
+                timing_started = self.NsTraceTimingStart()
                 if stl_solid_continuation:
                     skip_surface_once = int(j) if stl_exit_continuation else None
                     if stl_exit_continuation:
@@ -4647,7 +4742,9 @@ class system():
                         self.__NsPhysicalDirection(ResVec, SIGN),
                     )
                     self.RAY.append(np.asarray(pTarget, dtype=float))
+                self.NsTraceTimingRecord("NsTrace.advance_origin", timing_started)
 
+                timing_started = self.NsTraceTimingStart()
                 if self.__NsTraceIsRepeatedSurfaceStall(
                     a,
                     b,
@@ -4659,6 +4756,7 @@ class system():
                     stl_boundary_continuation,
                 ):
                     break
+                self.NsTraceTimingRecord("NsTrace.stall_check", timing_started)
 
             if self.Glass[j] == 'NULL':
                 ang = 0

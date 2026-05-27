@@ -8,6 +8,7 @@ from typing import Any
 import KrakenOS as Kos
 import numpy as np
 
+from KrakenOS.MeshRayTrace import mesh_trace_stats_snapshot, reset_mesh_trace_stats
 from KrakenOS.UI.scene_geometry import SceneSource3D
 from KrakenOS.UI.services.open3d_timing import open3d_timing_event
 from KrakenOS.UI.services.row_spec_contracts import _requires_scalar_trace
@@ -438,7 +439,29 @@ class TracePreviewService:
                             terminal_policy=terminal_policy,
                             launch_metadata=_bundle_launch_metadata(source),
                         )
-                        Kos.NsTraceLoop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
+                        if hasattr(system, "EnableNsTraceTiming"):
+                            system.EnableNsTraceTiming(True)
+                        reset_mesh_trace_stats(active=True)
+                        try:
+                            Kos.NsTraceLoop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
+                        finally:
+                            ns_loop_stats = {}
+                            if hasattr(system, "NsTraceTimingSnapshot"):
+                                ns_loop_stats = system.NsTraceTimingSnapshot(reset=True)
+                            open3d_timing_event(
+                                "trace_preview_ns_loop_stats",
+                                backend="NsTraceLoop",
+                                bundle_index=int(bundle_index),
+                                ray_count=bundle_ray_count,
+                                **ns_loop_stats,
+                            )
+                            open3d_timing_event(
+                                "trace_preview_mesh_ray_stats",
+                                backend="NsTraceLoop",
+                                bundle_index=int(bundle_index),
+                                ray_count=bundle_ray_count,
+                                **mesh_trace_stats_snapshot(reset=True),
+                            )
                         open3d_timing_event(
                             "trace_preview_bundle_done",
                             backend="NsTraceLoop",

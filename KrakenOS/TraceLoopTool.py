@@ -109,6 +109,12 @@ def NsTraceLoop(x, y, z, L, M, N, W, Container, clean = 1, source_metadata=None)
         dCos = [L[i], M[i], N[i]]
         if hasattr(Container, "set_launch_metadata"):
             Container.set_launch_metadata(**_metadata_for_ray(source_metadata, i, pSource_0, dCos, W))
+        trace_started = System.NsTraceTimingStart() if hasattr(System, "NsTraceTimingStart") else None
         System.NsTrace(pSource_0, dCos, W)
+        if hasattr(System, "NsTraceTimingRecord"):
+            System.NsTraceTimingRecord("system.NsTrace", trace_started)
+        push_started = System.NsTraceTimingStart() if hasattr(System, "NsTraceTimingStart") else None
         Container.push()
+        if hasattr(System, "NsTraceTimingRecord"):
+            System.NsTraceTimingRecord("raykeeper.push", push_started)
     return 0
