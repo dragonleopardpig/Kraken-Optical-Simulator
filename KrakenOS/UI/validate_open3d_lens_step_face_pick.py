@@ -12,6 +12,7 @@ from KrakenOS.UI import cad_import_service
 from KrakenOS.UI.open3d_inspector import Kraken3DInspector
 from KrakenOS.UI.services import open3d_step_overlay_refresh
 from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
+from KrakenOS.UI.services.step_overlay_import import StepOverlayImportService
 
 
 def _cell_normal(data, cell_id: int) -> np.ndarray | None:
@@ -117,6 +118,9 @@ def main() -> int:
     interaction_source = __import__("inspect").getsource(Open3DInteractionService._on_mouse_move)
     if "carry_label = self._step_carry_label()" not in interaction_source or "target_label = str(carry_label)" not in interaction_source:
         failures.append("Carry-mode imported STEP hover must pick the active STEP face, not only rotation handles.")
+    import_source = __import__("inspect").getsource(StepOverlayImportService.import_optical_step)
+    if "_optical_prescription_sidecars" not in import_source or "STEP has no glass prescription" not in import_source:
+        failures.append("Optical STEP import should warn when a sidecar prescription is needed for designed lens focus.")
 
     if failures:
         print("Open 3D lens STEP face-pick validation failed:")

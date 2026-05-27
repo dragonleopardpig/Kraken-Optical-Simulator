@@ -77,6 +77,22 @@ class StepOverlayImportService:
             return (0.0, 0.0, 0.0)
         return (0.0, 0.0, 0.5 * (min(finite) + max(finite)))
 
+    @staticmethod
+    def _optical_prescription_sidecars(path: Path) -> tuple[Path, ...]:
+        path = Path(path).expanduser()
+        parent = path.parent
+        if not parent.exists():
+            return ()
+        suffixes = {".zmx", ".seq"}
+        matches: list[Path] = []
+        try:
+            for candidate in parent.iterdir():
+                if candidate.is_file() and candidate.suffix.lower() in suffixes:
+                    matches.append(candidate)
+        except OSError:
+            return ()
+        return tuple(sorted(matches, key=lambda item: (item.suffix.lower() != ".zmx", item.name.lower())))
+
     def _preserve_unpromoted_step_overlay(self, label: str) -> dict[str, object] | None:
         """Promote an un-promoted STEP overlay before its import slot is reused."""
         label = str(label).strip().lower()
@@ -125,7 +141,14 @@ class StepOverlayImportService:
         self._commit_history_capture()
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
-        self.status_var.set(f"Optical STEP imported: {path.name}. Carry and place it in Open 3D.")
+        sidecars = self._optical_prescription_sidecars(path)
+        if sidecars:
+            self.status_var.set(
+                f"Optical STEP imported as CAD solid: {path.name}. STEP has no glass prescription; "
+                f"import {sidecars[0].name} for designed lens focus, or promote/assign STEP material and faces."
+            )
+        else:
+            self.status_var.set(f"Optical STEP imported: {path.name}. Carry and place it in Open 3D.")
         if refresh_open_3d:
             self._refresh_open_3d_views(step_label="optical")
         return path
