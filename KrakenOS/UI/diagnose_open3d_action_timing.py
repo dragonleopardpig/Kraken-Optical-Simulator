@@ -86,7 +86,7 @@ def _timing_summary(path: Path) -> dict[str, object]:
     }
 
 
-def run_replay(layout_name: str, step_path: Path) -> dict[str, object]:
+def run_replay(layout_name: str, step_path: Path, *, trace_rays: bool = False) -> dict[str, object]:
     timing_path = reset_open3d_timing_log(reason="diagnose_open3d_action_timing")
     app = KrakenLayoutEditor(headless=True)
     try:
@@ -132,11 +132,16 @@ def run_replay(layout_name: str, step_path: Path) -> dict[str, object]:
             _drain_tk(inspector, seconds=0.2)
         inspector._clear_open3d_selection(render=True)
         _drain_tk(inspector, seconds=0.2)
+        if bool(trace_rays):
+            inspector.show_rays_var.set(True)
+            inspector.refresh_from_editor()
+            _drain_tk(inspector, seconds=0.2)
 
         summary = _timing_summary(timing_path)
         summary.update(
             {
                 "layout": layout_name,
+                "trace_rays": bool(trace_rays),
                 "step_path": str(step_path),
                 "step_size": int(step_path.stat().st_size) if step_path.exists() else None,
                 "actor_counts": inspector._debug_actor_counts(),
@@ -155,11 +160,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--layout", default=DEFAULT_LAYOUT, help="Common layout name to load.")
     parser.add_argument("--step", type=Path, default=DEFAULT_STEP, help="Optical STEP file to add.")
+    parser.add_argument("--trace-rays", action="store_true", help="Enable Show Rays after STEP placement to profile the first physics trace.")
     parser.add_argument("--output", type=Path, help="Optional JSON summary path.")
     args = parser.parse_args(argv)
 
     step_path = Path(args.step).expanduser().resolve()
-    report = run_replay(str(args.layout), step_path)
+    report = run_replay(str(args.layout), step_path, trace_rays=bool(args.trace_rays))
     text = json.dumps(report, indent=2, sort_keys=True, default=str)
     print(text)
     if args.output is not None:

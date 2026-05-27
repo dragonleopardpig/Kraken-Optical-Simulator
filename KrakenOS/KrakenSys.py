@@ -391,6 +391,8 @@ class system():
         self._collect_tt_override = None
         self._collect_bulk_override = None
         self._optical_solid_face_world_cache = {}
+        self._optical_solid_face_world_signature_cache = {}
+        self._optical_solid_mesh_face_id_cache = {}
         if not hasattr(self, "_scene_boundary_faces_by_surface"):
             self._scene_boundary_faces_by_surface = {}
         if not hasattr(self, "_scene_optical_volumes_by_surface"):
@@ -510,6 +512,8 @@ class system():
 
     def __OpticalSolidWorldFaces(self, surface_index):
         cache_key = int(surface_index)
+        if not hasattr(self, "_optical_solid_face_world_cache"):
+            self._optical_solid_face_world_cache = {}
         cached = self._optical_solid_face_world_cache.get(cache_key)
         if cached is not None:
             return cached
@@ -545,6 +549,64 @@ class system():
             world_faces.append(world_face)
         self._optical_solid_face_world_cache[cache_key] = world_faces
         return world_faces
+
+    def __OpticalSolidWorldFaceSignature(self, surface_index, world_faces):
+        cache_key = int(surface_index)
+        if not hasattr(self, "_optical_solid_face_world_signature_cache"):
+            self._optical_solid_face_world_signature_cache = {}
+        cached = self._optical_solid_face_world_signature_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        signature = []
+        for face in list(world_faces or []):
+            if not isinstance(face, dict):
+                continue
+            try:
+                centroid = tuple(
+                    round(float(value), 9)
+                    for value in np.asarray(
+                        face.get("centroid_world", face.get("centroid", ())),
+                        dtype=float,
+                    ).reshape(-1)[:3]
+                )
+            except Exception:
+                centroid = ()
+            try:
+                normal = tuple(
+                    round(float(value), 9)
+                    for value in np.asarray(
+                        face.get("normal_world", face.get("normal", ())),
+                        dtype=float,
+                    ).reshape(-1)[:3]
+                )
+            except Exception:
+                normal = ()
+            try:
+                raw_triangles = face.get("triangle_indices", face.get("cell_indices", []))
+                if raw_triangles is None:
+                    raw_values = []
+                elif isinstance(raw_triangles, np.ndarray):
+                    raw_values = raw_triangles.reshape(-1).tolist()
+                elif isinstance(raw_triangles, (list, tuple, set)):
+                    raw_values = list(raw_triangles)
+                else:
+                    raw_values = [raw_triangles]
+                triangle_indices = tuple(sorted(int(value) for value in raw_values))
+            except Exception:
+                triangle_indices = ()
+            signature.append(
+                (
+                    str(face.get("face_id", "") or "").strip(),
+                    str(face.get("function", "") or "").strip(),
+                    str(face.get("role", "") or "").strip(),
+                    centroid,
+                    normal,
+                    triangle_indices,
+                )
+            )
+        value = tuple(signature)
+        self._optical_solid_face_world_signature_cache[cache_key] = value
+        return value
 
     def __SceneBoundaryFaceRecords(self, surface_index):
         index = getattr(self, "_scene_boundary_faces_by_surface", {})
@@ -1121,12 +1183,22 @@ class system():
         if not is_optical_solid:
             return mesh
         try:
+            if not hasattr(self, "_optical_solid_mesh_face_id_cache"):
+                self._optical_solid_mesh_face_id_cache = {}
+            world_faces = self.__OpticalSolidWorldFaces(surface_index)
+            face_signature = self.__OpticalSolidWorldFaceSignature(surface_index, world_faces)
+            cache_key = (int(mesh_index), id(mesh), face_signature)
+            cached = self._optical_solid_mesh_face_id_cache.get(cache_key)
+            if cached is not None:
+                return cached
             mesh = assign_mesh_cell_face_ids(
                 mesh,
-                self.__OpticalSolidWorldFaces(surface_index),
+                world_faces,
                 context=context,
             )
             self.__ReplaceSceneMesh(mesh_index, mesh)
+            self._optical_solid_mesh_face_id_cache[cache_key] = mesh
+            self._optical_solid_mesh_face_id_cache[(int(mesh_index), id(mesh), face_signature)] = mesh
         except Exception:
             pass
         return mesh
@@ -1170,6 +1242,7 @@ class system():
         A_Glass = self.SDT[ng].Glass
         if (A_Glass == 'NULL'):
             distance = 99999999999999.9
+            return distance, 0, None, None
         else:
             (A_pTarget, A_SurfHit) = self.__TraceSceneMeshRay(
                 k,
@@ -1179,6 +1252,7 @@ class system():
             )
             if (len(A_SurfHit) == 0):
                 distance = 99999999999999.9
+                return distance, 0, A_pTarget, A_SurfHit
             else:
                 s = 0
                 h = []
@@ -1199,7 +1273,7 @@ class system():
                     h.append(distance)
                     s = (s + 1)
                 distance = np.min(np.asarray(h))
-        return distance
+        return distance, int(len(A_SurfHit)), A_pTarget, A_SurfHit
 
     def __NonSequentialChooser(self, SIGN, A_RayOrig, ResVec, j, skip_surface=None):
         """__NonSequentialChooser.
@@ -1221,29 +1295,49 @@ class system():
         [Px, Py, Pz] = A_RayOrig
         [LL, MM, NN] = ResVec
         A_Proto_pTarget = (np.asarray(A_RayOrig) + ((np.asarray(ResVec) * 999999999.9) * SIGN))
-        for k in range(1, len(self.EEE)):
-            distance = self.__NonSequentialChooserToot(A_RayOrig, A_Proto_pTarget, k, current_surface_index=j)
-            chooser.append(distance)
-        chooser = np.asarray(chooser)
+        skip_index = -1
         if skip_surface is not None:
             try:
                 skip_index = int(skip_surface)
             except Exception:
                 skip_index = -1
-            if 1 <= skip_index < len(self.EEE):
-                chooser[skip_index - 1] = 99999999999999.9
+        hit_counts = []
+        hit_records = []
+        for k in range(1, len(self.EEE)):
+            if k == skip_index:
+                chooser.append(99999999999999.9)
+                hit_counts.append(0)
+                hit_records.append((None, None))
+                continue
+            distance, hit_count, hit_points, hit_cells = self.__NonSequentialChooserToot(
+                A_RayOrig,
+                A_Proto_pTarget,
+                k,
+                current_surface_index=j,
+            )
+            chooser.append(distance)
+            hit_counts.append(int(hit_count))
+            hit_records.append((hit_points, hit_cells))
+        chooser = np.asarray(chooser)
         if chooser.size == 0 or float(np.min(chooser)) >= 9999999999999.0:
             return (int(j), 0, 0, 0)
         jj = (np.argmin(chooser) + 1)
         chooser[(jj - 1)] = 99999999999999.9
         kk = (np.argmin(chooser) + 1)
-        (A_pTarget, A_SurfHit) = self.__TraceSceneMeshRay(
-            int(jj),
-            A_RayOrig,
-            A_Proto_pTarget,
-            f"non-sequential chooser surface {int(jj)}",
-        )
-        PRR = np.shape(A_SurfHit)[0]
+        PRR = int(hit_counts[int(jj) - 1]) if 0 <= int(jj) - 1 < len(hit_counts) else 0
+        try:
+            hit_points, hit_cells = hit_records[int(jj) - 1]
+            if hit_points is not None and hit_cells is not None and hasattr(self.INORM, "set_trace_mesh_ray_cache"):
+                self.INORM.set_trace_mesh_ray_cache(
+                    int(jj),
+                    A_RayOrig,
+                    A_Proto_pTarget,
+                    self.EEE[int(jj)],
+                    hit_points,
+                    hit_cells,
+                )
+        except Exception:
+            pass
         return (int(j), int(jj), int(kk), PRR)
 
     def __CollectDataInit(self):
@@ -1563,6 +1657,8 @@ class system():
         """SetData.
         """
         self._optical_solid_face_world_cache = {}
+        self._optical_solid_face_world_signature_cache = {}
+        self._optical_solid_mesh_face_id_cache = {}
         self.SuTo = SUT(self.SDT)
         self.Object_Num = np.arange(0, self.n, 1)
         self.__SurFuncSuscrip()
@@ -1572,6 +1668,9 @@ class system():
     def SetSolid(self):
         """SetSolid.
         """
+        self._optical_solid_face_world_cache = {}
+        self._optical_solid_face_world_signature_cache = {}
+        self._optical_solid_mesh_face_id_cache = {}
         self.__SurFuncSuscrip()
         self.Pr3D.Prerequisites3SMath()
         self.Pr3D.Prerequisites3D_UDA()

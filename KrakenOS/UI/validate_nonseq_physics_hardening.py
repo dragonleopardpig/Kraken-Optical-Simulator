@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import inspect
 
 import numpy as np
 
@@ -116,6 +117,38 @@ def validate_nonseq_physics_hardening() -> list[NonSeqPhysicsHardeningCheck]:
             "intersection-normal solid hit filter uses the same scaled near-hit tolerance",
             abs(inter_normal_tolerance - kernel_tolerance) <= 1.0e-12,
             f"inter_normal_mm={inter_normal_tolerance:.9g}, kernel_mm={kernel_tolerance:.9g}",
+        )
+    )
+    system_source = inspect.getsource(Kos.system)
+    inter_normal_source = inspect.getsource(Kos.InterNormalCalc)
+    checks.append(
+        NonSeqPhysicsHardeningCheck(
+            "optical-solid mesh face-id assignment is cached within a built non-sequential system",
+            "_optical_solid_mesh_face_id_cache" in system_source
+            and "def __OpticalSolidWorldFaceSignature" in system_source
+            and "assign_mesh_cell_face_ids(" in system_source
+            and "cached is not None" in system_source,
+            "Repeated mesh ray queries reuse face-id metadata instead of rescanning all triangles every hit.",
+        )
+    )
+    checks.append(
+        NonSeqPhysicsHardeningCheck(
+            "non-sequential chooser reuses first-pass hit counts instead of retracing the selected mesh",
+            "return distance, int(len(A_SurfHit)), A_pTarget, A_SurfHit" in system_source
+            and "hit_counts = []" in system_source
+            and "PRR = int(hit_counts[int(jj) - 1])" in system_source
+            and "f\"non-sequential chooser surface {int(jj)}\"" not in system_source,
+            "The chooser no longer performs a second identical mesh ray-trace just to compute PreSurfHit.",
+        )
+    )
+    checks.append(
+        NonSeqPhysicsHardeningCheck(
+            "intersection-normal solid hits reuse the chooser mesh-ray result for the same segment",
+            "def set_trace_mesh_ray_cache" in inter_normal_source
+            and "def __PopTraceMeshRayCache" in inter_normal_source
+            and "cached = self.__PopTraceMeshRayCache" in inter_normal_source
+            and "set_trace_mesh_ray_cache(" in system_source,
+            "The selected mesh is not ray-traced again immediately after the chooser already found its intersections.",
         )
     )
     return checks

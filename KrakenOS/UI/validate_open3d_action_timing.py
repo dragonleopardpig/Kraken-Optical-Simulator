@@ -100,6 +100,12 @@ def main() -> int:
             and "_clear_open3d_selection(render=True)" in diagnostic_source,
         ),
         (
+            "display-backed timing replay can profile the first Show Rays physics trace",
+            "--trace-rays" in diagnostic_source
+            and "trace_rays" in diagnostic_source
+            and "show_rays_var.set(True)" in diagnostic_source,
+        ),
+        (
             "Ctrl-Z undo/redo restore path is timed and has a hidden-ray STEP display-only fast path",
             "history_undo" in workbench_source
             and "history_redo" in workbench_source

@@ -44,6 +44,38 @@ class InterNormalCalc():
         self.P2 = np.asarray([0.0, 0.0, 0.0, 1.0])
         self.P_z1 = 10000000.0
         self.last_mesh_hit = None
+        self._trace_mesh_ray_cache = None
+
+    def set_trace_mesh_ray_cache(self, mesh_index, start, stop, mesh, points, hits):
+        try:
+            self._trace_mesh_ray_cache = {
+                "mesh_index": int(mesh_index),
+                "start": np.asarray(start, dtype=float).reshape(3),
+                "stop": np.asarray(stop, dtype=float).reshape(3),
+                "mesh": mesh,
+                "points": np.asarray(points, dtype=float),
+                "hits": np.asarray(hits, dtype=int),
+            }
+        except Exception:
+            self._trace_mesh_ray_cache = None
+
+    def __PopTraceMeshRayCache(self, mesh_index, start, stop):
+        cache = self._trace_mesh_ray_cache
+        self._trace_mesh_ray_cache = None
+        if not isinstance(cache, dict):
+            return None
+        try:
+            if int(cache.get("mesh_index", -1)) != int(mesh_index):
+                return None
+            start_arr = np.asarray(start, dtype=float).reshape(3)
+            stop_arr = np.asarray(stop, dtype=float).reshape(3)
+            if not np.allclose(start_arr, np.asarray(cache.get("start"), dtype=float), rtol=1e-12, atol=1e-8):
+                return None
+            if not np.allclose(stop_arr, np.asarray(cache.get("stop"), dtype=float), rtol=1e-12, atol=1e-8):
+                return None
+            return cache.get("mesh"), (cache.get("points"), cache.get("hits"))
+        except Exception:
+            return None
 
     def __RaySelfHitTolerance(self):
         scales = []
@@ -374,12 +406,16 @@ class InterNormalCalc():
         PTO_exit = [0, 0, 0]
         norm = [0, 0, 1]
         self.last_mesh_hit = None
-        mesh, (inter, ind) = trace_mesh_ray(
-            self.EEE[jj],
-            PP_start,
-            PP_stop,
-            context=f"non-sequential surface {jj}",
-        )
+        cached = self.__PopTraceMeshRayCache(jj, PP_start, PP_stop)
+        if cached is None:
+            mesh, (inter, ind) = trace_mesh_ray(
+                self.EEE[jj],
+                PP_start,
+                PP_stop,
+                context=f"non-sequential surface {jj}",
+            )
+        else:
+            mesh, (inter, ind) = cached
         if mesh is not self.EEE[jj]:
             try:
                 self.EEE[jj] = mesh
