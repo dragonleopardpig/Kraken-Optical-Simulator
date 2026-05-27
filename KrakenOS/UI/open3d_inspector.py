@@ -748,7 +748,17 @@ class Kraken3DInspector(tk.Toplevel):
             return self._right_click_face_ray_context((float(x), float(y)), event=event)
         if pick_point.size < 3 or not np.all(np.isfinite(pick_point[:3])):
             pick_point = np.asarray([], dtype=float)
-        feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
+        row_index = self._actor_row_map.get(actor_key)
+        step_label = self._actor_step_map.get(actor_key)
+        persistent_file_backed = False
+        if row_index is not None:
+            try:
+                persistent_file_backed = self.editor._file_backed_stl_row_at(int(row_index)) is not None
+            except Exception:
+                persistent_file_backed = False
+        feature = None
+        if step_label is None and not persistent_file_backed:
+            feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
         feature_center = np.asarray([], dtype=float)
         feature_normal = np.asarray([], dtype=float)
         if feature is not None:
@@ -774,21 +784,13 @@ class Kraken3DInspector(tk.Toplevel):
             "actor_key": actor_key,
             "cell_id": int(cell_id),
             "feature": feature,
-            "row_index": self._actor_row_map.get(actor_key),
-            "step_label": self._actor_step_map.get(actor_key),
+            "row_index": row_index,
+            "step_label": step_label,
             "point_world": target_point,
             "normal_world": normal,
             "display_xy": (float(x), float(y)),
             "event": event,
         }
-        row_index = context["row_index"]
-        step_label = context["step_label"]
-        persistent_file_backed = False
-        if row_index is not None:
-            try:
-                persistent_file_backed = self.editor._file_backed_stl_row_at(int(row_index)) is not None
-            except Exception:
-                persistent_file_backed = False
         if step_label is None and (row_index is None or not persistent_file_backed):
             fallback = self._right_click_face_ray_context((float(x), float(y)), event=event)
             if fallback is not None:

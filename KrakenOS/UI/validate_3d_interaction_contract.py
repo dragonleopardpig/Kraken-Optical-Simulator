@@ -215,6 +215,7 @@ def main() -> int:
     camera_pan = inspect.getsource(Kraken3DInspector._pan_camera_fixed_drag)
     pick = inspect.getsource(Open3DInteractionService._on_left_button_press)
     mouse_move = inspect.getsource(Open3DInteractionService._on_mouse_move)
+    passive_hover_pick = inspect.getsource(Open3DInteractionService._passive_hover_pick_rotation_handle)
     mouse_bindings_factory = inspect.getsource(Kraken3DInspector._mouse_bindings_service)
     interaction_factory = inspect.getsource(Kraken3DInspector._interaction_service)
     handler = inspect.getsource(Kraken3DInspector.show_step_rotation_handler)
@@ -1474,11 +1475,12 @@ def main() -> int:
             and "_add_optical_solid_face_role_overlays(system)" not in refresh,
         ),
         (
-            "Open 3D passive CAD/STL hover stays lightweight before right-click assignment",
-            "right-click a face to assign surface physics" in mouse_move
-            and "right-click for surface roles" in mouse_move
-            and '"step-passive"' in mouse_move
-            and '"row-passive"' in mouse_move,
+            "Open 3D passive CAD/STL hover skips dense body picking before explicit assignment",
+            "_passive_hover_pick_rotation_handle" in mouse_move
+            and "PickFromListOn" in passive_hover_pick
+            and "AddPickList" in passive_hover_pick
+            and '"step-passive"' not in mouse_move
+            and '"row-passive"' not in mouse_move,
         ),
         (
             "Open 3D transparent CAD solids support through-body internal face picking",

@@ -536,15 +536,44 @@ class Open3DInteractionService:
             self.status_var.set(f"Selected row {row_index}: {row_name}")
         self.render()
 
-    def _passive_hover_pick_actor(self, x: int | float, y: int | float):
+    def _passive_hover_pick_rotation_handle(self, x: int | float, y: int | float):
+        """Pick only lightweight rotation handles during passive mouse motion.
+
+        Dense CAD/STEP bodies are intentionally excluded here. Full body/face
+        picking still happens on explicit click, right-click, and active
+        placement commands.
+        """
         picker = getattr(self, "_prop_picker", None) or self._picker
         if picker is None or self._renderer is None:
+            return None, None, -1
+        handle_keys = set(getattr(self, "_actor_step_rotate_map", {}) or {})
+        handle_keys.update(set(getattr(self, "_actor_placement_rotate_map", {}) or {}))
+        if not handle_keys:
+            return None, None, -1
+        pick_from_list = False
+        try:
+            picker.InitializePickList()
+            for actor_key in sorted(str(key) for key in handle_keys):
+                actor = self._actor_by_key.get(actor_key)
+                if actor is not None:
+                    picker.AddPickList(actor)
+                    pick_from_list = True
+            if not pick_from_list:
+                return None, None, -1
+            picker.PickFromListOn()
+        except Exception:
             return None, None, -1
         try:
             picker.Pick(float(x), float(y), 0.0, self._renderer)
             actor = picker.GetActor()
         except Exception:
             return None, None, -1
+        finally:
+            try:
+                picker.PickFromListOff()
+                picker.InitializePickList()
+            except Exception:
+                pass
         actor_key = self._actor_key(actor)
         cell_id = -1
         if picker is self._picker:
@@ -763,7 +792,7 @@ class Open3DInteractionService:
             if self._picker is not None and self._renderer is not None and self._vtk_interactor is not None:
                 try:
                     x, y = self._vtk_interactor.GetEventPosition()
-                    actor, actor_key, _cell_id = self._passive_hover_pick_actor(x, y)
+                    actor, actor_key, _cell_id = self._passive_hover_pick_rotation_handle(x, y)
                     step_rotate = self._actor_step_rotate_map.get(actor_key) if actor_key is not None else None
                     placement_rotate = self._actor_placement_rotate_map.get(actor_key) if actor_key is not None else None
                     if step_rotate is not None:
@@ -786,32 +815,9 @@ class Open3DInteractionService:
                         )
                         return
                     self._set_rotation_handle_hover(None)
-                    step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
                 except Exception:
                     actor = None
                     actor_key = None
-                    step_label = None
-                if step_label is not None:
-                    hover_key = ("step-passive", actor_key)
-                    self._set_step_hover_outline(None, hover_key, render=self._hover_step_outline_actor is not None)
-                    display = self.editor._step_overlay_display_label(str(step_label)).upper()
-                    self._update_hover_status("", render=False)
-                    self.status_var.set(
-                        f"{display} STEP: click to select or hold-drag to move; "
-                        "right-click for surface roles; use Center Surface->Axis for face picking."
-                    )
-                    return
-                row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
-                if row_index is not None and self.editor._file_backed_stl_row_at(int(row_index)) is not None:
-                    hover_key = ("row-passive", actor_key)
-                    self._set_step_hover_outline(None, hover_key, render=self._hover_step_outline_actor is not None)
-                    self._update_hover_status("", render=False)
-                    self._set_axis_pick_cursor(False)
-                    self.status_var.set(
-                        f"S{int(row_index)} CAD/STL: click to select; "
-                        "right-click a face to assign surface physics."
-                    )
-                    return
             self._set_step_hover_outline(None, None)
             self._set_rotation_handle_hover(None)
             self._update_hover_status("", render=False)

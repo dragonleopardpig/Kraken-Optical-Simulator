@@ -150,7 +150,10 @@ Phase 1: Profile And Freeze The Current Baseline
     Add a validator/diagnostic that imports a large camera or imaging-lens STEP
     and reports import time, triangle count, actor count, hover-pick latency,
     and highlight latency. The initial target should be p95 hover latency under
-    50 ms, then under 16 ms for ordinary display-only hover.
+    50 ms, then under 16 ms for ordinary display-only hover. The branch now
+    includes ``python -m KrakenOS.UI.diagnose_open3d_hover_latency`` as the
+    headless cache/contract diagnostic; GUI picker timing can be added to that
+    command when a stable display backend is available in CI.
 
 Phase 2: Cache The Existing Mesh Path
     Before changing import backends, remove repeated work:
@@ -164,15 +167,14 @@ Phase 2: Cache The Existing Mesh Path
     This phase should improve responsiveness without changing the optical
     tracing contract.
 
-    Current branch progress: the first ``CadSceneCache`` service is in place.
-    Open 3D imported STEP hover and transparent face-pick paths now reuse
-    cached triangle arrays, cached face triangle slices, and cached face-outline
-    artifacts for the existing mesh path. Ordinary passive hover is intentionally
-    lightweight: it uses a prop-level picker to identify the actor and defers
-    transparent face-ray testing and outline generation to explicit right-click
-    assignment or axis/face-pick commands. The next Phase 2 work is to move the
-    actor/cell-to-face lookup into cached cell data and add a hover-latency
-    diagnostic.
+    Current branch progress: the mesh-path responsiveness foundation is
+    complete. Open 3D imported STEP hover and transparent face-pick paths now
+    reuse cached triangle arrays, cached face triangle slices, and cached
+    face-outline artifacts for the existing mesh path. Ordinary passive hover is
+    intentionally lightweight: it does not pick dense CAD body actors. It only
+    uses a rotation-handle actor pick list, then defers transparent face-ray
+    testing, feature scanning, and outline generation to explicit click,
+    right-click assignment, or axis/face-pick commands.
 
 Phase 3: Add An OpenCascade Topology Adapter
     Build a new adapter using the installed ``pythonocc-core``/``OCC`` backend:
@@ -207,12 +209,13 @@ Phase 5: Integrate With Optical Physics
 Recommended Immediate Next Step
 -------------------------------
 
-Start with Phase 2, not a full CadQuery dependency jump. The current lag can be
-reduced substantially by eliminating repeated STL reads, repeated face
-clustering, repeated temporary row-plan promotion, and repeated feature-edge
-extraction during hover.
+Start with the completed Phase 2 mesh path, not a full CadQuery dependency
+jump. The current lag is addressed by eliminating repeated STL reads, repeated
+face clustering, repeated temporary row-plan promotion, repeated feature-edge
+extraction during hover, and full-scene body picking during ordinary mouse
+motion.
 
-Once the current mesh path has stable in-memory caches and a latency diagnostic,
-Phase 3 can replace the source of those caches with OpenCascade topology. That
-keeps the architecture clean and gives a clear before/after measurement for any
-future CadQuery/OCP adoption.
+Once a future requirement needs exact vendor topology beyond the current mesh
+metadata, Phase 3 can replace the source of those caches with OpenCascade
+topology. That keeps the architecture clean and gives a clear before/after
+measurement for any future CadQuery/OCP adoption.

@@ -121,12 +121,28 @@ def _validate_open3d_wiring() -> list[str]:
         for token in ("_step_face_ray_pick_for_display_xy", "_row_face_ray_pick_for_display_xy", "_picked_feature_info_cached"):
             if token in passive_hover_source:
                 failures.append(f"Open 3D passive CAD hover must not call heavy face lookup: {token}")
-        if '"step-passive"' not in passive_hover_source or '"row-passive"' not in passive_hover_source:
-            failures.append("Open 3D passive CAD hover must use lightweight step-passive/row-passive hover keys.")
-        if "_passive_hover_pick_actor" not in passive_hover_source:
-            failures.append("Open 3D passive CAD hover must route through the prop-level passive picker.")
-        if "right-click for surface roles" not in passive_hover_source or "right-click a face to assign surface physics" not in passive_hover_source:
-            failures.append("Open 3D passive CAD hover must route detailed face work to explicit right-click/selection operations.")
+        for token in ("_actor_step_map.get(actor_key)", "_actor_row_map.get(actor_key)", '"step-passive"', '"row-passive"'):
+            if token in passive_hover_source:
+                failures.append(f"Open 3D passive CAD hover must not pick dense CAD body actors: {token}")
+        if "_passive_hover_pick_rotation_handle" not in passive_hover_source:
+            failures.append("Open 3D passive hover must pick only the lightweight rotation-handle actor list.")
+        if "PickFromListOn" not in interaction_source or "AddPickList" not in interaction_source:
+            failures.append("Open 3D passive rotation-handle hover must use a VTK pick list instead of full-scene picking.")
+    try:
+        right_click_start = inspector_source.index("def _right_click_pick_context")
+        right_click_end = inspector_source.index("def _ray_event_mesh_face_id", right_click_start)
+        right_click_source = inspector_source[right_click_start:right_click_end]
+    except ValueError:
+        right_click_source = ""
+    if not right_click_source:
+        failures.append("Open 3D right-click pick context could not be located.")
+    else:
+        feature_pos = right_click_source.find("_picked_feature_info_cached")
+        row_pos = right_click_source.find("row_index = self._actor_row_map.get(actor_key)")
+        if feature_pos >= 0 and row_pos >= 0 and feature_pos < row_pos:
+            failures.append("Open 3D right-click context must resolve row/STEP actor identity before expensive feature scans.")
+        if "if step_label is None and not persistent_file_backed" not in right_click_source:
+            failures.append("Open 3D right-click context must skip feature scans for file-backed CAD rows and imported STEP overlays.")
     return failures
 
 

@@ -22,6 +22,7 @@ def main() -> int:
         "KrakenOS/UI/services/layout_literals.py",
         "KrakenOS/UI/services/step_face_direction.py",
         "KrakenOS/UI/services/cad_step_export.py",
+        "KrakenOS/UI/diagnose_open3d_hover_latency.py",
     )
     for relative in required_modules:
         if not (PROJECT_ROOT / relative).is_file():
@@ -55,6 +56,10 @@ def main() -> int:
     for token in ("CadSceneCache", "CadDocumentCache", "CadPickCache", "face_outline"):
         if token not in scene_cache_source:
             failures.append(f"CAD scene-cache service is missing {token}.")
+    hover_diagnostic_source = _source("KrakenOS/UI/diagnose_open3d_hover_latency.py")
+    for token in ("PASSIVE_HOVER_TARGET_P95_MS", "CadSceneCache", "passive_hover_uses_rotation_handle_pick_list"):
+        if token not in hover_diagnostic_source:
+            failures.append(f"Open 3D hover-latency diagnostic is missing {token}.")
 
     branch_readme = _source("BRANCH_README.md")
     if "CadQuery/OCP topology study" not in branch_readme:
@@ -77,6 +82,7 @@ def main() -> int:
             "CadPickCache",
             "BRepMesh_IncrementalMesh",
             "make it a required runtime dependency",
+            "rotation-handle actor pick list",
         )
         for phrase in required_phrases:
             if phrase not in doc_source:

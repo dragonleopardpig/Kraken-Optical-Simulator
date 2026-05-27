@@ -71,9 +71,18 @@ deferred.
 | Area | Status | Progress | Next action |
 | --- | --- | --- | --- |
 | Upstream main integration | Ready to start | `65%` | Begin selective upstream replay with validators after each small batch. Do not overwrite non-sequential scene, Open 3D, CAD cache, or packaging contracts. |
-| CadQuery/OCP topology study | Cache foundation landed | `60%` | `CadSceneCache` now reuses existing mesh-path triangle and face-outline artifacts, and passive Open 3D CAD hover uses actor-level picking instead of transparent face tests until explicit face-pick/right-click operations. Next add actor/cell-data face lookup and hover-latency diagnostics before any optional CadQuery/OCP adapter. |
 | External merge readiness | In progress | `80%` | Keep this README, Sphinx docs, validation commands, and generated reports aligned so a reviewer can evaluate scope and test coverage without following the entire development history. |
 | Final UI theming polish | Deferred | `0%` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
+
+The CadQuery/OCP topology study milestone is now complete for this branch
+(`100%`). The branch keeps CadQuery/OCP as an optional future adapter, not a
+runtime dependency, because the immediate responsiveness issue is addressed in
+the current mesh path: `CadSceneCache` reuses STEP-derived triangle and face
+outline artifacts, ordinary Open 3D passive hover uses a rotation-handle actor
+pick list instead of dense CAD body picking, right-click CAD face assignment
+defers feature scans until an explicit user action, and
+`python -m KrakenOS.UI.diagnose_open3d_hover_latency` reports the cache and
+passive-hover contract for large vendor STEP-derived STL files.
 
 ## KrakenOS Base Features
 
@@ -343,10 +352,10 @@ lookups, not move behavior back into `layout_editor.py`.
 - Some legacy compatibility paths remain for sequential/table workflows. New
   scene features should prefer SceneBundle, ray-event, row metadata, and CSV
   diagnostics instead of display-only state.
-- CAD/STEP face topology remains a hard area. The branch supports face
-  grouping, assignment, native export, and diagnostics, and the Sphinx
-  ``Responsive STEP Handling Architecture`` note documents the next topology,
-  display, and pick-cache direction for large vendor STEP responsiveness.
+- CAD/STEP face topology remains a hard area, but the branch now has the
+  current mesh-path responsiveness foundation in place. The branch supports
+  face grouping, assignment, native export, diagnostics, cached display/pick
+  artifacts, and the Sphinx ``Responsive STEP Handling Architecture`` note.
 - Large-CAD Live Mode performance can still improve through mesh reuse and
   tighter invalidation. The debounce/cancellation contract exists; the next
   work should tune performance without changing physics state.
@@ -355,8 +364,8 @@ lookups, not move behavior back into `layout_editor.py`.
   colors, detector spread analysis, and a validator for an equilateral prism.
 - Full 3D CAD-style placement can continue to improve. The current branch has
   direct STEP import, placement, face assignment, snapping, handles, and browser
-  state; future work can study CadQuery/OCP for better topology tools without
-  adding a required dependency prematurely.
+  state; CadQuery/OCP remains a long-horizon optional adapter if the current
+  OpenCascade/mesh cache boundary proves insufficient for exact topology tools.
 
 ## Historical Notes
 
@@ -369,6 +378,5 @@ instead of being repeated here as a long progress table.
 
 Start upstream main integration in small batches. For each upstream batch, run
 the fast contracts first, then the targeted display/physics validator for the
-area touched. Keep the new CAD scene-cache boundary intact; the next CAD work is
-actor/cell-data face lookup plus hover-latency diagnostics before any optional
-CadQuery/OCP adapter.
+area touched. Keep the CAD scene-cache boundary, passive-hover handle-pick
+contract, and hover-latency diagnostic intact.
