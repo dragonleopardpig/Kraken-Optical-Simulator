@@ -8622,6 +8622,16 @@ class Kraken3DInspector(tk.Toplevel):
             triangle_count = 0
         return triangle_count <= 4
 
+    def _step_label_is_round_lens_like(self, label: str) -> bool:
+        label = str(label or "").strip().lower()
+        if not label:
+            return False
+        for actor_key in list(self._step_actor_map.get(label, []) or []):
+            actor = self._actor_by_key.get(str(actor_key))
+            if actor is not None and bool(getattr(actor, "_kraken_round_lens_like_step_body", False)):
+                return True
+        return False
+
     def _coarse_step_face_ray_pick_for_display_xy(self, label: str, display_xy) -> FaceRayPick | None:
         """Return a face pick unless STEP->STL degraded it to a tiny facet.
 
@@ -8630,6 +8640,8 @@ class Kraken3DInspector(tk.Toplevel):
         Axis-alignment selection should fall back to a smooth connected display
         region for those cases instead of highlighting one little triangle.
         """
+        if self._step_label_is_round_lens_like(label):
+            return None
         pick = self._step_face_ray_pick_for_display_xy(label, display_xy)
         if self._step_face_ray_pick_is_tessellation_patch(label, pick):
             return None

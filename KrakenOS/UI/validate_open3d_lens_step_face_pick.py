@@ -103,6 +103,10 @@ def main() -> int:
     inspector_source = __import__("inspect").getsource(Kraken3DInspector)
     if "_kraken_round_lens_like_step_body" not in inspector_source or "prop.SetEdgeVisibility(0)" not in inspector_source:
         failures.append("Round lens-like STEP selection must suppress raw polygon edge visibility.")
+    if "_step_label_is_round_lens_like" not in inspector_source:
+        failures.append("Round lens-like STEP labels must bypass tiny-facet metadata picking.")
+    if "if self._step_label_is_round_lens_like(label):" not in inspector_source:
+        failures.append("Round lens-like STEP clicks must fall back directly to smooth display-region picking.")
     if "_round_lens_feature_for_cell" not in inspector_source or "_mesh_round_lens_axis" not in inspector_source:
         failures.append("Round lens-like STEP face grouping helpers are missing.")
 
