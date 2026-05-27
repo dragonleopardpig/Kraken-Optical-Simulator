@@ -992,7 +992,8 @@ class ThreeDSceneToolsMixin:
                     if isinstance(record, dict)
                 )
             )
-            if not bool(self.show_clipped_rays_var.get()) and not live_step_preview:
+            show_clipped_rays = bool(self.show_clipped_rays_var.get())
+            if not show_clipped_rays and not live_step_preview:
                 scene_paths = [path for path in scene_paths if ray_path_reaches_image_from_events(path)]
             total = len(scene_paths)
             step = max(total // 300, 1) if total > 300 else 1
@@ -1014,7 +1015,16 @@ class ThreeDSceneToolsMixin:
                     ray_index = int(getattr(path, "ray_index"))
                 except Exception:
                     ray_index = int(fallback_index * step)
-                rendered.append((ray_index, color, points[:, :3], ray_path_terminal_status_from_events(path)))
+                terminal_status = ray_path_terminal_status_from_events(path)
+                if live_step_preview and not show_clipped_rays:
+                    points = KrakenLayoutEditor._trim_transient_step_terminal_tail_for_display(
+                        points,
+                        path,
+                        terminal_status=terminal_status,
+                    )
+                    if points.ndim != 2 or points.shape[0] < 2:
+                        continue
+                rendered.append((ray_index, color, points[:, :3], terminal_status))
             return rendered
 
         fallback_rays = rays if rays is not None else self.last_rays
@@ -1041,6 +1051,49 @@ class ThreeDSceneToolsMixin:
         )
         radius = max(values[1] - values[0], values[3] - values[2], values[5] - values[4], 1.0)
         return center, float(radius)
+
+    @staticmethod
+    def _trim_transient_step_terminal_tail_for_display(
+        points,
+        path,
+        *,
+        terminal_status: str = "",
+    ) -> np.ndarray:
+        try:
+            pts = np.asarray(points, dtype=float)
+        except Exception:
+            return np.empty((0, 3), dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+            return np.empty((0, 3), dtype=float)
+        pts = np.array(pts[:, :3], dtype=float, copy=True)
+        finite = np.all(np.isfinite(pts), axis=1)
+        if not np.all(finite):
+            pts = pts[finite]
+        if pts.shape[0] < 2:
+            return np.empty((0, 3), dtype=float)
+        status = str(terminal_status or "").strip().lower()
+        if status not in {"escaped", "missed_detector"}:
+            return pts
+        last_surface_point = None
+        for event in reversed(list(getattr(path, "events", []) or [])):
+            if str(getattr(event, "event_kind", "") or "").strip().lower() == "terminal":
+                continue
+            try:
+                candidate = np.asarray(getattr(event, "point_world", ()), dtype=float).reshape(-1)[:3]
+            except Exception:
+                candidate = np.asarray([], dtype=float)
+            if candidate.size == 3 and np.all(np.isfinite(candidate)):
+                last_surface_point = candidate
+                break
+        if last_surface_point is not None:
+            distances = np.linalg.norm(pts[:, :3] - last_surface_point[:3], axis=1)
+            if distances.size:
+                index = int(np.argmin(distances))
+                if float(distances[index]) <= 1.0e-6 and index >= 1:
+                    return pts[: index + 1]
+        if pts.shape[0] > 2:
+            return pts[:-1]
+        return pts
 
     @staticmethod
     def _scene_ray_path_by_index(scene_bundle: SceneBundle | None) -> dict[int, object]:

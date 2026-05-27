@@ -256,10 +256,16 @@ class Open3DSceneRefreshService:
         ray_surface_edge_overlays: list[tuple[object, tuple[float, float, float], float, int | None]] = []
         ray_surface_wire_overlays: list[tuple[object, tuple[float, float, float], float, int]] = []
         live_trace_step_labels_by_row = self._live_trace_step_overlay_label_by_row()
+        mesh_row_indices: set[int] = set()
+        for mesh_item in mesh_items:
+            try:
+                mesh_row_indices.add(int(getattr(mesh_item, "row_index", -1)))
+            except Exception:
+                continue
         current_live_trace_step_overlay_labels = {
             str(label).strip().lower()
             for row_index, label in live_trace_step_labels_by_row.items()
-            if 0 <= int(row_index) < len(rows) and str(label).strip().lower()
+            if int(row_index) in mesh_row_indices and str(label).strip().lower()
         }
         live_trace_step_mesh_by_label: dict[str, object] = {}
         for mesh_item in mesh_items:

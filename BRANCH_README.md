@@ -92,11 +92,14 @@ through both the editor and inspector, transient STEP import/carry/drop remains
 display-only and preserves the existing ray family while the component is being
 placed, and an explicit optical-axis snap marks the transient optical STEP as a
 physics-preview solid, exits carry mode, and keeps the full traced launch family
-visible even when defocus means some rays miss the detector. Show Rays and Trace
-Now include the placed transient STEP without requiring row promotion first.
-Trace Now also turns ray visibility on before rendering, and Undo/Redo clears
-stale transient STEP physics-preview and rotation/carry state so a successful
-trace cannot leave invisible geometry or floating handles behind.
+visible even when defocus means some rays miss the detector, while hidden-clipped
+mode suppresses long missed/escaped terminal tails so the viewport does not turn
+into a diagnostic fan. Show Rays and Trace Now include the placed transient STEP
+without requiring row promotion first. Trace Now also turns ray visibility on
+before rendering, and Undo/Redo clears stale transient STEP physics-preview and
+rotation/carry state so a successful trace cannot leave invisible geometry or
+floating handles behind. The display-only STEP suppression check is tied to the
+current rendered mesh rows, not stale live-trace row labels.
 Repeated Show Rays toggles reuse the current traced scene instead of rebuilding
 transient STEP physics, first-trace timing now records live STEP row
 planning, system build, ray tracing, SceneBundle projection, and per-bundle

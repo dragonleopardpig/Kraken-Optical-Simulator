@@ -223,6 +223,7 @@ def main() -> int:
     mouse_bindings_factory = inspect.getsource(Kraken3DInspector._mouse_bindings_service)
     interaction_factory = inspect.getsource(Kraken3DInspector._interaction_service)
     handler = inspect.getsource(Kraken3DInspector.show_step_rotation_handler)
+    handler_visible_body = inspect.getsource(Kraken3DInspector._step_label_has_visible_body_actor)
     handler_rotate = inspect.getsource(Kraken3DInspector._rotate_step_from_handler)
     step_rotation_service_factory = inspect.getsource(Kraken3DInspector._open3d_step_rotation_handle_service)
     ensure_step_handles = inspect.getsource(Open3DStepRotationHandleService.ensure_for_label)
@@ -577,6 +578,7 @@ def main() -> int:
     current_source_cone = inspect.getsource(KrakenLayoutEditor._current_source_cone_angle)
     saved_layout_figure = inspect.getsource(build_saved_layout_figure)
     scene_ray_records = inspect.getsource(KrakenLayoutEditor._iter_3d_scene_ray_records)
+    transient_step_tail_trim = inspect.getsource(KrakenLayoutEditor._trim_transient_step_terminal_tail_for_display)
     ray_terminal_style = inspect.getsource(KrakenLayoutEditor._ray_terminal_3d_style)
     should_draw_endpoint = inspect.getsource(KrakenLayoutEditor._should_draw_3d_terminal_endpoint)
     bounded_ray_display = inspect.getsource(KrakenLayoutEditor._bounded_3d_ray_points_for_display)
@@ -628,6 +630,9 @@ def main() -> int:
         (
             "STEP reselect rebuilds rotation handles after blank deselect",
             "_ensure_step_rotation_handles_for_label(label)" in handler
+            and "_step_label_has_visible_body_actor(label)" in handler
+            and "refresh_imported_step_overlay(label, render=False)" in handler
+            and "_step_actor_map.get(label" in handler_visible_body
             and "Open3DStepRotationHandleService" in step_rotation_service_factory
             and "return self.add_handles(label, mesh)" in ensure_step_handles
             and "handle_count_for_label(label)" in ensure_step_handles,
@@ -1787,7 +1792,15 @@ def main() -> int:
             and "_last_live_step_overlay_trace_records" in scene_ray_records
             and "transient_live_trace" in scene_ray_records
             and "and not live_step_preview" in scene_ray_records
+            and "_trim_transient_step_terminal_tail_for_display" in scene_ray_records
             and "ray_path_reaches_image_from_events(path)" in scene_ray_records,
+        ),
+        (
+            "Open 3D transient STEP previews suppress long missed/escaped terminal tails when clipped rays are hidden",
+            '"escaped", "missed_detector"' in transient_step_tail_trim
+            and 'event_kind", "") or "").strip().lower() == "terminal"' in transient_step_tail_trim
+            and "return pts[: index + 1]" in transient_step_tail_trim
+            and "return pts[:-1]" in transient_step_tail_trim,
         ),
         (
             "Open 3D viewport reports ray terminal status groups",

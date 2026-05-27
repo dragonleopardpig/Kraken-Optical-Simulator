@@ -3252,6 +3252,17 @@ class Kraken3DInspector(tk.Toplevel):
     def _step_rotation_handle_count_for_label(self, label: str) -> int:
         return self._open3d_step_rotation_handle_service().handle_count_for_label(label)
 
+    def _step_label_has_visible_body_actor(self, label: str) -> bool:
+        label = str(label or "").strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET:
+            return False
+        for actor_key in list(self._step_actor_map.get(label, []) or []):
+            if actor_key in self._actor_step_rotate_map or actor_key in self._actor_step_rotate_visual_keys:
+                continue
+            if self._actor_by_key.get(actor_key) is not None:
+                return True
+        return False
+
     def _ensure_step_rotation_handles_for_label(self, label: str) -> int:
         return self._open3d_step_rotation_handle_service().ensure_for_label(label)
 
@@ -4547,6 +4558,15 @@ class Kraken3DInspector(tk.Toplevel):
                 self._step_carry_grid_spacing_mm = None
             self.editor.select_step_component(label)
             self._set_step_highlight(label, render=False)
+            if not self._step_label_has_visible_body_actor(label):
+                self.refresh_imported_step_overlay(label, render=False)
+            if not self._step_label_has_visible_body_actor(label):
+                self._close_step_rotation_handler()
+                self._set_step_highlight(None, render=False)
+                self.status_var.set(f"{label.upper()} STEP rotation handles hidden because the STEP body is not visible.")
+                self.render()
+                self._timing_finish(token, status="missing_visible_step_body")
+                return
             handle_count = self._ensure_step_rotation_handles_for_label(label)
             handle_text = "Use the colored STEP rotation handles, or Center STEP Axis."
             if not self._show_rotation_handles():

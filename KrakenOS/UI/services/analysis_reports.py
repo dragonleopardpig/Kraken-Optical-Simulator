@@ -119,6 +119,7 @@ def _short_error_message(exc: Exception, limit: int = 220) -> str:
 
 
 class AnalysisReportsMixin:
+    @staticmethod
     def _format_ray_inspector_value(value) -> str:
         try:
             numeric = float(value)
