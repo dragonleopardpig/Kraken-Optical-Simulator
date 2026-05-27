@@ -111,6 +111,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="CAD/STEP service boundaries are clean enough to start the CadQuery/OCP study.",
     ),
     ValidationTarget(
+        "cad-scene-cache",
+        "KrakenOS.UI.validate_cad_scene_cache",
+        reason="Open 3D STEP hover/pick paths reuse cached CAD triangle and face-outline artifacts.",
+    ),
+    ValidationTarget(
         "open3d-axis-guides",
         "KrakenOS.UI.validate_open3d_optical_axis_guides",
         reason="Centered sequential scenes keep one global optical axis; off-axis scenes keep traced guides.",

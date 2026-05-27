@@ -24,6 +24,7 @@ from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
 from KrakenOS.UI.scene_builder import build_scene_placements
 from KrakenOS.UI.scene_geometry import SceneBundle, ScenePlacement3D, SurfaceMesh3D
 from KrakenOS.UI.scene_projector import normalize_projection_plane
+from KrakenOS.UI.services.cad_scene_cache import CadSceneCache
 from KrakenOS.UI.services.open3d_carry_grip import Open3DCarryGripService
 from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
 from KrakenOS.UI.services.open3d_face_pick import FaceRayPick, pick_face_from_ray
@@ -217,6 +218,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._thickness_dimension_actor_map: dict[int, list[str]] = {}
         self._thickness_dimension_drag_map: dict[str, dict[str, object]] = {}
         self._step_feature_cache: dict[tuple[str, int], tuple[np.ndarray, object | None, np.ndarray | None] | None] = {}
+        self._cad_scene_cache = CadSceneCache()
         self._picked_step_label: str | None = None
         self._picked_ray_index: int | None = None
         self._current_scene_bundle: SceneBundle | None = None
@@ -3262,6 +3264,10 @@ class Kraken3DInspector(tk.Toplevel):
             pass
         try:
             self._step_feature_cache.clear()
+        except Exception:
+            pass
+        try:
+            self._cad_scene_cache.clear()
         except Exception:
             pass
         self._hover_step_actor = None
@@ -8009,8 +8015,7 @@ class Kraken3DInspector(tk.Toplevel):
         )
         if world_triangles.size == 0:
             try:
-                _fmt, triangles = _read_stl_triangle_vertices(path)
-                triangles = np.asarray(triangles, dtype=float)
+                triangles = self._cad_scene_cache.triangle_array(path, _read_stl_triangle_vertices).triangles
             except Exception:
                 return None
             if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or triangles.shape[0] == 0:
@@ -8048,34 +8053,33 @@ class Kraken3DInspector(tk.Toplevel):
         try:
             metadata = self.editor._step_overlay_face_metadata(str(label).strip().lower())
             source_stl = Path(str(metadata.get("source_stl", "") or "")).expanduser()
-            _fmt, triangles = _read_stl_triangle_vertices(source_stl)
-            triangles = np.asarray(triangles, dtype=float)
+            triangles = self._cad_scene_cache.triangle_array(source_stl, _read_stl_triangle_vertices).triangles
         except Exception:
             return None
         if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or triangles.shape[0] == 0:
             return None
-        indices: list[int] = []
-        for value in list(face.get("triangle_indices", face.get("cell_indices", [])) or []):
-            try:
-                index = int(value)
-            except Exception:
-                continue
-            if 0 <= index < int(triangles.shape[0]):
-                indices.append(index)
-        if not indices:
+        selected_triangles = self._cad_scene_cache.face_triangles(source_stl, face, _read_stl_triangle_vertices)
+        if selected_triangles.ndim != 3 or selected_triangles.shape[1:] != (3, 3) or selected_triangles.shape[0] == 0:
             return None
-        face_mesh = self._polydata_from_triangles(np.asarray(triangles[np.asarray(indices, dtype=int)], dtype=float))
-        if face_mesh is None:
-            return None
-        selected_triangles = np.asarray(triangles[np.asarray(indices, dtype=int)], dtype=float)
-        outline = self._planar_outline_from_triangles(selected_triangles, normal_world=face.get("normal_world", face.get("normal")))
-        if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
-            outline = self._display_feature_edges(face_mesh, feature_angle=8.0)
-        if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
-            try:
-                outline = face_mesh.extract_all_edges()
-            except Exception:
-                outline = None
+
+        def build_outline(cached_triangles: np.ndarray):
+            face_mesh = self._polydata_from_triangles(cached_triangles)
+            if face_mesh is None:
+                return None
+            outline_mesh = self._planar_outline_from_triangles(
+                cached_triangles,
+                normal_world=face.get("normal_world", face.get("normal")),
+            )
+            if outline_mesh is None or int(getattr(outline_mesh, "n_points", 0)) <= 0:
+                outline_mesh = self._display_feature_edges(face_mesh, feature_angle=8.0)
+            if outline_mesh is None or int(getattr(outline_mesh, "n_points", 0)) <= 0:
+                try:
+                    outline_mesh = face_mesh.extract_all_edges()
+                except Exception:
+                    outline_mesh = None
+            return outline_mesh
+
+        outline = self._cad_scene_cache.face_outline(source_stl, face, _read_stl_triangle_vertices, build_outline)
         center = face.get("centroid_world", face.get("centroid", ()))
         return self._hover_overlay_for_feature(center, outline)
 
@@ -8133,8 +8137,7 @@ class Kraken3DInspector(tk.Toplevel):
         try:
             metadata = self.editor._step_overlay_face_metadata(str(label).strip().lower())
             source_stl = Path(str(metadata.get("source_stl", "") or "")).expanduser()
-            _fmt, triangles = _read_stl_triangle_vertices(source_stl)
-            triangles = np.asarray(triangles, dtype=float)
+            triangles = self._cad_scene_cache.triangle_array(source_stl, _read_stl_triangle_vertices).triangles
         except Exception:
             return None
         faces = [face for face in list(metadata.get("faces", []) or []) if isinstance(face, dict)]
@@ -8154,8 +8157,7 @@ class Kraken3DInspector(tk.Toplevel):
         origin, direction = ray
         try:
             row, path, metadata = self.editor._optical_solid_face_metadata_for_row(int(row_index))
-            _fmt, triangles = _read_stl_triangle_vertices(path)
-            triangles = np.asarray(triangles, dtype=float)
+            triangles = self._cad_scene_cache.triangle_array(path, _read_stl_triangle_vertices).triangles
         except Exception:
             return None
         if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or triangles.shape[0] == 0:

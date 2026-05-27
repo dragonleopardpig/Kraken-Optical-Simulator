@@ -17,6 +17,7 @@ def main() -> int:
 
     required_modules = (
         "KrakenOS/UI/services/cad_cache_paths.py",
+        "KrakenOS/UI/services/cad_scene_cache.py",
         "KrakenOS/UI/services/step_overlay_labels.py",
         "KrakenOS/UI/services/layout_literals.py",
         "KrakenOS/UI/services/step_face_direction.py",
@@ -49,6 +50,11 @@ def main() -> int:
 
     if "CAD_CACHE_DIR = Path.home()" in _source("KrakenOS/UI/layout_editor.py"):
         failures.append("layout_editor.py must import CAD_CACHE_DIR from services/cad_cache_paths.py")
+
+    scene_cache_source = _source("KrakenOS/UI/services/cad_scene_cache.py")
+    for token in ("CadSceneCache", "CadDocumentCache", "CadPickCache", "face_outline"):
+        if token not in scene_cache_source:
+            failures.append(f"CAD scene-cache service is missing {token}.")
 
     branch_readme = _source("BRANCH_README.md")
     if "CadQuery/OCP topology study" not in branch_readme:

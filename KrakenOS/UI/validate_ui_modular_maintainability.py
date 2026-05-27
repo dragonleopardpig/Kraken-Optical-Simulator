@@ -45,6 +45,7 @@ FAST_CONTRACT_ALIASES = (
     '"row-spec-contracts"',
     '"layout-literals"',
     '"cadquery-readiness"',
+    '"cad-scene-cache"',
 )
 
 REQUIRED_SERVICE_MODULES = (
@@ -52,6 +53,7 @@ REQUIRED_SERVICE_MODULES = (
     "KrakenOS/UI/services/row_spec_contracts.py",
     "KrakenOS/UI/services/layout_literals.py",
     "KrakenOS/UI/services/cad_cache_paths.py",
+    "KrakenOS/UI/services/cad_scene_cache.py",
     "KrakenOS/UI/services/step_overlay_labels.py",
 )
 

@@ -70,9 +70,9 @@ deferred.
 
 | Area | Status | Progress | Next action |
 | --- | --- | --- | --- |
-| Upstream main integration | Triaged | `40%` | Continue selective integration. Packaging metadata and attachment cleanup are merged; runtime tracing/display cleanups from upstream need adapted validators before landing. |
-| CadQuery/OCP topology study | Architecture studied | `25%` | Local CadQuery/OCP source has been reviewed and documented. Next step is a Kraken CAD scene cache: topology/display/pick caches first, optional CadQuery/OCP adapter later if it proves better than the available pythonocc/OCC backend. |
-| External merge readiness | In progress | `70%` | Keep this README, Sphinx docs, validation commands, and generated reports aligned so a reviewer can evaluate scope and test coverage without following the entire development history. |
+| Upstream main integration | Ready to start | `65%` | Begin selective upstream replay with validators after each small batch. Do not overwrite non-sequential scene, Open 3D, CAD cache, or packaging contracts. |
+| CadQuery/OCP topology study | Cache foundation landed | `55%` | `CadSceneCache` now reuses existing mesh-path triangle and face-outline artifacts in Open 3D hover/pick paths. Next add actor/cell-data face lookup and hover-latency diagnostics before any optional CadQuery/OCP adapter. |
+| External merge readiness | In progress | `80%` | Keep this README, Sphinx docs, validation commands, and generated reports aligned so a reviewer can evaluate scope and test coverage without following the entire development history. |
 | Final UI theming polish | Deferred | `0%` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
 
 ## KrakenOS Base Features
@@ -272,6 +272,7 @@ Frequently useful targeted checks:
 python -m KrakenOS.UI.validate_ui_modular_maintainability
 python -m KrakenOS.UI.validate_ui_install_metadata
 python -m KrakenOS.UI.validate_optimization_backend
+python -m KrakenOS.UI.validate_cad_scene_cache
 python -m KrakenOS.UI.validate_native_nonseq_closure
 python -m KrakenOS.UI.validate_2d_3d_projection_sync
 python -m KrakenOS.UI.validate_infinity_field_launch
@@ -366,7 +367,8 @@ instead of being repeated here as a long progress table.
 
 ## Next Pipeline Step
 
-Prototype the CAD scene cache described in the Sphinx responsiveness note:
-cache transformed STEP meshes, triangle arrays, face metadata, and face-outline
-polydata first; then add an OpenCascade topology adapter and compare CadQuery/OCP
-behind the same interface.
+Start upstream main integration in small batches. For each upstream batch, run
+the fast contracts first, then the targeted display/physics validator for the
+area touched. Keep the new CAD scene-cache boundary intact; the next CAD work is
+actor/cell-data face lookup plus hover-latency diagnostics before any optional
+CadQuery/OCP adapter.

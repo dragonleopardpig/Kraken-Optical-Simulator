@@ -164,6 +164,13 @@ Phase 2: Cache The Existing Mesh Path
     This phase should improve responsiveness without changing the optical
     tracing contract.
 
+    Current branch progress: the first ``CadSceneCache`` service is in place.
+    Open 3D imported STEP hover and transparent face-pick paths now reuse
+    cached triangle arrays, cached face triangle slices, and cached face-outline
+    artifacts for the existing mesh path. The next Phase 2 work is to move the
+    actor/cell-to-face lookup into cached cell data and add a hover-latency
+    diagnostic.
+
 Phase 3: Add An OpenCascade Topology Adapter
     Build a new adapter using the installed ``pythonocc-core``/``OCC`` backend:
 
