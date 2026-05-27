@@ -120,6 +120,8 @@ def main() -> int:
     scene_refresh_source = __import__("inspect").getsource(open3d_scene_refresh)
     if "row_round_lens_like" not in scene_refresh_source or "boundary_edges=row_edge_boundary_edges" not in scene_refresh_source:
         failures.append("Row-backed round lens-like optical solids must suppress tessellation patch-boundary edge overlays.")
+    if "round_lens_like = bool(self._mesh_round_lens_axis(cad_mesh) is not None)" not in scene_refresh_source or "boundary_edges=not round_lens_like" not in scene_refresh_source:
+        failures.append("Imported round lens-like STEP overlays must suppress tessellation patch-boundary edge overlays in full scene refreshes.")
     interaction_source = __import__("inspect").getsource(Open3DInteractionService._on_mouse_move)
     if "carry_label = self._step_carry_label()" not in interaction_source or "target_label = str(carry_label)" not in interaction_source:
         failures.append("Carry-mode imported STEP hover must pick the active STEP face, not only rotation handles.")

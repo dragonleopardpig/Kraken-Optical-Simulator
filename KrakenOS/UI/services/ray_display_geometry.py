@@ -319,7 +319,7 @@ def _dotted_axis_records_from_ray_path(path, bounds, *, max_segments: int = 6) -
         if not np.isfinite(length) or length <= 1e-6:
             continue
         direction = direction / length
-        if abs(float(direction[2])) > 0.998 and float(np.hypot(start[0], start[1])) < 1e-5 and float(np.hypot(end[0], end[1])) < 1e-5:
+        if float(np.hypot(direction[0], direction[1])) <= 1e-4:
             continue
         axis_origin = 0.5 * (start + end)
         if axis_role == "post_surface":

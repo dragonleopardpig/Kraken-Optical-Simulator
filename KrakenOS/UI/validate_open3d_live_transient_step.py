@@ -107,9 +107,18 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             "Transient STEP overlays are not drawn twice during live tracing",
             "def _live_trace_step_overlay_labels" in inspector_source
             and "live_trace_step_overlay_labels = self._live_trace_step_overlay_labels()" in open3d_scene_refresh_service
-            and "if label in live_trace_step_overlay_labels:" in open3d_scene_refresh_service
+            and "if label in live_trace_step_overlay_labels and label in live_trace_step_mesh_by_label:" in open3d_scene_refresh_service
             and "continue" in open3d_scene_refresh_service,
-            "When Live Mode turns an imported optical STEP into a transient row, the display-only overlay is suppressed.",
+            "When Live Mode turns an imported optical STEP into a transient row, the display-only overlay is suppressed only when the transient mesh is present.",
+        ),
+        Open3DLiveTransientStepCheck(
+            "Show Rays toggles reuse the current Open 3D scene bundle",
+            "def _can_refresh_show_rays_from_current_scene" in inspector_source
+            and "def _current_scene_has_live_step_trace" in inspector_source
+            and "show_rays_fast_toggle_refresh" in inspector_source
+            and "self._current_rays = rays" in open3d_scene_refresh_service
+            and "self._current_row_names = list(row_names or [])" in open3d_scene_refresh_service,
+            "Expensive transient STEP tracing is paid once; subsequent ray visibility changes are display-only refreshes.",
         ),
         Open3DLiveTransientStepCheck(
             "Live STEP row plans are cached across source-only refreshes",

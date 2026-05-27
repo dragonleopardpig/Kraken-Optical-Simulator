@@ -53,6 +53,8 @@ class Open3DSceneRefreshService:
             raise RuntimeError(_VTK_TK_UNAVAILABLE_REASON or "Embedded VTK/Tk viewer unavailable")
         self._current_scene_bundle = scene_bundle
         self._current_system = system
+        self._current_rays = rays
+        self._current_row_names = list(row_names or [])
         self._remember_refresh_sampling_mode(getattr(self.editor, "_active_preview_sampling_mode", None))
 
         show_reference_surfaces = bool(self.show_reference_surfaces_var.get())
@@ -525,7 +527,7 @@ class Open3DSceneRefreshService:
             ("led", self.editor._transformed_imported_led_step_mesh, (0.95, 0.62, 0.16), 0.35),
             ("camera", self.editor._transformed_imported_camera_step_mesh, (0.28, 0.33, 0.42), 0.38),
         ):
-            if label in live_trace_step_overlay_labels:
+            if label in live_trace_step_overlay_labels and label in live_trace_step_mesh_by_label:
                 continue
             try:
                 cad_mesh = builder()
@@ -546,7 +548,15 @@ class Open3DSceneRefreshService:
                     flat_shading=True,
                 )
                 try:
-                    cad_edges = self._display_feature_edges(cad_mesh, feature_angle=55)
+                    try:
+                        round_lens_like = bool(self._mesh_round_lens_axis(cad_mesh) is not None)
+                    except Exception:
+                        round_lens_like = False
+                    cad_edges = self._display_feature_edges(
+                        cad_mesh,
+                        feature_angle=75 if round_lens_like else 55,
+                        boundary_edges=not round_lens_like,
+                    )
                     if int(getattr(cad_edges, "n_points", 0)) > 0:
                         edge_color = _OPTICAL_STEP_EDGE_COLOR if label == "optical" else self._solid_edge_color_from_body(color)
                         silhouette_color = _OPTICAL_STEP_SILHOUETTE_COLOR if label == "optical" else self._solid_silhouette_edge_color()
