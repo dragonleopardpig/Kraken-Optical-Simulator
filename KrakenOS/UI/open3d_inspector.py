@@ -6974,7 +6974,7 @@ class Kraken3DInspector(tk.Toplevel):
         return path is not None and Path(path).exists()
 
     @staticmethod
-    def _display_feature_edges(mesh, *, feature_angle: float = 24.0):
+    def _display_feature_edges(mesh, *, feature_angle: float = 24.0, boundary_edges: bool = True):
         if pv is None or mesh is None:
             return None
         try:
@@ -6996,7 +6996,7 @@ class Kraken3DInspector(tk.Toplevel):
         try:
             edges = surface.extract_feature_edges(
                 feature_angle=float(feature_angle),
-                boundary_edges=True,
+                boundary_edges=bool(boundary_edges),
                 feature_edges=True,
                 manifold_edges=False,
             )

@@ -10,6 +10,7 @@ import numpy as np
 
 from KrakenOS.UI import cad_import_service
 from KrakenOS.UI.open3d_inspector import Kraken3DInspector
+from KrakenOS.UI.services import open3d_step_overlay_refresh
 
 
 def _cell_normal(data, cell_id: int) -> np.ndarray | None:
@@ -109,6 +110,9 @@ def main() -> int:
         failures.append("Round lens-like STEP clicks must fall back directly to smooth display-region picking.")
     if "_round_lens_feature_for_cell" not in inspector_source or "_mesh_round_lens_axis" not in inspector_source:
         failures.append("Round lens-like STEP face grouping helpers are missing.")
+    refresh_source = __import__("inspect").getsource(open3d_step_overlay_refresh)
+    if "boundary_edges=not round_lens_like" not in refresh_source:
+        failures.append("Round lens-like STEP rendering must suppress tessellation patch-boundary edge overlays.")
 
     if failures:
         print("Open 3D lens STEP face-pick validation failed:")
