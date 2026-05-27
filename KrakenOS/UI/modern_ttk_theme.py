@@ -1,8 +1,8 @@
-"""Modern ttk theme helpers for the KrakenOS UI.
+"""Deferred ttk theme helpers for the KrakenOS UI.
 
-The editor is still a Tk/ttk application. This module keeps the visual refresh
-low-risk by styling existing widgets instead of replacing them with a different
-widget toolkit.
+The editor is still a Tk/ttk application. The production-readiness branch keeps
+the native ttk look by default while preserving this adapter as a final polish
+milestone hook.
 """
 
 from __future__ import annotations
@@ -62,15 +62,17 @@ def _apply_sv_ttk_if_available(style: ttk.Style, selected_mode: str) -> bool:
 
 
 def apply_modern_ttk_theme(root: tk.Misc, *, mode: str | None = None) -> ttk.Style:
-    """Apply the KrakenOS ttk style layer and return the active style object.
+    """Return the active style object, leaving native ttk untouched by default.
 
-    Set ``KRAKEN_UI_TTK_THEME=classic`` or ``off`` to leave the native ttk theme
-    untouched. This is useful for debugging platform-specific widget issues.
+    Set ``KRAKEN_UI_TTK_THEME=modern`` to opt into the experimental style layer.
+    The branch defaults to ``native`` until the final visual polish milestone.
     """
 
-    selected_mode = (mode or os.getenv("KRAKEN_UI_TTK_THEME", "modern")).strip().lower()
+    selected_mode = (
+        mode if mode is not None else os.getenv("KRAKEN_UI_TTK_THEME", "native")
+    ).strip().lower()
     style = ttk.Style(root)
-    if selected_mode in {"", "0", "false", "off", "native", "classic"}:
+    if selected_mode in {"", "0", "false", "off", "native", "classic", "default"}:
         setattr(style, "kraken_theme_backend", "native")
         return style
 

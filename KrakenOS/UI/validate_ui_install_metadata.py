@@ -19,7 +19,6 @@ REQUIRED_UI_DEPS = (
     "pybind11",
     "pygmo",
     "pyzmq",
-    "sv-ttk",
 )
 
 

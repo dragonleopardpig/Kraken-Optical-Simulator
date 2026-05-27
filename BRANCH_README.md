@@ -73,6 +73,7 @@ deferred.
 | Upstream main integration | Triaged | `40%` | Continue selective integration. Packaging metadata and attachment cleanup are merged; runtime tracing/display cleanups from upstream need adapted validators before landing. |
 | CadQuery/OCP topology study | Architecture studied | `25%` | Local CadQuery/OCP source has been reviewed and documented. Next step is a Kraken CAD scene cache: topology/display/pick caches first, optional CadQuery/OCP adapter later if it proves better than the available pythonocc/OCC backend. |
 | External merge readiness | In progress | `70%` | Keep this README, Sphinx docs, validation commands, and generated reports aligned so a reviewer can evaluate scope and test coverage without following the entire development history. |
+| Final UI theming polish | Deferred | `0%` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
 
 ## KrakenOS Base Features
 
@@ -196,8 +197,9 @@ Notes:
 
 - The desktop UI uses Tkinter. If `import tkinter` fails, install your
   operating system's Tk package and refresh the virtual environment.
-- The `ui` extra installs UI/runtime dependencies, the optional optimizer
-  backend dependency `pygmo`, and the optional `sv-ttk` theme dependency.
+- The `ui` extra installs UI/runtime dependencies and the optional optimizer
+  backend dependency `pygmo`. The custom ttk visual theme is deferred to the
+  final polish milestone and is not part of the current `ui` extra.
 - If the Optimization panel reports that the backend is unavailable, confirm the
   active environment with `python -m KrakenOS.UI.validate_optimization_backend`.
 - STEP/IGES CAD import benefits from an OpenCascade/pythonocc-style backend.
@@ -322,7 +324,8 @@ The split now covers:
   decisions as reusable service contracts instead of editor-local helpers.
 - Reusable Tk controls for commit bindings, commit-aware entry/combobox
   helpers, table cell editors, menu controls, and tooltips.
-- The optional `sv-ttk` theme adapter and public `.[ui]` install metadata.
+- A native ttk visual baseline, public `.[ui]` install metadata, and a dormant
+  theme-adapter hook for the final polish milestone.
 
 The refactor is protected by `validate_ui_modular_maintainability`, widget
 commit validators, row-spec contract validation, saved-layout literal

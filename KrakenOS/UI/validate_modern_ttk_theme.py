@@ -1,4 +1,4 @@
-"""Validate the low-risk modern ttk theme layer."""
+"""Validate that custom ttk theming is deferred by default."""
 
 from __future__ import annotations
 
@@ -12,28 +12,35 @@ def main() -> int:
     root.withdraw()
     try:
         style = apply_modern_ttk_theme(root)
-        frame_bg = str(style.lookup("TFrame", "background") or "")
-        button_bg = str(style.lookup("TButton", "background") or "")
-        heading_bg = str(style.lookup("Treeview.Heading", "background") or "")
         backend = getattr(style, "kraken_theme_backend", "")
+        classic_style = apply_modern_ttk_theme(root, mode="classic")
+        modern_style = apply_modern_ttk_theme(root, mode="modern")
+        modern_backend = getattr(modern_style, "kraken_theme_backend", "")
         checks = [
-            ("modern palette defines accent color", MODERN_TTK_PALETTE.get("accent") == "#2563eb"),
-            ("theme backend is recorded", backend.startswith("sv-ttk") or backend == "ttk-clam"),
-            ("TFrame background uses modern palette", frame_bg == MODERN_TTK_PALETTE["background"]),
-            ("TButton background is styled", bool(button_bg)),
-            ("Treeview heading background is styled", bool(heading_bg)),
-            ("classic escape hatch returns style", apply_modern_ttk_theme(root, mode="classic") is not None),
+            (
+                "modern palette defines accent color",
+                MODERN_TTK_PALETTE.get("accent") == "#2563eb",
+            ),
+            ("default theme backend is native", backend == "native"),
+            (
+                "classic escape hatch returns native style",
+                getattr(classic_style, "kraken_theme_backend", "") == "native",
+            ),
+            (
+                "modern theme remains opt-in",
+                modern_backend.startswith("sv-ttk") or modern_backend == "ttk-clam",
+            ),
         ]
     finally:
         root.destroy()
 
     failed = [name for name, ok in checks if not ok]
     if failed:
-        print("Modern ttk theme validation failed:")
+        print("Deferred ttk theme validation failed:")
         for name in failed:
             print(f"- {name}")
         return 1
-    print("Modern ttk theme validation passed.")
+    print("Deferred ttk theme validation passed.")
     return 0
 
 

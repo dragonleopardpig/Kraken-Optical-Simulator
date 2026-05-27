@@ -89,7 +89,11 @@ def main() -> int:
     if "class Kraken3DInspector" in layout_source:
         failures.append("Kraken3DInspector implementation must stay outside layout_editor.py")
     if "apply_modern_ttk_theme(self)" not in layout_source:
-        failures.append("layout_editor.py must apply the centralized ttk theme adapter")
+        failures.append("layout_editor.py must keep the dormant ttk theme adapter hook")
+
+    theme_source = (PROJECT_ROOT / "KrakenOS/UI/modern_ttk_theme.py").read_text(encoding="utf-8")
+    if 'os.getenv("KRAKEN_UI_TTK_THEME", "native")' not in theme_source:
+        failures.append("ttk theme adapter must default to native/no-op until the final polish milestone")
 
     fast_contracts_source = (PROJECT_ROOT / "KrakenOS/UI/validate_fast_contracts.py").read_text(encoding="utf-8")
     for alias in FAST_CONTRACT_ALIASES:

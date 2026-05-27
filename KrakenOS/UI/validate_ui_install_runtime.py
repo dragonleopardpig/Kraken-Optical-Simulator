@@ -13,7 +13,6 @@ REQUIRED_IMPORTS = {
     "pybind11": "pybind11",
     "pygmo": "pygmo",
     "zmq": "pyzmq",
-    "sv_ttk": "sv-ttk",
 }
 
 
