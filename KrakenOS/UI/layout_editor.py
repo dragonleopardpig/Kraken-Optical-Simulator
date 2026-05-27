@@ -123,7 +123,7 @@ from KrakenOS.UI.detector_aperture_analysis import (
     detector_aperture_table_values,
     write_detector_aperture_csv,
 )
-from KrakenOS.UI.custom_surfaces import decode_custom_surface_value, encode_custom_surface_value
+from KrakenOS.UI.custom_surfaces import decode_custom_surface_value
 from KrakenOS.UI.lens_drawing_export import export_lens_drawing, identify_elements
 from KrakenOS.UI.lens_drawing_properties import (
     DRAWING_PROPERTY_FIELDS,
@@ -295,6 +295,7 @@ from KrakenOS.UI.services.legacy_3d_scene import Legacy3DSceneService
 from KrakenOS.UI.services.layout_polyline_display import LayoutPolylineDisplayMixin
 from KrakenOS.UI.services.layout_file_writer import LayoutFileWriterService
 from KrakenOS.UI.services.layout_import_export import LayoutImportExportMixin
+from KrakenOS.UI.services.layout_literals import _UNSERIALIZABLE_LAYOUT_VALUE, _layout_literal_value
 from KrakenOS.UI.services.layout_scene_projection import LayoutSceneProjectionMixin
 from KrakenOS.UI.services.layout_shell_controls import LayoutShellControlsMixin
 from KrakenOS.UI.services.layout_settings import LayoutSettingsService
@@ -2009,36 +2010,6 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
     system = Kos.system(surfaces, _shared_setup(metal_catalogs) if setup is None else setup, build=int(build))
     apply_optical_solid_output_port_system_overrides(system, row_specs)
     return system
-
-
-def _layout_literal_value(value):
-    encoded_custom = encode_custom_surface_value(value)
-    if encoded_custom is not None and encoded_custom is not value:
-        return _layout_literal_value(encoded_custom)
-    if value is None or isinstance(value, (str, int, float, bool, np.floating, np.integer)):
-        return value
-    if isinstance(value, np.ndarray):
-        return np.asarray(value).tolist()
-    if isinstance(value, (list, tuple)):
-        converted = []
-        for item in value:
-            literal = _layout_literal_value(item)
-            if literal is _UNSERIALIZABLE_LAYOUT_VALUE:
-                return _UNSERIALIZABLE_LAYOUT_VALUE
-            converted.append(literal)
-        return converted
-    if isinstance(value, dict):
-        converted = {}
-        for key, item in value.items():
-            literal = _layout_literal_value(item)
-            if literal is _UNSERIALIZABLE_LAYOUT_VALUE:
-                return _UNSERIALIZABLE_LAYOUT_VALUE
-            converted[str(key)] = literal
-        return converted
-    return _UNSERIALIZABLE_LAYOUT_VALUE
-
-
-_UNSERIALIZABLE_LAYOUT_VALUE = object()
 
 
 def _build_cached_system_from_specs(row_specs: list[dict]) -> object:

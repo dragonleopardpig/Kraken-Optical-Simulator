@@ -8,11 +8,14 @@ from typing import Any
 
 import numpy as np
 
-
-def _layout_module():
-    from KrakenOS.UI import layout_editor as layout_editor_module
-
-    return layout_editor_module
+from KrakenOS.UI.services.advanced_surface_attrs import REFLECTIVE_PROXY_SURFACES
+from KrakenOS.UI.services.beam_scatter_metadata import (
+    BEAM_SPLITTER_ADVANCED_ATTR,
+    BEAM_SPLITTER_DEFAULT_SETTINGS,
+    _beam_splitter_coating_for_settings,
+)
+from KrakenOS.UI.services.layout_literals import _UNSERIALIZABLE_LAYOUT_VALUE, _layout_literal_value
+from KrakenOS.UI.trace_intent import BEAM_SPLITTER_SURFACE
 
 
 class LayoutFileWriterService:
@@ -31,14 +34,6 @@ class LayoutFileWriterService:
         setattr(self.editor, name, value)
 
     def _write_layout_file(self, path: Path) -> None:
-        le = _layout_module()
-        BEAM_SPLITTER_ADVANCED_ATTR = le.BEAM_SPLITTER_ADVANCED_ATTR
-        BEAM_SPLITTER_DEFAULT_SETTINGS = le.BEAM_SPLITTER_DEFAULT_SETTINGS
-        BEAM_SPLITTER_SURFACE = le.BEAM_SPLITTER_SURFACE
-        REFLECTIVE_PROXY_SURFACES = le.REFLECTIVE_PROXY_SURFACES
-        _UNSERIALIZABLE_LAYOUT_VALUE = le._UNSERIALIZABLE_LAYOUT_VALUE
-        _beam_splitter_coating_for_settings = le._beam_splitter_coating_for_settings
-        _layout_literal_value = le._layout_literal_value
         self._read_rows_from_table()
         title = path.stem.replace("_", " ").title()
         settings = self._collect_layout_settings()

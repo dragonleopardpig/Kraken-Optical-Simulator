@@ -101,6 +101,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Row-spec signatures and scalar-trace decisions live outside layout_editor.py.",
     ),
     ValidationTarget(
+        "layout-literals",
+        "KrakenOS.UI.validate_layout_literal_contracts",
+        reason="Saved-layout literal serialization lives outside layout_editor.py.",
+    ),
+    ValidationTarget(
         "open3d-axis-guides",
         "KrakenOS.UI.validate_open3d_optical_axis_guides",
         reason="Centered sequential scenes keep one global optical axis; off-axis scenes keep traced guides.",

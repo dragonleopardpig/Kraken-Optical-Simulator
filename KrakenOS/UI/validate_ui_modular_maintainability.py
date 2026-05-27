@@ -43,11 +43,13 @@ FAST_CONTRACT_ALIASES = (
     '"open3d-thickness-dimensions"',
     '"open3d-step-face-direction"',
     '"row-spec-contracts"',
+    '"layout-literals"',
 )
 
 REQUIRED_SERVICE_MODULES = (
     "KrakenOS/UI/services/advanced_surface_attrs.py",
     "KrakenOS/UI/services/row_spec_contracts.py",
+    "KrakenOS/UI/services/layout_literals.py",
 )
 
 
