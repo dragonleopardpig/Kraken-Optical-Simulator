@@ -10,7 +10,7 @@ from KrakenOS.UI.services import layout_polyline_display, layout_table_workbench
 from KrakenOS.UI.services import open3d_step_overlay_refresh
 from KrakenOS.UI.services import open3d_step_rotation_handles
 from KrakenOS.UI.services import open3d_timing, open3d_trace_refresh
-from KrakenOS.UI.services import three_d_scene_tools, trace_preview
+from KrakenOS.UI.services import three_d_scene_tools, trace_preview, trace_preview_sampling
 
 
 def main() -> int:
@@ -24,6 +24,7 @@ def main() -> int:
     trace_refresh_source = inspect.getsource(open3d_trace_refresh.Open3DTraceRefreshService)
     three_d_scene_source = inspect.getsource(three_d_scene_tools.ThreeDSceneToolsMixin._build_preview_system_rays_bundle)
     trace_preview_source = inspect.getsource(trace_preview.TracePreviewService._trace_preview_bundles)
+    trace_sampling_source = inspect.getsource(trace_preview_sampling.TracePreviewSamplingMixin._trace_selected_through_envelope)
     polyline_source = inspect.getsource(layout_polyline_display.LayoutPolylineDisplayMixin._load_step_mesh)
     workbench_source = inspect.getsource(layout_table_workbench.LayoutTableWorkbenchMixin)
     diagnostic_source = inspect.getsource(diagnose_open3d_action_timing)
@@ -80,6 +81,13 @@ def main() -> int:
             and "trace_preview_bundle_done" in trace_preview_source
             and "trace_preview_bundles_done" in trace_preview_source
             and "trace_preview_parallel_chunk_done" in trace_preview_source,
+        ),
+        (
+            "world envelope keeps the first successful trace instead of retracing it",
+            "candidate_rays" not in trace_sampling_source
+            and "rays.clean()" in trace_sampling_source
+            and "through_total <= 0" in trace_sampling_source
+            and "_trace_preview_bundles(system, rays, wavelength, bundles)" in trace_sampling_source,
         ),
         (
             "display-backed timing replay follows the reported user workflow",

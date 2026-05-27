@@ -823,8 +823,8 @@ class TracePreviewSamplingMixin:
         return True
 
     def _trace_selected_through_envelope(self, system, rays, wavelength: float, bundles: list[tuple[np.ndarray, ...]]) -> bool:
-        candidate_rays = Kos.raykeeper(system)
-        self._trace_preview_bundles(system, candidate_rays, wavelength, bundles)
+        rays.clean()
+        self._trace_preview_bundles(system, rays, wavelength, bundles)
         total_launches = 0
         max_group_count = 0
         for bundle in bundles:
@@ -834,9 +834,7 @@ class TracePreviewSamplingMixin:
                 group_count = 0
             total_launches += int(max(group_count, 0))
             max_group_count = max(max_group_count, int(max(group_count, 0)))
-        if _raykeeper_has_non_primary_branch_paths(candidate_rays, expected_launch_count=total_launches):
-            rays.clean()
-            self._trace_preview_bundles(system, rays, wavelength, bundles)
+        if _raykeeper_has_non_primary_branch_paths(rays, expected_launch_count=total_launches):
             self._preview_field_ray_count = max(1, int(max_group_count))
             self._preview_field_bundle_count = int(len(bundles))
             try:
@@ -850,17 +848,16 @@ class TracePreviewSamplingMixin:
             )
             return True
         final_surface = max(0, len(self.rows) - 1)
-        surfaces = [np.asarray(seq, dtype=int).ravel() for seq in getattr(candidate_rays, "SURFACE", ())]
+        surfaces = [np.asarray(seq, dtype=int).ravel() for seq in getattr(rays, "SURFACE", ())]
         through_total = 0
         for surface_ids in surfaces:
             if surface_ids.size and int(surface_ids[-1]) == final_surface:
                 through_total += 1
 
         if through_total <= 0:
+            rays.clean()
             return False
 
-        rays.clean()
-        self._trace_preview_bundles(system, rays, wavelength, bundles)
         self._preview_field_ray_count = max(1, int(max_group_count))
         self._preview_field_bundle_count = int(len(bundles))
         self.append_debug(

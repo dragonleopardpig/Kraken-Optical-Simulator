@@ -256,6 +256,11 @@ class Open3DSceneRefreshService:
         ray_surface_edge_overlays: list[tuple[object, tuple[float, float, float], float, int | None]] = []
         ray_surface_wire_overlays: list[tuple[object, tuple[float, float, float], float, int]] = []
         live_trace_step_labels_by_row = self._live_trace_step_overlay_label_by_row()
+        current_live_trace_step_overlay_labels = {
+            str(label).strip().lower()
+            for row_index, label in live_trace_step_labels_by_row.items()
+            if 0 <= int(row_index) < len(rows) and str(label).strip().lower()
+        }
         live_trace_step_mesh_by_label: dict[str, object] = {}
         for mesh_item in mesh_items:
             mesh = mesh_item.mesh
@@ -514,7 +519,6 @@ class Open3DSceneRefreshService:
         step_rotation_handles = 0
         step_carry_active = 0
         step_carry_grid_summary = ""
-        live_trace_step_overlay_labels = self._live_trace_step_overlay_labels()
         selected_step_label = str(selected_step or "").strip().lower()
         transient_selected_mesh = live_trace_step_mesh_by_label.get(selected_step_label)
         if transient_selected_mesh is not None and int(getattr(transient_selected_mesh, "n_points", 0)) > 0:
@@ -527,14 +531,19 @@ class Open3DSceneRefreshService:
             ("led", self.editor._transformed_imported_led_step_mesh, (0.95, 0.62, 0.16), 0.35),
             ("camera", self.editor._transformed_imported_camera_step_mesh, (0.28, 0.33, 0.42), 0.38),
         ):
-            if label in live_trace_step_overlay_labels and label in live_trace_step_mesh_by_label:
-                continue
+            label_is_live_trace_row = label in current_live_trace_step_overlay_labels
             try:
                 cad_mesh = builder()
             except Exception as exc:
                 cad_mesh = None
                 self.editor.append_debug(f"3D {label} STEP error: {exc}")
             if cad_mesh is not None and int(getattr(cad_mesh, "n_points", 0)) > 0:
+                if label_is_live_trace_row:
+                    if str(selected_step) == label and transient_selected_mesh is None:
+                        if self._step_carry_label() == label:
+                            step_carry_active, step_carry_grid_summary = self._add_step_carry_grid_overlay(label, cad_mesh)
+                        step_rotation_handles += self._add_step_rotation_handles(label, cad_mesh)
+                    continue
                 display_opacity = float(opacity)
                 if ray_visibility_requested and label == "optical":
                     display_opacity = max(display_opacity, 0.46)

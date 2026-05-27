@@ -93,7 +93,9 @@ does not trigger a physics trace until the user enables rays, Live Mode, or
 Trace Now, repeated Show Rays toggles reuse the current traced scene instead of
 rebuilding transient STEP physics, first-trace timing now records live STEP row
 planning, system build, ray tracing, SceneBundle projection, and per-bundle
-trace backend/ray-count durations, and
+trace backend/ray-count durations, the world-envelope sampler keeps the first
+successful non-sequential trace instead of retracing the same bundle into the
+display raykeeper, and
 `python -m KrakenOS.UI.diagnose_open3d_hover_latency` reports the cache and
 passive-hover contract for large vendor STEP-derived STL files.
 
