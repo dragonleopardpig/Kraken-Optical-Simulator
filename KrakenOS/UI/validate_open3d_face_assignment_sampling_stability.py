@@ -422,7 +422,7 @@ def _validate_world_envelope_keeps_splitter_branch_bundles() -> None:
         raise AssertionError("World-envelope branch detection should not flag one output per launch.")
 
     trace_source = inspect.getsource(KrakenLayoutEditor._trace_selected_through_envelope)
-    if "_raykeeper_has_non_primary_branch_paths(candidate_rays" not in trace_source:
+    if "_raykeeper_has_non_primary_branch_paths(" not in trace_source or "expected_launch_count=total_launches" not in trace_source:
         raise AssertionError("World-envelope through-ray selector is not branch-aware.")
     if "kept full" not in trace_source or "launch bundle" not in trace_source:
         raise AssertionError("World-envelope branch path does not preserve the full launch bundle.")

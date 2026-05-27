@@ -336,6 +336,7 @@ python -m KrakenOS.UI.validate_2d_3d_projection_sync
 python -m KrakenOS.UI.validate_infinity_field_launch
 python -m KrakenOS.UI.validate_row_spec_contracts
 python -m KrakenOS.UI.validate_open3d_step_face_direction
+python -m KrakenOS.UI.validate_open3d_face_assignment_sampling_stability --focused
 python -m KrakenOS.UI.validate_open3d_thickness_dimensions
 python -m KrakenOS.UI.validate_lens_drawing_properties
 python -m KrakenOS.UI.validate_lens_drawing_pdf_case_study
