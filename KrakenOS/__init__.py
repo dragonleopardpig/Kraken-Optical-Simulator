@@ -300,3 +300,23 @@ from .SurfBlockClass import *
 from .PSFMap import *
 from .SphericalPSFCalc import *
 from .Optimization import *
+
+try:
+    Display2D
+except NameError:
+    Display2D = display2d
+
+try:
+    Display3D
+except NameError:
+    Display3D = display3d
+
+try:
+    display2d_interactive
+except NameError:
+    display2d_interactive = display2d
+
+try:
+    display3d_interactive
+except NameError:
+    display3d_interactive = display3d

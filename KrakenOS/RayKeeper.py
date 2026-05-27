@@ -2,6 +2,90 @@
 import numpy as np
 import pyvista as pv
 
+def extract_ray_result(System):
+    """Return the last traced ray data without returning the full system.
+
+    This mirrors the traditional RayKeeper payload while preserving the
+    branch's non-sequential event, media, source, and branch metadata when the
+    active System exposes it.  Parallel or deferred trace collectors can pass
+    this dictionary back to RayKeeper without keeping a mutable System object.
+    """
+
+    return {
+        "nelements": getattr(System, "n", 0),
+        "val": getattr(System, "val", 0),
+        "Wave": getattr(System, "Wave", getattr(System, "WAV", np.nan)),
+        "ray_SurfHits": getattr(System, "ray_SurfHits", []),
+        "RAY": getattr(System, "ray_SurfHits", []),
+        "SURFACE": getattr(System, "SURFACE", []),
+        "NAME": getattr(System, "NAME", []),
+        "GLASS": getattr(System, "GLASS", []),
+        "S_XYZ": getattr(System, "S_XYZ", []),
+        "T_XYZ": getattr(System, "T_XYZ", []),
+        "XYZ": getattr(System, "XYZ", []),
+        "OST_XYZ": getattr(System, "OST_XYZ", []),
+        "OST_LMN": getattr(System, "OST_LMN", []),
+        "S_LMN": getattr(System, "S_LMN", []),
+        "LMN": getattr(System, "LMN", []),
+        "R_LMN": getattr(System, "R_LMN", []),
+        "N0": getattr(System, "N0", []),
+        "N1": getattr(System, "N1", []),
+        "WAV": getattr(System, "WAV", getattr(System, "Wave", np.nan)),
+        "G_LMN": getattr(System, "G_LMN", []),
+        "ORDER": getattr(System, "ORDER", []),
+        "GRATING": getattr(System, "GRATING", []),
+        "DISTANCE": getattr(System, "DISTANCE", []),
+        "OP": getattr(System, "OP", []),
+        "TOP_S": getattr(System, "TOP_S", []),
+        "TOP": getattr(System, "TOP", 0.0),
+        "ALPHA": getattr(System, "ALPHA", []),
+        "BULK_TRANS": getattr(System, "BULK_TRANS", []),
+        "RP": getattr(System, "RP", []),
+        "RS": getattr(System, "RS", []),
+        "TP": getattr(System, "TP", []),
+        "TS": getattr(System, "TS", []),
+        "TTBE": getattr(System, "TTBE", []),
+        "TT": getattr(System, "TT", 0.0),
+        "INTERACTION_TYPE": getattr(System, "INTERACTION_TYPE", []),
+        "INTERACTION_MODEL": getattr(System, "INTERACTION_MODEL", []),
+        "INTERACTION_TARGET_SURFACE": getattr(System, "INTERACTION_TARGET_SURFACE", []),
+        "INTERACTION_IN_POWER": getattr(System, "INTERACTION_IN_POWER", []),
+        "INTERACTION_COEFF": getattr(System, "INTERACTION_COEFF", []),
+        "INTERACTION_OUT_POWER": getattr(System, "INTERACTION_OUT_POWER", []),
+        "INTERACTION_LOSS_POWER": getattr(System, "INTERACTION_LOSS_POWER", []),
+        "INTERACTION_BULK": getattr(System, "INTERACTION_BULK", []),
+        "MESH_CELL_ID": getattr(System, "MESH_CELL_ID", []),
+        "MESH_ORIGINAL_CELL_ID": getattr(System, "MESH_ORIGINAL_CELL_ID", []),
+        "MESH_FACE_ID": getattr(System, "MESH_FACE_ID", []),
+        "MESH_FACE_MATCH_METHOD": getattr(System, "MESH_FACE_MATCH_METHOD", []),
+        "MESH_FACE_MATCH_SCORE": getattr(System, "MESH_FACE_MATCH_SCORE", []),
+        "MESH_FACE_MATCH_WARNING": getattr(System, "MESH_FACE_MATCH_WARNING", []),
+        "VOLUME_ID": getattr(System, "VOLUME_ID", []),
+        "MEDIA_IN": getattr(System, "MEDIA_IN", []),
+        "MEDIA_OUT": getattr(System, "MEDIA_OUT", []),
+        "MEDIA_TRANSITION": getattr(System, "MEDIA_TRANSITION", []),
+        "MEDIA_STATE_METHOD": getattr(System, "MEDIA_STATE_METHOD", []),
+        "MEDIA_STATE_DIAGNOSTIC": getattr(System, "MEDIA_STATE_DIAGNOSTIC", []),
+        "INSIDE_VOLUMES_BEFORE": getattr(System, "INSIDE_VOLUMES_BEFORE", []),
+        "INSIDE_VOLUMES_AFTER": getattr(System, "INSIDE_VOLUMES_AFTER", []),
+        "branch_id": getattr(System, "BRANCH_ID", 0),
+        "parent_branch_id": getattr(System, "PARENT_BRANCH_ID", -1),
+        "branch_power": getattr(System, "BRANCH_POWER", np.nan),
+        "branch_phase_deg": getattr(System, "BRANCH_PHASE", 0.0),
+        "branch_label": getattr(System, "BRANCH_LABEL", "primary"),
+        "branch_path": getattr(System, "BRANCH_PATH", "primary"),
+        "branch_termination_reason": getattr(System, "BRANCH_TERMINATION_REASON", ""),
+        "branch_termination_diagnostic": getattr(System, "BRANCH_TERMINATION_DIAGNOSTIC", ""),
+        "branch_tree_diagnostic": getattr(System, "BRANCH_TREE_DIAGNOSTIC", ""),
+        "branch_jones_p": getattr(System, "BRANCH_JONES_P", complex(1.0, 0.0)),
+        "branch_jones_s": getattr(System, "BRANCH_JONES_S", complex(0.0, 0.0)),
+        "branch_polarization_xyz": getattr(System, "BRANCH_POLARIZATION_XYZ", (1.0, 0.0, 0.0)),
+        "branch_final_media": getattr(System, "BRANCH_FINAL_MEDIA", ""),
+        "branch_final_index": getattr(System, "BRANCH_FINAL_INDEX", np.nan),
+        "branch_final_inside_volumes": getattr(System, "BRANCH_FINAL_INSIDE_VOLUMES", ""),
+        "branch_final_media_state_method": getattr(System, "BRANCH_FINAL_MEDIA_STATE_METHOD", ""),
+    }
+
 try:
     from .TraceEvents import (
         TRACE_EVENT_KIND_SURFACE,

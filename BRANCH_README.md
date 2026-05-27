@@ -70,9 +70,9 @@ deferred.
 
 | Area | Status | Progress | Next action |
 | --- | --- | --- | --- |
-| Upstream main integration | Ready to start | `65%` | Begin selective upstream replay with validators after each small batch. Do not overwrite non-sequential scene, Open 3D, CAD cache, or packaging contracts. |
-| External merge readiness | In progress | `80%` | Keep this README, Sphinx docs, validation commands, and generated reports aligned so a reviewer can evaluate scope and test coverage without following the entire development history. |
-| Final UI theming polish | Deferred | `0%` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
+| Upstream main integration gate | Complete | `100%` | Direct merge was audited and intentionally avoided because it would delete branch UI/CAD tooling. The safe replay now includes upstream-compatible public API aliases, deterministic catalog ordering, `extract_ray_result`, pytest smoke/API/invalid-trace/build-mode contracts, and ignore/attribute hygiene while preserving branch packaging extras. |
+| External merge readiness | Complete | `100%` | Branch README, validation commands, upstream-derived pytest checks, and fast UI/non-sequential validators are aligned as merge-review evidence. Continue using the checklist below for every future change. |
+| Final UI theming polish | Deferred outside this gate | `0%` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after upstream review, CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
 
 The CadQuery/OCP topology study milestone is now complete for this branch
 (`100%`). The branch keeps CadQuery/OCP as an optional future adapter, not a
@@ -247,6 +247,7 @@ Test-plan tiers:
 | Tier | Purpose | Example commands |
 | --- | --- | --- |
 | Fast contracts | Fixture-light, no-display checks for normal code changes. | `python -m KrakenOS.UI.validate_fast_contracts` |
+| Upstream-compatible pytest | Public API, package data, invalid traces, and build-zero contracts from upstream main adapted to the branch. | `python -m pytest tests/test_public_api.py tests/test_smoke.py tests/test_invalid_trace_results.py tests/test_build_modes.py` |
 | Focused contracts | Single-risk checks during development or review. | `python -m KrakenOS.UI.validate_fast_contracts --only ui-modular-maintainability` |
 | Display-backed smoke | Open 3D, VTK, screenshots, STEP face picking, and visual regressions. | `python -m KrakenOS.UI.validate_step_carry_open3d_smoke` |
 | CAD/prism physics | Real STEP/STL geometry, prism cascades, face roles, and ray-event audits. | `python -m KrakenOS.UI.validate_five_penta_prism_cascade` |
@@ -272,6 +273,7 @@ Start here for most changes:
 python -m KrakenOS.UI.validate_fast_contracts
 python -m KrakenOS.UI.validate_fast_contracts --list
 python -m KrakenOS.UI.validate_fast_contracts --subprocess
+python -m pytest tests/test_public_api.py tests/test_smoke.py tests/test_invalid_trace_results.py tests/test_build_modes.py
 python -m py_compile KrakenOS/UI/layout_editor.py
 ```
 
@@ -376,7 +378,9 @@ instead of being repeated here as a long progress table.
 
 ## Next Pipeline Step
 
-Start upstream main integration in small batches. For each upstream batch, run
-the fast contracts first, then the targeted display/physics validator for the
-area touched. Keep the CAD scene-cache boundary, passive-hover handle-pick
-contract, and hover-latency diagnostic intact.
+The upstream integration and external merge-readiness gates are complete for
+this branch milestone. The next sensible step is to prepare an upstream-facing
+merge note that names the branch contracts, test commands, known deferred
+items, and screenshots/reports a reviewer should inspect. Keep the CAD
+scene-cache boundary, passive-hover handle-pick contract, and hover-latency
+diagnostic intact during any follow-up cleanup.

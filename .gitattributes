@@ -1,3 +1,18 @@
+* text=auto
+
+*.py text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.csv text eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.stl binary
+*.npy binary
+*.pkl binary
+
 /attachment/*.DAT -text -diff
 /attachment/*.ZMF -text -diff
 /attachment/zemax/** -text -diff

@@ -1,10 +1,26 @@
 # Visual Studio Code
 .vscode/
 
+# Local IDE settings
+.idea/
+
+# Local cleanup backups
+_cleanup_backup/
+
+# Local test output
+tests/test_report.txt
+tests/test_*_report.txt
+
+# Generated example artifacts
+KrakenOS/Examples/krakenOS-pytracing.out
+KrakenOS/Examples/salida.stl
+KrakenOS/Examples/mi_objeto.pkl
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+docs/MU-2022-01_md/
 
 # C extensions
 *.so
@@ -112,6 +128,7 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+.ipynb_checkpoints/
 
 # IPython
 profile_default/
