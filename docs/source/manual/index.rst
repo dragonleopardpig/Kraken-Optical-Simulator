@@ -40,6 +40,7 @@ Focused UI screenshots in these pages are generated from the live Tk editor:
    lens_fabrication_drawings
    viewers
    viewer_3d
+   cad_step_responsiveness
    examples
    appendix/index
    references

@@ -71,7 +71,7 @@ deferred.
 | Area | Status | Progress | Next action |
 | --- | --- | --- | --- |
 | Upstream main integration | Triaged | `40%` | Continue selective integration. Packaging metadata and attachment cleanup are merged; runtime tracing/display cleanups from upstream need adapted validators before landing. |
-| CadQuery/OCP topology study | Ready to start | `10%` | The CAD/STEP boundary is clean enough to begin a separate study. Use CadQuery/OCP only as an optional reference for STEP topology, face/edge selectors, tessellation, assembly traversal, and fixture generation; do not add it as a runtime dependency until package weight and topology preservation are proven. |
+| CadQuery/OCP topology study | Architecture studied | `25%` | Local CadQuery/OCP source has been reviewed and documented. Next step is a Kraken CAD scene cache: topology/display/pick caches first, optional CadQuery/OCP adapter later if it proves better than the available pythonocc/OCC backend. |
 | External merge readiness | In progress | `70%` | Keep this README, Sphinx docs, validation commands, and generated reports aligned so a reviewer can evaluate scope and test coverage without following the entire development history. |
 
 ## KrakenOS Base Features
@@ -340,8 +340,9 @@ lookups, not move behavior back into `layout_editor.py`.
   scene features should prefer SceneBundle, ray-event, row metadata, and CSV
   diagnostics instead of display-only state.
 - CAD/STEP face topology remains a hard area. The branch supports face
-  grouping, assignment, native export, and diagnostics, but future work should
-  keep improving robust face/edge identity for vendor STEP files.
+  grouping, assignment, native export, and diagnostics, and the Sphinx
+  ``Responsive STEP Handling Architecture`` note documents the next topology,
+  display, and pick-cache direction for large vendor STEP responsiveness.
 - Large-CAD Live Mode performance can still improve through mesh reuse and
   tighter invalidation. The debounce/cancellation contract exists; the next
   work should tune performance without changing physics state.
@@ -362,7 +363,7 @@ instead of being repeated here as a long progress table.
 
 ## Next Pipeline Step
 
-Start the CadQuery/OCP topology study in a separate optional spike while
-continuing to remove transitional late-bound service helper lookups. Keep the
-runtime dependency graph unchanged until a small validator proves CadQuery adds
-better STEP topology identity than the current PyVista/STL fallback path.
+Prototype the CAD scene cache described in the Sphinx responsiveness note:
+cache transformed STEP meshes, triangle arrays, face metadata, and face-outline
+polydata first; then add an OpenCascade topology adapter and compare CadQuery/OCP
+behind the same interface.

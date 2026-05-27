@@ -53,6 +53,28 @@ def main() -> int:
     branch_readme = _source("BRANCH_README.md")
     if "CadQuery/OCP topology study" not in branch_readme:
         failures.append("BRANCH_README.md must keep the CadQuery/OCP topology study milestone visible.")
+    if "Responsive STEP Handling Architecture" not in branch_readme:
+        failures.append("BRANCH_README.md must link the STEP responsiveness architecture note.")
+
+    manual_index = _source("docs/source/manual/index.rst")
+    if "cad_step_responsiveness" not in manual_index:
+        failures.append("Sphinx manual index must include cad_step_responsiveness.")
+
+    responsiveness_doc = PROJECT_ROOT / "docs/source/manual/cad_step_responsiveness.rst"
+    if not responsiveness_doc.is_file():
+        failures.append("Missing Sphinx architecture note: docs/source/manual/cad_step_responsiveness.rst")
+    else:
+        doc_source = responsiveness_doc.read_text(encoding="utf-8")
+        required_phrases = (
+            "persistent CAD scene cache",
+            "CadDocumentCache",
+            "CadPickCache",
+            "BRepMesh_IncrementalMesh",
+            "make it a required runtime dependency",
+        )
+        for phrase in required_phrases:
+            if phrase not in doc_source:
+                failures.append(f"STEP responsiveness architecture note is missing {phrase!r}")
 
     if failures:
         print("CadQuery readiness validation failed:")
