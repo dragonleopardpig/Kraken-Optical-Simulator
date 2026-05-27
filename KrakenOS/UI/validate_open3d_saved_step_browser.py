@@ -11,6 +11,8 @@ from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
 @dataclass
 class _Row:
     name: str = "Saved STEP"
+    surface: str = "Standard"
+    element: str = ""
     advanced: dict[str, object] = field(default_factory=dict)
 
 
@@ -19,6 +21,8 @@ class _Editor:
         self.rows = [
             _Row(
                 "Saved penta prism",
+                "Standard",
+                "",
                 {
                     "Solid_3d_stl": "/tmp/promoted_penta.stl",
                     "OpticalSolidSourcePath": "/tmp/penta.step",
@@ -27,6 +31,8 @@ class _Editor:
             ),
             _Row(
                 "Saved lens STEP",
+                "Standard",
+                "",
                 {
                     "Solid_3d_stl": "/tmp/promoted_lens.stl",
                     "StepOverlayPromotion": {"step_label": "lens", "source_step_path": "/tmp/lens.step"},
@@ -36,12 +42,16 @@ class _Editor:
             ),
             _Row(
                 "Plain STL",
+                "Standard",
+                "",
                 {
                     "Solid_3d_stl": "/tmp/plain.stl",
                     "OpticalSolidSourcePath": "/tmp/plain.stl",
                     "OpticalSolidSourceFormat": "STL",
                 },
             ),
+            _Row("Front lens surface", "Standard", "Grouped Doublet", {}),
+            _Row("Rear lens surface", "Standard", "Grouped Doublet", {}),
         ]
 
     @staticmethod
@@ -56,11 +66,28 @@ class _Editor:
     def _step_path_for_label(_label: str):
         return None
 
+    @staticmethod
+    def _element_key(row: _Row) -> str:
+        return str(row.element or "").strip()
+
+    @staticmethod
+    def _element_block_for_index(rows: list[_Row], index: int) -> tuple[int, int]:
+        return KrakenLayoutEditor._element_block_for_index(rows, index)
+
+    def _file_backed_stl_row_at(self, _row_index: int):
+        return None
+
 
 class _Inspector:
     def __init__(self) -> None:
         self.editor = _Editor()
-        self._row_actor_map = {0: ["actor0"], 1: ["actor1"], 2: ["actor2"]}
+        self._row_actor_map = {
+            0: ["actor0"],
+            1: ["actor1"],
+            2: ["actor2"],
+            3: ["actor3"],
+            4: ["actor4"],
+        }
 
 
 def main() -> int:
@@ -78,6 +105,7 @@ def main() -> int:
     panel = Open3DStepAdminPanel(_Inspector())
     records = panel._promoted_step_rows()
     scene_records = panel._scene_row_records()
+    element_records = panel._scene_element_records()
     checks = [
         (
             "layout loader preserves STEP promotion metadata",
@@ -102,7 +130,15 @@ def main() -> int:
         ),
         (
             "Open 3D browser also lists visible non-STEP editable-table rows",
-            scene_records == [(2, "layout", "Plain STL")],
+            scene_records == [
+                (2, "layout", "Plain STL"),
+                (3, "lens", "Grouped Doublet: Front lens surface"),
+                (4, "lens", "Grouped Doublet: Rear lens surface"),
+            ],
+        ),
+        (
+            "Open 3D browser exposes grouped table elements as expandable component nodes",
+            element_records == [(3, 4, "lens", "Grouped Doublet", [3, 4])],
         ),
     ]
     failed = [name for name, ok in checks if not ok]

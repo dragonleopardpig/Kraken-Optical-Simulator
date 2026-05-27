@@ -429,6 +429,7 @@ def main() -> int:
     step_admin_source = inspect.getsource(Open3DStepAdminPanel).replace("self.inspector.", "self.")
     step_admin_overlay_select = inspect.getsource(Kraken3DInspector.select_step_overlay_from_admin)
     step_admin_promoted_select = inspect.getsource(Kraken3DInspector.select_promoted_step_row_from_admin)
+    step_admin_scene_element_select = inspect.getsource(Kraken3DInspector.select_scene_element_from_admin)
     row_scene_bounds = inspect.getsource(Kraken3DInspector._row_scene_bounds)
     init = inspect.getsource(Kraken3DInspector.__init__)
     top_controls_source = inspect.getsource(Open3DTopControlsPanel).replace("self.inspector.", "self.")
@@ -1613,8 +1614,18 @@ def main() -> int:
             "Open 3D browser includes editable-table scene rows",
             '"Layout / Table Components"' in step_admin_source
             and '"scene-row:"' in step_admin_source
+            and '"element:"' in step_admin_source
             and "def _scene_row_records" in step_admin_source
+            and "def _scene_element_records" in step_admin_source
             and "select_scene_row_from_admin" in step_admin_source,
+        ),
+        (
+            "Open 3D browser groups editable-table elements into expandable scene components",
+            "_scene_component_records" in step_admin_source
+            and "_scene_element_block_for_row" in step_admin_source
+            and "_element_iid" in step_admin_source
+            and "select_scene_element_from_admin" in step_admin_source
+            and "highlight_rows(visible_indices)" in step_admin_scene_element_select,
         ),
         (
             "STEP browser selection drives Open 3D highlight and table selection",

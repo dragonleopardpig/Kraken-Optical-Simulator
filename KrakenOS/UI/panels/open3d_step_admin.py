@@ -219,19 +219,133 @@ class Open3DStepAdminPanel:
             return "lens"
         return "layout"
 
-    def _scene_row_records(self) -> list[tuple[int, str, str]]:
+    def _element_key_for_row(self, row: object) -> str:
+        try:
+            return str(self.editor._element_key(row) or "").strip()
+        except Exception:
+            return str(getattr(row, "element", "") or "").strip()
+
+    def _scene_element_block_for_row(self, rows: list[object], row_index: int) -> tuple[int, int]:
+        try:
+            start, end = self.editor._element_block_for_index(rows, int(row_index))
+            return int(start), int(end)
+        except Exception:
+            pass
+        key = self._element_key_for_row(rows[int(row_index)]) if 0 <= int(row_index) < len(rows) else ""
+        if not key:
+            return int(row_index), int(row_index)
+        start = int(row_index)
+        end = int(row_index)
+        while start > 0 and self._element_key_for_row(rows[start - 1]) == key:
+            start -= 1
+        while end + 1 < len(rows) and self._element_key_for_row(rows[end + 1]) == key:
+            end += 1
+        return start, end
+
+    @staticmethod
+    def _element_iid(start: int, end: int) -> str:
+        return f"element:{int(start)}:{int(end)}"
+
+    @staticmethod
+    def _parse_element_iid(iid: str) -> tuple[int, int] | None:
+        parts = str(iid or "").split(":")
+        if len(parts) != 3 or parts[0] != "element":
+            return None
+        try:
+            start = int(parts[1])
+            end = int(parts[2])
+        except Exception:
+            return None
+        if end < start:
+            start, end = end, start
+        return start, end
+
+    def _element_visible_indices(self, start: int, end: int) -> list[int]:
+        visible = set(self._visible_scene_row_indices())
         rows = list(getattr(self.editor, "rows", []) or [])
         promoted = {row_index for row_index, _label, _name in self._promoted_step_rows()}
-        records: list[tuple[int, str, str]] = []
-        for row_index in self._visible_scene_row_indices():
-            if row_index in promoted or row_index < 0 or row_index >= len(rows):
+        return [
+            index
+            for index in range(int(start), int(end) + 1)
+            if index in visible and index not in promoted and 0 <= index < len(rows)
+        ]
+
+    def _scene_component_records(self) -> list[dict[str, object]]:
+        rows = list(getattr(self.editor, "rows", []) or [])
+        promoted = {row_index for row_index, _label, _name in self._promoted_step_rows()}
+        visible = set(self._visible_scene_row_indices())
+        consumed: set[int] = set()
+        records: list[dict[str, object]] = []
+        for row_index in sorted(visible):
+            if row_index in consumed or row_index in promoted or row_index < 0 or row_index >= len(rows):
                 continue
             row = rows[row_index]
+            element_key = self._element_key_for_row(row)
+            start, end = self._scene_element_block_for_row(rows, row_index)
+            block_indices = [
+                index
+                for index in range(start, end + 1)
+                if index in visible and index not in promoted and 0 <= index < len(rows)
+            ]
+            if element_key and len(block_indices) > 1:
+                first_row = rows[block_indices[0]]
+                category = self._scene_row_category(block_indices[0], first_row)
+                records.append(
+                    {
+                        "kind": "element",
+                        "start": int(block_indices[0]),
+                        "end": int(block_indices[-1]),
+                        "category": category,
+                        "name": element_key,
+                        "children": list(block_indices),
+                    }
+                )
+                consumed.update(block_indices)
+                continue
+            records.append(
+                {
+                    "kind": "scene-row",
+                    "row_index": int(row_index),
+                    "category": self._scene_row_category(int(row_index), row),
+                    "name": self._scene_row_display_name(int(row_index), row),
+                    "children": [int(row_index)],
+                }
+            )
+            consumed.add(int(row_index))
+        return records
+
+    def _scene_row_records(self) -> list[tuple[int, str, str]]:
+        records: list[tuple[int, str, str]] = []
+        rows = list(getattr(self.editor, "rows", []) or [])
+        for record in self._scene_component_records():
+            for row_index in list(record.get("children", []) or []):
+                try:
+                    row_index_int = int(row_index)
+                except Exception:
+                    continue
+                if row_index_int < 0 or row_index_int >= len(rows):
+                    continue
+                records.append(
+                    (
+                        row_index_int,
+                        self._scene_row_category(row_index_int, rows[row_index_int]),
+                        self._scene_row_display_name(row_index_int, rows[row_index_int]),
+                    )
+                )
+        return records
+
+    def _scene_element_records(self) -> list[tuple[int, int, str, str, list[int]]]:
+        records: list[tuple[int, int, str, str, list[int]]] = []
+        for record in self._scene_component_records():
+            if record.get("kind") != "element":
+                continue
             records.append(
                 (
-                    int(row_index),
-                    self._scene_row_category(int(row_index), row),
-                    self._scene_row_display_name(int(row_index), row),
+                    int(record.get("start", 0)),
+                    int(record.get("end", 0)),
+                    str(record.get("category", "layout") or "layout"),
+                    str(record.get("name", "") or "Element"),
+                    [int(index) for index in list(record.get("children", []) or [])],
                 )
             )
         return records
@@ -240,6 +354,24 @@ class Open3DStepAdminPanel:
         selected = str(getattr(self.editor, "_selected_step_label", "") or "").strip().lower()
         if selected and self.editor._step_path_for_label(selected) is not None:
             return f"overlay:{selected}"
+        remembered = str(self._selected_item_id or "")
+        current_row = None
+        try:
+            current_row = self.editor._current_selected_row_index()
+        except Exception:
+            current_row = None
+        if remembered.startswith("scene-row:"):
+            try:
+                remembered_row = int(remembered.split(":", 1)[1])
+            except Exception:
+                remembered_row = None
+            if remembered_row is not None and current_row == remembered_row and remembered_row in self._visible_scene_row_indices():
+                return remembered
+        element_span = self._parse_element_iid(remembered)
+        if element_span is not None and current_row is not None:
+            start, end = element_span
+            if start <= int(current_row) <= end:
+                return remembered
         candidate_rows: list[object] = [getattr(self.inspector, "_picked_row_index", None)]
         try:
             candidate_rows.append(self.editor._current_selected_row_index())
@@ -259,6 +391,12 @@ class Open3DStepAdminPanel:
             except Exception:
                 pass
             if row_index in self._visible_scene_row_indices():
+                rows = list(getattr(self.editor, "rows", []) or [])
+                if 0 <= row_index < len(rows):
+                    start, end = self._scene_element_block_for_row(rows, row_index)
+                    visible_indices = self._element_visible_indices(start, end)
+                    if self._element_key_for_row(rows[row_index]) and len(visible_indices) > 1:
+                        return self._element_iid(visible_indices[0], visible_indices[-1])
                 return f"scene-row:{row_index}"
         return ""
 
@@ -291,10 +429,33 @@ class Open3DStepAdminPanel:
                 category = self._category_for_label(label)
                 tree.insert(category_iids[category], "end", iid=f"row:{row_index}", text=f"S{row_index}: {name}")
                 category_counts[category] += 1
-            for row_index, category, name in self._scene_row_records():
+            rows = list(getattr(self.editor, "rows", []) or [])
+            for record in self._scene_component_records():
+                kind = str(record.get("kind", "") or "")
+                category = str(record.get("category", "layout") or "layout")
                 parent = category_iids.get(category, category_iids["layout"])
-                tree.insert(parent, "end", iid=f"scene-row:{row_index}", text=f"S{row_index}: {name}")
-                category_counts[category if category in category_counts else "layout"] += 1
+                count_key = category if category in category_counts else "layout"
+                if kind == "element":
+                    children = [int(index) for index in list(record.get("children", []) or [])]
+                    if not children:
+                        continue
+                    start = int(record.get("start", children[0]))
+                    end = int(record.get("end", children[-1]))
+                    element_iid = self._element_iid(start, end)
+                    name = str(record.get("name", "") or "Element")
+                    tree.insert(parent, "end", iid=element_iid, text=f"{name} ({len(children)} surfaces)", open=False)
+                    category_counts[count_key] += 1
+                    for row_index in children:
+                        if row_index < 0 or row_index >= len(rows):
+                            continue
+                        row_name = self._scene_row_display_name(row_index, rows[row_index])
+                        tree.insert(element_iid, "end", iid=f"scene-row:{row_index}", text=f"S{row_index}: {row_name}")
+                    continue
+                if kind == "scene-row":
+                    row_index = int(record.get("row_index", -1))
+                    name = str(record.get("name", "") or f"Surface {row_index}")
+                    tree.insert(parent, "end", iid=f"scene-row:{row_index}", text=f"S{row_index}: {name}")
+                    category_counts[count_key] += 1
             for key, parent_iid in category_iids.items():
                 if category_counts.get(key, 0) <= 0:
                     tree.insert(parent_iid, "end", iid=f"empty:{key}", text="(empty)")
@@ -342,6 +503,13 @@ class Open3DStepAdminPanel:
             except Exception:
                 row_index = -1
             self.inspector.select_scene_row_from_admin(row_index)
+        elif iid.startswith("element:"):
+            span = self._parse_element_iid(iid)
+            if span is None:
+                self.inspector.select_scene_row_from_admin(-1)
+            else:
+                start, end = span
+                self.inspector.select_scene_element_from_admin(start, end)
         self._update_properties(iid)
 
     def _current_kind_value(self) -> tuple[str, str]:
@@ -454,6 +622,41 @@ class Open3DStepAdminPanel:
                         "faces": f"{assigned} assigned" if file_backed_row_selected else str(surface or "-"),
                     }
                 )
+        elif iid.startswith("element:"):
+            span = self._parse_element_iid(iid)
+            rows = list(getattr(self.editor, "rows", []) or [])
+            if span is not None:
+                start, end = span
+                indices = self._element_visible_indices(start, end)
+                valid_indices = [index for index in indices if 0 <= index < len(rows)]
+                if valid_indices:
+                    first_row = rows[valid_indices[0]]
+                    name = self._element_key_for_row(first_row) or self._scene_row_display_name(valid_indices[0], first_row)
+                    centerable_row_selected = any(
+                        str(getattr(rows[index], "surface", "") or "") not in {"Object", "Image"}
+                        for index in valid_indices
+                    )
+                    file_backed_count = 0
+                    face_count = 0
+                    for index in valid_indices:
+                        try:
+                            if self.editor._file_backed_stl_row_at(index) is not None:
+                                file_backed_count += 1
+                        except Exception:
+                            pass
+                        advanced = getattr(rows[index], "advanced", {}) if not isinstance(rows[index], dict) else rows[index].get("advanced", {})
+                        face_metadata = advanced.get("OpticalSolidFaces", {}) if isinstance(advanced, dict) else {}
+                        if isinstance(face_metadata, dict):
+                            face_count += len(face_metadata)
+                    values.update(
+                        {
+                            "name": str(name or "Element"),
+                            "kind": f"Grouped table element S{valid_indices[0]}-S{valid_indices[-1]}",
+                            "file": f"{file_backed_count} CAD/STL row(s)" if file_backed_count else "Table",
+                            "pose": f"{len(valid_indices)} visible surface row(s)",
+                            "faces": f"{face_count} assigned" if file_backed_count else "Grouped element",
+                        }
+                    )
         for key, value in values.items():
             self._property_vars[key].set(value)
         button_states = {
@@ -494,6 +697,12 @@ class Open3DStepAdminPanel:
             except Exception:
                 return False
             return bool(self.inspector.select_scene_row_from_admin(row_index))
+        if kind == "element":
+            span = self._parse_element_iid(self._selected_item_id)
+            if span is None:
+                return False
+            start, end = span
+            return bool(self.inspector.select_scene_element_from_admin(start, end))
         return False
 
     def _import_step(self, label: str) -> None:
@@ -536,7 +745,7 @@ class Open3DStepAdminPanel:
         kind, _value = self._current_kind_value()
         if not self._select_current_for_action():
             return
-        if kind in {"row", "scene-row"}:
+        if kind in {"row", "scene-row", "element"}:
             self.inspector.start_center_row_to_ray()
         else:
             self.editor.start_any_step_axis_pick()

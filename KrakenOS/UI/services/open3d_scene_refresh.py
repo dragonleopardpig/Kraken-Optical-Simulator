@@ -244,6 +244,7 @@ class Open3DSceneRefreshService:
         self._hover_status_actor = None
         self._step_carry_grip_actor = None
         self._picked_row_index = None
+        self._picked_row_indices = set()
         actor_clear_ms = (time.perf_counter() - actor_clear_start) * 1000.0
 
         drew_surfaces = 0
@@ -586,7 +587,14 @@ class Open3DSceneRefreshService:
         if camera_state is None:
             self._renderer.ResetCamera()
             self.set_camera_preset(self._camera_preset)
-        self.highlight_row(self.editor._current_selected_row_index())
+        try:
+            selected_table_indices = [int(index) for index in self.editor._selected_table_indices()]
+        except Exception:
+            selected_table_indices = []
+        if len(selected_table_indices) > 1:
+            self.highlight_rows(selected_table_indices)
+        else:
+            self.highlight_row(self.editor._current_selected_row_index())
         if selected_step in STEP_OVERLAY_LABEL_SET and self.editor._step_path_for_label(str(selected_step)) is not None:
             self._step_rotation_active_label = str(selected_step)
             self._set_step_highlight(str(selected_step))

@@ -206,6 +206,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._picker = None
         self._prop_picker = None
         self._picked_row_index: int | None = None
+        self._picked_row_indices: set[int] = set()
         self._actor_row_map: dict[str, int] = {}
         self._row_actor_map: dict[int, list[str]] = {}
         self._actor_ray_map: dict[str, int] = {}
@@ -2764,10 +2765,21 @@ class Kraken3DInspector(tk.Toplevel):
         return (0.005, 0.007, 0.014)
 
     def _set_row_highlight(self, row_index: int | None) -> None:
-        if row_index == self._picked_row_index:
+        self._set_row_highlights([] if row_index is None else [int(row_index)])
+
+    def _set_row_highlights(self, row_indices) -> None:
+        selected_rows: set[int] = set()
+        for row_index in list(row_indices or []):
+            try:
+                selected_rows.add(int(row_index))
+            except Exception:
+                continue
+        picked = min(selected_rows) if selected_rows else None
+        if selected_rows == set(getattr(self, "_picked_row_indices", set()) or set()):
             return
         if self._renderer is None:
-            self._picked_row_index = row_index
+            self._picked_row_index = picked
+            self._picked_row_indices = set(selected_rows)
             return
         collection = self._renderer.GetActors()
         collection.InitTraversal()
@@ -2777,11 +2789,20 @@ class Kraken3DInspector(tk.Toplevel):
             if key is not None and key in self._actor_step_map:
                 continue
             actor_row_index = self._actor_row_map.get(key) if key is not None else None
-            self._set_row_actor_selected(actor, bool(row_index is not None and actor_row_index == row_index))
-        self._picked_row_index = row_index
+            try:
+                actor_row_index = int(actor_row_index)
+            except Exception:
+                actor_row_index = None
+            self._set_row_actor_selected(actor, bool(actor_row_index is not None and actor_row_index in selected_rows))
+        self._picked_row_index = picked
+        self._picked_row_indices = set(selected_rows)
 
     def highlight_row(self, row_index: int | None) -> None:
         self._set_row_highlight(row_index)
+        self.render()
+
+    def highlight_rows(self, row_indices) -> None:
+        self._set_row_highlights(row_indices)
         self.render()
 
     @staticmethod
@@ -3436,6 +3457,55 @@ class Kraken3DInspector(tk.Toplevel):
         self.status_var.set(f"Selected scene row S{row_index}: {getattr(row, 'name', '') or getattr(row, 'surface', '') or 'surface'}.")
         return True
 
+    def select_scene_element_from_admin(self, start_index: int, end_index: int) -> bool:
+        try:
+            start_index = int(start_index)
+            end_index = int(end_index)
+        except Exception:
+            self.status_var.set("No editable-table scene element is available.")
+            self.refresh_step_admin_panel()
+            return False
+        if end_index < start_index:
+            start_index, end_index = end_index, start_index
+        rows = list(getattr(self.editor, "rows", []) or [])
+        row_actor_map = getattr(self, "_row_actor_map", {}) or {}
+        visible_indices: list[int] = []
+        for row_index in range(start_index, end_index + 1):
+            if row_index < 0 or row_index >= len(rows):
+                continue
+            if row_index in row_actor_map or str(row_index) in row_actor_map:
+                visible_indices.append(row_index)
+        if not visible_indices:
+            self.status_var.set("No visible editable-table rows are available for that scene element.")
+            self.refresh_step_admin_panel()
+            return False
+        first_index = visible_indices[0]
+        first_row = rows[first_index]
+        self.editor._selected_step_label = None
+        self._step_carry_active_label = None
+        self._step_carry_follow_state = None
+        self._step_normal_axis_pick_mode = False
+        self._step_surface_center_axis_pick_mode = False
+        self._step_rotation_active_label = None
+        self._close_step_rotation_handler()
+        self._set_step_highlight(None, render=False)
+        self.editor._select_table_indices(visible_indices, focus_index=first_index)
+        self.editor._sync_surface_selection(first_index)
+        self._stl_placement_row_index = None
+        self.highlight_rows(visible_indices)
+        self.refresh_step_admin_panel()
+        try:
+            label = str(self.editor._element_key(first_row) or "").strip()
+        except Exception:
+            label = str(getattr(first_row, "element", "") or "").strip()
+        if not label:
+            label = getattr(first_row, "name", "") or getattr(first_row, "surface", "") or "element"
+        self.status_var.set(
+            f"Selected scene element {label}: S{visible_indices[0]}-S{visible_indices[-1]} "
+            f"({len(visible_indices)} visible surface rows)."
+        )
+        return True
+
     def import_step_overlay(self, label: str) -> None:
         label = str(label).strip().lower()
         token = self._timing_start("import_step_overlay", label=label)
@@ -3606,6 +3676,7 @@ class Kraken3DInspector(tk.Toplevel):
         removed = self.editor.delete_optical_step_rows(selection.row_indices)
         if removed > 0:
             self._picked_row_index = None
+            self._picked_row_indices = set()
             self._stl_placement_row_index = None
             self._row_carry_drag_state = None
             self._row_carry_hold_candidate_index = None
