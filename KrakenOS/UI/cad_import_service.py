@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import sys
+import struct
 from pathlib import Path
 
 
@@ -75,6 +76,30 @@ def python_with_import(module_name: str, *, candidates: tuple[str, ...] | None =
     raise RuntimeError(f"No python interpreter with '{module_name}' available")
 
 
+def stl_mesh_has_facets(path: Path) -> bool:
+    path = Path(path).expanduser()
+    try:
+        stat = path.stat()
+    except OSError:
+        return False
+    if stat.st_size <= 0:
+        return False
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(4096)
+            if head.lstrip().lower().startswith(b"solid"):
+                return b"facet" in head.lower()
+            if stat.st_size >= 84:
+                handle.seek(80)
+                raw_count = handle.read(4)
+                if len(raw_count) == 4:
+                    triangle_count = struct.unpack("<I", raw_count)[0]
+                    return triangle_count > 0 and stat.st_size >= 84 + 50 * triangle_count
+    except OSError:
+        return False
+    return stat.st_size > 128
+
+
 def convert_step_to_stl(source_path: Path, target_path: Path, *, gmsh_bin: str | None = None) -> None:
     gmsh = gmsh_bin or shutil.which("gmsh")
     if gmsh is None:
@@ -102,7 +127,7 @@ def convert_step_to_stl(source_path: Path, target_path: Path, *, gmsh_bin: str |
     )
     try:
         result = subprocess.run(
-            [gmsh, "-format", "stl", "-save_all", "-0", str(geo_path)],
+            [gmsh, "-format", "stl", "-save_all", "-2", str(geo_path)],
             check=False,
             capture_output=True,
             text=True,
@@ -112,10 +137,12 @@ def convert_step_to_stl(source_path: Path, target_path: Path, *, gmsh_bin: str |
             geo_path.unlink()
         except OSError:
             pass
-    if result.returncode != 0 and target_path.exists() and target_path.stat().st_size > 0:
+    if result.returncode != 0 and stl_mesh_has_facets(target_path):
         return
-    if result.returncode != 0 or not target_path.exists():
+    if result.returncode != 0 or not stl_mesh_has_facets(target_path):
         message = (result.stderr or result.stdout or "CAD conversion failed").strip()
+        if result.returncode == 0:
+            message = f"CAD conversion produced an empty STL: {target_path}"
         raise RuntimeError(message.splitlines()[0] if message else "CAD conversion failed")
 
 
@@ -134,7 +161,7 @@ def optical_solid_mesh_path_from_source(
         return source_path, None, "STL"
     if suffix in cad_suffixes:
         stl_path = cached_cad_mesh_path(source_path, cache_dir)
-        if not stl_path.exists() or stl_path.stat().st_size <= 0:
+        if not stl_mesh_has_facets(stl_path):
             convert_step_to_stl(source_path, stl_path)
         return stl_path, source_path, suffix.lstrip(".").upper()
     raise ValueError("Unsupported optical solid file. Use STL, STEP/STP, or IGES/IGS.")

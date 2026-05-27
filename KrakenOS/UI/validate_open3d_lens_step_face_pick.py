@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import shutil
+import tempfile
+from pathlib import Path
+
 import numpy as np
 
+from KrakenOS.UI import cad_import_service
 from KrakenOS.UI.open3d_inspector import Kraken3DInspector
 
 
@@ -63,6 +68,37 @@ def main() -> int:
                     failures.append("Grouped lens face normal is not aligned to the inferred lens axis.")
                 if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
                     failures.append("Grouped lens face did not produce a clean outline.")
+
+    project_root = Path(__file__).resolve().parents[2]
+    fixture_paths = (
+        project_root / "attachment" / "Lens" / "Achromatic_Lenses" / "step_32323.stp",
+        project_root / "attachment" / "Lens" / "Aspherized_Achromatic_Lenses" / "step_49665.step",
+    )
+    if shutil.which("gmsh") is None:
+        print("Open 3D lens STEP face-pick validation: skipping vendor STEP conversion probe because gmsh is unavailable.")
+    else:
+        with tempfile.TemporaryDirectory(prefix="kraken-lens-step-pick-") as tmp_dir:
+            for fixture in fixture_paths:
+                if not fixture.exists():
+                    print(f"Open 3D lens STEP face-pick validation: skipping missing fixture {fixture}.")
+                    continue
+                target = Path(tmp_dir) / f"{fixture.stem}.stl"
+                cad_import_service.convert_step_to_stl(fixture, target)
+                if not cad_import_service.stl_mesh_has_facets(target):
+                    failures.append(f"Vendor lens STEP converted to an empty STL: {fixture}")
+                    continue
+                mesh = pv.read(str(target)).extract_surface(algorithm="dataset_surface").triangulate()
+                if int(getattr(mesh, "n_cells", 0)) <= 0:
+                    failures.append(f"Vendor lens STEP converted to a mesh with no cells: {fixture}")
+                    continue
+                if Kraken3DInspector._mesh_round_lens_axis(mesh) is None:
+                    failures.append(f"Vendor lens STEP was not classified as a round lens-like body: {fixture}")
+
+    cad_source = __import__("inspect").getsource(cad_import_service)
+    if '"-2"' not in cad_source or '"-0"' in cad_source:
+        failures.append("STEP conversion must run gmsh meshing with -2, not the no-mesh -0 mode.")
+    if "stl_mesh_has_facets" not in cad_source:
+        failures.append("STEP conversion must reject cached or newly converted empty STL files.")
 
     inspector_source = __import__("inspect").getsource(Kraken3DInspector)
     if "_kraken_round_lens_like_step_body" not in inspector_source or "prop.SetEdgeVisibility(0)" not in inspector_source:
