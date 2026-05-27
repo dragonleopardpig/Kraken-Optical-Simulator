@@ -215,10 +215,6 @@ class Open3DSceneRefreshService:
         self._thickness_dimension_drag_map.clear()
         self._thickness_drag_state = None
         self._step_feature_cache.clear()
-        try:
-            self._cad_scene_cache.clear()
-        except Exception:
-            pass
         self._hover_rotation_handle_key = None
         self._picked_step_label = None
         self._picked_ray_index = None

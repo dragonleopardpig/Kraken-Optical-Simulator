@@ -39,6 +39,7 @@ class StepOverlayImportService:
         title: str = "Import lens STEP",
         display_label: str = "Lens STEP",
         largest_component_only: bool = True,
+        refresh_open_3d: bool = True,
     ) -> Path | None:
         le = _layout_module()
         path = self._ask_step_file(title, le.DEFAULT_LENS_STEP_PATH.parent, parent=dialog_parent)
@@ -58,7 +59,8 @@ class StepOverlayImportService:
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
         self.status_var.set(f"{display_label} imported: {path.name}. Open or refresh 3D view.")
-        self._refresh_open_3d_views()
+        if refresh_open_3d:
+            self._refresh_open_3d_views()
         return path
 
     def _default_optical_step_import_offset(self) -> tuple[float, float, float]:
@@ -100,7 +102,12 @@ class StepOverlayImportService:
             )
         return result
 
-    def import_optical_step(self, dialog_parent: tk.Misc | None = None) -> Path | None:
+    def import_optical_step(
+        self,
+        dialog_parent: tk.Misc | None = None,
+        *,
+        refresh_open_3d: bool = True,
+    ) -> Path | None:
         le = _layout_module()
         path = self._ask_step_file("Import optical STEP", le.DEFAULT_LENS_STEP_PATH.parent, parent=dialog_parent)
         if path is None:
@@ -119,10 +126,16 @@ class StepOverlayImportService:
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
         self.status_var.set(f"Optical STEP imported: {path.name}. Carry and place it in Open 3D.")
-        self._refresh_open_3d_views(step_label="optical")
+        if refresh_open_3d:
+            self._refresh_open_3d_views(step_label="optical")
         return path
 
-    def import_camera_step(self, dialog_parent: tk.Misc | None = None) -> Path | None:
+    def import_camera_step(
+        self,
+        dialog_parent: tk.Misc | None = None,
+        *,
+        refresh_open_3d: bool = True,
+    ) -> Path | None:
         le = _layout_module()
         path = self._ask_step_file("Import camera STEP", le.DEFAULT_CAMERA_STEP_PATH.parent, parent=dialog_parent)
         if path is None:
@@ -140,10 +153,16 @@ class StepOverlayImportService:
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
         self.status_var.set(f"Camera STEP imported: {path.name}. Open or refresh 3D view.")
-        self._refresh_open_3d_views(camera_only=True)
+        if refresh_open_3d:
+            self._refresh_open_3d_views(camera_only=True)
         return path
 
-    def import_led_step(self, dialog_parent: tk.Misc | None = None) -> Path | None:
+    def import_led_step(
+        self,
+        dialog_parent: tk.Misc | None = None,
+        *,
+        refresh_open_3d: bool = True,
+    ) -> Path | None:
         le = _layout_module()
         initial_dir = le.DEFAULT_LED_STEP_PATH if le.DEFAULT_LED_STEP_PATH.is_dir() else le.DEFAULT_LED_STEP_PATH.parent
         path = self._ask_step_file("Import LED STEP", initial_dir, parent=dialog_parent)
@@ -174,7 +193,8 @@ class StepOverlayImportService:
         self.status_var.set(
             f"LED STEP imported: {path.name}; edge distance={self.led_object_edge_distance_mm:.3g} mm."
         )
-        self._refresh_open_3d_views(step_label="led")
+        if refresh_open_3d:
+            self._refresh_open_3d_views(step_label="led")
         return path
 
     @staticmethod

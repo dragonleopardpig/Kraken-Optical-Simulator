@@ -72,15 +72,18 @@ deferred.
 | --- | --- | --- | --- |
 | Upstream main integration gate | Complete | `100%` | Direct merge was audited and intentionally avoided because it would delete branch UI/CAD tooling. The safe replay now includes upstream-compatible public API aliases, deterministic catalog ordering, `extract_ray_result`, pytest smoke/API/invalid-trace/build-mode contracts, and ignore/attribute hygiene while preserving branch packaging extras. |
 | External merge readiness | Complete | `100%` | Branch README, validation commands, upstream-derived pytest checks, and fast UI/non-sequential validators are aligned as merge-review evidence. Continue using the checklist below for every future change. |
+| Open 3D CAD responsiveness hardening | In progress | `85%` | The Aspherized Achromatic Lens STEP fixture is small and converts quickly, so the long import/deselect stall is an Open 3D refresh architecture issue. The current branch removes Open 3D import double-refresh, preserves CAD scene caches across full actor rebuilds, and batches selection renders. Remaining work is incremental actor updates or background import if larger vendor assemblies still stall. |
 | Final UI theming polish | Deferred outside this gate | `0%` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after upstream review, CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
 
 The CadQuery/OCP topology study milestone is now complete for this branch
 (`100%`). The branch keeps CadQuery/OCP as an optional future adapter, not a
 runtime dependency, because the immediate responsiveness issue is addressed in
 the current mesh path: `CadSceneCache` reuses STEP-derived triangle and face
-outline artifacts, ordinary Open 3D passive hover uses a rotation-handle actor
-pick list instead of dense CAD body picking, right-click CAD face assignment
-defers feature scans until an explicit user action, and
+outline artifacts across ordinary Open 3D refreshes, ordinary Open 3D passive
+hover uses a rotation-handle actor pick list instead of dense CAD body picking,
+right-click CAD face assignment defers feature scans until an explicit user
+action, Open 3D-originated STEP imports refresh the 3D scene once instead of
+through both the editor and inspector, and
 `python -m KrakenOS.UI.diagnose_open3d_hover_latency` reports the cache and
 passive-hover contract for large vendor STEP-derived STL files.
 

@@ -1318,7 +1318,7 @@ def main() -> int:
             and "_clear_open3d_selection(render=False)" in pick
             and "_selected_step_label = None" in clear_selection
             and "_selected_step_feature_label" in clear_selection
-            and "_set_step_highlight(None)" in clear_selection
+            and "_set_step_highlight(None, render=False)" in clear_selection
             and "_remove_step_rotation_handle_actors()" in clear_selection
             and "RemoveActor(actor)" in remove_step_handles,
         ),
@@ -1615,7 +1615,7 @@ def main() -> int:
             and "select_promoted_step_row_from_admin" in step_admin_source
             and "iid == self._selected_item_id" in step_admin_source
             and "iid == self._current_browser_selection_iid()" in step_admin_source
-            and "_set_step_highlight(label)" in step_admin_overlay_select
+            and "_set_step_highlight(label, render=False)" in step_admin_overlay_select
             and "show_step_rotation_handler(label)" in step_admin_overlay_select
             and "_step_carry_active_label = label" not in step_admin_overlay_select
             and "_select_table_indices([row_index]" in step_admin_promoted_select

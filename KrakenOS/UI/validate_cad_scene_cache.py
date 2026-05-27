@@ -105,8 +105,12 @@ def _validate_open3d_wiring() -> list[str]:
             failures.append(f"Open 3D inspector is missing CAD scene-cache wiring: {token}")
     if "self._cad_scene_cache.clear()" not in inspector_source:
         failures.append("Open 3D face-metadata reset must clear CAD scene-cache artifacts.")
-    if "self._cad_scene_cache.clear()" not in refresh_source:
-        failures.append("Open 3D scene refresh must clear CAD scene-cache artifacts.")
+    try:
+        refresh_body = refresh_source.split("def refresh_scene", 1)[1]
+    except IndexError:
+        refresh_body = refresh_source
+    if "self._cad_scene_cache.clear()" in refresh_body:
+        failures.append("Open 3D scene refresh must preserve CAD scene-cache artifacts across full actor rebuilds.")
     if "vtkPropPicker" not in layout_source or "self._prop_picker = vtkPropPicker()" not in inspector_source:
         failures.append("Open 3D must provide a prop-level picker for lightweight passive CAD hover.")
     try:

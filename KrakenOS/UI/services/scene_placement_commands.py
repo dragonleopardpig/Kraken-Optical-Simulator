@@ -1515,12 +1515,14 @@ class ScenePlacementMixin:
         title: str = "Import lens STEP",
         display_label: str = "Lens STEP",
         largest_component_only: bool = True,
+        refresh_open_3d: bool = True,
     ) -> Path | None:
         return self._step_overlay_import_service().import_lens_step(
             dialog_parent=dialog_parent,
             title=title,
             display_label=display_label,
             largest_component_only=largest_component_only,
+            refresh_open_3d=refresh_open_3d,
         )
 
     def _default_optical_step_import_offset(self) -> tuple[float, float, float]:
@@ -1529,17 +1531,41 @@ class ScenePlacementMixin:
     def _preserve_unpromoted_step_overlay(self, label: str) -> dict[str, object] | None:
         return self._step_overlay_import_service()._preserve_unpromoted_step_overlay(label)
 
-    def import_optical_step(self, dialog_parent: tk.Misc | None = None) -> Path | None:
-        return self._step_overlay_import_service().import_optical_step(dialog_parent=dialog_parent)
+    def import_optical_step(
+        self,
+        dialog_parent: tk.Misc | None = None,
+        *,
+        refresh_open_3d: bool = True,
+    ) -> Path | None:
+        return self._step_overlay_import_service().import_optical_step(
+            dialog_parent=dialog_parent,
+            refresh_open_3d=refresh_open_3d,
+        )
 
-    def import_camera_step(self, dialog_parent: tk.Misc | None = None) -> Path | None:
-        return self._step_overlay_import_service().import_camera_step(dialog_parent=dialog_parent)
+    def import_camera_step(
+        self,
+        dialog_parent: tk.Misc | None = None,
+        *,
+        refresh_open_3d: bool = True,
+    ) -> Path | None:
+        return self._step_overlay_import_service().import_camera_step(
+            dialog_parent=dialog_parent,
+            refresh_open_3d=refresh_open_3d,
+        )
 
     def rotate_camera_step_z(self, delta_deg: float) -> None:
         self.rotate_step_z("camera", delta_deg)
 
-    def import_led_step(self, dialog_parent: tk.Misc | None = None) -> Path | None:
-        return self._step_overlay_import_service().import_led_step(dialog_parent=dialog_parent)
+    def import_led_step(
+        self,
+        dialog_parent: tk.Misc | None = None,
+        *,
+        refresh_open_3d: bool = True,
+    ) -> Path | None:
+        return self._step_overlay_import_service().import_led_step(
+            dialog_parent=dialog_parent,
+            refresh_open_3d=refresh_open_3d,
+        )
 
     def _default_led_object_edge_distance(self) -> float:
         lens_front_z = max(float(self._lens_front_datum_z()), 0.0)

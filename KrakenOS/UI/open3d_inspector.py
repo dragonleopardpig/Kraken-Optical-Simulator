@@ -1642,7 +1642,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_normal_axis_pick_mode = False
         self._step_surface_center_axis_pick_mode = False
         self.editor.select_step_component(label)
-        self._set_step_highlight(label)
+        self._set_step_highlight(label, render=False)
         self.show_step_rotation_handler(label)
         self._set_step_carry_cursor(True)
         if transition.has_grip_world:
@@ -3112,7 +3112,7 @@ class Kraken3DInspector(tk.Toplevel):
         except Exception:
             pass
 
-    def _set_step_highlight(self, step_label: str | None) -> None:
+    def _set_step_highlight(self, step_label: str | None, *, render: bool = True) -> None:
         if step_label == self._picked_step_label:
             return
         if self._renderer is None:
@@ -3128,7 +3128,8 @@ class Kraken3DInspector(tk.Toplevel):
                 continue
             self._set_step_actor_selected(actor, bool(step_label is not None and actor_step == step_label))
         self._picked_step_label = step_label
-        self.render()
+        if render:
+            self.render()
 
     def _remove_step_rotation_handle_actors(self) -> bool:
         return self._open3d_step_rotation_handle_service().remove_actors()
@@ -3240,9 +3241,9 @@ class Kraken3DInspector(tk.Toplevel):
         if self._step_rotation_active_label is not None:
             self._close_step_rotation_handler()
             changed = True
-        self._set_step_hover_outline(None, None)
+        self._set_step_hover_outline(None, None, render=False)
         if self._picked_step_label is not None:
-            self._set_step_highlight(None)
+            self._set_step_highlight(None, render=False)
             changed = True
         if self._picked_row_index is not None:
             self._set_row_highlight(None)
@@ -3305,7 +3306,7 @@ class Kraken3DInspector(tk.Toplevel):
             return False
         self.editor.select_step_component(label)
         self._step_rotation_active_label = label
-        self._set_step_highlight(label)
+        self._set_step_highlight(label, render=False)
         self.show_step_rotation_handler(label)
         self.refresh_step_admin_panel()
         path = self.editor._step_path_for_label(label)
@@ -3336,7 +3337,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._step_surface_center_axis_pick_mode = False
         self._step_rotation_active_label = None
         self._close_step_rotation_handler()
-        self._set_step_highlight(None)
+        self._set_step_highlight(None, render=False)
         self.editor._select_table_indices([row_index], focus_index=row_index)
         self.editor._sync_surface_selection(row_index)
         self._stl_placement_row_index = row_index
@@ -3355,7 +3356,7 @@ class Kraken3DInspector(tk.Toplevel):
         importer = importers.get(label)
         if importer is None:
             return
-        path = importer(dialog_parent=self)
+        path = importer(dialog_parent=self, refresh_open_3d=False)
         if path is None:
             self.status_var.set(self.editor.status_var.get())
             return
@@ -3384,7 +3385,7 @@ class Kraken3DInspector(tk.Toplevel):
 
     def import_optical_step_overlay(self) -> None:
         had_existing_overlay = self.editor._step_path_for_label("optical") is not None
-        path = self.editor.import_optical_step(dialog_parent=self)
+        path = self.editor.import_optical_step(dialog_parent=self, refresh_open_3d=False)
         if path is None:
             self.status_var.set(self.editor.status_var.get())
             return
@@ -4310,7 +4311,7 @@ class Kraken3DInspector(tk.Toplevel):
             self._step_carry_grid_label = None
             self._step_carry_grid_spacing_mm = None
         self.editor.select_step_component(label)
-        self._set_step_highlight(label)
+        self._set_step_highlight(label, render=False)
         handle_count = self._ensure_step_rotation_handles_for_label(label)
         handle_text = "Use the colored STEP rotation handles, or Center STEP Axis."
         if not self._show_rotation_handles():
@@ -4318,8 +4319,7 @@ class Kraken3DInspector(tk.Toplevel):
         elif handle_count <= 0:
             handle_text = "Rotation handles could not be rebuilt for this STEP mesh; use Center STEP Axis or re-open Open 3D."
         self.status_var.set(f"{self._step_rotation_status_text(label)}. {handle_text}")
-        if handle_count > 0:
-            self.render()
+        self.render()
 
     def _update_step_rotation_handler_state(self) -> None:
         label = self._step_rotation_active_label
@@ -4372,7 +4372,7 @@ class Kraken3DInspector(tk.Toplevel):
                     self.editor._selected_step_label = None
             except Exception:
                 pass
-            self._set_step_highlight(None)
+            self._set_step_highlight(None, render=False)
 
     def _stl_placement_status_text(self, row_index: int) -> str:
         row = self.editor.rows[int(row_index)]

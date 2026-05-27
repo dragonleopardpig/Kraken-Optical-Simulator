@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import inspect
 from pathlib import Path
 
 from KrakenOS.UI.services.step_overlay_import import StepOverlayImportService
@@ -52,6 +53,11 @@ def main() -> int:
         (
             "default optical STEP import offset follows current row span",
             service._default_optical_step_import_offset() == (0.0, 0.0, 20.0),
+        ),
+        (
+            "Open 3D imports can suppress editor-level double refresh",
+            "refresh_open_3d: bool = True" in inspect.getsource(StepOverlayImportService)
+            and "if refresh_open_3d:" in inspect.getsource(StepOverlayImportService),
         ),
     ]
     service.clear_imported_step_overlay_state("lens")

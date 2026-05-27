@@ -145,8 +145,8 @@ def main() -> int:
         ),
         (
             "Open 3D STEP import keeps dialog parent in the 3D window",
-            "importer(dialog_parent=self)" in import_step_source,
-            "Open 3D import commands should not route through a hidden main-window-only dialog path",
+            "importer(dialog_parent=self, refresh_open_3d=False)" in import_step_source,
+            "Open 3D import commands should not route through a hidden main-window-only dialog path or double-refresh",
         ),
         (
             "Open 3D STEP import selects imported overlay handles",
