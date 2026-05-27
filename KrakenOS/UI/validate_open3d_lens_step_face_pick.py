@@ -11,6 +11,7 @@ import numpy as np
 from KrakenOS.UI import cad_import_service
 from KrakenOS.UI.open3d_inspector import Kraken3DInspector
 from KrakenOS.UI.services import open3d_step_overlay_refresh
+from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
 
 
 def _cell_normal(data, cell_id: int) -> np.ndarray | None:
@@ -113,6 +114,9 @@ def main() -> int:
     refresh_source = __import__("inspect").getsource(open3d_step_overlay_refresh)
     if "boundary_edges=not round_lens_like" not in refresh_source:
         failures.append("Round lens-like STEP rendering must suppress tessellation patch-boundary edge overlays.")
+    interaction_source = __import__("inspect").getsource(Open3DInteractionService._on_mouse_move)
+    if "carry_label = self._step_carry_label()" not in interaction_source or "target_label = str(carry_label)" not in interaction_source:
+        failures.append("Carry-mode imported STEP hover must pick the active STEP face, not only rotation handles.")
 
     if failures:
         print("Open 3D lens STEP face-pick validation failed:")

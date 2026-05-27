@@ -826,6 +826,10 @@ class Open3DInteractionService:
         led_edge_pick = bool(getattr(self.editor, "_cad_led_object_edge_pick", False))
         target_label = "led" if led_edge_pick else requested_label
         if target_label is None and not axis_pick_any:
+            carry_label = self._step_carry_label()
+            if carry_label is not None:
+                target_label = str(carry_label)
+        if target_label is None and not axis_pick_any:
             if self._picker is not None and self._renderer is not None and self._vtk_interactor is not None:
                 try:
                     x, y = self._vtk_interactor.GetEventPosition()
