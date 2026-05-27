@@ -42,6 +42,7 @@ FAST_CONTRACT_ALIASES = (
     '"open3d-live-budget"',
     '"open3d-thickness-dimensions"',
     '"open3d-step-face-direction"',
+    '"open3d-lens-step-face-pick"',
     '"row-spec-contracts"',
     '"layout-literals"',
     '"cadquery-readiness"',

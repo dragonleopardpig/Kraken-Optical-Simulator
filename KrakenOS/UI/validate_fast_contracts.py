@@ -81,6 +81,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="STEP face-direction controls and service boundary contract.",
     ),
     ValidationTarget(
+        "open3d-lens-step-face-pick",
+        "KrakenOS.UI.validate_open3d_lens_step_face_pick",
+        reason="Round achromat-like STEP bodies pick a grouped optical face and do not expose raw STL triangles when selected.",
+    ),
+    ValidationTarget(
         "widget-commit-bindings",
         "KrakenOS.UI.validate_widget_commit_bindings",
         reason="Reusable Tk entry/combobox commit binding contracts without opening a display.",

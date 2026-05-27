@@ -3131,6 +3131,11 @@ class Kraken3DInspector(tk.Toplevel):
                 prop.SetInterpolationToPhong()
                 prop.SetSpecular(0.18)
                 prop.SetSpecularPower(12.0)
+        if pick_step_label is not None:
+            try:
+                actor._kraken_round_lens_like_step_body = bool(self._mesh_round_lens_axis(mesh) is not None)
+            except Exception:
+                actor._kraken_round_lens_like_step_body = False
         try:
             if backface_culling:
                 prop.BackfaceCullingOn()
@@ -7974,6 +7979,9 @@ class Kraken3DInspector(tk.Toplevel):
         if normal_norm <= 1e-12:
             return np.mean(seed_points, axis=0), None, None
         normal /= normal_norm
+        round_lens_feature = Kraken3DInspector._round_lens_feature_for_cell(data, cell_id)
+        if round_lens_feature is not None:
+            return round_lens_feature
         seed_center = np.mean(seed_points, axis=0)
         plane_d = float(np.dot(normal, seed_center))
         try:
@@ -8117,6 +8125,139 @@ class Kraken3DInspector(tk.Toplevel):
         self._selected_step_feature_surface_center_world = selection.surface_center_world
         self._selected_step_feature_normal_world = selection.normal_world
         return True
+
+    @staticmethod
+    def _mesh_round_lens_axis(data) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+        if data is None:
+            return None
+        try:
+            points = np.asarray(getattr(data, "points", None), dtype=float)
+        except Exception:
+            try:
+                points = np.asarray([data.GetPoint(index) for index in range(int(data.GetNumberOfPoints()))], dtype=float)
+            except Exception:
+                return None
+        if points.ndim != 2 or points.shape[0] < 24 or points.shape[0] > 120000 or points.shape[1] < 3 or not np.all(np.isfinite(points[:, :3])):
+            return None
+        center = np.mean(points[:, :3], axis=0)
+        centered = points[:, :3] - center
+        try:
+            _u, singular, vh = np.linalg.svd(centered, full_matrices=False)
+        except Exception:
+            return None
+        if singular.size < 3 or vh.shape != (3, 3):
+            return None
+        major = float(max(singular[0], 1e-12))
+        mid = float(max(singular[1], 1e-12))
+        minor = float(max(singular[2], 1e-12))
+        if major / mid > 1.75 or minor / mid > 0.78:
+            return None
+        axis = np.asarray(vh[2], dtype=float)
+        axis_norm = float(np.linalg.norm(axis))
+        if axis_norm <= 1e-12 or not np.isfinite(axis_norm):
+            return None
+        axis = axis / axis_norm
+        projections = centered @ axis
+        if not np.all(np.isfinite(projections)):
+            return None
+        thickness = float(np.max(projections) - np.min(projections))
+        radial = centered - np.outer(projections, axis)
+        radial_norm = np.linalg.norm(radial, axis=1)
+        diameter = 2.0 * float(np.percentile(radial_norm, 95))
+        if diameter <= 1e-9 or thickness <= 1e-9 or thickness / diameter > 0.85:
+            return None
+        return center, axis, points[:, :3]
+
+    @staticmethod
+    def _round_lens_feature_for_cell(data, seed_cell_id: int):
+        axis_info = Kraken3DInspector._mesh_round_lens_axis(data)
+        if axis_info is None:
+            return None
+        object_center, axis, _points = axis_info
+        try:
+            seed_cell_id = int(seed_cell_id)
+            cell_count = int(data.GetNumberOfCells())
+            seed_cell = data.GetCell(seed_cell_id)
+            seed_ids = seed_cell.GetPointIds()
+            seed_points = np.asarray(
+                [data.GetPoint(seed_ids.GetId(index)) for index in range(seed_ids.GetNumberOfIds())],
+                dtype=float,
+            )
+        except Exception:
+            return None
+        if seed_points.ndim != 2 or seed_points.shape[0] < 3:
+            return None
+        seed_normal = np.cross(seed_points[1] - seed_points[0], seed_points[2] - seed_points[0])
+        seed_norm = float(np.linalg.norm(seed_normal))
+        if seed_norm <= 1e-12 or not np.isfinite(seed_norm):
+            return None
+        seed_normal = seed_normal / seed_norm
+        normal_dot = float(np.dot(seed_normal, axis))
+        if abs(normal_dot) < 0.18:
+            return None
+        face_normal = axis if normal_dot >= 0.0 else -axis
+        cell_normals: dict[int, np.ndarray] = {}
+        cell_point_ids: dict[int, tuple[int, ...]] = {}
+        point_to_cells: dict[int, list[int]] = {}
+        for candidate_id in range(cell_count):
+            try:
+                cell = data.GetCell(candidate_id)
+                ids = cell.GetPointIds()
+                point_ids = tuple(int(ids.GetId(index)) for index in range(ids.GetNumberOfIds()))
+                pts = np.asarray([data.GetPoint(point_id) for point_id in point_ids], dtype=float)
+            except Exception:
+                continue
+            if pts.ndim != 2 or pts.shape[0] < 3:
+                continue
+            candidate_normal = np.cross(pts[1] - pts[0], pts[2] - pts[0])
+            candidate_norm = float(np.linalg.norm(candidate_normal))
+            if candidate_norm <= 1e-12 or not np.isfinite(candidate_norm):
+                continue
+            candidate_normal = candidate_normal / candidate_norm
+            if float(np.dot(candidate_normal, face_normal)) < 0.16:
+                continue
+            candidate_center = np.mean(pts, axis=0)
+            if float(np.dot(candidate_center - object_center, face_normal)) < -1e-6:
+                continue
+            cell_normals[candidate_id] = candidate_normal
+            cell_point_ids[candidate_id] = point_ids
+            for point_id in point_ids:
+                point_to_cells.setdefault(int(point_id), []).append(candidate_id)
+        if seed_cell_id not in cell_normals:
+            return None
+        component: set[int] = set()
+        queue = [seed_cell_id]
+        while queue:
+            candidate_id = queue.pop()
+            if candidate_id in component or candidate_id not in cell_normals:
+                continue
+            component.add(candidate_id)
+            for point_id in cell_point_ids.get(candidate_id, ()):
+                for neighbor_id in point_to_cells.get(int(point_id), []):
+                    if neighbor_id not in component and neighbor_id in cell_normals:
+                        queue.append(neighbor_id)
+        if len(component) < 6:
+            return None
+        point_ids: set[int] = set()
+        for candidate_id in component:
+            point_ids.update(cell_point_ids.get(candidate_id, ()))
+        if len(point_ids) < 8:
+            return None
+        component_points = np.asarray([data.GetPoint(point_id) for point_id in point_ids], dtype=float)
+        if component_points.ndim != 2 or component_points.shape[0] < 8:
+            return None
+        axial = (component_points[:, :3] - object_center.reshape(1, 3)) @ face_normal
+        radial_vectors = component_points[:, :3] - (object_center.reshape(1, 3) + np.outer(axial, face_normal))
+        radial = np.linalg.norm(radial_vectors, axis=1)
+        radial_span = float(np.max(radial) - np.min(radial)) if radial.size else 0.0
+        near_axis_limit = float(np.min(radial)) + max(radial_span * 0.08, 1e-4)
+        near_axis = axial[radial <= near_axis_limit]
+        axial_center = float(np.mean(near_axis)) if near_axis.size else float(np.mean(axial))
+        surface_center = object_center + face_normal * axial_center
+        outline = Kraken3DInspector._planar_outline_from_points(component_points[:, :3], normal_world=face_normal)
+        if outline is None:
+            outline = Kraken3DInspector._outline_for_cells(data, component, feature_edges=False)
+        return surface_center, outline, face_normal.copy()
 
     @staticmethod
     def _outline_for_cells(data, cell_ids: set[int], *, feature_edges: bool = True):
@@ -8576,8 +8717,11 @@ class Kraken3DInspector(tk.Toplevel):
                 base = {}
         if selected:
             try:
-                prop.SetEdgeVisibility(1)
-                prop.SetEdgeColor(1.0, 0.48, 0.0)
+                if bool(getattr(actor, "_kraken_round_lens_like_step_body", False)):
+                    prop.SetEdgeVisibility(0)
+                else:
+                    prop.SetEdgeVisibility(1)
+                    prop.SetEdgeColor(1.0, 0.48, 0.0)
                 prop.SetLineWidth(max(float(base.get("line_width", 1.0)), 3.0))
                 prop.SetAmbient(max(float(base.get("ambient", 0.0)), 0.35))
                 prop.SetOpacity(min(max(float(base.get("opacity", 1.0)), 0.25) + 0.10, 1.0))
