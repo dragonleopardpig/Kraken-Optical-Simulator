@@ -446,6 +446,7 @@ vtkOrientationMarkerWidget = None
 vtkAxesActor = None
 vtkActor = None
 vtkCellPicker = None
+vtkPropPicker = None
 vtkDataSetMapper = None
 vtkRenderer = None
 vtkTextActor = None
@@ -1543,7 +1544,7 @@ def _load_3d_backends() -> None:
     """Load PyVista/VTK only when the user opens 3D or CAD overlays."""
     global _3D_BACKENDS_ATTEMPTED
     global pv, vtkTkRenderWindowInteractor, vtkTubeFilter, vtkOrientationMarkerWidget
-    global vtkAxesActor, vtkActor, vtkCellPicker, vtkDataSetMapper, vtkRenderer, vtkTextActor, vtkBillboardTextActor3D
+    global vtkAxesActor, vtkActor, vtkCellPicker, vtkPropPicker, vtkDataSetMapper, vtkRenderer, vtkTextActor, vtkBillboardTextActor3D
     global _VTK_TK_UNAVAILABLE_REASON
     if _3D_BACKENDS_ATTEMPTED:
         return
@@ -1564,6 +1565,7 @@ def _load_3d_backends() -> None:
             vtkActor as _vtk_actor,
             vtkCellPicker as _vtk_picker,
             vtkDataSetMapper as _vtk_mapper,
+            vtkPropPicker as _vtk_prop_picker,
             vtkRenderer as _vtk_renderer,
             vtkTextActor as _vtk_text_actor,
         )
@@ -1593,6 +1595,7 @@ def _load_3d_backends() -> None:
         vtkAxesActor = _vtk_axes
         vtkActor = _vtk_actor
         vtkCellPicker = _vtk_picker
+        vtkPropPicker = _vtk_prop_picker
         vtkDataSetMapper = _vtk_mapper
         vtkRenderer = _vtk_renderer
         vtkTextActor = _vtk_text_actor
@@ -1604,6 +1607,7 @@ def _load_3d_backends() -> None:
         vtkAxesActor = None
         vtkActor = None
         vtkCellPicker = None
+        vtkPropPicker = None
         vtkDataSetMapper = None
         vtkRenderer = None
         vtkTextActor = None

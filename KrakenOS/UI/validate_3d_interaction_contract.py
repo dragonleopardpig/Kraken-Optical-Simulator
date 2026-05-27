@@ -1340,7 +1340,7 @@ def main() -> int:
         (
             "Open 3D passive ray selection is disabled by default",
             "ray_pick_enabled_var = tk.BooleanVar(value=False)" in init
-            and 'text="Pick rays"' in init_with_top_controls
+            and '"Pick rays"' in init_with_top_controls
             and "_on_ray_pick_changed" in init_with_top_controls
             and "return bool(self.ray_pick_enabled_var.get())" in ray_pick_enabled
             and "Ray picking disabled" in ray_pick_changed,
@@ -1462,10 +1462,10 @@ def main() -> int:
             and "_default_uncoated_optical_solid_face_metadata(path)" in inspect.getsource(KrakenLayoutEditor._optical_stl_solid_row),
         ),
         (
-            "Open 3D hover badge reports face assignment physics",
+            "Open 3D explicit face pick badge can report face assignment physics",
             "vtkTextActor" in hover_status
             and "_hover_status_actor" in init
-            and "_face_hover_status_text" in mouse_move
+            and "_face_hover_status_text" in inspect.getsource(Kraken3DInspector)
             and "_optical_solid_face_port_role" in face_hover_status,
         ),
         (
@@ -1474,14 +1474,11 @@ def main() -> int:
             and "_add_optical_solid_face_role_overlays(system)" not in refresh,
         ),
         (
-            "Open 3D CAD/STL faces hover before right-click assignment",
-            "right-click to assign surface physics" in mouse_move
-            and "_hover_overlay_for_feature" in mouse_move
-            and "_hover_overlay_for_row_face" in mouse_move
-            and "_row_face_ray_pick_for_display_xy" in mouse_move
-            and "optical_solid_face_record_for_mesh_cell" in mouse_move
-            and "optical_solid_face_record_at_world_point" in mouse_move
-            and '("row", actor_key, "ray", through_face_id)' in mouse_move,
+            "Open 3D passive CAD/STL hover stays lightweight before right-click assignment",
+            "right-click a face to assign surface physics" in mouse_move
+            and "right-click for surface roles" in mouse_move
+            and '"step-passive"' in mouse_move
+            and '"row-passive"' in mouse_move,
         ),
         (
             "Open 3D transparent CAD solids support through-body internal face picking",
@@ -1589,9 +1586,9 @@ def main() -> int:
         (
             "Open 3D scene toolbar groups dense commands",
             '"CAD / target"' in init_with_top_controls
-            and 'text="Place"' in init_with_top_controls
-            and 'text="Orient"' in init_with_top_controls
-            and "ttk.Menubutton" in init_with_top_controls,
+            and '"Place"' in init_with_top_controls
+            and '"Orient"' in init_with_top_controls
+            and "pack_menubutton" in init_with_top_controls,
         ),
         (
             "Open 3D has a right-docked STEP element browser",

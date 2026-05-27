@@ -106,6 +106,7 @@ vtkOrientationMarkerWidget = None
 vtkAxesActor = None
 vtkActor = None
 vtkCellPicker = None
+vtkPropPicker = None
 vtkDataSetMapper = None
 vtkRenderer = None
 vtkTextActor = None
@@ -125,7 +126,7 @@ def _layout_editor_class():
 
 def _load_3d_backends() -> None:
     global pv, vtkTkRenderWindowInteractor, vtkOrientationMarkerWidget
-    global vtkAxesActor, vtkActor, vtkCellPicker, vtkDataSetMapper, vtkRenderer, vtkTextActor, vtkBillboardTextActor3D
+    global vtkAxesActor, vtkActor, vtkCellPicker, vtkPropPicker, vtkDataSetMapper, vtkRenderer, vtkTextActor, vtkBillboardTextActor3D
     global _VTK_TK_UNAVAILABLE_REASON
     layout_editor_module = _layout_module()
     layout_editor_module._load_3d_backends()
@@ -135,6 +136,7 @@ def _load_3d_backends() -> None:
     vtkAxesActor = layout_editor_module.vtkAxesActor
     vtkActor = layout_editor_module.vtkActor
     vtkCellPicker = layout_editor_module.vtkCellPicker
+    vtkPropPicker = layout_editor_module.vtkPropPicker
     vtkDataSetMapper = layout_editor_module.vtkDataSetMapper
     vtkRenderer = layout_editor_module.vtkRenderer
     vtkTextActor = layout_editor_module.vtkTextActor
@@ -196,6 +198,7 @@ class Kraken3DInspector(tk.Toplevel):
         self._vtk_interactor = None
         self._orientation_widget = None
         self._picker = None
+        self._prop_picker = None
         self._picked_row_index: int | None = None
         self._actor_row_map: dict[str, int] = {}
         self._row_actor_map: dict[int, list[str]] = {}
@@ -359,6 +362,8 @@ class Kraken3DInspector(tk.Toplevel):
             if vtkCellPicker is not None:
                 self._picker = vtkCellPicker()
                 self._picker.SetTolerance(0.0015)
+            if vtkPropPicker is not None:
+                self._prop_picker = vtkPropPicker()
 
             if vtkOrientationMarkerWidget is not None and vtkAxesActor is not None and self._vtk_interactor is not None:
                 axes = vtkAxesActor()

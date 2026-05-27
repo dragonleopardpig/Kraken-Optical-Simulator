@@ -536,11 +536,25 @@ class Open3DInteractionService:
             self.status_var.set(f"Selected row {row_index}: {row_name}")
         self.render()
 
+    def _passive_hover_pick_actor(self, x: int | float, y: int | float):
+        picker = getattr(self, "_prop_picker", None) or self._picker
+        if picker is None or self._renderer is None:
+            return None, None, -1
+        try:
+            picker.Pick(float(x), float(y), 0.0, self._renderer)
+            actor = picker.GetActor()
+        except Exception:
+            return None, None, -1
+        actor_key = self._actor_key(actor)
+        cell_id = -1
+        if picker is self._picker:
+            try:
+                cell_id = int(self._picker.GetCellId())
+            except Exception:
+                cell_id = -1
+        return actor, actor_key, cell_id
+
     def _on_mouse_move(self, obj, _event) -> None:
-        le = _layout_module()
-        STEP_OVERLAY_LABEL_SET = le.STEP_OVERLAY_LABEL_SET
-        _short_error_message = le._short_error_message
-        _optical_solid_face_function_display = le._optical_solid_face_function_display
         hover_critical = bool(self._center_row_to_ray_mode or self._step_normal_axis_pick_mode or self._step_surface_center_axis_pick_mode)
         if (
             self._step_carry_drag_state is None
@@ -749,9 +763,7 @@ class Open3DInteractionService:
             if self._picker is not None and self._renderer is not None and self._vtk_interactor is not None:
                 try:
                     x, y = self._vtk_interactor.GetEventPosition()
-                    self._picker.Pick(x, y, 0.0, self._renderer)
-                    actor = self._picker.GetActor()
-                    actor_key = self._actor_key(actor)
+                    actor, actor_key, _cell_id = self._passive_hover_pick_actor(x, y)
                     step_rotate = self._actor_step_rotate_map.get(actor_key) if actor_key is not None else None
                     placement_rotate = self._actor_placement_rotate_map.get(actor_key) if actor_key is not None else None
                     if step_rotate is not None:
@@ -780,95 +792,25 @@ class Open3DInteractionService:
                     actor_key = None
                     step_label = None
                 if step_label is not None:
-                    try:
-                        cell_id = int(self._picker.GetCellId())
-                    except Exception:
-                        cell_id = -1
-                    through_pick = self._step_face_ray_pick_for_display_xy(str(step_label), (x, y))
-                    outline = None
-                    face_text = "face"
-                    if through_pick is not None:
-                        face = through_pick.face
-                        face_id = str(face.get("face_id", "") or "").strip() or "face"
-                        face_text = f"{face_id} internal face" if through_pick.internal else f"{face_id} face"
-                        hover_key = (actor_key, "ray", face_id)
-                        if hover_key != self._hover_step_cell_key:
-                            outline = self._hover_overlay_for_step_face(str(step_label), face)
-                    else:
-                        hover_key = (actor_key, cell_id)
-                        if hover_key != self._hover_step_cell_key:
-                            feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
-                            outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
-                    self._set_step_hover_outline(outline, hover_key)
+                    hover_key = ("step-passive", actor_key)
+                    self._set_step_hover_outline(None, hover_key, render=self._hover_step_outline_actor is not None)
                     display = self.editor._step_overlay_display_label(str(step_label)).upper()
-                    coordinate_lines: list[str] = []
-                    if through_pick is not None:
-                        coordinate_lines.append(f"Pick={self._world_xyz_text(through_pick.point_world)}")
-                        coordinate_lines.append(f"Center={self._world_xyz_text(self._surface_center_from_face_ray_pick(through_pick))}")
-                    else:
-                        try:
-                            pick_point = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
-                        except Exception:
-                            pick_point = np.asarray([], dtype=float)
-                        if pick_point.size >= 3 and np.all(np.isfinite(pick_point[:3])):
-                            coordinate_lines.append(f"Pick={self._world_xyz_text(pick_point[:3])}")
-                    coordinate_text = "\n" + "\n".join(coordinate_lines) if coordinate_lines else ""
-                    self._update_hover_status(
-                        f"{display} STEP {face_text}{coordinate_text}\nDefault after promotion: Uncoated",
-                        display_xy=(x, y),
-                        render=True,
+                    self._update_hover_status("", render=False)
+                    self.status_var.set(
+                        f"{display} STEP: click to select or hold-drag to move; "
+                        "right-click for surface roles; use Center Surface->Axis for face picking."
                     )
-                    self.status_var.set(f"{display} STEP {face_text}: click to select its normal for optical-axis snapping.")
                     return
                 row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
                 if row_index is not None and self.editor._file_backed_stl_row_at(int(row_index)) is not None:
-                    try:
-                        cell_id = int(self._picker.GetCellId())
-                    except Exception:
-                        cell_id = -1
-                    through_pick = self._row_face_ray_pick_for_display_xy(int(row_index), (x, y))
-                    through_face_id = ""
-                    if through_pick is not None:
-                        through_face_id = str(through_pick.face.get("face_id", "") or "").strip()
-                    hover_key = ("row", actor_key, "ray", through_face_id) if through_face_id else ("row", actor_key, cell_id)
-                    outline = None
-                    feature = None
-                    face = through_pick.face if through_pick is not None else None
-                    try:
-                        if face is None:
-                            face = self.editor.optical_solid_face_record_for_mesh_cell(int(row_index), cell_id)
-                    except Exception:
-                        face = None
-                    if hover_key != self._hover_step_cell_key:
-                        if face is not None:
-                            outline = self._hover_overlay_for_row_face(int(row_index), face)
-                        if outline is None:
-                            feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
-                            outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
-                    self._set_step_hover_outline(outline, hover_key)
-                    face_text = "picked face"
-                    try:
-                        if face is None:
-                            point = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
-                            normal = None
-                            if feature is not None:
-                                normal = np.asarray(feature[2], dtype=float).reshape(-1)[:3]
-                            face = self.editor.optical_solid_face_record_at_world_point(
-                                int(row_index),
-                                point[:3],
-                                normal_world=normal,
-                                assigned_only=False,
-                            )
-                        if face is not None:
-                            function = _optical_solid_face_function_display(face.get("function"), legacy_role=face.get("role"))
-                            face_text = f"{str(face.get('face_id', '') or 'face')} ({function})"
-                            if through_pick is not None and through_pick.internal:
-                                face_text += " internal"
-                            self._update_hover_status(self._face_hover_status_text(int(row_index), face), display_xy=(x, y), render=True)
-                    except Exception:
-                        pass
+                    hover_key = ("row-passive", actor_key)
+                    self._set_step_hover_outline(None, hover_key, render=self._hover_step_outline_actor is not None)
+                    self._update_hover_status("", render=False)
                     self._set_axis_pick_cursor(False)
-                    self.status_var.set(f"S{int(row_index)} CAD/STL {face_text}: right-click to assign surface physics.")
+                    self.status_var.set(
+                        f"S{int(row_index)} CAD/STL: click to select; "
+                        "right-click a face to assign surface physics."
+                    )
                     return
             self._set_step_hover_outline(None, None)
             self._set_rotation_handle_hover(None)

@@ -90,7 +90,9 @@ def _validate_document_and_pick_caches() -> list[str]:
 def _validate_open3d_wiring() -> list[str]:
     failures: list[str] = []
     inspector_source = (PROJECT_ROOT / "KrakenOS/UI/open3d_inspector.py").read_text(encoding="utf-8")
+    layout_source = (PROJECT_ROOT / "KrakenOS/UI/layout_editor.py").read_text(encoding="utf-8")
     refresh_source = (PROJECT_ROOT / "KrakenOS/UI/services/open3d_scene_refresh.py").read_text(encoding="utf-8")
+    interaction_source = (PROJECT_ROOT / "KrakenOS/UI/services/open3d_interaction.py").read_text(encoding="utf-8")
     required_tokens = (
         "from KrakenOS.UI.services.cad_scene_cache import CadSceneCache",
         "self._cad_scene_cache = CadSceneCache()",
@@ -105,6 +107,26 @@ def _validate_open3d_wiring() -> list[str]:
         failures.append("Open 3D face-metadata reset must clear CAD scene-cache artifacts.")
     if "self._cad_scene_cache.clear()" not in refresh_source:
         failures.append("Open 3D scene refresh must clear CAD scene-cache artifacts.")
+    if "vtkPropPicker" not in layout_source or "self._prop_picker = vtkPropPicker()" not in inspector_source:
+        failures.append("Open 3D must provide a prop-level picker for lightweight passive CAD hover.")
+    try:
+        passive_start = interaction_source.index("if target_label is None and not axis_pick_any:")
+        passive_end = interaction_source.index("if self._picker is None or self._renderer is None", passive_start)
+        passive_hover_source = interaction_source[passive_start:passive_end]
+    except ValueError:
+        passive_hover_source = ""
+    if not passive_hover_source:
+        failures.append("Open 3D passive hover branch could not be located.")
+    else:
+        for token in ("_step_face_ray_pick_for_display_xy", "_row_face_ray_pick_for_display_xy", "_picked_feature_info_cached"):
+            if token in passive_hover_source:
+                failures.append(f"Open 3D passive CAD hover must not call heavy face lookup: {token}")
+        if '"step-passive"' not in passive_hover_source or '"row-passive"' not in passive_hover_source:
+            failures.append("Open 3D passive CAD hover must use lightweight step-passive/row-passive hover keys.")
+        if "_passive_hover_pick_actor" not in passive_hover_source:
+            failures.append("Open 3D passive CAD hover must route through the prop-level passive picker.")
+        if "right-click for surface roles" not in passive_hover_source or "right-click a face to assign surface physics" not in passive_hover_source:
+            failures.append("Open 3D passive CAD hover must route detailed face work to explicit right-click/selection operations.")
     return failures
 
 

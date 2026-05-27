@@ -71,7 +71,7 @@ deferred.
 | Area | Status | Progress | Next action |
 | --- | --- | --- | --- |
 | Upstream main integration | Ready to start | `65%` | Begin selective upstream replay with validators after each small batch. Do not overwrite non-sequential scene, Open 3D, CAD cache, or packaging contracts. |
-| CadQuery/OCP topology study | Cache foundation landed | `55%` | `CadSceneCache` now reuses existing mesh-path triangle and face-outline artifacts in Open 3D hover/pick paths. Next add actor/cell-data face lookup and hover-latency diagnostics before any optional CadQuery/OCP adapter. |
+| CadQuery/OCP topology study | Cache foundation landed | `60%` | `CadSceneCache` now reuses existing mesh-path triangle and face-outline artifacts, and passive Open 3D CAD hover uses actor-level picking instead of transparent face tests until explicit face-pick/right-click operations. Next add actor/cell-data face lookup and hover-latency diagnostics before any optional CadQuery/OCP adapter. |
 | External merge readiness | In progress | `80%` | Keep this README, Sphinx docs, validation commands, and generated reports aligned so a reviewer can evaluate scope and test coverage without following the entire development history. |
 | Final UI theming polish | Deferred | `0%` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
 
