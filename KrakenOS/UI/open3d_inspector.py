@@ -84,6 +84,7 @@ from KrakenOS.UI.source_trace_helpers import (
     SOURCE_DIRECTION_PRESET_VALUES,
     SOURCE_MODEL_VALUES,
 )
+from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABELS, STEP_OVERLAY_LABEL_SET
 from KrakenOS.UI.surface_table_model import SurfaceRow
 from KrakenOS.UI.nonseq_output_ports import optical_solid_output_port_runtime_transform_override
 from KrakenOS.UI import optical_solid_metadata
@@ -91,8 +92,6 @@ from KrakenOS.UI import optical_solid_metadata
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ATTACHMENT_DIR = PROJECT_ROOT / "attachment"
 STEP_CARRY_GRID_FREE = "Free"
-STEP_OVERLAY_LABELS = ("lens", "optical", "led", "camera")
-STEP_OVERLAY_LABEL_SET = set(STEP_OVERLAY_LABELS)
 FIELD_TYPE_CANONICAL_VALUES = (
     "Angle",
     "Object Height",

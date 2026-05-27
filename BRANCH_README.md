@@ -71,7 +71,7 @@ deferred.
 | Area | Status | Progress | Next action |
 | --- | --- | --- | --- |
 | Upstream main integration | Triaged | `40%` | Continue selective integration. Packaging metadata and attachment cleanup are merged; runtime tracing/display cleanups from upstream need adapted validators before landing. |
-| CadQuery/OCP topology study | Planned | `0%` | Study CadQuery as an optional reference for STEP topology, face/edge selectors, tessellation, assembly traversal, and fixture generation. Do not add it as a runtime dependency until the package weight and topology-preservation story are proven. |
+| CadQuery/OCP topology study | Ready to start | `10%` | The CAD/STEP boundary is clean enough to begin a separate study. Use CadQuery/OCP only as an optional reference for STEP topology, face/edge selectors, tessellation, assembly traversal, and fixture generation; do not add it as a runtime dependency until package weight and topology preservation are proven. |
 | External merge readiness | In progress | `70%` | Keep this README, Sphinx docs, validation commands, and generated reports aligned so a reviewer can evaluate scope and test coverage without following the entire development history. |
 
 ## KrakenOS Base Features
@@ -317,15 +317,16 @@ The split now covers:
 - Analysis display, analysis reports, analysis compute workflow, geometric
   analysis, paraxial tools, optimization preflight, tolerance modeling,
   tolerance analysis, and tolerance stack-up reporting.
-- Advanced surface attribute normalization, row-spec signatures, and
-  scalar-trace decisions as reusable service contracts instead of editor-local
-  helpers.
+- Advanced surface attribute normalization, row-spec signatures, saved-layout
+  literal serialization, CAD cache paths, STEP overlay labels, and scalar-trace
+  decisions as reusable service contracts instead of editor-local helpers.
 - Reusable Tk controls for commit bindings, commit-aware entry/combobox
   helpers, table cell editors, menu controls, and tooltips.
 - The optional `sv-ttk` theme adapter and public `.[ui]` install metadata.
 
 The refactor is protected by `validate_ui_modular_maintainability`, widget
-commit validators, row-spec contract validation, STEP face-direction service
+commit validators, row-spec contract validation, saved-layout literal
+validation, CadQuery-readiness boundary validation, STEP face-direction service
 validation, install metadata validators, and the fast contract runner. The next
 maintainability work should remove transitional late-bound constants and helper
 lookups, not move behavior back into `layout_editor.py`.
@@ -361,8 +362,7 @@ instead of being repeated here as a long progress table.
 
 ## Next Pipeline Step
 
-Continue from the completed modularization pass by removing transitional
-late-bound service constants/helper lookups, then run a clean packaging and docs
-readiness pass: `validate_fast_contracts`, `validate_ui_install_runtime`, a
-small Open 3D smoke check, and a Sphinx build. After that, resume targeted
-physics/display work only when a screenshot or validator shows a real mismatch.
+Start the CadQuery/OCP topology study in a separate optional spike while
+continuing to remove transitional late-bound service helper lookups. Keep the
+runtime dependency graph unchanged until a small validator proves CadQuery adds
+better STEP topology identity than the current PyVista/STL fallback path.

@@ -7,11 +7,14 @@ import hashlib
 
 import numpy as np
 
-
-def _layout_module():
-    from KrakenOS.UI import layout_editor as layout_editor_module
-
-    return layout_editor_module
+from KrakenOS.UI.scene_placement import SCENE_PLACEMENT_ADVANCED_ATTR, normalize_scene_placement_settings
+from KrakenOS.UI.services import cad_cache_paths
+from KrakenOS.UI.services.optical_solid_geometry import (
+    format_stl_mesh_diagnostics,
+    inspect_stl_mesh,
+    short_stl_mesh_diagnostics,
+)
+from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABEL_SET
 
 
 class StepOverlayPromotionService:
@@ -39,14 +42,6 @@ class StepOverlayPromotionService:
         use_current_selection: bool = True,
         quiet: bool = False,
     ) -> dict[str, object] | None:
-        le = _layout_module()
-        CAD_CACHE_DIR = le.CAD_CACHE_DIR
-        SCENE_PLACEMENT_ADVANCED_ATTR = le.SCENE_PLACEMENT_ADVANCED_ATTR
-        STEP_OVERLAY_LABEL_SET = le.STEP_OVERLAY_LABEL_SET
-        format_stl_mesh_diagnostics = le.format_stl_mesh_diagnostics
-        inspect_stl_mesh = le.inspect_stl_mesh
-        normalize_scene_placement_settings = le.normalize_scene_placement_settings
-        short_stl_mesh_diagnostics = le.short_stl_mesh_diagnostics
         label = str(label).strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET:
             return None
@@ -99,7 +94,7 @@ class StepOverlayPromotionService:
                 }
             ).encode("utf-8")
         )
-        mesh_path = CAD_CACHE_DIR / str(cache_subdir or "promoted_step_overlays") / f"{label}_{digest.hexdigest()[:16]}.stl"
+        mesh_path = cad_cache_paths.CAD_CACHE_DIR / str(cache_subdir or "promoted_step_overlays") / f"{label}_{digest.hexdigest()[:16]}.stl"
         if not mesh_path.exists() or mesh_path.stat().st_size <= 0:
             mesh_path.parent.mkdir(parents=True, exist_ok=True)
             local_mesh.save(str(mesh_path))
@@ -237,14 +232,6 @@ class StepOverlayPromotionService:
         clear_overlay: bool = False,
         refresh_open_3d: bool = True,
     ) -> dict[str, object] | None:
-        le = _layout_module()
-        CAD_CACHE_DIR = le.CAD_CACHE_DIR
-        SCENE_PLACEMENT_ADVANCED_ATTR = le.SCENE_PLACEMENT_ADVANCED_ATTR
-        STEP_OVERLAY_LABEL_SET = le.STEP_OVERLAY_LABEL_SET
-        format_stl_mesh_diagnostics = le.format_stl_mesh_diagnostics
-        inspect_stl_mesh = le.inspect_stl_mesh
-        normalize_scene_placement_settings = le.normalize_scene_placement_settings
-        short_stl_mesh_diagnostics = le.short_stl_mesh_diagnostics
         label = str(label).strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET:
             return None
@@ -292,7 +279,7 @@ class StepOverlayPromotionService:
                 }
             ).encode("utf-8")
         )
-        promoted_path = CAD_CACHE_DIR / "promoted_step_overlays" / f"{label}_{digest.hexdigest()[:16]}.stl"
+        promoted_path = cad_cache_paths.CAD_CACHE_DIR / "promoted_step_overlays" / f"{label}_{digest.hexdigest()[:16]}.stl"
         if not promoted_path.exists() or promoted_path.stat().st_size <= 0:
             promoted_path.parent.mkdir(parents=True, exist_ok=True)
             local_mesh.save(str(promoted_path))

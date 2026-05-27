@@ -13,6 +13,7 @@ import numpy as np
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI.scene_placement import SCENE_PLACEMENT_ADVANCED_ATTR, normalize_scene_placement_settings
 from KrakenOS.UI.scene_row_mapping import SCENE_ROW_SOURCE
+from KrakenOS.UI.services import cad_cache_paths
 from KrakenOS.UI.services.cad_step_export import _affine_from_point_sets
 from KrakenOS.UI.services.element_scene_metadata import (
     SCENE_NORMAL_TARGET_LABELS,
@@ -34,24 +35,19 @@ from KrakenOS.UI.services.optical_solid_geometry import (
     transformed_stl_bounds,
 )
 from KrakenOS.UI.services.step_face_direction import StepFaceDirectionService
+from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABEL_SET
 from KrakenOS.UI.services.step_overlay_import import StepOverlayImportService
 from KrakenOS.UI.services.step_overlay_promotion import StepOverlayPromotionService
 from KrakenOS.UI.source_trace_helpers import SOURCE_MODEL_DEFAULT
 from KrakenOS.UI.surface_table_model import SurfaceRow
 
 
-def _layout_module():
-    from KrakenOS.UI import layout_editor as layout_editor_module
-
-    return layout_editor_module
-
-
 def _current_cad_cache_dir() -> Path:
-    return Path(getattr(_layout_module(), "CAD_CACHE_DIR", Path.home() / ".cache" / "krakenos" / "cad"))
+    return Path(cad_cache_paths.CAD_CACHE_DIR)
 
 
 def _step_overlay_label_set() -> set[str]:
-    return set(getattr(_layout_module(), "STEP_OVERLAY_LABEL_SET", {"lens", "camera", "led", "optical"}))
+    return set(STEP_OVERLAY_LABEL_SET)
 
 
 def _short_error_message(exc: Exception, limit: int = 220) -> str:
@@ -2735,4 +2731,3 @@ class ScenePlacementMixin:
         )
         self._refresh_open_3d_views(step_label=plan.label)
         return plan.as_result()
-

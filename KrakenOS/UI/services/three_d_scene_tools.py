@@ -51,12 +51,11 @@ from KrakenOS.UI.services.optical_solid_geometry import (
     _rotation_matrix_from_kraken_tilts,
 )
 from KrakenOS.UI.services.row_spec_contracts import _row_specs_signature
+from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABELS, STEP_OVERLAY_LABEL_SET
 from KrakenOS.UI.surface_table_model import SurfaceRow
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SCREENSHOT_DIR = PROJECT_ROOT / "attachment"
-STEP_OVERLAY_LABELS = ("lens", "optical", "led", "camera")
-STEP_OVERLAY_LABEL_SET = set(STEP_OVERLAY_LABELS)
 
 pv = None
 vtkTkRenderWindowInteractor = None

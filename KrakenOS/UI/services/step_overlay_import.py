@@ -8,6 +8,8 @@ from typing import Any
 
 import numpy as np
 
+from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABEL_SET
+
 
 def _layout_module():
     from KrakenOS.UI import layout_editor as layout_editor_module
@@ -75,9 +77,8 @@ class StepOverlayImportService:
 
     def _preserve_unpromoted_step_overlay(self, label: str) -> dict[str, object] | None:
         """Promote an un-promoted STEP overlay before its import slot is reused."""
-        le = _layout_module()
         label = str(label).strip().lower()
-        if label not in le.STEP_OVERLAY_LABEL_SET:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return None
         if self._step_path_for_label(label) is None:
             return None
@@ -194,9 +195,8 @@ class StepOverlayImportService:
         return self._step_overlay_display_label(label)
 
     def step_path_for_label(self, label: str) -> Path | None:
-        le = _layout_module()
         label = str(label).strip().lower()
-        if label not in le.STEP_OVERLAY_LABEL_SET:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return None
         return {
             "lens": self.imported_lens_step_path,
@@ -206,9 +206,8 @@ class StepOverlayImportService:
         }.get(label)
 
     def clear_imported_step_overlay_state(self, label: str) -> None:
-        le = _layout_module()
         label = str(label).strip().lower()
-        if label not in le.STEP_OVERLAY_LABEL_SET:
+        if label not in STEP_OVERLAY_LABEL_SET:
             return
         path_attrs = {
             "lens": "imported_lens_step_path",

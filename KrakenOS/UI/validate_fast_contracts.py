@@ -106,6 +106,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Saved-layout literal serialization lives outside layout_editor.py.",
     ),
     ValidationTarget(
+        "cadquery-readiness",
+        "KrakenOS.UI.validate_cadquery_readiness",
+        reason="CAD/STEP service boundaries are clean enough to start the CadQuery/OCP study.",
+    ),
+    ValidationTarget(
         "open3d-axis-guides",
         "KrakenOS.UI.validate_open3d_optical_axis_guides",
         reason="Centered sequential scenes keep one global optical axis; off-axis scenes keep traced guides.",

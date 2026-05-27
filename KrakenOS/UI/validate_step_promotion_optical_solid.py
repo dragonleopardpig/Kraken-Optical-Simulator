@@ -9,6 +9,7 @@ import numpy as np
 from KrakenOS.UI import layout_editor as le
 from KrakenOS.UI.layout_editor import KrakenLayoutEditor, transformed_stl_bounds
 from KrakenOS.UI.scene_placement import SCENE_PLACEMENT_ADVANCED_ATTR, normalize_scene_placement_settings
+from KrakenOS.UI.services import cad_cache_paths
 from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
 
 
@@ -31,7 +32,10 @@ def main() -> int:
     if not PRISM_42779_STEP.exists():
         raise RuntimeError(f"Expected tracked STEP fixture: {PRISM_42779_STEP}")
 
+    original_layout_cache = le.CAD_CACHE_DIR
+    original_service_cache = cad_cache_paths.CAD_CACHE_DIR
     le.CAD_CACHE_DIR = VALIDATION_CACHE_DIR / "cad"
+    cad_cache_paths.CAD_CACHE_DIR = le.CAD_CACHE_DIR
     le.CAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     app = KrakenLayoutEditor(headless=True)
@@ -110,6 +114,8 @@ def main() -> int:
         if diagnostics is None or int(getattr(diagnostics, "triangle_count", 0)) <= 0:
             raise AssertionError(f"Promotion diagnostics missing triangle data: {diagnostics!r}")
     finally:
+        cad_cache_paths.CAD_CACHE_DIR = original_service_cache
+        le.CAD_CACHE_DIR = original_layout_cache
         app.destroy()
 
     print("STEP promotion optical solid validation passed.")

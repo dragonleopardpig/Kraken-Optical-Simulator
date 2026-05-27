@@ -537,10 +537,12 @@ from KrakenOS.UI.services.advanced_surface_attrs import (
     SCENE_TARGET_ADVANCED_ATTR,
     _advanced_surface_attrs_from_spec,
 )
+from KrakenOS.UI.services.cad_cache_paths import CAD_CACHE_DIR
 from KrakenOS.UI.services.row_spec_contracts import (
     _requires_scalar_trace,
     _row_specs_signature,
 )
+from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABELS, STEP_OVERLAY_LABEL_SET
 # Project-side scratch directory for ad-hoc screenshots and exports. Not used by
 # auto-save (which stays in ~/.cache); only as the *initial* directory for
 # user-triggered Save dialogs.
@@ -576,8 +578,6 @@ STEP_CARRY_GRID_FREE = "Free"
 STEP_CARRY_GRID_CHOICES = (
     STEP_CARRY_GRID_FREE,
 )
-STEP_OVERLAY_LABELS = ("lens", "optical", "led", "camera")
-STEP_OVERLAY_LABEL_SET = set(STEP_OVERLAY_LABELS)
 PROJECTION_MODE_AXIS_FIELD = "Axis field"
 PROJECTION_MODE_FULL_3D = "Full 3D"
 PROJECTION_MODE_VALUES = (PROJECTION_MODE_AXIS_FIELD, PROJECTION_MODE_FULL_3D)
@@ -587,7 +587,6 @@ INSERTABLE_COMMON_LAYOUT_TITLES = {
     "Ideal 2F Lens",
     "Flat Mirror 45 Deg",
 }
-CAD_CACHE_DIR = Path.home() / ".cache" / "krakenos" / "cad"
 VIEWER_EXPORT_DIR = Path.home() / ".cache" / "krakenos" / "viewer"
 AUTO_PLOT_PATH = TESTING_DIR / "2D.png"
 DEBUG_LOG_PATH = Path.home() / ".cache" / "krakenos" / "logs" / "kraken_debug_latest.log"

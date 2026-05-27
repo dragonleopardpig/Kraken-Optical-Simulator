@@ -44,12 +44,15 @@ FAST_CONTRACT_ALIASES = (
     '"open3d-step-face-direction"',
     '"row-spec-contracts"',
     '"layout-literals"',
+    '"cadquery-readiness"',
 )
 
 REQUIRED_SERVICE_MODULES = (
     "KrakenOS/UI/services/advanced_surface_attrs.py",
     "KrakenOS/UI/services/row_spec_contracts.py",
     "KrakenOS/UI/services/layout_literals.py",
+    "KrakenOS/UI/services/cad_cache_paths.py",
+    "KrakenOS/UI/services/step_overlay_labels.py",
 )
 
 
