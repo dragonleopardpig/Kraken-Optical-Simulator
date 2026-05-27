@@ -71,6 +71,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Toolbar grouping and camera/control layout contract.",
     ),
     ValidationTarget(
+        "open3d-thickness-dimensions",
+        "KrakenOS.UI.validate_open3d_thickness_dimensions",
+        reason="Open 3D table-Thickness edit and drag service contracts without VTK/Tk.",
+    ),
+    ValidationTarget(
         "widget-commit-bindings",
         "KrakenOS.UI.validate_widget_commit_bindings",
         reason="Reusable Tk entry/combobox commit binding contracts without opening a display.",

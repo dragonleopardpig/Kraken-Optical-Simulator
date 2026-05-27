@@ -104,8 +104,17 @@ Current pipeline checkpoint:
 | Five-penta first-open visual parity | Achieved | `██████████ 100%` | `validate_open3d_five_penta_initial_visual.py` loads the saved five-penta `.py` layout, captures the first Open 3D scene before pressing Trace Now, captures the Trace Now scene, and fails if the two ray-path signatures differ, if any ray becomes a detector-miss/image-plane projection, if the central terminal direction is not the expected final `-X` leg, or if the VTK snapshots are blank. This display-backed guard stays outside the fast suite but directly covers the screenshot-level initial-bend regression. |
 | Literal click-to-cascade placement | Achieved | `██████████ 100%` | The Open 3D imported-STEP face selection now preserves the picked face id, and the snap-to-axis command routes known 42779 penta entrance picks through the same deterministic two-face solver used by the five-penta reference guard. F005 is constrained to the incoming optical axis and F006 constrains roll/output direction before promotion, so the import/click/snap/promote path is no longer an entrance-normal-only placement. `validate_penta_mirror_3d_cascade.py` now requests a concrete +X penta exit direction and fails unless every ray follows the assigned vendor mirror faces and exits along that direction. |
 | Open 3D editable thickness dimensions | Achieved | `██████████ 100%` | The shared Physical Distance toggle now also draws Open 3D double-ended dimension arrows between adjacent editable-table rows. Each arrow uses the current 3D row/reference geometry, carries a numerical `Thickness` label, is pickable in the embedded VTK scene, and opens a row-scoped inline Tk/ttk thickness editor near the 3D canvas instead of a modal generic prompt. Enter/focus-out commits only that row's `Thickness`, Esc cancels, the editable table is synchronized, and Open 3D retraces without rewriting other spacing rows. The same dimension arrows/labels can now be dragged along their displayed direction; release commits the adjusted value to only the selected row and retraces Open 3D. |
+| Open 3D thickness dimension service validation | Achieved | `██████████ 100%` | `validate_open3d_thickness_dimensions` now exercises the dimension service without opening Tk/VTK: offset-vector math stays finite/perpendicular, numeric edits change only the selected row, invalid edits preserve all rows, drag motion accumulates signed values, zero-change drags avoid retrace, and committed edits synchronize the table plus force one Open 3D retrace. The validator is included in the fast contract runner. |
 
-Latest movement on 2026-05-25: Infinity Object + Field Half-Angle launch
+Latest movement on 2026-05-27: Open 3D editable Thickness dimensions already
+had the arrow/label/inline-edit/drag workflow in place; the next pipeline slice
+adds a focused service validator so that behavior is guarded without launching
+VTK/Tk. `validate_open3d_thickness_dimensions` now checks row-scoped numeric
+edits, invalid-value rejection, signed drag accumulation, zero-change drag
+avoidance, table synchronization, and forced Open 3D retrace. It is part of the
+fast contract runner.
+
+Earlier movement on 2026-05-25: Infinity Object + Field Half-Angle launch
 geometry is now stop-centered. The 3D Double Gauss screenshot showed the same
 root problem as the 2D plot: off-axis fields were represented as oblique
 bundles launched from the Object-row center, so the lens received a shifted

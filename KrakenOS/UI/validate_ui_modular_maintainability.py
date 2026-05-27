@@ -40,6 +40,7 @@ FAST_CONTRACT_ALIASES = (
     '"widget-commit-bindings"',
     '"open3d-toolbar"',
     '"open3d-live-budget"',
+    '"open3d-thickness-dimensions"',
 )
 
 
