@@ -498,16 +498,51 @@ class LayoutOpticalSolidWorkflowMixin:
             return None
         return row, path
 
+    @staticmethod
+    def _direct_indexed_optical_solid_face_metadata(value: object, path: Path) -> dict[str, object] | None:
+        if not isinstance(value, dict):
+            return None
+        faces = [face for face in list(value.get("faces", []) or []) if isinstance(face, dict)]
+        if not faces:
+            return None
+        direct_source = (
+            str(value.get("metadata_coordinates", "") or "").strip() == "local_centered_promoted_row"
+            or str(value.get("promoted_face_metadata_source", "") or "").strip() == "open3d_step_overlay"
+        )
+        if not direct_source:
+            return None
+        if not any(list(face.get("triangle_indices", face.get("cell_indices", ())) or []) for face in faces):
+            return None
+        normalized = normalize_optical_solid_face_metadata(value, source_stl=str(path))
+        if not list(normalized.get("faces", []) or []):
+            return None
+        for key in (
+            "source_step",
+            "source_backend",
+            "source_face_count",
+            "outer_face_count",
+            "interior_duplicate_count",
+            "promoted_face_metadata_source",
+            "metadata_coordinates",
+        ):
+            if key in value:
+                normalized[key] = value[key]
+        return normalized
+
     def _optical_solid_face_metadata_for_row(self, row_index: int) -> tuple[SurfaceRow, Path, dict[str, object]]:
         item = self._file_backed_stl_row_at(int(row_index))
         if item is None:
             raise RuntimeError(f"S{int(row_index)} is not a file-backed optical CAD/STL solid.")
         row, path = item
+        existing = (row.advanced or {}).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+        direct_metadata = self._direct_indexed_optical_solid_face_metadata(existing, path)
+        if direct_metadata is not None:
+            return row, path, direct_metadata
         candidates = cluster_optical_solid_planar_faces(path)
         if not candidates:
             raise RuntimeError(f"S{int(row_index)} has no planar CAD/STL face candidates.")
         metadata = normalize_optical_solid_face_metadata(
-            (row.advanced or {}).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}),
+            existing,
             candidates,
             source_stl=str(path),
         )

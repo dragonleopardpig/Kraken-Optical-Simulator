@@ -29,6 +29,7 @@ from KrakenOS.UI.capture_open3d_step_workflow_screenshots import (
     _set_optical_step_overlay,
 )
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor, _load_python_data, _short_error_message
+from KrakenOS.UI.optical_solid_metadata import OPTICAL_SOLID_FACES_ADVANCED_ATTR
 
 
 MXIED_LAYOUT = PROJECT_ROOT / "attachment" / "mxied.py"
@@ -190,6 +191,21 @@ def _body_cell_count(app: KrakenLayoutEditor, label: str) -> int:
         return 0
 
 
+def _metadata_body_cell_count(metadata: dict[str, object]) -> int:
+    indices: set[int] = set()
+    for face in list(metadata.get("faces", []) or []):
+        if not isinstance(face, dict):
+            continue
+        for value in list(face.get("triangle_indices", face.get("cell_indices", ())) or []):
+            try:
+                index = int(value)
+            except Exception:
+                continue
+            if index >= 0:
+                indices.add(index)
+    return len(indices)
+
+
 def _set_step_feature_hover(
     inspector: Kraken3DInspector,
     feature_pick: dict[str, object],
@@ -236,6 +252,44 @@ def _lens_face_targets(app: KrakenLayoutEditor) -> dict[str, dict[str, object]]:
     ]
     if len(caps) < 2 or not sides:
         raise RuntimeError(f"Expected lens front/rear/side records; got caps={len(caps)}, sides={len(sides)}.")
+
+    def normal_z(face: dict[str, object]) -> float:
+        normal = _face_normal(face)
+        return float(normal[2]) if normal is not None else 0.0
+
+    def normal_y(face: dict[str, object]) -> float:
+        normal = _face_normal(face)
+        return float(normal[1]) if normal is not None else 0.0
+
+    return {
+        "front": min(caps, key=normal_z),
+        "rear": max(caps, key=normal_z),
+        "side": max(sides, key=lambda face: abs(normal_y(face))),
+    }
+
+
+def _row_lens_face_targets(inspector: Kraken3DInspector, row_index: int) -> dict[str, dict[str, object]]:
+    row, _path, metadata = inspector.editor._optical_solid_face_metadata_for_row(int(row_index))
+    transform = inspector._runtime_transform_for_row(inspector.__dict__.get("_current_system"), int(row_index))
+    if transform is not None:
+        faces = inspector._runtime_world_face_records_for_pick(row, metadata, transform)
+    else:
+        faces = inspector.editor._optical_solid_face_records_for_temp_row(row, int(row_index), metadata)
+    faces = [face for face in faces if isinstance(face, dict)]
+    if not faces:
+        raise RuntimeError("Promoted lens row exposes no runtime face records.")
+    caps = [
+        face
+        for face in faces
+        if str(face.get("assignment_source", "") or "").startswith("step_analytic_axisymmetric_group")
+    ]
+    sides = [
+        face
+        for face in faces
+        if str(face.get("surface_type", "") or "").strip().lower() == "cylinder"
+    ]
+    if len(caps) < 2 or not sides:
+        raise RuntimeError(f"Expected promoted lens front/rear/side records; got caps={len(caps)}, sides={len(sides)}.")
 
     def normal_z(face: dict[str, object]) -> float:
         normal = _face_normal(face)
@@ -324,6 +378,97 @@ def _validate_lens_center_row(app: KrakenLayoutEditor, output_dir: Path) -> dict
         ]
         if len(set(picked_ids)) < 3:
             failures.append(f"Lens Center Row picks did not separate front/rear/side faces: {picked_ids}.")
+        report["faces"] = face_reports
+    finally:
+        _close_open3d(app)
+    report["failures"] = failures
+    report["ok"] = not failures
+    return report
+
+
+def _validate_promoted_lens_center_row(app: KrakenLayoutEditor, output_dir: Path) -> dict[str, object]:
+    report: dict[str, object] = {"lens_step": str(LENS_STEP), "snapshots": []}
+    failures: list[str] = []
+    try:
+        _configure_base_editor(app)
+        _set_optical_step_overlay(app, LENS_STEP, offset_xyz=(8.0, -6.0, 35.0))
+        result = app.promote_imported_step_to_optical_solid_row(
+            "optical",
+            open_face_editor=False,
+            clear_overlay=True,
+            refresh_open_3d=False,
+        )
+        if result is None:
+            raise RuntimeError(f"Promoted lens STEP failed: {app.status_var.get()}")
+        row_index = int(result["row_index"])
+        row = app.rows[row_index]
+        metadata = dict((row.advanced or {}).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}) or {})
+        body_cells = _metadata_body_cell_count(metadata)
+        report["row_index"] = row_index
+        report["body_cells"] = int(body_cells)
+        report["metadata_face_count"] = len([face for face in list(metadata.get("faces", []) or []) if isinstance(face, dict)])
+        report["metadata_sources"] = sorted(
+            {
+                str(face.get("assignment_source", "") or "")
+                for face in list(metadata.get("faces", []) or [])
+                if isinstance(face, dict)
+            }
+        )
+        if not any(str(source).startswith("step_analytic") for source in report["metadata_sources"]):
+            failures.append(f"Promoted lens metadata did not preserve analytic STEP faces: {report['metadata_sources']}.")
+
+        inspector = _open_3d_inspector(app)
+        inspector.show_rays_var.set(False)
+        inspector.show_rotation_handles_var.set(True)
+        inspector.refresh_from_editor(force_retrace=True)
+        inspector.set_camera_preset("bottom")
+        _settle(inspector, 0.1)
+        report["snapshots"].append(str(_save_vtk_snapshot(inspector, output_dir / "06_promoted_lens_before_center_row.png")))
+        inspector.start_center_row_to_ray()
+        _settle(inspector, 0.1)
+
+        face_reports: dict[str, object] = {}
+        for name, face in _row_lens_face_targets(inspector, row_index).items():
+            display_xy = _aim_camera_at_face(inspector, face, scale=0.28)
+            source_pick = inspector._center_axis_source_pick_ignoring_axis_overlays(*display_xy)
+            row_face_pick = source_pick.get("row_face_pick") if isinstance(source_pick, dict) else None
+            if row_face_pick is None:
+                failures.append(f"Promoted lens {name} face did not produce a row-backed face pick.")
+                continue
+            picked_face = dict(getattr(row_face_pick, "face", {}) or {})
+            picked_face_id = str(picked_face.get("face_id", "") or "").strip()
+            target_face_id = str(face.get("face_id", "") or "").strip()
+            hover_stats = _set_row_feature_hover(inspector, row_index, row_face_pick, ("promoted-lens", name, picked_face_id))
+            snapshot = _save_vtk_snapshot(inspector, output_dir / f"07_promoted_lens_{name}_face_hover.png")
+            report["snapshots"].append(str(snapshot))
+            n_polys = int(hover_stats.get("n_polys", 0) or 0)
+            n_cells = int(hover_stats.get("n_cells", 0) or 0)
+            source = str(picked_face.get("assignment_source", "") or "")
+            if picked_face_id != target_face_id:
+                failures.append(f"Promoted lens {name} pick returned {picked_face_id or 'none'}, expected {target_face_id}.")
+            if not source.startswith("step_analytic"):
+                failures.append(f"Promoted lens {name} pick used non-analytic metadata source: {source or 'none'}.")
+            if n_polys <= 0 and n_cells <= 0:
+                failures.append(f"Promoted lens {name} hover did not contain selected face geometry.")
+            if body_cells > 0 and max(n_polys, n_cells) >= int(0.85 * body_cells):
+                failures.append(
+                    f"Promoted lens {name} hover appears to cover the whole body ({max(n_polys, n_cells)}/{body_cells} cells)."
+                )
+            face_reports[name] = {
+                "target_face_id": target_face_id,
+                "picked_face_id": picked_face_id,
+                "assignment_source": source,
+                "display_xy": [float(display_xy[0]), float(display_xy[1])],
+                "hover": hover_stats,
+                "snapshot": str(snapshot),
+            }
+        picked_ids = [
+            str(record.get("picked_face_id", "") or "")
+            for record in face_reports.values()
+            if isinstance(record, dict)
+        ]
+        if len(set(picked_ids)) < 3:
+            failures.append(f"Promoted lens Center Row picks did not separate front/rear/side faces: {picked_ids}.")
         report["faces"] = face_reports
     finally:
         _close_open3d(app)
@@ -421,6 +566,7 @@ def validate(output_dir: Path = DEFAULT_OUTPUT_DIR) -> dict[str, object]:
         report = {
             "output_dir": str(output_dir),
             "lens": _validate_lens_center_row(app, output_dir),
+            "promoted_lens": _validate_promoted_lens_center_row(app, output_dir),
             "prism": _validate_prism_center_row(app, output_dir),
         }
     finally:
@@ -429,7 +575,7 @@ def validate(output_dir: Path = DEFAULT_OUTPUT_DIR) -> dict[str, object]:
         except Exception:
             pass
     failures: list[str] = []
-    for section in ("lens", "prism"):
+    for section in ("lens", "promoted_lens", "prism"):
         section_report = report.get(section)
         if isinstance(section_report, dict):
             failures.extend(f"{section}: {failure}" for failure in list(section_report.get("failures", []) or []))

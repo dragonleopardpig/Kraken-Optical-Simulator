@@ -142,10 +142,16 @@ tessellation when the cursor is over an optical cap; the hover tooltip includes
 the selected face ID before falling back to raw triangle features, and passive
 hover over an imported STEP actor now displays the selected analytic face as a
 translucent surface overlay instead of only a rim outline. Grouped analytic lens
-face picking is also checked through an actual VTK actor/cell screenshot replay at
-   `attachment/open3d_lens_face_selection_snap/`; Open 3D left-drag camera
-   rotation is contract-checked with the restored screen-following sign
-   convention.
+face picking is also checked through an actual VTK actor/cell screenshot replay
+at `attachment/open3d_lens_face_selection_snap/`. Promoted row-backed optical
+STEP solids now preserve those analytic face groups in local row coordinates
+instead of re-clustering the promoted STL into many small mesh fragments, so
+Center Row, hover selection, and face-role editing still select the whole
+front/rear/side face after promotion. This regression is covered by
+`python -m KrakenOS.UI.validate_open3d_center_row_face_visual`, which saves
+the imported and promoted face-hover snapshots under
+`attachment/open3d_center_row_face_visual/`. Open 3D left-drag camera rotation
+is contract-checked with the restored screen-following sign convention.
 
 The Tier 3 native STEP reconstruction path is now implemented for supported
 axisymmetric optical lenses. `KrakenOS.UI.services.step_analytic_geometry`
@@ -374,7 +380,7 @@ Test-plan tiers:
 | Fast contracts | Fixture-light, no-display checks for normal code changes. | `python -m KrakenOS.UI.validate_fast_contracts` |
 | Upstream-compatible pytest | Public API, package data, invalid traces, and build-zero contracts from upstream main adapted to the branch. | `python -m pytest tests/test_public_api.py tests/test_smoke.py tests/test_invalid_trace_results.py tests/test_build_modes.py` |
 | Focused contracts | Single-risk checks during development or review. | `python -m KrakenOS.UI.validate_fast_contracts --only ui-modular-maintainability`, `python -m KrakenOS.UI.validate_fast_contracts --only optimization-controls`, `python -m KrakenOS.UI.validate_fast_contracts --only step-native-reconstruction`, `python -m KrakenOS.UI.validate_fast_contracts --only step-native-promotion`, `python -m KrakenOS.UI.validate_fast_contracts --only open3d-lens-step-face-pick`, or `python -m KrakenOS.UI.validate_fast_contracts --only five-penta-with-lens-layout` |
-| Display-backed smoke | Open 3D, VTK, screenshots, STEP face picking, and visual regressions. | `python -m KrakenOS.UI.validate_step_carry_open3d_smoke`, `python -m KrakenOS.UI.capture_open3d_lens_face_selection_snap`, `python -m KrakenOS.UI.diagnose_open3d_lens_ray_outlier` |
+| Display-backed smoke | Open 3D, VTK, screenshots, STEP face picking, and visual regressions. | `python -m KrakenOS.UI.validate_step_carry_open3d_smoke`, `python -m KrakenOS.UI.capture_open3d_lens_face_selection_snap`, `python -m KrakenOS.UI.validate_open3d_center_row_face_visual`, `python -m KrakenOS.UI.diagnose_open3d_lens_ray_outlier` |
 | Open 3D responsiveness replay | Timed replay of Machine Vision 150 mm + imported optical STEP import/select/deselect. | `python -m KrakenOS.UI.diagnose_open3d_action_timing --output /tmp/kraken_open3d_action_timing_report.json` |
 | CAD/prism physics | Real STEP/STL geometry, prism cascades, face roles, and ray-event audits. | `python -m KrakenOS.UI.validate_five_penta_prism_cascade` |
 | Install/package | Public `.[ui]` metadata and runtime dependency checks. | `python -m KrakenOS.UI.validate_ui_install_runtime` |

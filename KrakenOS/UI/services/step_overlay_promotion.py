@@ -7,6 +7,10 @@ import hashlib
 
 import numpy as np
 
+from KrakenOS.UI.optical_solid_metadata import (
+    OPTICAL_SOLID_FACES_ADVANCED_ATTR,
+    normalize_optical_solid_face_metadata,
+)
 from KrakenOS.UI.scene_placement import SCENE_PLACEMENT_ADVANCED_ATTR, normalize_scene_placement_settings
 from KrakenOS.UI.services import cad_cache_paths
 from KrakenOS.UI.services.optical_solid_geometry import (
@@ -45,6 +49,100 @@ class StepOverlayPromotionService:
             except Exception:
                 parts = [value]
         return tuple(str(item).strip() for item in parts if str(item).strip())
+
+    @staticmethod
+    def _promoted_local_step_face_metadata(
+        metadata: object,
+        *,
+        center_world: np.ndarray,
+        promoted_path,
+        source_path,
+        max_triangle_index: int,
+    ) -> dict[str, object] | None:
+        """Convert imported STEP face metadata from world to promoted-row local coordinates."""
+
+        if not isinstance(metadata, dict):
+            return None
+        try:
+            center = np.asarray(center_world, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if center.size < 3 or not np.all(np.isfinite(center[:3])):
+            return None
+        faces: list[dict[str, object]] = []
+        for face in list(metadata.get("faces", []) or []):
+            if not isinstance(face, dict):
+                continue
+            record = dict(face)
+            try:
+                centroid = np.asarray(record.get("centroid", ()), dtype=float).reshape(-1)[:3]
+            except Exception:
+                centroid = np.asarray([], dtype=float)
+            if centroid.size >= 3 and np.all(np.isfinite(centroid[:3])):
+                local_centroid = centroid[:3] - center[:3]
+                record["centroid"] = [float(value) for value in local_centroid[:3]]
+            record.pop("centroid_world", None)
+            record.pop("normal_world", None)
+            indices: list[int] = []
+            for value in list(record.get("triangle_indices", record.get("cell_indices", ())) or []):
+                try:
+                    index = int(value)
+                except Exception:
+                    continue
+                if 0 <= index < int(max_triangle_index):
+                    indices.append(index)
+            if not indices:
+                continue
+            record["triangle_indices"] = indices
+            record["triangle_count"] = len(indices)
+            try:
+                normal = np.asarray(record.get("normal", ()), dtype=float).reshape(-1)[:3]
+            except Exception:
+                normal = np.asarray([], dtype=float)
+            try:
+                centroid = np.asarray(record.get("centroid", ()), dtype=float).reshape(-1)[:3]
+            except Exception:
+                centroid = np.asarray([], dtype=float)
+            if normal.size >= 3 and centroid.size >= 3 and np.all(np.isfinite(normal[:3])) and np.all(np.isfinite(centroid[:3])):
+                record["plane_offset_mm"] = float(np.dot(normal[:3], centroid[:3]))
+            faces.append(record)
+        if not faces:
+            return None
+
+        virtual_planes: list[dict[str, object]] = []
+        for plane in list(metadata.get("virtual_planes", []) or []):
+            if not isinstance(plane, dict):
+                continue
+            record = dict(plane)
+            try:
+                point = np.asarray(record.get("point", ()), dtype=float).reshape(-1)[:3]
+            except Exception:
+                point = np.asarray([], dtype=float)
+            if point.size >= 3 and np.all(np.isfinite(point[:3])):
+                record["point"] = [float(value) for value in (point[:3] - center[:3])]
+            virtual_planes.append(record)
+
+        source_stl = str(promoted_path)
+        normalized = normalize_optical_solid_face_metadata(
+            {
+                "source_stl": source_stl,
+                "faces": faces,
+                "virtual_planes": virtual_planes,
+            },
+            source_stl=source_stl,
+        )
+        for key in (
+            "source_backend",
+            "source_face_count",
+            "outer_face_count",
+            "interior_duplicate_count",
+        ):
+            if key in metadata:
+                normalized[key] = metadata[key]
+        normalized["source_step"] = str(source_path)
+        normalized["promoted_face_metadata_source"] = "open3d_step_overlay"
+        normalized["metadata_coordinates"] = "local_centered_promoted_row"
+        return normalized
 
     def _step_overlay_insert_index(self, insert_at: int | None, *, use_current_selection: bool = True) -> tuple[int, str]:
         arm_key = ""
@@ -550,6 +648,11 @@ class StepOverlayPromotionService:
         bounds_max = np.max(points[:, :3], axis=0)
         center_world = 0.5 * (bounds_min + bounds_max)
         extents = np.maximum(bounds_max - bounds_min, 0.0)
+        try:
+            overlay_face_metadata = self._step_overlay_face_metadata(label)
+        except Exception as exc:
+            overlay_face_metadata = None
+            self.append_debug(f"{label.upper()} STEP promotion could not preserve imported face metadata: {exc}")
         local_mesh = mesh.copy(deep=True)
         local_mesh.points = points[:, :3] - center_world[:3]
 
@@ -642,6 +745,18 @@ class StepOverlayPromotionService:
             if label == "lens"
             else None,
         }
+        preserved_face_metadata = self._promoted_local_step_face_metadata(
+            overlay_face_metadata,
+            center_world=center_world,
+            promoted_path=promoted_path.resolve(),
+            source_path=source_path.resolve(),
+            max_triangle_index=int(getattr(local_mesh, "n_cells", 0) or 0),
+        )
+        if preserved_face_metadata is not None:
+            row.advanced[OPTICAL_SOLID_FACES_ADVANCED_ATTR] = preserved_face_metadata
+            row.advanced["StepOverlayPromotion"]["preserved_face_count"] = int(
+                len(list(preserved_face_metadata.get("faces", []) or []))
+            )
         placement = normalize_scene_placement_settings(
             {
                 "enabled": True,
