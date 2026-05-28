@@ -3263,6 +3263,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     changed = True
             except Exception:
                 pass
+            panel = getattr(self, "_open3d_step_admin_panel_instance", None)
+            if panel is not None:
+                try:
+                    panel.clear_selection(update_properties=False)
+                    changed = True
+                except Exception as exc:
+                    self.editor.append_debug(f"Open 3D STEP admin clear failed: {exc}")
             for attr_name in (
                 "_selected_step_feature",
                 "_selected_step_feature_label",
@@ -4228,6 +4235,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         try:
             blocking_keys = set(self._actor_optical_axis_map)
             blocking_keys.update(self._actor_ray_map)
+            blocking_keys.update(self._actor_step_rotate_map)
+            blocking_keys.update(self._actor_step_rotate_visual_keys)
+            blocking_keys.update(self._actor_placement_move_map)
+            blocking_keys.update(self._actor_placement_rotate_map)
+            blocking_keys.update(self._actor_thickness_dimension_map)
             for actor_key in blocking_keys:
                 actor = self._actor_by_key.get(actor_key)
                 if actor is None:
@@ -4259,7 +4271,27 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 "cell_id": int(cell_id),
                 "pick_world": pick_world,
             }
+            if result["row_index"] is not None:
+                row_pick = self._row_face_ray_pick_for_display_xy(int(result["row_index"]), (x, y))
+                if row_pick is not None:
+                    result["row_face_pick"] = row_pick
+            if result["step_label"] is not None:
+                feature_pick = self._step_feature_pick_for_display_xy(
+                    str(result["step_label"]),
+                    (x, y),
+                    actor=actor,
+                    actor_key=str(actor_key) if actor_key else None,
+                    cell_id=int(cell_id),
+                )
+                if isinstance(feature_pick, dict):
+                    result["feature_pick"] = feature_pick
             if result["row_index"] is None and result["step_label"] is None:
+                for disabled_actor in disabled:
+                    try:
+                        disabled_actor.PickableOn()
+                    except Exception:
+                        pass
+                disabled.clear()
                 fallback = self._step_feature_pick_any_for_display_xy((x, y))
                 if fallback is not None:
                     result["step_label"] = str(fallback.get("label"))
@@ -7747,6 +7779,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_surface_center_axis_pick_mode = False
         self._set_ray_highlight(None)
         self._set_optical_axis_highlight(None)
+        self._clear_open3d_selection(render=False)
         self._center_row_to_ray_index = None
         self._center_row_to_ray_face_id = ""
         if row_index is not None and 0 <= int(row_index) < len(self.editor.rows):
@@ -7754,6 +7787,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if row.surface not in {"Object", "Image"} and self.editor._file_backed_stl_row_at(int(row_index)) is None:
                 self._center_row_to_ray_index = int(row_index)
         self._hide_regular_rays_for_center_axis_pick()
+        self._clear_open3d_selection(render=False)
         if self._center_row_to_ray_index is not None:
             self._set_row_highlight(int(self._center_row_to_ray_index))
             stl_note = " assigned optical-face anchor or" if self.editor._file_backed_stl_row_at(int(self._center_row_to_ray_index)) is not None else ""

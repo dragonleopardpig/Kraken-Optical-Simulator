@@ -473,6 +473,31 @@ class Open3DStepAdminPanel:
         else:
             self._update_properties("")
 
+    def clear_selection(self, *, update_properties: bool = True) -> None:
+        """Clear the browser selection without re-selecting the previous STEP."""
+        tree = self._tree
+        self._selected_item_id = ""
+        if tree is None:
+            if update_properties:
+                self._update_properties("")
+            return
+        self._refreshing = True
+        try:
+            try:
+                selection = tree.selection()
+                if selection:
+                    tree.selection_remove(selection)
+            except Exception:
+                pass
+            try:
+                tree.focus("")
+            except Exception:
+                pass
+        finally:
+            self._refreshing = False
+        if update_properties:
+            self._update_properties("")
+
     def _on_tree_select(self, _event=None) -> None:
         if self._refreshing:
             return

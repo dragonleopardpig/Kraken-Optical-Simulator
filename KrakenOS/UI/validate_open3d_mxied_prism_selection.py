@@ -139,6 +139,50 @@ def validate_case(layout_path: Path = DEFAULT_LAYOUT_PATH, output_dir: Path = DE
         if getattr(inspector, "_actor_step_rotate_map", {}):
             failures.append("Blank-clear path left imported STEP rotation handles visible")
 
+        app.select_step_component("optical")
+        inspector.show_rotation_handles_var.set(True)
+        inspector.refresh_from_editor()
+        inspector.show_step_rotation_handler("optical")
+        _settle(inspector, 0.1)
+        if not getattr(inspector, "_actor_step_rotate_map", {}):
+            failures.append("Could not arm imported STEP handles before Center Row mode")
+        inspector.start_center_row_to_ray()
+        _settle(inspector, 0.1)
+        if getattr(app, "_selected_step_label", None) is not None:
+            failures.append("Center Row mode did not clear the selected imported STEP")
+        if getattr(inspector, "_actor_step_rotate_map", {}):
+            failures.append("Center Row mode left STEP rotation handles visible")
+        center_mode_pick_failures: list[str] = []
+        for face in faces:
+            face_id = str(face.get("face_id", "") or "").strip()
+            center = _face_center(face)
+            normal = _safe_unit(face.get("normal_world", face.get("normal")))
+            if center is None or normal is None:
+                continue
+            camera.SetFocalPoint(*tuple(float(value) for value in center[:3]))
+            camera.SetPosition(*tuple(float(value) for value in center[:3] + normal[:3] * scene_radius * 2.8))
+            camera.SetViewUp(*_view_up_for_normal(normal))
+            camera.ParallelProjectionOn()
+            camera.SetParallelScale(max(scene_radius * 0.35, 18.0))
+            inspector._reset_camera_clipping_range_for_scene()
+            inspector.render()
+            _settle(inspector, 0.02)
+            display = inspector._world_to_display_2d(center)
+            if display is None:
+                continue
+            source_pick = inspector._center_axis_source_pick_ignoring_axis_overlays(float(display[0]), float(display[1]))
+            picked_step = str(source_pick.get("step_label", "") if isinstance(source_pick, dict) else "")
+            feature_pick = source_pick.get("feature_pick") if isinstance(source_pick, dict) else None
+            payload_face = str(feature_pick.get("face_id", "") if isinstance(feature_pick, dict) else "").strip()
+            row_face_pick = source_pick.get("row_face_pick") if isinstance(source_pick, dict) else None
+            row_face_id = ""
+            if row_face_pick is not None:
+                row_face_id = str(row_face_pick.face.get("face_id", "") or "").strip()
+            if (picked_step != "optical" or payload_face != face_id) and not row_face_id:
+                center_mode_pick_failures.append(f"{face_id}->{picked_step}/{payload_face or 'none'}")
+        if center_mode_pick_failures:
+            failures.append("Center Row mode could not pick imported penta faces: " + ", ".join(center_mode_pick_failures))
+
         final_image = _save_vtk_snapshot(inspector, output_dir / "after_clear_selection.png")
         report = {
             "ok": not failures,

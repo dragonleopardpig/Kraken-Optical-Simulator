@@ -85,6 +85,27 @@ class Open3DInteractionService:
         finally:
             self._timing_finish(pick_start, actor_found=actor is not None)
         actor_key = self._actor_key(actor)
+        active_pick_mode = bool(
+            self._source_target_pick_mode
+            or self._center_row_to_ray_mode
+            or self._placement_target_pick_mode
+            or self._placement_orient_pick_mode
+            or self._placement_orient_ray_mode
+            or self._step_carry_snap_ray_mode
+            or self._step_carry_snap_target_mode
+            or self._step_normal_axis_pick_mode
+            or self._step_surface_center_axis_pick_mode
+            or bool(getattr(self.editor, "_cad_axis_pick_any", False))
+        )
+        if active_pick_mode and actor_key is not None and (
+            actor_key in self._actor_step_rotate_map
+            or actor_key in self._actor_step_rotate_visual_keys
+            or actor_key in self._actor_placement_move_map
+            or actor_key in self._actor_placement_rotate_map
+            or actor_key in self._actor_thickness_dimension_map
+        ):
+            actor = None
+            actor_key = None
         self._debug_trace(
             "left_click_pick",
             **self._debug_pick_payload(actor_key, x=int(x), y=int(y)),
@@ -187,7 +208,11 @@ class Open3DInteractionService:
                 self.editor._select_table_row(row_index)
                 row_name = self.editor.rows[row_index].name if 0 <= row_index < len(self.editor.rows) else "Surface"
                 self._center_row_to_ray_index = row_index
-                self._center_row_to_ray_face_id = self._picked_scene_face_id_for_row(row_index)
+                row_face_pick = source_pick.get("row_face_pick") if isinstance(source_pick, dict) else None
+                picked_face_id = ""
+                if row_face_pick is not None:
+                    picked_face_id = str(row_face_pick.face.get("face_id", "") or "").strip()
+                self._center_row_to_ray_face_id = picked_face_id or self._picked_scene_face_id_for_row(row_index)
                 stl_note = " assigned optical-face anchor or" if self.editor._file_backed_stl_row_at(row_index) is not None else ""
                 face_note = f" face {self._center_row_to_ray_face_id}" if self._center_row_to_ray_face_id else ""
                 message = f"Center Row->Optical Axis: selected S{row_index}{face_note}: {row_name}. Now click the dotted Optical Axis guide for its{stl_note} center."
@@ -566,7 +591,12 @@ class Open3DInteractionService:
                 self.render()
                 return
             self._center_row_to_ray_index = int(row_index)
-            self._center_row_to_ray_face_id = self._picked_scene_face_id_for_row(int(row_index))
+            source_pick = self._center_axis_source_pick_ignoring_axis_overlays(x, y)
+            row_face_pick = source_pick.get("row_face_pick") if isinstance(source_pick, dict) else None
+            picked_face_id = ""
+            if row_face_pick is not None:
+                picked_face_id = str(row_face_pick.face.get("face_id", "") or "").strip()
+            self._center_row_to_ray_face_id = picked_face_id or self._picked_scene_face_id_for_row(int(row_index))
             stl_note = " assigned optical-face anchor or" if self.editor._file_backed_stl_row_at(int(row_index)) is not None else ""
             self._set_ray_highlight(None)
             self._set_optical_axis_highlight(None)
@@ -746,6 +776,24 @@ class Open3DInteractionService:
                 if row_index is not None and 0 <= int(row_index) < len(self.editor.rows):
                     row = self.editor.rows[int(row_index)]
                     if row.surface not in {"Object", "Image"}:
+                        row_face_pick = source_pick.get("row_face_pick") if isinstance(source_pick, dict) else None
+                        if row_face_pick is not None:
+                            face_id = str(row_face_pick.face.get("face_id", "") or "").strip()
+                            hover_key = ("row", int(row_index), face_id or id(row_face_pick.face))
+                            outline = None
+                            if hover_key != self._hover_step_cell_key:
+                                outline = self._hover_overlay_for_row_face(int(row_index), row_face_pick.face)
+                            self._set_step_hover_outline(outline, hover_key)
+                            if self._picked_row_index is not None:
+                                self._set_row_highlight(None)
+                            self._update_hover_status(
+                                f"S{int(row_index)} {row.name or row.surface or 'CAD row'}{(' ' + face_id) if face_id else ''} face",
+                                display_xy=(x, y),
+                                render=True,
+                            )
+                            self.status_var.set(f"Center Row->Optical Axis: click S{int(row_index)}{(' ' + face_id) if face_id else ''} face.")
+                            return
+                        self._set_step_hover_outline(None, None)
                         if self._picked_row_index != int(row_index):
                             self._set_row_highlight(int(row_index))
                             self.render()
