@@ -19,6 +19,7 @@ from KrakenOS.UI.services import (
 from KrakenOS.UI.services.open3d_face_index_edges import (
     face_boundary_edges_from_face_index,
     face_outline_from_face_index,
+    face_outline_from_face_indices,
     triangle_array_and_face_index,
 )
 from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
@@ -106,6 +107,9 @@ def main() -> int:
     outline = face_outline_from_face_index(duplicated_points_mesh, 0)
     if outline is None or int(getattr(outline, "n_cells", 0)) != 3:
         failures.append("Face-index outline extraction did not outline the selected analytic face.")
+    grouped_outline = face_outline_from_face_indices(duplicated_points_mesh, (0, 1))
+    if grouped_outline is None or int(getattr(grouped_outline, "n_cells", 0)) != 4:
+        failures.append("Face-index outline extraction did not merge split analytic face groups.")
 
     project_root = Path(__file__).resolve().parents[2]
     fixture_paths = (
@@ -157,7 +161,7 @@ def main() -> int:
     face_index_source = __import__("inspect").getsource(open3d_face_index_edges)
     if "_display_feature_edges_mesh" not in inspector_source or "face_boundary_edges_from_face_index" not in face_index_source:
         failures.append("Open 3D feature-edge drawing must prefer analytic face-index boundaries.")
-    if "face_outline_from_face_index" not in inspector_source:
+    if "face_outline_from_face_indices" not in inspector_source:
         failures.append("Open 3D STEP hover outlines must use displayed analytic face-index boundaries.")
     if "face_pick_from_display_mesh" not in inspector_source or "triangle_array_and_face_index" not in face_index_source:
         failures.append("Open 3D STEP ray picking must use displayed analytic face-index triangles before STL fallback.")

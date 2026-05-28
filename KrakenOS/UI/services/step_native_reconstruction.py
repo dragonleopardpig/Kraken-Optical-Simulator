@@ -532,6 +532,90 @@ def _fit_group(
     )
 
 
+def axisymmetric_step_selection_face_records(document: StepAnalyticDocument) -> tuple[dict[str, object], ...]:
+    """Return grouped optical-face records for Open 3D lens selection.
+
+    Vendor lens STEP files often split one optical surface into multiple B-Rep
+    patches.  For selection and axis snapping those patches are one optical
+    face; the snap normal should be the lens axis normal, not an arbitrary
+    local tessellation or surface-parameter normal.
+    """
+
+    axis, axis_origin, aperture_diameter, _diagnostics = _document_axis(document)
+    if not any(_is_side_wall(face, axis) for face in document.outer_faces):
+        return ()
+    basis_x, basis_y = _basis_from_axis(axis)
+    candidates, _candidate_diagnostics = _candidate_faces(document, axis, axis_origin, basis_x, basis_y)
+    if not candidates:
+        return ()
+    groups = _group_candidates(candidates, aperture_diameter)
+    if not groups:
+        return ()
+    all_points = _unique_points(np.asarray(document.triangles, dtype=float))
+    if all_points.shape[0] >= 3:
+        all_z = _localize(all_points, axis_origin, basis_x, basis_y, axis)[:, 2]
+        lens_mid_z = 0.5 * (float(np.nanmin(all_z)) + float(np.nanmax(all_z)))
+    else:
+        lens_mid_z = 0.0
+    records: list[dict[str, object]] = []
+    for group in groups:
+        triangle_indices = tuple(sorted({int(value) for face in group.faces for value in face.triangle_indices}))
+        if not triangle_indices:
+            continue
+        local_points = np.vstack(group.local_points) if group.local_points else np.empty((0, 3), dtype=float)
+        if local_points.size == 0:
+            continue
+        fit = _fit_group(
+            group,
+            axis_origin=axis_origin,
+            axis=axis,
+            aperture_diameter_mm=aperture_diameter,
+            term_count=DEFAULT_ASPHERE_TERMS,
+        )
+        vertex_z = float(fit.vertex_z_mm) if np.isfinite(float(fit.vertex_z_mm)) else float(np.nanmedian(local_points[:, 2]))
+        surface_center = axis_origin + axis * vertex_z
+        signed_normals = []
+        for face in group.faces:
+            normal = _unit(face.normal)
+            signed_normals.append(float(np.dot(normal, axis)))
+        signed_axis = float(np.nanmedian(signed_normals)) if signed_normals else 0.0
+        if abs(signed_axis) > 0.25:
+            surface_normal = axis * (1.0 if signed_axis >= 0.0 else -1.0)
+        else:
+            surface_normal = axis * (1.0 if float(np.nanmedian(local_points[:, 2])) >= lens_mid_z else -1.0)
+        first = group.faces[0]
+        record = first.as_optical_solid_record()
+        surface_id = _surface_id_for_group(group)
+        record.update(
+            {
+                "face_id": surface_id,
+                "component_face_id": surface_id,
+                "source_face_id": surface_id,
+                "source_face_ids": [face.face_id for face in group.faces],
+                "source_surface_types": sorted({str(face.surface_type) for face in group.faces}),
+                "surface_type": fit.native_kind,
+                "analytic_parameters": {
+                    "native_kind": fit.native_kind,
+                    "axis_origin": [float(value) for value in axis_origin[:3]],
+                    "axis_direction": [float(value) for value in axis[:3]],
+                    "source_face_ids": [face.face_id for face in group.faces],
+                },
+                "normal": [float(value) for value in surface_normal[:3]],
+                "centroid": [float(value) for value in surface_center[:3]],
+                "area_mm2": float(sum(float(face.area_mm2) for face in group.faces)),
+                "triangle_count": int(len(triangle_indices)),
+                "triangle_indices": [int(value) for value in triangle_indices],
+                "plane_offset_mm": float(np.dot(surface_normal[:3], surface_center[:3])),
+                "assignment_source": "step_analytic_axisymmetric_group",
+                "notes": "OpenCascade STEP grouped axisymmetric optical face",
+                "interior_duplicate": False,
+                "duplicate_group": "",
+            }
+        )
+        records.append(record)
+    return tuple(records)
+
+
 def _aspher_data_200(values: Iterable[float]) -> list[float]:
     data = [0.0] * 200
     for index, value in enumerate(list(values)[: min(DEFAULT_ASPHERE_TERMS, 200)]):

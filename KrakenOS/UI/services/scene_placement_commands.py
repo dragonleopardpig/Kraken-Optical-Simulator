@@ -35,6 +35,7 @@ from KrakenOS.UI.services.optical_solid_geometry import (
     transformed_stl_bounds,
 )
 from KrakenOS.UI.services.step_face_direction import StepFaceDirectionService
+from KrakenOS.UI.services.step_native_reconstruction import axisymmetric_step_selection_face_records
 from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABEL_SET
 from KrakenOS.UI.services.step_overlay_import import StepOverlayImportService
 from KrakenOS.UI.services.step_overlay_promotion import StepOverlayPromotionService
@@ -2523,7 +2524,66 @@ class ScenePlacementMixin:
         except Exception:
             face_index_by_triangle = None
         records: list[dict[str, object]] = []
+        grouped_face_ids: set[str] = set()
+        try:
+            grouped_records = tuple(axisymmetric_step_selection_face_records(document))
+        except Exception:
+            grouped_records = ()
+        if grouped_records:
+            try:
+                source_triangles = np.asarray(document.triangles, dtype=float).reshape((-1, 3, 3))
+                affine = _affine_from_point_sets(source_triangles.reshape((-1, 3)), triangles.reshape((-1, 3)))
+            except Exception:
+                affine = None
+            for grouped in grouped_records:
+                record = dict(grouped)
+                indices = tuple(
+                    int(value)
+                    for value in list(record.get("triangle_indices", ())) or ()
+                    if 0 <= int(value) < int(triangles.shape[0])
+                )
+                if not indices:
+                    continue
+                source_ids = tuple(str(value) for value in list(record.get("source_face_ids", ())) if str(value))
+                grouped_face_ids.update(source_ids)
+                try:
+                    center = np.asarray(record.get("centroid", ()), dtype=float).reshape(-1)[:3]
+                    normal = np.asarray(record.get("normal", ()), dtype=float).reshape(-1)[:3]
+                except Exception:
+                    center = np.asarray([], dtype=float)
+                    normal = np.asarray([], dtype=float)
+                if affine is not None and center.size >= 3 and normal.size >= 3:
+                    center = (affine @ np.asarray((center[0], center[1], center[2], 1.0), dtype=float))[:3]
+                    normal = np.asarray(affine[:3, :3], dtype=float) @ normal[:3]
+                if center.size < 3 or not np.all(np.isfinite(center[:3])):
+                    selected = np.asarray(triangles[np.asarray(indices, dtype=int)], dtype=float)
+                    center = np.mean(selected.reshape((-1, 3)), axis=0)
+                normal_norm = float(np.linalg.norm(normal[:3])) if normal.size >= 3 else 0.0
+                if normal.size < 3 or normal_norm <= 1.0e-12 or not np.isfinite(normal_norm):
+                    selected = np.asarray(triangles[np.asarray(indices, dtype=int)], dtype=float)
+                    fallback_record = self._analytic_step_face_record_from_triangles(
+                        document.outer_faces[0],
+                        indices,
+                        selected,
+                    )
+                    normal = fallback_record.get("normal", (0.0, 0.0, 1.0))
+                    normal = np.asarray(normal, dtype=float).reshape(-1)[:3]
+                    normal_norm = float(np.linalg.norm(normal[:3])) if normal.size >= 3 else 0.0
+                normal = np.asarray(normal[:3] / max(normal_norm, 1.0e-12), dtype=float)
+                record.update(
+                    {
+                        "centroid": [float(value) for value in center[:3]],
+                        "normal": [float(value) for value in normal[:3]],
+                        "triangle_indices": [int(value) for value in indices],
+                        "triangle_count": int(len(indices)),
+                        "plane_offset_mm": float(np.dot(normal[:3], center[:3])),
+                        "assignment_source": "step_analytic_axisymmetric_group_transformed",
+                    }
+                )
+                records.append(record)
         for face_index, face in enumerate(document.outer_faces):
+            if str(face.face_id) in grouped_face_ids:
+                continue
             if face_index_by_triangle is not None:
                 triangle_indices = tuple(int(value) for value in np.flatnonzero(face_index_by_triangle == int(face_index)))
             else:

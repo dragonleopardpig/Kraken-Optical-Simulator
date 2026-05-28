@@ -30,8 +30,8 @@ from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentServ
 from KrakenOS.UI.services.open3d_face_index_edges import (
     display_feature_edges as _display_feature_edges_mesh,
     face_pick_from_display_mesh,
-    face_index_for_record,
-    face_outline_from_face_index,
+    face_indices_for_record,
+    face_outline_from_face_indices,
 )
 from KrakenOS.UI.services.open3d_face_pick import FaceRayPick, pick_face_from_ray
 from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
@@ -8507,9 +8507,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return None
         try:
             display_mesh = self.editor._transformed_imported_step_mesh_for_label(str(label).strip().lower())
-            face_index = face_index_for_record(display_mesh, face)
-            if face_index is not None:
-                outline = face_outline_from_face_index(display_mesh, int(face_index))
+            face_indices = face_indices_for_record(display_mesh, face)
+            if face_indices:
+                outline = face_outline_from_face_indices(display_mesh, face_indices)
                 if outline is not None and int(getattr(outline, "n_points", 0)) > 0:
                     center = face.get("centroid_world", face.get("centroid", ()))
                     return self._hover_overlay_for_feature(center, outline)

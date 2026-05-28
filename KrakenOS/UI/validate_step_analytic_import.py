@@ -64,6 +64,20 @@ def validate_step_analytic_import() -> list[StepAnalyticImportCheck]:
     except Exception as exc:
         app_metadata = {"error": str(exc)}
     app_metadata_faces = [face for face in list(app_metadata.get("faces", []) or []) if isinstance(face, dict)]
+    app_grouped_faces = [
+        face
+        for face in app_metadata_faces
+        if len(list(face.get("source_face_ids", []) or [])) > 1
+    ]
+    axis = np.asarray((0.0, 0.0, 1.0), dtype=float)
+
+    def _face_axis_alignment(face: dict[str, object]) -> float:
+        try:
+            normal = np.asarray(face.get("normal", (0.0, 0.0, 1.0)), dtype=float).reshape(3)
+        except Exception:
+            return 0.0
+        return abs(float(np.dot(normal, axis)))
+
     triangle_total = int(document.triangles.shape[0])
     expected_indices = list(range(triangle_total))
     actual_indices: list[int] = []
@@ -119,13 +133,15 @@ def validate_step_analytic_import() -> list[StepAnalyticImportCheck]:
             ),
         ),
         StepAnalyticImportCheck(
-            "Open 3D STEP overlay metadata uses analytic B-Rep faces before planar clustering",
-            len(app_metadata_faces) == len(document.outer_faces)
+            "Open 3D STEP overlay metadata groups split analytic optical faces before planar fallback",
+            0 < len(app_metadata_faces) <= len(document.outer_faces)
             and int(app_metadata.get("interior_duplicate_count", -1)) == int(document.interior_duplicate_count)
             and all(str(face.get("assignment_source", "") or "").startswith("step_analytic") for face in app_metadata_faces)
-            and all("/" in str(face.get("face_id", "") or "") for face in app_metadata_faces),
+            and any("+" in str(face.get("face_id", "") or "") for face in app_grouped_faces)
+            and any(_face_axis_alignment(face) > 0.999 for face in app_grouped_faces),
             (
                 f"faces={len(app_metadata_faces)}, "
+                f"grouped={[(face.get('face_id'), face.get('source_face_ids')) for face in app_grouped_faces]}, "
                 f"interior_duplicates={app_metadata.get('interior_duplicate_count')}, "
                 f"error={app_metadata.get('error', '')}"
             ),

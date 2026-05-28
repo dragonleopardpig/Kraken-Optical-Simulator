@@ -39,6 +39,7 @@ from KrakenOS.UI.services.optical_solid_geometry import (
 )
 from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timing_span
 from KrakenOS.UI.services.step_analytic_geometry import StepAnalyticDocument, load_step_analytic_document
+from KrakenOS.UI.services.step_native_reconstruction import axisymmetric_step_selection_face_records
 from KrakenOS.UI.trace_intent import BEAM_SPLITTER_SURFACE
 
 pv = None
@@ -376,6 +377,7 @@ class LayoutPolylineDisplayMixin:
             if mesh is None:
                 return None
             face_index_by_triangle = np.full(int(document.triangles.shape[0]), -1, dtype=np.int32)
+            selection_face_index_by_triangle = np.full(int(document.triangles.shape[0]), -1, dtype=np.int32)
             source_face_index_by_triangle = np.full(int(document.triangles.shape[0]), -1, dtype=np.int32)
             solid_index_by_triangle = np.full(int(document.triangles.shape[0]), -1, dtype=np.int32)
             for face_index, face in enumerate(document.outer_faces):
@@ -383,9 +385,28 @@ class LayoutPolylineDisplayMixin:
                     triangle_index = int(value)
                     if 0 <= triangle_index < int(face_index_by_triangle.size):
                         face_index_by_triangle[triangle_index] = int(face_index)
+                        selection_face_index_by_triangle[triangle_index] = int(face_index)
                         source_face_index_by_triangle[triangle_index] = int(face.source_face_index)
                         solid_index_by_triangle[triangle_index] = int(face.solid_index)
             try:
+                face_index_by_id = {
+                    str(face.face_id): int(face_index)
+                    for face_index, face in enumerate(document.outer_faces)
+                }
+                for grouped in axisymmetric_step_selection_face_records(document):
+                    source_ids = [str(value) for value in list(grouped.get("source_face_ids", ())) if str(value)]
+                    raw_indices = [face_index_by_id[value] for value in source_ids if value in face_index_by_id]
+                    if not raw_indices:
+                        continue
+                    grouped_index = int(min(raw_indices))
+                    for value in list(grouped.get("triangle_indices", ())) or ():
+                        triangle_index = int(value)
+                        if 0 <= triangle_index < int(selection_face_index_by_triangle.size):
+                            selection_face_index_by_triangle[triangle_index] = grouped_index
+            except Exception:
+                pass
+            try:
+                mesh.cell_data["kraken_step_selection_face_index"] = selection_face_index_by_triangle
                 mesh.cell_data["kraken_step_face_index"] = face_index_by_triangle
                 mesh.cell_data["kraken_step_source_face_index"] = source_face_index_by_triangle
                 mesh.cell_data["kraken_step_solid_index"] = solid_index_by_triangle
