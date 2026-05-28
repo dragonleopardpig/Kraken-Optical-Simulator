@@ -164,7 +164,8 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             and "_last_live_step_overlay_trace_records" in editor_source
             and "transient_live_trace" in editor_source
             and "and not live_step_preview" in editor_source
-            and "_trim_transient_step_terminal_tail_for_display" in editor_source
+            and "self._trim_transient_step_terminal_tail_for_display(" in editor_source
+            and "KrakenLayoutEditor._trim_transient_step_terminal_tail_for_display" not in editor_source
             and "ray_path_reaches_image_from_events(path)" in editor_source,
             "Defocused rays from a placed transient STEP are not filtered down to only detector-hit paths, but hidden-clipped mode suppresses long terminal tails.",
         ),

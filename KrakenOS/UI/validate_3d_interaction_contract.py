@@ -1792,7 +1792,8 @@ def main() -> int:
             and "_last_live_step_overlay_trace_records" in scene_ray_records
             and "transient_live_trace" in scene_ray_records
             and "and not live_step_preview" in scene_ray_records
-            and "_trim_transient_step_terminal_tail_for_display" in scene_ray_records
+            and "self._trim_transient_step_terminal_tail_for_display(" in scene_ray_records
+            and "KrakenLayoutEditor._trim_transient_step_terminal_tail_for_display" not in scene_ray_records
             and "ray_path_reaches_image_from_events(path)" in scene_ray_records,
         ),
         (

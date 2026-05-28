@@ -99,7 +99,9 @@ without requiring row promotion first. Trace Now also turns ray visibility on
 before rendering, and Undo/Redo clears stale transient STEP physics-preview and
 rotation/carry state so a successful trace cannot leave invisible geometry or
 floating handles behind. The display-only STEP suppression check is tied to the
-current rendered mesh rows, not stale live-trace row labels.
+current rendered mesh rows, not stale live-trace row labels, and the transient
+STEP ray-tail trimming path is now contract-checked as a local Open 3D service
+method call so it cannot regress into a runtime-only editor name lookup.
 Repeated Show Rays toggles reuse the current traced scene instead of rebuilding
 transient STEP physics, first-trace timing now records live STEP row
 planning, system build, ray tracing, SceneBundle projection, and per-bundle

@@ -1017,7 +1017,7 @@ class ThreeDSceneToolsMixin:
                     ray_index = int(fallback_index * step)
                 terminal_status = ray_path_terminal_status_from_events(path)
                 if live_step_preview and not show_clipped_rays:
-                    points = KrakenLayoutEditor._trim_transient_step_terminal_tail_for_display(
+                    points = self._trim_transient_step_terminal_tail_for_display(
                         points,
                         path,
                         terminal_status=terminal_status,
