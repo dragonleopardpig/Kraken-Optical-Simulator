@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from KrakenOS.UI import cad_import_service
+from KrakenOS.UI import capture_open3d_lens_face_selection_snap
 from KrakenOS.UI.open3d_inspector import Kraken3DInspector
 from KrakenOS.UI.services import (
     open3d_face_index_edges,
@@ -181,8 +182,13 @@ def main() -> int:
         failures.append("Carry-mode imported STEP hover must pick the active STEP face, not only rotation handles.")
     if "_step_feature_pick_for_display_xy" not in interaction_source:
         failures.append("Active imported STEP hover must use the display-safe STEP feature picker.")
+    if '"passive"' not in interaction_source:
+        failures.append("Passive imported STEP hover must show the selected face highlight outside axis modes.")
     if "_step_feature_pick_for_display_xy" not in interaction_class_source:
         failures.append("Imported STEP click selection must use the display-safe STEP feature picker.")
+    capture_source = __import__("inspect").getsource(capture_open3d_lens_face_selection_snap)
+    if "highlight_polys" not in capture_source or "GetNumberOfPolys" not in capture_source:
+        failures.append("Lens face-selection capture must fail when the highlight has no selected surface polygons.")
     import_source = __import__("inspect").getsource(StepOverlayImportService.import_optical_step)
     if "_optical_prescription_sidecars" not in import_source or "STEP has no glass prescription" not in import_source:
         failures.append("Optical STEP import should warn when a sidecar prescription is needed for designed lens focus.")

@@ -862,6 +862,35 @@ class Open3DInteractionService:
                         )
                         return
                     self._set_rotation_handle_hover(None)
+                    step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
+                    if step_label is not None:
+                        try:
+                            cell_id = int(self._picker.GetCellId())
+                        except Exception:
+                            cell_id = -1
+                        feature_pick = self._step_feature_pick_for_display_xy(
+                            str(step_label),
+                            (x, y),
+                            actor=actor,
+                            actor_key=actor_key,
+                            cell_id=cell_id,
+                        )
+                        feature = feature_pick.get("feature") if feature_pick is not None else None
+                        if feature is not None:
+                            face_id = str(feature_pick.get("face_id", "") if feature_pick is not None else "").strip()
+                            hover_key = (actor_key, "passive", face_id or int(cell_id))
+                            outline = None
+                            if hover_key != self._hover_step_cell_key:
+                                outline = self._hover_overlay_for_feature(feature[0], feature[1])
+                            self._set_step_hover_outline(outline, hover_key)
+                            face_note = f" {face_id} face" if face_id else " feature"
+                            self._update_hover_status(
+                                f"{str(step_label).upper()} STEP{face_note}",
+                                display_xy=(x, y),
+                                render=True,
+                            )
+                            self._set_axis_pick_cursor(True)
+                            return
                 except Exception:
                     actor = None
                     actor_key = None

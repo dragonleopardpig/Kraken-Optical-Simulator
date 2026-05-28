@@ -134,9 +134,10 @@ passive-hover contract for large vendor STEP-derived STL files. Round-lens
 STEP hover/click/right-click selection now resolves grouped analytic lens-cap
 records before raw VTK cells, so transparent achromats do not select side/rim
 tessellation when the cursor is over an optical cap; the hover tooltip includes
-the selected face ID before falling back to raw triangle features. Grouped
-analytic lens face picking is also checked through an actual VTK actor/cell
-screenshot replay at
+the selected face ID before falling back to raw triangle features, and passive
+hover over an imported STEP actor now displays the selected analytic face as a
+translucent surface overlay instead of only a rim outline. Grouped analytic lens
+face picking is also checked through an actual VTK actor/cell screenshot replay at
    `attachment/open3d_lens_face_selection_snap/`; Open 3D left-drag camera
    rotation is contract-checked with the restored screen-following sign
    convention.

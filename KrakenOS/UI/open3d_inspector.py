@@ -7924,14 +7924,36 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._hover_step_cell_key = hover_key
         if outline_mesh is not None and int(getattr(outline_mesh, "n_points", 0)) > 0 and vtkActor is not None and vtkDataSetMapper is not None:
             try:
+                has_surface = False
+                try:
+                    has_surface = int(outline_mesh.GetNumberOfPolys()) > 0
+                except Exception:
+                    try:
+                        has_surface = int(getattr(outline_mesh, "n_faces_strict", 0)) > 0
+                    except Exception:
+                        has_surface = False
                 mapper = vtkDataSetMapper()
                 mapper.SetInputData(outline_mesh)
+                try:
+                    mapper.ScalarVisibilityOff()
+                except Exception:
+                    pass
                 actor = vtkActor()
                 actor.SetMapper(mapper)
                 prop = actor.GetProperty()
-                prop.SetColor(1.0, 0.18, 0.0)
-                prop.SetOpacity(1.0)
-                prop.SetLineWidth(8.0)
+                if has_surface:
+                    prop.SetColor(1.0, 0.26, 0.0)
+                    prop.SetOpacity(0.58)
+                    prop.SetLineWidth(6.0)
+                    try:
+                        prop.EdgeVisibilityOn()
+                        prop.SetEdgeColor(1.0, 0.12, 0.0)
+                    except Exception:
+                        pass
+                else:
+                    prop.SetColor(1.0, 0.18, 0.0)
+                    prop.SetOpacity(1.0)
+                    prop.SetLineWidth(8.0)
                 try:
                     prop.SetAmbient(1.0)
                     prop.SetDiffuse(0.0)
@@ -8511,8 +8533,33 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             face_indices = face_indices_for_record(display_mesh, face)
             if face_indices:
                 outline = None
+                face_mesh = None
+                selected_triangles = triangles_for_face_indices(display_mesh, face_indices)
+                if selected_triangles.size:
+                    try:
+                        center_for_offset = np.asarray(face.get("centroid_world", face.get("centroid", ())), dtype=float).reshape(-1)[:3]
+                        camera = self._renderer.GetActiveCamera() if self._renderer is not None else None
+                        camera_position = np.asarray(camera.GetPosition(), dtype=float).reshape(-1)[:3] if camera is not None else np.asarray([])
+                        view_direction = camera_position[:3] - center_for_offset[:3]
+                        view_norm = float(np.linalg.norm(view_direction))
+                        if (
+                            center_for_offset.size >= 3
+                            and camera_position.size >= 3
+                            and np.all(np.isfinite(center_for_offset[:3]))
+                            and np.all(np.isfinite(camera_position[:3]))
+                            and np.isfinite(view_norm)
+                            and view_norm > 1.0e-12
+                        ):
+                            try:
+                                _scene_center, scene_radius = self._scene_bounds()
+                            except Exception:
+                                scene_radius = 1.0
+                            offset = max(float(scene_radius) * 1.0e-4, 1.0e-3)
+                            selected_triangles = selected_triangles + (view_direction[:3] / view_norm).reshape((1, 1, 3)) * offset
+                    except Exception:
+                        pass
+                    face_mesh = self._polydata_from_triangles(selected_triangles)
                 if str(face.get("assignment_source", "") or "").startswith("step_analytic_axisymmetric_group"):
-                    selected_triangles = triangles_for_face_indices(display_mesh, face_indices)
                     if selected_triangles.size:
                         outline = self._planar_outline_from_triangles(
                             selected_triangles,
@@ -8520,9 +8567,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                         )
                 if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
                     outline = face_outline_from_face_indices(display_mesh, face_indices)
+                overlay = face_mesh
                 if outline is not None and int(getattr(outline, "n_points", 0)) > 0:
+                    if overlay is not None and int(getattr(overlay, "n_points", 0)) > 0:
+                        try:
+                            overlay = overlay.merge(outline)
+                        except Exception:
+                            pass
+                    else:
+                        overlay = outline
+                if overlay is not None and int(getattr(overlay, "n_points", 0)) > 0:
                     center = face.get("centroid_world", face.get("centroid", ()))
-                    return self._hover_overlay_for_feature(center, outline)
+                    return self._hover_overlay_for_feature(center, overlay)
         except Exception:
             pass
         try:

@@ -104,11 +104,18 @@ def _pick_lens_face(inspector: Kraken3DInspector, face: dict[str, object]) -> di
     if not face_id:
         raise RuntimeError(f"Lens feature pick resolved only a generic cell, not a grouped face; cell={cell_id}.")
     outline = inspector._hover_overlay_for_feature(feature[0], feature[1])
+    try:
+        highlight_polys = int(outline.GetNumberOfPolys()) if outline is not None else 0
+    except Exception:
+        highlight_polys = 0
+    if highlight_polys <= 0:
+        raise RuntimeError(f"Lens face highlight did not include selected surface polygons for {face_id}.")
     inspector._set_step_hover_outline(outline, ("capture", "optical", face_id))
     return {
         "display_xy": [int(x), int(y)],
         "cell_id": int(cell_id),
         "face_id": face_id,
+        "highlight_polys": int(highlight_polys),
         "surface_center": [float(value) for value in np.asarray(feature_pick.get("surface_center"), dtype=float).reshape(-1)[:3]],
     }
 
