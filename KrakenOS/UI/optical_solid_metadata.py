@@ -350,7 +350,7 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
         record.get("suggested_function", record.get("suggested_role")),
         legacy_role=record.get("suggested_role"),
     )
-    return {
+    normalized = {
         "face_id": str(record.get("face_id", "") or "").strip(),
         "role": role,
         "function": function,
@@ -391,6 +391,19 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
         "assignment_source": str(record.get("assignment_source", "") or "").strip(),
         "notes": str(record.get("notes", "") or "").strip(),
     }
+    for key in (
+        "component_face_id",
+        "source_face_id",
+        "source_solid_index",
+        "source_face_index",
+        "surface_type",
+        "analytic_parameters",
+        "interior_duplicate",
+        "duplicate_group",
+    ):
+        if key in record:
+            normalized[key] = record[key]
+    return normalized
 
 
 def normalize_optical_solid_virtual_plane_record(record: dict[str, object]) -> dict[str, object]:

@@ -186,6 +186,15 @@ Phase 3: Add An OpenCascade Topology Adapter
     - mesh once with ``BRepMesh_IncrementalMesh``;
     - write VTK cell arrays for ``component_id`` and ``face_id``.
 
+    Current branch progress: the first Tier 3 boundary now exists in
+    ``KrakenOS.UI.services.step_analytic_geometry``. It loads STEP with
+    OpenCascade before any STL conversion, walks native solids and faces,
+    qualifies face IDs by solid, extracts analytic face descriptors for plane,
+    sphere, cylinder, cone, torus, and B-spline surfaces, detects duplicated
+    cemented interior faces from multi-solid achromats, and produces a
+    face-tagged tessellation. This is not the default Open 3D or tracing path
+    yet; it is the topology-preserving input that those paths should adopt next.
+
 Phase 4: Compare CadQuery/OCP
     Install CadQuery/OCP only in an isolated optional environment and compare:
 

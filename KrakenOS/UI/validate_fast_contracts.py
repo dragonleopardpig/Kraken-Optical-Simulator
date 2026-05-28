@@ -131,6 +131,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Open 3D STEP hover/pick paths reuse cached CAD triangle and face-outline artifacts.",
     ),
     ValidationTarget(
+        "step-analytic-import",
+        "KrakenOS.UI.validate_step_analytic_import",
+        reason="Native OpenCascade STEP topology keeps face identity and skips cemented interior duplicates.",
+    ),
+    ValidationTarget(
         "open3d-action-timing",
         "KrakenOS.UI.validate_open3d_action_timing",
         reason="Open 3D import, refresh, render, pick, and selection actions emit structured timing diagnostics.",

@@ -1,6 +1,6 @@
 # KrakenOS Non-Sequential UI Branch
 
-Last updated: 2026-05-27
+Last updated: 2026-05-28
 
 This document summarizes the `nonseq-display-refactor` branch. The upstream
 `README.md` is intentionally left unchanged; this branch README is the public
@@ -77,6 +77,7 @@ and fast UI/non-sequential validators.
 
 | Area | Status | Progress | Next action |
 | --- | --- | --- | --- |
+| Native STEP analytic reconstruction | Started | `15% [##........]` | Tier 3 has started with an OpenCascade STEP analytic importer that keeps B-Rep face identity, qualifies face IDs by solid, extracts analytic surface descriptors, skips coincident cemented interior faces, and creates a face-tagged tessellation. Next, route Open 3D optical STEP display/picking through this topology cache before replacing mesh tracing with KrakenOS-native analytic surfaces. |
 | Open 3D CAD responsiveness hardening | Complete | `100% [##########]` | The reported Machine Vision 150 mm plus imported Aspherized Achromatic Lens workflow now has structured action timing, single-refresh Open 3D imports, cached CAD/STL artifacts, display-only hidden-ray placement and undo, grouped smooth CAD face picking, round-lens axis-normal snapping, current-scene reuse for repeated Show Rays toggles, empty-gmsh-STL rejection, sidecar prescription warnings, per-bundle system/RayKeeper/mesh timing counters, and a repeated-mesh compatibility fast path. The headless replay reduced the first live STEP non-sequential trace from about 16.5 s to about 2.7 s, with the full Open 3D refresh around 3.6 s on the test machine; larger vendor assemblies should be treated as new performance fixtures rather than blocking this gate. |
 | Final UI theming polish | Deferred outside this gate | `0% [..........]` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after upstream review, CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
 
@@ -126,6 +127,15 @@ skip PyVista normal-extraction compatibility checks once a mesh has been
 prepared, and
 `python -m KrakenOS.UI.diagnose_open3d_hover_latency` reports the cache and
 passive-hover contract for large vendor STEP-derived STL files.
+
+The Tier 3 native STEP reconstruction path has now begun under
+`KrakenOS.UI.services.step_analytic_geometry`. It imports STEP files with the
+available OpenCascade backend, walks solids and faces before STL conversion,
+extracts analytic surface descriptors such as sphere, cylinder, and B-spline
+faces, removes duplicated cemented interior faces from the outer pick set, and
+builds a face-tagged tessellation. This is not yet the default tracing backend;
+it is the production boundary needed before imported lenses can become
+KrakenOS-native analytic optical surfaces instead of STL approximations.
 
 Open 3D responsiveness timing is written to:
 
@@ -181,9 +191,9 @@ simulation library and that this branch builds on:
   solids, face roles, placement anchors, path metadata, and ray events survive
   in row metadata, SceneBundle records, raykeeper/event records, diagnostics,
   and CSV/export output.
-- YZ, XZ, and XY 2D projections generated from the traced 3D scene. The
-  projection policy is user-selectable, and 2D/Open 3D use the same bounded ray
-  display logic for escaped tails and detector misses.
+- YZ, XZ, and XY 2D projections generated from the traced 3D scene. The 2D
+  plane selector always projects the full traced 3D ray bundle, and 2D/Open 3D
+  use the same bounded ray display logic for escaped tails and detector misses.
 - Open 3D authoring with direct view buttons, live controls, ray visibility
   toggles, explicit ray-pick mode, bottom-status ray terminal summaries, optical
   axis guides, hover diagnostics, selectable STEP/CAD faces, and docked STEP
@@ -351,6 +361,7 @@ python -m KrakenOS.UI.validate_ui_install_metadata
 python -m KrakenOS.UI.validate_attachment_paths
 python -m KrakenOS.UI.validate_optimization_backend
 python -m KrakenOS.UI.validate_cad_scene_cache
+python -m KrakenOS.UI.validate_step_analytic_import
 python -m KrakenOS.UI.validate_3d_interaction_contract
 python -m KrakenOS.UI.validate_native_nonseq_closure
 python -m KrakenOS.UI.validate_2d_3d_projection_sync

@@ -22,6 +22,7 @@ def main() -> int:
         "KrakenOS/UI/services/layout_literals.py",
         "KrakenOS/UI/services/step_face_direction.py",
         "KrakenOS/UI/services/cad_step_export.py",
+        "KrakenOS/UI/services/step_analytic_geometry.py",
         "KrakenOS/UI/diagnose_open3d_hover_latency.py",
     )
     for relative in required_modules:
@@ -81,6 +82,7 @@ def main() -> int:
             "CadDocumentCache",
             "CadPickCache",
             "BRepMesh_IncrementalMesh",
+            "step_analytic_geometry",
             "make it a required runtime dependency",
             "rotation-handle actor pick list",
         )
