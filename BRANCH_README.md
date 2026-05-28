@@ -79,7 +79,7 @@ and fast UI/non-sequential validators.
 | --- | --- | --- | --- |
 | Native STEP analytic reconstruction | Complete for supported axisymmetric lenses | `100% [##########]` | STEP topology is now imported before STL conversion, split/duplicated vendor faces are grouped into native optical surfaces, supported sphere/plane/B-spline surfaces are rebuilt as KrakenOS `SurfaceRow` prescriptions, B-spline faces are fitted into native asphere coefficients with residual diagnostics, cemented duplicate interfaces are collapsed into one internal surface, and geometry-only STEP files remain non-trace-ready until glass/materials are supplied. |
 | Native STEP Open 3D promotion | Complete for supported axisymmetric lenses | `100% [##########]` | Imported STEP overlays can now be promoted directly from Open 3D into native KrakenOS analytic rows with an explicit glass/material sequence, while applying the Open 3D overlay placement/orientation as row `Tilt`/`Desp` values. If the user snapped a selected STEP face center to an optical axis, that stored face-center anchor is preserved exactly during promotion. Source/fit diagnostics remain in metadata. STL optical-solid promotion remains available for prisms, beam splitters, and freeform solids that should stay mesh-backed. |
-| Open 3D CAD responsiveness hardening | Complete | `100% [##########]` | The reported Machine Vision 150 mm plus imported Aspherized Achromatic Lens workflow now has structured action timing, single-refresh Open 3D imports, cached CAD/STL artifacts, display-only hidden-ray placement and undo, grouped smooth CAD face picking, analytic face-ID edge/hover/pick routing for native STEP meshes, axisymmetric lens patch grouping for split vendor optical faces, exterior-cap picking for round lens STEP bodies, round-lens axis-normal snapping, current-scene reuse for repeated Show Rays toggles, empty-gmsh-STL rejection, sidecar prescription warnings, per-bundle system/RayKeeper/mesh timing counters, and a repeated-mesh compatibility fast path. The headless replay reduced the first live STEP non-sequential trace from about 16.5 s to about 2.7 s, with the full Open 3D refresh around 3.6 s on the test machine; larger vendor assemblies should be treated as new performance fixtures rather than blocking this gate. |
+| Open 3D CAD responsiveness hardening | Complete | `100% [##########]` | The reported Machine Vision 150 mm plus imported Aspherized Achromatic Lens workflow now has structured action timing, single-refresh Open 3D imports, cached CAD/STL artifacts, display-only hidden-ray placement and undo, grouped smooth CAD face picking, analytic face-ID edge/hover/pick routing for native STEP meshes, VTK-cell-to-grouped-face picking, axisymmetric lens patch grouping for split vendor optical faces, exterior-cap picking for round lens STEP bodies, round-lens axis-normal snapping, current-scene reuse for repeated Show Rays toggles, empty-gmsh-STL rejection, sidecar prescription warnings, per-bundle system/RayKeeper/mesh timing counters, and a repeated-mesh compatibility fast path. The headless replay reduced the first live STEP non-sequential trace from about 16.5 s to about 2.7 s, with the full Open 3D refresh around 3.6 s on the test machine; larger vendor assemblies should be treated as new performance fixtures rather than blocking this gate. |
 | Final UI theming polish | Deferred outside this gate | `0% [..........]` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after upstream review, CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
 
 The CadQuery/OCP topology study milestone is now complete for this branch
@@ -118,11 +118,12 @@ planning, system build, ray tracing, SceneBundle projection, and per-bundle
 trace backend/ray-count durations, the world-envelope sampler keeps the first
 successful non-sequential trace instead of retracing the same bundle into the
 display raykeeper, optical-solid mesh face metadata is cached inside the built
-non-sequential system, the chooser skips a second identical ray trace on the
-selected mesh, intersection-normal lookup reuses the chooser's selected mesh
-ray result for the same segment, axial external optical-solid exit segments
-remain pickable as Open 3D optical axes for prism cascades, non-sequential
-trace timing now includes per-bundle system-trace, RayKeeper-push, and mesh
+    non-sequential system, the chooser skips a second identical ray trace on the
+   selected mesh, intersection-normal lookup reuses the chooser's selected mesh
+   ray result for the same segment, Open 3D suppresses traced optical-axis guides
+   for segments that remain on the global axial direction while keeping genuinely
+   bent post-surface axes for prism cascades, non-sequential trace timing now
+   includes per-bundle system-trace, RayKeeper-push, and mesh
 ray-intersection duration summaries, repeated non-sequential mesh chooser calls
 skip PyVista normal-extraction compatibility checks once a mesh has been
 prepared, and
@@ -130,8 +131,11 @@ prepared, and
 passive-hover contract for large vendor STEP-derived STL files. Round-lens
 STEP hover/click selection now bypasses cemented/internal tessellation patches
 and selects the visible exterior cap silhouette from the displayed body before
-falling back to raw triangle features; Open 3D left-drag camera rotation is
-also contract-checked with the restored screen-following sign convention.
+   falling back to raw triangle features; grouped analytic lens face picking is
+   also checked through an actual VTK actor/cell screenshot replay at
+   `attachment/open3d_lens_face_selection_snap/`; Open 3D left-drag camera
+   rotation is contract-checked with the restored screen-following sign
+   convention.
 
 The Tier 3 native STEP reconstruction path is now implemented for supported
 axisymmetric optical lenses. `KrakenOS.UI.services.step_analytic_geometry`
@@ -354,7 +358,7 @@ Test-plan tiers:
 | Fast contracts | Fixture-light, no-display checks for normal code changes. | `python -m KrakenOS.UI.validate_fast_contracts` |
 | Upstream-compatible pytest | Public API, package data, invalid traces, and build-zero contracts from upstream main adapted to the branch. | `python -m pytest tests/test_public_api.py tests/test_smoke.py tests/test_invalid_trace_results.py tests/test_build_modes.py` |
 | Focused contracts | Single-risk checks during development or review. | `python -m KrakenOS.UI.validate_fast_contracts --only ui-modular-maintainability`, `python -m KrakenOS.UI.validate_fast_contracts --only optimization-controls`, `python -m KrakenOS.UI.validate_fast_contracts --only step-native-reconstruction`, `python -m KrakenOS.UI.validate_fast_contracts --only step-native-promotion`, `python -m KrakenOS.UI.validate_fast_contracts --only open3d-lens-step-face-pick`, or `python -m KrakenOS.UI.validate_fast_contracts --only five-penta-with-lens-layout` |
-| Display-backed smoke | Open 3D, VTK, screenshots, STEP face picking, and visual regressions. | `python -m KrakenOS.UI.validate_step_carry_open3d_smoke` |
+| Display-backed smoke | Open 3D, VTK, screenshots, STEP face picking, and visual regressions. | `python -m KrakenOS.UI.validate_step_carry_open3d_smoke`, `python -m KrakenOS.UI.capture_open3d_lens_face_selection_snap` |
 | Open 3D responsiveness replay | Timed replay of Machine Vision 150 mm + imported optical STEP import/select/deselect. | `python -m KrakenOS.UI.diagnose_open3d_action_timing --output /tmp/kraken_open3d_action_timing_report.json` |
 | CAD/prism physics | Real STEP/STL geometry, prism cascades, face roles, and ray-event audits. | `python -m KrakenOS.UI.validate_five_penta_prism_cascade` |
 | Install/package | Public `.[ui]` metadata and runtime dependency checks. | `python -m KrakenOS.UI.validate_ui_install_runtime` |

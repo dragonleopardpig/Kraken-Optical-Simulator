@@ -6,6 +6,8 @@ from typing import Any
 
 import numpy as np
 
+from KrakenOS.UI.services.open3d_face_index_edges import face_pick_from_display_cell
+
 
 def round_lens_feature_for_display_xy(inspector: Any, label: str, display_xy):
     """Pick the exterior cap of a round lens-like STEP body.
@@ -122,6 +124,33 @@ def step_feature_pick_for_display_xy(
     label = str(label or "").strip().lower()
     if not label:
         return None
+    try:
+        metadata = inspector.editor._step_overlay_face_metadata(label)
+        faces = [face for face in list(metadata.get("faces", []) or []) if isinstance(face, dict)]
+        pick_point = None
+        try:
+            pick_point = np.asarray(inspector._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+        except Exception:
+            pick_point = None
+        cell_pick = face_pick_from_display_cell(
+            inspector.editor,
+            label,
+            faces,
+            int(cell_id),
+            pick_point=pick_point,
+        )
+        if cell_pick is not None:
+            return {
+                "feature": inspector._feature_from_face_ray_pick(
+                    cell_pick,
+                    inspector._hover_overlay_for_step_face(label, cell_pick.face),
+                ),
+                "surface_center": inspector._surface_center_from_face_ray_pick(cell_pick),
+                "face_id": str(cell_pick.face.get("face_id", "") or "").strip(),
+                "through_pick": cell_pick,
+            }
+    except Exception:
+        pass
     through_pick = inspector._coarse_step_face_ray_pick_for_display_xy(label, display_xy)
     if through_pick is not None:
         return {

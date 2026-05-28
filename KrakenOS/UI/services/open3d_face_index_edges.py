@@ -12,7 +12,7 @@ try:  # PyVista is optional outside Open 3D.
 except Exception:  # pragma: no cover - exercised in environments without VTK.
     pv = None
 
-from KrakenOS.UI.services.open3d_face_pick import pick_face_from_ray
+from KrakenOS.UI.services.open3d_face_pick import FaceRayPick, pick_face_from_ray
 
 
 FACE_INDEX_CELL_DATA = "kraken_step_face_index"
@@ -77,6 +77,23 @@ def triangle_array_and_face_index(mesh) -> tuple[np.ndarray, np.ndarray]:
     """Return displayed triangles and analytic face index values."""
     _surface, triangles, face_index = _surface_triangles_and_face_index(mesh)
     return triangles, face_index
+
+
+def triangles_for_face_indices(mesh, target_face_indices) -> np.ndarray:
+    """Return displayed triangles whose selection face index is in the target set."""
+    try:
+        targets = {int(value) for value in target_face_indices}
+    except Exception:
+        return np.empty((0, 3, 3), dtype=float)
+    if not targets:
+        return np.empty((0, 3, 3), dtype=float)
+    _surface, triangles, face_index = _surface_triangles_and_face_index(mesh)
+    if triangles.size == 0 or face_index.size != triangles.shape[0]:
+        return np.empty((0, 3, 3), dtype=float)
+    mask = np.asarray([int(value) in targets for value in face_index], dtype=bool)
+    if mask.shape[0] != triangles.shape[0] or not np.any(mask):
+        return np.empty((0, 3, 3), dtype=float)
+    return np.asarray(triangles[mask], dtype=float)
 
 
 def _point_key(point: np.ndarray) -> tuple[float, float, float]:
@@ -267,3 +284,68 @@ def face_pick_from_display_mesh(editor, label: str, faces, origin, direction):
     except Exception:
         return None
     return None
+
+
+def face_pick_from_display_cell(editor, label: str, faces, cell_id: int, *, pick_point=None) -> FaceRayPick | None:
+    """Resolve a VTK-picked displayed cell to its grouped analytic STEP face."""
+    try:
+        cell_id = int(cell_id)
+    except Exception:
+        return None
+    if cell_id < 0:
+        return None
+    try:
+        display_mesh = editor._transformed_imported_step_mesh_for_label(str(label).strip().lower())
+        triangles, face_index = triangle_array_and_face_index(display_mesh)
+    except Exception:
+        return None
+    if (
+        triangles.ndim != 3
+        or triangles.shape[1:] != (3, 3)
+        or triangles.shape[0] <= cell_id
+        or face_index.shape[0] != triangles.shape[0]
+    ):
+        return None
+    try:
+        target_face_index = int(face_index[cell_id])
+    except Exception:
+        return None
+    if target_face_index < 0:
+        return None
+    face_record = None
+    for face in list(faces or []):
+        if not isinstance(face, dict):
+            continue
+        if target_face_index in set(face_indices_for_record(display_mesh, face)):
+            face_record = dict(face)
+            break
+    if face_record is None:
+        return None
+    point = None
+    try:
+        point_candidate = np.asarray(pick_point, dtype=float).reshape(-1)[:3]
+        if point_candidate.size >= 3 and np.all(np.isfinite(point_candidate[:3])):
+            point = point_candidate[:3]
+    except Exception:
+        point = None
+    if point is None:
+        point = np.mean(np.asarray(triangles[cell_id], dtype=float).reshape((3, 3)), axis=0)
+    try:
+        normal = np.asarray(face_record.get("normal_world", face_record.get("normal", ())), dtype=float).reshape(-1)[:3]
+    except Exception:
+        normal = np.asarray([], dtype=float)
+    norm = float(np.linalg.norm(normal[:3])) if normal.size >= 3 else 0.0
+    if normal.size < 3 or norm <= 1.0e-12 or not np.isfinite(norm):
+        triangle = np.asarray(triangles[cell_id], dtype=float).reshape((3, 3))
+        normal = np.cross(triangle[1] - triangle[0], triangle[2] - triangle[0])
+        norm = float(np.linalg.norm(normal[:3]))
+    if norm <= 1.0e-12 or not np.isfinite(norm):
+        return None
+    normal = normal[:3] / norm
+    return FaceRayPick(
+        face=face_record,
+        point_world=tuple(float(value) for value in point[:3]),
+        normal_world=tuple(float(value) for value in normal[:3]),
+        distance=0.0,
+        internal=False,
+    )

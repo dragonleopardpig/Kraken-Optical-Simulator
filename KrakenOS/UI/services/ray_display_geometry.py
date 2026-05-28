@@ -322,12 +322,7 @@ def _dotted_axis_records_from_ray_path(path, bounds, *, max_segments: int = 6) -
         from_face = str(getattr(event_before, "mesh_face_id", "") or "") if event_before is not None else ""
         to_face = str(getattr(event_after, "mesh_face_id", "") or "") if event_after is not None else ""
         if float(np.hypot(direction[0], direction[1])) <= 1e-4:
-            keep_axial_solid_exit = (
-                (axis_role == "between_surfaces" and bool(from_face or to_face))
-                or (axis_role == "post_surface" and bool(from_face))
-            )
-            if not keep_axial_solid_exit:
-                continue
+            continue
         axis_origin = 0.5 * (start + end)
         if axis_role == "post_surface":
             span = _bounds_span(bounds)

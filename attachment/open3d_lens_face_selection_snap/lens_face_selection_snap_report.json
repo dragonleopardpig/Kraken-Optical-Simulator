@@ -1,0 +1,52 @@
+{
+  "axis_count_after_snap": 1,
+  "lens_step": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/aspherized-achromatic-lenses/step_49665.step",
+  "pick": {
+    "actor_key": "Addr=0x5693749cd2c0",
+    "cell_id": 136,
+    "display_xy": [
+      800,
+      450
+    ],
+    "face_id": "S001/F002",
+    "surface_center": [
+      8.000000000000004,
+      -6.00000000000001,
+      35.00000000000002
+    ]
+  },
+  "snap": {
+    "angle_error_deg": 0.0,
+    "axis_id": "axis:global",
+    "face_id": "S001/F002",
+    "placement_offset_xyz": [
+      -5.329070518200751e-15,
+      1.7763568394002505e-15,
+      34.99999999999999
+    ],
+    "rotation_deg": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "snapshots": [
+    "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/open3d_lens_face_selection_snap/01_imported_lens.png",
+    "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/open3d_lens_face_selection_snap/02_grouped_face_hover.png",
+    "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/open3d_lens_face_selection_snap/03_after_axis_snap.png"
+  ],
+  "target_face": {
+    "assignment_source": "step_analytic_axisymmetric_group_transformed",
+    "centroid": [
+      8.000000000000004,
+      -6.00000000000001,
+      35.00000000000002
+    ],
+    "face_id": "S001/F002",
+    "normal": [
+      -2.1598174771358226e-16,
+      -9.241686450039637e-16,
+      -1.0
+    ]
+  }
+}

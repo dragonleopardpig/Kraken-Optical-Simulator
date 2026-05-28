@@ -32,6 +32,7 @@ from KrakenOS.UI.services.open3d_face_index_edges import (
     face_pick_from_display_mesh,
     face_indices_for_record,
     face_outline_from_face_indices,
+    triangles_for_face_indices,
 )
 from KrakenOS.UI.services.open3d_face_pick import FaceRayPick, pick_face_from_ray
 from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
@@ -8509,7 +8510,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             display_mesh = self.editor._transformed_imported_step_mesh_for_label(str(label).strip().lower())
             face_indices = face_indices_for_record(display_mesh, face)
             if face_indices:
-                outline = face_outline_from_face_indices(display_mesh, face_indices)
+                outline = None
+                if str(face.get("assignment_source", "") or "").startswith("step_analytic_axisymmetric_group"):
+                    selected_triangles = triangles_for_face_indices(display_mesh, face_indices)
+                    if selected_triangles.size:
+                        outline = self._planar_outline_from_triangles(
+                            selected_triangles,
+                            normal_world=face.get("normal_world", face.get("normal")),
+                        )
+                if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
+                    outline = face_outline_from_face_indices(display_mesh, face_indices)
                 if outline is not None and int(getattr(outline, "n_points", 0)) > 0:
                     center = face.get("centroid_world", face.get("centroid", ()))
                     return self._hover_overlay_for_feature(center, outline)
