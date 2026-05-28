@@ -192,8 +192,11 @@ Phase 3: Add An OpenCascade Topology Adapter
     qualifies face IDs by solid, extracts analytic face descriptors for plane,
     sphere, cylinder, cone, torus, and B-spline surfaces, detects duplicated
     cemented interior faces from multi-solid achromats, and produces a
-    face-tagged tessellation. This is not the default Open 3D or tracing path
-    yet; it is the topology-preserving input that those paths should adopt next.
+    face-tagged tessellation. Open 3D STEP display and overlay face metadata
+    now try this topology-preserving path before falling back to gmsh/STL. This
+    is not the default tracing path yet; the next step is rebuilding supported
+    analytic optical faces as KrakenOS-native surfaces and validating that trace
+    events match the current mesh path before the backend is switched.
 
 Phase 4: Compare CadQuery/OCP
     Install CadQuery/OCP only in an isolated optional environment and compare:

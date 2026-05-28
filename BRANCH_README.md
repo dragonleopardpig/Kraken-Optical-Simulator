@@ -77,7 +77,7 @@ and fast UI/non-sequential validators.
 
 | Area | Status | Progress | Next action |
 | --- | --- | --- | --- |
-| Native STEP analytic reconstruction | Started | `15% [##........]` | Tier 3 has started with an OpenCascade STEP analytic importer that keeps B-Rep face identity, qualifies face IDs by solid, extracts analytic surface descriptors, skips coincident cemented interior faces, and creates a face-tagged tessellation. Next, route Open 3D optical STEP display/picking through this topology cache before replacing mesh tracing with KrakenOS-native analytic surfaces. |
+| Native STEP analytic reconstruction | In progress | `35% [####......]` | Open 3D STEP display and overlay face metadata now try the OpenCascade analytic topology path before the gmsh/STL fallback. The next gate is generating KrakenOS-native analytic optical rows from the preserved STEP faces, then validating tracing against the current mesh path. |
 | Open 3D CAD responsiveness hardening | Complete | `100% [##########]` | The reported Machine Vision 150 mm plus imported Aspherized Achromatic Lens workflow now has structured action timing, single-refresh Open 3D imports, cached CAD/STL artifacts, display-only hidden-ray placement and undo, grouped smooth CAD face picking, round-lens axis-normal snapping, current-scene reuse for repeated Show Rays toggles, empty-gmsh-STL rejection, sidecar prescription warnings, per-bundle system/RayKeeper/mesh timing counters, and a repeated-mesh compatibility fast path. The headless replay reduced the first live STEP non-sequential trace from about 16.5 s to about 2.7 s, with the full Open 3D refresh around 3.6 s on the test machine; larger vendor assemblies should be treated as new performance fixtures rather than blocking this gate. |
 | Final UI theming polish | Deferred outside this gate | `0% [..........]` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after upstream review, CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
 
@@ -133,9 +133,12 @@ The Tier 3 native STEP reconstruction path has now begun under
 available OpenCascade backend, walks solids and faces before STL conversion,
 extracts analytic surface descriptors such as sphere, cylinder, and B-spline
 faces, removes duplicated cemented interior faces from the outer pick set, and
-builds a face-tagged tessellation. This is not yet the default tracing backend;
-it is the production boundary needed before imported lenses can become
-KrakenOS-native analytic optical surfaces instead of STL approximations.
+builds a face-tagged tessellation. Open 3D STEP display and overlay face
+metadata now use that analytic topology path first and fall back to the legacy
+gmsh/STL path only when analytic import is unavailable. This is not yet the
+default tracing backend; it is the production boundary needed before imported
+lenses can become KrakenOS-native analytic optical surfaces instead of STL
+approximations.
 
 Open 3D responsiveness timing is written to:
 

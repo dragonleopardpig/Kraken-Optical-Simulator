@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
+from KrakenOS.UI.layout_editor import KrakenLayoutEditor
 from KrakenOS.UI.services.step_analytic_geometry import load_step_analytic_document
 
 
@@ -48,6 +49,21 @@ def validate_step_analytic_import() -> list[StepAnalyticImportCheck]:
     source_surface_types = {face.surface_type for face in document.faces}
     metadata = document.optical_solid_face_metadata()
     metadata_faces = [face for face in list(metadata.get("faces", []) or []) if isinstance(face, dict)]
+    app_metadata: dict[str, object] = {}
+    try:
+        app = KrakenLayoutEditor(headless=True)
+        try:
+            app.imported_lens_step_path = ASPHERIZED_ACHROMAT_STEP
+            app.lens_step_largest_component_only = True
+            app_metadata = app._step_overlay_face_metadata("lens")
+        finally:
+            try:
+                app.destroy()
+            except Exception:
+                pass
+    except Exception as exc:
+        app_metadata = {"error": str(exc)}
+    app_metadata_faces = [face for face in list(app_metadata.get("faces", []) or []) if isinstance(face, dict)]
     triangle_total = int(document.triangles.shape[0])
     expected_indices = list(range(triangle_total))
     actual_indices: list[int] = []
@@ -100,6 +116,18 @@ def validate_step_analytic_import() -> list[StepAnalyticImportCheck]:
             (
                 f"metadata_faces={len(metadata_faces)}, "
                 f"sample={metadata_faces[0] if metadata_faces else {}}"
+            ),
+        ),
+        StepAnalyticImportCheck(
+            "Open 3D STEP overlay metadata uses analytic B-Rep faces before planar clustering",
+            len(app_metadata_faces) == len(document.outer_faces)
+            and int(app_metadata.get("interior_duplicate_count", -1)) == int(document.interior_duplicate_count)
+            and all(str(face.get("assignment_source", "") or "").startswith("step_analytic") for face in app_metadata_faces)
+            and all("/" in str(face.get("face_id", "") or "") for face in app_metadata_faces),
+            (
+                f"faces={len(app_metadata_faces)}, "
+                f"interior_duplicates={app_metadata.get('interior_duplicate_count')}, "
+                f"error={app_metadata.get('error', '')}"
             ),
         ),
     ]

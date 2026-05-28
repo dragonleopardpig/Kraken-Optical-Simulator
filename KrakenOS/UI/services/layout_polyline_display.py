@@ -38,6 +38,7 @@ from KrakenOS.UI.services.optical_solid_geometry import (
     optical_solid_face_world_records,
 )
 from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timing_span
+from KrakenOS.UI.services.step_analytic_geometry import StepAnalyticDocument, load_step_analytic_document
 from KrakenOS.UI.trace_intent import BEAM_SPLITTER_SURFACE
 
 pv = None
@@ -304,6 +305,97 @@ class LayoutPolylineDisplayMixin:
                 return float(z_positions[index])
         return 0.0
 
+    @staticmethod
+    def _polydata_from_triangle_array(triangles: np.ndarray):
+        if pv is None:
+            _load_3d_backends()
+        if pv is None:
+            return None
+        triangle_array = np.asarray(triangles, dtype=float)
+        if triangle_array.ndim != 3 or triangle_array.shape[1:] != (3, 3) or triangle_array.shape[0] <= 0:
+            return None
+        points = triangle_array.reshape((-1, 3))
+        faces = np.empty((int(triangle_array.shape[0]), 4), dtype=np.int64)
+        faces[:, 0] = 3
+        faces[:, 1] = np.arange(0, int(points.shape[0]), 3, dtype=np.int64)
+        faces[:, 2] = faces[:, 1] + 1
+        faces[:, 3] = faces[:, 1] + 2
+        return pv.PolyData(points, faces.reshape(-1))
+
+    @staticmethod
+    def _triangle_array_from_polydata(mesh) -> tuple[np.ndarray, object | None]:
+        if mesh is None:
+            return np.empty((0, 3, 3), dtype=float), None
+        try:
+            surface = mesh.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
+        except Exception:
+            try:
+                surface = mesh.triangulate().copy(deep=True)
+            except Exception:
+                return np.empty((0, 3, 3), dtype=float), None
+        try:
+            faces = np.asarray(surface.faces, dtype=np.int64).reshape((-1, 4))
+            if faces.shape[0] <= 0 or not np.all(faces[:, 0] == 3):
+                return np.empty((0, 3, 3), dtype=float), surface
+            points = np.asarray(surface.points, dtype=float)
+            triangles = points[faces[:, 1:4]]
+        except Exception:
+            return np.empty((0, 3, 3), dtype=float), surface
+        if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or not np.all(np.isfinite(triangles)):
+            return np.empty((0, 3, 3), dtype=float), surface
+        return np.asarray(triangles, dtype=float), surface
+
+    def _load_step_analytic_document(self, source_path: Path) -> StepAnalyticDocument:
+        source_path = Path(source_path).expanduser()
+        cache_key = f"step-analytic-document:{source_path.resolve()}"
+        cached = self._external_cad_mesh_cache.get(cache_key)
+        if isinstance(cached, StepAnalyticDocument):
+            return cached
+        with open3d_timing_span("load_step_analytic_document", source_path=str(source_path)):
+            document = load_step_analytic_document(source_path)
+        self._external_cad_mesh_cache[cache_key] = document
+        open3d_timing_event(
+            "load_step_analytic_document_cached",
+            source_path=str(source_path),
+            solids=int(document.solid_count),
+            source_faces=int(document.source_face_count),
+            outer_faces=int(len(document.outer_faces)),
+            triangles=int(document.triangles.shape[0]),
+            interior_duplicates=int(document.interior_duplicate_count),
+        )
+        return document
+
+    def _mesh_from_step_analytic_document(self, document: StepAnalyticDocument):
+        with open3d_timing_span(
+            "build_step_analytic_mesh",
+            source_path=str(document.source_path),
+            triangles=int(document.triangles.shape[0]),
+            outer_faces=int(len(document.outer_faces)),
+        ):
+            mesh = self._polydata_from_triangle_array(document.triangles)
+            if mesh is None:
+                return None
+            face_index_by_triangle = np.full(int(document.triangles.shape[0]), -1, dtype=np.int32)
+            source_face_index_by_triangle = np.full(int(document.triangles.shape[0]), -1, dtype=np.int32)
+            solid_index_by_triangle = np.full(int(document.triangles.shape[0]), -1, dtype=np.int32)
+            for face_index, face in enumerate(document.outer_faces):
+                for value in face.triangle_indices:
+                    triangle_index = int(value)
+                    if 0 <= triangle_index < int(face_index_by_triangle.size):
+                        face_index_by_triangle[triangle_index] = int(face_index)
+                        source_face_index_by_triangle[triangle_index] = int(face.source_face_index)
+                        solid_index_by_triangle[triangle_index] = int(face.solid_index)
+            try:
+                mesh.cell_data["kraken_step_face_index"] = face_index_by_triangle
+                mesh.cell_data["kraken_step_source_face_index"] = source_face_index_by_triangle
+                mesh.cell_data["kraken_step_solid_index"] = solid_index_by_triangle
+                mesh.field_data["kraken_step_analytic"] = np.asarray([1], dtype=np.int8)
+                mesh.field_data["kraken_step_outer_face_count"] = np.asarray([len(document.outer_faces)], dtype=np.int32)
+                mesh.field_data["kraken_step_source_face_count"] = np.asarray([document.source_face_count], dtype=np.int32)
+            except Exception:
+                pass
+            return mesh
+
     def _load_step_mesh(self, source_path: Path, *, largest_component: bool = False):
         source_path = Path(source_path).expanduser()
         with open3d_timing_span(
@@ -328,6 +420,24 @@ class LayoutPolylineDisplayMixin:
                     cells=int(getattr(cached, "n_cells", 0)),
                 )
                 return cached.copy(deep=True)
+            if source_path.suffix.lower() in {".step", ".stp"}:
+                try:
+                    document = self._load_step_analytic_document(source_path)
+                    mesh = self._mesh_from_step_analytic_document(document)
+                    if mesh is not None and int(getattr(mesh, "n_points", 0)) > 0:
+                        self._external_cad_mesh_cache[cache_key] = mesh.copy(deep=True)
+                        open3d_timing_event(
+                            "load_step_mesh_analytic_cached",
+                            source_path=str(source_path),
+                            largest_component_requested=bool(largest_component),
+                            points=int(getattr(mesh, "n_points", 0)),
+                            cells=int(getattr(mesh, "n_cells", 0)),
+                            outer_faces=int(len(document.outer_faces)),
+                            interior_duplicates=int(document.interior_duplicate_count),
+                        )
+                        return mesh
+                except Exception as exc:
+                    self.append_debug(f"Analytic STEP display import fell back to STL for {source_path.name}: {exc}")
             stl_path = _cached_cad_mesh_path(source_path)
             converted = False
             if not stl_path.exists() or stl_path.stat().st_size <= 0:

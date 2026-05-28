@@ -2365,10 +2365,129 @@ class ScenePlacementMixin:
             "segment_index": int(axis_info.get("segment_index", -1)),
         }
 
+    @staticmethod
+    def _analytic_step_face_record_from_triangles(face, triangle_indices: tuple[int, ...], triangles: np.ndarray) -> dict[str, object]:
+        selected = np.asarray(triangles, dtype=float)
+        if selected.ndim != 3 or selected.shape[1:] != (3, 3) or selected.shape[0] <= 0:
+            record = face.as_optical_solid_record()
+            record["triangle_indices"] = list(triangle_indices)
+            record["triangle_count"] = len(triangle_indices)
+            return record
+        weighted_normal = np.zeros(3, dtype=float)
+        weighted_centroid = np.zeros(3, dtype=float)
+        total_area = 0.0
+        for tri in selected:
+            v0, v1, v2 = (np.asarray(vertex, dtype=float) for vertex in tri)
+            cross = np.cross(v1 - v0, v2 - v0)
+            norm = float(np.linalg.norm(cross))
+            if norm <= 1.0e-12 or not np.isfinite(norm):
+                continue
+            area = 0.5 * norm
+            weighted_normal += cross * 0.5
+            weighted_centroid += ((v0 + v1 + v2) / 3.0) * area
+            total_area += area
+        if total_area > 0.0 and np.isfinite(total_area):
+            centroid = weighted_centroid / total_area
+        else:
+            centroid = np.mean(selected.reshape((-1, 3)), axis=0)
+        normal_norm = float(np.linalg.norm(weighted_normal))
+        if normal_norm > 1.0e-12 and np.isfinite(normal_norm):
+            normal = weighted_normal / normal_norm
+        else:
+            try:
+                normal = np.asarray(face.normal, dtype=float).reshape(3)
+            except Exception:
+                normal = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        normal_norm = float(np.linalg.norm(normal))
+        if normal_norm <= 1.0e-12 or not np.isfinite(normal_norm):
+            normal = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        else:
+            normal = normal / normal_norm
+        record = face.as_optical_solid_record()
+        record.update(
+            {
+                "centroid": [float(value) for value in centroid[:3]],
+                "normal": [float(value) for value in normal[:3]],
+                "area_mm2": float(total_area) if total_area > 0.0 else float(record.get("area_mm2", 0.0) or 0.0),
+                "triangle_count": int(len(triangle_indices)),
+                "triangle_indices": [int(value) for value in triangle_indices],
+                "plane_offset_mm": float(np.dot(normal[:3], centroid[:3])),
+                "assignment_source": "step_analytic_transformed",
+            }
+        )
+        return record
+
+    def _step_overlay_analytic_face_metadata(self, label: str) -> dict[str, object] | None:
+        label = str(label).strip().lower()
+        source_path = self._step_path_for_label(label)
+        if source_path is None or Path(source_path).suffix.lower() not in {".step", ".stp"}:
+            return None
+        document = self._load_step_analytic_document(Path(source_path))
+        mesh = self._transformed_imported_step_mesh_for_label(label)
+        if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+            return None
+        triangles, surface = self._triangle_array_from_polydata(mesh)
+        if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or triangles.shape[0] <= 0:
+            return None
+        face_index_by_triangle = None
+        try:
+            candidate = np.asarray(surface.cell_data.get("kraken_step_face_index", ()), dtype=int)
+            if candidate.shape[0] == triangles.shape[0]:
+                face_index_by_triangle = candidate
+        except Exception:
+            face_index_by_triangle = None
+        records: list[dict[str, object]] = []
+        for face_index, face in enumerate(document.outer_faces):
+            if face_index_by_triangle is not None:
+                triangle_indices = tuple(int(value) for value in np.flatnonzero(face_index_by_triangle == int(face_index)))
+            else:
+                triangle_indices = tuple(
+                    int(value)
+                    for value in face.triangle_indices
+                    if 0 <= int(value) < int(triangles.shape[0])
+                )
+            if not triangle_indices:
+                continue
+            selected = np.asarray(triangles[np.asarray(triangle_indices, dtype=int)], dtype=float)
+            records.append(self._analytic_step_face_record_from_triangles(face, triangle_indices, selected))
+        if not records:
+            return None
+        digest = hashlib.sha1()
+        digest.update(f"analytic:{label}".encode("utf-8"))
+        digest.update(str(Path(source_path).resolve()).encode("utf-8", errors="ignore"))
+        digest.update(np.ascontiguousarray(triangles, dtype=np.float64).tobytes())
+        mesh_path = _current_cad_cache_dir() / "step_overlay_face_snap" / f"{label}_analytic_{digest.hexdigest()[:16]}.stl"
+        if not mesh_path.exists() or mesh_path.stat().st_size <= 0:
+            mesh_path.parent.mkdir(parents=True, exist_ok=True)
+            output_mesh = self._polydata_from_triangle_array(triangles)
+            if output_mesh is not None:
+                output_mesh.save(str(mesh_path))
+        metadata = normalize_optical_solid_face_metadata(
+            {
+                "source_stl": str(mesh_path),
+                "source_step": str(Path(source_path)),
+                "source_backend": document.backend,
+                "faces": auto_assign_optical_solid_face_roles(records),
+            },
+            source_stl=str(mesh_path),
+        )
+        metadata["source_step"] = str(Path(source_path))
+        metadata["source_backend"] = document.backend
+        metadata["source_face_count"] = int(document.source_face_count)
+        metadata["outer_face_count"] = int(len(document.outer_faces))
+        metadata["interior_duplicate_count"] = int(document.interior_duplicate_count)
+        return metadata
+
     def _step_overlay_face_metadata(self, label: str) -> dict[str, object]:
         label = str(label).strip().lower()
         if label not in _step_overlay_label_set() or self._step_path_for_label(label) is None:
             return normalize_optical_solid_face_metadata({})
+        try:
+            analytic_metadata = self._step_overlay_analytic_face_metadata(label)
+            if analytic_metadata is not None:
+                return analytic_metadata
+        except Exception as exc:
+            self.append_debug(f"Analytic STEP face metadata fell back to planar clustering for {label}: {_short_error_message(exc)}")
         mesh = self._transformed_imported_step_mesh_for_label(label)
         if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
             return normalize_optical_solid_face_metadata({})
