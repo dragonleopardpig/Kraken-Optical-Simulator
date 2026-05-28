@@ -222,9 +222,10 @@ Phase 3: Add An OpenCascade Topology Adapter
     as ``Promote STEP to Native Rows`` in the CAD/target menu and ``Native
     Rows`` in the STEP element browser. The command prompts for the material
     sequence, inserts ordinary analytic table rows, applies the current Open 3D
-    placement/orientation as row ``Tilt``/``Desp`` values, clears the
-    display-only overlay when requested, and keeps the source path plus
-    reconstruction diagnostics in row metadata.
+    placement/orientation as row ``Tilt``/``Desp`` values, uses a stored
+    snapped face-center/axis anchor instead of the overlay bounds center when
+    available, clears the display-only overlay when requested, and keeps the
+    source path plus reconstruction diagnostics in row metadata.
 
 Phase 4: Compare CadQuery/OCP
     Install CadQuery/OCP only in an isolated optional environment and compare:

@@ -78,7 +78,7 @@ and fast UI/non-sequential validators.
 | Area | Status | Progress | Next action |
 | --- | --- | --- | --- |
 | Native STEP analytic reconstruction | Complete for supported axisymmetric lenses | `100% [##########]` | STEP topology is now imported before STL conversion, split/duplicated vendor faces are grouped into native optical surfaces, supported sphere/plane/B-spline surfaces are rebuilt as KrakenOS `SurfaceRow` prescriptions, B-spline faces are fitted into native asphere coefficients with residual diagnostics, cemented duplicate interfaces are collapsed into one internal surface, and geometry-only STEP files remain non-trace-ready until glass/materials are supplied. |
-| Native STEP Open 3D promotion | Complete for supported axisymmetric lenses | `100% [##########]` | Imported STEP overlays can now be promoted directly from Open 3D into native KrakenOS analytic rows with an explicit glass/material sequence, while applying the Open 3D overlay placement/orientation as row `Tilt`/`Desp` values and preserving source/fit diagnostics in metadata. STL optical-solid promotion remains available for prisms, beam splitters, and freeform solids that should stay mesh-backed. |
+| Native STEP Open 3D promotion | Complete for supported axisymmetric lenses | `100% [##########]` | Imported STEP overlays can now be promoted directly from Open 3D into native KrakenOS analytic rows with an explicit glass/material sequence, while applying the Open 3D overlay placement/orientation as row `Tilt`/`Desp` values. If the user snapped a selected STEP face center to an optical axis, that stored face-center anchor is preserved exactly during promotion. Source/fit diagnostics remain in metadata. STL optical-solid promotion remains available for prisms, beam splitters, and freeform solids that should stay mesh-backed. |
 | Open 3D CAD responsiveness hardening | Complete | `100% [##########]` | The reported Machine Vision 150 mm plus imported Aspherized Achromatic Lens workflow now has structured action timing, single-refresh Open 3D imports, cached CAD/STL artifacts, display-only hidden-ray placement and undo, grouped smooth CAD face picking, round-lens axis-normal snapping, current-scene reuse for repeated Show Rays toggles, empty-gmsh-STL rejection, sidecar prescription warnings, per-bundle system/RayKeeper/mesh timing counters, and a repeated-mesh compatibility fast path. The headless replay reduced the first live STEP non-sequential trace from about 16.5 s to about 2.7 s, with the full Open 3D refresh around 3.6 s on the test machine; larger vendor assemblies should be treated as new performance fixtures rather than blocking this gate. |
 | Final UI theming polish | Deferred outside this gate | `0% [..........]` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after upstream review, CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
 
@@ -149,8 +149,10 @@ Rows` in the CAD/target menu and as `Native Rows` in the STEP element browser.
 The validator `python -m KrakenOS.UI.validate_step_native_promotion` checks the
 interactive promotion boundary: a display-only achromat STEP overlay becomes
 native analytic KrakenOS rows, the overlay placement/orientation is applied to
-the generated row `Tilt`/`Desp` values, the overlay is cleared when requested,
-and the source path/material/reconstruction diagnostics are preserved in row metadata.
+the generated row `Tilt`/`Desp` values, a stored snapped face-center/axis anchor
+is used instead of the looser overlay bounds center when available, the overlay
+is cleared when requested, and the source path/material/reconstruction
+diagnostics are preserved in row metadata.
 This keeps the North Star rule intact: imported STEP state may become a native
 optical prescription, but missing material data or poor surface fits produce
 diagnostics instead of plausible wrong physics.

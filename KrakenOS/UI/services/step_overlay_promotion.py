@@ -68,6 +68,36 @@ class StepOverlayPromotionService:
         )
         return int(resolved_insert_at), str(arm_key or "")
 
+    @staticmethod
+    def _native_step_anchor_local_z(reconstruction, face_id: str) -> dict[str, object] | None:
+        requested = str(face_id or "").strip()
+        if not requested:
+            return None
+        fits = list(getattr(reconstruction, "surface_fits", ()) or ())
+        if not fits:
+            return None
+        try:
+            min_z = min(float(fit.vertex_z_mm) for fit in fits)
+        except Exception:
+            return None
+        for fit in fits:
+            fit_face_ids = [str(value).strip() for value in list(getattr(fit, "face_ids", ()) or []) if str(value).strip()]
+            if requested not in fit_face_ids and not any(
+                face_id.endswith(f"/{requested}") or requested.endswith(f"/{face_id}") for face_id in fit_face_ids
+            ):
+                continue
+            try:
+                local_z = float(fit.vertex_z_mm) - float(min_z)
+            except Exception:
+                return None
+            return {
+                "face_id": requested,
+                "matched_surface_id": str(getattr(fit, "surface_id", "") or ""),
+                "matched_face_ids": fit_face_ids,
+                "anchor_local_z_mm": float(local_z),
+            }
+        return None
+
     def _native_step_overlay_row_pose(self, label: str, reconstruction, insert_at: int) -> dict[str, object]:
         x_deg = float(self._step_x_rotation_deg(label))
         y_deg = float(self._step_y_rotation_deg(label))
@@ -129,6 +159,32 @@ class StepOverlayPromotionService:
                 "source": str(mesh_bounds.get("source", "fallback_step_offsets")),
             }
 
+        anchor = self._step_overlay_axis_anchor(label)
+        if isinstance(anchor, dict):
+            anchor_match = self._native_step_anchor_local_z(reconstruction, str(anchor.get("face_id", "") or ""))
+            try:
+                target_point = np.asarray(anchor.get("target_point", ()), dtype=float).reshape(-1)[:3]
+            except Exception:
+                target_point = np.asarray([], dtype=float)
+            if anchor_match is not None and target_point.size >= 3 and np.all(np.isfinite(target_point[:3])):
+                anchor_local_z = float(anchor_match["anchor_local_z_mm"])
+                row_decenter = (
+                    float(target_point[0]),
+                    float(target_point[1]),
+                    float(target_point[2] - z_station - anchor_local_z),
+                )
+                return {
+                    "row_tilts_deg": [float(value) for value in row_tilts],
+                    "row_decenter_mm": [float(value) for value in row_decenter],
+                    "z_station_mm": float(z_station),
+                    "native_axis_center_z_mm": float(native_center_z),
+                    "native_axis_span_z_mm": float(native_span_z),
+                    "pose_source": "stored_step_axis_anchor_face_center",
+                    "axis_anchor": dict(anchor),
+                    **anchor_match,
+                    **mesh_bounds,
+                }
+
         row_decenter = (
             float(center_world[0]),
             float(center_world[1]),
@@ -140,6 +196,7 @@ class StepOverlayPromotionService:
             "z_station_mm": float(z_station),
             "native_axis_center_z_mm": float(native_center_z),
             "native_axis_span_z_mm": float(native_span_z),
+            "pose_source": "transformed_overlay_bounds_center",
             **mesh_bounds,
         }
 

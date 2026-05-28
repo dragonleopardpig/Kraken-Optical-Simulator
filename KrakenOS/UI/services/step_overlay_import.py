@@ -53,6 +53,7 @@ class StepOverlayImportService:
         self.lens_step_rotation_z_deg = 0.0
         self.lens_step_axis_offset_xy = (0.0, 0.0)
         self.lens_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+        self._clear_step_overlay_axis_anchor("lens")
         self._selected_step_label = "lens"
         self._cad_axis_pick_any = False
         self._open3d_trace_refresh_service().clear_step_overlay_physics_preview("lens")
@@ -137,6 +138,7 @@ class StepOverlayImportService:
         self.optical_step_rotation_z_deg = 0.0
         self.optical_step_axis_offset_xy = (0.0, 0.0)
         self.optical_step_placement_offset_xyz = self._default_optical_step_import_offset()
+        self._clear_step_overlay_axis_anchor("optical")
         self._selected_step_label = "optical"
         self._cad_axis_pick_any = False
         self._open3d_trace_refresh_service().clear_step_overlay_physics_preview("optical")
@@ -172,6 +174,7 @@ class StepOverlayImportService:
         self.camera_step_rotation_z_deg = 0.0
         self.camera_step_axis_offset_xy = (0.0, 0.0)
         self.camera_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+        self._clear_step_overlay_axis_anchor("camera")
         self._selected_step_label = "camera"
         self._cad_axis_pick_any = False
         self._open3d_trace_refresh_service().clear_step_overlay_physics_preview("camera")
@@ -209,6 +212,7 @@ class StepOverlayImportService:
         self.led_step_object_edge_local_z = None
         self.led_step_axis_offset_xy = (0.0, 0.0)
         self.led_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+        self._clear_step_overlay_axis_anchor("led")
         self._selected_step_label = "led"
         self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False
@@ -281,6 +285,7 @@ class StepOverlayImportService:
             self.led_step_object_edge_local_z = None
         if label == "lens":
             self.lens_step_largest_component_only = True
+        self._clear_step_overlay_axis_anchor(label)
         self._open3d_trace_refresh_service().clear_step_overlay_physics_preview(label)
         if self._selected_step_label == label:
             self._selected_step_label = None

@@ -1686,6 +1686,71 @@ class ScenePlacementMixin:
     def _clear_imported_step_overlay_state(self, label: str) -> None:
         self._step_overlay_import_service().clear_imported_step_overlay_state(label)
 
+    def _step_overlay_axis_anchor(self, label: str) -> dict[str, object] | None:
+        label = str(label).strip().lower()
+        anchors = getattr(self, "_step_overlay_axis_anchor_by_label", {}) or {}
+        anchor = anchors.get(label) if isinstance(anchors, dict) else None
+        return dict(anchor) if isinstance(anchor, dict) else None
+
+    def _clear_step_overlay_axis_anchor(self, label: str) -> None:
+        label = str(label).strip().lower()
+        anchors = dict(getattr(self, "_step_overlay_axis_anchor_by_label", {}) or {})
+        if label in anchors:
+            anchors.pop(label, None)
+            self._step_overlay_axis_anchor_by_label = anchors
+
+    def _record_step_overlay_axis_anchor(
+        self,
+        label: str,
+        *,
+        face_id: str = "",
+        guide_face_id: str = "",
+        target_point=None,
+        target_direction=None,
+        guide_direction=None,
+        anchor_mode: str = "surface_center",
+        axis_frame: dict[str, object] | None = None,
+        source: str = "step_axis_snap",
+    ) -> dict[str, object] | None:
+        label = str(label).strip().lower()
+        if label not in _step_overlay_label_set():
+            return None
+        try:
+            target = np.asarray(target_point, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if target.size < 3 or not np.all(np.isfinite(target[:3])):
+            return None
+        record: dict[str, object] = {
+            "label": label,
+            "source": str(source or "step_axis_snap"),
+            "anchor_mode": str(anchor_mode or "surface_center"),
+            "face_id": str(face_id or "").strip(),
+            "guide_face_id": str(guide_face_id or "").strip(),
+            "target_point": [float(value) for value in target[:3]],
+        }
+        for key, values in (("target_direction", target_direction), ("guide_direction", guide_direction)):
+            try:
+                vector = np.asarray(values, dtype=float).reshape(-1)[:3]
+            except Exception:
+                vector = np.asarray([], dtype=float)
+            if vector.size >= 3 and np.all(np.isfinite(vector[:3])):
+                record[key] = [float(value) for value in vector[:3]]
+        frame = dict(axis_frame or {})
+        for key in ("axis_id", "axis_kind", "axis_role", "axis_label", "segment_index", "ray_index", "branch_path"):
+            if key in frame:
+                value = frame.get(key)
+                if key in {"segment_index", "ray_index"}:
+                    try:
+                        value = int(value)
+                    except Exception:
+                        value = -1
+                record[key] = value
+        anchors = dict(getattr(self, "_step_overlay_axis_anchor_by_label", {}) or {})
+        anchors[label] = record
+        self._step_overlay_axis_anchor_by_label = anchors
+        return dict(record)
+
     def rotate_step_axis(self, label: str, axis: str, delta_deg: float, *, refresh: bool = True) -> None:
         label = str(label).strip().lower()
         axis = str(axis).strip().lower()
@@ -1700,6 +1765,7 @@ class ScenePlacementMixin:
         current = float(getattr(self, attr, 0.0))
         next_angle = float((current + float(delta_deg)) % 360.0)
         setattr(self, attr, next_angle)
+        self._clear_step_overlay_axis_anchor(label)
         self._selected_step_label = label
         self._commit_history_capture()
         self.status_var.set(f"{label.upper()} STEP {axis.upper()} rotation: {next_angle:.0f} deg")
@@ -1757,6 +1823,7 @@ class ScenePlacementMixin:
         self._begin_history_capture()
         self._set_step_rotation_deg_tuple(label, next_angles)
         self._set_step_placement_offset_xyz(label, next_offset)
+        self._clear_step_overlay_axis_anchor(label)
         self._selected_step_label = label
         self._commit_history_capture()
         self.status_var.set(
@@ -1880,6 +1947,7 @@ class ScenePlacementMixin:
         if values.size < 3 or not np.all(np.isfinite(values[:3])):
             return
         setattr(self, f"{label}_step_placement_offset_xyz", (float(values[0]), float(values[1]), float(values[2])))
+        self._clear_step_overlay_axis_anchor(label)
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
 
@@ -2307,6 +2375,7 @@ class ScenePlacementMixin:
         setattr(self, f"{label}_step_rotation_x_deg", x_deg)
         setattr(self, f"{label}_step_rotation_y_deg", y_deg)
         setattr(self, f"{label}_step_rotation_z_deg", z_deg)
+        self._clear_step_overlay_axis_anchor(label)
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
 
@@ -2606,6 +2675,15 @@ class ScenePlacementMixin:
                 "segment_index": int(axis_frame.get("segment_index", -1)),
             }
         )
+        self._record_step_overlay_axis_anchor(
+            label,
+            face_id=str(face.get("face_id", "") or "").strip(),
+            target_point=result.get("target_point"),
+            target_direction=result.get("target_direction"),
+            anchor_mode="surface_center_normal",
+            axis_frame=axis_frame,
+            source="face_normal_axis_snap",
+        )
         return result
 
     def _default_step_pair_guide_face_id(self, label: str, metadata: dict[str, object], anchor_face_id: str) -> str:
@@ -2751,6 +2829,17 @@ class ScenePlacementMixin:
             f"{label.upper()} STEP {anchor_id}/{guide_id} snapped to {axis_label}; "
             f"entrance error {anchor_error:.6g} deg, roll error {guide_error:.6g} deg."
         )
+        self._record_step_overlay_axis_anchor(
+            label,
+            face_id=anchor_id,
+            guide_face_id=guide_id,
+            target_point=target_point[:3],
+            target_direction=target_anchor_normal[:3],
+            guide_direction=target_guide_normal[:3],
+            anchor_mode="surface_center_normal_with_roll",
+            axis_frame=axis_frame,
+            source="face_pair_axis_snap",
+        )
         self._refresh_open_3d_views(step_label=label)
         return {
             "label": label,
@@ -2849,6 +2938,14 @@ class ScenePlacementMixin:
         self.status_var.set(
             f"{label.upper()} STEP entrance normal aligned opposite {axis_label}; "
             f"face center moved to ({target_point[0]:.6g}, {target_point[1]:.6g}, {target_point[2]:.6g}) mm."
+        )
+        self._record_step_overlay_axis_anchor(
+            label,
+            target_point=target_point[:3],
+            target_direction=target_normal[:3],
+            anchor_mode="picked_point_normal",
+            axis_frame=frame,
+            source="feature_normal_axis_snap",
         )
         self._refresh_open_3d_views(step_label=label)
         return {

@@ -39,6 +39,16 @@ def validate_step_native_promotion() -> list[StepNativePromotionCheck]:
         app.lens_step_rotation_z_deg = 30.0
         app.lens_step_axis_offset_xy = (1.25, -0.75)
         app.lens_step_placement_offset_xyz = (3.0, -2.0, 4.0)
+        anchor_target = (4.0, -5.0, 123.0)
+        app._record_step_overlay_axis_anchor(
+            "lens",
+            face_id="S001/F002",
+            target_point=anchor_target,
+            target_direction=(0.0, 0.0, -1.0),
+            anchor_mode="surface_center_normal",
+            axis_frame={"axis_id": "axis-1", "axis_label": "Test Optical Axis"},
+            source="validation_snap",
+        )
         expected_tilts = tuple(
             float(value)
             for value in app._kraken_tilts_from_rotation_matrix(app._step_rotation_matrix_from_angles(10.0, 5.0, 30.0))
@@ -71,6 +81,13 @@ def validate_step_native_promotion() -> list[StepNativePromotionCheck]:
         applied_pose = dict((result or {}).get("applied_row_pose", {}) or {})
         applied_tilts = tuple(float(value) for value in list(applied_pose.get("row_tilts_deg", ()))[:3])
         applied_decenter = tuple(float(value) for value in list(applied_pose.get("row_decenter_mm", ()))[:3])
+        anchor_local_z = float(applied_pose.get("anchor_local_z_mm", 0.0) or 0.0)
+        z_station = float(applied_pose.get("z_station_mm", 0.0) or 0.0)
+        expected_decenter = (
+            float(anchor_target[0]),
+            float(anchor_target[1]),
+            float(anchor_target[2]) - z_station - anchor_local_z,
+        )
         row_summary = [
             {
                 "surface": row.surface,
@@ -126,16 +143,16 @@ def validate_step_native_promotion() -> list[StepNativePromotionCheck]:
                 f"expected_tilts={expected_tilts}, applied={applied_tilts}, rows={row_summary}",
             ),
             StepNativePromotionCheck(
-                "native promotion applies one group decenter matching the transformed overlay pose",
+                "native promotion applies one group decenter matching the stored face-center axis anchor",
                 len(applied_decenter) == 3
-                and any(abs(value) > 1.0e-9 for value in applied_decenter)
+                and all(abs(applied_decenter[index] - expected_decenter[index]) < 1.0e-9 for index in range(3))
                 and all(
                     abs(float(row.desp_x) - applied_decenter[0]) < 1.0e-9
                     and abs(float(row.desp_y) - applied_decenter[1]) < 1.0e-9
                     and abs(float(row.desp_z) - applied_decenter[2]) < 1.0e-9
                     for row in native_rows
                 ),
-                f"applied_decenter={applied_decenter}, rows={row_summary}",
+                f"expected_decenter={expected_decenter}, applied_decenter={applied_decenter}, rows={row_summary}",
             ),
             StepNativePromotionCheck(
                 "promotion metadata records source path, materials, and reconstruction diagnostics",
@@ -144,6 +161,8 @@ def validate_step_native_promotion() -> list[StepNativePromotionCheck]:
                 and first_promotion.get("trace_ready") is True
                 and first_promotion.get("row_coordinates") == "native_reconstructed_prescription_with_open3d_pose"
                 and dict(first_promotion.get("applied_row_pose", {}) or {}).get("row_decenter_mm") == list(applied_decenter)
+                and dict(first_promotion.get("applied_row_pose", {}) or {}).get("pose_source") == "stored_step_axis_anchor_face_center"
+                and dict(first_promotion.get("applied_row_pose", {}) or {}).get("face_id") == "S001/F002"
                 and reconstruction.get("surface_count") == 3
                 and reconstruction.get("trace_ready") is True,
                 f"promotion={first_promotion}",

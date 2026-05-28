@@ -4129,6 +4129,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         delta = target[:3] - center[:3]
         try:
             self.editor.translate_step_overlay(label, delta[:3], refresh=False)
+            self.editor._record_step_overlay_axis_anchor(
+                label,
+                face_id=str(getattr(selection, "face_id", "") or "").strip(),
+                target_point=target[:3],
+                anchor_mode="surface_center",
+                axis_frame=axis_frame,
+                source="surface_center_axis_snap",
+            )
         except Exception as exc:
             self.status_var.set(f"Center Surface->Optical Axis failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"3D STEP surface-center axis snap failed: {exc}")
