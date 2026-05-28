@@ -1,0 +1,240 @@
+"""Face-index aware Open 3D edge and outline helpers."""
+
+from __future__ import annotations
+
+from collections import Counter
+from typing import Iterable
+
+import numpy as np
+
+try:  # PyVista is optional outside Open 3D.
+    import pyvista as pv
+except Exception:  # pragma: no cover - exercised in environments without VTK.
+    pv = None
+
+from KrakenOS.UI.services.open3d_face_pick import pick_face_from_ray
+
+
+FACE_INDEX_CELL_DATA = "kraken_step_face_index"
+
+
+def mesh_has_face_index(mesh) -> bool:
+    """Return true when a mesh carries analytic STEP face cell IDs."""
+    try:
+        values = np.asarray(pv.wrap(mesh).cell_data.get(FACE_INDEX_CELL_DATA, ()), dtype=int)
+        return bool(values.size == int(getattr(mesh, "n_cells", 0)) and np.any(values >= 0))
+    except Exception:
+        return False
+
+
+def _surface_triangles_and_face_index(mesh):
+    if pv is None or mesh is None:
+        return None, np.empty((0, 3, 3), dtype=float), np.empty((0,), dtype=int)
+    try:
+        surface = pv.wrap(mesh)
+        values = np.asarray(surface.cell_data.get(FACE_INDEX_CELL_DATA, ()), dtype=int)
+        faces = np.asarray(surface.faces, dtype=np.int64).reshape((-1, 4))
+        if faces.shape[0] != values.shape[0] or not np.all(faces[:, 0] == 3):
+            raise ValueError("not triangle surface")
+        points = np.asarray(surface.points, dtype=float)
+    except Exception:
+        try:
+            surface = pv.wrap(mesh).extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
+            values = np.asarray(surface.cell_data.get(FACE_INDEX_CELL_DATA, ()), dtype=int)
+            faces = np.asarray(surface.faces, dtype=np.int64).reshape((-1, 4))
+            points = np.asarray(surface.points, dtype=float)
+        except Exception:
+            return None, np.empty((0, 3, 3), dtype=float), np.empty((0,), dtype=int)
+    if faces.ndim != 2 or faces.shape[0] <= 0 or faces.shape[1] != 4 or not np.all(faces[:, 0] == 3):
+        return surface, np.empty((0, 3, 3), dtype=float), np.empty((0,), dtype=int)
+    if values.shape[0] != faces.shape[0]:
+        return surface, np.empty((0, 3, 3), dtype=float), np.empty((0,), dtype=int)
+    if points.ndim != 2 or points.shape[1] < 3:
+        return surface, np.empty((0, 3, 3), dtype=float), np.empty((0,), dtype=int)
+    triangles = points[faces[:, 1:4], :3]
+    if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or not np.all(np.isfinite(triangles)):
+        return surface, np.empty((0, 3, 3), dtype=float), np.empty((0,), dtype=int)
+    return surface, np.asarray(triangles, dtype=float), np.asarray(values, dtype=int)
+
+
+def triangle_array_and_face_index(mesh) -> tuple[np.ndarray, np.ndarray]:
+    """Return displayed triangles and analytic face index values."""
+    _surface, triangles, face_index = _surface_triangles_and_face_index(mesh)
+    return triangles, face_index
+
+
+def _point_key(point: np.ndarray) -> tuple[float, float, float]:
+    return tuple(float(value) for value in np.round(np.asarray(point, dtype=float).reshape(3), decimals=8))
+
+
+def _edge_key(a: np.ndarray, b: np.ndarray) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    first = _point_key(a)
+    second = _point_key(b)
+    return (first, second) if first <= second else (second, first)
+
+
+def _edge_records(triangles: np.ndarray, face_index: np.ndarray) -> dict[object, list[tuple[int, np.ndarray, np.ndarray]]]:
+    records: dict[object, list[tuple[int, np.ndarray, np.ndarray]]] = {}
+    for cell_id, (triangle, face_id) in enumerate(zip(triangles, face_index, strict=False)):
+        try:
+            face_id = int(face_id)
+        except Exception:
+            face_id = -1
+        if face_id < 0:
+            continue
+        for i0, i1 in ((0, 1), (1, 2), (2, 0)):
+            p0 = np.asarray(triangle[i0], dtype=float).reshape(3)
+            p1 = np.asarray(triangle[i1], dtype=float).reshape(3)
+            records.setdefault(_edge_key(p0, p1), []).append((face_id, p0, p1))
+    return records
+
+
+def _line_polydata(edges: Iterable[tuple[np.ndarray, np.ndarray]]):
+    if pv is None:
+        return None
+    points: list[tuple[float, float, float]] = []
+    point_index: dict[tuple[float, float, float], int] = {}
+    lines: list[int] = []
+
+    def add_point(point: np.ndarray) -> int:
+        key = _point_key(point)
+        existing = point_index.get(key)
+        if existing is not None:
+            return existing
+        point_index[key] = len(points)
+        points.append(key)
+        return int(point_index[key])
+
+    for p0, p1 in edges:
+        i0 = add_point(p0)
+        i1 = add_point(p1)
+        if i0 == i1:
+            continue
+        lines.extend((2, i0, i1))
+    if not points or not lines:
+        return None
+    try:
+        return pv.PolyData(np.asarray(points, dtype=float), lines=np.asarray(lines, dtype=np.int64))
+    except Exception:
+        return None
+
+
+def face_boundary_edges_from_face_index(mesh, *, include_open_boundaries: bool = True):
+    """Return true analytic face boundaries from `kraken_step_face_index` data."""
+    _surface, triangles, face_index = _surface_triangles_and_face_index(mesh)
+    if triangles.size == 0 or face_index.size != triangles.shape[0] or not np.any(face_index >= 0):
+        return None
+    selected_edges: list[tuple[np.ndarray, np.ndarray]] = []
+    for records in _edge_records(triangles, face_index).values():
+        faces = {int(face_id) for face_id, _p0, _p1 in records if int(face_id) >= 0}
+        if len(faces) > 1 or (include_open_boundaries and len(records) == 1 and faces):
+            _face_id, p0, p1 = records[0]
+            selected_edges.append((p0, p1))
+    return _line_polydata(selected_edges)
+
+
+def display_feature_edges(mesh, *, feature_angle: float = 24.0, boundary_edges: bool = True):
+    """Return face-index boundaries when available, else geometric feature edges."""
+    if pv is None or mesh is None:
+        return None
+    face_edges = face_boundary_edges_from_face_index(mesh, include_open_boundaries=bool(boundary_edges))
+    if face_edges is not None and int(getattr(face_edges, "n_points", 0)) > 0:
+        return face_edges
+    try:
+        surface = pv.wrap(mesh).extract_surface(algorithm="dataset_surface").copy(deep=True)
+    except Exception:
+        try:
+            surface = pv.wrap(mesh).copy(deep=True)
+        except Exception:
+            return None
+    try:
+        surface = surface.clean(tolerance=1e-6, absolute=True)
+    except TypeError:
+        try:
+            surface = surface.clean(tolerance=1e-6)
+        except Exception:
+            pass
+    except Exception:
+        pass
+    try:
+        edges = surface.extract_feature_edges(
+            feature_angle=float(feature_angle),
+            boundary_edges=bool(boundary_edges),
+            feature_edges=True,
+            manifold_edges=False,
+        )
+    except Exception:
+        return None
+    try:
+        return edges if int(getattr(edges, "n_points", 0)) > 0 else None
+    except Exception:
+        return None
+
+
+def face_index_for_record(mesh, face: dict[str, object]) -> int | None:
+    """Resolve a normalized face record to its displayed analytic face index."""
+    _surface, _triangles, face_index = _surface_triangles_and_face_index(mesh)
+    if face_index.size == 0:
+        return None
+    indices: list[int] = []
+    for value in list(face.get("triangle_indices", face.get("cell_indices", ())) or ()):
+        try:
+            index = int(value)
+        except Exception:
+            continue
+        if 0 <= index < int(face_index.size) and int(face_index[index]) >= 0:
+            indices.append(int(face_index[index]))
+    if not indices:
+        return None
+    return int(Counter(indices).most_common(1)[0][0])
+
+
+def face_outline_from_face_index(mesh, target_face_index: int):
+    """Return only the selected analytic STEP face boundary."""
+    try:
+        target_face_index = int(target_face_index)
+    except Exception:
+        return None
+    _surface, triangles, face_index = _surface_triangles_and_face_index(mesh)
+    if triangles.size == 0 or face_index.size != triangles.shape[0]:
+        return None
+    selected_edges: list[tuple[np.ndarray, np.ndarray]] = []
+    for records in _edge_records(triangles, face_index).values():
+        selected_count = sum(1 for face_id, _p0, _p1 in records if int(face_id) == target_face_index)
+        if selected_count <= 0:
+            continue
+        if (
+            len(records) == 1
+            or selected_count < len(records)
+            or any(int(face_id) != target_face_index for face_id, _p0, _p1 in records)
+        ):
+            _face_id, p0, p1 = next(
+                (record for record in records if int(record[0]) == target_face_index),
+                records[0],
+            )
+            selected_edges.append((p0, p1))
+    return _line_polydata(selected_edges)
+
+
+def face_pick_from_display_mesh(editor, label: str, faces, origin, direction):
+    """Pick against the displayed analytic mesh before any STL fallback."""
+    try:
+        display_mesh = editor._transformed_imported_step_mesh_for_label(str(label).strip().lower())
+        triangles, face_index = triangle_array_and_face_index(display_mesh)
+        if (
+            triangles.ndim == 3
+            and triangles.shape[1:] == (3, 3)
+            and triangles.shape[0] > 0
+            and face_index.shape[0] == triangles.shape[0]
+        ):
+            return pick_face_from_ray(
+                faces,
+                triangles,
+                origin,
+                direction,
+                all_points=triangles.reshape((-1, 3)),
+                prefer_internal=True,
+            )
+    except Exception:
+        return None
+    return None

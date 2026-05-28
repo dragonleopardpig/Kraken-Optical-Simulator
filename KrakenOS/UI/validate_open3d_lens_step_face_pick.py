@@ -10,7 +10,17 @@ import numpy as np
 
 from KrakenOS.UI import cad_import_service
 from KrakenOS.UI.open3d_inspector import Kraken3DInspector
-from KrakenOS.UI.services import open3d_round_lens_pick, open3d_scene_refresh, open3d_step_overlay_refresh
+from KrakenOS.UI.services import (
+    open3d_face_index_edges,
+    open3d_round_lens_pick,
+    open3d_scene_refresh,
+    open3d_step_overlay_refresh,
+)
+from KrakenOS.UI.services.open3d_face_index_edges import (
+    face_boundary_edges_from_face_index,
+    face_outline_from_face_index,
+    triangle_array_and_face_index,
+)
 from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
 from KrakenOS.UI.services.step_overlay_import import StepOverlayImportService
 
@@ -72,6 +82,31 @@ def main() -> int:
                 if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
                     failures.append("Grouped lens face did not produce a clean outline.")
 
+    duplicated_points_mesh = pv.PolyData(
+        np.asarray(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ],
+            dtype=float,
+        ),
+        np.asarray([3, 0, 1, 2, 3, 3, 4, 5], dtype=np.int64),
+    )
+    duplicated_points_mesh.cell_data["kraken_step_face_index"] = np.asarray([0, 1], dtype=np.int32)
+    triangles, face_index = triangle_array_and_face_index(duplicated_points_mesh)
+    if triangles.shape != (2, 3, 3) or tuple(int(value) for value in face_index) != (0, 1):
+        failures.append("Face-index helper did not preserve duplicated analytic mesh triangle IDs.")
+    boundary = face_boundary_edges_from_face_index(duplicated_points_mesh, include_open_boundaries=False)
+    if boundary is None or int(getattr(boundary, "n_cells", 0)) != 1:
+        failures.append("Face-index edge extraction did not return only the true boundary between analytic faces.")
+    outline = face_outline_from_face_index(duplicated_points_mesh, 0)
+    if outline is None or int(getattr(outline, "n_cells", 0)) != 3:
+        failures.append("Face-index outline extraction did not outline the selected analytic face.")
+
     project_root = Path(__file__).resolve().parents[2]
     fixture_paths = (
         project_root / "attachment" / "Lens" / "Achromatic_Lenses" / "step_32323.stp",
@@ -119,6 +154,13 @@ def main() -> int:
         failures.append("Round lens-like STEP display picking must select exterior cap faces instead of interior tessellation patches.")
     if "_step_feature_pick_for_display_xy" not in inspector_source:
         failures.append("STEP face hover/click code must share the display-safe STEP feature picker.")
+    face_index_source = __import__("inspect").getsource(open3d_face_index_edges)
+    if "_display_feature_edges_mesh" not in inspector_source or "face_boundary_edges_from_face_index" not in face_index_source:
+        failures.append("Open 3D feature-edge drawing must prefer analytic face-index boundaries.")
+    if "face_outline_from_face_index" not in inspector_source:
+        failures.append("Open 3D STEP hover outlines must use displayed analytic face-index boundaries.")
+    if "face_pick_from_display_mesh" not in inspector_source or "triangle_array_and_face_index" not in face_index_source:
+        failures.append("Open 3D STEP ray picking must use displayed analytic face-index triangles before STL fallback.")
     if "camera.Azimuth(dx_f * degrees_per_pixel)" not in inspector_source or "camera.Elevation(-dy_f * degrees_per_pixel)" not in inspector_source:
         failures.append("Open 3D fixed left-drag camera rotation must use the restored screen-following sign convention.")
     refresh_source = __import__("inspect").getsource(open3d_step_overlay_refresh)

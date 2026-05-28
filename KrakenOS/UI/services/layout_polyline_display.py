@@ -425,6 +425,10 @@ class LayoutPolylineDisplayMixin:
                     document = self._load_step_analytic_document(source_path)
                     mesh = self._mesh_from_step_analytic_document(document)
                     if mesh is not None and int(getattr(mesh, "n_points", 0)) > 0:
+                        try:
+                            _cached_cad_mesh_path(source_path).unlink(missing_ok=True)
+                        except Exception:
+                            pass
                         self._external_cad_mesh_cache[cache_key] = mesh.copy(deep=True)
                         open3d_timing_event(
                             "load_step_mesh_analytic_cached",

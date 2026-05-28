@@ -268,6 +268,8 @@ def _candidate_faces(
         triangles = _triangles_for_face(document, face)
         points = _unique_points(triangles)
         if points.shape[0] < 3:
+            if face.interior_duplicate:
+                continue
             diagnostics.append(
                 StepNativeDiagnostic(
                     "warning",
@@ -658,4 +660,3 @@ def reconstruct_step_native_surfaces(
         glass_sequence=glass_sequence,
         asphere_terms=asphere_terms,
     )
-

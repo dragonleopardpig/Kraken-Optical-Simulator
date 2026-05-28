@@ -122,9 +122,6 @@ def step_feature_pick_for_display_xy(
     label = str(label or "").strip().lower()
     if not label:
         return None
-    round_lens_pick = round_lens_feature_for_display_xy(inspector, label, display_xy)
-    if round_lens_pick is not None:
-        return round_lens_pick
     through_pick = inspector._coarse_step_face_ray_pick_for_display_xy(label, display_xy)
     if through_pick is not None:
         return {
@@ -136,6 +133,9 @@ def step_feature_pick_for_display_xy(
             "face_id": str(through_pick.face.get("face_id", "") or "").strip(),
             "through_pick": through_pick,
         }
+    round_lens_pick = round_lens_feature_for_display_xy(inspector, label, display_xy)
+    if round_lens_pick is not None:
+        return round_lens_pick
     feature = inspector._picked_feature_info_cached(
         actor,
         inspector._picker,

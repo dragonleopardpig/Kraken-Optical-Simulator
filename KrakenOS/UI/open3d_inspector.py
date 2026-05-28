@@ -27,6 +27,12 @@ from KrakenOS.UI.services.cad_scene_cache import CadSceneCache
 from KrakenOS.UI.services.open3d_carry_grip import Open3DCarryGripService
 from KrakenOS.UI.services.open3d_debug_tools import Open3DDebugToolsMixin
 from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
+from KrakenOS.UI.services.open3d_face_index_edges import (
+    display_feature_edges as _display_feature_edges_mesh,
+    face_pick_from_display_mesh,
+    face_index_for_record,
+    face_outline_from_face_index,
+)
 from KrakenOS.UI.services.open3d_face_pick import FaceRayPick, pick_face_from_ray
 from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
 from KrakenOS.UI.services.open3d_live_refresh import DEFAULT_LIVE_REFRESH_DELAY_MS, Open3DLiveRefreshService
@@ -7000,39 +7006,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
     @staticmethod
     def _display_feature_edges(mesh, *, feature_angle: float = 24.0, boundary_edges: bool = True):
-        if pv is None or mesh is None:
-            return None
-        try:
-            surface = pv.wrap(mesh).extract_surface(algorithm="dataset_surface").copy(deep=True)
-        except Exception:
-            try:
-                surface = pv.wrap(mesh).copy(deep=True)
-            except Exception:
-                return None
-        try:
-            surface = surface.clean(tolerance=1e-6, absolute=True)
-        except TypeError:
-            try:
-                surface = surface.clean(tolerance=1e-6)
-            except Exception:
-                pass
-        except Exception:
-            pass
-        try:
-            edges = surface.extract_feature_edges(
-                feature_angle=float(feature_angle),
-                boundary_edges=bool(boundary_edges),
-                feature_edges=True,
-                manifold_edges=False,
-            )
-        except Exception:
-            return None
-        try:
-            if int(getattr(edges, "n_points", 0)) > 0:
-                return edges
-        except Exception:
-            return None
-        return None
+        return _display_feature_edges_mesh(mesh, feature_angle=feature_angle, boundary_edges=boundary_edges)
 
     def _normalize_sampling_mode_label(self, sampling_mode: object) -> str | None:
         return Open3DTraceRefreshService.normalize_sampling_mode_label(sampling_mode)
@@ -8532,6 +8506,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if pv is None or not isinstance(face, dict):
             return None
         try:
+            display_mesh = self.editor._transformed_imported_step_mesh_for_label(str(label).strip().lower())
+            face_index = face_index_for_record(display_mesh, face)
+            if face_index is not None:
+                outline = face_outline_from_face_index(display_mesh, int(face_index))
+                if outline is not None and int(getattr(outline, "n_points", 0)) > 0:
+                    center = face.get("centroid_world", face.get("centroid", ()))
+                    return self._hover_overlay_for_feature(center, outline)
+        except Exception:
+            pass
+        try:
             metadata = self.editor._step_overlay_face_metadata(str(label).strip().lower())
             source_stl = Path(str(metadata.get("source_stl", "") or "")).expanduser()
             triangles = self._cad_scene_cache.triangle_array(source_stl, _read_stl_triangle_vertices).triangles
@@ -8617,11 +8601,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         origin, direction = ray
         try:
             metadata = self.editor._step_overlay_face_metadata(str(label).strip().lower())
+        except Exception:
+            return None
+        faces = [face for face in list(metadata.get("faces", []) or []) if isinstance(face, dict)]
+        pick = face_pick_from_display_mesh(self.editor, label, faces, origin, direction)
+        if pick is not None:
+            return pick
+        try:
             source_stl = Path(str(metadata.get("source_stl", "") or "")).expanduser()
             triangles = self._cad_scene_cache.triangle_array(source_stl, _read_stl_triangle_vertices).triangles
         except Exception:
             return None
-        faces = [face for face in list(metadata.get("faces", []) or []) if isinstance(face, dict)]
         return pick_face_from_ray(
             faces,
             triangles,
@@ -8683,9 +8673,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         Axis-alignment selection should fall back to a smooth connected display
         region for those cases instead of highlighting one little triangle.
         """
-        if self._step_label_is_round_lens_like(label):
-            return None
         pick = self._step_face_ray_pick_for_display_xy(label, display_xy)
+        if self._step_label_is_round_lens_like(label):
+            return None if self._step_face_ray_pick_is_tessellation_patch(label, pick) else pick
         if self._step_face_ray_pick_is_tessellation_patch(label, pick):
             return None
         return pick
