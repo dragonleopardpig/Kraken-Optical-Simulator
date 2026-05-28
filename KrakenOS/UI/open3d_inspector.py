@@ -4895,7 +4895,6 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 "points": np.asarray(((0.0, 0.0, z0), (0.0, 0.0, z1)), dtype=float),
             }
         ]
-        scene_has_off_axis = bool(getattr(scene_bundle, "has_off_axis", False))
         allow_traced_axis_guides = bool(getattr(scene_bundle, "has_off_axis", False)) or bool(
             list(getattr(scene_bundle, "optical_volumes", []) or [])
         ) or bool(list(getattr(scene_bundle, "boundary_faces", []) or []))
@@ -4970,8 +4969,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     for event in list(getattr(path, "events", []) or [])
                 )
             ]
-            if not scene_has_off_axis:
-                physical_paths = [path for path in physical_paths if _path_has_non_refractive_steering(path)]
+            physical_paths = [path for path in physical_paths if _path_has_non_refractive_steering(path)]
             if physical_paths:
                 chief = min(physical_paths, key=_path_score)
                 records.extend(_dotted_axis_records_from_ray_path(chief, bounds))

@@ -129,8 +129,22 @@ def main() -> int:
     traced_off_axis = [
         record for record in off_axis_records if str(record.get("axis_kind", "") or "") == "traced_chief_ray_segment"
     ]
-    if len(off_axis_records) <= 1 or not traced_off_axis:
-        raise AssertionError(f"Off-axis scenes should keep traced axis guides, got {off_axis_records!r}")
+    if len(off_axis_records) != 1 or traced_off_axis:
+        raise AssertionError(
+            "Off-axis refractive ray spread alone should not create extra optical-axis guides, "
+            f"got {off_axis_records!r}"
+        )
+
+    off_axis_folded_bundle = SceneBundle(
+        ray_paths=[_folded_path()],
+        has_off_axis=True,
+    )
+    off_axis_folded_records = _records_for(off_axis_folded_bundle)
+    traced_off_axis_folded = [
+        record for record in off_axis_folded_records if str(record.get("axis_kind", "") or "") == "traced_chief_ray_segment"
+    ]
+    if len(off_axis_folded_records) <= 1 or not traced_off_axis_folded:
+        raise AssertionError(f"Off-axis folded scenes should keep traced axis guides, got {off_axis_folded_records!r}")
 
     folded_volume_bundle = SceneBundle(
         ray_paths=[_folded_path()],
