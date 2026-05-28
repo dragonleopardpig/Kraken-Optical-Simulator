@@ -10,7 +10,7 @@ from KrakenOS.UI.layout_editor import (
     ATMOS_PLOT_MODE_DEFAULT,
     BRANCH_FIELD_PROPAGATION_MM_DEFAULT,
     DETECTOR_BINS_DEFAULT,
-    PROJECTION_MODE_AXIS_FIELD,
+    PROJECTION_MODE_FULL_3D,
     PUPIL_PATTERN_DEFAULT,
     SOURCE_ANGULAR_WEIGHT_DEFAULT,
     SOURCE_MODEL_DEFAULT,
@@ -20,7 +20,6 @@ from KrakenOS.UI.layout_editor import (
     KrakenLayoutEditor,
     SurfaceRow,
     _normalize_metal_catalog_specs,
-    normalize_projection_display_mode,
 )
 from KrakenOS.UI.layout_plot_controller import project_scene_bundle
 from KrakenOS.UI.scene_projector import (
@@ -95,11 +94,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.show_path_labels_var = _Var(editor.show_path_labels)
     editor.ray_display_mode_var = _Var(editor._normalize_ray_display_mode(settings.get("ray_display_mode", "All rays")))
     editor.display_orientation_var = _Var(normalize_projection_plane(str(settings.get("display_orientation", "YZ"))))
-    editor.projection_display_mode_var = _Var(
-        normalize_projection_display_mode(
-            settings.get("projection_display_mode", settings.get("projection_mode", PROJECTION_MODE_AXIS_FIELD))
-        )
-    )
+    editor.projection_display_mode_var = _Var(PROJECTION_MODE_FULL_3D)
     editor.object_mode_var = _Var(str(settings.get("object_mode", "Finite")))
     editor.wavelength_var = _Var(str(settings.get("wavelength", "0.55")))
     editor.ray_count_var = _Var(str(settings.get("ray_count", "5")))

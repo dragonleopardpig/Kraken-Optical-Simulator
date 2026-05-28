@@ -346,7 +346,7 @@ class MainWindowBuilder:
 
         le = _layout_module()
         self.display_orientation_var = tk.StringVar(value="YZ")
-        self.projection_display_mode_var = tk.StringVar(value=le.PROJECTION_MODE_AXIS_FIELD)
+        self.projection_display_mode_var = tk.StringVar(value=le.PROJECTION_MODE_FULL_3D)
         self.atmosphere_hidden_panel = ttk.Frame(control_stack)
         self._build_atmosphere_panel(self.atmosphere_hidden_panel)
 
@@ -560,32 +560,7 @@ class MainWindowBuilder:
             self.display_orientation_menu,
             "Choose the primary 2D projection plane for the editable layout plot",
         )
-        ttk.Label(plot_toolbar_main, text="Projection").pack(side="left", padx=(10, 2))
-        projection_buttons = (
-            (
-                "Axis field",
-                le.PROJECTION_MODE_AXIS_FIELD,
-                "Show only the field family that belongs to the selected YZ/XZ plane",
-            ),
-            (
-                "Full 3D",
-                le.PROJECTION_MODE_FULL_3D,
-                "Show the full projected 3D ray bundle collapsed onto the selected plane",
-            ),
-        )
         self.projection_display_mode_buttons = []
-        for index, (text, mode, tooltip) in enumerate(projection_buttons):
-            button = pack_commit_radiobutton(
-                plot_toolbar_main,
-                text=text,
-                variable=self.projection_display_mode_var,
-                value=mode,
-                command=self._on_projection_display_mode_changed,
-                on_focus_in=self._begin_history_capture,
-                padx=((6 if index == 0 else 4), 0),
-            )
-            self._add_widget_tooltip(button, tooltip)
-            self.projection_display_mode_buttons.append(button)
         self._main_analysis_toolbar_panel().build(plot_toolbar_analysis)
         cardinal_button = pack_commit_checkbutton(
             plot_toolbar_main,

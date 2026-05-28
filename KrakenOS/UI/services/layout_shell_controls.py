@@ -785,12 +785,10 @@ class LayoutShellControlsMixin:
     def _on_projection_display_mode_changed(self, _event=None) -> None:
         self._commit_history_capture()
         if hasattr(self, "projection_display_mode_var"):
-            self.projection_display_mode_var.set(
-                normalize_projection_display_mode(self.projection_display_mode_var.get())
-            )
+            self.projection_display_mode_var.set(PROJECTION_MODE_FULL_3D)
         self._sync_trace_state_badge()
         if hasattr(self, "status_var"):
-            self.status_var.set(f"2D projection set to {self._current_projection_display_mode()}. Refreshing layout.")
+            self.status_var.set("2D projection is always Full 3D. Refreshing layout.")
         try:
             self.after_idle(self.refresh_plot)
         except Exception:

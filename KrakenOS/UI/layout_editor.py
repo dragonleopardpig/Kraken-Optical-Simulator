@@ -488,15 +488,7 @@ def _preferred_existing_dir(*candidates: Path | str) -> Path:
 
 
 def normalize_projection_display_mode(value: object) -> str:
-    text = str(value or "").strip()
-    key = text.lower().replace("-", " ").replace("_", " ")
-    if key in {"full", "full 3d", "full 3 d", "full projection", "full 3d projection", "all fields"}:
-        return PROJECTION_MODE_FULL_3D
-    if key in {"axis", "axis field", "axis fields", "section", "plane", "field plane"}:
-        return PROJECTION_MODE_AXIS_FIELD
-    if text in PROJECTION_MODE_VALUES:
-        return text
-    return PROJECTION_MODE_AXIS_FIELD
+    return PROJECTION_MODE_FULL_3D
 
 
 # Backward-compatible symbol names: the user-facing project scratch/import
@@ -579,9 +571,9 @@ STEP_CARRY_GRID_FREE = "Free"
 STEP_CARRY_GRID_CHOICES = (
     STEP_CARRY_GRID_FREE,
 )
-PROJECTION_MODE_AXIS_FIELD = "Axis field"
 PROJECTION_MODE_FULL_3D = "Full 3D"
-PROJECTION_MODE_VALUES = (PROJECTION_MODE_AXIS_FIELD, PROJECTION_MODE_FULL_3D)
+PROJECTION_MODE_AXIS_FIELD = PROJECTION_MODE_FULL_3D
+PROJECTION_MODE_VALUES = (PROJECTION_MODE_FULL_3D,)
 INSERTABLE_COMMON_LAYOUT_TITLES = {
     "Single Lens",
     "Doublet Lens",
@@ -1425,7 +1417,7 @@ def _zemax_glass_from_tokens(tokens: list[str]) -> tuple[str, str | None]:
 
 def _zemax_import_defaults() -> ZemaxImportDefaults:
     return ZemaxImportDefaults(
-        projection_display_mode=PROJECTION_MODE_AXIS_FIELD,
+        projection_display_mode=PROJECTION_MODE_FULL_3D,
         source_model=SOURCE_MODEL_DEFAULT,
         pupil_pattern=PUPIL_PATTERN_DEFAULT,
         gaussian_input_mode=GAUSSIAN_INPUT_MODE_DEFAULT,

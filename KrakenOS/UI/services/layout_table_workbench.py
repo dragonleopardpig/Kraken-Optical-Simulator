@@ -389,7 +389,7 @@ class LayoutTableWorkbenchMixin:
         self._set_optional_var("camera_model_var", CAMERA_NONE_LABEL)
         self._set_optional_var("external_camera_var", "None")
         self._set_optional_var("camera_overlay_mode_var", "Off")
-        self._set_optional_var("projection_display_mode_var", PROJECTION_MODE_AXIS_FIELD)
+        self._set_optional_var("projection_display_mode_var", PROJECTION_MODE_FULL_3D)
         self.layout_preview_mode = "none"
         self._set_optional_var("layout_preview_mode_var", "none")
         self.selected_analysis_modes = []
@@ -2829,7 +2829,7 @@ class LayoutTableWorkbenchMixin:
         if not hasattr(self, "display_orientation_var"):
             return
         if hasattr(self, "projection_display_mode_var"):
-            self.projection_display_mode_var.set(PROJECTION_MODE_AXIS_FIELD)
+            self.projection_display_mode_var.set(PROJECTION_MODE_FULL_3D)
         if name == FOLDED_STARTER_LAYOUT_TITLE:
             self.display_orientation_var.set("YZ")
             self.object_mode_var.set("Finite")

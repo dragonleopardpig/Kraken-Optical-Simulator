@@ -33,21 +33,14 @@ class LayoutSceneProjectionMixin:
         return "x" if self._current_display_orientation() == "XZ" else "y"
 
     def _current_projection_display_mode(self) -> str:
-        value = getattr(self, "projection_display_mode_var", None)
-        if value is None:
-            return PROJECTION_MODE_AXIS_FIELD
-        mode = value.get() if hasattr(value, "get") else str(value)
-        return normalize_projection_display_mode(mode)
+        return PROJECTION_MODE_FULL_3D
 
     @staticmethod
     def _scene_bundle_launch_sampling_mode(bundle: SceneBundle | None) -> str:
         return scene_bundle_launch_sampling_mode(bundle)
 
     def _should_filter_projection_axis_fields(self, bundle: SceneBundle | None) -> bool:
-        return (
-            self._current_projection_display_mode() == PROJECTION_MODE_AXIS_FIELD
-            and self._scene_bundle_launch_sampling_mode(bundle) == "world_envelope"
-        )
+        return False
 
     def _should_filter_projection_slice(self, bundle: SceneBundle | None) -> bool:
         return self._scene_bundle_launch_sampling_mode(bundle) == "world_sections"

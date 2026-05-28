@@ -3,7 +3,7 @@ TITLE = "Machine Vision 150Mm Measured"
 
 SETTINGS = {'object_mode': 'Finite',
  'display_orientation': 'YZ',
- 'projection_display_mode': 'Axis field',
+ 'projection_display_mode': 'Full 3D',
  'wavelength': '0.55',
  'ray_count': '31',
  'ray_height_factor': '0.8',

@@ -149,14 +149,14 @@ def validate_infinity_field_launch() -> list[InfinityFieldLaunchCheck]:
             ),
         ),
         InfinityFieldLaunchCheck(
-            "canonical YZ projection displays the YZ field family without geometric slice loss",
-            axis_projection_filter_active
+            "canonical YZ projection displays every displayable full-3D ray",
+            not axis_projection_filter_active
             and not projection_slice_filter_active
-            and 0 < projected_world_count < displayable_world_count,
+            and projected_world_count == displayable_world_count,
             (
                 f"mode={editor._scene_bundle_launch_sampling_mode(world_bundle)}, "
                 f"projected={projected_world_count}, displayable={displayable_world_count}, "
-                f"traced={traced_world_count}"
+                f"traced={traced_world_count}, axis_filter={axis_projection_filter_active}"
             ),
         ),
         InfinityFieldLaunchCheck(
