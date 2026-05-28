@@ -37,6 +37,9 @@ class _Editor:
     def _invalidate_preview_scene_trace(self) -> None:
         self.invalidated = True
 
+    def _clear_step_overlay_axis_anchor(self, _label: str) -> None:
+        pass
+
     def _open3d_trace_refresh_service(self):
         editor = self
 

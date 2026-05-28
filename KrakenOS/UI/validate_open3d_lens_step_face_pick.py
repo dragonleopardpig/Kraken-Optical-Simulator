@@ -10,7 +10,7 @@ import numpy as np
 
 from KrakenOS.UI import cad_import_service
 from KrakenOS.UI.open3d_inspector import Kraken3DInspector
-from KrakenOS.UI.services import open3d_scene_refresh, open3d_step_overlay_refresh
+from KrakenOS.UI.services import open3d_round_lens_pick, open3d_scene_refresh, open3d_step_overlay_refresh
 from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
 from KrakenOS.UI.services.step_overlay_import import StepOverlayImportService
 
@@ -75,7 +75,7 @@ def main() -> int:
     project_root = Path(__file__).resolve().parents[2]
     fixture_paths = (
         project_root / "attachment" / "Lens" / "Achromatic_Lenses" / "step_32323.stp",
-        project_root / "attachment" / "Lens" / "Aspherized_Achromatic_Lenses" / "step_49665.step",
+        project_root / "attachment" / "Lens" / "aspherized-achromatic-lenses" / "step_49665.step",
     )
     if shutil.which("gmsh") is None:
         print("Open 3D lens STEP face-pick validation: skipping vendor STEP conversion probe because gmsh is unavailable.")
@@ -114,6 +114,13 @@ def main() -> int:
         failures.append("Round lens-like STEP clicks must fall back directly to smooth display-region picking.")
     if "_round_lens_feature_for_cell" not in inspector_source or "_mesh_round_lens_axis" not in inspector_source:
         failures.append("Round lens-like STEP face grouping helpers are missing.")
+    round_lens_pick_source = __import__("inspect").getsource(open3d_round_lens_pick)
+    if "round_lens_feature_for_display_xy" not in round_lens_pick_source or "outer +axis face" not in round_lens_pick_source:
+        failures.append("Round lens-like STEP display picking must select exterior cap faces instead of interior tessellation patches.")
+    if "_step_feature_pick_for_display_xy" not in inspector_source:
+        failures.append("STEP face hover/click code must share the display-safe STEP feature picker.")
+    if "camera.Azimuth(dx_f * degrees_per_pixel)" not in inspector_source or "camera.Elevation(-dy_f * degrees_per_pixel)" not in inspector_source:
+        failures.append("Open 3D fixed left-drag camera rotation must use the restored screen-following sign convention.")
     refresh_source = __import__("inspect").getsource(open3d_step_overlay_refresh)
     if "boundary_edges=not round_lens_like" not in refresh_source:
         failures.append("Round lens-like STEP rendering must suppress tessellation patch-boundary edge overlays.")
@@ -122,9 +129,14 @@ def main() -> int:
         failures.append("Row-backed round lens-like optical solids must suppress tessellation patch-boundary edge overlays.")
     if "round_lens_like = bool(self._mesh_round_lens_axis(cad_mesh) is not None)" not in scene_refresh_source or "boundary_edges=not round_lens_like" not in scene_refresh_source:
         failures.append("Imported round lens-like STEP overlays must suppress tessellation patch-boundary edge overlays in full scene refreshes.")
+    interaction_class_source = __import__("inspect").getsource(Open3DInteractionService)
     interaction_source = __import__("inspect").getsource(Open3DInteractionService._on_mouse_move)
     if "carry_label = self._step_carry_label()" not in interaction_source or "target_label = str(carry_label)" not in interaction_source:
         failures.append("Carry-mode imported STEP hover must pick the active STEP face, not only rotation handles.")
+    if "_step_feature_pick_for_display_xy" not in interaction_source:
+        failures.append("Active imported STEP hover must use the display-safe STEP feature picker.")
+    if "_step_feature_pick_for_display_xy" not in interaction_class_source:
+        failures.append("Imported STEP click selection must use the display-safe STEP feature picker.")
     import_source = __import__("inspect").getsource(StepOverlayImportService.import_optical_step)
     if "_optical_prescription_sidecars" not in import_source or "STEP has no glass prescription" not in import_source:
         failures.append("Optical STEP import should warn when a sidecar prescription is needed for designed lens focus.")

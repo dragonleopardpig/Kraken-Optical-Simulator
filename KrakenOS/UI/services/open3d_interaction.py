@@ -205,18 +205,16 @@ class Open3DInteractionService:
                 except Exception:
                     cell_id = -1
                 step_label = str(step_label)
-                through_pick = self._coarse_step_face_ray_pick_for_display_xy(step_label, (x, y))
-                if through_pick is not None:
-                    feature = self._feature_from_face_ray_pick(
-                        through_pick,
-                        self._hover_overlay_for_step_face(step_label, through_pick.face),
-                    )
-                    surface_center = self._surface_center_from_face_ray_pick(through_pick)
-                    picked_face_id = str(through_pick.face.get("face_id", "") or "").strip()
-                else:
-                    feature = self._picked_feature_info_cached(actor, self._picker, actor_key=str(source_actor_key) if source_actor_key else None, cell_id=cell_id)
-                    surface_center = None
-                    picked_face_id = ""
+                feature_pick = self._step_feature_pick_for_display_xy(
+                    step_label,
+                    (x, y),
+                    actor=actor,
+                    actor_key=str(source_actor_key) if source_actor_key else None,
+                    cell_id=cell_id,
+                )
+                feature = feature_pick.get("feature") if feature_pick is not None else None
+                surface_center = feature_pick.get("surface_center") if feature_pick is not None else None
+                picked_face_id = str(feature_pick.get("face_id", "") if feature_pick is not None else "").strip()
                 if not self._remember_selected_step_feature(step_label, feature, surface_center_world=surface_center, face_id=picked_face_id):
                     self.status_var.set("Center Row->Optical Axis: click a planar imported STEP face or a KrakenOS surface row.")
                     self.render()
@@ -330,18 +328,16 @@ class Open3DInteractionService:
                 return
             requested_label = self.editor._cad_axis_pick_label
             if requested_label is None and not axis_pick_any:
-                through_pick = self._coarse_step_face_ray_pick_for_display_xy(str(step_label), (x, y))
-                if through_pick is not None:
-                    feature = self._feature_from_face_ray_pick(
-                        through_pick,
-                        self._hover_overlay_for_step_face(str(step_label), through_pick.face),
-                    )
-                    surface_center = self._surface_center_from_face_ray_pick(through_pick)
-                    picked_face_id = str(through_pick.face.get("face_id", "") or "").strip()
-                else:
-                    feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=step_cell_id)
-                    surface_center = None
-                    picked_face_id = ""
+                feature_pick = self._step_feature_pick_for_display_xy(
+                    str(step_label),
+                    (x, y),
+                    actor=actor,
+                    actor_key=actor_key,
+                    cell_id=step_cell_id,
+                )
+                feature = feature_pick.get("feature") if feature_pick is not None else None
+                surface_center = feature_pick.get("surface_center") if feature_pick is not None else None
+                picked_face_id = str(feature_pick.get("face_id", "") if feature_pick is not None else "").strip()
                 remembered = self._remember_selected_step_feature(step_label, feature, surface_center_world=surface_center, face_id=picked_face_id)
                 self.editor.select_step_component(step_label)
                 self._set_step_highlight(step_label)
@@ -357,16 +353,15 @@ class Open3DInteractionService:
             if requested_label is not None and requested_label != step_label:
                 self.status_var.set(f"CAD STEP picked: {step_label}. Center mode is armed for {str(requested_label).upper()}.")
                 return
-            through_pick = self._coarse_step_face_ray_pick_for_display_xy(str(step_label), (x, y))
-            if through_pick is not None:
-                feature = self._feature_from_face_ray_pick(
-                    through_pick,
-                    self._hover_overlay_for_step_face(str(step_label), through_pick.face),
-                )
-                picked_face_id = str(through_pick.face.get("face_id", "") or "").strip()
-            else:
-                feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=step_cell_id)
-                picked_face_id = ""
+            feature_pick = self._step_feature_pick_for_display_xy(
+                str(step_label),
+                (x, y),
+                actor=actor,
+                actor_key=actor_key,
+                cell_id=step_cell_id,
+            )
+            feature = feature_pick.get("feature") if feature_pick is not None else None
+            picked_face_id = str(feature_pick.get("face_id", "") if feature_pick is not None else "").strip()
             if feature is None:
                 try:
                     center = np.asarray(self._picker.GetPickPosition(), dtype=float)
@@ -380,7 +375,7 @@ class Open3DInteractionService:
             self._remember_selected_step_feature(
                 step_label,
                 feature,
-                surface_center_world=self._surface_center_from_face_ray_pick(through_pick) if through_pick is not None else None,
+                surface_center_world=feature_pick.get("surface_center") if feature_pick is not None else None,
                 face_id=picked_face_id,
             )
             self._set_step_hover_outline(None, None)
@@ -692,7 +687,17 @@ class Open3DInteractionService:
                     hover_key = (actor_key, int(cell_id))
                     outline = None
                     if hover_key != self._hover_step_cell_key:
-                        feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
+                        feature_pick = self._step_feature_pick_for_display_xy(
+                            str(step_label),
+                            (x, y),
+                            actor=actor,
+                            actor_key=actor_key,
+                            cell_id=cell_id,
+                        )
+                        feature = feature_pick.get("feature") if feature_pick is not None else None
+                        picked_face_id = str(feature_pick.get("face_id", "") if feature_pick is not None else "").strip()
+                        if picked_face_id:
+                            hover_key = (actor_key, "display", picked_face_id)
                         outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
                     self._set_step_hover_outline(outline, hover_key)
                     if self._picked_row_index is not None:
@@ -899,18 +904,25 @@ class Open3DInteractionService:
                 cell_id = int(self._picker.GetCellId())
             except Exception:
                 cell_id = -1
-            through_pick = self._coarse_step_face_ray_pick_for_display_xy(str(step_label), (x, y))
+            feature_pick = self._step_feature_pick_for_display_xy(
+                str(step_label),
+                (x, y),
+                actor=actor,
+                actor_key=actor_key,
+                cell_id=cell_id,
+            )
             outline = None
-            if through_pick is not None:
-                face = through_pick.face
-                face_id = str(face.get("face_id", "") or "").strip() or "face"
+            through_pick = feature_pick.get("through_pick") if feature_pick is not None else None
+            if feature_pick is not None and str(feature_pick.get("face_id", "") or "").strip():
+                face_id = str(feature_pick.get("face_id", "") or "").strip()
                 hover_key = (actor_key, "ray", face_id)
                 if hover_key != self._hover_step_cell_key:
-                    outline = self._hover_overlay_for_step_face(str(step_label), face)
+                    feature = feature_pick.get("feature")
+                    outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
             else:
                 hover_key = (actor_key, cell_id)
                 if hover_key != self._hover_step_cell_key:
-                    feature = self._picked_feature_info_cached(actor, self._picker, actor_key=actor_key, cell_id=cell_id)
+                    feature = feature_pick.get("feature") if feature_pick is not None else None
                     outline = self._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
             self._set_step_hover_outline(outline, hover_key)
             self._set_axis_pick_cursor(True)

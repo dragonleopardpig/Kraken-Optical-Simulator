@@ -1932,9 +1932,9 @@ def main() -> int:
             and "PickableOff()" in center_axis_source_pick
             and "PickableOn()" in center_axis_source_pick
             and "\"step_label\"" in center_axis_source_pick
-            and "_picked_feature_info_cached(actor, self._picker" in pick
+            and "_step_feature_pick_for_display_xy" in pick
             and "start_step_normal_axis_pick(step_label)" in pick
-            and "_picked_feature_info_cached(actor, self._picker" in mouse_move
+            and "_step_feature_pick_for_display_xy" in mouse_move
             and "self._set_row_highlight(int(row_index))" in mouse_move
             and "return True" in center_row_axis_visibility
             and "dotted_global_guide" in optical_axis_records

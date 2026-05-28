@@ -186,7 +186,7 @@ def main() -> int:
             "STEP hover selection groups smooth CAD regions instead of raw mesh facets",
             "def _smooth_component_for_cell" in inspector_source
             and "def _coarse_step_face_ray_pick_for_display_xy" in inspector_source
-            and "_coarse_step_face_ray_pick_for_display_xy" in interaction_source
+            and "_step_feature_pick_for_display_xy" in interaction_source
             and "feature_edges=False" in inspector_source
             and "_outline_for_cells(data, smooth_component" in inspector_source,
         ),

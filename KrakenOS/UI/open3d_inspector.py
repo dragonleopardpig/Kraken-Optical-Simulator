@@ -31,6 +31,7 @@ from KrakenOS.UI.services.open3d_face_pick import FaceRayPick, pick_face_from_ra
 from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
 from KrakenOS.UI.services.open3d_live_refresh import DEFAULT_LIVE_REFRESH_DELAY_MS, Open3DLiveRefreshService
 from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
+from KrakenOS.UI.services.open3d_round_lens_pick import step_feature_pick_for_display_xy
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_step_overlay_refresh import Open3DStepOverlayRefreshService
 from KrakenOS.UI.services.open3d_step_rotation_handles import Open3DStepRotationHandleService
@@ -2560,8 +2561,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         try:
             focal = tuple(float(value) for value in camera.GetFocalPoint())
             camera.SetFocalPoint(*focal)
-            camera.Azimuth(-dx_f * degrees_per_pixel)
-            camera.Elevation(dy_f * degrees_per_pixel)
+            camera.Azimuth(dx_f * degrees_per_pixel)
+            camera.Elevation(-dy_f * degrees_per_pixel)
             camera.SetFocalPoint(*focal)
             camera.OrthogonalizeViewUp()
             self._reset_camera_clipping_range_for_scene()
@@ -8655,6 +8656,24 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if actor is not None and bool(getattr(actor, "_kraken_round_lens_like_step_body", False)):
                 return True
         return False
+
+    def _step_feature_pick_for_display_xy(
+        self,
+        label: str,
+        display_xy,
+        *,
+        actor=None,
+        actor_key: str | None = None,
+        cell_id: int = -1,
+    ) -> dict[str, object] | None:
+        return step_feature_pick_for_display_xy(
+            self,
+            label,
+            display_xy,
+            actor=actor,
+            actor_key=actor_key,
+            cell_id=int(cell_id),
+        )
 
     def _coarse_step_face_ray_pick_for_display_xy(self, label: str, display_xy) -> FaceRayPick | None:
         """Return a face pick unless STEP->STL degraded it to a tiny facet.
