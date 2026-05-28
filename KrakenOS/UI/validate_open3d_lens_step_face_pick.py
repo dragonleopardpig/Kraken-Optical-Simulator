@@ -114,7 +114,7 @@ def main() -> int:
     project_root = Path(__file__).resolve().parents[2]
     fixture_paths = (
         project_root / "attachment" / "Lens" / "Achromatic_Lenses" / "step_32323.stp",
-        project_root / "attachment" / "Lens" / "aspherized-achromatic-lenses" / "step_49665.step",
+        project_root / "attachment" / "Lens" / "Aspherized_Achromatic_Lenses" / "step_49665.step",
     )
     if shutil.which("gmsh") is None:
         print("Open 3D lens STEP face-pick validation: skipping vendor STEP conversion probe because gmsh is unavailable.")

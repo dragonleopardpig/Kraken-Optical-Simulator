@@ -703,12 +703,13 @@ class Open3DInteractionService:
                     if self._picked_row_index is not None:
                         self._set_row_highlight(None)
                     display = self.editor._step_overlay_display_label(str(step_label)).upper()
+                    face_text = f" {picked_face_id}" if picked_face_id else ""
                     self._update_hover_status(
-                        f"{display} STEP face\nDefault after promotion: Uncoated",
+                        f"{display} STEP{face_text} face\nDefault after promotion: Uncoated",
                         display_xy=(x, y) if "x" in locals() and "y" in locals() else None,
                         render=True,
                     )
-                    self.status_var.set(f"Center Row->Optical Axis: click this {display} STEP face, then click Optical Axis.")
+                    self.status_var.set(f"Center Row->Optical Axis: click this {display} STEP{face_text} face, then click Optical Axis.")
                     return
                 self._set_step_hover_outline(None, None)
                 self._update_hover_status("", render=False)

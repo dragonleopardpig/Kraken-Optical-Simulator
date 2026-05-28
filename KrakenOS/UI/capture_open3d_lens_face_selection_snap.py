@@ -30,7 +30,7 @@ from KrakenOS.UI.capture_open3d_step_workflow_screenshots import (
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor, _short_error_message
 
 
-LENS_STEP = PROJECT_ROOT / "attachment" / "Lens" / "aspherized-achromatic-lenses" / "step_49665.step"
+LENS_STEP = PROJECT_ROOT / "attachment" / "Lens" / "Aspherized_Achromatic_Lenses" / "step_49665.step"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "attachment" / "open3d_lens_face_selection_snap"
 
 
@@ -107,7 +107,6 @@ def _pick_lens_face(inspector: Kraken3DInspector, face: dict[str, object]) -> di
     inspector._set_step_hover_outline(outline, ("capture", "optical", face_id))
     return {
         "display_xy": [int(x), int(y)],
-        "actor_key": actor_key,
         "cell_id": int(cell_id),
         "face_id": face_id,
         "surface_center": [float(value) for value in np.asarray(feature_pick.get("surface_center"), dtype=float).reshape(-1)[:3]],

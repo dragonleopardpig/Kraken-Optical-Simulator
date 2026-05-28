@@ -1,8 +1,7 @@
 {
   "axis_count_after_snap": 1,
-  "lens_step": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/aspherized-achromatic-lenses/step_49665.step",
+  "lens_step": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/Aspherized_Achromatic_Lenses/step_49665.step",
   "pick": {
-    "actor_key": "Addr=0x5693749cd2c0",
     "cell_id": 136,
     "display_xy": [
       800,

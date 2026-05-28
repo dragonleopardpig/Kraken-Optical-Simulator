@@ -122,17 +122,21 @@ display raykeeper, optical-solid mesh face metadata is cached inside the built
    selected mesh, intersection-normal lookup reuses the chooser's selected mesh
    ray result for the same segment, Open 3D suppresses traced optical-axis guides
    for segments that remain on the global axial direction while keeping genuinely
-   bent post-surface axes for prism cascades, non-sequential trace timing now
+   bent post-surface axes for prism cascades (blank axial scenes keep only the
+   global guide; saved penta cascades intentionally show downstream exit-axis
+   guides), non-sequential trace timing now
    includes per-bundle system-trace, RayKeeper-push, and mesh
 ray-intersection duration summaries, repeated non-sequential mesh chooser calls
 skip PyVista normal-extraction compatibility checks once a mesh has been
 prepared, and
 `python -m KrakenOS.UI.diagnose_open3d_hover_latency` reports the cache and
 passive-hover contract for large vendor STEP-derived STL files. Round-lens
-STEP hover/click selection now bypasses cemented/internal tessellation patches
-and selects the visible exterior cap silhouette from the displayed body before
-   falling back to raw triangle features; grouped analytic lens face picking is
-   also checked through an actual VTK actor/cell screenshot replay at
+STEP hover/click/right-click selection now resolves grouped analytic lens-cap
+records before raw VTK cells, so transparent achromats do not select side/rim
+tessellation when the cursor is over an optical cap; the hover tooltip includes
+the selected face ID before falling back to raw triangle features. Grouped
+analytic lens face picking is also checked through an actual VTK actor/cell
+screenshot replay at
    `attachment/open3d_lens_face_selection_snap/`; Open 3D left-drag camera
    rotation is contract-checked with the restored screen-following sign
    convention.

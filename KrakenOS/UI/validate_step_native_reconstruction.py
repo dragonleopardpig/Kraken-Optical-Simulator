@@ -12,7 +12,7 @@ from KrakenOS.UI.services.step_native_reconstruction import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-ASPHERIZED_ACHROMAT_STEP = PROJECT_ROOT / "attachment" / "Lens" / "aspherized-achromatic-lenses" / "step_49665.step"
+ASPHERIZED_ACHROMAT_STEP = PROJECT_ROOT / "attachment" / "Lens" / "Aspherized_Achromatic_Lenses" / "step_49665.step"
 
 
 @dataclass(frozen=True)

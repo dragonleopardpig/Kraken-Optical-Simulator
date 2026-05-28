@@ -6,7 +6,101 @@ from typing import Any
 
 import numpy as np
 
-from KrakenOS.UI.services.open3d_face_index_edges import face_pick_from_display_cell
+from KrakenOS.UI.services.open3d_face_index_edges import (
+    face_indices_for_record,
+    face_pick_from_display_cell,
+    triangles_for_face_indices,
+)
+from KrakenOS.UI.services.open3d_face_pick import FaceRayPick
+
+
+def _metadata_round_lens_cap_pick(inspector: Any, label: str, display_xy):
+    """Resolve a round optical STEP click to an analytic cap face record.
+
+    Transparent vendor achromats let the user see optical caps through the
+    body. VTK still picks the nearest triangle, which is often a side wall or
+    rim patch. Prefer the grouped analytic cap records when the display ray
+    intersects their projected clear aperture.
+    """
+    if not inspector._step_label_is_round_lens_like(label):
+        return None
+    ray = inspector._display_pick_ray(display_xy)
+    if ray is None:
+        return None
+    ray_origin, ray_direction = ray
+    try:
+        metadata = inspector.editor._step_overlay_face_metadata(label)
+        faces = [face for face in list(metadata.get("faces", []) or []) if isinstance(face, dict)]
+        display_mesh = inspector.editor._transformed_imported_step_mesh_for_label(label)
+    except Exception:
+        return None
+
+    best: tuple[float, float, FaceRayPick] | None = None
+    for face in faces:
+        if not str(face.get("assignment_source", "") or "").startswith("step_analytic_axisymmetric_group"):
+            continue
+        try:
+            center = np.asarray(face.get("centroid_world", face.get("centroid", ())), dtype=float).reshape(-1)[:3]
+            normal = np.asarray(face.get("normal_world", face.get("normal", ())), dtype=float).reshape(-1)[:3]
+        except Exception:
+            continue
+        if center.size < 3 or normal.size < 3:
+            continue
+        if not (np.all(np.isfinite(center[:3])) and np.all(np.isfinite(normal[:3]))):
+            continue
+        normal_norm = float(np.linalg.norm(normal[:3]))
+        if not np.isfinite(normal_norm) or normal_norm <= 1.0e-12:
+            continue
+        normal = normal[:3] / normal_norm
+        denom = float(np.dot(ray_direction[:3], normal[:3]))
+        if not np.isfinite(denom) or abs(denom) <= 1.0e-10:
+            continue
+        distance = float(np.dot(center[:3] - ray_origin[:3], normal[:3]) / denom)
+        if not np.isfinite(distance) or distance < -1.0e-5:
+            continue
+        point = ray_origin[:3] + max(distance, 0.0) * ray_direction[:3]
+        face_indices = face_indices_for_record(display_mesh, face)
+        selected_triangles = triangles_for_face_indices(display_mesh, face_indices)
+        if selected_triangles.size == 0:
+            continue
+        points = np.asarray(selected_triangles, dtype=float).reshape((-1, 3))
+        radial_vectors = points[:, :3] - center.reshape(1, 3)
+        radial_vectors = radial_vectors - np.outer(radial_vectors @ normal[:3], normal[:3])
+        radial = np.linalg.norm(radial_vectors, axis=1)
+        finite_radial = radial[np.isfinite(radial)]
+        if finite_radial.size < 8:
+            continue
+        radius = float(np.percentile(finite_radial, 98))
+        if not np.isfinite(radius) or radius <= 1.0e-9:
+            continue
+        clicked = point[:3] - center[:3]
+        clicked = clicked - normal[:3] * float(np.dot(clicked, normal[:3]))
+        radial_distance = float(np.linalg.norm(clicked))
+        tolerance = max(radius * 0.08, 0.08)
+        if radial_distance > radius + tolerance:
+            continue
+        pick = FaceRayPick(
+            face=dict(face),
+            point_world=tuple(float(value) for value in point[:3]),
+            normal_world=tuple(float(value) for value in normal[:3]),
+            distance=max(distance, 0.0),
+            internal=False,
+        )
+        score = (max(distance, 0.0), radial_distance / max(radius, 1.0e-9), pick)
+        if best is None or score[:2] < best[:2]:
+            best = score
+    if best is None:
+        return None
+    pick = best[2]
+    return {
+        "feature": inspector._feature_from_face_ray_pick(
+            pick,
+            inspector._hover_overlay_for_step_face(label, pick.face),
+        ),
+        "surface_center": inspector._surface_center_from_face_ray_pick(pick),
+        "face_id": str(pick.face.get("face_id", "") or "").strip(),
+        "through_pick": pick,
+    }
 
 
 def round_lens_feature_for_display_xy(inspector: Any, label: str, display_xy):
@@ -20,6 +114,9 @@ def round_lens_feature_for_display_xy(inspector: Any, label: str, display_xy):
     label = str(label or "").strip().lower()
     if not label or not inspector._step_label_is_round_lens_like(label):
         return None
+    metadata_pick = _metadata_round_lens_cap_pick(inspector, label, display_xy)
+    if metadata_pick is not None:
+        return metadata_pick
     ray = inspector._display_pick_ray(display_xy)
     if ray is None:
         return None
@@ -124,6 +221,10 @@ def step_feature_pick_for_display_xy(
     label = str(label or "").strip().lower()
     if not label:
         return None
+    if inspector._step_label_is_round_lens_like(label):
+        round_lens_pick = round_lens_feature_for_display_xy(inspector, label, display_xy)
+        if round_lens_pick is not None:
+            return round_lens_pick
     try:
         metadata = inspector.editor._step_overlay_face_metadata(label)
         faces = [face for face in list(metadata.get("faces", []) or []) if isinstance(face, dict)]
@@ -162,9 +263,6 @@ def step_feature_pick_for_display_xy(
             "face_id": str(through_pick.face.get("face_id", "") or "").strip(),
             "through_pick": through_pick,
         }
-    round_lens_pick = round_lens_feature_for_display_xy(inspector, label, display_xy)
-    if round_lens_pick is not None:
-        return round_lens_pick
     feature = inspector._picked_feature_info_cached(
         actor,
         inspector._picker,

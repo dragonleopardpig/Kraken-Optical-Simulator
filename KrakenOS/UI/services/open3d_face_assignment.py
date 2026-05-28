@@ -156,20 +156,36 @@ class Open3DFaceAssignmentService:
             menu.add_command(label="Open Face Editor...", command=lambda idx=int(row_index): self.editor.open_optical_solid_face_role_editor(idx))
         elif step_label in STEP_OVERLAY_LABEL_SET:
             try:
-                through_pick = self._step_face_ray_pick_for_display_xy(step_label, context.get("display_xy"))
+                feature_pick = self._step_feature_pick_for_display_xy(
+                    step_label,
+                    context.get("display_xy"),
+                    actor=context.get("actor"),
+                    actor_key=str(context.get("actor_key") or "") or None,
+                    cell_id=cell_id,
+                )
+                through_pick = feature_pick.get("through_pick") if isinstance(feature_pick, dict) else None
                 if through_pick is not None:
                     face = through_pick.face
                     point = np.asarray(through_pick.point_world, dtype=float).reshape(3)
                     normal = np.asarray(through_pick.normal_world, dtype=float).reshape(3)
-                    face_lookup_method = "display_ray_internal" if through_pick.internal else "display_ray_face"
+                    face_lookup_method = "display_feature_internal" if through_pick.internal else "display_feature_face"
                 else:
+                    through_pick = self._step_face_ray_pick_for_display_xy(step_label, context.get("display_xy"))
+                    if through_pick is not None:
+                        face = through_pick.face
+                        point = np.asarray(through_pick.point_world, dtype=float).reshape(3)
+                        normal = np.asarray(through_pick.normal_world, dtype=float).reshape(3)
+                        face_lookup_method = "display_ray_internal" if through_pick.internal else "display_ray_face"
+                    else:
+                        face = None
+                        face_lookup_method = "mesh_cell_or_point"
+                if face is None:
                     face = self.editor.optical_solid_step_overlay_face_record_at_world_point(
                         step_label,
                         point[:3],
                         normal_world=normal,
                         cell_id=cell_id,
                     )
-                    face_lookup_method = "mesh_cell_or_point"
             except Exception as exc:
                 self.status_var.set(f"Imported STEP face lookup failed: {_short_error_message(exc)}")
                 self.editor.append_debug(f"Open 3D imported STEP face lookup failed: {exc}")
