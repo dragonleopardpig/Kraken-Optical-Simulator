@@ -124,7 +124,8 @@ display raykeeper, optical-solid mesh face metadata is cached inside the built
    for segments that remain on the global axial direction while keeping genuinely
    bent post-surface axes for prism cascades (blank axial scenes keep only the
    global guide; saved penta cascades intentionally show downstream exit-axis
-   guides), non-sequential trace timing now
+   guides; centered refractive optical volumes do not create extra downstream
+   guides from marginal chief-ray tilt), non-sequential trace timing now
    includes per-bundle system-trace, RayKeeper-push, and mesh
 ray-intersection duration summaries, repeated non-sequential mesh chooser calls
 skip PyVista normal-extraction compatibility checks once a mesh has been

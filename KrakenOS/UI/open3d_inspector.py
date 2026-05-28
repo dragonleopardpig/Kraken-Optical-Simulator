@@ -4895,6 +4895,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 "points": np.asarray(((0.0, 0.0, z0), (0.0, 0.0, z1)), dtype=float),
             }
         ]
+        scene_has_off_axis = bool(getattr(scene_bundle, "has_off_axis", False))
         allow_traced_axis_guides = bool(getattr(scene_bundle, "has_off_axis", False)) or bool(
             list(getattr(scene_bundle, "optical_volumes", []) or [])
         ) or bool(list(getattr(scene_bundle, "boundary_faces", []) or []))
@@ -4934,6 +4935,31 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     ray_index = 0.0
                 return (launch_radius, launch_tilt, -power, abs(source_ray), abs(ray_index))
 
+            def _path_has_non_refractive_steering(path) -> bool:
+                steering_tokens = (
+                    "reflect",
+                    "mirror",
+                    "tir",
+                    "split",
+                    "scatter",
+                    "diffract",
+                    "grating",
+                    "fold",
+                )
+                for event in list(getattr(path, "events", []) or []):
+                    if str(getattr(event, "event_kind", "") or "") != "surface":
+                        continue
+                    text = " ".join(
+                        (
+                            str(getattr(event, "event_type", "") or ""),
+                            str(getattr(event, "interaction_model", "") or ""),
+                            str(getattr(event, "surface_name", "") or ""),
+                        )
+                    ).strip().lower()
+                    if any(token in text for token in steering_tokens):
+                        return True
+                return False
+
             physical_paths = [
                 path
                 for path in paths
@@ -4944,6 +4970,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     for event in list(getattr(path, "events", []) or [])
                 )
             ]
+            if not scene_has_off_axis:
+                physical_paths = [path for path in physical_paths if _path_has_non_refractive_steering(path)]
             if physical_paths:
                 chief = min(physical_paths, key=_path_score)
                 records.extend(_dotted_axis_records_from_ray_path(chief, bounds))
