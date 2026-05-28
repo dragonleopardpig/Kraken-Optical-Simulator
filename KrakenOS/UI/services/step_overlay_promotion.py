@@ -68,6 +68,81 @@ class StepOverlayPromotionService:
         )
         return int(resolved_insert_at), str(arm_key or "")
 
+    def _native_step_overlay_row_pose(self, label: str, reconstruction, insert_at: int) -> dict[str, object]:
+        x_deg = float(self._step_x_rotation_deg(label))
+        y_deg = float(self._step_y_rotation_deg(label))
+        z_deg = float(self._step_roll_deg(label))
+        rotation = self._step_rotation_matrix_from_angles(x_deg, y_deg, z_deg)
+        try:
+            row_tilts = tuple(float(value) for value in self._kraken_tilts_from_rotation_matrix(rotation))
+        except Exception:
+            row_tilts = (x_deg, y_deg, -z_deg)
+
+        native_center_z = 0.0
+        native_span_z = 0.0
+        try:
+            z_values = sorted(
+                float(fit.vertex_z_mm)
+                for fit in list(getattr(reconstruction, "surface_fits", ()) or ())
+                if np.isfinite(float(fit.vertex_z_mm))
+            )
+            if z_values:
+                native_span_z = max(float(z_values[-1] - z_values[0]), 0.0)
+                native_center_z = 0.5 * native_span_z
+        except Exception:
+            native_center_z = 0.0
+            native_span_z = 0.0
+
+        z_station = float(sum(float(getattr(row, "thickness", 0.0) or 0.0) for row in self.rows[: int(insert_at)]))
+        mesh_bounds: dict[str, object] = {}
+        center_world = None
+        try:
+            mesh = self._transformed_imported_step_mesh_for_label(label)
+            points = np.asarray(getattr(mesh, "points", np.empty((0, 3))), dtype=float)
+            if points.ndim == 2 and points.shape[0] > 0 and points.shape[1] >= 3 and np.all(np.isfinite(points[:, :3])):
+                bounds_min = np.min(points[:, :3], axis=0)
+                bounds_max = np.max(points[:, :3], axis=0)
+                center_world = 0.5 * (bounds_min + bounds_max)
+                mesh_bounds = {
+                    "bounds_min_world": [float(value) for value in bounds_min[:3]],
+                    "bounds_max_world": [float(value) for value in bounds_max[:3]],
+                    "center_world": [float(value) for value in center_world[:3]],
+                    "source": "transformed_overlay_mesh_bounds",
+                }
+        except Exception as exc:
+            mesh_bounds = {"source": "fallback_no_overlay_mesh", "error": str(exc).splitlines()[0][:220]}
+
+        if center_world is None:
+            placement_offset = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
+            axis_offset_x, axis_offset_y = self._step_axis_offset_xy(label)
+            center_world = np.asarray(
+                (
+                    float(placement_offset[0]) - float(axis_offset_x),
+                    float(placement_offset[1]) - float(axis_offset_y),
+                    float(z_station) + float(native_center_z) + float(placement_offset[2]),
+                ),
+                dtype=float,
+            )
+            mesh_bounds = {
+                **mesh_bounds,
+                "center_world": [float(value) for value in center_world[:3]],
+                "source": str(mesh_bounds.get("source", "fallback_step_offsets")),
+            }
+
+        row_decenter = (
+            float(center_world[0]),
+            float(center_world[1]),
+            float(center_world[2] - z_station - native_center_z),
+        )
+        return {
+            "row_tilts_deg": [float(value) for value in row_tilts],
+            "row_decenter_mm": [float(value) for value in row_decenter],
+            "z_station_mm": float(z_station),
+            "native_axis_center_z_mm": float(native_center_z),
+            "native_axis_span_z_mm": float(native_span_z),
+            **mesh_bounds,
+        }
+
     def _step_overlay_optical_solid_row_plan(
         self,
         label: str,
@@ -474,6 +549,9 @@ class StepOverlayPromotionService:
         resolved_insert_at, arm_key = self._step_overlay_insert_index(insert_at)
         display_label = self._step_overlay_display_label(label)
         element_name = f"{display_label.upper()} native STEP"
+        applied_pose = self._native_step_overlay_row_pose(label, reconstruction, resolved_insert_at)
+        row_tilts = tuple(float(value) for value in list(applied_pose.get("row_tilts_deg", (0.0, 0.0, 0.0)))[:3])
+        row_decenter = tuple(float(value) for value in list(applied_pose.get("row_decenter_mm", (0.0, 0.0, 0.0)))[:3])
         pose_metadata = {
             "step_label": label,
             "source_step_path": str(source_path.resolve()),
@@ -485,7 +563,8 @@ class StepOverlayPromotionService:
             ],
             "axis_offset_xy": [float(value) for value in self._step_axis_offset_xy(label)],
             "placement_offset_xyz": [float(value) for value in self._step_placement_offset_xyz(label)],
-            "row_coordinates": "native_reconstructed_prescription",
+            "row_coordinates": "native_reconstructed_prescription_with_open3d_pose",
+            "applied_row_pose": applied_pose,
             "trace_ready": bool(reconstruction.trace_ready),
         }
         row_indices = list(range(int(resolved_insert_at), int(resolved_insert_at) + len(native_rows)))
@@ -494,6 +573,9 @@ class StepOverlayPromotionService:
                 self._apply_arm_key_metadata_to_row(row, arm_key)
             row.element = element_name
             row.name = f"{display_label.upper()} native STEP S{offset + 1}: {row.name}"
+            row.tilt_x, row.tilt_y, row.tilt_z = row_tilts
+            row.desp_x, row.desp_y, row.desp_z = row_decenter
+            row.axis_move = 0.0
             row.advanced = dict(row.advanced or {})
             row.advanced["StepNativePromotion"] = {
                 **pose_metadata,
@@ -501,9 +583,26 @@ class StepOverlayPromotionService:
                 "row_indices": row_indices,
                 "reconstruction": reconstruction.as_record() if offset == 0 else {"see_first_row": True},
             }
+            row.advanced[SCENE_PLACEMENT_ADVANCED_ATTR] = normalize_scene_placement_settings(
+                {
+                    "enabled": True,
+                    "anchor": "row_pose",
+                    "snap_enabled": True,
+                    "snap_mm": max(float(row.diameter) / 20.0, 0.1),
+                    "snap_deg": 5.0,
+                    "grid_visible": True,
+                    "grid_spacing_mm": max(float(row.diameter) / 10.0, 0.5),
+                    "grid_extent_mm": max(float(row.diameter) * 2.0, 25.0),
+                    "promotion_source": "open3d_step_native_overlay",
+                    "promotion_step_label": label,
+                    "promotion_source_step_path": str(source_path.resolve()),
+                    "promotion_row_coordinates": "native_reconstructed_prescription_with_open3d_pose",
+                }
+            )
             row.advanced["Note"] = (
                 "Promoted from OpenCascade STEP topology into KrakenOS-native analytic rows. "
                 "Geometry is reconstructed from STEP faces; glass/material sequence is user-supplied. "
+                "Open 3D overlay placement/orientation is applied as row Tilt/Desp. "
                 "Review fit diagnostics before treating vendor spline reconstruction as production optics."
             )
         self._begin_history_capture()
@@ -517,10 +616,17 @@ class StepOverlayPromotionService:
         self._commit_history_capture()
         self._mark_plot_update_pending()
         self.append_debug(
-            "Promoted {label} STEP overlay to native KrakenOS rows {rows}: materials={materials}".format(
+            "Promoted {label} STEP overlay to native KrakenOS rows {rows}: materials={materials} "
+            "tilt=({tx:.6g},{ty:.6g},{tz:.6g}) desp=({dx:.6g},{dy:.6g},{dz:.6g})".format(
                 label=label.upper(),
                 rows=row_indices,
                 materials=", ".join(material_sequence),
+                tx=float(row_tilts[0]),
+                ty=float(row_tilts[1]),
+                tz=float(row_tilts[2]),
+                dx=float(row_decenter[0]),
+                dy=float(row_decenter[1]),
+                dz=float(row_decenter[2]),
             )
         )
         self.status_var.set(
@@ -537,4 +643,5 @@ class StepOverlayPromotionService:
             "source_step_path": str(source_path.resolve()),
             "material_sequence": material_sequence,
             "reconstruction": reconstruction,
+            "applied_row_pose": applied_pose,
         }

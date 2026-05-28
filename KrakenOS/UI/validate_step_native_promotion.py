@@ -34,6 +34,15 @@ def validate_step_native_promotion() -> list[StepNativePromotionCheck]:
     try:
         app.imported_lens_step_path = ASPHERIZED_ACHROMAT_STEP
         app._selected_step_label = "lens"
+        app.lens_step_rotation_x_deg = 10.0
+        app.lens_step_rotation_y_deg = 5.0
+        app.lens_step_rotation_z_deg = 30.0
+        app.lens_step_axis_offset_xy = (1.25, -0.75)
+        app.lens_step_placement_offset_xyz = (3.0, -2.0, 4.0)
+        expected_tilts = tuple(
+            float(value)
+            for value in app._kraken_tilts_from_rotation_matrix(app._step_rotation_matrix_from_angles(10.0, 5.0, 30.0))
+        )
         try:
             result = app.promote_imported_step_to_native_surface_rows(
                 "lens",
@@ -59,12 +68,17 @@ def validate_step_native_promotion() -> list[StepNativePromotionCheck]:
         first_promotion = dict(native_rows[0].advanced.get("StepNativePromotion", {}) if native_rows else {})
         reconstruction = dict(first_promotion.get("reconstruction", {}) if first_promotion else {})
         materials = tuple(str(value) for value in first_promotion.get("material_sequence", ()) or ())
+        applied_pose = dict((result or {}).get("applied_row_pose", {}) or {})
+        applied_tilts = tuple(float(value) for value in list(applied_pose.get("row_tilts_deg", ()))[:3])
+        applied_decenter = tuple(float(value) for value in list(applied_pose.get("row_decenter_mm", ()))[:3])
         row_summary = [
             {
                 "surface": row.surface,
                 "rc": row.rc,
                 "thickness": row.thickness,
                 "glass": row.glass,
+                "tilt": (row.tilt_x, row.tilt_y, row.tilt_z),
+                "desp": (row.desp_x, row.desp_y, row.desp_z),
                 "advanced": sorted(row.advanced),
             }
             for row in native_rows
@@ -100,10 +114,36 @@ def validate_step_native_promotion() -> list[StepNativePromotionCheck]:
                 f"rows={row_summary}",
             ),
             StepNativePromotionCheck(
+                "native promotion applies the Open 3D overlay rotation to every analytic row",
+                len(applied_tilts) == 3
+                and all(abs(applied_tilts[index] - expected_tilts[index]) < 1.0e-9 for index in range(3))
+                and all(
+                    abs(float(row.tilt_x) - expected_tilts[0]) < 1.0e-9
+                    and abs(float(row.tilt_y) - expected_tilts[1]) < 1.0e-9
+                    and abs(float(row.tilt_z) - expected_tilts[2]) < 1.0e-9
+                    for row in native_rows
+                ),
+                f"expected_tilts={expected_tilts}, applied={applied_tilts}, rows={row_summary}",
+            ),
+            StepNativePromotionCheck(
+                "native promotion applies one group decenter matching the transformed overlay pose",
+                len(applied_decenter) == 3
+                and any(abs(value) > 1.0e-9 for value in applied_decenter)
+                and all(
+                    abs(float(row.desp_x) - applied_decenter[0]) < 1.0e-9
+                    and abs(float(row.desp_y) - applied_decenter[1]) < 1.0e-9
+                    and abs(float(row.desp_z) - applied_decenter[2]) < 1.0e-9
+                    for row in native_rows
+                ),
+                f"applied_decenter={applied_decenter}, rows={row_summary}",
+            ),
+            StepNativePromotionCheck(
                 "promotion metadata records source path, materials, and reconstruction diagnostics",
                 first_promotion.get("source_step_path") == str(ASPHERIZED_ACHROMAT_STEP.resolve())
                 and materials == ("BK7", "F2", "AIR")
                 and first_promotion.get("trace_ready") is True
+                and first_promotion.get("row_coordinates") == "native_reconstructed_prescription_with_open3d_pose"
+                and dict(first_promotion.get("applied_row_pose", {}) or {}).get("row_decenter_mm") == list(applied_decenter)
                 and reconstruction.get("surface_count") == 3
                 and reconstruction.get("trace_ready") is True,
                 f"promotion={first_promotion}",
