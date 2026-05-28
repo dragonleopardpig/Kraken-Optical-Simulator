@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import ttk
+from tkinter import simpledialog, ttk
 from typing import Any, Callable
 
 
@@ -84,12 +84,13 @@ class Open3DStepAdminPanel:
         self._selection_buttons["accept"] = self._grid_button(action_frame, 0, 1, "Accept", self._accept_selected)
         self._selection_buttons["promote"] = self._grid_button(action_frame, 1, 0, "Promote", self._promote_selected)
         self._selection_buttons["delete"] = self._grid_button(action_frame, 1, 1, "Delete", self._delete_selected)
-        self._selection_buttons["faces"] = self._grid_button(action_frame, 2, 0, "Faces", self._faces_selected)
-        self._selection_buttons["center"] = self._grid_button(action_frame, 2, 1, "Center Axis", self._center_selected)
-        self._selection_buttons["normal"] = self._grid_button(action_frame, 3, 0, "Center Normal->Axis", self._normal_axis_selected, columnspan=2)
+        self._selection_buttons["native"] = self._grid_button(action_frame, 2, 0, "Native Rows", self._native_selected, columnspan=2)
+        self._selection_buttons["faces"] = self._grid_button(action_frame, 3, 0, "Faces", self._faces_selected)
+        self._selection_buttons["center"] = self._grid_button(action_frame, 3, 1, "Center Axis", self._center_selected)
+        self._selection_buttons["normal"] = self._grid_button(action_frame, 4, 0, "Center Normal->Axis", self._normal_axis_selected, columnspan=2)
         self._selection_buttons["pick_normal"] = self._grid_button(
             action_frame,
-            4,
+            5,
             0,
             "Pick Normal->Axis",
             self._pick_normal_axis_selected,
@@ -97,13 +98,13 @@ class Open3DStepAdminPanel:
         )
         self._selection_buttons["surface_center"] = self._grid_button(
             action_frame,
-            5,
+            6,
             0,
             "Center Surface->Axis",
             self._surface_center_selected,
             columnspan=2,
         )
-        ttk.Label(action_frame, text="Face direction").grid(row=6, column=0, sticky="w", pady=(7, 0))
+        ttk.Label(action_frame, text="Face direction").grid(row=7, column=0, sticky="w", pady=(7, 0))
         self._face_direction_var = tk.StringVar(value="")
         face_direction_combo = ttk.Combobox(
             action_frame,
@@ -112,7 +113,7 @@ class Open3DStepAdminPanel:
             values=("Left", "Right", "Up", "Down", "Front", "Back"),
             width=10,
         )
-        face_direction_combo.grid(row=6, column=1, sticky="ew", pady=(7, 0))
+        face_direction_combo.grid(row=7, column=1, sticky="ew", pady=(7, 0))
         face_direction_combo.bind("<<ComboboxSelected>>", self._on_face_direction_selected)
         self._face_direction_combo = face_direction_combo
 
@@ -663,6 +664,7 @@ class Open3DStepAdminPanel:
             "carry": overlay_selected,
             "accept": overlay_selected,
             "promote": overlay_selected,
+            "native": overlay_selected,
             "delete": overlay_selected or promoted_row_selected,
             "faces": promoted_row_selected or file_backed_row_selected,
             "center": overlay_selected or promoted_row_selected or centerable_row_selected,
@@ -729,6 +731,26 @@ class Open3DStepAdminPanel:
             self.inspector.promote_selected_step_to_optical_solid_row()
             self._selected_item_id = ""
             self.refresh()
+
+    def _native_selected(self) -> None:
+        if not self._select_current_for_action():
+            return
+        label = str(getattr(self.editor, "_selected_step_label", "") or "").strip().lower()
+        display = self.editor._step_overlay_display_label(label) if label else "STEP"
+        materials = simpledialog.askstring(
+            "Native STEP Materials",
+            (
+                f"Glass/material sequence after each native {display} surface.\n"
+                "Example for a cemented achromat: BK7, F2, AIR"
+            ),
+            initialvalue="BK7, F2, AIR",
+            parent=self.inspector,
+        )
+        if materials is None:
+            return
+        self.inspector.promote_selected_step_to_native_surface_rows(glass_sequence=materials)
+        self._selected_item_id = ""
+        self.refresh()
 
     def _delete_selected(self) -> None:
         if self._select_current_for_action():

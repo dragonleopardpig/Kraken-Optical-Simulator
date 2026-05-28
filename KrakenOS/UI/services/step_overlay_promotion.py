@@ -14,6 +14,7 @@ from KrakenOS.UI.services.optical_solid_geometry import (
     inspect_stl_mesh,
     short_stl_mesh_diagnostics,
 )
+from KrakenOS.UI.services.step_native_reconstruction import reconstruct_step_native_surfaces
 from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABEL_SET
 
 
@@ -31,6 +32,41 @@ class StepOverlayPromotionService:
             object.__setattr__(self, name, value)
             return
         setattr(self.editor, name, value)
+
+    @staticmethod
+    def _normalize_glass_sequence(value: object) -> tuple[str, ...]:
+        if value is None:
+            return ()
+        if isinstance(value, str):
+            parts = value.replace(";", ",").split(",")
+        else:
+            try:
+                parts = list(value)  # type: ignore[arg-type]
+            except Exception:
+                parts = [value]
+        return tuple(str(item).strip() for item in parts if str(item).strip())
+
+    def _step_overlay_insert_index(self, insert_at: int | None, *, use_current_selection: bool = True) -> tuple[int, str]:
+        arm_key = ""
+        if insert_at is None:
+            selected_indices = self._selected_table_indices() if use_current_selection else []
+            arm_key = self._current_arm_view_key() if use_current_selection else ""
+            if selected_indices:
+                resolved_insert_at = max(selected_indices) + 1
+            elif arm_key:
+                resolved_insert_at = self._default_insert_index_for_arm_key(arm_key)
+            else:
+                resolved_insert_at = len(self.rows)
+                if self.rows and self.rows[-1].surface == "Image":
+                    resolved_insert_at -= 1
+        else:
+            resolved_insert_at = int(insert_at)
+            arm_key = self._current_arm_view_key() if use_current_selection else ""
+        resolved_insert_at = max(
+            1,
+            min(resolved_insert_at, len(self.rows) - (1 if self.rows and self.rows[-1].surface == "Image" else 0)),
+        )
+        return int(resolved_insert_at), str(arm_key or "")
 
     def _step_overlay_optical_solid_row_plan(
         self,
@@ -100,25 +136,7 @@ class StepOverlayPromotionService:
             local_mesh.save(str(mesh_path))
         diagnostics = inspect_stl_mesh(mesh_path)
 
-        arm_key = ""
-        if insert_at is None:
-            selected_indices = self._selected_table_indices() if use_current_selection else []
-            arm_key = self._current_arm_view_key() if use_current_selection else ""
-            if selected_indices:
-                resolved_insert_at = max(selected_indices) + 1
-            elif arm_key:
-                resolved_insert_at = self._default_insert_index_for_arm_key(arm_key)
-            else:
-                resolved_insert_at = len(self.rows)
-                if self.rows and self.rows[-1].surface == "Image":
-                    resolved_insert_at -= 1
-        else:
-            resolved_insert_at = int(insert_at)
-            arm_key = self._current_arm_view_key() if use_current_selection else ""
-        resolved_insert_at = max(
-            1,
-            min(resolved_insert_at, len(self.rows) - (1 if self.rows and self.rows[-1].surface == "Image" else 0)),
-        )
+        resolved_insert_at, arm_key = self._step_overlay_insert_index(insert_at, use_current_selection=use_current_selection)
         z_station = float(sum(float(getattr(row, "thickness", 0.0) or 0.0) for row in self.rows[:resolved_insert_at]))
 
         row = self._optical_stl_solid_row(
@@ -291,24 +309,7 @@ class StepOverlayPromotionService:
         except Exception as exc:
             raise RuntimeError(f"Could not read the surface table: {exc}") from exc
 
-        if insert_at is None:
-            selected_indices = self._selected_table_indices()
-            arm_key = self._current_arm_view_key()
-            if selected_indices:
-                resolved_insert_at = max(selected_indices) + 1
-            elif arm_key:
-                resolved_insert_at = self._default_insert_index_for_arm_key(arm_key)
-            else:
-                resolved_insert_at = len(self.rows)
-                if self.rows and self.rows[-1].surface == "Image":
-                    resolved_insert_at -= 1
-        else:
-            resolved_insert_at = int(insert_at)
-            arm_key = self._current_arm_view_key()
-        resolved_insert_at = max(
-            1,
-            min(resolved_insert_at, len(self.rows) - (1 if self.rows and self.rows[-1].surface == "Image" else 0)),
-        )
+        resolved_insert_at, arm_key = self._step_overlay_insert_index(insert_at)
         z_station = float(sum(float(getattr(row, "thickness", 0.0) or 0.0) for row in self.rows[:resolved_insert_at]))
 
         row = self._optical_stl_solid_row(
@@ -426,4 +427,114 @@ class StepOverlayPromotionService:
             "source_step_path": str(source_path.resolve()),
             "center_world": tuple(float(value) for value in center_world[:3]),
             "diagnostics": diagnostics,
+        }
+
+    def promote_imported_step_to_native_surface_rows(
+        self,
+        label: str,
+        *,
+        glass_sequence: object,
+        insert_at: int | None = None,
+        clear_overlay: bool = False,
+        refresh_open_3d: bool = True,
+    ) -> dict[str, object] | None:
+        """Promote a STEP overlay into native KrakenOS analytic surface rows."""
+
+        label = str(label).strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET:
+            return None
+        source_path = self._step_path_for_label(label)
+        if source_path is None:
+            self.status_var.set(f"No {label} STEP is imported.")
+            return None
+        material_sequence = self._normalize_glass_sequence(glass_sequence)
+        if not material_sequence:
+            raise RuntimeError("Native STEP promotion requires a comma-separated glass/material sequence.")
+
+        reconstruction = reconstruct_step_native_surfaces(source_path, glass_sequence=material_sequence)
+        if not reconstruction.trace_ready:
+            errors = [
+                str(diagnostic.message)
+                for diagnostic in reconstruction.diagnostics
+                if str(diagnostic.severity).lower() == "error"
+            ]
+            raise RuntimeError(
+                "Native STEP reconstruction is not trace-ready: "
+                + ("; ".join(errors) if errors else "inspect reconstruction diagnostics")
+            )
+        native_rows = reconstruction.component_rows()
+        if not native_rows:
+            raise RuntimeError("Native STEP reconstruction did not produce surface rows.")
+
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            raise RuntimeError(f"Could not read the surface table: {exc}") from exc
+        resolved_insert_at, arm_key = self._step_overlay_insert_index(insert_at)
+        display_label = self._step_overlay_display_label(label)
+        element_name = f"{display_label.upper()} native STEP"
+        pose_metadata = {
+            "step_label": label,
+            "source_step_path": str(source_path.resolve()),
+            "material_sequence": list(material_sequence),
+            "step_rotation_deg": [
+                float(self._step_x_rotation_deg(label)),
+                float(self._step_y_rotation_deg(label)),
+                float(self._step_roll_deg(label)),
+            ],
+            "axis_offset_xy": [float(value) for value in self._step_axis_offset_xy(label)],
+            "placement_offset_xyz": [float(value) for value in self._step_placement_offset_xyz(label)],
+            "row_coordinates": "native_reconstructed_prescription",
+            "trace_ready": bool(reconstruction.trace_ready),
+        }
+        row_indices = list(range(int(resolved_insert_at), int(resolved_insert_at) + len(native_rows)))
+        for offset, row in enumerate(native_rows):
+            if arm_key:
+                self._apply_arm_key_metadata_to_row(row, arm_key)
+            row.element = element_name
+            row.name = f"{display_label.upper()} native STEP S{offset + 1}: {row.name}"
+            row.advanced = dict(row.advanced or {})
+            row.advanced["StepNativePromotion"] = {
+                **pose_metadata,
+                "row_index_offset": int(offset),
+                "row_indices": row_indices,
+                "reconstruction": reconstruction.as_record() if offset == 0 else {"see_first_row": True},
+            }
+            row.advanced["Note"] = (
+                "Promoted from OpenCascade STEP topology into KrakenOS-native analytic rows. "
+                "Geometry is reconstructed from STEP faces; glass/material sequence is user-supplied. "
+                "Review fit diagnostics before treating vendor spline reconstruction as production optics."
+            )
+        self._begin_history_capture()
+        for offset, row in enumerate(native_rows):
+            self.rows.insert(resolved_insert_at + offset, row)
+        if clear_overlay:
+            self._clear_imported_step_overlay_state(label)
+        self._normalize_special_rows()
+        self._sync_table()
+        self._select_table_indices(row_indices, focus_index=row_indices[0])
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        self.append_debug(
+            "Promoted {label} STEP overlay to native KrakenOS rows {rows}: materials={materials}".format(
+                label=label.upper(),
+                rows=row_indices,
+                materials=", ".join(material_sequence),
+            )
+        )
+        self.status_var.set(
+            f"Promoted {label.upper()} STEP to {len(native_rows)} native analytic rows "
+            f"({', '.join(material_sequence)})."
+        )
+        if refresh_open_3d:
+            self._refresh_open_3d_views()
+        return {
+            "label": label,
+            "row_indices": row_indices,
+            "row_index": row_indices[0],
+            "row_count": len(native_rows),
+            "source_step_path": str(source_path.resolve()),
+            "material_sequence": material_sequence,
+            "reconstruction": reconstruction,
         }

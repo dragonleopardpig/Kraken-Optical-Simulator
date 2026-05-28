@@ -141,6 +141,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Tier 3 STEP faces rebuild as KrakenOS-native sphere/asphere rows with material and fit diagnostics.",
     ),
     ValidationTarget(
+        "step-native-promotion",
+        "KrakenOS.UI.validate_step_native_promotion",
+        reason="Open 3D imported STEP overlays promote into native KrakenOS analytic rows with user material diagnostics.",
+    ),
+    ValidationTarget(
         "open3d-action-timing",
         "KrakenOS.UI.validate_open3d_action_timing",
         reason="Open 3D import, refresh, render, pick, and selection actions emit structured timing diagnostics.",

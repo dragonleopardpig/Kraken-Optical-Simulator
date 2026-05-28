@@ -212,12 +212,18 @@ Phase 3: Add An OpenCascade Topology Adapter
     .. code-block:: bash
 
        python -m KrakenOS.UI.validate_fast_contracts --only step-native-reconstruction
+       python -m KrakenOS.UI.validate_fast_contracts --only step-native-promotion
 
     The current fixture check rebuilds the aspherized achromat STEP as three
     native surfaces: a front sphere, one collapsed cemented spherical
     interface, and one split B-spline/asphere back surface. With a supplied
     material sequence, the result is a normal KrakenOS row stack that can be
-    wrapped as ``Object`` / native surfaces / ``Image``.
+    wrapped as ``Object`` / native surfaces / ``Image``. Open 3D exposes this
+    as ``Promote STEP to Native Rows`` in the CAD/target menu and ``Native
+    Rows`` in the STEP element browser. The command prompts for the material
+    sequence, inserts ordinary analytic table rows, clears the display-only
+    overlay when requested, and keeps the source path plus reconstruction
+    diagnostics in row metadata.
 
 Phase 4: Compare CadQuery/OCP
     Install CadQuery/OCP only in an isolated optional environment and compare:

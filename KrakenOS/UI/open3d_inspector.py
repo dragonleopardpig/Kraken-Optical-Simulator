@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 import time
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, simpledialog, ttk
 
 import numpy as np
 
@@ -3743,6 +3743,69 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             f"Promoted {label.upper()} STEP to optical solid row S{row_index}: {path.name}. "
             "Hold the promoted solid to move it; assign optical faces/material, then Update to trace it."
         )
+
+    def _native_step_material_sequence_prompt(self, label: str) -> str | None:
+        display_label = self.editor._step_overlay_display_label(label)
+        try:
+            return simpledialog.askstring(
+                "Native STEP Materials",
+                (
+                    f"Glass/material sequence after each native {display_label} STEP surface.\n"
+                    "Example for a cemented achromat: BK7, F2, AIR"
+                ),
+                initialvalue="BK7, F2, AIR",
+                parent=self,
+            )
+        except Exception:
+            return None
+
+    def promote_selected_step_to_native_surface_rows(self, glass_sequence: object | None = None) -> dict[str, object] | None:
+        label = self._selected_imported_step_label()
+        if not label:
+            self.status_var.set("Select or import a STEP overlay before native promotion.")
+            return None
+        if glass_sequence is None:
+            glass_sequence = self._native_step_material_sequence_prompt(label)
+        if glass_sequence is None or not str(glass_sequence).strip():
+            self.status_var.set("Native STEP promotion cancelled; material sequence is required.")
+            return None
+        self._debug_trace("step_overlay_promote_to_native_rows", label=label, counts_before=self._debug_actor_counts())
+        try:
+            result = self.editor.promote_imported_step_to_native_surface_rows(
+                label,
+                glass_sequence=glass_sequence,
+                clear_overlay=True,
+                refresh_open_3d=False,
+            )
+        except Exception as exc:
+            self.status_var.set(f"Native STEP promotion failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D native STEP promotion failed: {exc}")
+            self._debug_trace("step_overlay_promote_to_native_rows_failed", label=label, error=_short_error_message(exc))
+            return None
+        if result is None:
+            self.status_var.set(self.editor.status_var.get())
+            self._debug_trace("step_overlay_promote_to_native_rows_no_result", label=label, status=self.editor.status_var.get())
+            return None
+        row_indices = [int(value) for value in list(result.get("row_indices", []) or [])]
+        self._stl_placement_dirty = True
+        self._clear_step_overlay_interaction_state(label)
+        try:
+            self.refresh_from_editor(force_retrace=True)
+            if row_indices:
+                self.highlight_row(row_indices[0])
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D native STEP promotion refresh failed: {exc}")
+        self.status_var.set(
+            f"Promoted {label.upper()} STEP to native analytic rows "
+            f"{row_indices[0]}-{row_indices[-1] if row_indices else '?'}."
+        )
+        self._debug_trace(
+            "step_overlay_promote_to_native_rows_done",
+            label=label,
+            row_indices=row_indices,
+            counts_after=self._debug_actor_counts(),
+        )
+        return result
 
     def start_selected_step_carry(self) -> None:
         transition = self.editor._open3d_step_state_service().resolve_carry_start(

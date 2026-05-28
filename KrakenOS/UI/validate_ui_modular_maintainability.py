@@ -48,6 +48,7 @@ FAST_CONTRACT_ALIASES = (
     '"cadquery-readiness"',
     '"cad-scene-cache"',
     '"step-native-reconstruction"',
+    '"step-native-promotion"',
 )
 
 REQUIRED_SERVICE_MODULES = (

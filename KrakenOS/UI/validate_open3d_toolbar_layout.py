@@ -29,6 +29,7 @@ _MENU_EXPECTATIONS: dict[str, tuple[str, ...]] = {
         "Arm Selected STEP Carry",
         "Accept STEP Placement",
         "Promote STEP to Optical Solid Row",
+        "Promote STEP to Native Rows",
         "Center STEP Axis",
         "Snap STEP Surface-Center Normal->Optical Axis",
         "Snap STEP Pick-Point Normal->Optical Axis",
