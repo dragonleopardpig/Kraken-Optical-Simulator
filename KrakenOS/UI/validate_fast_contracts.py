@@ -206,6 +206,12 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         args=("--focused",),
         reason="Fixture-free Open 3D sampling preservation checks.",
     ),
+    ValidationTarget(
+        "launch-origin-within-object-aperture",
+        "KrakenOS.UI.validate_launch_origin_within_object_aperture",
+        reason="Finite-object world-envelope launches must never originate "
+        "outside the configured object aperture (North Star #4).",
+    ),
 )
 
 

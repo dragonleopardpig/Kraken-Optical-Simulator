@@ -55,16 +55,46 @@ class TracePreviewSamplingMixin:
             return [0.0] * count
         return list(np.linspace(-span, span, count))
 
-    def _sample_field_grid_pairs(self, maximum: float) -> list[tuple[float, float]]:
-        """Sample full-field preview points as an X/Y grid.
+    def _launch_field_radial_max(self) -> float:
+        """Return the radial field maximum to use for finite-object launches.
 
-        The 2D layout remains a meridional slice, but 3D Full Pupil should
-        show the full field grid: field_count=3 -> 3x3 field points.
+        Takes the user-configured field height and clamps it by the object
+        aperture (``rows[0].diameter / 2``). When a lens added or removed
+        upstream changes ``_current_field_height()`` -- typically via a
+        magnification shift for Real Image Height fields -- the launch grid
+        automatically adapts. The clamp ensures the launch pattern never
+        exceeds the object surface that physically emits the rays.
+        """
+        height = abs(float(self._current_field_height()))
+        if self.rows:
+            try:
+                object_radius = max(float(self.rows[0].diameter) * 0.5, 0.0)
+            except Exception:
+                object_radius = 0.0
+            if object_radius > 0.0:
+                height = min(height, object_radius)
+        return height
+
+    def _sample_field_grid_pairs(self, maximum: float) -> list[tuple[float, float]]:
+        """Sample full-field preview points as an X/Y grid inscribed in the
+        configured field disc.
+
+        ``maximum`` is the user-configured radial field maximum (length or
+        angle, depending on field type). A 3x3 grid is laid out so that its
+        corners land exactly on that maximum and the per-axis samples sit at
+        ``maximum/sqrt(2)``. The old behavior placed axis samples at the
+        maximum and pushed grid corners to ``sqrt(2)*maximum``, which both
+        oversampled past the user's field and (for finite-object launches)
+        emitted rays from outside the object aperture. Keeping the grid
+        inscribed makes the 3D preview reflect the actual achievable field
+        instead of a sampling artifact.
         """
         count = self._current_field_count()
-        field_values = [float(value) for value in self._sample_field_values(maximum)]
+        radial_max = abs(float(maximum))
+        axis_max = radial_max / float(np.sqrt(2.0)) if count > 1 else radial_max
+        field_values = [float(value) for value in self._sample_field_values(axis_max)]
         if count <= 1:
-            value = field_values[0] if field_values else float(maximum)
+            value = field_values[0] if field_values else axis_max
             axis = self._current_display_slice_axis()
             return [(value, 0.0)] if axis == "x" else [(0.0, value)]
         pairs: list[tuple[float, float]] = []
@@ -340,7 +370,7 @@ class TracePreviewSamplingMixin:
         field_pairs = (
             [(0.0, 0.0)]
             if self._current_object_mode() == "Infinity"
-            else self._sample_field_grid_pairs(self._current_field_height())
+            else self._sample_field_grid_pairs(self._launch_field_radial_max())
         )
         bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
         for field_x, field_y in field_pairs:
@@ -413,7 +443,7 @@ class TracePreviewSamplingMixin:
                     )
                 )
         else:
-            pairs = self._sample_field_grid_pairs(self._current_field_height())
+            pairs = self._sample_field_grid_pairs(self._launch_field_radial_max())
             for field_x, field_y in pairs:
                 bundles.append(
                     self._orient_source_points_and_dirs(
@@ -766,7 +796,11 @@ class TracePreviewSamplingMixin:
                 bundles.append(bundle)
         else:
             object_distance = self._current_object_distance()
-            pairs = field_pairs if field_pairs is not None else self._sample_field_grid_pairs(self._current_field_height())
+            pairs = (
+                field_pairs
+                if field_pairs is not None
+                else self._sample_field_grid_pairs(self._launch_field_radial_max())
+            )
             for field_x, field_y in pairs:
                 origin = np.array([-float(field_x), -float(field_y), 0.0], dtype=float)
                 x_vals: list[float] = []
@@ -982,7 +1016,7 @@ class TracePreviewSamplingMixin:
             pupil.Ptype = self._current_analysis_pupil_pattern()
             pupil.FieldType = "height"
             bundles = []
-            for field_x, field_y in self._sample_field_grid_pairs(self._current_field_height()):
+            for field_x, field_y in self._sample_field_grid_pairs(self._launch_field_radial_max()):
                 pupil.FieldX = float(field_x)
                 pupil.FieldY = float(field_y)
                 bundle = self._pupil_pattern_bundle(pupil)
@@ -999,7 +1033,7 @@ class TracePreviewSamplingMixin:
         disk_pts = self._sample_pupil_disk(radius)
         object_distance = self._current_object_distance()
         bundles = []
-        for field_x, field_y in self._sample_field_grid_pairs(self._current_field_height()):
+        for field_x, field_y in self._sample_field_grid_pairs(self._launch_field_radial_max()):
             origin = np.array([-float(field_x), -float(field_y), 0.0], dtype=float)
             x_vals: list[float] = []
             y_vals: list[float] = []
