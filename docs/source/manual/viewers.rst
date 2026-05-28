@@ -582,6 +582,11 @@ hardware context:
   STEP import directly from the Open 3D ``CAD / target -> Import STEP`` menu.
   The arbitrary optical import uses a separate ``optical`` overlay slot and
   does not replace an existing lens STEP overlay.
+* Show Rays and Trace Now keep arbitrary imported optical STEP overlays
+  display-only until the user explicitly places/snaps them. Once placed, a
+  supported axisymmetric lens STEP is traced through reconstructed KrakenOS
+  native analytic rows; unsupported solids still use the mesh-backed
+  ``Solid_3d_stl`` optical-solid path.
 * imported STEP carry placement in Open 3D: a newly imported optical STEP is
   selected and carried by the cursor immediately until the next click drops it.
   If the pointer is outside the VTK canvas when the file dialog closes, the

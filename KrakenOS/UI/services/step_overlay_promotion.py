@@ -200,6 +200,138 @@ class StepOverlayPromotionService:
             **mesh_bounds,
         }
 
+    @staticmethod
+    def _default_live_native_glass_sequence(reconstruction) -> tuple[str, ...]:
+        try:
+            surface_count = len(list(reconstruction.component_rows()))
+        except Exception:
+            surface_count = 0
+        if surface_count <= 0:
+            try:
+                surface_count = len(list(getattr(reconstruction, "surface_fits", ()) or ()))
+            except Exception:
+                surface_count = 0
+        if surface_count <= 0:
+            return ()
+        if surface_count == 1:
+            return ("AIR",)
+        return tuple("BK7" for _ in range(surface_count - 1)) + ("AIR",)
+
+    def _step_overlay_native_live_trace_plan(
+        self,
+        label: str,
+        source_path,
+        *,
+        resolved_insert_at: int,
+        arm_key: str,
+        quiet: bool,
+    ) -> dict[str, object] | None:
+        try:
+            probe = reconstruct_step_native_surfaces(source_path)
+            material_sequence = self._default_live_native_glass_sequence(probe)
+            if not material_sequence:
+                return None
+            reconstruction = reconstruct_step_native_surfaces(source_path, glass_sequence=material_sequence)
+        except Exception as exc:
+            if not quiet:
+                self.append_debug(f"{label.upper()} STEP native live trace skipped: {exc}")
+            return None
+        if not bool(getattr(reconstruction, "trace_ready", False)):
+            if not quiet:
+                diagnostics = [
+                    str(getattr(diagnostic, "message", "") or "")
+                    for diagnostic in list(getattr(reconstruction, "diagnostics", ()) or ())
+                    if str(getattr(diagnostic, "severity", "") or "").lower() == "error"
+                ]
+                self.append_debug(
+                    f"{label.upper()} STEP native live trace not ready: "
+                    + ("; ".join(diagnostics) if diagnostics else "inspect reconstruction diagnostics")
+                )
+            return None
+        native_rows = list(reconstruction.component_rows())
+        if not native_rows:
+            return None
+        display_label = self._step_overlay_display_label(label)
+        element_name = f"Live {display_label.upper()} native STEP"
+        applied_pose = self._native_step_overlay_row_pose(label, reconstruction, int(resolved_insert_at))
+        row_tilts = tuple(float(value) for value in list(applied_pose.get("row_tilts_deg", (0.0, 0.0, 0.0)))[:3])
+        row_decenter = tuple(float(value) for value in list(applied_pose.get("row_decenter_mm", (0.0, 0.0, 0.0)))[:3])
+        row_indices = list(range(int(resolved_insert_at), int(resolved_insert_at) + len(native_rows)))
+        pose_metadata = {
+            "step_label": label,
+            "source_step_path": str(source_path.resolve()),
+            "material_sequence": list(material_sequence),
+            "step_rotation_deg": [
+                float(self._step_x_rotation_deg(label)),
+                float(self._step_y_rotation_deg(label)),
+                float(self._step_roll_deg(label)),
+            ],
+            "axis_offset_xy": [float(value) for value in self._step_axis_offset_xy(label)],
+            "placement_offset_xyz": [float(value) for value in self._step_placement_offset_xyz(label)],
+            "row_coordinates": "native_reconstructed_prescription_with_open3d_pose",
+            "applied_row_pose": applied_pose,
+            "trace_ready": bool(reconstruction.trace_ready),
+            "transient_live_trace": True,
+        }
+        for offset, row in enumerate(native_rows):
+            if arm_key:
+                self._apply_arm_key_metadata_to_row(row, arm_key)
+            row.element = element_name
+            row.name = f"Live {display_label.upper()} native STEP S{offset + 1}: {row.name}"
+            row.tilt_x, row.tilt_y, row.tilt_z = row_tilts
+            row.desp_x, row.desp_y, row.desp_z = row_decenter
+            row.axis_move = 0.0
+            row.advanced = dict(row.advanced or {})
+            row.advanced["StepNativePromotion"] = {
+                **pose_metadata,
+                "row_index_offset": int(offset),
+                "row_indices": row_indices,
+                "reconstruction": reconstruction.as_record() if offset == 0 else {"see_first_row": True},
+            }
+            row.advanced["LiveStepOverlayTrace"] = {
+                "enabled": True,
+                "step_label": label,
+                "trace_backend": "native_analytic_rows",
+                "source_step_path": str(source_path.resolve()),
+                "row_indices": row_indices,
+            }
+            row.advanced[SCENE_PLACEMENT_ADVANCED_ATTR] = normalize_scene_placement_settings(
+                {
+                    "enabled": True,
+                    "anchor": "row_pose",
+                    "snap_enabled": True,
+                    "snap_mm": max(float(row.diameter) / 20.0, 0.1),
+                    "snap_deg": 5.0,
+                    "grid_visible": False,
+                    "grid_spacing_mm": max(float(row.diameter) / 10.0, 0.5),
+                    "grid_extent_mm": max(float(row.diameter) * 2.0, 25.0),
+                    "promotion_source": "open3d_step_native_live_trace",
+                    "promotion_step_label": label,
+                    "promotion_source_step_path": str(source_path.resolve()),
+                    "promotion_row_coordinates": "native_reconstructed_prescription_with_open3d_pose",
+                    "transient_live_trace": True,
+                }
+            )
+            row.advanced["Note"] = (
+                "Transient Open 3D live trace rebuilt this imported STEP as KrakenOS-native analytic rows. "
+                "This avoids tracing refractive lens physics against faceted STL triangle normals. "
+                "The default live material sequence uses BK7 for internal media and AIR after the last surface; "
+                "promote to native rows and set exact glasses for production prescriptions."
+            )
+        return {
+            "label": label,
+            "row_index": int(resolved_insert_at),
+            "row_indices": row_indices,
+            "row_count": len(native_rows),
+            "rows": native_rows,
+            "source_step_path": str(source_path.resolve()),
+            "material_sequence": material_sequence,
+            "reconstruction": reconstruction,
+            "applied_row_pose": applied_pose,
+            "transient_live_trace": True,
+            "trace_backend": "native_analytic_rows",
+        }
+
     def _step_overlay_optical_solid_row_plan(
         self,
         label: str,
@@ -270,6 +402,16 @@ class StepOverlayPromotionService:
 
         resolved_insert_at, arm_key = self._step_overlay_insert_index(insert_at, use_current_selection=use_current_selection)
         z_station = float(sum(float(getattr(row, "thickness", 0.0) or 0.0) for row in self.rows[:resolved_insert_at]))
+        if transient_live_trace:
+            native_plan = self._step_overlay_native_live_trace_plan(
+                label,
+                source_path.resolve(),
+                resolved_insert_at=int(resolved_insert_at),
+                arm_key=arm_key,
+                quiet=quiet,
+            )
+            if native_plan is not None:
+                return native_plan
 
         row = self._optical_stl_solid_row(
             mesh_path.resolve(),

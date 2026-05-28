@@ -329,10 +329,18 @@ class ThreeDSceneToolsMixin:
         cache_key = self._live_step_overlay_trace_cache_key("optical", base_rows)
         cached_plan = self._cached_live_step_overlay_trace_plan(cache_key)
         if cached_plan is not None:
+            rows = cached_plan.get("rows")
+            if isinstance(rows, (list, tuple)) and rows:
+                row_index = int(cached_plan.get("row_index", len(base_rows)))
+                insert_at = max(1, min(row_index, len(base_rows)))
+                for offset, row in enumerate(rows):
+                    if isinstance(row, SurfaceRow):
+                        base_rows.insert(insert_at + offset, SurfaceRow(**asdict(row)))
+                return base_rows, [cached_plan]
             row = cached_plan.get("row")
             if isinstance(row, SurfaceRow):
                 row_index = int(cached_plan.get("row_index", len(base_rows)))
-                base_rows.insert(max(1, min(row_index, len(base_rows))), row)
+                base_rows.insert(max(1, min(row_index, len(base_rows))), SurfaceRow(**asdict(row)))
                 return base_rows, [cached_plan]
         original_rows = self.rows
         try:
@@ -346,11 +354,24 @@ class ThreeDSceneToolsMixin:
             )
             if plan is None:
                 return original_rows, []
+            rows = plan.get("rows")
+            if isinstance(rows, (list, tuple)) and rows:
+                row_index = int(plan.get("row_index", len(base_rows)))
+                insert_at = max(1, min(row_index, len(base_rows)))
+                inserted = 0
+                for offset, row in enumerate(rows):
+                    if isinstance(row, SurfaceRow):
+                        base_rows.insert(insert_at + offset, SurfaceRow(**asdict(row)))
+                        inserted += 1
+                if inserted:
+                    self._remember_live_step_overlay_trace_plan(cache_key, plan)
+                    return base_rows, [plan]
+                return original_rows, []
             row = plan.get("row")
             if not isinstance(row, SurfaceRow):
                 return original_rows, []
             row_index = int(plan.get("row_index", len(base_rows)))
-            base_rows.insert(max(1, min(row_index, len(base_rows))), row)
+            base_rows.insert(max(1, min(row_index, len(base_rows))), SurfaceRow(**asdict(row)))
             self._remember_live_step_overlay_trace_plan(cache_key, plan)
             return base_rows, [plan]
         finally:

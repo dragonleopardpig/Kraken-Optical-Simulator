@@ -132,9 +132,13 @@ wavelength)``. Current UI coverage adds:
 * ``Beam Splitter`` rows that persist splitter settings, spawn deterministic
   reflected/transmitted child paths, and write coating tables as a fallback
 * file-backed optical CAD/STL solids through native ``Solid_3d_stl`` rows;
-  STEP/IGES vendor CAD is meshed to cached STL first, and closed meshes use the
-  row material for non-sequential entry/exit regardless of the tilted mesh side
-  selected by the hit chooser
+  unsupported STEP/IGES vendor CAD is meshed to cached STL, and closed meshes
+  use the row material for non-sequential entry/exit regardless of the tilted
+  mesh side selected by the hit chooser
+* supported axisymmetric optical STEP lenses can be rebuilt as KrakenOS-native
+  analytic surface rows for transient Open 3D Show Rays/Trace Now previews and
+  for explicit native-row promotion, avoiding faceted STL normals for refractive
+  lens physics
 * Non-Sequential Scene Graph inspection and CSV export
 * Trace Path inspection and CSV export
 

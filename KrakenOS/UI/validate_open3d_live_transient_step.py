@@ -6,6 +6,7 @@ import inspect
 from dataclasses import dataclass
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
+from KrakenOS.UI.services import open3d_face_index_edges
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
@@ -31,6 +32,7 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
     inspector_source = inspect.getsource(Kraken3DInspector)
     editor_source = _editor_contract_source()
     open3d_scene_refresh_service = inspect.getsource(Open3DSceneRefreshService)
+    open3d_face_index_edges_source = inspect.getsource(open3d_face_index_edges)
     open3d_step_state_service = inspect.getsource(Open3DStepStateService)
     open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)
     physics_requested_source = inspect.getsource(Open3DTraceRefreshService.inspector_physics_requested)
@@ -101,6 +103,16 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
             "The imported optical STEP is converted to a file-backed Solid_3d_stl row with face metadata.",
         ),
         Open3DLiveTransientStepCheck(
+            "Trace-ready analytic STEP lenses use native rows before STL fallback",
+            "def _step_overlay_native_live_trace_plan" in step_promotion_service
+            and "reconstruct_step_native_surfaces(source_path" in step_promotion_service
+            and '"trace_backend": "native_analytic_rows"' in step_promotion_service
+            and 'if transient_live_trace:' in step_promotion_service
+            and "native_plan is not None" in step_promotion_service
+            and 'return tuple("BK7" for _ in range(surface_count - 1)) + ("AIR",)' in step_promotion_service,
+            "Axisymmetric optical STEP previews trace analytic KrakenOS surfaces when possible, avoiding faceted STL normals.",
+        ),
+        Open3DLiveTransientStepCheck(
             "Only the generic optical STEP overlay becomes live-traceable",
             "def _live_step_overlay_trace_rows" in editor_source
             and 'self._step_path_for_label("optical")' in editor_source
@@ -133,7 +145,8 @@ def validate_open3d_live_transient_step() -> list[Open3DLiveTransientStepCheck]:
         Open3DLiveTransientStepCheck(
             "CAD body edges are cleaned before display",
             "def _display_feature_edges" in inspector_source
-            and ".clean(tolerance=1e-6" in inspector_source
+            and "def display_feature_edges" in open3d_face_index_edges_source
+            and ".clean(tolerance=1e-6" in open3d_face_index_edges_source
             and "ray_surface_edge_overlays.append((edges, file_backed_silhouette_color" in open3d_scene_refresh_service,
             "Imported solids use strong outline edges without relying on raw triangulation boundaries.",
         ),
