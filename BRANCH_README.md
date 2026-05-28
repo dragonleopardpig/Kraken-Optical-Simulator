@@ -104,7 +104,10 @@ STEP ray-tail trimming path is now contract-checked as a local Open 3D service
 method call so it cannot regress into a runtime-only editor name lookup.
 Saved layout files now serialize in-repository camera, lens, optical, and LED
 STEP assets as project-relative paths, keeping browser-loadable examples
-portable across machines.
+portable across machines. The Open 3D Live Controls and Scene Components
+side panels are now horizontal paned-window panes, so users can drag their
+widths or hide either panel from the View toolbar while keeping the 3D viewport
+expanded.
 Repeated Show Rays toggles reuse the current traced scene instead of rebuilding
 transient STEP physics, first-trace timing now records live STEP row
 planning, system build, ray tracing, SceneBundle projection, and per-bundle

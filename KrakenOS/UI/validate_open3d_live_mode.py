@@ -50,12 +50,15 @@ def validate_open3d_live_mode() -> list[Open3DLiveModeCheck]:
             "Transient STEP placement can be committed from the left Live Controls panel.",
         ),
         Open3DLiveModeCheck(
-            "Live Controls are docked left of the 3D viewport",
-            "self.columnconfigure(0, weight=0)" in inspector_source
-            and "self.columnconfigure(1, weight=1)" in inspector_source
-            and 'host.grid(row=1, column=1, sticky="nsew")' in inspector_source
-            and 'live_panel.grid(row=1, column=0, sticky="nsew"' in inspector_source,
-            "The control panel owns the left column while the VTK viewport remains the expanding right column.",
+            "Live Controls are resizable and hideable beside the 3D viewport",
+            "ttk.Panedwindow(self, orient=tk.HORIZONTAL)" in inspector_source
+            and "_open3d_live_panel_host" in inspector_source
+            and "_open3d_viewport_host" in inspector_source
+            and "main_pane.add(live_panel, weight=0)" in inspector_source
+            and "main_pane.add(host, weight=1)" in inspector_source
+            and "show_live_controls_panel_var" in inspector_source
+            and "def toggle_live_controls_panel" in inspector_source,
+            "The control panel is a left paned-window pane that can be dragged wider/narrower or hidden.",
         ),
         Open3DLiveModeCheck(
             "Live controls are bound to the main editor state",

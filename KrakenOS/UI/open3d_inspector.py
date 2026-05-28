@@ -326,6 +326,8 @@ class Kraken3DInspector(tk.Toplevel):
         self.show_detector_overlays_var = tk.BooleanVar(value=False)
         self.show_terminal_diagnostics_var = tk.BooleanVar(value=False)
         self.show_placement_handles_var = tk.BooleanVar(value=False)
+        self.show_live_controls_panel_var = tk.BooleanVar(value=True)
+        self.show_scene_components_panel_var = tk.BooleanVar(value=True)
         self.live_mode_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="3D inspector ready")
 
@@ -334,30 +336,41 @@ class Kraken3DInspector(tk.Toplevel):
         self.columnconfigure(2, weight=0)
         self.rowconfigure(1, weight=1)
 
-        host = ttk.Frame(self, padding=8)
-        host.grid(row=1, column=1, sticky="nsew")
-        host.columnconfigure(0, weight=1)
-        host.rowconfigure(0, weight=1)
-
         if vtkTkRenderWindowInteractor is None or vtkRenderer is None:
             self.unavailable_reason = _VTK_TK_UNAVAILABLE_REASON or "Embedded VTK/Tk viewer unavailable."
             self.status_var.set(self.unavailable_reason)
             return
 
+        host = None
         try:
             self._build_open3d_top_controls(self)
 
+            main_pane = ttk.Panedwindow(self, orient=tk.HORIZONTAL)
+            main_pane.grid(row=1, column=0, columnspan=3, sticky="nsew", padx=8, pady=8)
+            self._open3d_main_pane = main_pane
+
             live_panel = ttk.LabelFrame(self, text="Live Controls", padding=8)
-            live_panel.grid(row=1, column=0, sticky="nsew", padx=(8, 0), pady=8)
             live_panel.columnconfigure(0, weight=1)
             live_panel.rowconfigure(1, weight=1)
+            live_panel.configure(width=320)
+            self._open3d_live_panel_host = live_panel
             self._build_live_left_panel(live_panel)
 
+            host = ttk.Frame(self, padding=0)
+            host.columnconfigure(0, weight=1)
+            host.rowconfigure(0, weight=1)
+            self._open3d_viewport_host = host
+
             step_admin_panel = ttk.LabelFrame(self, text="Scene Components", padding=8)
-            step_admin_panel.grid(row=1, column=2, sticky="nsew", padx=(0, 8), pady=8)
             step_admin_panel.columnconfigure(0, weight=1)
             step_admin_panel.rowconfigure(0, weight=1)
+            step_admin_panel.configure(width=300)
+            self._open3d_step_admin_panel_host = step_admin_panel
             self._build_step_admin_right_panel(step_admin_panel)
+
+            main_pane.add(live_panel, weight=0)
+            main_pane.add(host, weight=1)
+            main_pane.add(step_admin_panel, weight=0)
 
             _prepare_vtk_tk_widget(host)
             self._vtk_widget = vtkTkRenderWindowInteractor(host, width=1100, height=720)
@@ -402,9 +415,74 @@ class Kraken3DInspector(tk.Toplevel):
             self.unavailable_reason = _short_error_message(exc)
             self.status_var.set(f"Embedded 3D unavailable: {self.unavailable_reason}")
             try:
-                host.destroy()
+                if host is not None:
+                    host.destroy()
             except Exception:
                 pass
+
+    @staticmethod
+    def _open3d_pane_present(paned: ttk.Panedwindow | None, child: tk.Widget | None) -> bool:
+        if paned is None or child is None:
+            return False
+        child_name = str(child)
+        return any(str(pane) == child_name for pane in paned.panes())
+
+    def _set_open3d_side_panel_visible(self, panel: str, visible: bool) -> None:
+        paned = getattr(self, "_open3d_main_pane", None)
+        if paned is None:
+            return
+        if panel == "live":
+            widget = getattr(self, "_open3d_live_panel_host", None)
+            variable = self.show_live_controls_panel_var
+            insert_index = 0
+            label = "Live Controls"
+        elif panel == "components":
+            widget = getattr(self, "_open3d_step_admin_panel_host", None)
+            variable = self.show_scene_components_panel_var
+            insert_index = None
+            label = "Scene Components"
+        else:
+            return
+        if widget is None:
+            variable.set(False)
+            return
+        present = self._open3d_pane_present(paned, widget)
+        if visible and not present:
+            if insert_index is None:
+                paned.add(widget, weight=0)
+            else:
+                paned.insert(insert_index, widget, weight=0)
+            variable.set(True)
+            self.status_var.set(f"{label} panel shown.")
+        elif not visible and present:
+            paned.forget(widget)
+            variable.set(False)
+            self.status_var.set(f"{label} panel hidden.")
+        else:
+            variable.set(present)
+        try:
+            self.update_idletasks()
+        except Exception:
+            pass
+        self.render()
+
+    def _on_open3d_panel_visibility_changed(self) -> None:
+        self._set_open3d_side_panel_visible("live", bool(self.show_live_controls_panel_var.get()))
+        self._set_open3d_side_panel_visible("components", bool(self.show_scene_components_panel_var.get()))
+
+    def toggle_live_controls_panel(self) -> None:
+        visible = not self._open3d_pane_present(
+            getattr(self, "_open3d_main_pane", None),
+            getattr(self, "_open3d_live_panel_host", None),
+        )
+        self._set_open3d_side_panel_visible("live", visible)
+
+    def toggle_scene_components_panel(self) -> None:
+        visible = not self._open3d_pane_present(
+            getattr(self, "_open3d_main_pane", None),
+            getattr(self, "_open3d_step_admin_panel_host", None),
+        )
+        self._set_open3d_side_panel_visible("components", visible)
 
     def _open3d_top_controls_panel(self) -> Open3DTopControlsPanel:
         panel = getattr(self, "_open3d_top_controls_panel_instance", None)

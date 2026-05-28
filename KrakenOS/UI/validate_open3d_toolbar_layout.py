@@ -173,6 +173,15 @@ def main() -> int:
             "ray clicks should not open Ray Inspector unless the user enables the Pick rays toggle",
         ),
         (
+            "Open 3D view row can hide side panels",
+            '"Live panel"' in toolbar_source
+            and "show_live_controls_panel_var" in toolbar_source
+            and '"Components"' in toolbar_source
+            and "show_scene_components_panel_var" in toolbar_source
+            and "_on_open3d_panel_visibility_changed" in toolbar_source,
+            "3D side panels should be hideable from the same always-visible toolbar as 2D sidebars.",
+        ),
+        (
             "Open 3D carry row avoids explicit Lift/Drop buttons",
             'ttk.Button(carry_toolbar, text="Lift"' not in toolbar_source
             and 'ttk.Button(carry_toolbar, text="Drop"' not in toolbar_source

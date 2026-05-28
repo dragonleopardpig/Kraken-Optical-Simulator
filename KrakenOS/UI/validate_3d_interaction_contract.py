@@ -438,6 +438,11 @@ def main() -> int:
     step_admin_scene_element_select = inspect.getsource(Kraken3DInspector.select_scene_element_from_admin)
     row_scene_bounds = inspect.getsource(Kraken3DInspector._row_scene_bounds)
     init = inspect.getsource(Kraken3DInspector.__init__)
+    open3d_panel_visibility = inspect.getsource(Kraken3DInspector._set_open3d_side_panel_visible)
+    open3d_panel_toggles = (
+        inspect.getsource(Kraken3DInspector.toggle_live_controls_panel)
+        + inspect.getsource(Kraken3DInspector.toggle_scene_components_panel)
+    )
     top_controls_source = inspect.getsource(Open3DTopControlsPanel).replace("self.inspector.", "self.")
     init_with_top_controls = init + "\n" + top_controls_source
     try:
@@ -1621,10 +1626,15 @@ def main() -> int:
             and "pack_menubutton" in init_with_top_controls,
         ),
         (
-            "Open 3D has a right-docked STEP element browser",
+            "Open 3D has a resizable/hideable STEP element browser",
             "_build_step_admin_right_panel" in init
             and '"Scene Components"' in init
-            and "columnconfigure(2, weight=0)" in init
+            and "ttk.Panedwindow(self, orient=tk.HORIZONTAL)" in init
+            and "_open3d_step_admin_panel_host" in init
+            and "main_pane.add(step_admin_panel, weight=0)" in init
+            and "show_scene_components_panel_var" in init
+            and "components" in open3d_panel_visibility
+            and "toggle_scene_components_panel" in open3d_panel_toggles
             and "columnspan=3" in init_with_top_controls
             and "refresh_step_admin_panel" in refresh,
         ),
