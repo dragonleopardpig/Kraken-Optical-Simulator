@@ -66,6 +66,7 @@ from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsServic
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_step_rotation_handles import Open3DStepRotationHandleService
+from KrakenOS.UI.services.open3d_step_overlay_refresh import Open3DStepOverlayRefreshService
 from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.plot_refresh import PlotRefreshService
@@ -296,6 +297,7 @@ def main() -> int:
     display_pick_ray = inspect.getsource(Kraken3DInspector._display_pick_ray)
     row_face_ray_pick = inspect.getsource(Kraken3DInspector._row_face_ray_pick_for_display_xy)
     step_face_ray_pick = inspect.getsource(Kraken3DInspector._step_face_ray_pick_for_display_xy)
+    step_pick_any = inspect.getsource(Kraken3DInspector._step_feature_pick_any_for_display_xy)
     face_ray_pick_service = inspect.getsource(pick_face_from_ray)
     remember_step_feature = inspect.getsource(Kraken3DInspector._remember_selected_step_feature)
     step_carry_drop = inspect.getsource(Kraken3DInspector.stop_step_carry)
@@ -1341,12 +1343,20 @@ def main() -> int:
             "Open 3D Esc and blank clicks clear selected components",
             "_clear_open3d_selection(render=True)" in operation_cancel
             and "_clear_open3d_selection(render=False)" in operation_cancel
+            and "cancel_active_3d_operation()" in pick
             and "_clear_open3d_selection(render=False)" in pick
             and "_selected_step_label = None" in clear_selection
             and "_selected_step_feature_label" in clear_selection
             and "_set_step_highlight(None, render=False)" in clear_selection
             and "_remove_step_rotation_handle_actors()" in clear_selection
             and "RemoveActor(actor)" in remove_step_handles,
+        ),
+        (
+            "Transparent imported STEP faces have display-ray pick fallback",
+            "_step_feature_pick_for_display_xy" in step_pick_any
+            and "_step_feature_pick_any_for_display_xy" in pick
+            and "backface_culling=False" in refresh
+            and "backface_culling=False" in inspect.getsource(Open3DStepOverlayRefreshService.refresh_imported_step_overlay),
         ),
         (
             "Open 3D Esc reverts uncommitted free carry movement",

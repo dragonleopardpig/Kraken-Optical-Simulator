@@ -205,13 +205,15 @@ class Open3DInteractionService:
                 except Exception:
                     cell_id = -1
                 step_label = str(step_label)
-                feature_pick = self._step_feature_pick_for_display_xy(
-                    step_label,
-                    (x, y),
-                    actor=actor,
-                    actor_key=str(source_actor_key) if source_actor_key else None,
-                    cell_id=cell_id,
-                )
+                feature_pick = source_pick.get("feature_pick") if isinstance(source_pick, dict) else None
+                if not isinstance(feature_pick, dict):
+                    feature_pick = self._step_feature_pick_for_display_xy(
+                        step_label,
+                        (x, y),
+                        actor=actor,
+                        actor_key=str(source_actor_key) if source_actor_key else None,
+                        cell_id=cell_id,
+                    )
                 feature = feature_pick.get("feature") if feature_pick is not None else None
                 surface_center = feature_pick.get("surface_center") if feature_pick is not None else None
                 picked_face_id = str(feature_pick.get("face_id", "") if feature_pick is not None else "").strip()
@@ -229,6 +231,8 @@ class Open3DInteractionService:
                 self.start_step_normal_axis_pick(step_label)
                 self.render()
                 return
+            if actor_key is None and self.cancel_active_3d_operation():
+                return
             self.status_var.set("Center Row->Optical Axis: click a surface/CAD row or imported STEP face before choosing Optical Axis.")
             self.render()
             return
@@ -241,6 +245,8 @@ class Open3DInteractionService:
                     self._set_optical_axis_highlight(axis_id)
                     self._apply_center_row_to_optical_axis(axis_info)
                     self.render()
+                    return
+                if actor_key is None and self.cancel_active_3d_operation():
                     return
                 self.status_var.set("Center Row->Optical Axis: click the dotted Optical Axis guide.")
                 self.render()
@@ -257,6 +263,8 @@ class Open3DInteractionService:
                 self._apply_step_normal_axis_pick(axis_info)
                 self.render()
                 return
+            if actor_key is None and self.cancel_active_3d_operation():
+                return
             self.status_var.set("Snap STEP Normal->Optical Axis: click the dotted Optical Axis guide.")
             self.render()
             return
@@ -267,6 +275,8 @@ class Open3DInteractionService:
                 self._set_optical_axis_highlight(axis_id)
                 self._apply_step_surface_center_axis_pick(axis_info)
                 self.render()
+                return
+            if actor_key is None and self.cancel_active_3d_operation():
                 return
             self.status_var.set("Center Surface->Optical Axis: click the dotted Optical Axis guide.")
             self.render()
@@ -282,6 +292,16 @@ class Open3DInteractionService:
             self.render()
             return
         step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
+        fallback_step_pick = None
+        if step_label is None:
+            fallback_labels = None
+            requested_label = getattr(self.editor, "_cad_axis_pick_label", None)
+            axis_pick_any = bool(getattr(self.editor, "_cad_axis_pick_any", False))
+            if requested_label is not None:
+                fallback_labels = (requested_label,)
+            fallback_step_pick = self._step_feature_pick_any_for_display_xy((x, y), labels=fallback_labels)
+            if fallback_step_pick is not None:
+                step_label = str(fallback_step_pick.get("label"))
         axis_pick_any = bool(getattr(self.editor, "_cad_axis_pick_any", False))
         if self._source_target_pick_mode and step_label is not None:
             self.status_var.set("Source Target: pick a KrakenOS surface/CAD solid row, not external STEP hardware.")
@@ -328,13 +348,15 @@ class Open3DInteractionService:
                 return
             requested_label = self.editor._cad_axis_pick_label
             if requested_label is None and not axis_pick_any:
-                feature_pick = self._step_feature_pick_for_display_xy(
-                    str(step_label),
-                    (x, y),
-                    actor=actor,
-                    actor_key=actor_key,
-                    cell_id=step_cell_id,
-                )
+                feature_pick = fallback_step_pick.get("feature_pick") if isinstance(fallback_step_pick, dict) else None
+                if not isinstance(feature_pick, dict):
+                    feature_pick = self._step_feature_pick_for_display_xy(
+                        str(step_label),
+                        (x, y),
+                        actor=actor,
+                        actor_key=actor_key,
+                        cell_id=step_cell_id,
+                    )
                 feature = feature_pick.get("feature") if feature_pick is not None else None
                 surface_center = feature_pick.get("surface_center") if feature_pick is not None else None
                 picked_face_id = str(feature_pick.get("face_id", "") if feature_pick is not None else "").strip()
@@ -353,13 +375,15 @@ class Open3DInteractionService:
             if requested_label is not None and requested_label != step_label:
                 self.status_var.set(f"CAD STEP picked: {step_label}. Center mode is armed for {str(requested_label).upper()}.")
                 return
-            feature_pick = self._step_feature_pick_for_display_xy(
-                str(step_label),
-                (x, y),
-                actor=actor,
-                actor_key=actor_key,
-                cell_id=step_cell_id,
-            )
+            feature_pick = fallback_step_pick.get("feature_pick") if isinstance(fallback_step_pick, dict) else None
+            if not isinstance(feature_pick, dict):
+                feature_pick = self._step_feature_pick_for_display_xy(
+                    str(step_label),
+                    (x, y),
+                    actor=actor,
+                    actor_key=actor_key,
+                    cell_id=step_cell_id,
+                )
             feature = feature_pick.get("feature") if feature_pick is not None else None
             picked_face_id = str(feature_pick.get("face_id", "") if feature_pick is not None else "").strip()
             if feature is None:
@@ -473,6 +497,9 @@ class Open3DInteractionService:
             self.render()
             return
         if row_index is None:
+            if actor_key is None and self._active_3d_operation_labels():
+                if self.cancel_active_3d_operation():
+                    return
             if self._placement_target_pick_mode:
                 self.status_var.set("Snap Row->Target: click a surface/CAD solid row.")
                 self.render()
@@ -686,14 +713,17 @@ class Open3DInteractionService:
                 if step_label is not None:
                     hover_key = (actor_key, int(cell_id))
                     outline = None
+                    picked_face_id = ""
                     if hover_key != self._hover_step_cell_key:
-                        feature_pick = self._step_feature_pick_for_display_xy(
-                            str(step_label),
-                            (x, y),
-                            actor=actor,
-                            actor_key=actor_key,
-                            cell_id=cell_id,
-                        )
+                        feature_pick = source_pick.get("feature_pick") if isinstance(source_pick, dict) else None
+                        if not isinstance(feature_pick, dict):
+                            feature_pick = self._step_feature_pick_for_display_xy(
+                                str(step_label),
+                                (x, y),
+                                actor=actor,
+                                actor_key=actor_key,
+                                cell_id=cell_id,
+                            )
                         feature = feature_pick.get("feature") if feature_pick is not None else None
                         picked_face_id = str(feature_pick.get("face_id", "") if feature_pick is not None else "").strip()
                         if picked_face_id:
@@ -863,18 +893,25 @@ class Open3DInteractionService:
                         return
                     self._set_rotation_handle_hover(None)
                     step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
+                    fallback_step_pick = None
+                    if step_label is None:
+                        fallback_step_pick = self._step_feature_pick_any_for_display_xy((x, y))
+                        if fallback_step_pick is not None:
+                            step_label = str(fallback_step_pick.get("label"))
                     if step_label is not None:
                         try:
                             cell_id = int(self._picker.GetCellId())
                         except Exception:
                             cell_id = -1
-                        feature_pick = self._step_feature_pick_for_display_xy(
-                            str(step_label),
-                            (x, y),
-                            actor=actor,
-                            actor_key=actor_key,
-                            cell_id=cell_id,
-                        )
+                        feature_pick = fallback_step_pick.get("feature_pick") if isinstance(fallback_step_pick, dict) else None
+                        if not isinstance(feature_pick, dict):
+                            feature_pick = self._step_feature_pick_for_display_xy(
+                                str(step_label),
+                                (x, y),
+                                actor=actor,
+                                actor_key=actor_key,
+                                cell_id=cell_id,
+                            )
                         feature = feature_pick.get("feature") if feature_pick is not None else None
                         if feature is not None:
                             face_id = str(feature_pick.get("face_id", "") if feature_pick is not None else "").strip()
@@ -929,18 +966,28 @@ class Open3DInteractionService:
             return
         self._set_rotation_handle_hover(None)
         step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
+        fallback_step_pick = None
+        if step_label is None:
+            fallback_labels = None
+            if target_label is not None and not axis_pick_any:
+                fallback_labels = (target_label,)
+            fallback_step_pick = self._step_feature_pick_any_for_display_xy((x, y), labels=fallback_labels)
+            if fallback_step_pick is not None:
+                step_label = str(fallback_step_pick.get("label"))
         if step_label is not None and (axis_pick_any or step_label == target_label):
             try:
                 cell_id = int(self._picker.GetCellId())
             except Exception:
                 cell_id = -1
-            feature_pick = self._step_feature_pick_for_display_xy(
-                str(step_label),
-                (x, y),
-                actor=actor,
-                actor_key=actor_key,
-                cell_id=cell_id,
-            )
+            feature_pick = fallback_step_pick.get("feature_pick") if isinstance(fallback_step_pick, dict) else None
+            if not isinstance(feature_pick, dict):
+                feature_pick = self._step_feature_pick_for_display_xy(
+                    str(step_label),
+                    (x, y),
+                    actor=actor,
+                    actor_key=actor_key,
+                    cell_id=cell_id,
+                )
             outline = None
             through_pick = feature_pick.get("through_pick") if feature_pick is not None else None
             if feature_pick is not None and str(feature_pick.get("face_id", "") or "").strip():

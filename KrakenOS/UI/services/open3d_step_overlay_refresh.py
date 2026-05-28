@@ -162,6 +162,7 @@ class Open3DStepOverlayRefreshService:
                 pick_step_label=label,
                 follow_step_label=label,
                 flat_shading=True,
+                backface_culling=False,
             )
             try:
                 cad_edges = inspector._display_feature_edges(

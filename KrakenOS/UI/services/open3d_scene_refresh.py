@@ -561,6 +561,7 @@ class Open3DSceneRefreshService:
                     pick_step_label=label,
                     follow_step_label=label,
                     flat_shading=True,
+                    backface_culling=False,
                 )
                 try:
                     try:

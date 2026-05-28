@@ -4251,7 +4251,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 pick_world = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
             except Exception:
                 pick_world = np.asarray([], dtype=float)
-            return {
+            result = {
                 "actor": actor,
                 "actor_key": actor_key,
                 "row_index": int(row_index) if row_index is not None else None,
@@ -4259,6 +4259,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 "cell_id": int(cell_id),
                 "pick_world": pick_world,
             }
+            if result["row_index"] is None and result["step_label"] is None:
+                fallback = self._step_feature_pick_any_for_display_xy((x, y))
+                if fallback is not None:
+                    result["step_label"] = str(fallback.get("label"))
+                    result["feature_pick"] = fallback.get("feature_pick")
+                    result["cell_id"] = -1
+            return result
         except Exception:
             return None
         finally:
@@ -4267,6 +4274,74 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     actor.PickableOn()
                 except Exception:
                     pass
+
+    def _step_pick_label_order(self, labels=None) -> list[str]:
+        ordered: list[str] = []
+
+        def add(label) -> None:
+            value = str(label or "").strip().lower()
+            if value and value in STEP_OVERLAY_LABEL_SET and value not in ordered:
+                ordered.append(value)
+
+        if labels is not None:
+            try:
+                for label in labels:
+                    add(label)
+            except TypeError:
+                add(labels)
+        add(getattr(self.editor, "_selected_step_label", None))
+        add(getattr(self, "_picked_step_label", None))
+        add(getattr(self, "_step_rotation_active_label", None))
+        add(self._step_carry_label())
+        for label in STEP_OVERLAY_LABELS:
+            add(label)
+        return ordered
+
+    def _step_feature_pick_any_for_display_xy(self, display_xy, labels=None) -> dict[str, object] | None:
+        """Pick an imported STEP face by display ray, even when VTK returns no actor.
+
+        Transparent prisms can show back/slanted faces that the VTK prop picker
+        will not report as the picked actor. The face-aware picker works from
+        the camera ray and STEP face metadata, so use it as the coverage
+        fallback for hover, click selection, and axis-snap workflows.
+        """
+        candidates: list[tuple[float, int, str, dict[str, object]]] = []
+        for order, label in enumerate(self._step_pick_label_order(labels)):
+            try:
+                if self.editor._step_path_for_label(label) is None:
+                    continue
+            except Exception:
+                continue
+            try:
+                feature_pick = self._step_feature_pick_for_display_xy(
+                    label,
+                    display_xy,
+                    actor=None,
+                    actor_key=None,
+                    cell_id=-1,
+                )
+            except Exception:
+                feature_pick = None
+            if not isinstance(feature_pick, dict):
+                continue
+            feature = feature_pick.get("feature")
+            if feature is None:
+                continue
+            through_pick = feature_pick.get("through_pick")
+            distance = float(order)
+            if through_pick is not None:
+                try:
+                    distance = float(through_pick.distance)
+                except Exception:
+                    distance = float(order)
+            if not np.isfinite(distance):
+                distance = float(order)
+            candidates.append((float(distance), int(order), label, feature_pick))
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: (item[0], item[1]))
+        _distance, _order, label, feature_pick = candidates[0]
+        return {"label": label, "feature_pick": feature_pick}
 
     def start_step_carry_snap_ray(self) -> None:
         label = str(self.editor._selected_step_label or self._step_rotation_active_label or self._step_carry_active_label or "").strip().lower()
