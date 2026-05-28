@@ -136,6 +136,11 @@ FAST_TARGETS: tuple[ValidationTarget, ...] = (
         reason="Native OpenCascade STEP topology keeps face identity and skips cemented interior duplicates.",
     ),
     ValidationTarget(
+        "step-native-reconstruction",
+        "KrakenOS.UI.validate_step_native_reconstruction",
+        reason="Tier 3 STEP faces rebuild as KrakenOS-native sphere/asphere rows with material and fit diagnostics.",
+    ),
+    ValidationTarget(
         "open3d-action-timing",
         "KrakenOS.UI.validate_open3d_action_timing",
         reason="Open 3D import, refresh, render, pick, and selection actions emit structured timing diagnostics.",

@@ -47,6 +47,7 @@ FAST_CONTRACT_ALIASES = (
     '"layout-literals"',
     '"cadquery-readiness"',
     '"cad-scene-cache"',
+    '"step-native-reconstruction"',
 )
 
 REQUIRED_SERVICE_MODULES = (
@@ -57,6 +58,7 @@ REQUIRED_SERVICE_MODULES = (
     "KrakenOS/UI/services/cad_scene_cache.py",
     "KrakenOS/UI/services/open3d_step_overlay_refresh.py",
     "KrakenOS/UI/services/step_overlay_labels.py",
+    "KrakenOS/UI/services/step_native_reconstruction.py",
 )
 
 

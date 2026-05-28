@@ -186,17 +186,38 @@ Phase 3: Add An OpenCascade Topology Adapter
     - mesh once with ``BRepMesh_IncrementalMesh``;
     - write VTK cell arrays for ``component_id`` and ``face_id``.
 
-    Current branch progress: the first Tier 3 boundary now exists in
-    ``KrakenOS.UI.services.step_analytic_geometry``. It loads STEP with
-    OpenCascade before any STL conversion, walks native solids and faces,
-    qualifies face IDs by solid, extracts analytic face descriptors for plane,
-    sphere, cylinder, cone, torus, and B-spline surfaces, detects duplicated
-    cemented interior faces from multi-solid achromats, and produces a
-    face-tagged tessellation. Open 3D STEP display and overlay face metadata
-    now try this topology-preserving path before falling back to gmsh/STL. This
-    is not the default tracing path yet; the next step is rebuilding supported
-    analytic optical faces as KrakenOS-native surfaces and validating that trace
-    events match the current mesh path before the backend is switched.
+    Current branch progress: Tier 3 is implemented for supported
+    axisymmetric optical lenses. ``KrakenOS.UI.services.step_analytic_geometry``
+    loads STEP with OpenCascade before any STL conversion, walks native solids
+    and faces, qualifies face IDs by solid, extracts analytic face descriptors
+    for plane, sphere, cylinder, cone, torus, and B-spline surfaces, detects
+    duplicated cemented interior faces from multi-solid achromats, and produces
+    a face-tagged tessellation. Open 3D STEP display and overlay face metadata
+    now try this topology-preserving path before falling back to gmsh/STL.
+
+    ``KrakenOS.UI.services.step_native_reconstruction`` uses the same topology
+    with interior interfaces retained, groups split vendor patches into one
+    optical surface, collapses duplicated cemented faces into a single native
+    interface, rebuilds exact sphere/plane surfaces, fits supported
+    axisymmetric B-spline surfaces into KrakenOS ``AspherData`` coefficients,
+    and emits ordinary ``SurfaceRow`` records. Geometry-only STEP files are not
+    treated as trace-ready because STEP often lacks optical glass data. The
+    reconstruction reports ``material_sequence_required`` until the caller
+    supplies one material after each native surface. Poor B-spline fits are
+    likewise rejected with residual diagnostics instead of becoming plausible
+    but wrong physics.
+
+    The focused validator is:
+
+    .. code-block:: bash
+
+       python -m KrakenOS.UI.validate_fast_contracts --only step-native-reconstruction
+
+    The current fixture check rebuilds the aspherized achromat STEP as three
+    native surfaces: a front sphere, one collapsed cemented spherical
+    interface, and one split B-spline/asphere back surface. With a supplied
+    material sequence, the result is a normal KrakenOS row stack that can be
+    wrapped as ``Object`` / native surfaces / ``Image``.
 
 Phase 4: Compare CadQuery/OCP
     Install CadQuery/OCP only in an isolated optional environment and compare:

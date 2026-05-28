@@ -64,9 +64,9 @@ diagnostics, Open 3D authoring, STEP/CAD optical-solid placement, beam-splitter
 and detector workflows, fabrication drawing export, optimization/tolerance
 workflows, and the production-readiness refactor of the UI coordinator.
 
-Completed work is no longer listed as 100% progress rows. The active status
-table is reserved for items that are still incomplete or intentionally
-deferred.
+Completed work is summarized in prose where possible. The short status table
+keeps the current gate signal visible for the just-finished STEP milestone,
+CAD responsiveness, and intentionally deferred visual theming.
 
 The upstream main integration gate and external merge readiness are complete.
 Direct upstream merge was audited and intentionally avoided where it would
@@ -77,7 +77,7 @@ and fast UI/non-sequential validators.
 
 | Area | Status | Progress | Next action |
 | --- | --- | --- | --- |
-| Native STEP analytic reconstruction | In progress | `35% [####......]` | Open 3D STEP display and overlay face metadata now try the OpenCascade analytic topology path before the gmsh/STL fallback. The next gate is generating KrakenOS-native analytic optical rows from the preserved STEP faces, then validating tracing against the current mesh path. |
+| Native STEP analytic reconstruction | Complete for supported axisymmetric lenses | `100% [##########]` | STEP topology is now imported before STL conversion, split/duplicated vendor faces are grouped into native optical surfaces, supported sphere/plane/B-spline surfaces are rebuilt as KrakenOS `SurfaceRow` prescriptions, B-spline faces are fitted into native asphere coefficients with residual diagnostics, cemented duplicate interfaces are collapsed into one internal surface, and geometry-only STEP files remain non-trace-ready until glass/materials are supplied. |
 | Open 3D CAD responsiveness hardening | Complete | `100% [##########]` | The reported Machine Vision 150 mm plus imported Aspherized Achromatic Lens workflow now has structured action timing, single-refresh Open 3D imports, cached CAD/STL artifacts, display-only hidden-ray placement and undo, grouped smooth CAD face picking, round-lens axis-normal snapping, current-scene reuse for repeated Show Rays toggles, empty-gmsh-STL rejection, sidecar prescription warnings, per-bundle system/RayKeeper/mesh timing counters, and a repeated-mesh compatibility fast path. The headless replay reduced the first live STEP non-sequential trace from about 16.5 s to about 2.7 s, with the full Open 3D refresh around 3.6 s on the test machine; larger vendor assemblies should be treated as new performance fixtures rather than blocking this gate. |
 | Final UI theming polish | Deferred outside this gate | `0% [..........]` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after upstream review, CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
 
@@ -128,17 +128,24 @@ prepared, and
 `python -m KrakenOS.UI.diagnose_open3d_hover_latency` reports the cache and
 passive-hover contract for large vendor STEP-derived STL files.
 
-The Tier 3 native STEP reconstruction path has now begun under
-`KrakenOS.UI.services.step_analytic_geometry`. It imports STEP files with the
-available OpenCascade backend, walks solids and faces before STL conversion,
-extracts analytic surface descriptors such as sphere, cylinder, and B-spline
-faces, removes duplicated cemented interior faces from the outer pick set, and
-builds a face-tagged tessellation. Open 3D STEP display and overlay face
-metadata now use that analytic topology path first and fall back to the legacy
-gmsh/STL path only when analytic import is unavailable. This is not yet the
-default tracing backend; it is the production boundary needed before imported
-lenses can become KrakenOS-native analytic optical surfaces instead of STL
-approximations.
+The Tier 3 native STEP reconstruction path is now implemented for supported
+axisymmetric optical lenses. `KrakenOS.UI.services.step_analytic_geometry`
+imports STEP files with the available OpenCascade backend, walks solids and
+faces before STL conversion, extracts analytic descriptors such as sphere,
+cylinder, plane, and B-spline faces, removes duplicated cemented interior faces
+from the outer pick set, and builds a face-tagged tessellation for display and
+selection. `KrakenOS.UI.services.step_native_reconstruction` then reloads the
+same topology with interior interfaces retained, groups split vendor patches
+into one optical surface, collapses duplicated cemented faces into one native
+interface, fits supported B-spline optical faces into KrakenOS-native
+`AspherData` coefficients, and emits ordinary `SurfaceRow` prescriptions. The
+validator `python -m KrakenOS.UI.validate_step_native_reconstruction` checks
+the aspherized achromat STEP fixture: it rebuilds the front sphere, cemented
+sphere, and split B-spline/asphere back surface as three native rows, while
+refusing trace-ready status unless a material sequence such as `BK7`, `F2`,
+`AIR` is supplied. This keeps the North Star rule intact: imported STEP state
+may become a native optical prescription, but missing material data or poor
+surface fits produce diagnostics instead of plausible wrong physics.
 
 Open 3D responsiveness timing is written to:
 
@@ -326,7 +333,7 @@ Test-plan tiers:
 | --- | --- | --- |
 | Fast contracts | Fixture-light, no-display checks for normal code changes. | `python -m KrakenOS.UI.validate_fast_contracts` |
 | Upstream-compatible pytest | Public API, package data, invalid traces, and build-zero contracts from upstream main adapted to the branch. | `python -m pytest tests/test_public_api.py tests/test_smoke.py tests/test_invalid_trace_results.py tests/test_build_modes.py` |
-| Focused contracts | Single-risk checks during development or review. | `python -m KrakenOS.UI.validate_fast_contracts --only ui-modular-maintainability`, `python -m KrakenOS.UI.validate_fast_contracts --only optimization-controls`, `python -m KrakenOS.UI.validate_fast_contracts --only open3d-lens-step-face-pick`, or `python -m KrakenOS.UI.validate_fast_contracts --only five-penta-with-lens-layout` |
+| Focused contracts | Single-risk checks during development or review. | `python -m KrakenOS.UI.validate_fast_contracts --only ui-modular-maintainability`, `python -m KrakenOS.UI.validate_fast_contracts --only optimization-controls`, `python -m KrakenOS.UI.validate_fast_contracts --only step-native-reconstruction`, `python -m KrakenOS.UI.validate_fast_contracts --only open3d-lens-step-face-pick`, or `python -m KrakenOS.UI.validate_fast_contracts --only five-penta-with-lens-layout` |
 | Display-backed smoke | Open 3D, VTK, screenshots, STEP face picking, and visual regressions. | `python -m KrakenOS.UI.validate_step_carry_open3d_smoke` |
 | Open 3D responsiveness replay | Timed replay of Machine Vision 150 mm + imported optical STEP import/select/deselect. | `python -m KrakenOS.UI.diagnose_open3d_action_timing --output /tmp/kraken_open3d_action_timing_report.json` |
 | CAD/prism physics | Real STEP/STL geometry, prism cascades, face roles, and ray-event audits. | `python -m KrakenOS.UI.validate_five_penta_prism_cascade` |
