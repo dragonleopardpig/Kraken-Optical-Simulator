@@ -21,8 +21,10 @@ from KrakenOS.UI.layout_editor import (
     ZEMAX_ATTACHMENT_DIR,
 )
 from KrakenOS.UI.services.layout_import_export import LayoutImportExportMixin
+from KrakenOS.UI.services.layout_settings import LayoutSettingsService
 from KrakenOS.UI.services.optical_solid_workflow import LayoutOpticalSolidWorkflowMixin
 from KrakenOS.UI.services.step_overlay_import import StepOverlayImportService
+from KrakenOS.common_optical_layouts import machine_vision_150mm_measured
 
 
 @dataclass
@@ -87,6 +89,7 @@ def validate_attachment_paths() -> list[AttachmentPathCheck]:
     step_import_source = inspect.getsource(StepOverlayImportService)
     ask_step_source = inspect.getsource(LayoutOpticalSolidWorkflowMixin._ask_step_file)
     zemax_import_source = inspect.getsource(LayoutImportExportMixin.import_zemax_file)
+    layout_settings_source = inspect.getsource(LayoutSettingsService._collect_layout_settings)
     checks.append(
         AttachmentPathCheck(
             "Open STEP dialogs start at attachment root",
@@ -103,6 +106,22 @@ def validate_attachment_paths() -> list[AttachmentPathCheck]:
             "Zemax open dialog starts at attachment root",
             "initial_dirs = [\n            ATTACHMENT_DIR," in zemax_import_source,
             "Import Zemax file opens at attachment/ before narrower fallback directories.",
+        )
+    )
+    machine_vision_step_paths = [
+        str(machine_vision_150mm_measured.SETTINGS.get(key, ""))
+        for key in ("camera_step_path", "lens_step_path", "optical_step_path", "led_step_path")
+        if str(machine_vision_150mm_measured.SETTINGS.get(key, "")).strip()
+    ]
+    checks.append(
+        AttachmentPathCheck(
+            "saved layout STEP paths stay portable",
+            "_portable_step_path_text" in layout_settings_source
+            and "relative_to(PROJECT_ROOT.resolve())" in layout_settings_source
+            and machine_vision_step_paths
+            and all(not Path(path).expanduser().is_absolute() for path in machine_vision_step_paths)
+            and all(path.startswith("attachment/") for path in machine_vision_step_paths),
+            ", ".join(machine_vision_step_paths),
         )
     )
 

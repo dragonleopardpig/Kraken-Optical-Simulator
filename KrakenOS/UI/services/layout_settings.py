@@ -39,9 +39,25 @@ class LayoutSettingsService:
         COHERENT_SUM_MODE_DEFAULT = le.COHERENT_SUM_MODE_DEFAULT
         BRANCH_FIELD_PROPAGATION_MM_DEFAULT = le.BRANCH_FIELD_PROPAGATION_MM_DEFAULT
         CAMERA_NONE_LABEL = le.CAMERA_NONE_LABEL
+        PROJECT_ROOT = le.PROJECT_ROOT
         TOLERANCE_MANUFACTURING_TEMPLATES_SETTINGS = le.TOLERANCE_MANUFACTURING_TEMPLATES_SETTINGS
         normalize_source_row_order = le.normalize_source_row_order
         _normalize_metal_catalog_specs = le._normalize_metal_catalog_specs
+
+        def _portable_step_path_text(path_value: Any) -> str:
+            if path_value is None:
+                return ""
+            text = str(path_value).strip()
+            if not text or text.lower() in {"none", "null"}:
+                return ""
+            path = Path(text).expanduser()
+            if not path.is_absolute():
+                return path.as_posix()
+            try:
+                return path.resolve(strict=False).relative_to(PROJECT_ROOT.resolve()).as_posix()
+            except Exception:
+                return str(path)
+
         operand_settings: dict[str, dict[str, object]] = {}
         all_labels = {spec.label for spec in OPERAND_REGISTRY.values()}
         for label in all_labels:
@@ -157,26 +173,26 @@ class LayoutSettingsService:
             "nonseq_ns_limit": self.nonseq_ns_limit_var.get().strip() if hasattr(self, "nonseq_ns_limit_var") else "200",
             "nonseq_energy_probability": self._current_nonseq_energy_probability(),
             "camera_model": self.camera_model_var.get().strip() if hasattr(self, "camera_model_var") else CAMERA_NONE_LABEL,
-            "camera_step_path": str(self.imported_camera_step_path) if self.imported_camera_step_path is not None else "",
+            "camera_step_path": _portable_step_path_text(self.imported_camera_step_path),
             "camera_step_rotation_x_deg": float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
             "camera_step_rotation_y_deg": float(getattr(self, "camera_step_rotation_y_deg", 0.0)),
             "camera_step_rotation_z_deg": float(getattr(self, "camera_step_rotation_z_deg", 0.0)),
             "camera_step_axis_offset_xy": list(self._step_axis_offset_xy("camera")),
             "camera_step_placement_offset_xyz": list(self._step_placement_offset_xyz("camera")),
-            "lens_step_path": str(self.imported_lens_step_path) if self.imported_lens_step_path is not None else "",
+            "lens_step_path": _portable_step_path_text(self.imported_lens_step_path),
             "lens_step_largest_component_only": bool(getattr(self, "lens_step_largest_component_only", True)),
             "lens_step_rotation_x_deg": float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
             "lens_step_rotation_y_deg": float(getattr(self, "lens_step_rotation_y_deg", 0.0)),
             "lens_step_rotation_z_deg": float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
             "lens_step_axis_offset_xy": list(self._step_axis_offset_xy("lens")),
             "lens_step_placement_offset_xyz": list(self._step_placement_offset_xyz("lens")),
-            "optical_step_path": str(self.imported_optical_step_path) if self.imported_optical_step_path is not None else "",
+            "optical_step_path": _portable_step_path_text(self.imported_optical_step_path),
             "optical_step_rotation_x_deg": float(getattr(self, "optical_step_rotation_x_deg", 0.0)),
             "optical_step_rotation_y_deg": float(getattr(self, "optical_step_rotation_y_deg", 0.0)),
             "optical_step_rotation_z_deg": float(getattr(self, "optical_step_rotation_z_deg", 0.0)),
             "optical_step_axis_offset_xy": list(self._step_axis_offset_xy("optical")),
             "optical_step_placement_offset_xyz": list(self._step_placement_offset_xyz("optical")),
-            "led_step_path": str(self.imported_led_step_path) if self.imported_led_step_path is not None else "",
+            "led_step_path": _portable_step_path_text(self.imported_led_step_path),
             "led_step_rotation_x_deg": float(getattr(self, "led_step_rotation_x_deg", 0.0)),
             "led_step_rotation_y_deg": float(getattr(self, "led_step_rotation_y_deg", 0.0)),
             "led_step_rotation_z_deg": float(getattr(self, "led_step_rotation_z_deg", 0.0)),
