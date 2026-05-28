@@ -324,6 +324,10 @@ def _validate_lens_center_row(app: KrakenLayoutEditor, output_dir: Path) -> dict
         inspector.show_rotation_handles_var.set(True)
         _set_optical_step_overlay(app, LENS_STEP, offset_xyz=(8.0, -6.0, 35.0))
         _refresh(inspector, reset_camera=True)
+        hidden_axis_records = len(inspector._optical_axis_records_for_3d(inspector._current_scene_bundle))
+        report["axis_records_with_rays_hidden"] = int(hidden_axis_records)
+        if hidden_axis_records != 1:
+            failures.append(f"Rays-hidden imported lens view drew {hidden_axis_records} optical-axis guides, expected 1.")
         inspector.set_camera_preset("bottom")
         inspector.show_step_rotation_handler("optical")
         _settle(inspector, 0.1)
@@ -336,11 +340,15 @@ def _validate_lens_center_row(app: KrakenLayoutEditor, output_dir: Path) -> dict
         inspector.start_center_row_to_ray()
         _settle(inspector, 0.1)
         handles_after = int(len(getattr(inspector, "_actor_step_rotate_map", {}) or {}))
+        placement_after = int(len(getattr(inspector, "_actor_placement_rotate_map", {}) or {}))
         report["handles_after_center_row"] = handles_after
+        report["placement_handles_after_center_row"] = placement_after
         if getattr(app, "_selected_step_label", None) is not None:
             failures.append("Center Row left the imported lens selected.")
         if handles_after:
             failures.append("Center Row left lens rotation handles visible.")
+        if placement_after:
+            failures.append("Center Row left lens placement handles visible.")
 
         body_cells = _body_cell_count(app, "optical")
         report["body_cells"] = int(body_cells)
@@ -421,6 +429,10 @@ def _validate_promoted_lens_center_row(app: KrakenLayoutEditor, output_dir: Path
         inspector.show_rays_var.set(False)
         inspector.show_rotation_handles_var.set(True)
         inspector.refresh_from_editor(force_retrace=True)
+        hidden_axis_records = len(inspector._optical_axis_records_for_3d(inspector._current_scene_bundle))
+        report["axis_records_with_rays_hidden"] = int(hidden_axis_records)
+        if hidden_axis_records != 1:
+            failures.append(f"Rays-hidden promoted lens view drew {hidden_axis_records} optical-axis guides, expected 1.")
         inspector.set_camera_preset("bottom")
         _settle(inspector, 0.1)
         report["snapshots"].append(str(_save_vtk_snapshot(inspector, output_dir / "06_promoted_lens_before_center_row.png")))
@@ -486,6 +498,10 @@ def _validate_prism_center_row(app: KrakenLayoutEditor, output_dir: Path) -> dic
         inspector.show_rays_var.set(False)
         inspector.show_rotation_handles_var.set(True)
         inspector.refresh_from_editor(force_retrace=True)
+        hidden_axis_records = len(inspector._optical_axis_records_for_3d(inspector._current_scene_bundle))
+        report["axis_records_with_rays_hidden"] = int(hidden_axis_records)
+        if hidden_axis_records != 1:
+            failures.append(f"Rays-hidden prism view drew {hidden_axis_records} optical-axis guides, expected 1.")
         inspector.set_camera_preset("iso")
         app.select_step_component("optical")
         inspector.show_step_rotation_handler("optical")
@@ -499,12 +515,16 @@ def _validate_prism_center_row(app: KrakenLayoutEditor, output_dir: Path) -> dic
         inspector.start_center_row_to_ray()
         _settle(inspector, 0.1)
         handles_after = int(len(getattr(inspector, "_actor_step_rotate_map", {}) or {}))
+        placement_after = int(len(getattr(inspector, "_actor_placement_rotate_map", {}) or {}))
         report["handles_after_center_row"] = handles_after
+        report["placement_handles_after_center_row"] = placement_after
         report["snapshots"].append(str(_save_vtk_snapshot(inspector, output_dir / "04_prism_center_row_no_handles.png")))
         if getattr(app, "_selected_step_label", None) is not None:
             failures.append("Center Row left the imported prism selected.")
         if handles_after:
             failures.append("Center Row left prism rotation handles visible.")
+        if placement_after:
+            failures.append("Center Row left prism placement handles visible.")
 
         metadata = app._step_overlay_face_metadata("optical")
         faces = [face for face in list(metadata.get("faces", []) or []) if isinstance(face, dict)]

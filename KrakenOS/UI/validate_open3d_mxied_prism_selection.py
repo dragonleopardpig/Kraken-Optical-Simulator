@@ -68,6 +68,61 @@ def _face_center(face: dict[str, object]) -> np.ndarray | None:
     return None
 
 
+def _promoted_prism_face_source(app: KrakenLayoutEditor, inspector) -> tuple[str, int | None, list[dict[str, object]]]:
+    """Return the saved-layout prism faces to validate.
+
+    `mxied.py` can contain both a live imported STEP overlay and already
+    promoted optical-solid rows. Prefer the live overlay when it is prism-like;
+    otherwise validate the promoted penta/right-angle prism row that is actually
+    visible in the saved 3D scene.
+    """
+    try:
+        metadata = app._step_overlay_face_metadata("optical")
+        faces = [face for face in list(metadata.get("faces", []) or []) if isinstance(face, dict)]
+    except Exception:
+        faces = []
+    if len(faces) >= 5:
+        return "step", None, faces
+
+    candidates: list[tuple[int, int, int, list[dict[str, object]]]] = []
+    for row_index in range(len(app.rows)):
+        try:
+            row, path, metadata = app._optical_solid_face_metadata_for_row(int(row_index))
+        except Exception:
+            continue
+        advanced = dict(getattr(row, "advanced", {}) or {})
+        promotion = dict(advanced.get("StepOverlayPromotion", {}) or {})
+        placement = dict(advanced.get("ScenePlacement", {}) or {})
+        source_text = " ".join(
+            (
+                str(path or ""),
+                str(getattr(row, "OpticalSolidSourcePath", "") or ""),
+                str(advanced.get("OpticalSolidSourcePath", "") or ""),
+                str(promotion.get("source_step_path", "") or ""),
+                str(placement.get("promotion_source_step_path", "") or ""),
+            )
+        ).lower()
+        if "prism" not in source_text and "42779" not in source_text and "45595" not in source_text:
+            continue
+        try:
+            transform = inspector._runtime_transform_for_row(inspector.__dict__.get("_current_system"), int(row_index))
+            if transform is not None:
+                faces = inspector._runtime_world_face_records_for_pick(row, metadata, transform)
+            else:
+                faces = app._optical_solid_face_records_for_temp_row(row, int(row_index), metadata)
+        except Exception:
+            faces = []
+        faces = [face for face in list(faces or []) if isinstance(face, dict)]
+        if len(faces) < 5:
+            continue
+        penta_rank = 0 if "42779" in source_text else 1
+        candidates.append((penta_rank, -len(faces), int(row_index), faces))
+    if not candidates:
+        return "step", None, []
+    _rank, _face_sort, row_index, faces = min(candidates, key=lambda item: item[:3])
+    return "row", int(row_index), faces
+
+
 def validate_case(layout_path: Path = DEFAULT_LAYOUT_PATH, output_dir: Path = DEFAULT_OUTPUT_DIR) -> dict[str, object]:
     if not layout_path.exists():
         raise RuntimeError(f"Missing layout: {layout_path}")
@@ -81,10 +136,9 @@ def validate_case(layout_path: Path = DEFAULT_LAYOUT_PATH, output_dir: Path = DE
         inspector.set_camera_preset("iso")
         initial_image = _save_vtk_snapshot(inspector, output_dir / "initial_mxied.png")
 
-        metadata = app._step_overlay_face_metadata("optical")
-        faces = [face for face in list(metadata.get("faces", []) or []) if isinstance(face, dict)]
+        source_kind, source_row_index, faces = _promoted_prism_face_source(app, inspector)
         if len(faces) < 5:
-            raise RuntimeError(f"Expected imported penta prism faces, got {len(faces)}")
+            raise RuntimeError(f"Expected penta/right-angle prism faces, got {len(faces)}")
         try:
             _scene_center, scene_radius = inspector._scene_bounds()
         except Exception:
@@ -115,43 +169,68 @@ def validate_case(layout_path: Path = DEFAULT_LAYOUT_PATH, output_dir: Path = DE
             if display is None:
                 failures.append(f"{face_id} center did not project to screen")
                 continue
-            feature_pick = inspector._step_feature_pick_any_for_display_xy(display[:2], labels=("optical",))
             picked_face = ""
-            if isinstance(feature_pick, dict):
-                payload = feature_pick.get("feature_pick")
-                if isinstance(payload, dict):
-                    picked_face = str(payload.get("face_id", "") or "").strip()
+            if source_kind == "row" and source_row_index is not None:
+                row_pick = inspector._row_face_ray_pick_for_display_xy(int(source_row_index), display[:2])
+                if row_pick is not None:
+                    picked_face = str(row_pick.face.get("face_id", "") or "").strip()
+            else:
+                feature_pick = inspector._step_feature_pick_any_for_display_xy(display[:2], labels=("optical",))
+                if isinstance(feature_pick, dict):
+                    payload = feature_pick.get("feature_pick")
+                    if isinstance(payload, dict):
+                        picked_face = str(payload.get("face_id", "") or "").strip()
             picked.append({"face_id": face_id, "picked_face_id": picked_face})
             if picked_face != face_id:
                 failures.append(f"{face_id} projected pick returned {picked_face or 'none'}")
 
-        app.select_step_component("optical")
         inspector.show_rotation_handles_var.set(True)
-        inspector.refresh_from_editor()
-        inspector.show_step_rotation_handler("optical")
-        _settle(inspector, 0.1)
-        if not getattr(inspector, "_actor_step_rotate_map", {}):
-            failures.append("Selected imported penta did not show rotation handles before clear")
-        if not inspector._clear_open3d_selection(render=False):
-            failures.append("Open 3D clear did not report a selected imported STEP")
-        if getattr(app, "_selected_step_label", None) is not None:
-            failures.append("Blank-clear path left imported STEP selected")
-        if getattr(inspector, "_actor_step_rotate_map", {}):
-            failures.append("Blank-clear path left imported STEP rotation handles visible")
-
-        app.select_step_component("optical")
-        inspector.show_rotation_handles_var.set(True)
-        inspector.refresh_from_editor()
-        inspector.show_step_rotation_handler("optical")
-        _settle(inspector, 0.1)
-        if not getattr(inspector, "_actor_step_rotate_map", {}):
-            failures.append("Could not arm imported STEP handles before Center Row mode")
+        if source_kind == "row" and source_row_index is not None:
+            inspector._placement_handle_selected_row_index = int(source_row_index)
+            inspector._set_row_highlight(int(source_row_index))
+            app._select_table_row(int(source_row_index))
+            inspector.refresh_from_editor()
+            _settle(inspector, 0.1)
+            if not getattr(inspector, "_actor_placement_rotate_map", {}):
+                failures.append("Selected promoted prism did not show placement rotation handles before clear")
+            if not inspector._clear_open3d_selection(render=False):
+                failures.append("Open 3D clear did not report a selected promoted prism row")
+            if getattr(inspector, "_actor_placement_rotate_map", {}):
+                failures.append("Blank-clear path left promoted prism placement handles visible")
+            inspector._placement_handle_selected_row_index = int(source_row_index)
+            inspector._set_row_highlight(int(source_row_index))
+            app._select_table_row(int(source_row_index))
+            inspector.refresh_from_editor()
+            _settle(inspector, 0.1)
+            if not getattr(inspector, "_actor_placement_rotate_map", {}):
+                failures.append("Could not arm promoted prism handles before Center Row mode")
+        else:
+            app.select_step_component("optical")
+            inspector.refresh_from_editor()
+            inspector.show_step_rotation_handler("optical")
+            _settle(inspector, 0.1)
+            if not getattr(inspector, "_actor_step_rotate_map", {}):
+                failures.append("Selected imported prism did not show rotation handles before clear")
+            if not inspector._clear_open3d_selection(render=False):
+                failures.append("Open 3D clear did not report a selected imported STEP")
+            if getattr(app, "_selected_step_label", None) is not None:
+                failures.append("Blank-clear path left imported STEP selected")
+            if getattr(inspector, "_actor_step_rotate_map", {}):
+                failures.append("Blank-clear path left imported STEP rotation handles visible")
+            app.select_step_component("optical")
+            inspector.refresh_from_editor()
+            inspector.show_step_rotation_handler("optical")
+            _settle(inspector, 0.1)
+            if not getattr(inspector, "_actor_step_rotate_map", {}):
+                failures.append("Could not arm imported STEP handles before Center Row mode")
         inspector.start_center_row_to_ray()
         _settle(inspector, 0.1)
         if getattr(app, "_selected_step_label", None) is not None:
             failures.append("Center Row mode did not clear the selected imported STEP")
         if getattr(inspector, "_actor_step_rotate_map", {}):
             failures.append("Center Row mode left STEP rotation handles visible")
+        if getattr(inspector, "_actor_placement_rotate_map", {}):
+            failures.append("Center Row mode left promoted-row placement handles visible")
         center_mode_pick_failures: list[str] = []
         for face in faces:
             face_id = str(face.get("face_id", "") or "").strip()
@@ -178,7 +257,9 @@ def validate_case(layout_path: Path = DEFAULT_LAYOUT_PATH, output_dir: Path = DE
             row_face_id = ""
             if row_face_pick is not None:
                 row_face_id = str(row_face_pick.face.get("face_id", "") or "").strip()
-            if (picked_step != "optical" or payload_face != face_id) and not row_face_id:
+            if source_kind == "row" and row_face_id != face_id:
+                center_mode_pick_failures.append(f"{face_id}->row/{row_face_id or 'none'}")
+            elif source_kind != "row" and (picked_step != "optical" or payload_face != face_id) and not row_face_id:
                 center_mode_pick_failures.append(f"{face_id}->{picked_step}/{payload_face or 'none'}")
         if center_mode_pick_failures:
             failures.append("Center Row mode could not pick imported penta faces: " + ", ".join(center_mode_pick_failures))
@@ -187,6 +268,8 @@ def validate_case(layout_path: Path = DEFAULT_LAYOUT_PATH, output_dir: Path = DE
         report = {
             "ok": not failures,
             "layout_path": str(layout_path.resolve()),
+            "source_kind": source_kind,
+            "source_row_index": source_row_index,
             "initial_image": str(initial_image),
             "final_image": str(final_image),
             "face_count": len(faces),

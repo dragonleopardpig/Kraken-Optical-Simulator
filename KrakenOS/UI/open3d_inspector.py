@@ -228,6 +228,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._actor_step_rotate_visual_keys: set[str] = set()
         self._actor_placement_move_map: dict[str, tuple[int, str, float]] = {}
         self._actor_placement_rotate_map: dict[str, tuple[int, str, float]] = {}
+        self._placement_handle_selected_row_index: int | None = None
         self._actor_thickness_dimension_map: dict[str, int] = {}
         self._thickness_dimension_actor_map: dict[int, list[str]] = {}
         self._thickness_dimension_drag_map: dict[str, dict[str, object]] = {}
@@ -3177,9 +3178,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if self._renderer is None:
             return False
         removed = False
-        for actor_key in list(self._actor_placement_rotate_map):
+        placement_keys = set(self._actor_placement_rotate_map)
+        placement_keys.update(self._actor_placement_move_map)
+        for actor_key in list(placement_keys):
             actor = self._actor_by_key.pop(actor_key, None)
             self._actor_placement_rotate_map.pop(actor_key, None)
+            self._actor_placement_move_map.pop(actor_key, None)
             if actor is None:
                 continue
             try:
@@ -3210,12 +3214,25 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 return True
         except Exception:
             pass
+        picked_row_index = getattr(self, "_picked_row_index", None)
+        selected_handle_row_index = getattr(self, "_placement_handle_selected_row_index", None)
+        try:
+            picked_row_has_handles = (
+                (picked_row_index is not None or selected_handle_row_index is not None)
+                and self.editor._file_backed_stl_row_at(
+                    int(picked_row_index if picked_row_index is not None else selected_handle_row_index)
+                )
+                is not None
+                and self._show_rotation_handles()
+            )
+        except Exception:
+            picked_row_has_handles = False
         return bool(
             self._stl_placement_panel_visible()
             or self._placement_target_pick_mode
             or self._placement_orient_pick_mode
             or self._placement_orient_ray_mode
-            or self._center_row_to_ray_mode
+            or picked_row_has_handles
             or self._placement_drag_state is not None
             or self._row_carry_drag_state is not None
         )
@@ -3290,6 +3307,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if self._picked_row_index is not None:
                 self._set_row_highlight(None)
                 changed = True
+            if self._placement_handle_selected_row_index is not None:
+                self._placement_handle_selected_row_index = None
+                changed = True
             if self._picked_ray_index is not None:
                 self._set_ray_highlight(None)
                 changed = True
@@ -3297,6 +3317,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self._set_optical_axis_highlight(None)
                 changed = True
             if self._remove_step_rotation_handle_actors():
+                changed = True
+            if self._remove_placement_rotation_handle_actors():
                 changed = True
             if changed and render:
                 self.render()
@@ -4275,6 +4297,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 row_pick = self._row_face_ray_pick_for_display_xy(int(result["row_index"]), (x, y))
                 if row_pick is not None:
                     result["row_face_pick"] = row_pick
+            if result["step_label"] is None:
+                row_any = self._row_face_pick_any_for_display_xy((x, y))
+                if isinstance(row_any, dict):
+                    result["row_index"] = int(row_any["row_index"])
+                    result["row_face_pick"] = row_any["row_face_pick"]
+                    result["row_pick_screen_delta"] = float(row_any.get("screen_delta", float("inf")))
             if result["step_label"] is not None:
                 feature_pick = self._step_feature_pick_for_display_xy(
                     str(result["step_label"]),
@@ -4306,6 +4334,57 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     actor.PickableOn()
                 except Exception:
                     pass
+
+    def _row_face_pick_any_for_display_xy(self, display_xy) -> dict[str, object] | None:
+        """Pick the most intentional CAD/STL row face through a display ray.
+
+        VTK actor picking returns the nearest prop, which is unstable for
+        translucent overlapping prisms and lenses. Center Row workflows need
+        the face the cursor is aimed at, so rank row-face ray hits by the
+        projected face anchor before falling back to ray distance.
+        """
+        try:
+            cursor = np.asarray(display_xy, dtype=float).reshape(-1)[:2]
+        except Exception:
+            return None
+        if cursor.size < 2 or not np.all(np.isfinite(cursor[:2])):
+            return None
+        candidates: list[tuple[float, float, int, FaceRayPick]] = []
+        for row_index in range(len(self.editor.rows)):
+            try:
+                if self.editor._file_backed_stl_row_at(int(row_index)) is None:
+                    continue
+            except Exception:
+                continue
+            try:
+                pick = self._row_face_ray_pick_for_display_xy(int(row_index), cursor)
+            except Exception:
+                pick = None
+            if pick is None:
+                continue
+            screen_delta = float("inf")
+            try:
+                center = self._surface_center_from_face_ray_pick(pick)
+                display = self._world_to_display_2d(center)
+                if display is not None:
+                    delta = np.asarray(display[:2], dtype=float) - cursor[:2]
+                    screen_delta = float(np.linalg.norm(delta[:2]))
+            except Exception:
+                screen_delta = float("inf")
+            distance = float(getattr(pick, "distance", float("inf")))
+            if not np.isfinite(distance):
+                distance = float("inf")
+            candidates.append((screen_delta, distance, int(row_index), pick))
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+        screen_delta, distance, row_index, pick = candidates[0]
+        return {
+            "row_index": int(row_index),
+            "row_face_pick": pick,
+            "screen_delta": float(screen_delta),
+            "distance": float(distance),
+        }
 
     def _step_pick_label_order(self, labels=None) -> list[str]:
         ordered: list[str] = []
@@ -5002,6 +5081,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 "points": np.asarray(((0.0, 0.0, z0), (0.0, 0.0, z1)), dtype=float),
             }
         ]
+        try:
+            show_rays = bool(self.show_rays_var.get())
+        except Exception:
+            show_rays = False
+        if not show_rays:
+            return records
         allow_traced_axis_guides = bool(getattr(scene_bundle, "has_off_axis", False)) or bool(
             list(getattr(scene_bundle, "optical_volumes", []) or [])
         ) or bool(list(getattr(scene_bundle, "boundary_faces", []) or []))
@@ -5355,6 +5440,26 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         )
 
     @staticmethod
+    def _row_face_metadata_uses_saved_mesh(row) -> bool:
+        """Return true when face triangle IDs belong to the saved CAD mesh.
+
+        Promoted imported STEP solids persist face records against the centered
+        promoted STL. Kraken's runtime trace mesh can have a different triangle
+        order, so reusing those saved face indices on the runtime mesh makes
+        selection and role overlays jump to unrelated faces.
+        """
+        try:
+            advanced = dict(getattr(row, "advanced", {}) or {})
+        except Exception:
+            return False
+        promotion = dict(advanced.get("StepOverlayPromotion", {}) or {})
+        placement = dict(advanced.get("ScenePlacement", {}) or {})
+        return bool(
+            str(promotion.get("mesh_coordinates", "") or "").strip() == "local_centered_from_open3d_overlay"
+            or str(placement.get("promotion_mesh_coordinates", "") or "").strip() == "local_centered_from_open3d_overlay"
+        )
+
+    @staticmethod
     def _world_face_triangles_for_record(
         row,
         triangles: np.ndarray,
@@ -5567,12 +5672,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 record = normalize_optical_solid_face_record(face)
                 if not self._assigned_optical_solid_face(record):
                     continue
-                world_triangles = self._runtime_world_face_triangles_for_record(
-                    system,
-                    row_index,
-                    record,
-                    scene_radius=scene_radius,
-                )
+                world_triangles = np.empty((0, 3, 3), dtype=float)
+                if not self._row_face_metadata_uses_saved_mesh(row):
+                    world_triangles = self._runtime_world_face_triangles_for_record(
+                        system,
+                        row_index,
+                        record,
+                        scene_radius=scene_radius,
+                    )
                 if world_triangles.size == 0:
                     world_triangles = self._world_face_triangles_for_record(
                         row,
@@ -8081,8 +8188,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     prop.SetOpacity(0.58)
                     prop.SetLineWidth(6.0)
                     try:
-                        prop.EdgeVisibilityOn()
-                        prop.SetEdgeColor(1.0, 0.12, 0.0)
+                        prop.EdgeVisibilityOff()
                     except Exception:
                         pass
                 else:
@@ -8620,12 +8726,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             _center, scene_radius = self._scene_bounds()
         except Exception:
             scene_radius = 1.0
-        world_triangles = self._runtime_world_face_triangles_for_record(
-            self.__dict__.get("_current_system"),
-            int(row_index),
-            face,
-            scene_radius=float(scene_radius),
-        )
+        world_triangles = np.empty((0, 3, 3), dtype=float)
+        if not self._row_face_metadata_uses_saved_mesh(row):
+            world_triangles = self._runtime_world_face_triangles_for_record(
+                self.__dict__.get("_current_system"),
+                int(row_index),
+                face,
+                scene_radius=float(scene_radius),
+            )
         if world_triangles.size == 0:
             try:
                 triangles = self._cad_scene_cache.triangle_array(path, _read_stl_triangle_vertices).triangles
@@ -8908,7 +9016,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 except Exception:
                     pass
         if (
-            runtime_triangles.ndim == 3
+            not self._row_face_metadata_uses_saved_mesh(row)
+            and runtime_triangles.ndim == 3
             and runtime_triangles.shape[1:] == (3, 3)
             and runtime_triangles.shape[0] > max_face_triangle_index
             and runtime_triangles.shape[0] > 0
@@ -8933,7 +9042,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             origin,
             direction,
             all_points=world_triangles.reshape((-1, 3)),
-            prefer_internal=True,
+            prefer_internal=not self._row_face_metadata_uses_saved_mesh(row),
         )
 
     @staticmethod

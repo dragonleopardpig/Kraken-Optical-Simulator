@@ -610,7 +610,11 @@ class Open3DInteractionService:
             return
         if self.editor._file_backed_stl_row_at(row_index) is not None:
             self._stl_placement_row_index = int(row_index)
+            self._placement_handle_selected_row_index = int(row_index)
             self._update_stl_placement_handler_state()
+            if self._show_rotation_handles():
+                self.refresh_from_editor()
+                self.highlight_row(row_index)
             self.status_var.set(
                 f"Selected CAD/STL row {row_index}: {row_name}. "
                 "Right-click a face to assign physics, or use Place controls for pose changes."
@@ -779,7 +783,11 @@ class Open3DInteractionService:
                         row_face_pick = source_pick.get("row_face_pick") if isinstance(source_pick, dict) else None
                         if row_face_pick is not None:
                             face_id = str(row_face_pick.face.get("face_id", "") or "").strip()
-                            hover_key = ("row", int(row_index), face_id or id(row_face_pick.face))
+                            try:
+                                source_cell_id = int(source_pick.get("cell_id", -1)) if isinstance(source_pick, dict) else -1
+                            except Exception:
+                                source_cell_id = -1
+                            hover_key = ("row", int(row_index), face_id or source_cell_id)
                             outline = None
                             if hover_key != self._hover_step_cell_key:
                                 outline = self._hover_overlay_for_row_face(int(row_index), row_face_pick.face)
