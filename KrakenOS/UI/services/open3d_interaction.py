@@ -143,86 +143,13 @@ class Open3DInteractionService:
                 consumed = None
             if consumed is not None:
                 return
-        step_rotate = self._actor_step_rotate_map.get(actor_key) if actor_key is not None else None
-        if step_rotate is not None:
-            if (
-                self._source_target_pick_mode
-                or self._center_row_to_ray_mode
-                or self._placement_target_pick_mode
-                or self._placement_orient_pick_mode
-                or self._placement_orient_ray_mode
-                or self._step_carry_snap_ray_mode
-                or self._step_carry_snap_target_mode
-                or self._step_normal_axis_pick_mode
-                or self._step_surface_center_axis_pick_mode
-                or bool(getattr(self.editor, "_cad_axis_pick_any", False))
-            ):
-                self.status_var.set("STEP rotation handle: finish the active pick mode first.")
-                self.render()
-                return
-            self._apply_step_rotation_handle(*step_rotate)
-            self.render()
-            return
-        placement_rotate = self._actor_placement_rotate_map.get(actor_key) if actor_key is not None else None
-        if placement_rotate is not None:
-            if (
-                self._source_target_pick_mode
-                or self._center_row_to_ray_mode
-                or self._placement_target_pick_mode
-                or self._placement_orient_pick_mode
-                or self._placement_orient_ray_mode
-                or self._step_carry_snap_ray_mode
-                or self._step_carry_snap_target_mode
-                or self._step_normal_axis_pick_mode
-                or self._step_surface_center_axis_pick_mode
-                or bool(getattr(self.editor, "_cad_axis_pick_any", False))
-            ):
-                self.status_var.set("Placement handle: finish the active pick mode first.")
-                self.render()
-                return
-            self._apply_scene_placement_rotate_handle(*placement_rotate)
-            self.render()
-            return
-        placement_move = self._actor_placement_move_map.get(actor_key) if actor_key is not None else None
-        if placement_move is not None:
-            if (
-                self._source_target_pick_mode
-                or self._center_row_to_ray_mode
-                or self._placement_target_pick_mode
-                or self._placement_orient_pick_mode
-                or self._placement_orient_ray_mode
-                or self._step_carry_snap_ray_mode
-                or self._step_carry_snap_target_mode
-                or self._step_normal_axis_pick_mode
-                or self._step_surface_center_axis_pick_mode
-                or bool(getattr(self.editor, "_cad_axis_pick_any", False))
-            ):
-                self.status_var.set("Placement handle: finish the active pick mode first.")
-                self.render()
-                return
-            self._apply_scene_placement_translate_handle(*placement_move)
-            self.render()
-            return
-        thickness_row = self._actor_thickness_dimension_map.get(actor_key) if actor_key is not None else None
-        if thickness_row is not None:
-            if (
-                self._source_target_pick_mode
-                or self._center_row_to_ray_mode
-                or self._placement_target_pick_mode
-                or self._placement_orient_pick_mode
-                or self._placement_orient_ray_mode
-                or self._step_carry_snap_ray_mode
-                or self._step_carry_snap_target_mode
-                or self._step_normal_axis_pick_mode
-                or self._step_surface_center_axis_pick_mode
-                or bool(getattr(self.editor, "_cad_axis_pick_any", False))
-            ):
-                self.status_var.set("Thickness dimension: finish the active pick mode first.")
-                self.render()
-                return
-            self._edit_open3d_thickness_dimension(int(thickness_row))
-            self.render()
-            return
+        # Phase 6-7 migrated the STEP-rotation, placement-rotate,
+        # placement-translate, and thickness-dimension click ladders to
+        # WidgetRegistry-routed AbstractWidgets above. They now consume
+        # every event that previously fell into the inline ladders here,
+        # so the ladders have been removed; the widget-fallback covers
+        # the visual-only handle variants by bidding nothing and letting
+        # the rest of this handler run.
         if self._center_row_to_ray_mode and self._center_row_to_ray_index is None:
             source_pick = self._center_axis_source_pick_ignoring_axis_overlays(x, y)
             row_index = source_pick.get("row_index") if source_pick is not None else None

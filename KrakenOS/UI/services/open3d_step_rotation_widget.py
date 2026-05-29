@@ -39,10 +39,10 @@ class StepRotationHandleWidget(AbstractWidget):
             return True
         payload = event.target_payload
         if payload is None:
-            # Visual-only handle actor (rotation gizmo decoration) -- consume
-            # the event so we don't fall through to row picking, but do
-            # nothing user-visible.
-            return True
+            # Visual-only handle actor (gizmo decoration without an action
+            # tuple). Don't consume so the click can fall through to the
+            # legacy ladder / row picker, matching pre-widget behaviour.
+            return False
         try:
             self.set_state(WidgetState.PROCESSING)
             inspector._apply_step_rotation_handle(*payload)
