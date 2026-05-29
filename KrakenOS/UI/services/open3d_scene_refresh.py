@@ -207,9 +207,6 @@ class Open3DSceneRefreshService:
             except Exception:
                 camera_state = None
 
-        preserved_ray_index = self._picked_ray_index
-        preserved_optical_axis_id = self._picked_optical_axis_id
-
         self._clear_galvo_scan_animation(cancel_timer=True, render=False)
         actor_clear_start = time.perf_counter()
         self._renderer.RemoveAllViewProps()
@@ -238,9 +235,6 @@ class Open3DSceneRefreshService:
         self._thickness_drag_state = None
         self._step_feature_cache.clear()
         self._hover_rotation_handle_key = None
-        self._picked_step_label = None
-        self._picked_ray_index = None
-        self._picked_optical_axis_id = None
         self._hover_step_actor = None
         self._hover_step_outline_actor = None
         self._hover_step_cell_key = None
@@ -250,8 +244,6 @@ class Open3DSceneRefreshService:
         self._placement_grid_status_actor = None
         self._hover_status_actor = None
         self._step_carry_grip_actor = None
-        self._picked_row_index = None
-        self._picked_row_indices = set()
         actor_clear_ms = (time.perf_counter() - actor_clear_start) * 1000.0
 
         drew_surfaces = 0
@@ -666,14 +658,19 @@ class Open3DSceneRefreshService:
             self._set_step_highlight(str(selected_step))
         else:
             self._close_step_rotation_handler()
-        if preserved_ray_index is not None:
+        # SelectionModel survives RemoveAllViewProps; re-apply ray and
+        # optical-axis highlights against the freshly built actors. Row
+        # and step highlights are re-applied above via editor selection.
+        ray_index = self._picked_ray_index
+        if ray_index is not None:
             try:
-                self._set_ray_highlight(int(preserved_ray_index))
+                self._set_ray_highlight(int(ray_index))
             except Exception:
                 pass
-        if preserved_optical_axis_id:
+        axis_id = self._picked_optical_axis_id
+        if axis_id:
             try:
-                self._set_optical_axis_highlight(str(preserved_optical_axis_id))
+                self._set_optical_axis_highlight(str(axis_id))
             except Exception:
                 pass
         self._update_step_rotation_handler_state()
