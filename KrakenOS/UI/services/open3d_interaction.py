@@ -224,16 +224,23 @@ class Open3DInteractionService:
             self.render()
             return
         axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
+        # Wider proximity radius for axis picks: VTK's vtkCellPicker has tight
+        # spatial tolerance for the dotted-line dashes, so the picker often
+        # misses clicks that look on-target. 40 px (~2 cm on a typical display)
+        # makes the axis a forgiving target for the snap workflows without
+        # encroaching on the body click hit-box. Don't auto-cancel the pick
+        # mode when the user clicks empty space -- they probably meant to hit
+        # the axis but missed; show the "click the dotted Optical Axis guide"
+        # nudge instead, so a stray click can't silently lose the workflow.
+        AXIS_PICK_TOLERANCE_PX = 40.0
         if self._center_row_to_ray_mode:
             if self._center_row_to_ray_index is not None:
-                axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=28.0)
+                axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=AXIS_PICK_TOLERANCE_PX)
                 if axis_info is not None:
                     axis_id = str(axis_info.get("axis_id", "") or "").strip()
                     self._set_optical_axis_highlight(axis_id)
                     self._apply_center_row_to_optical_axis(axis_info)
                     self.render()
-                    return
-                if actor_key is None and self.cancel_active_3d_operation():
                     return
                 self.status_var.set("Center Row->Optical Axis: click the dotted Optical Axis guide.")
                 self.render()
@@ -243,27 +250,23 @@ class Open3DInteractionService:
                 self.render()
                 return
         if self._step_normal_axis_pick_mode:
-            axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=28.0)
+            axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=AXIS_PICK_TOLERANCE_PX)
             if axis_info is not None:
                 axis_id = str(axis_info.get("axis_id", "") or "").strip()
                 self._set_optical_axis_highlight(axis_id)
                 self._apply_step_normal_axis_pick(axis_info)
                 self.render()
                 return
-            if actor_key is None and self.cancel_active_3d_operation():
-                return
             self.status_var.set("Snap STEP Normal->Optical Axis: click the dotted Optical Axis guide.")
             self.render()
             return
         if self._step_surface_center_axis_pick_mode:
-            axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=28.0)
+            axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=AXIS_PICK_TOLERANCE_PX)
             if axis_info is not None:
                 axis_id = str(axis_info.get("axis_id", "") or "").strip()
                 self._set_optical_axis_highlight(axis_id)
                 self._apply_step_surface_center_axis_pick(axis_info)
                 self.render()
-                return
-            if actor_key is None and self.cancel_active_3d_operation():
                 return
             self.status_var.set("Center Surface->Optical Axis: click the dotted Optical Axis guide.")
             self.render()
