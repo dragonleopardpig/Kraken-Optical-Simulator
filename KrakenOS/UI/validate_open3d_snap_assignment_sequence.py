@@ -122,7 +122,15 @@ def _default_overlay_face(face_id: str) -> tuple[np.ndarray, np.ndarray]:
         row_index = int(promoted["row_index"])
         row = app.rows[row_index]
         faces = optical_solid_face_world_records(row, app._stl_row_z_station(row_index), assigned_only=False)
-        face = next((item for item in faces if str(item.get("face_id", "")) == face_id), None)
+        face = next(
+            (
+                item
+                for item in faces
+                if str(item.get("face_id", "")) == face_id
+                or str(item.get("face_id", "")).endswith("/" + face_id)
+            ),
+            None,
+        )
         if face is None:
             raise AssertionError(f"Reference face {face_id} was not found.")
         center = np.asarray(face.get("centroid_world"), dtype=float).reshape(3)
