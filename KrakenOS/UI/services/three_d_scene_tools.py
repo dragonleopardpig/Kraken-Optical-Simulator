@@ -897,6 +897,7 @@ class ThreeDSceneToolsMixin:
                     color=mesh_color,
                     opacity=mesh_opacity,
                     is_stop=self._legacy_3d_is_stop_plane(row),
+                    is_body=bool(file_backed_optical_solid),
                 )
             )
         return mesh_items

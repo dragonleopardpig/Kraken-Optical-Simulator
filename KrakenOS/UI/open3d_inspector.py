@@ -6940,6 +6940,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return 0, f"Placement handles: transient {label} STEP uses STEP carry/rotation handles."
         if primary_row >= 0:
             display_center = self._row_display_actor_center(primary_row, body_only=True)
+            if display_center is None:
+                # Tier 2 STL rows can carry a transient runtime expansion that
+                # strips the file-backed marker from the actor; fall back to
+                # the row's combined actor bounds so the handles still ride on
+                # the visible body rather than on the row's logical pose.
+                try:
+                    is_file_backed = self._render_row_file_backed(self.editor.rows, primary_row)
+                except Exception:
+                    is_file_backed = False
+                if is_file_backed:
+                    display_center = self._row_display_actor_center(primary_row, body_only=False)
             if display_center is not None:
                 center = display_center
         spacing = max(float(getattr(primary, "grid_spacing_mm", 10.0) or 10.0), 1e-6)
