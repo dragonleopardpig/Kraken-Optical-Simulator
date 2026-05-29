@@ -744,10 +744,32 @@ class LayoutOpticalSolidWorkflowMixin:
                     related_face_ids.append(record_face_id)
                 record = updated
             updated_faces.append(record)
+        # Preserve the "direct" provenance markers so the next metadata read
+        # takes the _direct_indexed_optical_solid_face_metadata fast path,
+        # keeping the prefixed S{idx}/F{nn} face IDs that user code captured
+        # before the assignment. Without this, subsequent reads fall back to
+        # cluster_optical_solid_planar_faces which emits bare F{nn} IDs --
+        # so a follow-up assign with a previously valid "S001/F002" id would
+        # raise "CAD/STL face S001/F002 is not available on S{idx}".
+        passthrough = {
+            key: metadata[key]
+            for key in (
+                "source_step",
+                "source_backend",
+                "source_face_count",
+                "outer_face_count",
+                "interior_duplicate_count",
+                "promoted_face_metadata_source",
+                "metadata_coordinates",
+            )
+            if isinstance(metadata, dict) and key in metadata
+        }
         metadata_to_save = normalize_optical_solid_face_metadata(
             {"faces": updated_faces, "virtual_planes": metadata.get("virtual_planes", []), "source_stl": str(path)},
             source_stl=str(path),
         )
+        for key, value in passthrough.items():
+            metadata_to_save[key] = value
         self._begin_history_capture()
         target = self.rows[row_index]
         target.advanced = dict(target.advanced or {})
