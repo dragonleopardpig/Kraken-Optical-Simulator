@@ -515,6 +515,74 @@ editing, and center-to-axis workflows. The next maintainability work should
 remove transitional late-bound constants and helper lookups, not move behavior
 back into `layout_editor.py`.
 
+### Slicer-pattern adoption (Phase 1-11)
+
+The Open 3D inspector now adopts the core data-model / representation /
+widget contracts from 3D Slicer's MRML stack. The patterns were ported
+incrementally so each phase is a small commit that runs against the
+existing validator set and adds a service class under
+`KrakenOS/UI/services/`:
+
+- `open3d_selection_model.SelectionModel` is the source of truth for
+  row, ray, step-overlay, and optical-axis picks. The five
+  `Kraken3DInspector._picked_*` fields are `@property` shims over the
+  model, mirroring `vtkMRMLMarkupsNode`'s data role. Scene rebuilds no
+  longer clear the picks; the model survives `RemoveAllViewProps()` and
+  the refresh service reapplies highlights through
+  `_set_ray_highlight` / `_set_optical_axis_highlight`. Stale picks for
+  rays or axes that no longer exist in the rebuilt scene are dropped
+  instead of haunting the model invisibly.
+- `open3d_selection_view.SelectionView` is the observer hook on the
+  model. `open3d_selection_representation.SelectionRepresentation`
+  carries the actor-styling logic (`apply_row_selection`,
+  `apply_ray_selection`, `apply_step_selection`,
+  `apply_optical_axis_selection`); the inspector's
+  `_set_*_highlight` methods are now thin facades over the
+  representation, matching `vtkMRMLAbstractWidgetRepresentation`.
+- `open3d_interaction_event.InteractionEventData` carries the
+  pre-resolved display xy, world xyz, picker actor, pick target, and
+  modifier keys for an interaction event. The companion
+  `PickClassifier` collapses an actor key against every
+  `_actor_*_map` dict the inspector keeps and emits a single
+  `PickTarget` enum value plus payload, ported from
+  `vtkMRMLInteractionEventData` + `CanProcessInteractionEvent`.
+- `open3d_interaction_mode.InteractionMode` enumerates the 14
+  mutually exclusive inspector modes; `InteractionModeState` is the
+  observable holder. The nine `_*_pick_mode` booleans on the
+  inspector are now `@property` facades backed by the state, so every
+  set/clear notifies state observers. `current_interaction_mode()`
+  reports the active mode in one place.
+- `open3d_abstract_widget.AbstractWidget` + `WidgetRegistry`
+  reproduce `vtkMRMLAbstractWidget`'s bidding interface. Concrete
+  widgets ship for `THICKNESS_DIMENSION`,
+  `PLACEMENT_ROTATE`/`PLACEMENT_TRANSLATE`, and
+  `STEP_ROTATE_HANDLE`; each migrates the matching inline ladder from
+  `Open3DInteractionService._on_left_button_press` (the four ladders
+  are now removed; visual-only handle actors fall through to the
+  remaining workflows by design).
+- `open3d_camera_state.CameraState` plus
+  `capture_camera_state` / `apply_camera_state` replace the dict of
+  tuples that `Open3DSceneRefreshService` used to capture and restore
+  the active VTK camera around a scene rebuild, matching
+  `vtkMRMLCameraNode`'s persistence surface.
+- `open3d_application_logic.Open3DApplicationLogic` is the
+  `vtkMRMLApplicationLogic` counterpart: a small facade that exposes
+  the inspector's high-level workflows (`current_mode`, `is_busy`,
+  `cancel_active_operation`, `start_*_pick`, plus accessors for the
+  Phase 1-7 services) so non-Tk callers can drive the 3D inspector
+  without importing the 9000-line widget class.
+
+Each phase preserves behaviour and was validated against
+`validate_open3d_handle_anchor`, `validate_open3d_live_mode`,
+`validate_open3d_step_state_service`, and the validator that exercises
+the migrated handler. The follow-on opportunities are widget-based
+manipulators for the placement handles (today they still pop the
+inspector's `_apply_scene_placement_*_handle` methods rather than
+moving the actors themselves), an observer-driven cursor/mode-badge
+manager hooked to `InteractionModeState`, and a `DisplayableManager`
+service that consolidates the actor-map ownership currently scattered
+across `Open3DSceneRefreshService` and the inspector.
+
 ## Known Risks And Future Work
 
 - Upstream main integration is selective. Runtime tracing, display, and test
