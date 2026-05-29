@@ -42,6 +42,7 @@ from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsServic
 from KrakenOS.UI.services.open3d_round_lens_pick import step_feature_pick_for_display_xy
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_selection_model import SelectionModel
+from KrakenOS.UI.services.open3d_selection_representation import SelectionRepresentation
 from KrakenOS.UI.services.open3d_selection_view import SelectionView
 from KrakenOS.UI.services.open3d_step_overlay_refresh import Open3DStepOverlayRefreshService
 from KrakenOS.UI.services.open3d_step_rotation_handles import Open3DStepRotationHandleService
@@ -257,6 +258,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._picker = None
         self._prop_picker = None
         self._selection_model = SelectionModel()
+        self._selection_representation = SelectionRepresentation(self)
         self._selection_view = SelectionView(self, self._selection_model)
         self._selection_view.attach()
         self._actor_row_map: dict[str, int] = {}
@@ -2956,34 +2958,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._set_row_highlights([] if row_index is None else [int(row_index)])
 
     def _set_row_highlights(self, row_indices) -> None:
-        selected_rows: set[int] = set()
-        for row_index in list(row_indices or []):
-            try:
-                selected_rows.add(int(row_index))
-            except Exception:
-                continue
-        picked = min(selected_rows) if selected_rows else None
-        if selected_rows == set(getattr(self, "_picked_row_indices", set()) or set()):
-            return
-        if self._renderer is None:
-            self._picked_row_index = picked
-            self._picked_row_indices = set(selected_rows)
-            return
-        collection = self._renderer.GetActors()
-        collection.InitTraversal()
-        for _ in range(collection.GetNumberOfItems()):
-            actor = collection.GetNextActor()
-            key = self._actor_key(actor)
-            if key is not None and key in self._actor_step_map:
-                continue
-            actor_row_index = self._actor_row_map.get(key) if key is not None else None
-            try:
-                actor_row_index = int(actor_row_index)
-            except Exception:
-                actor_row_index = None
-            self._set_row_actor_selected(actor, bool(actor_row_index is not None and actor_row_index in selected_rows))
-        self._picked_row_index = picked
-        self._picked_row_indices = set(selected_rows)
+        self._selection_representation.apply_row_selection(row_indices)
 
     def highlight_row(self, row_index: int | None) -> None:
         self._set_row_highlight(row_index)
@@ -3156,23 +3131,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 return
 
     def _set_ray_highlight(self, ray_index: int | None) -> None:
-        if ray_index == self._picked_ray_index and self._ray_event_label_actors:
-            return
-        if self._renderer is None:
-            self._picked_ray_index = ray_index
-            return
-        self._clear_ray_event_label_actors(render=False)
-        collection = self._renderer.GetActors()
-        collection.InitTraversal()
-        for _ in range(collection.GetNumberOfItems()):
-            actor = collection.GetNextActor()
-            actor_key = self._actor_key(actor)
-            actor_ray_index = self._actor_ray_map.get(actor_key) if actor_key is not None else None
-            if actor_ray_index is None:
-                continue
-            self._set_ray_actor_selected(actor, bool(ray_index is not None and actor_ray_index == ray_index))
-        self._add_selected_ray_event_label_actors(ray_index)
-        self._picked_ray_index = ray_index
+        self._selection_representation.apply_ray_selection(ray_index)
 
     def _remove_optical_axis_highlight_actor(self) -> bool:
         actor = self._optical_axis_highlight_actor
@@ -3192,72 +3151,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return False
 
     def _set_optical_axis_highlight(self, axis_id: str | None) -> None:
-        axis_id = str(axis_id or "").strip() or None
-        if axis_id == self._picked_optical_axis_id and (axis_id is None or self._optical_axis_highlight_actor is not None):
-            return
-        if self._renderer is None:
-            self._picked_optical_axis_id = axis_id
-            return
-        self._remove_optical_axis_highlight_actor()
-        selected_points = None
-        collection = self._renderer.GetActors()
-        collection.InitTraversal()
-        for _ in range(collection.GetNumberOfItems()):
-            actor = collection.GetNextActor()
-            actor_key = self._actor_key(actor)
-            axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
-            if not axis_info:
-                continue
-            current_id = str(axis_info.get("axis_id", "") or "").strip()
-            prop = actor.GetProperty()
-            if prop is None:
-                continue
-            if axis_id is not None and current_id == axis_id:
-                prop.SetColor(1.0, 0.68, 0.05)
-                prop.SetOpacity(1.0)
-                prop.SetLineWidth(4.0)
-                try:
-                    selected_points = np.asarray(axis_info.get("points"), dtype=float)
-                except Exception:
-                    selected_points = None
-            else:
-                prop.SetColor(0.0, 0.43, 0.88)
-                prop.SetOpacity(0.82)
-                prop.SetLineWidth(3.0 if self._optical_axis_pick_mode_active() else 2.0)
-        if axis_id is not None and (selected_points is None or selected_points.ndim != 2):
-            for record in list(self._optical_axis_pick_records):
-                if str(record.get("axis_id", "") or "").strip() != axis_id:
-                    continue
-                try:
-                    selected_points = np.asarray(record.get("points"), dtype=float)
-                except Exception:
-                    selected_points = None
-                break
-        if (
-            axis_id is not None
-            and selected_points is not None
-            and selected_points.ndim == 2
-            and selected_points.shape[0] >= 2
-            and selected_points.shape[1] >= 3
-            and np.all(np.isfinite(selected_points[:, :3]))
-            and pv is not None
-        ):
-            try:
-                mesh = pv.lines_from_points(selected_points[:, :3])
-                actor = self._add_mesh_actor(
-                    mesh,
-                    color=(1.0, 0.68, 0.05),
-                    opacity=1.0,
-                    line_width=7.0,
-                    flat_shading=True,
-                    backface_culling=False,
-                )
-                if actor is not None:
-                    actor.PickableOff()
-                    self._optical_axis_highlight_actor = actor
-            except Exception as exc:
-                self.editor.append_debug(f"3D optical-axis solid highlight failed: {exc}")
-        self._picked_optical_axis_id = axis_id
+        self._selection_representation.apply_optical_axis_selection(axis_id)
 
     def _add_mesh_actor(
         self,
@@ -3381,23 +3275,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
 
     def _set_step_highlight(self, step_label: str | None, *, render: bool = True) -> None:
-        if step_label == self._picked_step_label:
-            return
-        if self._renderer is None:
-            self._picked_step_label = step_label
-            return
-        collection = self._renderer.GetActors()
-        collection.InitTraversal()
-        for _ in range(collection.GetNumberOfItems()):
-            actor = collection.GetNextActor()
-            actor_key = self._actor_key(actor)
-            actor_step = self._actor_step_map.get(actor_key) if actor_key is not None else None
-            if actor_step is None:
-                continue
-            self._set_step_actor_selected(actor, bool(step_label is not None and actor_step == step_label))
-        self._picked_step_label = step_label
-        if render:
-            self.render()
+        self._selection_representation.apply_step_selection(step_label, render=render)
 
     def _remove_step_rotation_handle_actors(self) -> bool:
         return self._open3d_step_rotation_handle_service().remove_actors()
