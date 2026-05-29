@@ -6817,6 +6817,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         return combined_center(require_body=False)
 
     def _scene_placements_for_3d(self, scene_bundle: SceneBundle | None) -> list[ScenePlacement3D]:
+        if (
+            scene_bundle is not None
+            and scene_bundle is self.editor.__dict__.get("_last_saved_step_native_scene_bundle")
+        ):
+            try:
+                return build_scene_placements(self.editor.rows, targets=None)
+            except Exception:
+                return []
         placements = list(getattr(scene_bundle, "placements", []) or []) if scene_bundle is not None else []
         if placements:
             return placements

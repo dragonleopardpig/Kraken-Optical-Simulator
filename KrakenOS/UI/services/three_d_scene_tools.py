@@ -673,9 +673,11 @@ class ThreeDSceneToolsMixin:
             scene_bundle is not None
             and scene_bundle is self.__dict__.get("_last_saved_step_native_scene_bundle")
         ):
-            rows = self.__dict__.get("_last_saved_step_native_trace_rows")
-            if rows:
-                return list(rows)
+            # Saved STEP native reconstruction is a trace-only substitution.
+            # The editable/display row remains the promoted file-backed STEP
+            # row, otherwise Open 3D draws hidden analytic rows as extra
+            # bodies and placement handles operate on shifted row indices.
+            return list(self.rows)
         return list(self.rows)
 
     def _preview_render_row_names(self, scene_bundle: SceneBundle | None = None) -> list[str]:

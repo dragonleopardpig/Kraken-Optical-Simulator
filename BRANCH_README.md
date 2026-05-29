@@ -108,7 +108,10 @@ when the original STEP path is available and reconstructable; the expansion
 preserves total table track length and falls back to the saved mesh row if the
 STEP is not trace-ready. This covers reopened vendor DCV/DCX lens rows that
 would otherwise display as glass but trace against faceted STL normals or no
-usable optical prescription.
+usable optical prescription. Open 3D display rows and placement handles remain
+bound to the saved editable-table rows while those hidden analytic rows feed the
+ray kernel, so a reopened STEP lens does not draw a duplicate analytic body or
+rotate against shifted trace-only row indices.
 Trace Now also turns ray visibility on before rendering, and Undo/Redo clears
 stale transient STEP physics-preview and rotation/carry state so a successful
 trace cannot leave invisible geometry or floating handles behind. The

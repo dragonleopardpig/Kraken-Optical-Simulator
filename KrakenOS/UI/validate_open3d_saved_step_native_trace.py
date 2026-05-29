@@ -70,6 +70,35 @@ def main() -> int:
         render_rows = app._preview_render_rows(object())
         if len(render_rows) != len(app.rows):
             failures.append("_preview_render_rows must not switch rows for unrelated scene bundles")
+        system, _rays, scene_bundle = app._build_preview_system_rays_bundle(
+            sampling_mode="world_envelope",
+            update_state=False,
+        )
+        runtime_records = list(getattr(app, "_last_saved_step_native_trace_records", []) or [])
+        if not runtime_records:
+            failures.append("runtime Open 3D preview did not record saved STEP native trace rows")
+        runtime_rows = app._preview_render_rows(scene_bundle)
+        if len(runtime_rows) != len(app.rows):
+            failures.append(
+                "Open 3D saved STEP native trace must render saved table rows, "
+                f"not trace-only native rows ({len(runtime_rows)} != {len(app.rows)})"
+            )
+        if any(str(getattr(row, "name", "")).startswith("Trace-native ") for row in runtime_rows):
+            failures.append("trace-only native row leaked into Open 3D render rows")
+        trace_rows = list(getattr(app, "_last_saved_step_native_trace_rows", []) or [])
+        if not any(
+            bool(
+                (
+                    row.advanced
+                    if isinstance(getattr(row, "advanced", None), dict)
+                    else {}
+                ).get("StepNativePromotion", {}).get("trace_only")
+            )
+            for row in trace_rows
+        ):
+            failures.append("native trace rows must remain marked trace_only for diagnostics")
+        if system is None:
+            failures.append("runtime Open 3D preview did not build a trace system")
     finally:
         app.destroy()
     if failures:
