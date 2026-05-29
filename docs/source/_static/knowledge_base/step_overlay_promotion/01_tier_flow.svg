@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 480" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#111827"/>
+    </marker>
+    <style>
+      .ttl   { fill:#111827; font-size:16px; font-weight:700; }
+      .sub   { fill:#374151; font-size:11.5px; }
+      .lbl   { fill:#111827; font-size:12px; }
+      .lblb  { fill:#111827; font-size:12px; font-weight:700; }
+      .mono  { fill:#1f2937; font-size:10.5px; font-family:'Courier New', monospace; }
+      .flow  { stroke:#111827; stroke-width:1.6; fill:none; }
+      .t1    { fill:#dbeafe; stroke:#1d4ed8; stroke-width:1.6; }
+      .t2    { fill:#dcfce7; stroke:#16a34a; stroke-width:1.6; }
+      .t3    { fill:#fef3c7; stroke:#b45309; stroke-width:1.6; }
+      .step  { fill:#fee2e2; stroke:#b91c1c; stroke-width:1.4; }
+      .note  { fill:#6b7280; font-size:10.5px; font-style:italic; }
+      .badge { fill:#1f2937; font-size:10px; font-weight:700; }
+    </style>
+  </defs>
+
+  <text x="460" y="24" text-anchor="middle" class="ttl">STEP overlay promotion tiers — KrakenOS Open 3D pipeline</text>
+
+  <!-- STEP file source -->
+  <rect x="40" y="60" width="170" height="60" rx="8" class="step"/>
+  <text x="125" y="84" text-anchor="middle" class="lblb">Imported STEP file</text>
+  <text x="125" y="102" text-anchor="middle" class="sub">.step / .stp on disk</text>
+
+  <!-- Tier 1 -->
+  <rect x="260" y="60" width="220" height="120" rx="10" class="t1"/>
+  <text x="370" y="82" text-anchor="middle" class="lblb">Tier 1 — STEP overlay</text>
+  <text x="370" y="100" text-anchor="middle" class="sub">imported_optical_step_path slot</text>
+  <text x="370" y="120" text-anchor="middle" class="lbl">visual mesh only</text>
+  <text x="370" y="136" text-anchor="middle" class="lbl">STEP rotation handles</text>
+  <text x="370" y="152" text-anchor="middle" class="lbl">no physics trace</text>
+  <text x="370" y="168" text-anchor="middle" class="sub">("Show Rays" alone keeps it CAD)</text>
+
+  <!-- Tier 2 -->
+  <rect x="530" y="60" width="220" height="120" rx="10" class="t2"/>
+  <text x="640" y="82" text-anchor="middle" class="lblb">Tier 2 — STL optical solid</text>
+  <text x="640" y="100" text-anchor="middle" class="sub">single SurfaceRow, file-backed</text>
+  <text x="640" y="120" text-anchor="middle" class="lbl">advanced["Solid_3d_stl"]</text>
+  <text x="640" y="136" text-anchor="middle" class="lbl">advanced["StepOverlayPromotion"]</text>
+  <text x="640" y="152" text-anchor="middle" class="lbl">rays trace rotated triangles</text>
+  <text x="640" y="168" text-anchor="middle" class="sub">flip = 180° row tilt</text>
+
+  <!-- Tier 3 -->
+  <rect x="530" y="240" width="220" height="160" rx="10" class="t3"/>
+  <text x="640" y="262" text-anchor="middle" class="lblb">Tier 3 — Native analytic</text>
+  <text x="640" y="280" text-anchor="middle" class="sub">N SurfaceRows (one per face)</text>
+  <text x="640" y="300" text-anchor="middle" class="lbl">sphere_exact, asphere fit</text>
+  <text x="640" y="316" text-anchor="middle" class="lbl">advanced["StepNativePromotion"]</text>
+  <text x="640" y="332" text-anchor="middle" class="lbl">row_indices links siblings</text>
+  <text x="640" y="350" text-anchor="middle" class="lbl">rays trace prescription</text>
+  <text x="640" y="370" text-anchor="middle" class="sub">flip = flip_rows() reverses + remaps</text>
+
+  <!-- Arrows STEP → Tier 1 -->
+  <path d="M210 90 L260 90" class="flow" marker-end="url(#arr)"/>
+  <text x="235" y="83" text-anchor="middle" class="mono">import</text>
+
+  <!-- Arrow Tier 1 → Tier 2 -->
+  <path d="M480 100 L530 100" class="flow" marker-end="url(#arr)"/>
+  <text x="505" y="92" text-anchor="middle" class="mono">promote</text>
+  <text x="505" y="116" text-anchor="middle" class="mono">_to_optical_solid_row</text>
+
+  <!-- Arrow Tier 1 → Tier 3 -->
+  <path d="M395 180 L530 280" class="flow" marker-end="url(#arr)"/>
+  <text x="430" y="232" text-anchor="middle" class="mono">promote</text>
+  <text x="430" y="246" text-anchor="middle" class="mono">_to_native_surface_rows</text>
+
+  <!-- Auto-preserve note -->
+  <rect x="40" y="200" width="220" height="74" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+  <text x="150" y="222" text-anchor="middle" class="lblb">Auto-preserve (Tier 2)</text>
+  <text x="150" y="240" text-anchor="middle" class="sub">re-importing another STEP into</text>
+  <text x="150" y="254" text-anchor="middle" class="sub">the same slot promotes the old</text>
+  <text x="150" y="268" text-anchor="middle" class="sub">overlay first (clear_overlay=True)</text>
+  <path d="M260 232 C 310 232 320 130 370 130" class="flow" marker-end="url(#arr)" stroke-dasharray="4,3"/>
+
+  <!-- Flip mechanics for Tier 3 box -->
+  <rect x="40" y="320" width="450" height="120" rx="8" fill="#f3f4f6" stroke="#9ca3af"/>
+  <text x="50" y="342" class="lblb">Tier 3 flip — flip_rows(indices)</text>
+  <text x="50" y="360" class="lbl">1. Reverse the row order (back face becomes front).</text>
+  <text x="50" y="376" class="lbl">2. Negate rc on every Standard row (sphere curvature direction flips).</text>
+  <text x="50" y="392" class="lbl">3. Remap thicknesses: reversed(th[:-1]) + [th[-1]]   (last gap pinned).</text>
+  <text x="50" y="408" class="lbl">4. Remap glasses identically; rename via _flipped_name.</text>
+  <text x="50" y="426" class="note">Math lives in KrakenOS/UI/services/layout_table_workbench.py · flip_rows.</text>
+
+  <!-- Status legend -->
+  <rect x="780" y="60" width="115" height="120" rx="6" fill="#ffffff" stroke="#9ca3af"/>
+  <text x="838" y="80" text-anchor="middle" class="lblb">Handles?</text>
+  <rect x="794" y="92" width="14" height="14" class="t1"/>
+  <text x="814" y="104" class="lbl">rotate (STEP)</text>
+  <rect x="794" y="114" width="14" height="14" class="t2"/>
+  <text x="814" y="126" class="lbl">scene placement</text>
+  <rect x="794" y="136" width="14" height="14" class="t3"/>
+  <text x="814" y="148" class="lbl">placement + Flip</text>
+  <text x="838" y="170" text-anchor="middle" class="note">(after the fix)</text>
+</svg>

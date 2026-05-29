@@ -154,6 +154,16 @@ class Open3DFaceAssignmentService:
                 )
             menu.add_separator()
             menu.add_command(label="Open Face Editor...", command=lambda idx=int(row_index): self.editor.open_optical_solid_face_role_editor(idx))
+            menu.add_separator()
+            self._build_row_actions_cascade(menu, int(row_index))
+        elif row_index is not None and self.editor._is_any_promoted_optical_solid_row(self.editor.rows[int(row_index)]):
+            group = self.editor._lens_row_group_for_row(int(row_index))
+            label_text = (
+                f"Lens (S{group[0]}-S{group[-1]})" if len(group) >= 2 else f"S{int(row_index)}"
+            )
+            menu.add_command(label=f"Row Actions for {label_text}", state="disabled")
+            menu.add_separator()
+            self._build_row_actions_cascade(menu, int(row_index))
         elif step_label in STEP_OVERLAY_LABEL_SET:
             try:
                 feature_pick = self._step_feature_pick_for_display_xy(
@@ -439,3 +449,69 @@ class Open3DFaceAssignmentService:
             f"Promoted {label.upper()} STEP to S{row_index} and set {face_id} to {display}. "
             "The row now participates in non-sequential tracing."
         )
+
+    def _build_row_actions_cascade(self, parent_menu, row_index: int) -> None:
+        """Mirror 2D row-context actions inside the 3D right-click menu."""
+        editor = self.editor
+        if not (0 <= int(row_index) < len(editor.rows)):
+            return
+        group = editor._lens_row_group_for_row(int(row_index))
+        is_group = len(group) >= 2
+
+        def _select_group() -> None:
+            try:
+                editor._select_table_indices(group, focus_index=group[0])
+            except Exception:
+                try:
+                    editor._select_table_row(int(row_index))
+                except Exception:
+                    pass
+
+        def _refresh_3d() -> None:
+            try:
+                self.refresh_from_editor(force_retrace=True)
+                self.highlight_row(group[0])
+            except Exception as exc:
+                editor.append_debug(f"Open 3D refresh after row action failed: {exc}")
+
+        def _do(action) -> None:
+            _select_group()
+            try:
+                action()
+            except Exception as exc:
+                from KrakenOS.UI.layout_editor import _short_error_message
+                self.status_var.set(f"Row action failed: {_short_error_message(exc)}")
+                editor.append_debug(f"Open 3D row action failed: {exc}")
+                return
+            _refresh_3d()
+
+        actions = tk.Menu(parent_menu, tearoff=False)
+        flip_label = "Flip Lens (reverse element)" if is_group else "Flip / reverse selected element"
+        flip_state = "normal" if is_group else "disabled"
+        actions.add_command(
+            label=flip_label,
+            state=flip_state,
+            command=lambda: _do(lambda: editor.flip_rows(group)),
+        )
+        actions.add_separator()
+        actions.add_command(label="Move element up", command=lambda: _do(editor.move_up))
+        actions.add_command(label="Move element down", command=lambda: _do(editor.move_down))
+        actions.add_separator()
+        actions.add_command(label="Duplicate", command=lambda: _do(editor.duplicate_selected))
+        actions.add_command(label="Delete", command=lambda: _do(editor.delete_selected))
+        actions.add_separator()
+        actions.add_command(
+            label="Group as element",
+            state=("normal" if is_group else "disabled"),
+            command=lambda: _do(editor.group_selected_as_element),
+        )
+        actions.add_command(
+            label="Ungroup element",
+            command=lambda: _do(editor.ungroup_selected_elements),
+        )
+        actions.add_separator()
+        actions.add_command(
+            label="Element settings...",
+            command=lambda: (_select_group(), editor.open_element_settings()),
+        )
+        parent_menu.add_cascade(label="Row Actions", menu=actions)

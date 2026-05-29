@@ -228,6 +228,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._actor_step_rotate_visual_keys: set[str] = set()
         self._actor_placement_move_map: dict[str, tuple[int, str, float]] = {}
         self._actor_placement_rotate_map: dict[str, tuple[int, str, float]] = {}
+        self._actor_placement_rotate_visual_keys: set[str] = set()
+        self._actor_placement_move_visual_keys: set[str] = set()
         self._placement_handle_selected_row_index: int | None = None
         self._actor_thickness_dimension_map: dict[str, int] = {}
         self._thickness_dimension_actor_map: dict[int, list[str]] = {}
@@ -3180,10 +3182,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         removed = False
         placement_keys = set(self._actor_placement_rotate_map)
         placement_keys.update(self._actor_placement_move_map)
+        placement_keys.update(self._actor_placement_rotate_visual_keys)
+        placement_keys.update(self._actor_placement_move_visual_keys)
         for actor_key in list(placement_keys):
             actor = self._actor_by_key.pop(actor_key, None)
             self._actor_placement_rotate_map.pop(actor_key, None)
             self._actor_placement_move_map.pop(actor_key, None)
+            self._actor_placement_rotate_visual_keys.discard(actor_key)
+            self._actor_placement_move_visual_keys.discard(actor_key)
             if actor is None:
                 continue
             try:
@@ -3217,14 +3223,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         picked_row_index = getattr(self, "_picked_row_index", None)
         selected_handle_row_index = getattr(self, "_placement_handle_selected_row_index", None)
         try:
-            picked_row_has_handles = (
-                (picked_row_index is not None or selected_handle_row_index is not None)
-                and self.editor._file_backed_stl_row_at(
-                    int(picked_row_index if picked_row_index is not None else selected_handle_row_index)
-                )
-                is not None
-                and self._show_rotation_handles()
+            active_row_index = (
+                int(picked_row_index)
+                if picked_row_index is not None
+                else (int(selected_handle_row_index) if selected_handle_row_index is not None else None)
             )
+            row_eligible = False
+            if active_row_index is not None and 0 <= active_row_index < len(self.editor.rows):
+                if self.editor._file_backed_stl_row_at(active_row_index) is not None:
+                    row_eligible = True
+                else:
+                    row_eligible = bool(
+                        self.editor._is_any_promoted_optical_solid_row(self.editor.rows[active_row_index])
+                    )
+            picked_row_has_handles = bool(row_eligible and self._show_rotation_handles())
         except Exception:
             picked_row_has_handles = False
         return bool(
@@ -7021,6 +7033,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             )
             if actor is not None:
                 count += 1
+                arc_key = self._actor_key(actor)
+                if arc_key is not None:
+                    self._actor_placement_rotate_visual_keys.add(arc_key)
             for delta_deg in (-float(step), float(step)):
                 arrow_mesh = self._scene_placement_rotation_arrowhead_mesh(
                     center=center,

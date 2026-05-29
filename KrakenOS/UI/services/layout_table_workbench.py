@@ -4858,15 +4858,16 @@ class LayoutTableWorkbenchMixin:
 
 
     def flip_selected(self) -> None:
-        selected = self.table.selection()
-        if not selected:
+        if not self.table.selection():
             return
+        self.flip_rows(self._selected_table_indices())
+
+    def flip_rows(self, indices: list[int]) -> bool:
+        cleaned = sorted({int(value) for value in indices if 0 <= int(value) < len(self.rows)})
+        if len(cleaned) < 2:
+            return False
         self._begin_history_capture()
-        indices = self._selected_table_indices()
-        if len(indices) < 2:
-            self._history_pending_state = None
-            return
-        selected_rows = [SurfaceRow(**asdict(self.rows[index])) for index in indices]
+        selected_rows = [SurfaceRow(**asdict(self.rows[index])) for index in cleaned]
         selected_thicknesses = [row.thickness for row in selected_rows]
         selected_glasses = [row.glass for row in selected_rows]
         flipped_rows = list(reversed(selected_rows))
@@ -4876,24 +4877,21 @@ class LayoutTableWorkbenchMixin:
                 row.rc = -row.rc
             row.name = self._flipped_name(row.name)
 
-        if len(flipped_rows) >= 2:
-            remapped_thicknesses = list(reversed(selected_thicknesses[:-1])) + [selected_thicknesses[-1]]
-            remapped_glasses = list(reversed(selected_glasses[:-1])) + [selected_glasses[-1]]
-        else:
-            remapped_thicknesses = selected_thicknesses
-            remapped_glasses = selected_glasses
+        remapped_thicknesses = list(reversed(selected_thicknesses[:-1])) + [selected_thicknesses[-1]]
+        remapped_glasses = list(reversed(selected_glasses[:-1])) + [selected_glasses[-1]]
 
         for row, thickness, glass in zip(flipped_rows, remapped_thicknesses, remapped_glasses):
             row.thickness = thickness
             row.glass = glass
 
-        for index, row in zip(indices, flipped_rows):
+        for index, row in zip(cleaned, flipped_rows):
             self.rows[index] = row
         self._normalize_special_rows()
         self._sync_table()
-        self._select_table_indices(indices, focus_index=indices[0])
+        self._select_table_indices(cleaned, focus_index=cleaned[0])
         self._commit_history_capture()
         self.refresh_plot()
+        return True
 
     def move_up(self) -> None:
         selected = self.table.selection()

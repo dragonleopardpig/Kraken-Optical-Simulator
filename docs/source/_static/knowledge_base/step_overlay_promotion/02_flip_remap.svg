@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 360" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#111827"/>
+    </marker>
+    <style>
+      .ttl   { fill:#111827; font-size:16px; font-weight:700; }
+      .sub   { fill:#374151; font-size:11.5px; }
+      .lbl   { fill:#111827; font-size:12px; }
+      .lblb  { fill:#111827; font-size:12px; font-weight:700; }
+      .mono  { fill:#1f2937; font-size:11.5px; font-family:'Courier New', monospace; }
+      .flow  { stroke:#111827; stroke-width:1.6; fill:none; }
+      .colhd { fill:#f3f4f6; stroke:#9ca3af; stroke-width:1; }
+      .cellA { fill:#dbeafe; stroke:#1d4ed8; stroke-width:1.4; }
+      .cellB { fill:#dcfce7; stroke:#16a34a; stroke-width:1.4; }
+      .cellC { fill:#fef3c7; stroke:#b45309; stroke-width:1.4; }
+      .gap   { fill:#fde68a; stroke:#b45309; stroke-width:1.2; stroke-dasharray:3,2; }
+      .pinned { fill:#bbf7d0; stroke:#15803d; stroke-width:1.6; }
+      .note  { fill:#6b7280; font-size:10.5px; font-style:italic; }
+    </style>
+  </defs>
+  <text x="410" y="22" text-anchor="middle" class="ttl">flip_rows — example: 3-row achromat</text>
+
+  <!-- Before -->
+  <text x="120" y="52" text-anchor="middle" class="lblb">Before</text>
+
+  <rect x="40"  y="60" width="160" height="28" class="colhd"/>
+  <text x="120" y="78" text-anchor="middle" class="lblb">row · rc · thickness · glass</text>
+
+  <rect x="40"  y="92" width="160" height="36" class="cellA"/>
+  <text x="120" y="114" text-anchor="middle" class="mono">S1  rc=+28.5  th=9.0  BK7</text>
+
+  <rect x="40"  y="130" width="160" height="36" class="cellB"/>
+  <text x="120" y="152" text-anchor="middle" class="mono">S2  rc=-31.0  th=2.58 F2</text>
+
+  <rect x="40"  y="168" width="160" height="36" class="cellC"/>
+  <text x="120" y="190" text-anchor="middle" class="mono">S3  rc=-200   th=0.0  AIR</text>
+
+  <text x="120" y="226" text-anchor="middle" class="sub">last thickness pins the gap</text>
+  <text x="120" y="240" text-anchor="middle" class="sub">to the next non-group surface</text>
+
+  <!-- Arrow -->
+  <path d="M220 130 L340 130" class="flow" marker-end="url(#arr)"/>
+  <text x="280" y="120" text-anchor="middle" class="mono">flip_rows</text>
+  <text x="280" y="145" text-anchor="middle" class="mono">([1, 2, 3])</text>
+
+  <!-- After -->
+  <text x="440" y="52" text-anchor="middle" class="lblb">After</text>
+
+  <rect x="360" y="60" width="160" height="28" class="colhd"/>
+  <text x="440" y="78" text-anchor="middle" class="lblb">row · rc · thickness · glass</text>
+
+  <rect x="360" y="92" width="160" height="36" class="cellC"/>
+  <text x="440" y="114" text-anchor="middle" class="mono">S1  rc=+200   th=2.58 F2</text>
+
+  <rect x="360" y="130" width="160" height="36" class="cellB"/>
+  <text x="440" y="152" text-anchor="middle" class="mono">S2  rc=+31.0  th=9.0  BK7</text>
+
+  <rect x="360" y="168" width="160" height="36" class="pinned"/>
+  <text x="440" y="190" text-anchor="middle" class="mono">S3  rc=-28.5  th=0.0  AIR</text>
+
+  <text x="440" y="226" text-anchor="middle" class="sub">last gap th=0.0 stays at the new last row,</text>
+  <text x="440" y="240" text-anchor="middle" class="sub">prior gaps reversed: [9.0, 2.58] → [2.58, 9.0]</text>
+  <text x="440" y="254" text-anchor="middle" class="sub">last glass AIR stays last; BK7/F2 swap places</text>
+
+  <!-- Why this is correct -->
+  <rect x="560" y="60" width="240" height="240" rx="8" fill="#f9fafb" stroke="#9ca3af"/>
+  <text x="572" y="82" class="lblb">Why this is physically correct</text>
+  <text x="572" y="104" class="lbl">• Reversing rows traverses the lens</text>
+  <text x="572" y="120" class="lbl">  back-to-front in the ray trace.</text>
+  <text x="572" y="142" class="lbl">• rc sign flip handles the convention</text>
+  <text x="572" y="158" class="lbl">  R &gt; 0 = center-of-curvature to the</text>
+  <text x="572" y="174" class="lbl">  right of the surface. Reversing the</text>
+  <text x="572" y="190" class="lbl">  ray direction flips that.</text>
+  <text x="572" y="212" class="lbl">• Thicknesses are gaps between</text>
+  <text x="572" y="228" class="lbl">  consecutive surfaces inside the group;</text>
+  <text x="572" y="244" class="lbl">  reversing the list keeps each gap</text>
+  <text x="572" y="260" class="lbl">  between the same two physical media.</text>
+  <text x="572" y="282" class="lbl">• Last thickness is the gap to the</text>
+  <text x="572" y="298" class="lbl">  next non-group row; it stays pinned.</text>
+
+  <text x="410" y="332" text-anchor="middle" class="note">layout_table_workbench.py · flip_rows()  ·  validate_open3d_row_actions_parity.py</text>
+</svg>

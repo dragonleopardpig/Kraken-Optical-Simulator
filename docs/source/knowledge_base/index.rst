@@ -14,3 +14,4 @@ real sensor.
    pupil_sampling
    lens_design_intro
    ir_subpixel_detection
+   step_overlay_promotion

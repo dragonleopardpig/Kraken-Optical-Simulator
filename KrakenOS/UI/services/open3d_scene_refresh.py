@@ -227,6 +227,8 @@ class Open3DSceneRefreshService:
         self._actor_step_rotate_visual_keys.clear()
         self._actor_placement_move_map.clear()
         self._actor_placement_rotate_map.clear()
+        self._actor_placement_rotate_visual_keys.clear()
+        self._actor_placement_move_visual_keys.clear()
         self._actor_thickness_dimension_map.clear()
         self._thickness_dimension_actor_map.clear()
         self._thickness_dimension_drag_map.clear()

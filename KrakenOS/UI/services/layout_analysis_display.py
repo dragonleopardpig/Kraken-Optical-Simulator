@@ -230,6 +230,42 @@ class LayoutAnalysisDisplayMixin:
         return bool(cls._open3d_step_label_for_optical_solid_row(row))
 
     @staticmethod
+    def _row_advanced_dict(row) -> dict:
+        advanced = row.get("advanced", {}) if isinstance(row, dict) else getattr(row, "advanced", {})
+        return advanced if isinstance(advanced, dict) else {}
+
+    @classmethod
+    def _step_native_promotion_metadata(cls, row) -> dict | None:
+        promotion = cls._row_advanced_dict(row).get("StepNativePromotion")
+        return promotion if isinstance(promotion, dict) else None
+
+    @classmethod
+    def _is_step_native_promoted_row(cls, row) -> bool:
+        return cls._step_native_promotion_metadata(row) is not None
+
+    @classmethod
+    def _is_any_promoted_optical_solid_row(cls, row) -> bool:
+        if cls._is_open3d_promoted_optical_solid_row(row):
+            return True
+        return cls._is_step_native_promoted_row(row)
+
+    def _lens_row_group_for_row(self, row_index: int) -> list[int]:
+        try:
+            row_index = int(row_index)
+        except Exception:
+            return []
+        if not (0 <= row_index < len(self.rows)):
+            return []
+        row = self.rows[row_index]
+        promotion = self._step_native_promotion_metadata(row)
+        if promotion is not None:
+            raw_indices = promotion.get("row_indices", []) or []
+            indices = sorted({int(value) for value in raw_indices if 0 <= int(value) < len(self.rows)})
+            if indices:
+                return indices
+        return [row_index]
+
+    @staticmethod
     def _geometry_value_present(value) -> bool:
         if value is None:
             return False
