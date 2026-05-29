@@ -41,6 +41,11 @@ from KrakenOS.UI.services.open3d_live_refresh import DEFAULT_LIVE_REFRESH_DELAY_
 from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
 from KrakenOS.UI.services.open3d_round_lens_pick import step_feature_pick_for_display_xy
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
+from KrakenOS.UI.services.open3d_interaction_mode import (
+    InteractionMode,
+    InteractionModeState,
+    derive_interaction_mode,
+)
 from KrakenOS.UI.services.open3d_selection_model import SelectionModel
 from KrakenOS.UI.services.open3d_selection_representation import SelectionRepresentation
 from KrakenOS.UI.services.open3d_selection_view import SelectionView
@@ -261,6 +266,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._selection_representation = SelectionRepresentation(self)
         self._selection_view = SelectionView(self, self._selection_model)
         self._selection_view.attach()
+        self._interaction_mode_state = InteractionModeState()
         self._actor_row_map: dict[str, int] = {}
         self._row_actor_map: dict[int, list[str]] = {}
         self._actor_ray_map: dict[str, int] = {}
@@ -4734,6 +4740,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if bool(getattr(self.editor, "_cad_led_object_edge_pick", False)):
             labels.append("LED edge pick")
         return labels
+
+    def current_interaction_mode(self) -> InteractionMode:
+        """Return the active interaction mode as a single enum value.
+
+        Derives from the existing per-mode booleans plus editor flags so
+        callers don't have to know which booleans are mutually exclusive.
+        Also syncs ``_interaction_mode_state`` so any observers attached
+        to that state fire when the derived mode changes.
+        """
+        mode = derive_interaction_mode(self)
+        self._interaction_mode_state.set_mode(mode)
+        return mode
 
     def cancel_active_3d_operation(self) -> bool:
         active_labels = self._active_3d_operation_labels()
