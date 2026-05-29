@@ -2643,6 +2643,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         snap_mm = self._axis_slide_snap_step_for_row(row_index)
         direction = self._placement_drag_display_direction("translate", "z", 1.0, actor)
         label = f"lens S{group[0]}" if len(group) == 1 else f"lens group S{group[0]}-S{group[-1]}"
+        history_started = False
+        try:
+            self.editor._begin_history_capture()
+            history_started = True
+        except Exception:
+            history_started = False
         self.status_var.set(
             f"Slide {label} along Z; snap {snap_mm:.6g} mm. Release to commit; Esc cancels."
         )
@@ -2653,6 +2659,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             "display_direction": np.asarray(direction, dtype=float),
             "pixel_accumulator": 0.0,
             "applied_delta_mm": 0.0,
+            "history_started": bool(history_started),
+            "last_result": None,
         }
 
     def _apply_axis_slide_drag_motion(self, dx: int | float, dy: int | float) -> None:
@@ -2677,20 +2685,22 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         snap_mm = float(state.get("snap_mm", 0.25))
         delta_z = float(steps) * snap_mm
         try:
-            result = self.editor.slide_lens_along_axis(int(state.get("row_index", -1)), delta_z)
+            result = self.editor.slide_lens_along_axis(
+                int(state.get("row_index", -1)),
+                delta_z,
+                record_history=False,
+                sync_table=False,
+            )
         except Exception as exc:
             self.status_var.set(f"Slide along axis: {_short_error_message(exc)}")
             self.editor.append_debug(f"3D axis slide failed: {exc}")
             return
         state["applied_delta_mm"] = float(state.get("applied_delta_mm", 0.0)) + delta_z
+        state["last_result"] = dict(result)
         group = list(state.get("group_indices", [])) or [int(result.get("row_index", -1))]
-        try:
-            self.refresh_from_editor()
-            self.highlight_row(int(group[0]))
-        except Exception as exc:
-            self.editor.append_debug(f"3D axis slide refresh failed: {exc}")
         self.status_var.set(
             "Slide S{first}-S{last} along Z: total dz={total:+.6g} mm "
+            "(release to redraw; Esc reverts) "
             "(leading S{pre}.thickness={pt:.6g}, trailing S{tr}.thickness={tt:.6g}).".format(
                 first=int(group[0]),
                 last=int(group[-1]),
@@ -2709,10 +2719,30 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             return
         if abs(applied_delta) <= 1.0e-9 or not group:
+            if bool(state.get("history_started", False)):
+                try:
+                    self.editor._history_pending_state = None
+                except Exception:
+                    pass
             self.status_var.set("Slide along axis: no movement applied.")
             return
         first = int(group[0])
         last = int(group[-1])
+        try:
+            self.editor._sync_table()
+            self.editor._select_table_indices(group, focus_index=first)
+        except Exception:
+            pass
+        if bool(state.get("history_started", False)):
+            try:
+                self.editor._commit_history_capture()
+            except Exception as exc:
+                self.editor.append_debug(f"3D axis slide history commit failed: {exc}")
+        try:
+            self.refresh_from_editor()
+            self.highlight_row(first)
+        except Exception as exc:
+            self.editor.append_debug(f"3D axis slide finish refresh failed: {exc}")
         label = f"S{first}" if first == last else f"S{first}-S{last}"
         self.status_var.set(f"Slide along axis committed: {label} moved {applied_delta:+.6g} mm along Z.")
 
@@ -4786,7 +4816,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.status_var.set("No active Open 3D operation to cancel.")
             return False
 
-        carry_states = [self._step_carry_follow_state, self._step_carry_drag_state, self._row_carry_drag_state]
+        carry_states = [
+            self._step_carry_follow_state,
+            self._step_carry_drag_state,
+            self._row_carry_drag_state,
+            self._axis_slide_drag_state,
+        ]
         restore_state = None
         if any(isinstance(state, dict) and bool(state.get("history_started", False)) for state in carry_states):
             restore_state = getattr(self.editor, "_history_pending_state", None)
@@ -7201,6 +7236,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 mesh,
                 color=color,
                 opacity=0.46,
+                pick_placement_rotate=(row_index, axis, float(step)),
                 flat_shading=True,
                 backface_culling=False,
             )

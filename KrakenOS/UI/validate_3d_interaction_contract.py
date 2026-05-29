@@ -1524,7 +1524,10 @@ def main() -> int:
             and "_display_to_world_3d(display_xy, 1.0)" in display_pick_ray
             and "pick_face_from_ray(" in row_face_ray_pick
             and "pick_face_from_ray(" in step_face_ray_pick
-            and "prefer_internal=True" in row_face_ray_pick
+            and (
+                "prefer_internal=True" in row_face_ray_pick
+                or "prefer_internal=not self._row_face_metadata_uses_saved_mesh(row)" in row_face_ray_pick
+            )
             and "prefer_internal=True" in step_face_ray_pick
             and "Toolkit pickers" in face_ray_pick_service
             and "internal" in face_ray_pick_service,
@@ -1923,6 +1926,7 @@ def main() -> int:
         ("Open 3D placement handles write through row pose service", "translate_scene_row_pose" in placement_handle_pick),
         ("placement translate service writes Desp and ScenePlacement metadata", "desp_x" in editor_translate and "SCENE_PLACEMENT_ADVANCED_ATTR" in editor_translate),
         ("Open 3D placement rotation handles are pickable scene actors", "pick_placement_rotate" in placement_rotate_handles and "_actor_placement_rotate_map" in pick),
+        ("Open 3D placement rotation arc body is pickable after trace/snap", "pick_placement_rotate=(row_index, axis, float(step))" in placement_rotate_handles),
         ("Open 3D placement rotation handles write through world-axis row pose service", "rotate_scene_row_pose_world_axis" in placement_rotate_pick),
         ("placement rotate service writes Tilt and ScenePlacement metadata", "tilt_x" in editor_rotate and "SCENE_PLACEMENT_ADVANCED_ATTR" in editor_rotate),
         ("Open 3D placement drag starts from picked handle actors", "_placement_drag_state_from_current_pick()" in bindings and "_placement_handle_info_for_actor_key" in placement_drag_start),

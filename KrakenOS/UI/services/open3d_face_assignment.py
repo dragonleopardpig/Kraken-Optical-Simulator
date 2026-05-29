@@ -457,6 +457,18 @@ class Open3DFaceAssignmentService:
             return
         group = editor._lens_row_group_for_row(int(row_index))
         is_group = len(group) >= 2
+        try:
+            row = editor.rows[int(row_index)]
+        except Exception:
+            row = None
+        single_row_scene_flip = bool(
+            not is_group
+            and row is not None
+            and (
+                editor._file_backed_stl_row_at(int(row_index)) is not None
+                or editor._is_any_promoted_optical_solid_row(row)
+            )
+        )
 
         def _select_group() -> None:
             try:
@@ -485,13 +497,20 @@ class Open3DFaceAssignmentService:
                 return
             _refresh_3d()
 
+        def _flip_or_reverse() -> object:
+            if is_group:
+                return editor.flip_rows(group)
+            if single_row_scene_flip:
+                return editor.rotate_scene_row_pose_world_axis(int(row_index), "y", 180.0)
+            return editor.flip_rows(group)
+
         actions = tk.Menu(parent_menu, tearoff=False)
         flip_label = "Flip Lens (reverse element)" if is_group else "Flip / reverse selected element"
-        flip_state = "normal" if is_group else "disabled"
+        flip_state = "normal" if (is_group or single_row_scene_flip) else "disabled"
         actions.add_command(
             label=flip_label,
             state=flip_state,
-            command=lambda: _do(lambda: editor.flip_rows(group)),
+            command=lambda: _do(_flip_or_reverse),
         )
         actions.add_separator()
         actions.add_command(label="Move element up", command=lambda: _do(editor.move_up))

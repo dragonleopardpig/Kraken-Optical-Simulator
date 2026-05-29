@@ -240,6 +240,7 @@ class ThreeDSceneToolsMixin:
         )
         original_rows: list[SurfaceRow] | None = None
         scene_bundle = None
+        saved_native_records: list[dict[str, object]] = []
         try:
             if include_live_step_overlays:
                 with open3d_timing_span(
@@ -251,6 +252,11 @@ class ThreeDSceneToolsMixin:
                 self._last_live_step_overlay_trace_rows = None
                 self._last_live_step_overlay_trace_records = []
                 self._last_live_step_overlay_scene_bundle = None
+            with open3d_timing_span(
+                "preview_saved_step_native_rows",
+                row_count=len(active_rows),
+            ):
+                active_rows, saved_native_records = self._saved_promoted_step_native_trace_rows(active_rows)
             if active_rows is not self.rows:
                 original_rows = self.rows
                 self.rows = active_rows
@@ -261,12 +267,13 @@ class ThreeDSceneToolsMixin:
                         "preview_build_system",
                         row_count=len(self.rows),
                         require_solids=True,
-                        force_rebuild=bool(live_step_records),
+                        force_rebuild=bool(live_step_records or saved_native_records),
                         live_step_records=len(live_step_records),
+                        saved_native_records=len(saved_native_records),
                     ):
                         system = self.build_system(
                             require_solids=True,
-                            force_rebuild=bool(live_step_records),
+                            force_rebuild=bool(live_step_records or saved_native_records),
                         )
                     rays = Kos.raykeeper(system)
                     max_radius = max((max(row.diameter / 2.0, 0.5) for row in self.rows), default=1.0)
@@ -297,6 +304,14 @@ class ThreeDSceneToolsMixin:
                 self._last_live_step_overlay_trace_rows = list(self.rows)
                 self._last_live_step_overlay_trace_records = list(live_step_records)
                 self._last_live_step_overlay_scene_bundle = scene_bundle
+            if saved_native_records:
+                self._last_saved_step_native_trace_rows = list(self.rows)
+                self._last_saved_step_native_trace_records = list(saved_native_records)
+                self._last_saved_step_native_scene_bundle = scene_bundle
+            else:
+                self._last_saved_step_native_trace_rows = None
+                self._last_saved_step_native_trace_records = []
+                self._last_saved_step_native_scene_bundle = None
         except Exception:
             status = "error"
             raise
@@ -311,6 +326,7 @@ class ThreeDSceneToolsMixin:
                 update_state=bool(update_state),
                 include_live_step_overlays=bool(include_live_step_overlays),
                 live_step_records=len(live_step_records),
+                saved_native_records=len(saved_native_records),
                 ray_path_count=len(getattr(locals().get("rays", None), "CC", []) or []),
             )
         self.append_debug(capture.getvalue())
@@ -321,6 +337,211 @@ class ThreeDSceneToolsMixin:
             self._last_scene_bundle = scene_bundle
             self._preview_scene_trace_dirty = False
         return system, rays, scene_bundle
+
+    @staticmethod
+    def _saved_step_source_path_for_row(row: SurfaceRow) -> Path | None:
+        advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
+        source = str(advanced.get("OpticalSolidSourcePath", "") or "").strip()
+        if not source:
+            promotion = advanced.get("StepOverlayPromotion", {})
+            if isinstance(promotion, dict):
+                source = str(promotion.get("source_step_path", "") or "").strip()
+        if not source:
+            return None
+        try:
+            path = Path(source).expanduser()
+        except Exception:
+            return None
+        if path.suffix.lower() not in {".step", ".stp"}:
+            return None
+        return path
+
+    @staticmethod
+    def _saved_step_native_center_world(row: SurfaceRow, z_station: float) -> np.ndarray:
+        advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
+        promotion = advanced.get("StepOverlayPromotion", {})
+        if isinstance(promotion, dict):
+            try:
+                center = np.asarray(promotion.get("center_world", ()), dtype=float).reshape(-1)[:3]
+            except Exception:
+                center = np.asarray([], dtype=float)
+            if center.size >= 3 and np.all(np.isfinite(center[:3])):
+                return center[:3]
+        return np.asarray(
+            (
+                float(getattr(row, "desp_x", 0.0) or 0.0),
+                float(getattr(row, "desp_y", 0.0) or 0.0),
+                float(z_station) + float(getattr(row, "desp_z", 0.0) or 0.0),
+            ),
+            dtype=float,
+        )
+
+    @staticmethod
+    def _native_reconstruction_center_z(reconstruction) -> float:
+        try:
+            z_values = sorted(
+                float(fit.vertex_z_mm)
+                for fit in list(getattr(reconstruction, "surface_fits", ()) or ())
+                if np.isfinite(float(fit.vertex_z_mm))
+            )
+        except Exception:
+            z_values = []
+        if not z_values:
+            return 0.0
+        return 0.5 * max(float(z_values[-1] - z_values[0]), 0.0)
+
+    @staticmethod
+    def _saved_step_native_material_sequence(row: SurfaceRow, surface_count: int) -> tuple[str, ...]:
+        count = max(int(surface_count), 0)
+        if count <= 0:
+            return ()
+        material = str(getattr(row, "glass", "") or "").strip().upper()
+        if not material or material == "AIR":
+            material = "BK7"
+        if count == 1:
+            return ("AIR",)
+        return tuple(material for _ in range(count - 1)) + ("AIR",)
+
+    def _saved_promoted_step_native_trace_plan(
+        self,
+        row: SurfaceRow,
+        *,
+        source_path: Path,
+        source_row_index: int,
+        output_row_index: int,
+        z_station: float,
+    ) -> dict[str, object] | None:
+        advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
+        if not str(advanced.get("Solid_3d_stl", "") or "").strip():
+            return None
+        try:
+            stat_key = (int(source_path.stat().st_mtime_ns), int(source_path.stat().st_size))
+        except Exception:
+            stat_key = (0, 0)
+        cache_key = (
+            str(source_path.resolve()),
+            stat_key,
+            str(getattr(row, "glass", "") or ""),
+            round(float(getattr(row, "thickness", 0.0) or 0.0), 9),
+            tuple(round(float(getattr(row, attr, 0.0) or 0.0), 9) for attr in ("tilt_x", "tilt_y", "tilt_z")),
+            tuple(round(float(getattr(row, attr, 0.0) or 0.0), 9) for attr in ("desp_x", "desp_y", "desp_z")),
+            int(output_row_index),
+            round(float(z_station), 9),
+        )
+        cache = getattr(self, "_saved_step_native_trace_plan_cache", {}) or {}
+        cached = cache.get(cache_key)
+        if isinstance(cached, dict):
+            rows = cached.get("rows")
+            if isinstance(rows, (list, tuple)) and rows:
+                copied_rows = [SurfaceRow(**asdict(item)) for item in rows if isinstance(item, SurfaceRow)]
+                if copied_rows:
+                    return {**cached, "rows": copied_rows, "cache_hit": True}
+        try:
+            from KrakenOS.UI.services.step_native_reconstruction import reconstruct_step_native_surfaces
+
+            probe = reconstruct_step_native_surfaces(source_path)
+            try:
+                surface_count = len(list(probe.component_rows()))
+            except Exception:
+                surface_count = len(list(getattr(probe, "surface_fits", ()) or ()))
+            material_sequence = self._saved_step_native_material_sequence(row, surface_count)
+            if not material_sequence:
+                return None
+            reconstruction = reconstruct_step_native_surfaces(source_path, glass_sequence=material_sequence)
+            if not bool(getattr(reconstruction, "trace_ready", False)):
+                return None
+            native_rows = [SurfaceRow(**asdict(item)) for item in list(reconstruction.component_rows())]
+        except Exception as exc:
+            try:
+                self.append_debug(f"Saved STEP native trace skipped for S{source_row_index}: {_short_error_message(exc)}")
+            except Exception:
+                pass
+            return None
+        if not native_rows:
+            return None
+        original_track = max(float(getattr(row, "thickness", 0.0) or 0.0), 0.0)
+        native_track = sum(max(float(getattr(item, "thickness", 0.0) or 0.0), 0.0) for item in native_rows)
+        if original_track > native_track and native_rows:
+            native_rows[-1].thickness = float(getattr(native_rows[-1], "thickness", 0.0) or 0.0) + (original_track - native_track)
+        center_world = self._saved_step_native_center_world(row, z_station)
+        native_center_z = self._native_reconstruction_center_z(reconstruction)
+        row_indices = list(range(int(output_row_index), int(output_row_index) + len(native_rows)))
+        for offset, native_row in enumerate(native_rows):
+            native_row.element = str(getattr(row, "element", "") or "STEP native trace")
+            native_row.name = f"Trace-native {Path(source_path).stem} S{offset + 1}: {native_row.name}"
+            native_row.tilt_x = float(getattr(row, "tilt_x", 0.0) or 0.0)
+            native_row.tilt_y = float(getattr(row, "tilt_y", 0.0) or 0.0)
+            native_row.tilt_z = float(getattr(row, "tilt_z", 0.0) or 0.0)
+            native_row.desp_x = float(center_world[0])
+            native_row.desp_y = float(center_world[1])
+            native_row.desp_z = float(center_world[2] - float(z_station) - float(native_center_z))
+            native_row.axis_move = 0.0
+            native_row.advanced = dict(native_row.advanced or {})
+            native_row.advanced["StepNativePromotion"] = {
+                "step_label": "optical",
+                "source_step_path": str(source_path.resolve()),
+                "source_saved_row_index": int(source_row_index),
+                "row_index_offset": int(offset),
+                "row_indices": row_indices,
+                "material_sequence": list(material_sequence),
+                "row_coordinates": "native_reconstructed_prescription_from_saved_step_row",
+                "trace_ready": True,
+                "trace_only": True,
+            }
+        plan = {
+            "source_row_index": int(source_row_index),
+            "row_index": int(output_row_index),
+            "row_indices": row_indices,
+            "rows": [SurfaceRow(**asdict(item)) for item in native_rows],
+            "source_step_path": str(source_path.resolve()),
+            "trace_backend": "saved_step_native_analytic_rows",
+            "material_sequence": material_sequence,
+        }
+        cache[cache_key] = {**plan, "rows": [SurfaceRow(**asdict(item)) for item in native_rows]}
+        while len(cache) > 8:
+            try:
+                cache.pop(next(iter(cache)))
+            except Exception:
+                break
+        self._saved_step_native_trace_plan_cache = cache
+        return plan
+
+    def _saved_promoted_step_native_trace_rows(
+        self,
+        rows: list[SurfaceRow],
+    ) -> tuple[list[SurfaceRow], list[dict[str, object]]]:
+        output: list[SurfaceRow] = []
+        records: list[dict[str, object]] = []
+        z_station = 0.0
+        changed = False
+        for source_index, row in enumerate(list(rows or [])):
+            source_path = self._saved_step_source_path_for_row(row)
+            plan = None
+            if source_path is not None:
+                plan = self._saved_promoted_step_native_trace_plan(
+                    row,
+                    source_path=source_path,
+                    source_row_index=int(source_index),
+                    output_row_index=len(output),
+                    z_station=float(z_station),
+                )
+            if isinstance(plan, dict):
+                native_rows = [
+                    SurfaceRow(**asdict(item))
+                    for item in list(plan.get("rows", []) or [])
+                    if isinstance(item, SurfaceRow)
+                ]
+                if native_rows:
+                    output.extend(native_rows)
+                    records.append({key: value for key, value in plan.items() if key != "rows"})
+                    z_station += sum(float(getattr(item, "thickness", 0.0) or 0.0) for item in native_rows)
+                    changed = True
+                    continue
+            output.append(row)
+            z_station += float(getattr(row, "thickness", 0.0) or 0.0)
+        if not changed:
+            return rows, []
+        return output, records
 
     def _live_step_overlay_trace_rows(self) -> tuple[list[SurfaceRow], list[dict[str, object]]]:
         if self._step_path_for_label("optical") is None:
@@ -446,6 +667,13 @@ class ThreeDSceneToolsMixin:
             and scene_bundle is self.__dict__.get("_last_live_step_overlay_scene_bundle")
         ):
             rows = self.__dict__.get("_last_live_step_overlay_trace_rows")
+            if rows:
+                return list(rows)
+        if (
+            scene_bundle is not None
+            and scene_bundle is self.__dict__.get("_last_saved_step_native_scene_bundle")
+        ):
+            rows = self.__dict__.get("_last_saved_step_native_trace_rows")
             if rows:
                 return list(rows)
         return list(self.rows)

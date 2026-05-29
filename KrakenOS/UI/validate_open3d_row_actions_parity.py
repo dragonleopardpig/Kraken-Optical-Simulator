@@ -73,6 +73,8 @@ def _check_source_contracts() -> list[str]:
     for hook in required_action_hooks:
         if hook not in cascade_src:
             failures.append(f"Row Actions cascade must wire {hook} so 2D action is reachable in 3D")
+    if "single_row_scene_flip" not in cascade_src or "rotate_scene_row_pose_world_axis" not in cascade_src:
+        failures.append("Open 3D Row Actions must enable Flip for a single promoted STEP/STL scene row")
 
     return failures
 

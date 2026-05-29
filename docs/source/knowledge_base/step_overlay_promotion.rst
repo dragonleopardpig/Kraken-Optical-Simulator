@@ -117,10 +117,26 @@ full sibling list.
 * Pickable: yes (now that the handle predicate accepts promoted rows).
 * Traceable: yes, exactly — each surface is an analytic sphere/asphere.
 * Handles: scene-placement handles appear (after the predicate fix); a
-  single-row rotation only rotates that surface, so use **Flip Lens**
-  from the right-click menu for a true 180° flip.
-* Flippable: yes, but via ``flip_rows()`` not via the rotation handle —
-  see below.
+  single-row rotation only rotates that surface. The arc body and both
+  arrowheads are pickable, so clicking the curved rotation handle after
+  snap/trace is equivalent to clicking its positive arrowhead.
+* Flippable: yes. Multi-row native groups use ``flip_rows()``; a
+  single row-backed STEP/STL solid uses a 180 degree row-pose flip about
+  the world Y axis from the same Open 3D row-actions menu.
+
+Saved Tier 2 rows with a source STEP path
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A reopened layout may contain a single ``Solid_3d_stl`` row that came
+from an optical STEP lens before native promotion existed. Open 3D now
+checks those saved rows during preview tracing. If the source STEP is
+axisymmetric and reconstructable, the trace path temporarily expands the
+single saved row into native analytic ``SurfaceRow`` siblings, preserves
+the original total table thickness, and uses those analytic rows for ray
+physics. The saved row remains the layout object, and unsupported STEP
+solids still fall back to the mesh-backed Tier 2 path.
+
+Validator: ``python -m KrakenOS.UI.validate_open3d_saved_step_native_trace``.
 
 
 Flipping a Tier-3 lens: why it's not a rotation
@@ -345,7 +361,9 @@ grows by ``Δz`` and the gap after shrinks by the same amount:
 
 The slide is rejected (status bar warning) if it would push either gap
 thickness below zero, so the lens can never overrun a neighbouring
-element. Validator: ``validate_axis_slide.py``.
+element. Dragging batches row edits and redraws once on release, which
+keeps large Open 3D scenes responsive. Validator:
+``python -m KrakenOS.UI.validate_axis_slide``.
 
 
 Known follow-ups

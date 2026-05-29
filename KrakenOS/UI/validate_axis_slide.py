@@ -48,6 +48,9 @@ def _check_source_contracts() -> list[str]:
         __import__("KrakenOS.UI.services.open3d_mouse_bindings", fromlist=["Open3DMouseBindingsService"])
         .Open3DMouseBindingsService._install_pick_only_left_click_bindings
     )
+    apply_source = inspect.getsource(Kraken3DInspector._apply_axis_slide_drag_motion)
+    finish_source = inspect.getsource(Kraken3DInspector._finish_axis_slide_drag)
+    cancel_source = inspect.getsource(Kraken3DInspector.cancel_active_3d_operation)
     for marker in (
         "_axis_slide_state_from_current_pick",
         "_apply_axis_slide_drag_motion",
@@ -55,6 +58,14 @@ def _check_source_contracts() -> list[str]:
     ):
         if marker not in bindings_source:
             failures.append(f"mouse bindings must dispatch {marker}")
+    if "refresh_from_editor()" in apply_source:
+        failures.append("axis-slide drag motion must not rebuild/retrace the 3D scene on every mouse step")
+    if "record_history=False" not in apply_source or "sync_table=False" not in apply_source:
+        failures.append("axis-slide drag motion must batch table/history work until mouse release")
+    if "refresh_from_editor()" not in finish_source or "_commit_history_capture()" not in finish_source:
+        failures.append("axis-slide release must commit history and redraw once")
+    if "self._axis_slide_drag_state" not in cancel_source or "history_started" not in cancel_source:
+        failures.append("Esc/cancel must restore an in-progress axis-slide history capture")
     return failures
 
 
