@@ -2896,13 +2896,47 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         label = f"S{first}" if first == last else f"S{first}-S{last}"
         self.status_var.set(f"Slide along axis committed: {label} moved {applied_delta:+.6g} mm along Z.")
 
+    def _preferred_camera_orbit_focal_point(self) -> tuple[float, float, float] | None:
+        """Pick a more intuitive orbit pivot than the scene focal point.
+
+        When the user has a row, STEP overlay, or ray selected, orbiting
+        around the *scene focal point* puts the selected body off to one
+        side and the rest of the scene on the other side, so a left-drag
+        makes the two visually swing in opposite arcs. Pivoting around
+        the selected geometry instead keeps it visually anchored while
+        the surroundings orbit, eliminating the "two bodies rotating
+        opposite directions" surprise reported with step1-step3.png.
+        """
+        row_index = self._picked_row_index
+        if row_index is not None:
+            try:
+                center = self._row_actor_center_world(int(row_index))
+            except Exception:
+                center = None
+            if center is not None and center.size >= 3 and np.all(np.isfinite(center[:3])):
+                return (float(center[0]), float(center[1]), float(center[2]))
+        step_label = self._picked_step_label
+        if step_label is not None:
+            try:
+                center = self._step_overlay_center_world(str(step_label))
+            except Exception:
+                center = None
+            if center is not None:
+                arr = np.asarray(center, dtype=float).reshape(-1)[:3]
+                if arr.size == 3 and np.all(np.isfinite(arr)):
+                    return (float(arr[0]), float(arr[1]), float(arr[2]))
+        return None
+
     def _rotate_camera_fixed_drag(self, dx: int | float, dy: int | float) -> None:
         """Rotate around the current focal point with constant pixel sensitivity.
 
         VTK's default trackball camera can feel accelerated and can effectively
         change the apparent pivot during fast mouse motion. This handler maps
         total mouse travel to angle at a fixed degrees-per-pixel rate and leaves
-        the camera focal point untouched.
+        the camera focal point untouched. When the user has a row or STEP
+        overlay selected, the orbit pivot is moved onto that geometry so the
+        selected body visually stays put and only the rest of the scene
+        orbits around it.
         """
         if self._renderer is None:
             return
@@ -2918,7 +2952,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return
         degrees_per_pixel = 0.22
         try:
-            focal = tuple(float(value) for value in camera.GetFocalPoint())
+            preferred = self._preferred_camera_orbit_focal_point()
+            if preferred is not None:
+                focal = preferred
+            else:
+                focal = tuple(float(value) for value in camera.GetFocalPoint())
             camera.SetFocalPoint(*focal)
             camera.Azimuth(dx_f * degrees_per_pixel)
             camera.Elevation(-dy_f * degrees_per_pixel)
