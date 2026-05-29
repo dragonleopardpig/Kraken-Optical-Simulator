@@ -6,6 +6,11 @@ from typing import Any
 
 import numpy as np
 
+from KrakenOS.UI.services.open3d_interaction_event import (
+    InteractionEventData,
+    PickClassifier,
+)
+
 
 def _layout_module():
     from KrakenOS.UI import layout_editor as layout_editor_module
@@ -112,6 +117,32 @@ class Open3DInteractionService:
             counts=self._debug_actor_counts(),
             modes=self._debug_mode_state(),
         )
+        # Widget pipeline dispatch (Phase 6+). Concrete widgets in
+        # _widget_registry get first crack at the event; if any of them
+        # consumes it, skip the inline ladders below.
+        registry = getattr(self._inspector, "_widget_registry", None)
+        if registry is not None:
+            classifier = PickClassifier(self._inspector)
+            target, payload = classifier.classify(actor_key)
+            try:
+                cell_id = int(self._picker.GetCellId())
+            except Exception:
+                cell_id = -1
+            event_data = InteractionEventData(
+                event_type="mouse_press",
+                display_xy=(float(x), float(y)),
+                actor=actor,
+                actor_key=actor_key,
+                cell_id=cell_id if cell_id >= 0 else None,
+                pick_target=target,
+                target_payload=payload,
+            )
+            try:
+                consumed = registry.dispatch(event_data)
+            except Exception:
+                consumed = None
+            if consumed is not None:
+                return
         step_rotate = self._actor_step_rotate_map.get(actor_key) if actor_key is not None else None
         if step_rotate is not None:
             if (
