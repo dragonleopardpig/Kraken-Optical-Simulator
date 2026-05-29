@@ -1,6 +1,6 @@
 # KrakenOS Non-Sequential UI Branch
 
-Last updated: 2026-05-28
+Last updated: 2026-05-29
 
 This document summarizes the `nonseq-display-refactor` branch. The upstream
 `README.md` is intentionally left unchanged; this branch README is the public
@@ -114,7 +114,10 @@ ray kernel, so a reopened STEP lens does not draw a duplicate analytic body or
 rotate against shifted trace-only row indices. The saved-native display path
 also discards trace-bundle surface meshes and rebuilds the visible CAD bodies
 from the original promoted STEP/STL rows, preventing stale trace row indices
-from being picked during Center Row -> Optical Axis. Stale transient STEP
+from being picked during Center Row -> Optical Axis. Saved-native row-face
+hover outlines, assigned-face overlays, and virtual-plane overlays use the same
+original file-backed row transform as the visible body, so a face highlight
+cannot be drawn at a shifted trace-only row location. Stale transient STEP
 overlays whose source path already exists as a promoted row are suppressed in
 Open 3D and legacy 3D refreshes, so a saved lens is not drawn twice as both an
 editable row and an imported-overlay ghost.
@@ -168,7 +171,10 @@ saved promoted mesh face IDs instead of stale runtime trace-mesh triangle
 indices, hidden-ray views keep only one canonical global optical-axis guide,
 Center Row mode clears transient/row placement handles, and Center Row face
 picking ranks transparent overlapping CAD row faces by the projected face
-anchor rather than the nearest actor. These regressions are covered by
+anchor rather than the nearest actor. The mixed-prism validator also requires
+row-face hover outlines to overlap the visible promoted row body, catching the
+saved-layout shifted-outline regression shown by `attachment/mxied.py`. These
+regressions are covered by
 `python -m KrakenOS.UI.validate_open3d_center_row_face_visual` and
 `python -m KrakenOS.UI.validate_open3d_mxied_prism_selection`, which save
 face-hover and mixed-prism selection snapshots under

@@ -5488,7 +5488,24 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor.append_debug(f"3D optical face marker error: {exc}")
             return False
 
+    def _saved_step_native_display_transform_for_row(self, row_index: int):
+        scene_bundle = self.__dict__.get("_current_scene_bundle")
+        if scene_bundle is not self.editor.__dict__.get("_last_saved_step_native_scene_bundle"):
+            return None
+        item = self.editor._file_backed_stl_row_at(int(row_index))
+        if item is None:
+            return None
+        row, _path = item
+        try:
+            z_station = self.editor._stl_row_z_station(int(row_index))
+            return self.editor._file_backed_row_display_transform(row, float(z_station))
+        except Exception:
+            return None
+
     def _runtime_transform_for_row(self, system, row_index: int):
+        saved_display_transform = self._saved_step_native_display_transform_for_row(int(row_index))
+        if saved_display_transform is not None:
+            return saved_display_transform
         override = optical_solid_output_port_runtime_transform_override(system, self.editor.rows, row_index)
         if override is not None:
             return override

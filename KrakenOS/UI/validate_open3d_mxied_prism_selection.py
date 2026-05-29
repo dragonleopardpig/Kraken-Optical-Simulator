@@ -68,6 +68,54 @@ def _face_center(face: dict[str, object]) -> np.ndarray | None:
     return None
 
 
+def _finite_bounds(values) -> np.ndarray | None:
+    try:
+        bounds = np.asarray(values, dtype=float).reshape(6)
+    except Exception:
+        return None
+    if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[0] > bounds[1]:
+        return None
+    return bounds
+
+
+def _merged_row_actor_bounds(inspector, row_index: int) -> np.ndarray | None:
+    row_map = getattr(inspector, "_row_actor_map", {}) or {}
+    actor_map = getattr(inspector, "_actor_by_key", {}) or {}
+    bounds_list: list[np.ndarray] = []
+    for actor_key in list(row_map.get(int(row_index), []) or []):
+        actor = actor_map.get(actor_key)
+        if actor is None:
+            continue
+        bounds = _finite_bounds(actor.GetBounds())
+        if bounds is not None:
+            bounds_list.append(bounds)
+    if not bounds_list:
+        return None
+    stacked = np.vstack(bounds_list)
+    return np.asarray(
+        (
+            float(np.min(stacked[:, 0])),
+            float(np.max(stacked[:, 1])),
+            float(np.min(stacked[:, 2])),
+            float(np.max(stacked[:, 3])),
+            float(np.min(stacked[:, 4])),
+            float(np.max(stacked[:, 5])),
+        ),
+        dtype=float,
+    )
+
+
+def _bounds_overlap(lhs: np.ndarray, rhs: np.ndarray, *, padding: float) -> bool:
+    return bool(
+        lhs[0] <= rhs[1] + padding
+        and lhs[1] >= rhs[0] - padding
+        and lhs[2] <= rhs[3] + padding
+        and lhs[3] >= rhs[2] - padding
+        and lhs[4] <= rhs[5] + padding
+        and lhs[5] >= rhs[4] - padding
+    )
+
+
 def _promoted_prism_face_source(app: KrakenLayoutEditor, inspector) -> tuple[str, int | None, list[dict[str, object]]]:
     """Return the saved-layout prism faces to validate.
 
@@ -150,6 +198,11 @@ def validate_case(layout_path: Path = DEFAULT_LAYOUT_PATH, output_dir: Path = DE
 
         picked: list[dict[str, object]] = []
         failures: list[str] = []
+        row_body_bounds = (
+            _merged_row_actor_bounds(inspector, int(source_row_index))
+            if source_kind == "row" and source_row_index is not None
+            else None
+        )
         for face in faces:
             face_id = str(face.get("face_id", "") or "").strip()
             center = _face_center(face)
@@ -174,6 +227,16 @@ def validate_case(layout_path: Path = DEFAULT_LAYOUT_PATH, output_dir: Path = DE
                 row_pick = inspector._row_face_ray_pick_for_display_xy(int(source_row_index), display[:2])
                 if row_pick is not None:
                     picked_face = str(row_pick.face.get("face_id", "") or "").strip()
+                overlay = inspector._hover_overlay_for_row_face(int(source_row_index), face)
+                overlay_bounds = _finite_bounds(overlay.bounds if overlay is not None else None)
+                if overlay_bounds is None:
+                    failures.append(f"{face_id} did not produce a row-face hover overlay")
+                elif row_body_bounds is not None and not _bounds_overlap(
+                    overlay_bounds,
+                    row_body_bounds,
+                    padding=max(scene_radius * 0.03, 2.0),
+                ):
+                    failures.append(f"{face_id} hover overlay did not overlap the visible row body")
             else:
                 feature_pick = inspector._step_feature_pick_any_for_display_xy(display[:2], labels=("optical",))
                 if isinstance(feature_pick, dict):
