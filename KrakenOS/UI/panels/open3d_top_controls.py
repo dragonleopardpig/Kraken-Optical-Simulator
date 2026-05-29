@@ -228,4 +228,11 @@ class Open3DTopControlsPanel:
             command=self.inspector._on_scene_visibility_changed,
             padx=(12, 0),
         )
+        pack_commit_checkbutton(
+            carry_toolbar,
+            "Slide along axis",
+            variable=self.inspector.slide_along_axis_mode_var,
+            command=self.inspector._toggle_axis_slide_mode,
+            padx=(12, 0),
+        )
         return carry_toolbar

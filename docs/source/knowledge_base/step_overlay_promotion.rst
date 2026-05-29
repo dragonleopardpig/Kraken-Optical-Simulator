@@ -317,6 +317,37 @@ Run it standalone:
    python -m KrakenOS.UI.validate_open3d_row_actions_parity
 
 
+Slide along the optical axis
+----------------------------
+
+Tier 2 and Tier 3 promoted bodies share a 1-DOF interaction:
+**Slide along axis**, toggled from the Carry toolbar. While the mode is
+on, clicking the lens body and dragging projects the cursor motion onto
+the world Z axis only — off-axis displacement and rotation are
+suppressed. The drag uses the same snap-step as the scene placement
+settings on the row, and the move is committed to the history stack on
+mouse release.
+
+The semantic is *preserve overall track length* — every row downstream of
+the lens stays at its absolute Z position; only the gap before the lens
+grows by ``Δz`` and the gap after shrinks by the same amount:
+
+.. code-block:: python
+
+   # KrakenOS/UI/services/scene_placement_commands.py
+   def slide_lens_along_axis(self, row_index, delta_z_mm, ...):
+       group = self._lens_row_group_for_row(row_index)
+       preceding_index = group[0] - 1
+       trailing_index = group[-1]
+       self.rows[preceding_index].thickness += delta_z_mm
+       self.rows[trailing_index].thickness   -= delta_z_mm
+       # internal group thicknesses untouched — lens stays rigid.
+
+The slide is rejected (status bar warning) if it would push either gap
+thickness below zero, so the lens can never overrun a neighbouring
+element. Validator: ``validate_axis_slide.py``.
+
+
 Known follow-ups
 ----------------
 

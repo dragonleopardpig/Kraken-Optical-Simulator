@@ -136,6 +136,120 @@ class ScenePlacementMixin:
             "scene_placement_settings": settings,
         }
 
+    def slide_lens_along_axis(
+        self,
+        row_index: int,
+        delta_z_mm: float,
+        *,
+        record_history: bool = True,
+        sync_table: bool = True,
+    ) -> dict[str, object]:
+        """Slide a lens/element along the optical axis, preserving overall track length.
+
+        Semantic: the element (single Tier-2 row or full Tier-3 row group)
+        moves by ``delta_z_mm``; the row preceding the group has its
+        thickness extended by ``delta_z_mm`` (the gap *before* the element
+        grows), and the last row of the group has its thickness reduced by
+        the same amount (the gap *after* shrinks). Every row downstream of
+        the group stays at its original absolute position; the internal
+        thicknesses of the group are unchanged so the lens geometry is
+        rigid.
+        """
+        try:
+            row_index = int(row_index)
+        except Exception as exc:
+            raise RuntimeError("Invalid row index for axis slide") from exc
+        if not (0 <= row_index < len(self.rows)):
+            raise RuntimeError("Axis-slide row is outside the table")
+        try:
+            delta = float(delta_z_mm)
+        except Exception as exc:
+            raise RuntimeError("Invalid axis-slide delta") from exc
+        if not np.isfinite(delta):
+            raise RuntimeError("Axis-slide delta is non-finite")
+        if abs(delta) <= 1.0e-12:
+            raise RuntimeError("Axis-slide delta is zero")
+        group = self._lens_row_group_for_row(row_index)
+        if not group:
+            raise RuntimeError("No lens row group resolved for axis slide")
+        first_row = group[0]
+        last_row = group[-1]
+        preceding_index = first_row - 1
+        if preceding_index < 0:
+            raise RuntimeError(
+                "Cannot slide along axis: no preceding row to absorb the leading gap "
+                f"(first group row is S{first_row})."
+            )
+        if last_row + 1 >= len(self.rows):
+            raise RuntimeError(
+                "Cannot slide along axis: no trailing row to absorb the slide "
+                f"(last group row S{last_row} is the table tail)."
+            )
+        preceding_row = self.rows[preceding_index]
+        last_group_row = self.rows[last_row]
+        leading_before = float(preceding_row.thickness)
+        trailing_before = float(last_group_row.thickness)
+        leading_after = leading_before + delta
+        trailing_after = trailing_before - delta
+        if leading_after < 0.0:
+            raise RuntimeError(
+                f"Slide rejected: would push preceding gap S{preceding_index}.thickness "
+                f"to {leading_after:.6g} mm (negative)."
+            )
+        if trailing_after < 0.0:
+            raise RuntimeError(
+                f"Slide rejected: would push trailing gap S{last_row}.thickness "
+                f"to {trailing_after:.6g} mm (negative)."
+            )
+        history_started = False
+        if bool(record_history) and "_history_restoring" in self.__dict__ and "_history_pending_state" in self.__dict__:
+            try:
+                self._begin_history_capture()
+                history_started = True
+            except Exception:
+                history_started = False
+        preceding_row.thickness = leading_after
+        last_group_row.thickness = trailing_after
+        if bool(sync_table) and "table" in self.__dict__:
+            try:
+                self._sync_table()
+                self._select_table_indices(group, focus_index=first_row)
+            except Exception:
+                pass
+        if history_started:
+            self._commit_history_capture()
+        try:
+            self._mark_plot_update_pending()
+        except Exception:
+            pass
+        self.append_debug(
+            "Axis slide S{row} (group {first}-{last}): dz={delta:+.6g} mm "
+            "leading S{pre}.thickness {lb:.6g}->{la:.6g}, "
+            "trailing S{lr}.thickness {tb:.6g}->{ta:.6g}".format(
+                row=row_index,
+                first=first_row,
+                last=last_row,
+                delta=delta,
+                pre=preceding_index,
+                lb=leading_before,
+                la=leading_after,
+                lr=last_row,
+                tb=trailing_before,
+                ta=trailing_after,
+            )
+        )
+        return {
+            "row_index": row_index,
+            "group_indices": list(group),
+            "delta_z_mm": delta,
+            "preceding_row_index": preceding_index,
+            "preceding_thickness_before": leading_before,
+            "preceding_thickness_after": leading_after,
+            "trailing_row_index": last_row,
+            "trailing_thickness_before": trailing_before,
+            "trailing_thickness_after": trailing_after,
+        }
+
     def rotate_scene_row_pose(self, row_index: int, axis: str, delta_deg: float) -> dict[str, object]:
         try:
             row_index = int(row_index)

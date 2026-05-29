@@ -22,6 +22,7 @@ from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
 from KrakenOS.UI.scene_builder import build_scene_placements
 from KrakenOS.UI.scene_geometry import SceneBundle, ScenePlacement3D, SurfaceMesh3D
+from KrakenOS.UI.scene_placement import SCENE_PLACEMENT_ADVANCED_ATTR
 from KrakenOS.UI.scene_projector import normalize_projection_plane
 from KrakenOS.UI.services.cad_scene_cache import CadSceneCache
 from KrakenOS.UI.services.open3d_carry_grip import Open3DCarryGripService
@@ -308,6 +309,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._row_carry_hold_press_xy: tuple[int, int] | None = None
         self._row_carry_hold_pick_world: tuple[float, float, float] | None = None
         self._row_carry_drag_state: dict[str, object] | None = None
+        self._axis_slide_drag_state: dict[str, object] | None = None
         self._open3d_carry_grip_service = Open3DCarryGripService(self)
         self._selected_step_feature: StepFeatureSelection | None = None
         self._selected_step_feature_label: str | None = None
@@ -332,6 +334,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.show_detector_overlays_var = tk.BooleanVar(value=False)
         self.show_terminal_diagnostics_var = tk.BooleanVar(value=False)
         self.show_placement_handles_var = tk.BooleanVar(value=False)
+        self.slide_along_axis_mode_var = tk.BooleanVar(value=False)
         self.show_live_controls_panel_var = tk.BooleanVar(value=True)
         self.show_scene_components_panel_var = tk.BooleanVar(value=True)
         self.live_mode_var = tk.BooleanVar(value=False)
@@ -2547,6 +2550,172 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         else:
             self.status_var.set(f"Placement {kind} drag S{row_index} {axis}: applied {applied_steps} snap step(s).")
 
+    def _axis_slide_mode_active(self) -> bool:
+        try:
+            return bool(self.slide_along_axis_mode_var.get())
+        except Exception:
+            return False
+
+    def _toggle_axis_slide_mode(self) -> None:
+        if self._axis_slide_mode_active():
+            self.status_var.set(
+                "Slide along axis: click an optical element body and drag along Z. "
+                "Overall track length is preserved; no off-axis or rotation allowed."
+            )
+        else:
+            self._axis_slide_drag_state = None
+            self.status_var.set("Slide along axis: off.")
+
+    def _axis_slide_snap_step_for_row(self, row_index: int) -> float:
+        try:
+            row = self.editor.rows[int(row_index)]
+        except Exception:
+            return 0.25
+        advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
+        settings = advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}) if isinstance(advanced, dict) else {}
+        try:
+            snap_enabled = bool(settings.get("snap_enabled", True))
+            snap = float(settings.get("snap_mm", 0.25))
+        except Exception:
+            snap_enabled, snap = True, 0.25
+        if not snap_enabled or not np.isfinite(snap) or snap <= 0.0:
+            snap = 0.25
+        return float(snap)
+
+    def _axis_slide_state_from_current_pick(self) -> dict[str, object] | None:
+        if not self._axis_slide_mode_active():
+            return None
+        if (
+            self._picker is None
+            or self._renderer is None
+            or self._vtk_interactor is None
+            or self._source_target_pick_mode
+            or self._center_row_to_ray_mode
+            or self._placement_target_pick_mode
+            or self._placement_orient_pick_mode
+            or self._placement_orient_ray_mode
+            or self._step_carry_snap_ray_mode
+            or self._step_carry_snap_target_mode
+            or self._step_normal_axis_pick_mode
+            or self._step_surface_center_axis_pick_mode
+            or bool(getattr(self.editor, "_cad_axis_pick_any", False))
+        ):
+            return None
+        try:
+            if int(self._vtk_interactor.GetControlKey()):
+                return None
+        except Exception:
+            pass
+        try:
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor = self._picker.GetActor()
+        except Exception:
+            return None
+        actor_key = self._actor_key(actor)
+        if actor_key is None:
+            return None
+        row_index = self._actor_row_map.get(actor_key)
+        if row_index is None:
+            return None
+        try:
+            row_index = int(row_index)
+        except Exception:
+            return None
+        if not (0 <= row_index < len(self.editor.rows)):
+            return None
+        row = self.editor.rows[row_index]
+        promoted = bool(
+            self.editor._file_backed_stl_row_at(row_index) is not None
+            or self.editor._is_any_promoted_optical_solid_row(row)
+        )
+        if not promoted:
+            self.status_var.set(
+                "Slide along axis ignores S{row}: only promoted optical-solid rows can be slid.".format(row=row_index)
+            )
+            return None
+        group = self.editor._lens_row_group_for_row(row_index)
+        if not group or group[0] - 1 < 0 or group[-1] + 1 >= len(self.editor.rows):
+            self.status_var.set(
+                "Slide along axis rejected: lens needs a preceding and trailing row to absorb the slide."
+            )
+            return None
+        snap_mm = self._axis_slide_snap_step_for_row(row_index)
+        direction = self._placement_drag_display_direction("translate", "z", 1.0, actor)
+        label = f"lens S{group[0]}" if len(group) == 1 else f"lens group S{group[0]}-S{group[-1]}"
+        self.status_var.set(
+            f"Slide {label} along Z; snap {snap_mm:.6g} mm. Release to commit; Esc cancels."
+        )
+        return {
+            "row_index": row_index,
+            "group_indices": list(group),
+            "snap_mm": float(snap_mm),
+            "display_direction": np.asarray(direction, dtype=float),
+            "pixel_accumulator": 0.0,
+            "applied_delta_mm": 0.0,
+        }
+
+    def _apply_axis_slide_drag_motion(self, dx: int | float, dy: int | float) -> None:
+        state = self._axis_slide_drag_state
+        if state is None:
+            return
+        try:
+            cursor_delta = np.asarray((float(dx), -float(dy)), dtype=float)
+            direction = np.asarray(state.get("display_direction"), dtype=float).reshape(-1)[:2]
+            signed_pixels = float(np.dot(cursor_delta, direction))
+        except Exception:
+            return
+        if not np.isfinite(signed_pixels) or abs(signed_pixels) <= 1.0e-12:
+            return
+        pixels_per_step = self._placement_drag_pixels_per_step()
+        accumulator = float(state.get("pixel_accumulator", 0.0)) + signed_pixels
+        steps = int(accumulator / pixels_per_step)
+        if steps == 0:
+            state["pixel_accumulator"] = accumulator
+            return
+        state["pixel_accumulator"] = accumulator - float(steps) * pixels_per_step
+        snap_mm = float(state.get("snap_mm", 0.25))
+        delta_z = float(steps) * snap_mm
+        try:
+            result = self.editor.slide_lens_along_axis(int(state.get("row_index", -1)), delta_z)
+        except Exception as exc:
+            self.status_var.set(f"Slide along axis: {_short_error_message(exc)}")
+            self.editor.append_debug(f"3D axis slide failed: {exc}")
+            return
+        state["applied_delta_mm"] = float(state.get("applied_delta_mm", 0.0)) + delta_z
+        group = list(state.get("group_indices", [])) or [int(result.get("row_index", -1))]
+        try:
+            self.refresh_from_editor()
+            self.highlight_row(int(group[0]))
+        except Exception as exc:
+            self.editor.append_debug(f"3D axis slide refresh failed: {exc}")
+        self.status_var.set(
+            "Slide S{first}-S{last} along Z: total dz={total:+.6g} mm "
+            "(leading S{pre}.thickness={pt:.6g}, trailing S{tr}.thickness={tt:.6g}).".format(
+                first=int(group[0]),
+                last=int(group[-1]),
+                total=float(state.get("applied_delta_mm", 0.0)),
+                pre=int(result.get("preceding_row_index", -1)),
+                pt=float(result.get("preceding_thickness_after", 0.0)),
+                tr=int(result.get("trailing_row_index", -1)),
+                tt=float(result.get("trailing_thickness_after", 0.0)),
+            )
+        )
+
+    def _finish_axis_slide_drag(self, state: dict[str, object]) -> None:
+        try:
+            applied_delta = float(state.get("applied_delta_mm", 0.0))
+            group = list(state.get("group_indices", []))
+        except Exception:
+            return
+        if abs(applied_delta) <= 1.0e-9 or not group:
+            self.status_var.set("Slide along axis: no movement applied.")
+            return
+        first = int(group[0])
+        last = int(group[-1])
+        label = f"S{first}" if first == last else f"S{first}-S{last}"
+        self.status_var.set(f"Slide along axis committed: {label} moved {applied_delta:+.6g} mm along Z.")
+
     def _rotate_camera_fixed_drag(self, dx: int | float, dy: int | float) -> None:
         """Rotate around the current focal point with constant pixel sensitivity.
 
@@ -4546,6 +4715,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_carry_drag_state = None
         self._step_carry_follow_state = None
         self._row_carry_drag_state = None
+        self._axis_slide_drag_state = None
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
         self._step_carry_grid_label = None
@@ -4591,6 +4761,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             labels.append("STEP carry drag")
         if self._row_carry_drag_state is not None:
             labels.append("row carry drag")
+        if self._axis_slide_drag_state is not None:
+            labels.append("axis slide drag")
         if self._middle_drag_active:
             labels.append("view pan")
         thickness_service = getattr(self, "_open3d_thickness_dimension_service_instance", None)
@@ -4646,6 +4818,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_carry_drag_state = None
         self._step_carry_follow_state = None
         self._row_carry_drag_state = None
+        self._axis_slide_drag_state = None
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
         self._step_normal_axis_pick_mode = False
