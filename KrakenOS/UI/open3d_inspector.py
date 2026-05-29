@@ -252,6 +252,90 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _picked_optical_axis_id(self, value: str | None) -> None:
         self._selection_model.picked_optical_axis_id = None if value is None else str(value)
 
+    # ------------------------------------------------------------------
+    # Phase 10: pick-mode booleans become InteractionMode-backed properties.
+    # Each setter promotes its mode to active (True) or steps down to IDLE
+    # (False) so the 10+ mutually exclusive booleans stay consistent and
+    # observers of _interaction_mode_state get notified on every change.
+
+    def _set_pick_mode_flag(self, mode: InteractionMode, value: bool) -> None:
+        if bool(value):
+            self._interaction_mode_state.set_mode(mode)
+        elif self._interaction_mode_state.mode == mode:
+            self._interaction_mode_state.set_mode(InteractionMode.IDLE)
+
+    @property
+    def _source_target_pick_mode(self) -> bool:
+        return self._interaction_mode_state.mode == InteractionMode.SOURCE_TARGET
+
+    @_source_target_pick_mode.setter
+    def _source_target_pick_mode(self, value: bool) -> None:
+        self._set_pick_mode_flag(InteractionMode.SOURCE_TARGET, value)
+
+    @property
+    def _center_row_to_ray_mode(self) -> bool:
+        return self._interaction_mode_state.mode == InteractionMode.CENTER_ROW_TO_RAY
+
+    @_center_row_to_ray_mode.setter
+    def _center_row_to_ray_mode(self, value: bool) -> None:
+        self._set_pick_mode_flag(InteractionMode.CENTER_ROW_TO_RAY, value)
+
+    @property
+    def _placement_target_pick_mode(self) -> bool:
+        return self._interaction_mode_state.mode == InteractionMode.PLACEMENT_TARGET
+
+    @_placement_target_pick_mode.setter
+    def _placement_target_pick_mode(self, value: bool) -> None:
+        self._set_pick_mode_flag(InteractionMode.PLACEMENT_TARGET, value)
+
+    @property
+    def _placement_orient_pick_mode(self) -> bool:
+        return self._interaction_mode_state.mode == InteractionMode.PLACEMENT_ORIENT
+
+    @_placement_orient_pick_mode.setter
+    def _placement_orient_pick_mode(self, value: bool) -> None:
+        self._set_pick_mode_flag(InteractionMode.PLACEMENT_ORIENT, value)
+
+    @property
+    def _placement_orient_ray_mode(self) -> bool:
+        return self._interaction_mode_state.mode == InteractionMode.PLACEMENT_ORIENT_RAY
+
+    @_placement_orient_ray_mode.setter
+    def _placement_orient_ray_mode(self, value: bool) -> None:
+        self._set_pick_mode_flag(InteractionMode.PLACEMENT_ORIENT_RAY, value)
+
+    @property
+    def _step_carry_snap_ray_mode(self) -> bool:
+        return self._interaction_mode_state.mode == InteractionMode.STEP_CARRY_SNAP_RAY
+
+    @_step_carry_snap_ray_mode.setter
+    def _step_carry_snap_ray_mode(self, value: bool) -> None:
+        self._set_pick_mode_flag(InteractionMode.STEP_CARRY_SNAP_RAY, value)
+
+    @property
+    def _step_carry_snap_target_mode(self) -> bool:
+        return self._interaction_mode_state.mode == InteractionMode.STEP_CARRY_SNAP_TARGET
+
+    @_step_carry_snap_target_mode.setter
+    def _step_carry_snap_target_mode(self, value: bool) -> None:
+        self._set_pick_mode_flag(InteractionMode.STEP_CARRY_SNAP_TARGET, value)
+
+    @property
+    def _step_normal_axis_pick_mode(self) -> bool:
+        return self._interaction_mode_state.mode == InteractionMode.STEP_NORMAL_AXIS_PICK
+
+    @_step_normal_axis_pick_mode.setter
+    def _step_normal_axis_pick_mode(self, value: bool) -> None:
+        self._set_pick_mode_flag(InteractionMode.STEP_NORMAL_AXIS_PICK, value)
+
+    @property
+    def _step_surface_center_axis_pick_mode(self) -> bool:
+        return self._interaction_mode_state.mode == InteractionMode.STEP_SURFACE_CENTER_AXIS_PICK
+
+    @_step_surface_center_axis_pick_mode.setter
+    def _step_surface_center_axis_pick_mode(self, value: bool) -> None:
+        self._set_pick_mode_flag(InteractionMode.STEP_SURFACE_CENTER_AXIS_PICK, value)
+
     def __init__(self, editor: "KrakenLayoutEditor") -> None:
         _load_3d_backends()
         super().__init__(editor)
