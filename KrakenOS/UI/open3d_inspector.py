@@ -42,6 +42,7 @@ from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsServic
 from KrakenOS.UI.services.open3d_round_lens_pick import step_feature_pick_for_display_xy
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_abstract_widget import WidgetRegistry
+from KrakenOS.UI.services.open3d_application_logic import Open3DApplicationLogic
 from KrakenOS.UI.services.open3d_placement_widget import (
     PlacementRotateWidget,
     PlacementTranslateWidget,
@@ -363,6 +364,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._widget_registry.add(PlacementRotateWidget(self))
         self._widget_registry.add(PlacementTranslateWidget(self))
         self._widget_registry.add(ThicknessDimensionWidget(self))
+        self._application_logic = Open3DApplicationLogic(self)
         self._actor_row_map: dict[str, int] = {}
         self._row_actor_map: dict[int, list[str]] = {}
         self._actor_ray_map: dict[str, int] = {}
