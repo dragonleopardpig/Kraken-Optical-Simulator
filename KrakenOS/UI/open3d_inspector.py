@@ -41,6 +41,7 @@ from KrakenOS.UI.services.open3d_live_refresh import DEFAULT_LIVE_REFRESH_DELAY_
 from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
 from KrakenOS.UI.services.open3d_round_lens_pick import step_feature_pick_for_display_xy
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
+from KrakenOS.UI.services.open3d_selection_model import SelectionModel
 from KrakenOS.UI.services.open3d_step_overlay_refresh import Open3DStepOverlayRefreshService
 from KrakenOS.UI.services.open3d_step_rotation_handles import Open3DStepRotationHandleService
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService, StepFeatureSelection
@@ -193,6 +194,50 @@ def _short_error_message(exc: Exception, limit: int = 220) -> str:
 
 
 class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
+    # Pick state lives on a SelectionModel that survives RemoveAllViewProps().
+    # These five properties are compatibility shims so existing call sites
+    # (`self._picked_row_index = X`, `self._picked_step_label`, ...) keep
+    # working unchanged.
+    @property
+    def _picked_row_index(self) -> int | None:
+        return self._selection_model.picked_row_index
+
+    @_picked_row_index.setter
+    def _picked_row_index(self, value: int | None) -> None:
+        self._selection_model.picked_row_index = None if value is None else int(value)
+
+    @property
+    def _picked_row_indices(self) -> set[int]:
+        return self._selection_model.picked_row_indices
+
+    @_picked_row_indices.setter
+    def _picked_row_indices(self, value) -> None:
+        self._selection_model.picked_row_indices = set(int(v) for v in (value or []))
+
+    @property
+    def _picked_step_label(self) -> str | None:
+        return self._selection_model.picked_step_label
+
+    @_picked_step_label.setter
+    def _picked_step_label(self, value: str | None) -> None:
+        self._selection_model.picked_step_label = None if value is None else str(value)
+
+    @property
+    def _picked_ray_index(self) -> int | None:
+        return self._selection_model.picked_ray_index
+
+    @_picked_ray_index.setter
+    def _picked_ray_index(self, value: int | None) -> None:
+        self._selection_model.picked_ray_index = None if value is None else int(value)
+
+    @property
+    def _picked_optical_axis_id(self) -> str | None:
+        return self._selection_model.picked_optical_axis_id
+
+    @_picked_optical_axis_id.setter
+    def _picked_optical_axis_id(self, value: str | None) -> None:
+        self._selection_model.picked_optical_axis_id = None if value is None else str(value)
+
     def __init__(self, editor: "KrakenLayoutEditor") -> None:
         _load_3d_backends()
         super().__init__(editor)
@@ -210,8 +255,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._orientation_widget = None
         self._picker = None
         self._prop_picker = None
-        self._picked_row_index: int | None = None
-        self._picked_row_indices: set[int] = set()
+        self._selection_model = SelectionModel()
         self._actor_row_map: dict[str, int] = {}
         self._row_actor_map: dict[int, list[str]] = {}
         self._actor_ray_map: dict[str, int] = {}
@@ -237,8 +281,6 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._thickness_dimension_drag_map: dict[str, dict[str, object]] = {}
         self._step_feature_cache: dict[tuple[str, int], tuple[np.ndarray, object | None, np.ndarray | None] | None] = {}
         self._cad_scene_cache = CadSceneCache()
-        self._picked_step_label: str | None = None
-        self._picked_ray_index: int | None = None
         self._current_scene_bundle: SceneBundle | None = None
         self._current_system = None
         self._current_rays = None
@@ -249,7 +291,6 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._galvo_scan_actors: list[object] = []
         self._galvo_scan_frames: list[dict[str, object]] = []
         self._galvo_scan_frame_index = 0
-        self._picked_optical_axis_id: str | None = None
         self._hover_rotation_handle_key: str | None = None
         self._hover_step_actor = None
         self._hover_step_outline_actor = None
@@ -3891,6 +3932,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         )
 
     def _delete_selected_step_event(self, _event=None) -> str:
+        try:
+            focused = self.focus_get()
+        except Exception:
+            focused = None
+        if isinstance(focused, (ttk.Entry, ttk.Combobox, ttk.Spinbox, tk.Entry, tk.Spinbox, tk.Text)):
+            return ""
         self.delete_selected_step()
         return "break"
 
@@ -5490,6 +5537,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
     def _saved_step_native_display_transform_for_row(self, row_index: int):
         scene_bundle = self.__dict__.get("_current_scene_bundle")
+        if scene_bundle is None:
+            return None
         if scene_bundle is not self.editor.__dict__.get("_last_saved_step_native_scene_bundle"):
             return None
         item = self.editor._file_backed_stl_row_at(int(row_index))

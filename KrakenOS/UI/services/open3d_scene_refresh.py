@@ -207,6 +207,9 @@ class Open3DSceneRefreshService:
             except Exception:
                 camera_state = None
 
+        preserved_ray_index = self._picked_ray_index
+        preserved_optical_axis_id = self._picked_optical_axis_id
+
         self._clear_galvo_scan_animation(cancel_timer=True, render=False)
         actor_clear_start = time.perf_counter()
         self._renderer.RemoveAllViewProps()
@@ -663,6 +666,16 @@ class Open3DSceneRefreshService:
             self._set_step_highlight(str(selected_step))
         else:
             self._close_step_rotation_handler()
+        if preserved_ray_index is not None:
+            try:
+                self._set_ray_highlight(int(preserved_ray_index))
+            except Exception:
+                pass
+        if preserved_optical_axis_id:
+            try:
+                self._set_optical_axis_highlight(str(preserved_optical_axis_id))
+            except Exception:
+                pass
         self._update_step_rotation_handler_state()
         self._update_stl_placement_handler_state()
         self.refresh_step_admin_panel()
