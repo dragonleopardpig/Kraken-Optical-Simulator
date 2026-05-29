@@ -59,9 +59,21 @@ class _FakeRenderer:
         return (-15.0, 15.0, -15.0, 45.0, -10.0, 70.0)
 
 
+class _FakeBoolVar:
+    def __init__(self, value: bool) -> None:
+        self._value = bool(value)
+
+    def get(self) -> bool:
+        return self._value
+
+
 def _axis_records(scene_bundle) -> list[dict[str, object]]:
     inspector = object.__new__(Kraken3DInspector)
     inspector._renderer = _FakeRenderer()
+    # _optical_axis_records_for_3d gates the traced-axis branch on the
+    # inspector's show_rays toggle; the mock bypasses __init__ so we have
+    # to provide a stand-in or the function early-returns the global guide.
+    inspector.show_rays_var = _FakeBoolVar(True)
     return Kraken3DInspector._optical_axis_records_for_3d(inspector, scene_bundle)
 
 
