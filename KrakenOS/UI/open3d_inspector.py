@@ -9563,9 +9563,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._stl_placement_dirty = False
         self.editor._three_d_inspector = None
         self._cancel_live_refresh()
+        self._cancel_step_carry_hold_timer()
+        self._cancel_row_carry_hold_timer()
         self._clear_galvo_scan_animation(cancel_timer=True, render=False)
         self._close_step_rotation_handler()
         self._close_stl_placement_handler()
+        try:
+            self.editor._cad_axis_pick_any = False
+            self.editor._cad_axis_pick_label = None
+            self.editor._cad_led_object_edge_pick = False
+        except Exception:
+            pass
+        view = self.__dict__.get("_selection_view")
+        if view is not None:
+            try:
+                view.detach()
+            except Exception:
+                pass
         self._destroy_vtk_render_window()
         try:
             self.destroy()
