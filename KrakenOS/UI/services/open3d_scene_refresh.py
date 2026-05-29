@@ -185,27 +185,15 @@ class Open3DSceneRefreshService:
             self._last_valid_surface_mesh_items = list(mesh_items)
             self._last_valid_surface_mesh_row_count = len(rows)
 
+        # CameraState capture via the Phase 8 helper so the dict shape
+        # lives in one place; refresh_scene still owns the policy of
+        # honouring reset_camera over a stored snapshot.
         camera_state = None
         selected_axis_id = self._picked_optical_axis_id
         if not bool(reset_camera):
-            try:
-                previous_bounds = np.asarray(self._renderer.ComputeVisiblePropBounds(), dtype=float)
-                camera = self._renderer.GetActiveCamera()
-                if (
-                    camera is not None
-                    and previous_bounds.size == 6
-                    and np.all(np.isfinite(previous_bounds))
-                    and previous_bounds[0] <= previous_bounds[1]
-                ):
-                    camera_state = {
-                        "position": tuple(float(value) for value in camera.GetPosition()),
-                        "focal_point": tuple(float(value) for value in camera.GetFocalPoint()),
-                        "view_up": tuple(float(value) for value in camera.GetViewUp()),
-                        "parallel_projection": int(camera.GetParallelProjection()),
-                        "parallel_scale": float(camera.GetParallelScale()),
-                    }
-            except Exception:
-                camera_state = None
+            from KrakenOS.UI.services.open3d_camera_state import capture_camera_state
+
+            camera_state = capture_camera_state(self._renderer)
 
         self._clear_galvo_scan_animation(cancel_timer=True, render=False)
         actor_clear_start = time.perf_counter()
@@ -630,18 +618,16 @@ class Open3DSceneRefreshService:
                 flat_shading=True,
             )
 
+        from KrakenOS.UI.services.open3d_camera_state import apply_camera_state
+
         if camera_state is not None:
-            camera = self._renderer.GetActiveCamera()
-            if camera is not None:
+            if apply_camera_state(self._renderer, camera_state):
                 try:
-                    camera.SetPosition(*camera_state["position"])
-                    camera.SetFocalPoint(*camera_state["focal_point"])
-                    camera.SetViewUp(*camera_state["view_up"])
-                    camera.SetParallelProjection(int(camera_state["parallel_projection"]))
-                    camera.SetParallelScale(float(camera_state["parallel_scale"]))
                     self._reset_camera_clipping_range_for_scene()
                 except Exception:
                     camera_state = None
+            else:
+                camera_state = None
         if camera_state is None:
             self._renderer.ResetCamera()
             self.set_camera_preset(self._camera_preset)
