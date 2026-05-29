@@ -158,10 +158,73 @@ def _check_slide_behaviour() -> list[str]:
     return failures
 
 
+def _check_slide_performance() -> list[str]:
+    """100 fast slides must complete under 0.5 s.
+
+    During a real drag the mouse fires ~100 motion events per second; per
+    snap-step crossing the inspector calls ``slide_lens_along_axis``. The
+    primitive must therefore be sub-millisecond cheap so the drag stays
+    responsive. A regression that re-introduces table sync, history
+    capture, or scene refresh inside the primitive blows past this budget
+    immediately.
+    """
+    import time
+
+    failures: list[str] = []
+    le._load_3d_backends()
+    app = KrakenLayoutEditor(headless=True)
+    try:
+        app.load_layouts()
+        app.load_layout_by_name("Machine Vision 150Mm Measured", refresh=False)
+        template = next((row for row in app.rows if row.surface == "Standard"), None)
+        if template is None:
+            failures.append("MV150 fixture has no Standard row for performance probe")
+            return failures
+        promotion_meta = {"row_indices": [1, 2, 3]}
+        achr: list[SurfaceRow] = []
+        for rc, th, glass, name in [
+            (28.5, 9.0, "BK7", "Front"),
+            (-31.0, 2.58, "F2", "Cem"),
+            (-200.0, 6.0, "AIR", "Back"),
+        ]:
+            row = SurfaceRow(**asdict(template))
+            row.surface = "Standard"
+            row.rc = float(rc)
+            row.thickness = float(th)
+            row.glass = glass
+            row.name = name
+            row.advanced = {"StepNativePromotion": dict(promotion_meta)}
+            achr.append(row)
+        app.rows[1:4] = achr
+        app._sync_table()
+
+        # Warm the path.
+        app.slide_lens_along_axis(2, 0.01, record_history=False, sync_table=False)
+        app.slide_lens_along_axis(2, -0.01, record_history=False, sync_table=False)
+
+        iterations = 100
+        start = time.perf_counter()
+        for index in range(iterations):
+            sign = -1.0 if (index % 2) else 1.0
+            app.slide_lens_along_axis(2, 0.001 * sign, record_history=False, sync_table=False)
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        budget_ms = 500.0
+        if elapsed_ms >= budget_ms:
+            failures.append(
+                f"slide_lens_along_axis is too slow: {iterations} drag-step calls took "
+                f"{elapsed_ms:.1f} ms (budget {budget_ms:.0f} ms). A hidden refresh or "
+                "table sync has crept into the primitive."
+            )
+    finally:
+        app.destroy()
+    return failures
+
+
 def main() -> int:
     failures: list[str] = []
     failures.extend(_check_source_contracts())
     failures.extend(_check_slide_behaviour())
+    failures.extend(_check_slide_performance())
     if failures:
         for failure in failures:
             print(f"FAIL: {failure}")

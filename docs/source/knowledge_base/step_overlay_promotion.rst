@@ -366,6 +366,57 @@ keeps large Open 3D scenes responsive. Validator:
 ``python -m KrakenOS.UI.validate_axis_slide``.
 
 
+Diagnosing "my promoted lens does not refract"
+----------------------------------------------
+
+A common surprise after Tier 2 promotion: rays pass straight through the
+lens as if it were a flat plate. There are two independent reasons for
+this and they need different fixes:
+
+**Reason 1 — sequential ``rc`` is zero.**
+A Tier 2 promotion writes a ``SurfaceRow`` with ``surface="Standard"``
+and ``rc=0`` because the STL body alone doesn't volunteer a curvature.
+The KrakenOS *sequential* tracer reads ``rc`` to decide refraction at
+the surface, so an ``rc=0`` row is mathematically flat. Whether the
+underlying STL mesh is biconvex, plano-convex, or anything else is
+irrelevant to the sequential pass — it sees a window.
+
+**Reason 2 — non-sequential face functions are "Unassigned".**
+The *non-sequential* tracer intersects rays against the STL triangles
+and decides what to do at each face based on its
+``OpticalSolidFaces.faces[*].function``. Right after promotion every
+face is ``Unassigned`` (or marked as ``Transmit/Port`` for plumbing
+ports), neither of which causes refraction. With every face
+unassigned, the non-sequential tracer treats the body as transparent —
+rays pass through without ever changing direction.
+
+How to tell which case applies to your row, from the saved layout:
+
+.. code-block:: python
+
+   # Reason 1 indicator
+   row.rc == 0.0  and  row.surface == "Standard"
+
+   # Reason 2 indicator
+   row.advanced["OpticalSolidFaces"]["faces"][*]["function"] == "Unassigned"
+
+The fix depends on what the lens actually is:
+
+* **Spherical / aspheric refractive lens** — promote with
+  *Promote STEP to Native Rows* instead of *Promote STEP to Optical
+  Solid Row*. Native promotion writes real ``rc`` (and asphere
+  coefficients) into a row group, so both tracers see the right
+  curvatures. ``flip_rows()`` and the axis-slide gesture work on the
+  whole group.
+* **Mesh-only solid** (free-form, vendor STL with no analytic surface
+  fit) — open *Assign CAD/STL Optical Faces* on the row and set the
+  refracting faces to ``Refractive``. This drives the non-sequential
+  tracer's refraction at those faces. ``rc`` stays at 0 (correct — the
+  geometry is the STL, not an analytic surface), and only the
+  non-sequential pass will see refraction; do not run a sequential
+  trace through this row.
+
+
 Known follow-ups
 ----------------
 
