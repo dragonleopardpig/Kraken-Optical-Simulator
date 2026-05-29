@@ -357,6 +357,48 @@ class ThreeDSceneToolsMixin:
         return path
 
     @staticmethod
+    def _step_source_key(value: object) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        try:
+            return str(Path(text).expanduser().resolve())
+        except Exception:
+            try:
+                return str(Path(text).expanduser())
+            except Exception:
+                return text
+
+    def _promoted_step_source_keys_for_rows(self, rows: list[SurfaceRow] | None = None) -> set[str]:
+        keys: set[str] = set()
+        for row in list(rows if rows is not None else self.rows):
+            advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
+            candidates: list[object] = [advanced.get("OpticalSolidSourcePath")]
+            promotion = advanced.get("StepOverlayPromotion")
+            if isinstance(promotion, dict):
+                candidates.append(promotion.get("source_step_path"))
+            placement = advanced.get("ScenePlacement")
+            if isinstance(placement, dict):
+                candidates.append(placement.get("promotion_source_step_path"))
+            for candidate in candidates:
+                key = self._step_source_key(candidate)
+                if key:
+                    keys.add(key)
+        return keys
+
+    def _step_overlay_matches_promoted_row(
+        self,
+        label: str,
+        promoted_source_keys: set[str] | None = None,
+    ) -> bool:
+        source_path = self._step_path_for_label(str(label or "").strip().lower())
+        key = self._step_source_key(source_path)
+        if not key:
+            return False
+        keys = promoted_source_keys if promoted_source_keys is not None else self._promoted_step_source_keys_for_rows()
+        return key in keys
+
+    @staticmethod
     def _saved_step_native_center_world(row: SurfaceRow, z_station: float) -> np.ndarray:
         advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
         promotion = advanced.get("StepOverlayPromotion", {})

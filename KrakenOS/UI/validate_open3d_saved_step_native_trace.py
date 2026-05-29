@@ -100,6 +100,9 @@ def main() -> int:
             failures.append("native trace rows must remain marked trace_only for diagnostics")
         if system is None:
             failures.append("runtime Open 3D preview did not build a trace system")
+        app.imported_lens_step_path = DCV_STEP
+        if not app._step_overlay_matches_promoted_row("lens"):
+            failures.append("imported STEP overlay matching a promoted saved row must be suppressible")
         layout_editor_module._load_3d_backends()
         if layout_editor_module.pv is not None:
             display_meshes = list(

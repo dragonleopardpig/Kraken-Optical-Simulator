@@ -134,6 +134,16 @@ class Open3DStepOverlayRefreshService:
         builder, color, opacity = spec
         with open3d_timing_span("refresh_imported_step_overlay", label=label):
             removed = self._remove_step_overlay_actors(label)
+            if (
+                inspector._step_carry_label() != label
+                and self.editor._step_overlay_matches_promoted_row(label)
+            ):
+                if str(getattr(self.editor, "_selected_step_label", "") or "").strip().lower() == label:
+                    self.editor._selected_step_label = None
+                open3d_timing_event("refresh_imported_step_overlay_promoted_suppressed", label=label, removed=removed)
+                if render:
+                    inspector.render()
+                return bool(removed)
             try:
                 cad_mesh = builder()
             except Exception as exc:

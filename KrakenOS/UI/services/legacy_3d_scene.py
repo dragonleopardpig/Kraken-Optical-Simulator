@@ -260,6 +260,8 @@ class Legacy3DSceneService:
             ("led", self._transformed_imported_led_step_mesh, "#f59e0b", 0.35),
             ("camera", self._transformed_imported_camera_step_mesh, "#6b7280", 0.32),
         ):
+            if self._step_overlay_matches_promoted_row(label):
+                continue
             try:
                 cad_mesh = builder()
             except Exception as exc:

@@ -114,7 +114,10 @@ ray kernel, so a reopened STEP lens does not draw a duplicate analytic body or
 rotate against shifted trace-only row indices. The saved-native display path
 also discards trace-bundle surface meshes and rebuilds the visible CAD bodies
 from the original promoted STEP/STL rows, preventing stale trace row indices
-from being picked during Center Row -> Optical Axis.
+from being picked during Center Row -> Optical Axis. Stale transient STEP
+overlays whose source path already exists as a promoted row are suppressed in
+Open 3D and legacy 3D refreshes, so a saved lens is not drawn twice as both an
+editable row and an imported-overlay ghost.
 Trace Now also turns ray visibility on before rendering, and Undo/Redo clears
 stale transient STEP physics-preview and rotation/carry state so a successful
 trace cannot leave invisible geometry or floating handles behind. The

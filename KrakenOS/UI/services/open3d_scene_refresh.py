@@ -528,9 +528,23 @@ class Open3DSceneRefreshService:
         step_carry_active = 0
         step_carry_grid_summary = ""
         selected_step_label = str(selected_step or "").strip().lower()
+        promoted_step_source_keys = self.editor._promoted_step_source_keys_for_rows(rows)
+        carry_label = self._step_carry_label()
+        if (
+            selected_step_label
+            and selected_step_label in STEP_OVERLAY_LABEL_SET
+            and selected_step_label != carry_label
+            and self.editor._step_overlay_matches_promoted_row(
+                selected_step_label,
+                promoted_step_source_keys,
+            )
+        ):
+            self.editor._selected_step_label = None
+            selected_step = None
+            selected_step_label = ""
         transient_selected_mesh = live_trace_step_mesh_by_label.get(selected_step_label)
         if transient_selected_mesh is not None and int(getattr(transient_selected_mesh, "n_points", 0)) > 0:
-            if self._step_carry_label() == selected_step_label:
+            if carry_label == selected_step_label:
                 step_carry_active, step_carry_grid_summary = self._add_step_carry_grid_overlay(selected_step_label, transient_selected_mesh)
             step_rotation_handles += self._add_step_rotation_handles(selected_step_label, transient_selected_mesh)
         for label, builder, color, opacity in (
@@ -540,6 +554,11 @@ class Open3DSceneRefreshService:
             ("camera", self.editor._transformed_imported_camera_step_mesh, (0.28, 0.33, 0.42), 0.38),
         ):
             label_is_live_trace_row = label in current_live_trace_step_overlay_labels
+            if (
+                label != carry_label
+                and self.editor._step_overlay_matches_promoted_row(label, promoted_step_source_keys)
+            ):
+                continue
             try:
                 cad_mesh = builder()
             except Exception as exc:
@@ -548,7 +567,7 @@ class Open3DSceneRefreshService:
             if cad_mesh is not None and int(getattr(cad_mesh, "n_points", 0)) > 0:
                 if label_is_live_trace_row:
                     if str(selected_step) == label and transient_selected_mesh is None:
-                        if self._step_carry_label() == label:
+                        if carry_label == label:
                             step_carry_active, step_carry_grid_summary = self._add_step_carry_grid_overlay(label, cad_mesh)
                         step_rotation_handles += self._add_step_rotation_handles(label, cad_mesh)
                     continue
@@ -597,7 +616,7 @@ class Open3DSceneRefreshService:
                 except Exception:
                     pass
                 if str(selected_step) == label:
-                    if self._step_carry_label() == label:
+                    if carry_label == label:
                         step_carry_active, step_carry_grid_summary = self._add_step_carry_grid_overlay(label, cad_mesh)
                     step_rotation_handles += self._add_step_rotation_handles(label, cad_mesh)
 
