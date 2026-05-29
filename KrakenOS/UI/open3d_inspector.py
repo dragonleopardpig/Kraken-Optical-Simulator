@@ -2897,15 +2897,24 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.status_var.set(f"Slide along axis committed: {label} moved {applied_delta:+.6g} mm along Z.")
 
     def _preferred_camera_orbit_focal_point(self) -> tuple[float, float, float] | None:
-        """Pick a more intuitive orbit pivot than the scene focal point.
+        """Pick the geometric pivot the camera orbit should rotate around.
 
-        When the user has a row, STEP overlay, or ray selected, orbiting
-        around the *scene focal point* puts the selected body off to one
-        side and the rest of the scene on the other side, so a left-drag
-        makes the two visually swing in opposite arcs. Pivoting around
-        the selected geometry instead keeps it visually anchored while
-        the surroundings orbit, eliminating the "two bodies rotating
-        opposite directions" surprise reported with step1-step3.png.
+        Order of preference, from most-specific to most-general:
+
+          1. The currently picked row's actor center (so a body the user
+             has highlighted stays visually anchored during orbit).
+          2. The currently picked STEP overlay center, for the same reason.
+          3. The geometric center of the renderer's visible scene bounds.
+             This is the CAD-style default -- even when nothing is picked,
+             the orbit pivot lands at the midpoint between all visible
+             bodies instead of wherever the camera's focal point happens
+             to have drifted to, so a left-drag rotates the bodies around
+             their shared center rather than around a stale offset that
+             would split their motion into opposing arcs.
+
+        Returns ``None`` only when there are no usable bounds at all; the
+        caller falls back to the camera's existing focal point in that
+        case so nothing crashes during early frames.
         """
         row_index = self._picked_row_index
         if row_index is not None:
@@ -2925,18 +2934,36 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 arr = np.asarray(center, dtype=float).reshape(-1)[:3]
                 if arr.size == 3 and np.all(np.isfinite(arr)):
                     return (float(arr[0]), float(arr[1]), float(arr[2]))
-        return None
+        if self._renderer is None:
+            return None
+        try:
+            bounds = np.asarray(self._renderer.ComputeVisiblePropBounds(), dtype=float).reshape(-1)
+        except Exception:
+            return None
+        if bounds.size < 6 or not np.all(np.isfinite(bounds[:6])):
+            return None
+        if not (bounds[0] <= bounds[1] and bounds[2] <= bounds[3] and bounds[4] <= bounds[5]):
+            return None
+        return (
+            0.5 * (float(bounds[0]) + float(bounds[1])),
+            0.5 * (float(bounds[2]) + float(bounds[3])),
+            0.5 * (float(bounds[4]) + float(bounds[5])),
+        )
 
     def _rotate_camera_fixed_drag(self, dx: int | float, dy: int | float) -> None:
-        """Rotate around the current focal point with constant pixel sensitivity.
+        """Rotate around the visible scene-bounds center with CAD-style feel.
 
-        VTK's default trackball camera can feel accelerated and can effectively
-        change the apparent pivot during fast mouse motion. This handler maps
-        total mouse travel to angle at a fixed degrees-per-pixel rate and leaves
-        the camera focal point untouched. When the user has a row or STEP
-        overlay selected, the orbit pivot is moved onto that geometry so the
-        selected body visually stays put and only the rest of the scene
-        orbits around it.
+        The orbit pivot is always the geometric center of the currently
+        visible scene (falling back through the picked-row / picked-step
+        preferences first), so the two bodies in step1-3.png stay
+        balanced around a common pivot instead of swinging on opposite
+        arcs around a stale focal point.
+
+        Rotation rate is intentionally gentle (0.10 deg / px) so a
+        typical 100 px drag produces a ~10 deg camera move. That keeps
+        the parallax between bodies on either side of the pivot small
+        enough that the eye perceives the whole scene as rotating
+        together, the way CAD viewers feel.
         """
         if self._renderer is None:
             return
@@ -2950,7 +2977,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return
         if abs(dx_f) < 1e-12 and abs(dy_f) < 1e-12:
             return
-        degrees_per_pixel = 0.22
+        degrees_per_pixel = 0.10
         try:
             preferred = self._preferred_camera_orbit_focal_point()
             if preferred is not None:
