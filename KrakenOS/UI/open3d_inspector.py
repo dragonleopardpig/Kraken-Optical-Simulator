@@ -2897,20 +2897,26 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.status_var.set(f"Slide along axis committed: {label} moved {applied_delta:+.6g} mm along Z.")
 
     def _rotate_camera_fixed_drag(self, dx: int | float, dy: int | float) -> None:
-        """Orbit the camera around its current focal point at a CAD-style rate.
+        """CAD-style orbit: always rotate around world up for Azimuth.
 
-        The focal point is NEVER reassigned during a drag: shifting it
-        mid-orbit (e.g. snapping to a picked row's center) reorients
-        the view direction relative to the camera's view-up, which then
-        makes Azimuth and Elevation no longer rotate around the world
-        Y/right axes -- the visible effect is the bodies tilting even
-        on a pure horizontal drag, which step1/step2.png flagged.
+        The Azimuth axis is forced to world up ``(0, 1, 0)`` before every
+        rotation, so a left-drag *always* rotates around the world Y
+        axis regardless of accumulated state. VTK's stock orbit relies
+        on ``OrthogonalizeViewUp`` to keep view-up perpendicular to
+        view-direction, but that normalisation can flip sign near
+        degenerate angles -- and once view-up flips, the next Azimuth
+        rotates the camera in the opposite direction, which is the
+        "rotates one way then reverses half-way through the drag"
+        symptom reported in step1-5.png.
 
-        degrees_per_pixel = 0.10 keeps a typical 100 px drag at ~10 deg
-        of camera motion, which is gentle enough that the inevitable
-        parallax between bodies on either side of the focal point reads
-        as a single scene rotating together rather than two bodies
-        spinning in opposite directions.
+        Locking view-up to world up before each rotation also matches
+        the way most CAD viewers feel: horizontal drag orbits around the
+        vertical axis, vertical drag tilts up/down, and the two never
+        cross-couple into a roll. Camera position rotates monotonically
+        with the cumulative drag direction.
+
+        Rate is 0.10 deg / px so a typical 100 px drag is a gentle
+        ~10 deg camera move.
         """
         if self._renderer is None:
             return
@@ -2926,11 +2932,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return
         degrees_per_pixel = 0.10
         try:
-            focal = tuple(float(value) for value in camera.GetFocalPoint())
+            # Lock the orbit axis to world up before every drag tick so
+            # accumulated micro-drift in view-up can't flip the sign of
+            # Azimuth's rotation axis mid-drag.
+            camera.SetViewUp(0.0, 1.0, 0.0)
             camera.Azimuth(dx_f * degrees_per_pixel)
             camera.Elevation(-dy_f * degrees_per_pixel)
-            camera.SetFocalPoint(*focal)
-            camera.OrthogonalizeViewUp()
+            # Re-lock view-up after Elevation tilts view-direction --
+            # Azimuth on the next tick keeps rotating around world Y
+            # rather than whatever non-perpendicular axis would result.
+            camera.SetViewUp(0.0, 1.0, 0.0)
             self._reset_camera_clipping_range_for_scene()
             self.render()
         except Exception as exc:
