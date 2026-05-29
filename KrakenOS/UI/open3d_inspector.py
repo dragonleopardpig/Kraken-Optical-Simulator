@@ -42,6 +42,7 @@ from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsServic
 from KrakenOS.UI.services.open3d_round_lens_pick import step_feature_pick_for_display_xy
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_selection_model import SelectionModel
+from KrakenOS.UI.services.open3d_selection_view import SelectionView
 from KrakenOS.UI.services.open3d_step_overlay_refresh import Open3DStepOverlayRefreshService
 from KrakenOS.UI.services.open3d_step_rotation_handles import Open3DStepRotationHandleService
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService, StepFeatureSelection
@@ -256,6 +257,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._picker = None
         self._prop_picker = None
         self._selection_model = SelectionModel()
+        self._selection_view = SelectionView(self, self._selection_model)
+        self._selection_view.attach()
         self._actor_row_map: dict[str, int] = {}
         self._row_actor_map: dict[int, list[str]] = {}
         self._actor_ray_map: dict[str, int] = {}
