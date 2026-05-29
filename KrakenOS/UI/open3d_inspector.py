@@ -6816,7 +6816,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         try:
             status_text = " | ".join(part.strip() for part in str(text).splitlines() if part.strip())
             if status_text:
-                self.status_var.set(status_text)
+                # Preserve the "3D scene ready | surfaces=N | rays=M ..." prefix
+                # that refresh_scene just set, instead of clobbering it -- users
+                # (and tests) rely on the surface/ray counts being readable in
+                # the status bar after a refresh.
+                existing = ""
+                try:
+                    existing = str(self.status_var.get() or "").strip()
+                except Exception:
+                    existing = ""
+                if existing.startswith("3D scene ready"):
+                    self.status_var.set(f"{existing} | {status_text}")
+                else:
+                    self.status_var.set(status_text)
         except Exception as exc:
             self.editor.append_debug(f"3D ray terminal summary update failed: {exc}")
 
