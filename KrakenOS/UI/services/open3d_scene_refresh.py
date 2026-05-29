@@ -661,18 +661,32 @@ class Open3DSceneRefreshService:
         # SelectionModel survives RemoveAllViewProps; re-apply ray and
         # optical-axis highlights against the freshly built actors. Row
         # and step highlights are re-applied above via editor selection.
+        # If the prior target no longer exists in the rebuilt scene
+        # (e.g. a row was deleted or a new trace produced fewer rays),
+        # drop the stale selection rather than keep it haunting the
+        # model invisibly.
         ray_index = self._picked_ray_index
         if ray_index is not None:
-            try:
-                self._set_ray_highlight(int(ray_index))
-            except Exception:
-                pass
+            if int(ray_index) in self._ray_actor_map:
+                try:
+                    self._set_ray_highlight(int(ray_index))
+                except Exception:
+                    pass
+            else:
+                self._picked_ray_index = None
         axis_id = self._picked_optical_axis_id
         if axis_id:
-            try:
-                self._set_optical_axis_highlight(str(axis_id))
-            except Exception:
-                pass
+            available_axis_ids = {
+                str((info or {}).get("axis_id", "") or "").strip()
+                for info in self._actor_optical_axis_map.values()
+            }
+            if str(axis_id) in available_axis_ids:
+                try:
+                    self._set_optical_axis_highlight(str(axis_id))
+                except Exception:
+                    pass
+            else:
+                self._picked_optical_axis_id = None
         self._update_step_rotation_handler_state()
         self._update_stl_placement_handler_state()
         self.refresh_step_admin_panel()
