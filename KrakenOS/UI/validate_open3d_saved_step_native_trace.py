@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from KrakenOS.UI import layout_editor as layout_editor_module
 from KrakenOS.UI.layout_editor import KrakenLayoutEditor, SurfaceRow
 
 
@@ -99,6 +100,25 @@ def main() -> int:
             failures.append("native trace rows must remain marked trace_only for diagnostics")
         if system is None:
             failures.append("runtime Open 3D preview did not build a trace system")
+        layout_editor_module._load_3d_backends()
+        if layout_editor_module.pv is not None:
+            display_meshes = list(
+                app._scene_surface_meshes(
+                    system,
+                    scene_bundle,
+                    include_reference_surfaces=True,
+                )
+            )
+            if not display_meshes:
+                failures.append("saved STEP native Open 3D display did not rebuild file-backed display meshes")
+            for mesh_item in display_meshes:
+                row_index = int(getattr(mesh_item, "row_index", -1))
+                if not (0 <= row_index < len(app.rows)):
+                    failures.append(f"display mesh row index leaked from trace rows: {row_index}")
+                row = getattr(mesh_item, "row", None)
+                advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
+                if bool(advanced.get("StepNativePromotion", {}).get("trace_only")):
+                    failures.append("trace-only native mesh leaked into Open 3D display meshes")
     finally:
         app.destroy()
     if failures:

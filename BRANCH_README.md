@@ -111,7 +111,10 @@ would otherwise display as glass but trace against faceted STL normals or no
 usable optical prescription. Open 3D display rows and placement handles remain
 bound to the saved editable-table rows while those hidden analytic rows feed the
 ray kernel, so a reopened STEP lens does not draw a duplicate analytic body or
-rotate against shifted trace-only row indices.
+rotate against shifted trace-only row indices. The saved-native display path
+also discards trace-bundle surface meshes and rebuilds the visible CAD bodies
+from the original promoted STEP/STL rows, preventing stale trace row indices
+from being picked during Center Row -> Optical Axis.
 Trace Now also turns ray visibility on before rendering, and Undo/Redo clears
 stale transient STEP physics-preview and rotation/carry state so a successful
 trace cannot leave invisible geometry or floating handles behind. The

@@ -198,6 +198,10 @@ class Open3DInteractionService:
             step_label = source_pick.get("step_label") if source_pick is not None else None
             if row_index is not None:
                 row_index = int(row_index)
+                if not (0 <= row_index < len(self.editor.rows)):
+                    self.status_var.set("Center Row->Optical Axis: ignored stale trace-only display pick. Click the visible CAD/STL body again.")
+                    self.render()
+                    return
                 if self.editor.rows[row_index].surface in {"Object", "Image"}:
                     self.status_var.set("Center Row->Optical Axis: Object/Image rows are references; choose a physical surface or CAD/STL row.")
                     self.render()

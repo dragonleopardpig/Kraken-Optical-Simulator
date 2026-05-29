@@ -956,6 +956,73 @@ class ThreeDSceneToolsMixin:
         except Exception:
             return None
 
+    @staticmethod
+    def _file_backed_row_display_transform(row: SurfaceRow, z_station: float) -> np.ndarray:
+        matrix = np.eye(4, dtype=float)
+        try:
+            matrix[:3, :3] = np.asarray(
+                _rotation_matrix_from_kraken_tilts(
+                    float(getattr(row, "tilt_x", 0.0) or 0.0),
+                    float(getattr(row, "tilt_y", 0.0) or 0.0),
+                    float(getattr(row, "tilt_z", 0.0) or 0.0),
+                ),
+                dtype=float,
+            )
+        except Exception:
+            matrix[:3, :3] = np.eye(3, dtype=float)
+        try:
+            center = ThreeDSceneToolsMixin._saved_step_native_center_world(row, float(z_station))
+        except Exception:
+            center = np.asarray(
+                (
+                    float(getattr(row, "desp_x", 0.0) or 0.0),
+                    float(getattr(row, "desp_y", 0.0) or 0.0),
+                    float(z_station) + float(getattr(row, "desp_z", 0.0) or 0.0),
+                ),
+                dtype=float,
+            )
+        matrix[:3, 3] = np.asarray(center, dtype=float).reshape(-1)[:3]
+        return matrix
+
+    def _saved_step_native_display_surface_meshes(
+        self,
+        *,
+        include_reference_surfaces: bool,
+    ) -> list[SurfaceMesh3D]:
+        _ensure_pv()
+        if pv is None:
+            return []
+        mesh_items: list[SurfaceMesh3D] = []
+        try:
+            z_positions = list(self._row_z_positions())
+        except Exception:
+            z_positions = []
+        for row_index, row in enumerate(list(self.rows or [])):
+            if not include_reference_surfaces and row.surface in {"Object", "Image"}:
+                continue
+            advanced = row.advanced if isinstance(row.advanced, dict) else {}
+            if not self._scene_graph_value_present(advanced.get("Solid_3d_stl")):
+                continue
+            z_station = float(z_positions[row_index]) if row_index < len(z_positions) else 0.0
+            transform = self._file_backed_row_display_transform(row, z_station)
+            mesh = self._stl_mesh_with_world_transform(row, transform)
+            if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+                continue
+            mesh_items.append(
+                SurfaceMesh3D(
+                    row_index=int(row_index),
+                    kind=str(row.surface or "standard").lower().replace(" ", "_"),
+                    row=row,
+                    surface=None,
+                    mesh=mesh,
+                    color=(0.10, 0.62, 0.72),
+                    opacity=0.30,
+                    is_stop=self._legacy_3d_is_stop_plane(row),
+                    is_body=False,
+                )
+            )
+        return mesh_items
+
     def _iter_3d_side_body_meshes(
         self,
         system,
@@ -1030,6 +1097,15 @@ class ThreeDSceneToolsMixin:
         include_reference_surfaces: bool,
     ) -> list[SurfaceMesh3D]:
         bundle = scene_bundle if scene_bundle is not None else self._last_scene_bundle
+        if (
+            bundle is not None
+            and bundle is self.__dict__.get("_last_saved_step_native_scene_bundle")
+        ):
+            mesh_items = self._saved_step_native_display_surface_meshes(
+                include_reference_surfaces=include_reference_surfaces,
+            )
+            if mesh_items:
+                return mesh_items
         mesh_items = list(getattr(bundle, "surface_meshes", []) or []) if bundle is not None else []
         if not mesh_items and system is not None:
             mesh_items = self._iter_3d_surface_meshes(system, include_reference_surfaces=True)
