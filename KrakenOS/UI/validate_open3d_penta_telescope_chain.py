@@ -48,6 +48,26 @@ SYNTHETIC_RECORDING_DIR = (
     PROJECT_ROOT / "attachment" / "recorded_bug_repros" / "penta_telescope_chain"
 )
 
+# Fixture paths (verified to exist).
+BALL_LENS_STEP = PROJECT_ROOT / "attachment" / "Lens" / "ball_lens" / "step_63227.stp"
+DCV_STEP = PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "step_32996.stp"
+ACHROMAT_STEP = PROJECT_ROOT / "attachment" / "Lens" / "Achromatic_Lenses" / "step_32323.stp"
+CYL_STEP = PROJECT_ROOT / "attachment" / "Lens" / "cylinder_lens_rectangle" / "step_34754.step"
+
+# Optical specs harvested from the Zemax .zmx files alongside each STEP.
+BALL_LENS_EFL_MM = 3.09   # f = R / (2*(n-1)), R=4.7625, n_AL2O3≈1.77
+BALL_LENS_RADIUS_MM = 4.7625
+DCV_EFL_MM = -50.4        # negative -- diverging
+ACHROMAT_EFL_MM = 50.0    # positive cemented doublet
+CYL_EFL_MM = 50.0         # toroidal plano-cylinder
+
+# Phase 1 layout: two ball lenses confocal would interpenetrate
+# (2f=6.2mm < D=9.525mm), so use a clear-aperture-safe spacing of
+# 30 mm between sphere centers. The trace is still a 1:1 image
+# relay -- just not a textbook confocal pair.
+BALL_LENS_GAP_MM = 30.0
+PHASE1_CLEARANCE_FROM_PRISM_MM = 30.0
+
 # Penta s5 exit beam waypoint + direction. Empirically the saved
 # cascade emerges at world (37.5, -y_input, 197.5) with the Y
 # component flipped relative to the entry side (the cascade folds
@@ -259,6 +279,205 @@ def phase0_base_trace(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> 
 
 
 # ---------------------------------------------------------------------------
+# Helper: import + position + promote a STEP overlay at a target world point.
+
+
+def _import_position_promote(
+    app: KrakenLayoutEditor,
+    inspector: Kraken3DInspector,
+    *,
+    step_path: Path,
+    target_world: np.ndarray,
+    label_name: str,
+) -> dict[str, Any]:
+    """Import an optical STEP, translate to target world XYZ, promote to a row.
+
+    Uses the existing 'optical' slot for the import (the editor only
+    has one optical slot per import). The translate is computed
+    from the difference between the STEP's default centroid (which
+    is at world origin after import) and the requested target.
+    """
+    app.imported_optical_step_path = step_path
+    app.select_step_component("optical")
+    inspector.refresh_from_editor()
+    inspector.update_idletasks()
+    inspector.update()
+    # Default import lands the STEP at world(0,0,0). Compute the
+    # delta to move its centroid to `target_world`.
+    try:
+        mesh = app._transformed_imported_optical_step_mesh()
+        if mesh is not None and int(getattr(mesh, "n_points", 0) or 0) > 0:
+            pts = np.asarray(mesh.points, dtype=float)
+            current_centroid = pts.mean(axis=0)
+        else:
+            current_centroid = np.zeros(3)
+    except Exception:
+        current_centroid = np.zeros(3)
+    delta = np.asarray(target_world, dtype=float).reshape(3) - current_centroid.reshape(3)
+    try:
+        app.translate_step_overlay(
+            "optical",
+            tuple(float(v) for v in delta[:3]),
+            refresh=False,
+            record_history=False,
+        )
+    except Exception:
+        pass
+    promoted = app.promote_imported_step_to_optical_solid_row(
+        "optical",
+        insert_at=None,
+        open_face_editor=False,
+        clear_overlay=True,
+        refresh_open_3d=False,
+    )
+    inspector.refresh_from_editor()
+    inspector.update_idletasks()
+    inspector.update()
+    return {
+        "label": label_name,
+        "fixture": step_path.name,
+        "target_world": target_world.tolist(),
+        "row_index": int(promoted.get("row_index")) if isinstance(promoted, dict) else None,
+    }
+
+
+def _row_actor_zmin_zmax(inspector: Kraken3DInspector, row_index: int) -> tuple[float, float] | None:
+    actor_by_key = inspector._actor_by_key or {}
+    keys = list((inspector._row_actor_map or {}).get(row_index, []) or [])
+    if not keys:
+        return None
+    zmin = float("inf")
+    zmax = float("-inf")
+    for k in keys:
+        a = actor_by_key.get(k)
+        if a is None:
+            continue
+        try:
+            b = a.GetBounds()
+        except Exception:
+            continue
+        if b is None or len(b) < 6:
+            continue
+        zmin = min(zmin, float(b[4]))
+        zmax = max(zmax, float(b[5]))
+    if zmin == float("inf"):
+        return None
+    return (zmin, zmax)
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 workflow: add 2 ball lenses for 1:1 image relay
+
+
+def phase1_ball_lens_telescope(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> WorkflowReport:
+    """Add 2 ball lenses along world +Z from the cascade exit waypoint."""
+    report = WorkflowReport(name="Phase 1: ball-lens 1:1 telescope")
+
+    ball1_target = EXIT_POSITION + EXIT_DIRECTION * PHASE1_CLEARANCE_FROM_PRISM_MM
+    ball2_target = ball1_target + EXIT_DIRECTION * BALL_LENS_GAP_MM
+
+    def _import_ball_1() -> dict[str, Any]:
+        return _import_position_promote(
+            app,
+            inspector,
+            step_path=BALL_LENS_STEP,
+            target_world=ball1_target,
+            label_name="ball_1",
+        )
+
+    ball1_step = _timed(report, "import_ball_lens_1", _import_ball_1, budget_ms=20000.0)
+    if not ball1_step.ok or ball1_step.payload.get("row_index") is None:
+        return report
+    ball1_row = int(ball1_step.payload["row_index"])
+
+    def _import_ball_2() -> dict[str, Any]:
+        return _import_position_promote(
+            app,
+            inspector,
+            step_path=BALL_LENS_STEP,
+            target_world=ball2_target,
+            label_name="ball_2",
+        )
+
+    ball2_step = _timed(report, "import_ball_lens_2", _import_ball_2, budget_ms=20000.0)
+    if not ball2_step.ok or ball2_step.payload.get("row_index") is None:
+        return report
+    ball2_row = int(ball2_step.payload["row_index"])
+
+    def _check_positions() -> dict[str, Any]:
+        b1 = _row_actor_zmin_zmax(inspector, ball1_row)
+        b2 = _row_actor_zmin_zmax(inspector, ball2_row)
+        return {
+            "ball_1_row": ball1_row,
+            "ball_1_z_band": list(b1) if b1 is not None else None,
+            "ball_1_expected_z": float(ball1_target[2]),
+            "ball_2_row": ball2_row,
+            "ball_2_z_band": list(b2) if b2 is not None else None,
+            "ball_2_expected_z": float(ball2_target[2]),
+        }
+
+    pos_step = _timed(report, "ball_lens_positions", _check_positions, budget_ms=2000.0)
+    if pos_step.ok:
+        b1 = pos_step.payload.get("ball_1_z_band")
+        b2 = pos_step.payload.get("ball_2_z_band")
+        for label, band, expected in (
+            ("ball_1", b1, ball1_target[2]),
+            ("ball_2", b2, ball2_target[2]),
+        ):
+            if band is None:
+                pos_step.ok = False
+                pos_step.note = f"{label} actor not registered"
+                report.failures.append(pos_step.note)
+                continue
+            center_z = 0.5 * (band[0] + band[1])
+            if abs(center_z - float(expected)) > 5.0:
+                pos_step.ok = False
+                pos_step.note = (
+                    f"{label} body center Z={center_z:.2f} != expected {float(expected):.2f} "
+                    f"(band={band})"
+                )
+                report.failures.append(pos_step.note)
+
+    def _trace_after_balls() -> dict[str, Any]:
+        inspector.show_rays_var.set(True)
+        inspector._trace_live_now()
+        inspector.update_idletasks()
+        inspector.update()
+        bundle = inspector._current_scene_bundle
+        paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
+        # Ray endpoints AFTER ball lens telescope should sit past
+        # ball_2's Z position.
+        terminal_zs: list[float] = []
+        for path in paths:
+            pts = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
+            if pts.ndim == 2 and pts.shape[0] >= 1 and pts.shape[1] >= 3:
+                terminal_zs.append(float(pts[-1, 2]))
+        max_terminal_z = max(terminal_zs, default=0.0)
+        return {
+            "ray_path_count": len(paths),
+            "ray_actor_count": len(inspector._actor_ray_map or {}),
+            "max_terminal_z": round(max_terminal_z, 2),
+            "ball_2_z": float(ball2_target[2]),
+        }
+
+    tr = _timed(report, "trace_after_balls", _trace_after_balls, budget_ms=20000.0)
+    if tr.ok:
+        if tr.payload.get("ray_path_count", 0) == 0:
+            tr.ok = False
+            tr.note = "trace produced 0 ray paths after adding ball lenses"
+            report.failures.append(tr.note)
+        elif tr.payload.get("max_terminal_z", 0.0) < tr.payload.get("ball_2_z", 0.0):
+            tr.ok = False
+            tr.note = (
+                f"rays terminated before second ball lens: "
+                f"max_terminal_z={tr.payload.get('max_terminal_z')} < "
+                f"ball_2_z={tr.payload.get('ball_2_z')}"
+            )
+            report.failures.append(tr.note)
+    return report
+
+
+# ---------------------------------------------------------------------------
 # Recorder wrapper
 
 
@@ -379,6 +598,12 @@ def main() -> int:
 
         with _PhaseRecording(inspector, "phase0_base_trace", args.recordings_dir) as rec:
             reports.append(phase0_base_trace(app, inspector))
+        recordings.append(rec)
+        if not reports[-1].ok:
+            return _print_report(reports, recordings)
+
+        with _PhaseRecording(inspector, "phase1_ball_lens_telescope", args.recordings_dir) as rec:
+            reports.append(phase1_ball_lens_telescope(app, inspector))
         recordings.append(rec)
     finally:
         try:
