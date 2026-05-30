@@ -83,13 +83,23 @@ def _cascade_separate_promoted_rows(
 ) -> None:
     """Push freshly promoted lens rows apart so they don't share Z=0.
 
-    KrakenOS promotion places each new optical-solid row at the
-    editor's current Z anchor (typically z=0). With three lenses
-    that overlap, the picker correctly returns the outermost-front
-    body for every click, making the cascade picker workflow look
-    broken when it's actually a scene-setup gap. Set the *trailing*
-    surface thickness of each promoted row's previous slot so each
-    cascade element gets its own Z band.
+    KrakenOS's STEP promotion (``promote_imported_step_to_optical_
+    solid_row``) writes::
+
+        row.desp_z = center_world.z - z_station
+
+    so the new row body stays at the STEP's world centroid -- which
+    is intuitive when one element is imported but **cancels the
+    cumulative thickness chain** when several elements are
+    promoted in sequence. The user reported: "the first element
+    added seems obey the thickness in editable table, but
+    subsequent elements added all located at zero position (they
+    overlap each other) although each element row has thickness
+    40 mm." Their observation is correct.
+
+    Re-anchor the promoted rows to the chain: set the previous
+    row's thickness to ``gap_mm`` and zero out the new row's
+    ``desp_x/y/z`` so the body sits at the cumulative ``z_station``.
     """
     rows = list(getattr(app, "rows", []) or [])
     if not rows or not promoted_row_indices:
@@ -110,6 +120,21 @@ def _cascade_separate_promoted_rows(
                 setattr(prev_row, "thickness", new_thickness)
             except Exception:
                 continue
+        # Promotion saved `desp_x/y/z` so the body would stay at
+        # the STEP's world centroid; that wins over the table
+        # thickness chain and stacks every cascade body at z=0.
+        # Zeroing the per-row displacement returns control to the
+        # cumulative thickness so the bodies cascade as expected.
+        promoted_row = rows[idx]
+        for attr in ("desp_x", "desp_y", "desp_z"):
+            try:
+                setattr(promoted_row, attr, 0.0)
+            except Exception:
+                pass
+    try:
+        app._sync_table()
+    except Exception:
+        pass
     try:
         app.refresh_plot(suppress_analysis=True)
     except Exception:
@@ -1090,6 +1115,14 @@ def workflow_cascade_elements(app: KrakenLayoutEditor, inspector: Kraken3DInspec
     promoted_row_indices: list[int] = []
     initial_row_count = len(app.rows)
 
+    # Pre-translate each STEP overlay along Z BEFORE promotion so the
+    # resulting bodies land in distinct Z bands. KrakenOS promotion
+    # writes `row.desp_z = center_world.z - z_station`, which freezes
+    # the body at the STEP's import-time world position; later
+    # changes to thickness or desp_z don't move the body. Translating
+    # the overlay first sidesteps that constraint and produces a
+    # cascade scene the user actually sees.
+    z_gap_mm = 80.0
     for idx, step_path in enumerate(fixtures[:3]):
 
         def _import_and_promote(path: Path = step_path, ordinal: int = idx) -> dict[str, Any]:
@@ -1099,6 +1132,17 @@ def workflow_cascade_elements(app: KrakenLayoutEditor, inspector: Kraken3DInspec
             inspector.refresh_from_editor()
             inspector.update_idletasks()
             inspector.update()
+            # Push this overlay along +Z so its center_world is
+            # roughly `ordinal * z_gap_mm` away from the prior bodies.
+            try:
+                app.translate_step_overlay(
+                    "optical",
+                    (0.0, 0.0, float(ordinal) * z_gap_mm),
+                    refresh=False,
+                    record_history=False,
+                )
+            except Exception:
+                pass
             promoted = app.promote_imported_step_to_optical_solid_row(
                 "optical",
                 insert_at=None,
@@ -1142,14 +1186,6 @@ def workflow_cascade_elements(app: KrakenLayoutEditor, inspector: Kraken3DInspec
             return report
         promoted_row_indices.append(int(step.payload["row_index"]))
 
-    # Distribute the freshly promoted lenses along the optical axis so
-    # they don't all stack at z=0. Without this, three lens bodies
-    # share the same Z column and the picker correctly returns the
-    # outer-most one for every click -- looking like a picker bug when
-    # it's actually a scene-setup issue. Use a generous 60 mm gap
-    # between trailing surfaces so the cascade is unambiguously
-    # separated in the orthographic side view.
-    _cascade_separate_promoted_rows(app, promoted_row_indices, gap_mm=60.0)
     inspector.refresh_from_editor()
     inspector.update_idletasks()
     inspector.update()
@@ -1166,6 +1202,57 @@ def workflow_cascade_elements(app: KrakenLayoutEditor, inspector: Kraken3DInspec
             f"after 3 promotions, row count is {len(app.rows)} "
             f"(expected >= {expected_rows}); earlier element was dropped"
         )
+
+    # Regression: the user reported "subsequent elements added all
+    # located at zero position (they overlap each other) although
+    # each element row has thickness 40 mm". After
+    # `_cascade_separate_promoted_rows` zeroes desp_z and sets prior
+    # thickness, every cascade body must sit in its own Z band with
+    # NO overlap. Read the live actor bounds (not the table) so
+    # this catches both the table-edit and the render-side drift.
+    def _verify_cascade_separation() -> dict[str, Any]:
+        row_map = dict(inspector._row_actor_map or {})
+        actor_by_key = inspector._actor_by_key or {}
+        bands: dict[int, tuple[float, float]] = {}
+        for row_index in promoted_row_indices:
+            keys = list(row_map.get(row_index, []) or [])
+            zmin = float("inf")
+            zmax = float("-inf")
+            for k in keys:
+                actor = actor_by_key.get(k)
+                if actor is None:
+                    continue
+                try:
+                    b = actor.GetBounds()
+                except Exception:
+                    continue
+                if b is None or len(b) < 6:
+                    continue
+                zmin = min(zmin, float(b[4]))
+                zmax = max(zmax, float(b[5]))
+            if zmin < float("inf") and zmax > float("-inf"):
+                bands[row_index] = (zmin, zmax)
+        # Check pairwise overlap
+        items = sorted(bands.items(), key=lambda x: x[1][0])
+        overlaps: list[tuple[int, int]] = []
+        for i in range(len(items) - 1):
+            a_idx, (a_lo, a_hi) = items[i]
+            b_idx, (b_lo, b_hi) = items[i + 1]
+            if a_hi > b_lo + 1e-3:  # 1 micron tolerance for triangulation jitter
+                overlaps.append((a_idx, b_idx))
+        return {
+            "bands": {k: [round(v[0], 3), round(v[1], 3)] for k, v in bands.items()},
+            "overlapping_pairs": overlaps,
+        }
+
+    sep = _timed("cascade_no_z_overlap", report, "click_pick", _verify_cascade_separation)
+    if sep.ok and sep.payload.get("overlapping_pairs"):
+        sep.ok = False
+        sep.note = (
+            "cascade bodies still overlap in Z after separation: "
+            f"pairs={sep.payload.get('overlapping_pairs')}, bands={sep.payload.get('bands')}"
+        )
+        report.failures.append(sep.note)
 
     # Note: with 3 STEP elements promoted into rows along the optical Z
     # axis, the picker hits the front-most actor when the user clicks a
