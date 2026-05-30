@@ -2766,8 +2766,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             return None
         actor_key = self._actor_key(actor) if actor is not None else None
-        row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
-        if row_index is None and actor_key is not None:
+        # If the picker missed entirely (no actor at the click position --
+        # off-screen click, click in empty space, etc.), don't guess a
+        # row spatially: in a cascade the closest-by-distance row is
+        # almost always wrong (it picks whichever element happens to sit
+        # near the world origin). Returning None lets the caller fall
+        # back to camera orbit instead of silently moving a random row.
+        if actor_key is None:
+            return None
+        row_index = self._actor_row_map.get(actor_key)
+        if row_index is None:
             # Edge / wireframe / silhouette actors for a row are tracked-only:
             # they appear in _row_actor_map[row] but not in _actor_row_map.
             # vtkCellPicker often hits one of these on top of the translucent
@@ -2778,12 +2786,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     row_index = candidate_row
                     break
         if row_index is None:
-            # Final spatial fallback: the picked actor isn't registered to
-            # any row, but its world hit point may still fall inside (or
-            # near) a row body's bounding box -- e.g. a hover-only edge
-            # decoration drawn over the visible mesh. Find the row whose
-            # actor center is closest to the picker hit; reject if no row
-            # is within the rendered scene radius.
+            # The picker hit *something* but it isn't tied to a row in
+            # either direction. Use the world hit point to find the row
+            # whose actor center is closest, but require the hit to be
+            # inside a reasonable radius around that row -- otherwise a
+            # click on a decorative actor far from any cascade element
+            # would still resolve to "the nearest row", which is the
+            # bug the multi-element harness flagged.
             try:
                 pick_world = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
             except Exception:
@@ -2794,7 +2803,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 or not np.all(np.isfinite(pick_world[:3]))
             ):
                 return None
-            best: tuple[float, int] | None = None
+            best: tuple[float, int, float] | None = None
             for candidate_row in (self._row_actor_map or {}).keys():
                 try:
                     candidate_row_int = int(candidate_row)
@@ -2806,16 +2815,30 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 if center is None or center.size < 3 or not np.all(np.isfinite(center[:3])):
                     continue
                 dist = float(np.linalg.norm(pick_world[:3] - center[:3]))
+                # Estimate this row's body radius from the actor bounds so
+                # the spatial test scales with how big the element is.
+                row_radius = 1.0
+                for actor_key_in_row in list(self._row_actor_map.get(candidate_row_int, []) or []):
+                    body_actor = self._actor_by_key.get(actor_key_in_row)
+                    if body_actor is None:
+                        continue
+                    try:
+                        bounds = np.asarray(body_actor.GetBounds(), dtype=float).reshape(6)
+                    except Exception:
+                        continue
+                    if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[0] > bounds[1]:
+                        continue
+                    diag = float(np.linalg.norm(
+                        (bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4])
+                    ))
+                    row_radius = max(row_radius, 0.5 * diag)
                 if best is None or dist < best[0]:
-                    best = (dist, candidate_row_int)
+                    best = (dist, candidate_row_int, row_radius)
             if best is None:
                 return None
-            try:
-                _scene_center, scene_radius = self._scene_bounds()
-                scene_radius = float(scene_radius)
-            except Exception:
-                scene_radius = float("inf")
-            if best[0] > max(scene_radius, 1.0):
+            if best[0] > best[2] * 1.5:
+                # Hit is too far from the closest row's body radius --
+                # decline rather than retarget the gesture.
                 return None
             row_index = best[1]
         try:
