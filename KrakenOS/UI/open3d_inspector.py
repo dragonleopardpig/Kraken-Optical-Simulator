@@ -449,7 +449,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
         self._step_normal_axis_pick_mode = False
-        self._step_normal_axis_anchor_mode = "surface_center"
+        self._step_normal_axis_anchor_mode = "body_center"
         self._step_surface_center_axis_pick_mode = False
         self._step_carry_grid_label: str | None = None
         self._step_carry_grid_spacing_mm: float | None = None
@@ -4230,16 +4230,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._selected_step_feature_normal_world = None
 
     def snap_selected_step_normal_to_optical_axis(self) -> None:
-        """Snap-by-clicked-point variant: face goes where the user clicked.
+        """Default snap-to-axis variant: lens body lands where you click.
 
-        Previously this entry used anchor_mode="surface_center", which
-        moves the face centroid to the axis click target rather than
-        the user's pick point on the face. The user reported that "the
-        snapping location is not the mouse pointer clicking location";
-        defaulting to the pick-point anchor matches the intuition that
-        wherever you clicked on the face is where the face ends up on
-        the axis. The dedicated Surface-Center entry below still drives
-        the centroid-anchored variant.
+        Evolution of the default anchor:
+        - first iteration: ``surface_center`` -- face centroid lands on
+          axis click. The body still extended to one side and didn't
+          look "at the click" to the user.
+        - second iteration: ``pick_point`` -- the exact spot on the
+          face went to the click. Same visual mismatch: the body sat
+          to one side, not centered on the cursor.
+        - current default: ``body_center`` -- the STEP body centroid
+          lands at the cursor world point on the axis, so the lens
+          visually lands where the user clicked. Dedicated menu
+          entries below preserve the pick-point and surface-center
+          variants for users who need either.
         """
         service = self.editor._open3d_step_state_service()
         label = service.selected_import_label(
@@ -4256,7 +4260,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if self._step_feature_action_selection(label=label, require_pick_point=True, require_normal=True) is None:
             self.status_var.set("Snap STEP Normal->Optical Axis: click a planar STEP face first.")
             return
-        self.start_step_normal_axis_pick(label, anchor_mode="pick_point")
+        self.start_step_normal_axis_pick(label, anchor_mode="body_center")
 
     def snap_selected_step_pick_point_normal_to_optical_axis(self) -> None:
         service = self.editor._open3d_step_state_service()
@@ -4356,13 +4360,70 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             f"(error {angle_error:.6g} deg)."
         )
 
-    def start_step_normal_axis_pick(self, label: str | None = None, *, anchor_mode: str = "surface_center") -> None:
+    def _step_body_center_world(self, label: str) -> np.ndarray | None:
+        """World-space centroid of an imported STEP body, current pose.
+
+        Used by the `body_center` anchor mode of the snap-to-axis
+        workflow so the *body* of the imported lens lands at the
+        cursor world point, not just the clicked face. Returns None
+        if the live mesh isn't available.
+        """
+        try:
+            mesh = self.editor._transformed_imported_step_mesh_for_label(str(label))
+        except Exception:
+            return None
+        if mesh is None or int(getattr(mesh, "n_points", 0) or 0) <= 0:
+            return None
+        try:
+            pts = np.asarray(getattr(mesh, "points", np.empty((0, 3))), dtype=float)
+        except Exception:
+            pts = np.empty((0, 3), dtype=float)
+        if pts.ndim == 2 and pts.shape[0] >= 1 and pts.shape[1] >= 3:
+            finite = pts[np.all(np.isfinite(pts[:, :3]), axis=1)]
+            if finite.size:
+                return np.asarray(finite[:, :3].mean(axis=0), dtype=float).reshape(3)
+        # Fall back to bounding-box center if point cloud isn't usable.
+        try:
+            b = np.asarray(getattr(mesh, "bounds", None), dtype=float).reshape(-1)
+        except Exception:
+            return None
+        if b.size != 6 or not np.all(np.isfinite(b)):
+            return None
+        return np.asarray(
+            [
+                0.5 * (b[0] + b[1]),
+                0.5 * (b[2] + b[3]),
+                0.5 * (b[4] + b[5]),
+            ],
+            dtype=float,
+        )
+
+    def start_step_normal_axis_pick(self, label: str | None = None, *, anchor_mode: str = "body_center") -> None:
+        """Arm the click-the-axis-to-snap state machine.
+
+        ``anchor_mode`` controls which point on the STEP lands at the
+        cursor world target on the optical axis:
+
+        - ``"body_center"`` (default): the STEP body centroid. The lens
+          visually lands where the cursor is. This matches the user's
+          intuition of "click here, lens goes here".
+        - ``"surface_center"``: the clicked face's centroid lands on
+          the axis click. Lens body extends to one side.
+        - ``"pick_point"``: the exact point you clicked on the face
+          lands on the axis click. Useful for edge-precise alignment.
+        """
         service = self.editor._open3d_step_state_service()
         label = service.selected_import_label((label, self._selected_step_feature_label))
         if not label:
             self.status_var.set("Snap STEP Normal->Optical Axis: select or import a STEP component first.")
             return
-        anchor_mode = "pick_point" if str(anchor_mode).strip().lower() == "pick_point" else "surface_center"
+        mode_text = str(anchor_mode).strip().lower()
+        if mode_text == "pick_point":
+            anchor_mode = "pick_point"
+        elif mode_text == "body_center":
+            anchor_mode = "body_center"
+        else:
+            anchor_mode = "surface_center"
         selection = self._step_feature_action_selection(
             label=label,
             require_pick_point=True,
@@ -4389,8 +4450,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._set_axis_pick_cursor(True)
         self._update_mode_badge()
         self._hide_regular_rays_for_center_axis_pick()
-        anchor_text = "surface center" if anchor_mode == "surface_center" else "picked point"
-        coordinate = selection.surface_center_world if anchor_mode == "surface_center" else selection.pick_point_world
+        if anchor_mode == "body_center":
+            coordinate = self._step_body_center_world(label)
+            anchor_text = "body center"
+        elif anchor_mode == "surface_center":
+            coordinate = selection.surface_center_world
+            anchor_text = "surface center"
+        else:
+            coordinate = selection.pick_point_world
+            anchor_text = "picked point"
         self.status_var.set(
             f"Snap {label.upper()} STEP normal using {anchor_text}: click the dotted Optical Axis guide. "
             f"Anchor={self._world_xyz_text(coordinate)}."
@@ -4428,7 +4496,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         )
 
     def _apply_step_normal_axis_pick(self, axis_info: dict[str, object]) -> None:
-        anchor_mode = "pick_point" if str(getattr(self, "_step_normal_axis_anchor_mode", "surface_center")).strip().lower() == "pick_point" else "surface_center"
+        mode_text = str(getattr(self, "_step_normal_axis_anchor_mode", "body_center")).strip().lower()
+        if mode_text == "pick_point":
+            anchor_mode = "pick_point"
+        elif mode_text == "surface_center":
+            anchor_mode = "surface_center"
+        else:
+            anchor_mode = "body_center"
         selection = self._step_feature_action_selection(
             require_pick_point=True,
             require_surface_center=(anchor_mode == "surface_center"),
@@ -4438,7 +4512,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.status_var.set("Snap STEP Normal->Optical Axis: click a planar STEP face first.")
             return
         label = selection.label
-        center = selection.pick_point_world if anchor_mode == "pick_point" else selection.surface_center_world
+        if anchor_mode == "body_center":
+            center = self._step_body_center_world(label)
+            if center is None:
+                # No live mesh -- fall back to face centroid so we still
+                # snap rather than refusing.
+                center = selection.surface_center_world
+                anchor_mode = "surface_center"
+        elif anchor_mode == "pick_point":
+            center = selection.pick_point_world
+        else:
+            center = selection.surface_center_world
         normal = selection.normal_world
         try:
             if anchor_mode == "surface_center" and str(getattr(selection, "face_id", "") or "").strip():
@@ -4464,7 +4548,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_carry_active_label = None
         self._step_carry_follow_state = None
         self._step_normal_axis_pick_mode = False
-        self._step_normal_axis_anchor_mode = "surface_center"
+        self._step_normal_axis_anchor_mode = "body_center"
         self._step_surface_center_axis_pick_mode = False
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
@@ -4520,7 +4604,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         axis_label = str(result.get("axis_label", "optical axis"))
         angle_error = float(result.get("angle_error_deg", float("nan")))
-        anchor_text = "picked point" if anchor_mode == "pick_point" else "surface center"
+        if anchor_mode == "body_center":
+            anchor_text = "body center"
+        elif anchor_mode == "pick_point":
+            anchor_text = "picked point"
+        else:
+            anchor_text = "surface center"
         self.status_var.set(
             f"{label.upper()} STEP face normal snapped to {axis_label} using {anchor_text} "
             f"(error {angle_error:.6g} deg). Use 'Step rotation handles' in the toolbar if you need to flip."
@@ -6863,7 +6952,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return f"SNAP {snap_text} STEP -> TARGET\nClick detector/object/target row or face."
         if self._step_normal_axis_pick_mode:
             label = str(self._selected_step_feature_label or self.editor._selected_step_label or "STEP").upper()
-            anchor = "PICK POINT" if str(getattr(self, "_step_normal_axis_anchor_mode", "surface_center")).strip().lower() == "pick_point" else "SURFACE CENTER"
+            mode_text = str(getattr(self, "_step_normal_axis_anchor_mode", "body_center")).strip().lower()
+            if mode_text == "pick_point":
+                anchor = "PICK POINT"
+            elif mode_text == "surface_center":
+                anchor = "SURFACE CENTER"
+            else:
+                anchor = "BODY CENTER"
             return f"SNAP {label} {anchor} NORMAL -> AXIS\nClick the dotted Optical Axis guide."
         if self._step_surface_center_axis_pick_mode:
             label = str(self._selected_step_feature_label or self.editor._selected_step_label or "STEP").upper()

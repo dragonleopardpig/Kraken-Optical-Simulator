@@ -645,6 +645,40 @@ def workflow_snap_to_axis(inspector: Kraken3DInspector) -> WorkflowReport:
         )
         report.failures.append(no_handles.note)
 
+    # Regression: with the default body_center anchor, the LENS BODY
+    # centroid must land at the axis target (the world point on the
+    # axis closest to the cursor click). The user reported "snapping
+    # position is not where the mouse pointer clicking location at
+    # optical axis"; defaulting to body_center anchors the visual
+    # body to the cursor target, and this assertion guards against a
+    # silent revert to face-only anchoring.
+    def _body_center_at_axis_target() -> dict[str, Any]:
+        center = inspector._step_body_center_world("optical")
+        if center is None:
+            return {"__error__": "optical STEP body center unavailable post-snap"}
+        # Closest point on the axis polyline (X=0, Y=0, Z varies) is
+        # (0, 0, center.z). Body center should be on that axis within
+        # a tight epsilon -- not at face Y/face X.
+        return {
+            "body_center": [float(v) for v in center[:3]],
+            "axis_target": [0.0, 0.0, float(center[2])],
+            "delta_x": float(abs(center[0])),
+            "delta_y": float(abs(center[1])),
+        }
+
+    body = _timed("body_center_on_axis", report, "click_pick", _body_center_at_axis_target)
+    if body.ok:
+        eps = 0.5  # 0.5 mm tolerance on the global Z axis line
+        if body.payload.get("delta_x", 0.0) > eps or body.payload.get("delta_y", 0.0) > eps:
+            body.ok = False
+            body.note = (
+                f"body_center anchor did NOT land on the global optical axis "
+                f"(X=0, Y=0): body_center={body.payload.get('body_center')}, "
+                f"delta_x={body.payload.get('delta_x'):.3f}, "
+                f"delta_y={body.payload.get('delta_y'):.3f} mm"
+            )
+            report.failures.append(body.note)
+
     # Now drive the *picker* path the user actually hits: re-arm normal-axis
     # snap mode, project the axis midpoint to a display pixel, and invoke
     # _on_left_button_press through SetEventInformationFlipY -> _picker.Pick.
