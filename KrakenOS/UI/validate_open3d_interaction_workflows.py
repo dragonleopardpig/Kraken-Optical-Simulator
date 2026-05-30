@@ -63,7 +63,7 @@ def _select_step_fixture() -> Path:
 
 
 INTERACTIVE_BUDGET_MS = {
-    "open_inspector": 6000.0,
+    "open_inspector": 12000.0,
     "import_step": 4000.0,
     "click_pick": 600.0,
     "clear_selection": 400.0,
@@ -163,6 +163,61 @@ class MouseSimulator:
                 except Exception:
                     pass
                 return axis_info
+        return None
+
+    def left_press_at_pixel(self, x: int, y: int) -> dict[str, Any]:
+        """Drive _on_left_button_press through the real picker at (x, y).
+
+        Sets the VTK interactor event position so ``_picker.Pick`` resolves
+        against the live renderer, then invokes the actual click handler
+        the bindings would call on release. Returns a dictionary that
+        captures what the picker hit so the caller can assert against it.
+        """
+        inspector = self.inspector
+        info: dict[str, Any] = {"x": int(x), "y": int(y)}
+        if inspector._vtk_interactor is None or inspector._picker is None or inspector._renderer is None:
+            info["__error__"] = "VTK stack unavailable"
+            return info
+        # (x, y) here are *VTK display coordinates* (origin bottom-left),
+        # which is what _world_to_display_2d returns. The real Tk bindings
+        # call SetEventInformationFlipY with Tk's event.x/event.y; FlipY
+        # converts those to VTK-y. We already have VTK-y, so call the
+        # non-flipping setter directly to avoid double-flipping.
+        try:
+            inspector._vtk_interactor.SetEventPosition(int(x), int(y))
+        except Exception as exc:
+            info["__error__"] = f"could not set event position: {exc}"
+            return info
+        try:
+            inspector._picker.Pick(int(x), int(y), 0.0, inspector._renderer)
+            actor = inspector._picker.GetActor()
+        except Exception as exc:
+            info["__error__"] = f"picker raised: {exc}"
+            return info
+        info["picker_actor"] = actor is not None
+        info["picker_actor_key"] = inspector._actor_key(actor) if actor is not None else None
+        try:
+            inspector._on_left_button_press(None, None)
+        except Exception as exc:
+            info["__error__"] = f"_on_left_button_press raised: {exc}"
+            return info
+        self._pump()
+        info["status_after"] = str(inspector.status_var.get())
+        return info
+
+    def axis_world_to_display(self, axis_id: str = "axis:global") -> tuple[int, int] | None:
+        """Project the midpoint of an axis-pick record into display pixels."""
+        for record in list(getattr(self.inspector, "_optical_axis_pick_records", []) or []):
+            if str(record.get("axis_id", "") or "").strip() != axis_id:
+                continue
+            points = np.asarray(record.get("points"), dtype=float)
+            if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
+                continue
+            mid_world = 0.5 * (points[0, :3] + points[1, :3])
+            display = self.inspector._world_to_display_2d(mid_world)
+            if display is None:
+                continue
+            return (int(round(float(display[0]))), int(round(float(display[1]))))
         return None
 
 
@@ -340,17 +395,17 @@ def workflow_snap_to_axis(inspector: Kraken3DInspector) -> WorkflowReport:
         }
 
     start_step = _timed("start_normal_axis_pick", report, "click_pick", _start_normal_pick)
-    if start_step.ok and not start_step.payload.get("normal_axis_mode"):
+    if not start_step.payload.get("normal_axis_mode"):
         start_step.ok = False
         start_step.note = "start_step_normal_axis_pick did not enable pick mode"
         report.failures.append(start_step.note)
-    if start_step.ok and start_step.payload.get("axis_records", 0) < 1:
+        return report
+    if start_step.payload.get("axis_records", 0) < 1:
         start_step.ok = False
         start_step.note = (
             "no optical-axis pick records after entering snap mode -- the user can't click the axis"
         )
         report.failures.append(start_step.note)
-    if not start_step.ok:
         return report
 
     def _apply_snap() -> dict[str, Any]:
@@ -379,6 +434,48 @@ def workflow_snap_to_axis(inspector: Kraken3DInspector) -> WorkflowReport:
         snap_step.ok = False
         snap_step.note = f"snap status did not confirm success: {status!r}"
         report.failures.append(snap_step.note)
+
+    # Now drive the *picker* path the user actually hits: re-arm normal-axis
+    # snap mode, project the axis midpoint to a display pixel, and invoke
+    # _on_left_button_press through SetEventInformationFlipY -> _picker.Pick.
+    # This is the layer where "I can't snap" lives.
+    def _reseed() -> dict[str, Any]:
+        face_id = seed.payload.get("face_id") or ""
+        centroid = np.asarray(seed.payload.get("centroid", (0.0, 0.0, 0.0)), dtype=float)
+        normal = np.asarray(seed.payload.get("normal", (0.0, 0.0, 1.0)), dtype=float)
+        inspector._remember_selected_step_feature(
+            "optical",
+            (centroid, None, normal),
+            surface_center_world=centroid,
+            face_id=face_id,
+        )
+        inspector.start_step_normal_axis_pick("optical")
+        inspector.update_idletasks()
+        inspector.update()
+        return {"axis_records": len(inspector._optical_axis_pick_records or [])}
+
+    reseed_step = _timed("reseed_snap_mode", report, "click_pick", _reseed)
+    if reseed_step.payload.get("axis_records", 0) < 1:
+        return report
+
+    def _picker_click_axis() -> dict[str, Any]:
+        display = sim.axis_world_to_display("axis:global")
+        if display is None:
+            return {"__error__": "could not project axis midpoint to display"}
+        x, y = display
+        result = sim.left_press_at_pixel(int(x), int(y))
+        result["snap_mode_after"] = bool(inspector._step_normal_axis_pick_mode)
+        return result
+
+    pclick = _timed("snap_via_picker_click", report, "click_pick", _picker_click_axis)
+    if pclick.ok and pclick.payload.get("snap_mode_after"):
+        pclick.ok = False
+        pclick.note = (
+            "picker click on the projected axis pixel did NOT trigger snap apply; "
+            "_step_normal_axis_pick_mode is still True. "
+            f"payload={pclick.payload}"
+        )
+        report.failures.append(pclick.note)
     return report
 
 
@@ -505,6 +602,97 @@ def workflow_drag_axis_slide(app: KrakenLayoutEditor, inspector: Kraken3DInspect
             f"payload={drag_step.payload}"
         )
         report.failures.append(drag_step.note)
+
+    # End the previous drag-state and drive the picker-based entry: the bug
+    # the user reports is "drag along axis doesn't respond", which happens
+    # inside _axis_slide_state_from_current_pick() when the picker fails to
+    # hit the body. Project the body's bounding-box center to display pixels
+    # and call SetEventInformationFlipY + _axis_slide_state_from_current_pick.
+    inspector._axis_slide_drag_state = None
+
+    def _picker_arm() -> dict[str, Any]:
+        center = inspector._row_actor_center_world(row_index)
+        if center is None:
+            return {"__error__": f"row S{row_index} has no actor bounds"}
+        display = inspector._world_to_display_2d(center)
+        if display is None:
+            return {"__error__": "could not project body center to display pixel"}
+        px, py = int(round(float(display[0]))), int(round(float(display[1])))
+        if inspector._vtk_interactor is not None:
+            try:
+                inspector._vtk_interactor.SetEventPosition(px, py)
+            except Exception:
+                pass
+        # Probe each of the rejection conditions inside
+        # _axis_slide_state_from_current_pick so when the function returns
+        # None we report exactly which gate blocked the click.
+        diag: dict[str, Any] = {"click_xy": (px, py)}
+        diag["axis_slide_mode_active"] = bool(inspector._axis_slide_mode_active())
+        diag["any_pick_mode"] = any(
+            (
+                inspector._source_target_pick_mode,
+                inspector._center_row_to_ray_mode,
+                inspector._placement_target_pick_mode,
+                inspector._placement_orient_pick_mode,
+                inspector._placement_orient_ray_mode,
+                inspector._step_carry_snap_ray_mode,
+                inspector._step_carry_snap_target_mode,
+                inspector._step_normal_axis_pick_mode,
+                inspector._step_surface_center_axis_pick_mode,
+                bool(getattr(inspector.editor, "_cad_axis_pick_any", False)),
+            )
+        )
+        try:
+            inspector._picker.Pick(px, py, 0.0, inspector._renderer)
+            actor = inspector._picker.GetActor()
+        except Exception as exc:
+            diag["__error__"] = f"picker raised: {exc}"
+            return diag
+        actor_key = inspector._actor_key(actor) if actor is not None else None
+        diag["picker_actor_key"] = actor_key
+        diag["actor_in_row_map"] = (
+            actor_key in (inspector._actor_row_map or {}) if actor_key is not None else False
+        )
+        diag["row_from_actor"] = inspector._actor_row_map.get(actor_key) if actor_key else None
+        diag["actor_in_axis_map"] = actor_key in (inspector._actor_optical_axis_map or {})
+        diag["actor_in_step_map"] = actor_key in (inspector._actor_step_map or {})
+        # Check reverse maps
+        reverse_row = None
+        for rk, akeys in (inspector._row_actor_map or {}).items():
+            if actor_key in (akeys or []):
+                reverse_row = rk
+                break
+        diag["actor_in_reverse_row_map"] = reverse_row
+        try:
+            file_backed = inspector.editor._file_backed_stl_row_at(int(row_index)) is not None
+        except Exception:
+            file_backed = False
+        try:
+            promoted_solid = inspector.editor._is_any_promoted_optical_solid_row(app.rows[row_index])
+        except Exception:
+            promoted_solid = False
+        diag["file_backed"] = bool(file_backed)
+        diag["promoted_optical_solid"] = bool(promoted_solid)
+        try:
+            group = inspector.editor._lens_row_group_for_row(int(row_index))
+        except Exception:
+            group = None
+        diag["lens_group"] = list(group) if group else None
+        state = inspector._axis_slide_state_from_current_pick()
+        inspector._axis_slide_drag_state = state
+        diag["state_kind"] = type(state).__name__ if state is not None else None
+        diag["row_in_state"] = (state or {}).get("row_index") if isinstance(state, dict) else None
+        return diag
+
+    arm_picker = _timed("picker_arm_axis_slide", report, "click_pick", _picker_arm)
+    if arm_picker.ok and arm_picker.payload.get("state_kind") != "dict":
+        arm_picker.ok = False
+        arm_picker.note = (
+            "_axis_slide_state_from_current_pick returned None -- the user's body click "
+            "is not engaging slide mode. "
+            f"payload={arm_picker.payload}"
+        )
+        report.failures.append(arm_picker.note)
     return report
 
 

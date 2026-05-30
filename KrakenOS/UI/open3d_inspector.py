@@ -2762,12 +2762,59 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             actor = self._picker.GetActor()
         except Exception:
             return None
-        actor_key = self._actor_key(actor)
-        if actor_key is None:
-            return None
-        row_index = self._actor_row_map.get(actor_key)
+        actor_key = self._actor_key(actor) if actor is not None else None
+        row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
+        if row_index is None and actor_key is not None:
+            # Edge / wireframe / silhouette actors for a row are tracked-only:
+            # they appear in _row_actor_map[row] but not in _actor_row_map.
+            # vtkCellPicker often hits one of these on top of the translucent
+            # body, so without this lookup the slide gesture silently no-ops
+            # when the user clicks the body's outline.
+            for candidate_row, actor_keys in (self._row_actor_map or {}).items():
+                if actor_key in (actor_keys or []):
+                    row_index = candidate_row
+                    break
         if row_index is None:
-            return None
+            # Final spatial fallback: the picked actor isn't registered to
+            # any row, but its world hit point may still fall inside (or
+            # near) a row body's bounding box -- e.g. a hover-only edge
+            # decoration drawn over the visible mesh. Find the row whose
+            # actor center is closest to the picker hit; reject if no row
+            # is within the rendered scene radius.
+            try:
+                pick_world = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+            except Exception:
+                pick_world = None
+            if (
+                pick_world is None
+                or pick_world.size < 3
+                or not np.all(np.isfinite(pick_world[:3]))
+            ):
+                return None
+            best: tuple[float, int] | None = None
+            for candidate_row in (self._row_actor_map or {}).keys():
+                try:
+                    candidate_row_int = int(candidate_row)
+                except Exception:
+                    continue
+                if not (0 <= candidate_row_int < len(self.editor.rows)):
+                    continue
+                center = self._row_actor_center_world(candidate_row_int)
+                if center is None or center.size < 3 or not np.all(np.isfinite(center[:3])):
+                    continue
+                dist = float(np.linalg.norm(pick_world[:3] - center[:3]))
+                if best is None or dist < best[0]:
+                    best = (dist, candidate_row_int)
+            if best is None:
+                return None
+            try:
+                _scene_center, scene_radius = self._scene_bounds()
+                scene_radius = float(scene_radius)
+            except Exception:
+                scene_radius = float("inf")
+            if best[0] > max(scene_radius, 1.0):
+                return None
+            row_index = best[1]
         try:
             row_index = int(row_index)
         except Exception:
