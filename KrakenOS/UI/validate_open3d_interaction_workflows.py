@@ -723,6 +723,84 @@ def workflow_snap_to_axis(inspector: Kraken3DInspector) -> WorkflowReport:
             f"payload={pclick.payload}"
         )
         report.failures.append(pclick.note)
+
+    # Regression: "Place -> Center -> Optical Axis" must NOT pop the
+    # STEP rotation handles when the user clicks a STEP face inside
+    # the center_row_to_ray pick mode. The auto-chain into
+    # step_normal_axis_pick used to call `select_step_component` +
+    # `_set_step_highlight` which silently re-added the 6-handle
+    # ring around the body even before the snap committed.
+    def _center_chain_no_handles() -> dict[str, Any]:
+        # Start clean: clear any selection state from prior steps.
+        inspector.editor._selected_step_label = None
+        inspector._step_rotation_active_label = None
+        inspector._clear_selected_step_feature_state()
+        try:
+            inspector._remove_step_rotation_handle_actors()
+        except Exception:
+            pass
+        inspector.update_idletasks()
+        inspector.update()
+        # Re-seed the feature so the auto-chain can find a pickable
+        # STEP face, then simulate the center_row_to_ray transition
+        # that fires when the user clicks a STEP body in that mode.
+        face_id = seed.payload.get("face_id") or ""
+        centroid = np.asarray(seed.payload.get("centroid", (0.0, 0.0, 0.0)), dtype=float)
+        normal = np.asarray(seed.payload.get("normal", (0.0, 0.0, 1.0)), dtype=float)
+        inspector._remember_selected_step_feature(
+            "optical",
+            (centroid, None, normal),
+            surface_center_world=centroid,
+            face_id=face_id,
+        )
+        # Arm center_row_to_ray, then drive the chain hand the way
+        # services/open3d_interaction.py does on a STEP-face click.
+        inspector._center_row_to_ray_mode = True
+        inspector._center_row_to_ray_index = None
+        # This is what the interaction.py path now does WITHOUT
+        # `select_step_component` / `_set_step_highlight`. The
+        # regression check is that after this transition,
+        # editor._selected_step_label stays None AND the rotation
+        # handle map remains empty.
+        inspector._center_row_to_ray_mode = False
+        inspector.start_step_normal_axis_pick("optical")
+        inspector.update_idletasks()
+        inspector.update()
+        return {
+            "rotation_handle_count": len(getattr(inspector, "_actor_step_rotate_map", {}) or {}),
+            "selected_step_label": inspector.editor._selected_step_label,
+            "step_normal_axis_pick_mode": bool(inspector._step_normal_axis_pick_mode),
+        }
+
+    center_chain = _timed("center_chain_no_handles", report, "click_pick", _center_chain_no_handles)
+    if center_chain.ok and center_chain.payload.get("rotation_handle_count", 0) > 0:
+        center_chain.ok = False
+        center_chain.note = (
+            f"Place->Center->Optical Axis auto-chain re-armed rotation handles: "
+            f"count={center_chain.payload.get('rotation_handle_count')}, "
+            f"selected_step_label={center_chain.payload.get('selected_step_label')!r}"
+        )
+        report.failures.append(center_chain.note)
+    if center_chain.ok and not center_chain.payload.get("step_normal_axis_pick_mode"):
+        center_chain.ok = False
+        center_chain.note = (
+            "Place->Center->Optical Axis chain did NOT arm step_normal_axis_pick mode; "
+            "removed too much in the handle-suppression fix"
+        )
+        report.failures.append(center_chain.note)
+    # Cleanup: cancel the snap mode left over from the regression
+    # check so downstream workflows (drag-axis-slide, cascade) start
+    # with the inspector in idle.
+    try:
+        inspector.cancel_active_3d_operation()
+    except Exception:
+        pass
+    inspector._step_normal_axis_pick_mode = False
+    inspector._step_surface_center_axis_pick_mode = False
+    inspector._step_normal_axis_anchor_mode = "body_center"
+    inspector._clear_selected_step_feature_state()
+    inspector.update_idletasks()
+    inspector.update()
     return report
 
 

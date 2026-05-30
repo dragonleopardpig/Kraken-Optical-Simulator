@@ -212,8 +212,19 @@ class Open3DInteractionService:
                 self._center_row_to_ray_index = None
                 self._center_row_to_ray_face_id = ""
                 self._set_row_highlight(None)
-                self.editor.select_step_component(step_label)
-                self._set_step_highlight(step_label)
+                # Don't call `select_step_component(label)` /
+                # `_set_step_highlight(label)` here. They flip
+                # `editor._selected_step_label` to the picked STEP,
+                # and the next scene refresh sees that and re-adds the
+                # rotation-handle ring around the body. The user
+                # reported "the rotation handles appeared after I
+                # clicked Place -> Center -> Optical Axis" for the
+                # second imported item -- this auto-chain is the
+                # source. `_remember_selected_step_feature` above is
+                # enough for the snap commit to find the right face,
+                # and `start_step_normal_axis_pick` takes the label
+                # explicitly so it doesn't need the editor-side
+                # selection bit set.
                 self._set_step_hover_outline(None, None)
                 self.start_step_normal_axis_pick(step_label)
                 self.render()
