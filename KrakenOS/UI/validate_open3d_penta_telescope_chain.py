@@ -55,17 +55,25 @@ ACHROMAT_STEP = PROJECT_ROOT / "attachment" / "Lens" / "Achromatic_Lenses" / "st
 CYL_STEP = PROJECT_ROOT / "attachment" / "Lens" / "cylinder_lens_rectangle" / "step_34754.step"
 
 # Optical specs harvested from the Zemax .zmx files alongside each STEP.
-BALL_LENS_EFL_MM = 3.09   # f = R / (2*(n-1)), R=4.7625, n_AL2O3≈1.77
+# Ball-lens EFL is the THICK-lens result f = R·n / (2·(n-1)),
+# not the thin-lens approximation R/(2·(n-1)). For R=4.7625 mm and
+# n_AL2O3≈1.77 the correct value is 5.48 mm, which Zemax confirms:
+# the file lists BFL=0.7186 mm after a 9.525 mm-thick ball, so the
+# focal point sits 9.525+0.7186 = 10.244 mm past the front surface =
+# 5.48 mm past the sphere centre.
+BALL_LENS_EFL_MM = 5.48
 BALL_LENS_RADIUS_MM = 4.7625
 DCV_EFL_MM = -50.4        # negative -- diverging
 ACHROMAT_EFL_MM = 50.0    # positive cemented doublet
 CYL_EFL_MM = 50.0         # toroidal plano-cylinder
 
-# Phase 1 layout: two ball lenses confocal would interpenetrate
-# (2f=6.2mm < D=9.525mm), so use a clear-aperture-safe spacing of
-# 30 mm between sphere centers. The trace is still a 1:1 image
-# relay -- just not a textbook confocal pair.
-BALL_LENS_GAP_MM = 30.0
+# Phase 1 layout: two ball lenses confocal. With f = 5.48 mm and
+# R = 4.7625 mm, the textbook confocal pair (separation = 2f =
+# 10.96 mm) leaves a healthy 1.44 mm air gap between the ball
+# surfaces, and the common focal point sits at the centre of that
+# gap. So Phase 1 IS the textbook 1:1 telescope, not an
+# "approximate relay" with arbitrary spacing.
+BALL_LENS_GAP_MM = 2.0 * BALL_LENS_EFL_MM    # = 10.96 mm
 PHASE1_CLEARANCE_FROM_PRISM_MM = 30.0
 
 # Phase 2 layout: DCV (f=-50) then Achromat (f=+50). For a Galilean
@@ -476,19 +484,49 @@ def phase1_ball_lens_telescope(app: KrakenLayoutEditor, inspector: Kraken3DInspe
         inspector.update()
         bundle = inspector._current_scene_bundle
         paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
-        # Ray endpoints AFTER ball lens telescope should sit past
-        # ball_2's Z position.
+        # Common focal plane of the confocal pair sits at the midpoint
+        # of the gap between ball 1 and ball 2 centres -- i.e. at
+        # (ball1_z + ball2_z) / 2 = ball1_z + f. Walk each ray
+        # polyline and find its crossing with that focal plane; in a
+        # 1:1 telescope rays from one collimated bundle should
+        # converge near (X=37.5, Y=0) at the gap centre, then
+        # diverge again and exit collimated past ball 2.
+        focal_plane_z = float(0.5 * (ball1_target[2] + ball2_target[2]))
+        focal_xs: list[float] = []
+        focal_ys: list[float] = []
         terminal_zs: list[float] = []
         for path in paths:
             pts = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
-            if pts.ndim == 2 and pts.shape[0] >= 1 and pts.shape[1] >= 3:
-                terminal_zs.append(float(pts[-1, 2]))
-        max_terminal_z = max(terminal_zs, default=0.0)
+            if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+                continue
+            terminal_zs.append(float(pts[-1, 2]))
+            for i in range(pts.shape[0] - 1):
+                z0 = float(pts[i, 2]); z1 = float(pts[i + 1, 2])
+                if z0 == z1 or (z0 - focal_plane_z) * (z1 - focal_plane_z) > 0:
+                    continue
+                t = (focal_plane_z - z0) / (z1 - z0)
+                if not (0.0 <= t <= 1.0):
+                    continue
+                focal_xs.append(float(pts[i, 0] + t * (pts[i + 1, 0] - pts[i, 0])))
+                focal_ys.append(float(pts[i, 1] + t * (pts[i + 1, 1] - pts[i, 1])))
+                break
+        focal_radius = 0.0
+        if focal_xs:
+            cx = float(np.median(focal_xs))
+            cy = float(np.median(focal_ys))
+            radii = [
+                float(np.hypot(fx - cx, fy - cy))
+                for fx, fy in zip(focal_xs, focal_ys)
+            ]
+            focal_radius = float(max(radii))
         return {
             "ray_path_count": len(paths),
             "ray_actor_count": len(inspector._actor_ray_map or {}),
-            "max_terminal_z": round(max_terminal_z, 2),
+            "max_terminal_z": round(max(terminal_zs, default=0.0), 2),
             "ball_2_z": float(ball2_target[2]),
+            "focal_plane_z": round(focal_plane_z, 3),
+            "rays_at_focal_plane": len(focal_xs),
+            "focal_spot_radius_mm": round(focal_radius, 3),
         }
 
     tr = _timed(report, "trace_after_balls", _trace_after_balls, budget_ms=20000.0)
@@ -503,6 +541,17 @@ def phase1_ball_lens_telescope(app: KrakenLayoutEditor, inspector: Kraken3DInspe
                 f"rays terminated before second ball lens: "
                 f"max_terminal_z={tr.payload.get('max_terminal_z')} < "
                 f"ball_2_z={tr.payload.get('ball_2_z')}"
+            )
+            report.failures.append(tr.note)
+        # Confocal pair check: at least one ray should cross the
+        # midpoint focal plane (rays might be cut by the world
+        # envelope mid-cascade, hence a low threshold).
+        elif tr.payload.get("rays_at_focal_plane", 0) == 0:
+            tr.ok = False
+            tr.note = (
+                f"no rays crossed the confocal-pair focal plane at "
+                f"Z={tr.payload.get('focal_plane_z')} "
+                f"(midpoint of gap between ball centres)"
             )
             report.failures.append(tr.note)
     return report
