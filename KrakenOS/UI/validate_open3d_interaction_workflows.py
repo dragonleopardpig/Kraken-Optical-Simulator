@@ -435,6 +435,34 @@ def workflow_snap_to_axis(inspector: Kraken3DInspector) -> WorkflowReport:
         snap_step.note = f"snap status did not confirm success: {status!r}"
         report.failures.append(snap_step.note)
 
+    # Regression: rotation handles must NOT auto-appear after a snap.
+    # The user reported "rotation handles pop up after previous action";
+    # the snap result should leave the scene clean for the next gesture.
+    def _no_auto_handles() -> dict[str, Any]:
+        # Capture state immediately. If something is scheduled to add
+        # handles via after_idle / after, it might already have fired
+        # during the previous update(); read once and report.
+        live_pending = bool(
+            getattr(inspector, "_open3d_live_refresh_service_instance", None)
+            and getattr(inspector._open3d_live_refresh_service_instance, "after_id", None) is not None
+        )
+        return {
+            "rotation_handle_count": len(getattr(inspector, "_actor_step_rotate_map", {}) or {}),
+            "step_rotation_active_label": inspector._step_rotation_active_label,
+            "editor_selected_step_label": inspector.editor._selected_step_label,
+            "step_actor_count": sum(len(v or []) for v in (inspector._step_actor_map or {}).values()),
+            "live_refresh_pending": live_pending,
+        }
+
+    no_handles = _timed("no_handles_after_snap", report, "click_pick", _no_auto_handles)
+    if no_handles.ok and no_handles.payload.get("rotation_handle_count", 0) > 0:
+        no_handles.ok = False
+        no_handles.note = (
+            f"rotation handles popped up after the snap completed: "
+            f"count={no_handles.payload.get('rotation_handle_count')}"
+        )
+        report.failures.append(no_handles.note)
+
     # Now drive the *picker* path the user actually hits: re-arm normal-axis
     # snap mode, project the axis midpoint to a display pixel, and invoke
     # _on_left_button_press through SetEventInformationFlipY -> _picker.Pick.

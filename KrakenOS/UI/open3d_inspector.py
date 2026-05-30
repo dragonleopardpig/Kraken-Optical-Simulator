@@ -4207,6 +4207,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._selected_step_feature_normal_world = None
 
     def snap_selected_step_normal_to_optical_axis(self) -> None:
+        """Snap-by-clicked-point variant: face goes where the user clicked.
+
+        Previously this entry used anchor_mode="surface_center", which
+        moves the face centroid to the axis click target rather than
+        the user's pick point on the face. The user reported that "the
+        snapping location is not the mouse pointer clicking location";
+        defaulting to the pick-point anchor matches the intuition that
+        wherever you clicked on the face is where the face ends up on
+        the axis. The dedicated Surface-Center entry below still drives
+        the centroid-anchored variant.
+        """
         service = self.editor._open3d_step_state_service()
         label = service.selected_import_label(
             (
@@ -4219,10 +4230,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if not label:
             self.status_var.set("Snap STEP Normal->Optical Axis: select or import a STEP component first.")
             return
-        if self._step_feature_action_selection(label=label, require_surface_center=True, require_normal=True) is None:
+        if self._step_feature_action_selection(label=label, require_pick_point=True, require_normal=True) is None:
             self.status_var.set("Snap STEP Normal->Optical Axis: click a planar STEP face first.")
             return
-        self.start_step_normal_axis_pick(label, anchor_mode="surface_center")
+        self.start_step_normal_axis_pick(label, anchor_mode="pick_point")
 
     def snap_selected_step_pick_point_normal_to_optical_axis(self) -> None:
         service = self.editor._open3d_step_state_service()
@@ -4435,23 +4446,49 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
         self._clear_selected_step_feature_state()
+        # Clear the editor-side STEP selection so the post-snap refresh
+        # doesn't re-add the rotation handles the user just escaped from.
+        # The Open 3D scene refresh auto-pops rotation handles whenever a
+        # STEP overlay is "selected"; without clearing this, the handles
+        # silently reappear after every snap success ("rotation handles
+        # pop up after previous action").
+        try:
+            self.editor._selected_step_label = None
+        except Exception:
+            pass
+        self._step_rotation_active_label = None
         self._set_axis_pick_cursor(False)
         self._set_optical_axis_highlight(None)
         try:
             restore_rays = self._restore_rays_after_step_axis_pick(label)
             self.refresh_from_editor(force_retrace=restore_rays)
-            self.show_step_rotation_handler(label)
             axis_id = str(axis_info.get("axis_id", "") or "").strip()
             if axis_id:
                 self._set_optical_axis_highlight(axis_id)
         except Exception as exc:
             self.editor.append_debug(f"3D STEP normal-axis snap refresh failed: {exc}")
+        # Defensive sweep: a Tk event handler or live-refresh callback can
+        # fire during the next update_idletasks pump and re-select the
+        # snapped STEP, which silently re-adds the rotation handles we
+        # just cleared. Clear again at the end so the inspector's
+        # post-snap state is stable, including actively removing any
+        # rotation-handle actors that survived the refresh.
+        try:
+            self.editor._selected_step_label = None
+        except Exception:
+            pass
+        self._step_rotation_active_label = None
+        try:
+            if self._remove_step_rotation_handle_actors():
+                self.render()
+        except Exception:
+            pass
         axis_label = str(result.get("axis_label", "optical axis"))
         angle_error = float(result.get("angle_error_deg", float("nan")))
         anchor_text = "picked point" if anchor_mode == "pick_point" else "surface center"
         self.status_var.set(
             f"{label.upper()} STEP face normal snapped to {axis_label} using {anchor_text} "
-            f"(error {angle_error:.6g} deg). Use rotation handles to flip if needed."
+            f"(error {angle_error:.6g} deg). Use 'Step rotation handles' in the toolbar if you need to flip."
         )
 
     def _apply_step_surface_center_axis_pick(self, axis_info: dict[str, object]) -> None:
@@ -4496,21 +4533,41 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
         self._clear_selected_step_feature_state()
+        # See _apply_step_normal_axis_pick: clear the editor-side
+        # selection so the post-snap refresh stops re-adding rotation
+        # handles around the just-snapped STEP overlay.
+        try:
+            self.editor._selected_step_label = None
+        except Exception:
+            pass
+        self._step_rotation_active_label = None
         self._set_axis_pick_cursor(False)
         self._set_optical_axis_highlight(None)
         try:
             restore_rays = self._restore_rays_after_step_axis_pick(label)
             self.refresh_from_editor(force_retrace=restore_rays)
-            self.show_step_rotation_handler(label)
             axis_id = str(axis_info.get("axis_id", "") or "").strip()
             if axis_id:
                 self._set_optical_axis_highlight(axis_id)
         except Exception as exc:
             self.editor.append_debug(f"3D STEP surface-center axis snap refresh failed: {exc}")
+        # See _apply_step_normal_axis_pick: defensive sweep so refresh
+        # callbacks can't re-add rotation handles after the snap.
+        try:
+            self.editor._selected_step_label = None
+        except Exception:
+            pass
+        self._step_rotation_active_label = None
+        try:
+            if self._remove_step_rotation_handle_actors():
+                self.render()
+        except Exception:
+            pass
         axis_label = str(axis_frame.get("axis_label", axis_info.get("axis_label", "Optical Axis")) or "Optical Axis")
         self.status_var.set(
             f"{label.upper()} STEP surface center moved to {axis_label}: "
-            f"center {self._world_xyz_text(center)} -> target {self._world_xyz_text(target)}."
+            f"center {self._world_xyz_text(center)} -> target {self._world_xyz_text(target)}. "
+            "Use 'Step rotation handles' in the toolbar if you need to flip."
         )
 
     def _center_row_axis_pick_message(self) -> str:
