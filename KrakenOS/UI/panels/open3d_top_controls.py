@@ -101,6 +101,14 @@ class Open3DTopControlsPanel:
         )
         pack_command_button(view_toolbar, "Done 2D", command=self.inspector.finish_stl_placement, side="right", padx=(8, 0))
         pack_command_button(view_toolbar, "Close", command=self.inspector._on_close, side="right", padx=(8, 0))
+        # Bug recorder: start/stop button next to Close so it's always visible.
+        recorder_button = ttk.Button(
+            view_toolbar,
+            textvariable=self.inspector.recorder_button_var,
+            command=self.inspector.toggle_bug_recording,
+        )
+        recorder_button.pack(side="right", padx=(8, 0))
+        self.inspector._recorder_button = recorder_button
         return view_toolbar
 
     def build_scene_toolbar(self, parent: tk.Widget) -> ttk.Frame:

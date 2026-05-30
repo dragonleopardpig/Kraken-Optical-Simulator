@@ -43,6 +43,7 @@ from KrakenOS.UI.services.open3d_round_lens_pick import step_feature_pick_for_di
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_abstract_widget import WidgetRegistry
 from KrakenOS.UI.services.open3d_application_logic import Open3DApplicationLogic
+from KrakenOS.UI.services.open3d_event_recorder import Open3DEventRecorder
 from KrakenOS.UI.services.open3d_placement_widget import (
     PlacementRotateWidget,
     PlacementTranslateWidget,
@@ -365,6 +366,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._widget_registry.add(PlacementTranslateWidget(self))
         self._widget_registry.add(ThicknessDimensionWidget(self))
         self._application_logic = Open3DApplicationLogic(self)
+        self._event_recorder = Open3DEventRecorder(self)
+        self.recorder_button_var = tk.StringVar(value="● Record bug")
         self._actor_row_map: dict[str, int] = {}
         self._row_actor_map: dict[int, list[str]] = {}
         self._actor_ray_map: dict[str, int] = {}
@@ -4916,6 +4919,44 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._interaction_mode_state.set_mode(mode)
         return mode
 
+    def toggle_bug_recording(self) -> None:
+        """Start or stop the interaction recorder used to reproduce bugs.
+
+        First click captures a prelude snapshot (camera, picks, rows,
+        STEP paths) and begins logging mouse / key / command events.
+        Second click stops the recorder and saves the log to
+        ``attachment/recorded_bug_repros/recording_*.json``. The
+        button label flips between Record / Stop so the user sees
+        whether a capture is in progress.
+        """
+        recorder = getattr(self, "_event_recorder", None)
+        if recorder is None:
+            return
+        try:
+            if recorder.is_recording():
+                path = recorder.stop()
+                self.recorder_button_var.set("● Record bug")
+                if path is not None:
+                    self.status_var.set(f"Saved bug recording: {path}")
+                    try:
+                        self.editor.append_debug(f"Open 3D bug recording saved: {path}")
+                    except Exception:
+                        pass
+                else:
+                    self.status_var.set("Bug recording stopped (save failed; see debug log).")
+                return
+            recorder.start()
+            self.recorder_button_var.set("■ Stop recording")
+            self.status_var.set(
+                "Recording bug repro: every mouse press/move/release and key now logged. "
+                "Click 'Stop recording' when done."
+            )
+        except Exception as exc:
+            try:
+                self.editor.append_debug(f"Open 3D recorder toggle failed: {exc}")
+            except Exception:
+                pass
+
     def cancel_active_3d_operation(self) -> bool:
         active_labels = self._active_3d_operation_labels()
         if not active_labels:
@@ -5026,6 +5067,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             key = str(self._vtk_interactor.GetKeySym() or "")
         except Exception:
             key = ""
+        recorder = getattr(self, "_event_recorder", None)
+        if recorder is not None and key:
+            try:
+                recorder.record_key("key_press", keysym=key, state=0)
+            except Exception:
+                pass
         if key in {"Escape", "Esc"}:
             self.cancel_active_3d_operation()
         elif key in {"Delete", "BackSpace", "Backspace", "KP_Delete"}:

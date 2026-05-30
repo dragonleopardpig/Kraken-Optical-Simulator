@@ -38,7 +38,30 @@ class Open3DMouseBindingsService:
                 except Exception:
                     pass
 
+        def record_mouse(kind: str, event, button: int) -> None:
+            recorder = getattr(self._inspector, "_event_recorder", None)
+            if recorder is None:
+                return
+            try:
+                recorder.record_mouse(kind, event=event, button=button)
+            except Exception:
+                pass
+
+        def record_key(kind: str, event) -> None:
+            recorder = getattr(self._inspector, "_event_recorder", None)
+            if recorder is None:
+                return
+            try:
+                recorder.record_key(
+                    kind,
+                    keysym=str(getattr(event, "keysym", "") or ""),
+                    state=int(getattr(event, "state", 0) or 0),
+                )
+            except Exception:
+                pass
+
         def left_press(event):
+            record_mouse("mouse_press", event, 1)
             set_event_info(event)
             self._cancel_step_carry_hold_timer()
             ctrl_pressed = control_pressed(event)
@@ -80,6 +103,7 @@ class Open3DMouseBindingsService:
             return "break"
 
         def left_motion(event):
+            record_mouse("mouse_move", event, 1)
             set_event_info(event)
             if not self._left_drag_active:
                 return "break"
@@ -150,6 +174,7 @@ class Open3DMouseBindingsService:
             return "break"
 
         def left_release(event):
+            record_mouse("mouse_release", event, 1)
             set_event_info(event)
             should_pick = self._left_drag_active and not self._left_drag_moved
             ctrl_active = self._ctrl_left_camera_active or control_pressed(event)
@@ -194,6 +219,7 @@ class Open3DMouseBindingsService:
             return "break"
 
         def middle_press(event):
+            record_mouse("mouse_press", event, 2)
             set_event_info(event)
             self._cancel_step_carry_hold_timer()
             self._cancel_row_carry_hold_timer()
@@ -202,6 +228,7 @@ class Open3DMouseBindingsService:
             return "break"
 
         def middle_motion(event):
+            record_mouse("mouse_move", event, 2)
             set_event_info(event)
             if not self._middle_drag_active:
                 return "break"
@@ -215,6 +242,7 @@ class Open3DMouseBindingsService:
             return "break"
 
         def middle_release(event):
+            record_mouse("mouse_release", event, 2)
             set_event_info(event)
             self._middle_drag_active = False
             self._middle_drag_last_xy = None
