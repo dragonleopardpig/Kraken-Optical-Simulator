@@ -27,9 +27,13 @@ from typing import Any, Callable, Sequence
 import numpy as np
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
+from KrakenOS.UI.analyze_open3d_recording import analyze_recording, format_report
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SYNTHETIC_RECORDING_DIR = (
+    PROJECT_ROOT / "attachment" / "recorded_bug_repros" / "synthetic"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +246,27 @@ class MouseSimulator:
 # Helpers
 
 
+_ACTIVE_RECORDER: Any = None
+
+
+def _set_active_recorder(recorder: Any) -> None:
+    """Tell ``_timed`` which Open3DEventRecorder to bookend each step into."""
+    global _ACTIVE_RECORDER
+    _ACTIVE_RECORDER = recorder
+
+
+def _record_step(label: str, payload: dict[str, Any] | None = None) -> None:
+    rec = _ACTIVE_RECORDER
+    if rec is None:
+        return
+    try:
+        rec.record_command(label, payload=payload)
+    except Exception:
+        pass
+
+
 def _timed(name: str, report: WorkflowReport, budget_key: str, fn: Callable[[], dict[str, Any] | None]) -> Step:
+    _record_step(f"step_start:{name}")
     started = time.perf_counter()
     payload: dict[str, Any] = {}
     note = ""
@@ -263,9 +287,108 @@ def _timed(name: str, report: WorkflowReport, budget_key: str, fn: Callable[[], 
     if ok and budget is not None and duration_ms > budget:
         ok = False
         note = f"exceeded budget: {duration_ms:.1f} ms > {budget:.1f} ms"
+    _record_step(
+        f"step_end:{name}",
+        payload={
+            "duration_ms": float(duration_ms),
+            "ok": bool(ok),
+            "note": note,
+        },
+    )
     return report.add(
         Step(name=name, duration_ms=duration_ms, ok=ok, note=note, payload=payload),
     )
+
+
+class _WorkflowRecording:
+    """Scoped wrapper that drives the same Open3DEventRecorder the user does.
+
+    Starts a recording when the workflow begins, dumps the JSON when it
+    finishes, then runs ``analyze_recording`` on the dump and folds any
+    error-severity findings back into the workflow report. Two payoffs:
+
+    1. The synthetic harness leaves the same artifact a user-supplied
+       bug repro does, so a failing workflow can be replayed and
+       inspected with the same analyzer.
+    2. The analyzer's regression checks (axis truncation, post-snap
+       handles, view-up drift, actor disappearance) run automatically
+       on every harness pass without each workflow needing to spell
+       them out.
+    """
+
+    def __init__(
+        self,
+        inspector: Kraken3DInspector,
+        slug: str,
+        out_dir: Path,
+    ) -> None:
+        self.inspector = inspector
+        self.slug = slug
+        self.out_dir = out_dir
+        self.recorder = getattr(inspector, "_event_recorder", None)
+        self.path: Path | None = None
+        self.analysis: Any = None
+
+    def __enter__(self) -> "_WorkflowRecording":
+        if self.recorder is not None:
+            try:
+                self.recorder.start(note=f"workflow:{self.slug}")
+            except Exception:
+                pass
+            _set_active_recorder(self.recorder)
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if self.recorder is None:
+            return
+        _set_active_recorder(None)
+        try:
+            written = self.recorder.stop()
+        except Exception:
+            written = None
+        if written is None:
+            return
+        try:
+            self.out_dir.mkdir(parents=True, exist_ok=True)
+            dest = self.out_dir / f"{self.slug}_{written.name}"
+            written.rename(dest)
+            self.path = dest
+        except Exception:
+            self.path = written
+        try:
+            self.analysis = analyze_recording(self.path)
+        except Exception:
+            self.analysis = None
+
+    def fold_into(self, report: WorkflowReport) -> None:
+        """Promote analyzer error-findings into workflow failures."""
+        if self.analysis is None or not getattr(self.analysis, "findings", None):
+            return
+        for finding in self.analysis.findings:
+            if finding.severity != "error":
+                continue
+            note = (
+                f"recorder analyzer flagged {finding.code} at ev#{finding.event_index} "
+                f"(t={finding.timestamp_ms:.0f}ms): {finding.message}"
+            )
+            report.steps.append(
+                Step(
+                    name=f"analyzer:{finding.code}",
+                    duration_ms=0.0,
+                    ok=False,
+                    note=note,
+                    payload=dict(finding.detail),
+                )
+            )
+            report.failures.append(note)
+
+
+def _record_workflow(
+    inspector: Kraken3DInspector,
+    slug: str,
+    out_dir: Path,
+) -> _WorkflowRecording:
+    return _WorkflowRecording(inspector, slug, out_dir)
 
 
 def _open_inspector(app: KrakenLayoutEditor) -> Kraken3DInspector:
@@ -512,7 +635,10 @@ def workflow_snap_to_axis(inspector: Kraken3DInspector) -> WorkflowReport:
         result["snap_mode_after"] = bool(inspector._step_normal_axis_pick_mode)
         return result
 
-    pclick = _timed("snap_via_picker_click", report, "click_pick", _picker_click_axis)
+    # `snap_to_axis` budget: the picker click triggers a full
+    # `_apply_step_normal_axis_pick` which refreshes the scene and may
+    # force-retrace -- same cost envelope as the direct snap above.
+    pclick = _timed("snap_via_picker_click", report, "snap_to_axis", _picker_click_axis)
     if pclick.ok and pclick.payload.get("snap_mode_after"):
         pclick.ok = False
         pclick.note = (
@@ -526,6 +652,18 @@ def workflow_snap_to_axis(inspector: Kraken3DInspector) -> WorkflowReport:
 
 def workflow_click_handles(inspector: Kraken3DInspector) -> WorkflowReport:
     report = WorkflowReport(name="5. Click step-rotation / placement handles")
+    # Workflow 4 intentionally leaves the scene with no rotation handles (the
+    # "rotation handles pop up after previous action" regression check). Re-arm
+    # the STEP selection so this workflow can exercise the rotation-handle
+    # click path on real handles.
+    if inspector.editor._step_path_for_label("optical") is not None:
+        inspector.editor.select_step_component("optical")
+        try:
+            inspector.show_step_rotation_handler("optical")
+        except Exception:
+            pass
+        inspector.update_idletasks()
+        inspector.update()
     rotate_map = dict(getattr(inspector, "_actor_step_rotate_map", {}) or {})
 
     def _rotation_click() -> dict[str, Any]:
@@ -1007,6 +1145,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, help="Optional JSON report path.")
     parser.add_argument("--step-path", type=Path, help="Override the STEP fixture.")
+    parser.add_argument(
+        "--recordings-dir",
+        type=Path,
+        default=SYNTHETIC_RECORDING_DIR,
+        help="Where the per-workflow Open3DEventRecorder JSON dumps land.",
+    )
+    parser.add_argument(
+        "--no-record",
+        action="store_true",
+        help="Disable the per-workflow recorder/analyzer wrapping.",
+    )
     args = parser.parse_args()
 
     step_path = args.step_path or _select_step_fixture()
@@ -1014,6 +1163,17 @@ def main() -> int:
         raise SystemExit(f"STEP fixture not found: {step_path}")
 
     reports: list[WorkflowReport] = []
+    recordings: list[_WorkflowRecording] = []
+
+    def _wrap(slug: str, fn: Callable[[], WorkflowReport]) -> WorkflowReport:
+        """Run a workflow with the recorder armed, then fold analyzer findings in."""
+        if args.no_record:
+            return fn()
+        with _record_workflow(inspector, slug, args.recordings_dir) as rec:
+            result = fn()
+        rec.fold_into(result)
+        recordings.append(rec)
+        return result
 
     app = KrakenLayoutEditor(headless=True)
     try:
@@ -1033,14 +1193,19 @@ def main() -> int:
         inspector = app._three_d_inspector
         assert inspector is not None
 
-        reports.append(workflow_import_step(app, inspector, step_path))
+        reports.append(_wrap("02_import_step",
+                             lambda: workflow_import_step(app, inspector, step_path)))
         if not reports[-1].ok:
             return _print_report(reports)
 
-        reports.append(workflow_click_select_unselect(inspector))
-        reports.append(workflow_snap_to_axis(inspector))
-        reports.append(workflow_click_handles(inspector))
-        reports.append(workflow_drag_axis_slide(app, inspector))
+        reports.append(_wrap("03_click_select_unselect",
+                             lambda: workflow_click_select_unselect(inspector)))
+        reports.append(_wrap("04_snap_to_axis",
+                             lambda: workflow_snap_to_axis(inspector)))
+        reports.append(_wrap("05_click_handles",
+                             lambda: workflow_click_handles(inspector)))
+        reports.append(_wrap("06_drag_axis_slide",
+                             lambda: workflow_drag_axis_slide(app, inspector)))
         # Workflow 7 (promote / assign / flip) is exercised indirectly inside
         # workflow_drag_axis_slide (which promotes the imported STEP). Tag a
         # placeholder report so output stays aligned with the user's list.
@@ -1054,8 +1219,10 @@ def main() -> int:
             )
         )
         reports.append(promote_report)
-        reports.append(workflow_ray_on_and_trace(app, inspector))
-        reports.append(workflow_cascade_elements(app, inspector))
+        reports.append(_wrap("08_ray_on_trace",
+                             lambda: workflow_ray_on_and_trace(app, inspector)))
+        reports.append(_wrap("09_cascade_elements",
+                             lambda: workflow_cascade_elements(app, inspector)))
     finally:
         try:
             inspector_local = getattr(app, "_three_d_inspector", None)
@@ -1066,6 +1233,27 @@ def main() -> int:
         app.destroy()
 
     rc = _print_report(reports)
+    if recordings:
+        print()
+        print("Recorded workflow JSONs (replayable + analyzable):")
+        for rec in recordings:
+            if rec.path is None:
+                continue
+            findings = list(getattr(rec.analysis, "findings", []) or [])
+            errors = sum(1 for f in findings if f.severity == "error")
+            warns = sum(1 for f in findings if f.severity == "warning")
+            tag = "OK"
+            if errors:
+                tag = f"{errors}E"
+            elif warns:
+                tag = f"{warns}W"
+            print(f"  [{tag:>3}] {rec.slug}  ->  {rec.path}")
+            for f in findings:
+                if f.severity in ("error", "warning"):
+                    print(
+                        f"        {f.severity:7s} {f.code:35s} ev#{f.event_index:3d} "
+                        f"{f.message}"
+                    )
     if args.report is not None:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         with open(args.report, "w", encoding="utf-8") as handle:

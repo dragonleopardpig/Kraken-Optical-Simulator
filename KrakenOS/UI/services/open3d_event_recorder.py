@@ -50,6 +50,8 @@ class SceneSnapshot:
     optical_axis_records: list[dict[str, Any]] = field(default_factory=list)
     row_actor_bounds: dict[int, list[float]] = field(default_factory=dict)
     step_actor_counts: dict[str, int] = field(default_factory=dict)
+    step_actor_bounds: dict[str, list[float]] = field(default_factory=dict)
+    scene_visible_bounds: list[float] = field(default_factory=list)
     rotation_handle_count: int = 0
     placement_translate_handle_count: int = 0
     placement_rotate_handle_count: int = 0
@@ -327,6 +329,66 @@ class Open3DEventRecorder:
         try:
             for label, keys in (inspector._step_actor_map or {}).items():
                 snapshot.step_actor_counts[str(label)] = len(list(keys or []))
+        except Exception:
+            pass
+
+        # Per-STEP-overlay actor bounds: lets the analyzer compare the
+        # optical-axis Z span against the union of every body in the
+        # scene, catching "axis suddenly shortened" the moment a STEP
+        # body sits outside the axis envelope.
+        try:
+            actor_by_key = inspector._actor_by_key or {}
+            for label, actor_keys in (inspector._step_actor_map or {}).items():
+                if not actor_keys:
+                    continue
+                bmin = [float("inf")] * 3
+                bmax = [float("-inf")] * 3
+                found = False
+                for actor_key in actor_keys:
+                    actor = actor_by_key.get(actor_key)
+                    if actor is None:
+                        continue
+                    try:
+                        ab = actor.GetBounds()
+                    except Exception:
+                        continue
+                    if ab is None or len(ab) < 6:
+                        continue
+                    try:
+                        ab = [float(v) for v in ab]
+                    except Exception:
+                        continue
+                    if any(ab[i] > ab[i + 1] for i in (0, 2, 4)):
+                        continue
+                    bmin[0] = min(bmin[0], ab[0])
+                    bmax[0] = max(bmax[0], ab[1])
+                    bmin[1] = min(bmin[1], ab[2])
+                    bmax[1] = max(bmax[1], ab[3])
+                    bmin[2] = min(bmin[2], ab[4])
+                    bmax[2] = max(bmax[2], ab[5])
+                    found = True
+                if found:
+                    snapshot.step_actor_bounds[str(label)] = [
+                        bmin[0],
+                        bmax[0],
+                        bmin[1],
+                        bmax[1],
+                        bmin[2],
+                        bmax[2],
+                    ]
+        except Exception:
+            pass
+
+        # The renderer's ComputeVisiblePropBounds is the ground truth for
+        # what the optical-axis builder was looking at; capture it so the
+        # analyzer can detect order-of-operations bugs (e.g. the axis was
+        # built before STEP overlays were appended).
+        try:
+            renderer = inspector._renderer
+            if renderer is not None:
+                bounds = renderer.ComputeVisiblePropBounds()
+                if bounds is not None and len(bounds) >= 6:
+                    snapshot.scene_visible_bounds = [float(v) for v in bounds[:6]]
         except Exception:
             pass
 

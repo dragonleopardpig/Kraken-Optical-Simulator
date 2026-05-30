@@ -4506,6 +4506,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self.render()
         except Exception:
             pass
+        # Drop the admin panel's remembered overlay row so the next
+        # `refresh_step_admin_panel` can't restore an `overlay:<label>`
+        # selection that re-fires <<TreeviewSelect>> and re-adds rotation
+        # handles. The admin refresh also guards on
+        # `editor._selected_step_label`, but clearing here keeps the
+        # snap-side state explicit.
+        try:
+            admin = getattr(self, "_open3d_step_admin_panel_instance", None)
+            if admin is not None:
+                admin.clear_selection(update_properties=False)
+        except Exception:
+            pass
         axis_label = str(result.get("axis_label", "optical axis"))
         angle_error = float(result.get("angle_error_deg", float("nan")))
         anchor_text = "picked point" if anchor_mode == "pick_point" else "surface center"
@@ -4584,6 +4596,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         try:
             if self._remove_step_rotation_handle_actors():
                 self.render()
+        except Exception:
+            pass
+        # See `_apply_step_normal_axis_pick`: the admin tree's remembered
+        # overlay row would otherwise re-fire <<TreeviewSelect>> on the
+        # next refresh and silently re-add the rotation handles.
+        try:
+            admin = getattr(self, "_open3d_step_admin_panel_instance", None)
+            if admin is not None:
+                admin.clear_selection(update_properties=False)
         except Exception:
             pass
         axis_label = str(axis_frame.get("axis_label", axis_info.get("axis_label", "Optical Axis")) or "Optical Axis")
@@ -5518,6 +5539,96 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
 
+    def _augment_bounds_with_scene_overlays(
+        self,
+        bounds,
+        scene_bundle: SceneBundle | None,
+    ) -> np.ndarray:
+        """Return bounds widened to enclose pending STEP overlays and ray paths.
+
+        The optical-axis Z span must reflect every body that will be on
+        screen, not just what is in the renderer at the moment this is
+        called. STEP overlay bodies are added to the renderer *after*
+        the axis is built; ray endpoints can also sit outside the row
+        envelope. Pull both sources from the editor and the scene
+        bundle and union them with whatever ComputeVisiblePropBounds
+        produced.
+        """
+        try:
+            extent = np.asarray(bounds, dtype=float).reshape(-1)
+        except Exception:
+            return np.asarray([-10.0, 10.0, -10.0, 10.0, 0.0, 100.0], dtype=float)
+        if extent.size != 6 or not np.all(np.isfinite(extent)):
+            extent = np.asarray([-10.0, 10.0, -10.0, 10.0, 0.0, 100.0], dtype=float)
+
+        def _union(mesh) -> None:
+            nonlocal extent
+            if mesh is None or int(getattr(mesh, "n_points", 0) or 0) <= 0:
+                return
+            try:
+                mb = np.asarray(getattr(mesh, "bounds", None), dtype=float).reshape(-1)
+            except Exception:
+                return
+            if mb.size != 6 or not np.all(np.isfinite(mb)):
+                return
+            extent = np.asarray(
+                [
+                    min(extent[0], mb[0]),
+                    max(extent[1], mb[1]),
+                    min(extent[2], mb[2]),
+                    max(extent[3], mb[3]),
+                    min(extent[4], mb[4]),
+                    max(extent[5], mb[5]),
+                ],
+                dtype=float,
+            )
+
+        try:
+            promoted = self.editor._promoted_step_source_keys_for_rows(self.editor.rows)
+        except Exception:
+            promoted = {}
+        for label in ("optical", "lens", "camera", "led"):
+            try:
+                if self.editor._step_path_for_label(label) is None:
+                    continue
+                if self.editor._step_overlay_matches_promoted_row(label, promoted):
+                    # Refresh skips promoted overlays, so don't extend axis
+                    # past a body that won't actually be drawn.
+                    continue
+                _union(self.editor._transformed_imported_step_mesh_for_label(label))
+            except Exception:
+                continue
+
+        try:
+            paths = list(getattr(scene_bundle, "ray_paths", []) or [])
+        except Exception:
+            paths = []
+        for path in paths:
+            try:
+                pts = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
+            except Exception:
+                continue
+            if pts.ndim != 2 or pts.shape[0] < 1 or pts.shape[1] < 3:
+                continue
+            finite = pts[np.all(np.isfinite(pts[:, :3]), axis=1)]
+            if finite.size == 0:
+                continue
+            mn = finite[:, :3].min(axis=0)
+            mx = finite[:, :3].max(axis=0)
+            extent = np.asarray(
+                [
+                    min(extent[0], float(mn[0])),
+                    max(extent[1], float(mx[0])),
+                    min(extent[2], float(mn[1])),
+                    max(extent[3], float(mx[1])),
+                    min(extent[4], float(mn[2])),
+                    max(extent[5], float(mx[2])),
+                ],
+                dtype=float,
+            )
+
+        return extent
+
     def _optical_axis_records_for_3d(self, scene_bundle: SceneBundle | None) -> list[dict[str, object]]:
         try:
             bounds = np.asarray(self._renderer.ComputeVisiblePropBounds(), dtype=float).reshape(6)
@@ -5525,6 +5636,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 raise ValueError("invalid bounds")
         except Exception:
             bounds = np.asarray([-10.0, 10.0, -10.0, 10.0, 0.0, 100.0], dtype=float)
+        # ComputeVisiblePropBounds only sees actors already in the renderer.
+        # The scene-refresh call site invokes us BEFORE STEP overlay actors
+        # are added, so a STEP body placed off to the side of the rows
+        # leaves the dotted optical axis truncated to the row-only Z span.
+        # Predict STEP overlay bounds + sample ray-path bounds and union
+        # them in so the axis spans the full populated scene regardless of
+        # refresh order.
+        bounds = self._augment_bounds_with_scene_overlays(bounds, scene_bundle)
         z0, z1 = _optical_axis_z_span(bounds)
         records = [
             {

@@ -460,6 +460,19 @@ class Open3DStepAdminPanel:
             for key, parent_iid in category_iids.items():
                 if category_counts.get(key, 0) <= 0:
                     tree.insert(parent_iid, "end", iid=f"empty:{key}", text="(empty)")
+            # Don't restore an `overlay:<label>` selection that no longer
+            # matches the editor's `_selected_step_label`. Otherwise the
+            # tree's selection_set re-fires <<TreeviewSelect>> *after*
+            # _refreshing flips back to False, the callback runs
+            # `select_step_overlay_from_admin(label)`, and the rotation
+            # handles silently reappear after a snap that cleared the
+            # editor-side selection on purpose ("rotation handles pop
+            # up after previous action").
+            if previous and previous.startswith("overlay:"):
+                label = previous.split(":", 1)[1]
+                current = str(getattr(self.editor, "_selected_step_label", "") or "").strip().lower()
+                if current != label:
+                    previous = ""
             if previous and tree.exists(previous):
                 tree.selection_set(previous)
                 tree.focus(previous)
