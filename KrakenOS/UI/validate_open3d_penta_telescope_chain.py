@@ -93,14 +93,85 @@ PHASE3_GAP_FROM_ACHROMAT_MM = 100.0
 CYL_FOCAL_DISTANCE_MM = 50.0
 LINE_ASPECT_RATIO_MIN = 3.0  # Y_range / X_range must exceed this
 
-# Penta s5 exit beam waypoint + direction. Empirically the saved
-# cascade emerges at world (37.5, -y_input, 197.5) with the Y
-# component flipped relative to the entry side (the cascade folds
-# the path through five reflective faces). The beam continues from
-# (37.5, 0, 197.5) along the +Z direction roughly, so Phase 1-3
-# stack along world +Z from that waypoint.
+# Cascade exit beam waypoint + direction. Populated by Phase 0
+# from the actual last-segment of the central ray after the trace
+# completes. Default value is a placeholder -- the prism cascade
+# output actually emerges along world -X (not +Z as I'd initially
+# guessed); the runtime trace gives the truth.
 EXIT_POSITION = np.asarray([37.5, 0.0, 197.5], dtype=float)
-EXIT_DIRECTION = np.asarray([0.0, 0.0, 1.0], dtype=float)
+EXIT_DIRECTION = np.asarray([-1.0, 0.0, 0.0], dtype=float)
+
+
+def _set_exit_axis_from_trace(inspector: Kraken3DInspector) -> tuple[np.ndarray, np.ndarray] | None:
+    """Find the LAST optical axis segment of the central ray.
+
+    The user requested: "Find the last optical axis, and snap all
+    subsequent elements to it." Use the central (Y=0 at source)
+    ray's polyline, take the last segment as the exit axis (=
+    direction the beam travels after leaving the cascade). All
+    Phase 1-3 elements are then positioned along that axis with
+    the body centroid on it, and tilted so their local optical
+    axis aligns with EXIT_DIRECTION.
+    """
+    bundle = inspector._current_scene_bundle
+    paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
+    if not paths:
+        return None
+
+    def _start_radius(path) -> float:
+        pts = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 1 or pts.shape[1] < 3:
+            return float("inf")
+        return float(np.hypot(pts[0, 0], pts[0, 1]))
+
+    central = min(paths, key=_start_radius)
+    pts = np.asarray(getattr(central, "points_world", np.empty((0, 3))), dtype=float)
+    if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+        return None
+    # Last segment of the polyline IS the cascade output axis.
+    exit_pt = np.asarray(pts[-1, :3], dtype=float)
+    seg = pts[-1, :3] - pts[-2, :3]
+    norm = float(np.linalg.norm(seg))
+    if not np.isfinite(norm) or norm <= 1e-9:
+        return None
+    direction = np.asarray(seg / norm, dtype=float)
+    global EXIT_POSITION, EXIT_DIRECTION
+    EXIT_POSITION = exit_pt
+    EXIT_DIRECTION = direction
+    return exit_pt, direction
+
+
+def _tilts_to_align_local_axis_to_world(
+    local_axis: tuple[float, float, float],
+    world_axis: np.ndarray,
+) -> tuple[float, float, float]:
+    """Return (tilt_x, tilt_y, tilt_z) degrees mapping local_axis -> world_axis.
+
+    KrakenOS row tilts apply in X-then-Y-then-Z order. For the
+    common cases we need (align local +Z or local +Y to world -X)
+    a single-axis rotation suffices.
+    """
+    local = np.asarray(local_axis, dtype=float).reshape(3)
+    world = np.asarray(world_axis, dtype=float).reshape(3)
+    local /= max(float(np.linalg.norm(local)), 1e-12)
+    world /= max(float(np.linalg.norm(world)), 1e-12)
+    # Local +Z to world -X => rotate -90 around Y.
+    if np.allclose(local, [0.0, 0.0, 1.0]) and np.allclose(world, [-1.0, 0.0, 0.0]):
+        return (0.0, -90.0, 0.0)
+    # Local +Z to world +X => rotate +90 around Y.
+    if np.allclose(local, [0.0, 0.0, 1.0]) and np.allclose(world, [1.0, 0.0, 0.0]):
+        return (0.0, 90.0, 0.0)
+    # Local +Y to world -X => rotate +90 around Z.
+    if np.allclose(local, [0.0, 1.0, 0.0]) and np.allclose(world, [-1.0, 0.0, 0.0]):
+        return (0.0, 0.0, 90.0)
+    # Local +Y to world +X => rotate -90 around Z.
+    if np.allclose(local, [0.0, 1.0, 0.0]) and np.allclose(world, [1.0, 0.0, 0.0]):
+        return (0.0, 0.0, -90.0)
+    # Local +Z to world +Z => no rotation.
+    if np.allclose(local, [0.0, 0.0, 1.0]) and np.allclose(world, [0.0, 0.0, 1.0]):
+        return (0.0, 0.0, 0.0)
+    # Fallback: identity (caller should adapt).
+    return (0.0, 0.0, 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -163,13 +234,29 @@ def _timed(report: WorkflowReport, name: str, fn: Callable[[], dict[str, Any] | 
 
 
 def _load_penta_cascade(app: KrakenLayoutEditor) -> dict[str, Any]:
-    """Read the saved layout module and inject its rows into the editor."""
+    """Read the saved layout module and inject rows + SETTINGS into the editor.
+
+    Both pieces matter: the SURFACES describe the prism cascade
+    geometry, and the SETTINGS describe HOW to launch rays into it
+    (object_mode=Infinity, collimated disk source at world origin
+    going +Z with radius 4 mm). Without applying SETTINGS, the
+    editor falls back to defaults that re-position the source to
+    fit the FULL scene envelope -- which, once Phase 1 ball lenses
+    are appended past the cascade, sends rays straight from object
+    to the ball lenses, bypassing every prism (the user-reported
+    "rays just pierce through the upper Penta prism").
+    """
     module = _load_layout_module(PENTA_CASCADE_PATH)
     surfaces = list(getattr(module, "SURFACES", []) or [])
     if not surfaces:
         raise RuntimeError("five_penta_prism_cascade exposed no SURFACES")
     rows = _rows_from_layout_info({"surfaces": surfaces})
     app.rows = rows
+    settings = dict(getattr(module, "SETTINGS", {}) or {})
+    try:
+        app._apply_layout_settings(settings)
+    except Exception:
+        pass
     try:
         app._sync_table()
     except Exception:
@@ -177,6 +264,13 @@ def _load_penta_cascade(app: KrakenLayoutEditor) -> dict[str, Any]:
     return {
         "row_count": len(rows),
         "row_names": [getattr(r, "name", "") for r in rows],
+        "object_mode": settings.get("object_mode"),
+        "source_model": settings.get("source_model"),
+        "source_origin": (
+            settings.get("source_x"),
+            settings.get("source_y"),
+            settings.get("source_z"),
+        ),
     }
 
 
@@ -300,6 +394,20 @@ def phase0_base_trace(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> 
                 "ejected rays mid-fold"
             )
             report.failures.append(trace.note)
+
+    # Pin EXIT_POSITION + EXIT_DIRECTION to the central ray's last
+    # axis segment so Phase 1-3 optics align with the real beam.
+    def _pin_exit() -> dict[str, Any]:
+        result = _set_exit_axis_from_trace(inspector)
+        if result is None:
+            return {"__error__": "could not derive exit axis from trace"}
+        pos, direction = result
+        return {
+            "exit_position": [round(float(v), 3) for v in pos],
+            "exit_direction": [round(float(v), 6) for v in direction],
+        }
+
+    _timed(report, "pin_exit_axis", _pin_exit, budget_ms=1000.0)
     return report
 
 
@@ -314,35 +422,25 @@ def _import_position_promote(
     step_path: Path,
     target_world: np.ndarray,
     label_name: str,
-    pre_rotation: tuple[str, float] | None = None,
+    pre_rotations: Sequence[tuple[str, float]] = (),
 ) -> dict[str, Any]:
-    """Import an optical STEP, translate to target world XYZ, promote to a row.
+    """Import an optical STEP, rotate, translate to target, promote.
 
-    Uses the existing 'optical' slot for the import (the editor only
-    has one optical slot per import). The translate is computed
-    from the difference between the STEP's default centroid (which
-    is at world origin after import) and the requested target.
-
-    Optional ``pre_rotation`` of (axis, deg) is applied to the STEP
-    BEFORE the translate so the STEP's local optical axis aligns
-    with the beam direction. Used for the cylindrical lens whose
-    native orientation has the optical axis along local +Y.
+    ``pre_rotations`` is a sequence of (axis, deg) applied in order
+    so the STEP's local optical axis aligns with the beam direction
+    BEFORE the translate (the translate then uses the post-rotation
+    centroid, so the body lands at the requested world point).
     """
     app.imported_optical_step_path = step_path
     app.select_step_component("optical")
     inspector.refresh_from_editor()
     inspector.update_idletasks()
     inspector.update()
-    if pre_rotation is not None:
-        axis, deg = pre_rotation
+    for axis, deg in pre_rotations:
         try:
             app.rotate_step_axis("optical", str(axis), float(deg), refresh=False)
         except Exception:
             pass
-    # Default import lands the STEP at world(0,0,0). Compute the
-    # delta to move its centroid to `target_world` AFTER the
-    # optional rotation (so the post-rotation centroid lands at
-    # the requested target).
     try:
         mesh = app._transformed_imported_optical_step_mesh()
         if mesh is not None and int(getattr(mesh, "n_points", 0) or 0) > 0:
@@ -404,16 +502,61 @@ def _row_actor_zmin_zmax(inspector: Kraken3DInspector, row_index: int) -> tuple[
     return (zmin, zmax)
 
 
+def _row_actor_center_world(inspector: Kraken3DInspector, row_index: int) -> np.ndarray | None:
+    """Return the bounding-box centroid of row_index's body actors."""
+    actor_by_key = inspector._actor_by_key or {}
+    keys = list((inspector._row_actor_map or {}).get(row_index, []) or [])
+    if not keys:
+        return None
+    bmin = np.full(3, float("inf"))
+    bmax = np.full(3, float("-inf"))
+    for k in keys:
+        a = actor_by_key.get(k)
+        if a is None:
+            continue
+        try:
+            b = a.GetBounds()
+        except Exception:
+            continue
+        if b is None or len(b) < 6:
+            continue
+        bmin = np.minimum(bmin, np.asarray([b[0], b[2], b[4]], dtype=float))
+        bmax = np.maximum(bmax, np.asarray([b[1], b[3], b[5]], dtype=float))
+    if not np.all(np.isfinite(bmin)):
+        return None
+    return 0.5 * (bmin + bmax)
+
+
+def _axis_projection(point: np.ndarray) -> float:
+    """Signed distance from EXIT_POSITION along EXIT_DIRECTION."""
+    return float(np.dot(np.asarray(point, dtype=float).reshape(3) - EXIT_POSITION, EXIT_DIRECTION))
+
+
+def _perp_offset_from_axis(point: np.ndarray) -> float:
+    """Perpendicular distance from the axis line through EXIT_POSITION."""
+    rel = np.asarray(point, dtype=float).reshape(3) - EXIT_POSITION
+    along = float(np.dot(rel, EXIT_DIRECTION))
+    perp = rel - along * EXIT_DIRECTION
+    return float(np.linalg.norm(perp))
+
+
 # ---------------------------------------------------------------------------
 # Phase 1 workflow: add 2 ball lenses for 1:1 image relay
 
 
 def phase1_ball_lens_telescope(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> WorkflowReport:
-    """Add 2 ball lenses along world +Z from the cascade exit waypoint."""
+    """Add 2 ball lenses snapped onto the cascade's last optical axis."""
     report = WorkflowReport(name="Phase 1: ball-lens 1:1 telescope")
 
     ball1_target = EXIT_POSITION + EXIT_DIRECTION * PHASE1_CLEARANCE_FROM_PRISM_MM
     ball2_target = ball1_target + EXIT_DIRECTION * BALL_LENS_GAP_MM
+    # Ball lens is axially symmetric so orientation only matters
+    # for the optical axis direction. Align local +Z (lens optical
+    # axis after import) with EXIT_DIRECTION so light enters the
+    # front face head-on. For the penta cascade output (world -X),
+    # that's tilt_y = -90 deg.
+    tilts = _tilts_to_align_local_axis_to_world((0.0, 0.0, 1.0), EXIT_DIRECTION)
+    pre_rotations = tuple((axis, deg) for axis, deg in zip("xyz", tilts) if abs(deg) > 1e-9)
 
     def _import_ball_1() -> dict[str, Any]:
         return _import_position_promote(
@@ -422,6 +565,7 @@ def phase1_ball_lens_telescope(app: KrakenLayoutEditor, inspector: Kraken3DInspe
             step_path=BALL_LENS_STEP,
             target_world=ball1_target,
             label_name="ball_1",
+            pre_rotations=pre_rotations,
         )
 
     ball1_step = _timed(report, "import_ball_lens_1", _import_ball_1, budget_ms=20000.0)
@@ -436,6 +580,7 @@ def phase1_ball_lens_telescope(app: KrakenLayoutEditor, inspector: Kraken3DInspe
             step_path=BALL_LENS_STEP,
             target_world=ball2_target,
             label_name="ball_2",
+            pre_rotations=pre_rotations,
         )
 
     ball2_step = _timed(report, "import_ball_lens_2", _import_ball_2, budget_ms=20000.0)
@@ -444,36 +589,33 @@ def phase1_ball_lens_telescope(app: KrakenLayoutEditor, inspector: Kraken3DInspe
     ball2_row = int(ball2_step.payload["row_index"])
 
     def _check_positions() -> dict[str, Any]:
-        b1 = _row_actor_zmin_zmax(inspector, ball1_row)
-        b2 = _row_actor_zmin_zmax(inspector, ball2_row)
+        c1 = _row_actor_center_world(inspector, ball1_row)
+        c2 = _row_actor_center_world(inspector, ball2_row)
         return {
             "ball_1_row": ball1_row,
-            "ball_1_z_band": list(b1) if b1 is not None else None,
-            "ball_1_expected_z": float(ball1_target[2]),
+            "ball_1_center_world": [round(float(v), 2) for v in c1] if c1 is not None else None,
+            "ball_1_target_world": [round(float(v), 2) for v in ball1_target],
+            "ball_1_axis_offset_mm": round(_perp_offset_from_axis(c1), 3) if c1 is not None else None,
             "ball_2_row": ball2_row,
-            "ball_2_z_band": list(b2) if b2 is not None else None,
-            "ball_2_expected_z": float(ball2_target[2]),
+            "ball_2_center_world": [round(float(v), 2) for v in c2] if c2 is not None else None,
+            "ball_2_target_world": [round(float(v), 2) for v in ball2_target],
+            "ball_2_axis_offset_mm": round(_perp_offset_from_axis(c2), 3) if c2 is not None else None,
         }
 
     pos_step = _timed(report, "ball_lens_positions", _check_positions, budget_ms=2000.0)
     if pos_step.ok:
-        b1 = pos_step.payload.get("ball_1_z_band")
-        b2 = pos_step.payload.get("ball_2_z_band")
-        for label, band, expected in (
-            ("ball_1", b1, ball1_target[2]),
-            ("ball_2", b2, ball2_target[2]),
-        ):
-            if band is None:
+        for label, key in (("ball_1", "ball_1_axis_offset_mm"), ("ball_2", "ball_2_axis_offset_mm")):
+            off = pos_step.payload.get(key)
+            if off is None:
                 pos_step.ok = False
                 pos_step.note = f"{label} actor not registered"
                 report.failures.append(pos_step.note)
                 continue
-            center_z = 0.5 * (band[0] + band[1])
-            if abs(center_z - float(expected)) > 5.0:
+            if float(off) > 1.0:  # 1 mm tolerance on perpendicular distance to the axis
                 pos_step.ok = False
                 pos_step.note = (
-                    f"{label} body center Z={center_z:.2f} != expected {float(expected):.2f} "
-                    f"(band={band})"
+                    f"{label} body center is {float(off):.3f} mm OFF the cascade exit axis "
+                    f"(expected <= 1 mm)"
                 )
                 report.failures.append(pos_step.note)
 
@@ -484,49 +626,40 @@ def phase1_ball_lens_telescope(app: KrakenLayoutEditor, inspector: Kraken3DInspe
         inspector.update()
         bundle = inspector._current_scene_bundle
         paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
-        # Common focal plane of the confocal pair sits at the midpoint
-        # of the gap between ball 1 and ball 2 centres -- i.e. at
-        # (ball1_z + ball2_z) / 2 = ball1_z + f. Walk each ray
-        # polyline and find its crossing with that focal plane; in a
-        # 1:1 telescope rays from one collimated bundle should
-        # converge near (X=37.5, Y=0) at the gap centre, then
-        # diverge again and exit collimated past ball 2.
-        focal_plane_z = float(0.5 * (ball1_target[2] + ball2_target[2]))
-        focal_xs: list[float] = []
-        focal_ys: list[float] = []
-        terminal_zs: list[float] = []
+        # Focal plane sits at the midpoint along the axis between
+        # ball 1 and ball 2 centres. Project each ray-polyline
+        # vertex onto the axis and find the segment that brackets
+        # the focal-plane projection.
+        focal_along = 0.5 * (
+            _axis_projection(ball1_target) + _axis_projection(ball2_target)
+        )
+        focal_offsets: list[float] = []
+        max_along = 0.0
         for path in paths:
             pts = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
             if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
                 continue
-            terminal_zs.append(float(pts[-1, 2]))
+            alongs = np.asarray([_axis_projection(p) for p in pts[:, :3]], dtype=float)
+            max_along = max(max_along, float(alongs.max()))
             for i in range(pts.shape[0] - 1):
-                z0 = float(pts[i, 2]); z1 = float(pts[i + 1, 2])
-                if z0 == z1 or (z0 - focal_plane_z) * (z1 - focal_plane_z) > 0:
+                a0 = float(alongs[i]); a1 = float(alongs[i + 1])
+                if a0 == a1 or (a0 - focal_along) * (a1 - focal_along) > 0:
                     continue
-                t = (focal_plane_z - z0) / (z1 - z0)
+                t = (focal_along - a0) / (a1 - a0)
                 if not (0.0 <= t <= 1.0):
                     continue
-                focal_xs.append(float(pts[i, 0] + t * (pts[i + 1, 0] - pts[i, 0])))
-                focal_ys.append(float(pts[i, 1] + t * (pts[i + 1, 1] - pts[i, 1])))
+                hit = pts[i, :3] + t * (pts[i + 1, :3] - pts[i, :3])
+                focal_offsets.append(_perp_offset_from_axis(hit))
                 break
-        focal_radius = 0.0
-        if focal_xs:
-            cx = float(np.median(focal_xs))
-            cy = float(np.median(focal_ys))
-            radii = [
-                float(np.hypot(fx - cx, fy - cy))
-                for fx, fy in zip(focal_xs, focal_ys)
-            ]
-            focal_radius = float(max(radii))
+        focal_spot_radius = float(max(focal_offsets)) if focal_offsets else 0.0
         return {
             "ray_path_count": len(paths),
             "ray_actor_count": len(inspector._actor_ray_map or {}),
-            "max_terminal_z": round(max(terminal_zs, default=0.0), 2),
-            "ball_2_z": float(ball2_target[2]),
-            "focal_plane_z": round(focal_plane_z, 3),
-            "rays_at_focal_plane": len(focal_xs),
-            "focal_spot_radius_mm": round(focal_radius, 3),
+            "max_axis_projection_mm": round(max_along, 2),
+            "ball_2_axis_projection_mm": round(_axis_projection(ball2_target), 2),
+            "focal_plane_axis_mm": round(focal_along, 3),
+            "rays_at_focal_plane": len(focal_offsets),
+            "focal_spot_radius_mm": round(focal_spot_radius, 3),
         }
 
     tr = _timed(report, "trace_after_balls", _trace_after_balls, budget_ms=20000.0)
@@ -535,23 +668,19 @@ def phase1_ball_lens_telescope(app: KrakenLayoutEditor, inspector: Kraken3DInspe
             tr.ok = False
             tr.note = "trace produced 0 ray paths after adding ball lenses"
             report.failures.append(tr.note)
-        elif tr.payload.get("max_terminal_z", 0.0) < tr.payload.get("ball_2_z", 0.0):
+        elif tr.payload.get("max_axis_projection_mm", 0.0) < tr.payload.get("ball_2_axis_projection_mm", 0.0):
             tr.ok = False
             tr.note = (
-                f"rays terminated before second ball lens: "
-                f"max_terminal_z={tr.payload.get('max_terminal_z')} < "
-                f"ball_2_z={tr.payload.get('ball_2_z')}"
+                f"rays terminated before second ball lens along the cascade exit axis: "
+                f"max_axis_projection={tr.payload.get('max_axis_projection_mm')} < "
+                f"ball_2={tr.payload.get('ball_2_axis_projection_mm')}"
             )
             report.failures.append(tr.note)
-        # Confocal pair check: at least one ray should cross the
-        # midpoint focal plane (rays might be cut by the world
-        # envelope mid-cascade, hence a low threshold).
         elif tr.payload.get("rays_at_focal_plane", 0) == 0:
             tr.ok = False
             tr.note = (
-                f"no rays crossed the confocal-pair focal plane at "
-                f"Z={tr.payload.get('focal_plane_z')} "
-                f"(midpoint of gap between ball centres)"
+                f"no rays crossed the confocal-pair focal plane at axis projection "
+                f"{tr.payload.get('focal_plane_axis_mm')} mm (midpoint of ball-centre gap)"
             )
             report.failures.append(tr.note)
     return report
@@ -562,24 +691,21 @@ def phase1_ball_lens_telescope(app: KrakenLayoutEditor, inspector: Kraken3DInspe
 
 
 def phase2_dcv_achromat_group(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> WorkflowReport:
-    """Add a DCV then an Achromat further along world +Z."""
+    """Add a DCV then an Achromat further along the cascade exit axis."""
     report = WorkflowReport(name="Phase 2: DCV + Achromat group")
 
-    # Continue along +Z from the second ball lens (Z=257.5).
-    ball2_z = EXIT_POSITION[2] + PHASE1_CLEARANCE_FROM_PRISM_MM + BALL_LENS_GAP_MM
-    dcv_target = np.asarray(
-        [EXIT_POSITION[0], EXIT_POSITION[1], ball2_z + PHASE2_GAP_FROM_BALL_2_MM],
-        dtype=float,
-    )
-    achromat_target = np.asarray(
-        [EXIT_POSITION[0], EXIT_POSITION[1], dcv_target[2] + DCV_TO_ACHROMAT_GAP_MM],
-        dtype=float,
-    )
+    # Continue along EXIT_DIRECTION from ball 2.
+    ball2_offset = PHASE1_CLEARANCE_FROM_PRISM_MM + BALL_LENS_GAP_MM
+    dcv_target = EXIT_POSITION + EXIT_DIRECTION * (ball2_offset + PHASE2_GAP_FROM_BALL_2_MM)
+    achromat_target = dcv_target + EXIT_DIRECTION * DCV_TO_ACHROMAT_GAP_MM
+    tilts = _tilts_to_align_local_axis_to_world((0.0, 0.0, 1.0), EXIT_DIRECTION)
+    pre_rotations = tuple((axis, deg) for axis, deg in zip("xyz", tilts) if abs(deg) > 1e-9)
 
     def _import_dcv() -> dict[str, Any]:
         return _import_position_promote(
             app, inspector, step_path=DCV_STEP,
             target_world=dcv_target, label_name="dcv",
+            pre_rotations=pre_rotations,
         )
 
     dcv_step = _timed(report, "import_dcv", _import_dcv, budget_ms=20000.0)
@@ -591,6 +717,7 @@ def phase2_dcv_achromat_group(app: KrakenLayoutEditor, inspector: Kraken3DInspec
         return _import_position_promote(
             app, inspector, step_path=ACHROMAT_STEP,
             target_world=achromat_target, label_name="achromat",
+            pre_rotations=pre_rotations,
         )
 
     ach_step = _timed(report, "import_achromat", _import_achromat, budget_ms=20000.0)
@@ -599,34 +726,28 @@ def phase2_dcv_achromat_group(app: KrakenLayoutEditor, inspector: Kraken3DInspec
     ach_row = int(ach_step.payload["row_index"])
 
     def _check_positions() -> dict[str, Any]:
-        dcv_band = _row_actor_zmin_zmax(inspector, dcv_row)
-        ach_band = _row_actor_zmin_zmax(inspector, ach_row)
+        dcv_c = _row_actor_center_world(inspector, dcv_row)
+        ach_c = _row_actor_center_world(inspector, ach_row)
         return {
             "dcv_row": dcv_row,
-            "dcv_z_band": list(dcv_band) if dcv_band is not None else None,
-            "dcv_expected_z": float(dcv_target[2]),
+            "dcv_axis_offset_mm": round(_perp_offset_from_axis(dcv_c), 3) if dcv_c is not None else None,
             "achromat_row": ach_row,
-            "achromat_z_band": list(ach_band) if ach_band is not None else None,
-            "achromat_expected_z": float(achromat_target[2]),
+            "achromat_axis_offset_mm": round(_perp_offset_from_axis(ach_c), 3) if ach_c is not None else None,
         }
 
     pos_step = _timed(report, "dcv_achromat_positions", _check_positions, budget_ms=2000.0)
     if pos_step.ok:
-        for label, band, expected in (
-            ("dcv", pos_step.payload.get("dcv_z_band"), dcv_target[2]),
-            ("achromat", pos_step.payload.get("achromat_z_band"), achromat_target[2]),
-        ):
-            if band is None:
+        for label, key in (("dcv", "dcv_axis_offset_mm"), ("achromat", "achromat_axis_offset_mm")):
+            off = pos_step.payload.get(key)
+            if off is None:
                 pos_step.ok = False
                 pos_step.note = f"{label} actor not registered"
                 report.failures.append(pos_step.note)
                 continue
-            center_z = 0.5 * (band[0] + band[1])
-            if abs(center_z - float(expected)) > 5.0:
+            if float(off) > 1.0:
                 pos_step.ok = False
                 pos_step.note = (
-                    f"{label} body center Z={center_z:.2f} != expected {float(expected):.2f} "
-                    f"(band={band})"
+                    f"{label} body center is {float(off):.3f} mm OFF the cascade exit axis"
                 )
                 report.failures.append(pos_step.note)
 
@@ -637,15 +758,15 @@ def phase2_dcv_achromat_group(app: KrakenLayoutEditor, inspector: Kraken3DInspec
         inspector.update()
         bundle = inspector._current_scene_bundle
         paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
-        terminal_zs: list[float] = []
+        max_along = 0.0
         for path in paths:
             pts = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
             if pts.ndim == 2 and pts.shape[0] >= 1 and pts.shape[1] >= 3:
-                terminal_zs.append(float(pts[-1, 2]))
+                max_along = max(max_along, float(max(_axis_projection(p) for p in pts[:, :3])))
         return {
             "ray_path_count": len(paths),
-            "max_terminal_z": round(max(terminal_zs, default=0.0), 2),
-            "achromat_z": float(achromat_target[2]),
+            "max_axis_projection_mm": round(max_along, 2),
+            "achromat_axis_projection_mm": round(_axis_projection(achromat_target), 2),
         }
 
     tr = _timed(report, "trace_after_dcv_achromat", _trace_after_group, budget_ms=20000.0)
@@ -654,12 +775,12 @@ def phase2_dcv_achromat_group(app: KrakenLayoutEditor, inspector: Kraken3DInspec
             tr.ok = False
             tr.note = "trace produced 0 ray paths after DCV+Achromat"
             report.failures.append(tr.note)
-        elif tr.payload.get("max_terminal_z", 0.0) < tr.payload.get("achromat_z", 0.0):
+        elif tr.payload.get("max_axis_projection_mm", 0.0) < tr.payload.get("achromat_axis_projection_mm", 0.0):
             tr.ok = False
             tr.note = (
-                f"rays terminated before Achromat: "
-                f"max_terminal_z={tr.payload.get('max_terminal_z')} < "
-                f"achromat_z={tr.payload.get('achromat_z')}"
+                f"rays terminated before Achromat along the axis: "
+                f"{tr.payload.get('max_axis_projection_mm')} < "
+                f"{tr.payload.get('achromat_axis_projection_mm')}"
             )
             report.failures.append(tr.note)
     return report
@@ -670,34 +791,28 @@ def phase2_dcv_achromat_group(app: KrakenLayoutEditor, inspector: Kraken3DInspec
 
 
 def phase3_cylindrical_line_focus(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> WorkflowReport:
-    """Place a cylindrical lens past the Achromat, expect line-focused rays."""
+    """Place a cylindrical lens past the Achromat along the exit axis."""
     report = WorkflowReport(name="Phase 3: cylindrical lens line focus")
 
-    # Achromat is at Z = EXIT_Z + clearance + ball_gap + dcv_gap + dcv_achr_gap
-    # = 197.5 + 30 + 30 + 50 + 100 = 407.5 (= Phase 2 last target)
-    achromat_z = (
-        EXIT_POSITION[2]
-        + PHASE1_CLEARANCE_FROM_PRISM_MM
+    chain_offset = (
+        PHASE1_CLEARANCE_FROM_PRISM_MM
         + BALL_LENS_GAP_MM
         + PHASE2_GAP_FROM_BALL_2_MM
         + DCV_TO_ACHROMAT_GAP_MM
+        + PHASE3_GAP_FROM_ACHROMAT_MM
     )
-    cyl_target = np.asarray(
-        [EXIT_POSITION[0], EXIT_POSITION[1], achromat_z + PHASE3_GAP_FROM_ACHROMAT_MM],
-        dtype=float,
-    )
+    cyl_target = EXIT_POSITION + EXIT_DIRECTION * chain_offset
+    # Cylindrical STEP file's optical axis is local +Y. Align it to
+    # EXIT_DIRECTION (world -X for the penta cascade) -- a +90 deg
+    # rotation around Z maps local +Y -> world -X.
+    tilts = _tilts_to_align_local_axis_to_world((0.0, 1.0, 0.0), EXIT_DIRECTION)
+    pre_rotations = tuple((axis, deg) for axis, deg in zip("xyz", tilts) if abs(deg) > 1e-9)
 
     def _import_cyl() -> dict[str, Any]:
-        # The cylindrical STEP file's optical axis is local +Y, not
-        # local +Z (verified empirically: 4.3 mm bound -- matching
-        # the spec optical thickness -- runs along local Y). Rotate
-        # -90 deg around the X axis to map local +Y -> world +Z so
-        # the lens actually intersects the propagating beam with its
-        # curved face pointing along the beam direction.
         return _import_position_promote(
             app, inspector, step_path=CYL_STEP,
             target_world=cyl_target, label_name="cylindrical",
-            pre_rotation=("x", -90.0),
+            pre_rotations=pre_rotations,
         )
 
     cyl_step = _timed(report, "import_cylindrical", _import_cyl, budget_ms=20000.0)
@@ -706,28 +821,25 @@ def phase3_cylindrical_line_focus(app: KrakenLayoutEditor, inspector: Kraken3DIn
     cyl_row = int(cyl_step.payload["row_index"])
 
     def _check_position() -> dict[str, Any]:
-        band = _row_actor_zmin_zmax(inspector, cyl_row)
+        center = _row_actor_center_world(inspector, cyl_row)
         return {
             "cylindrical_row": cyl_row,
-            "cyl_z_band": list(band) if band is not None else None,
-            "cyl_expected_z": float(cyl_target[2]),
+            "cyl_axis_offset_mm": round(_perp_offset_from_axis(center), 3) if center is not None else None,
         }
 
     pos_step = _timed(report, "cylindrical_position", _check_position, budget_ms=2000.0)
     if pos_step.ok:
-        band = pos_step.payload.get("cyl_z_band")
-        if band is None:
+        off = pos_step.payload.get("cyl_axis_offset_mm")
+        if off is None:
             pos_step.ok = False
             pos_step.note = "cylindrical actor not registered"
             report.failures.append(pos_step.note)
-        else:
-            center_z = 0.5 * (band[0] + band[1])
-            if abs(center_z - float(cyl_target[2])) > 5.0:
-                pos_step.ok = False
-                pos_step.note = (
-                    f"cyl body center Z={center_z:.2f} != expected {float(cyl_target[2]):.2f}"
-                )
-                report.failures.append(pos_step.note)
+        elif float(off) > 1.5:
+            pos_step.ok = False
+            pos_step.note = (
+                f"cyl body center is {float(off):.3f} mm OFF the cascade exit axis"
+            )
+            report.failures.append(pos_step.note)
 
     def _trace_and_check_line() -> dict[str, Any]:
         inspector.show_rays_var.set(True)
@@ -736,50 +848,59 @@ def phase3_cylindrical_line_focus(app: KrakenLayoutEditor, inspector: Kraken3DIn
         inspector.update()
         bundle = inspector._current_scene_bundle
         paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
-        # Find each ray's intersection point with the focal plane
-        # at Z = cyl_back_surface + CYL_FOCAL_DISTANCE. Approximate
-        # by walking each ray polyline backwards from the terminal
-        # point to find the segment that crosses focal_z.
-        focal_z = float(cyl_target[2] + CYL_FOCAL_DISTANCE_MM)
-        focal_xs: list[float] = []
-        focal_ys: list[float] = []
+        # Focal plane is CYL_FOCAL_DISTANCE_MM past the cyl body
+        # centroid along the cascade exit axis. Project each ray
+        # onto the axis to find segments crossing this plane, then
+        # measure the in-plane spread in two perpendicular
+        # directions (one along the cylinder's power axis, one
+        # along its no-power axis).
+        cyl_axis_proj = _axis_projection(cyl_target)
+        focal_along = cyl_axis_proj + CYL_FOCAL_DISTANCE_MM
+        # Pick two perpendicular axes spanning the focal plane.
+        # Power axis sits in the curved direction of the cylinder
+        # (perpendicular to EXIT_DIRECTION). With pre_rotation
+        # mapping local +Y -> EXIT_DIRECTION, the cylinder's curved
+        # local +X also gets rotated. Use ANY two perpendiculars
+        # in the focal plane for the aspect ratio.
+        if abs(EXIT_DIRECTION[2]) < 0.99:
+            u = np.cross(EXIT_DIRECTION, np.asarray([0.0, 0.0, 1.0]))
+        else:
+            u = np.cross(EXIT_DIRECTION, np.asarray([0.0, 1.0, 0.0]))
+        u /= max(float(np.linalg.norm(u)), 1e-12)
+        v = np.cross(EXIT_DIRECTION, u)
+        v /= max(float(np.linalg.norm(v)), 1e-12)
+        u_proj: list[float] = []
+        v_proj: list[float] = []
         for path in paths:
             pts = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
             if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
                 continue
-            # Walk segments looking for one that brackets focal_z.
-            hit = None
+            alongs = np.asarray([_axis_projection(p) for p in pts[:, :3]], dtype=float)
             for i in range(pts.shape[0] - 1):
-                z0 = float(pts[i, 2])
-                z1 = float(pts[i + 1, 2])
-                if z0 == z1:
+                a0 = float(alongs[i]); a1 = float(alongs[i + 1])
+                if a0 == a1 or (a0 - focal_along) * (a1 - focal_along) > 0:
                     continue
-                # Crossing test (allow either direction)
-                if (z0 - focal_z) * (z1 - focal_z) > 0:
-                    continue
-                t = (focal_z - z0) / (z1 - z0)
+                t = (focal_along - a0) / (a1 - a0)
                 if not (0.0 <= t <= 1.0):
                     continue
-                x = float(pts[i, 0] + t * (pts[i + 1, 0] - pts[i, 0]))
-                y = float(pts[i, 1] + t * (pts[i + 1, 1] - pts[i, 1]))
-                hit = (x, y)
+                hit = pts[i, :3] + t * (pts[i + 1, :3] - pts[i, :3])
+                rel = hit - EXIT_POSITION
+                u_proj.append(float(np.dot(rel, u)))
+                v_proj.append(float(np.dot(rel, v)))
                 break
-            if hit is not None:
-                focal_xs.append(hit[0])
-                focal_ys.append(hit[1])
-        x_range = (max(focal_xs) - min(focal_xs)) if focal_xs else 0.0
-        y_range = (max(focal_ys) - min(focal_ys)) if focal_ys else 0.0
+        u_range = (max(u_proj) - min(u_proj)) if u_proj else 0.0
+        v_range = (max(v_proj) - min(v_proj)) if v_proj else 0.0
         ratio = (
-            (max(x_range, y_range) / min(x_range, y_range))
-            if min(x_range, y_range) > 1e-6
+            max(u_range, v_range) / min(u_range, v_range)
+            if min(u_range, v_range) > 1e-6
             else float("inf")
         )
         return {
             "ray_path_count": len(paths),
-            "focal_z": focal_z,
-            "rays_reached_focal_plane": len(focal_xs),
-            "x_range_mm": round(x_range, 3),
-            "y_range_mm": round(y_range, 3),
+            "focal_axis_projection_mm": round(focal_along, 2),
+            "rays_reached_focal_plane": len(u_proj),
+            "u_range_mm": round(u_range, 3),
+            "v_range_mm": round(v_range, 3),
             "line_aspect_ratio": round(ratio, 2) if ratio != float("inf") else "inf",
         }
 
@@ -817,7 +938,9 @@ def phase3_cylindrical_line_focus(app: KrakenLayoutEditor, inspector: Kraken3DIn
                     note=(
                         f"focal-plane aspect ratio {ratio_value:.2f} < "
                         f"{LINE_ASPECT_RATIO_MIN} (soft check: requires proper "
-                        "cylindrical face-role assignment to focus tightly)"
+                        "cylindrical face-role assignment to focus tightly; "
+                        f"u_range={line_step.payload.get('u_range_mm')}, "
+                        f"v_range={line_step.payload.get('v_range_mm')})"
                     ),
                     payload={"aspect": ratio_value},
                 )
