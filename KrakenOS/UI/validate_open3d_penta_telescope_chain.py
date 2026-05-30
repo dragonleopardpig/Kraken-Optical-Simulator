@@ -68,6 +68,14 @@ CYL_EFL_MM = 50.0         # toroidal plano-cylinder
 BALL_LENS_GAP_MM = 30.0
 PHASE1_CLEARANCE_FROM_PRISM_MM = 30.0
 
+# Phase 2 layout: DCV (f=-50) then Achromat (f=+50). For a Galilean
+# beam-expander pair the lenses should sit at separation |f1|+f2 = 0
+# which is unphysical (they'd touch). Use a 100 mm gap between
+# their centers so each has clear aperture and the trace can pass
+# through both.
+PHASE2_GAP_FROM_BALL_2_MM = 50.0
+DCV_TO_ACHROMAT_GAP_MM = 100.0
+
 # Penta s5 exit beam waypoint + direction. Empirically the saved
 # cascade emerges at world (37.5, -y_input, 197.5) with the Y
 # component flipped relative to the entry side (the cascade folds
@@ -478,6 +486,114 @@ def phase1_ball_lens_telescope(app: KrakenLayoutEditor, inspector: Kraken3DInspe
 
 
 # ---------------------------------------------------------------------------
+# Phase 2 workflow: DCV + Achromat group
+
+
+def phase2_dcv_achromat_group(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> WorkflowReport:
+    """Add a DCV then an Achromat further along world +Z."""
+    report = WorkflowReport(name="Phase 2: DCV + Achromat group")
+
+    # Continue along +Z from the second ball lens (Z=257.5).
+    ball2_z = EXIT_POSITION[2] + PHASE1_CLEARANCE_FROM_PRISM_MM + BALL_LENS_GAP_MM
+    dcv_target = np.asarray(
+        [EXIT_POSITION[0], EXIT_POSITION[1], ball2_z + PHASE2_GAP_FROM_BALL_2_MM],
+        dtype=float,
+    )
+    achromat_target = np.asarray(
+        [EXIT_POSITION[0], EXIT_POSITION[1], dcv_target[2] + DCV_TO_ACHROMAT_GAP_MM],
+        dtype=float,
+    )
+
+    def _import_dcv() -> dict[str, Any]:
+        return _import_position_promote(
+            app, inspector, step_path=DCV_STEP,
+            target_world=dcv_target, label_name="dcv",
+        )
+
+    dcv_step = _timed(report, "import_dcv", _import_dcv, budget_ms=20000.0)
+    if not dcv_step.ok or dcv_step.payload.get("row_index") is None:
+        return report
+    dcv_row = int(dcv_step.payload["row_index"])
+
+    def _import_achromat() -> dict[str, Any]:
+        return _import_position_promote(
+            app, inspector, step_path=ACHROMAT_STEP,
+            target_world=achromat_target, label_name="achromat",
+        )
+
+    ach_step = _timed(report, "import_achromat", _import_achromat, budget_ms=20000.0)
+    if not ach_step.ok or ach_step.payload.get("row_index") is None:
+        return report
+    ach_row = int(ach_step.payload["row_index"])
+
+    def _check_positions() -> dict[str, Any]:
+        dcv_band = _row_actor_zmin_zmax(inspector, dcv_row)
+        ach_band = _row_actor_zmin_zmax(inspector, ach_row)
+        return {
+            "dcv_row": dcv_row,
+            "dcv_z_band": list(dcv_band) if dcv_band is not None else None,
+            "dcv_expected_z": float(dcv_target[2]),
+            "achromat_row": ach_row,
+            "achromat_z_band": list(ach_band) if ach_band is not None else None,
+            "achromat_expected_z": float(achromat_target[2]),
+        }
+
+    pos_step = _timed(report, "dcv_achromat_positions", _check_positions, budget_ms=2000.0)
+    if pos_step.ok:
+        for label, band, expected in (
+            ("dcv", pos_step.payload.get("dcv_z_band"), dcv_target[2]),
+            ("achromat", pos_step.payload.get("achromat_z_band"), achromat_target[2]),
+        ):
+            if band is None:
+                pos_step.ok = False
+                pos_step.note = f"{label} actor not registered"
+                report.failures.append(pos_step.note)
+                continue
+            center_z = 0.5 * (band[0] + band[1])
+            if abs(center_z - float(expected)) > 5.0:
+                pos_step.ok = False
+                pos_step.note = (
+                    f"{label} body center Z={center_z:.2f} != expected {float(expected):.2f} "
+                    f"(band={band})"
+                )
+                report.failures.append(pos_step.note)
+
+    def _trace_after_group() -> dict[str, Any]:
+        inspector.show_rays_var.set(True)
+        inspector._trace_live_now()
+        inspector.update_idletasks()
+        inspector.update()
+        bundle = inspector._current_scene_bundle
+        paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
+        terminal_zs: list[float] = []
+        for path in paths:
+            pts = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
+            if pts.ndim == 2 and pts.shape[0] >= 1 and pts.shape[1] >= 3:
+                terminal_zs.append(float(pts[-1, 2]))
+        return {
+            "ray_path_count": len(paths),
+            "max_terminal_z": round(max(terminal_zs, default=0.0), 2),
+            "achromat_z": float(achromat_target[2]),
+        }
+
+    tr = _timed(report, "trace_after_dcv_achromat", _trace_after_group, budget_ms=20000.0)
+    if tr.ok:
+        if tr.payload.get("ray_path_count", 0) == 0:
+            tr.ok = False
+            tr.note = "trace produced 0 ray paths after DCV+Achromat"
+            report.failures.append(tr.note)
+        elif tr.payload.get("max_terminal_z", 0.0) < tr.payload.get("achromat_z", 0.0):
+            tr.ok = False
+            tr.note = (
+                f"rays terminated before Achromat: "
+                f"max_terminal_z={tr.payload.get('max_terminal_z')} < "
+                f"achromat_z={tr.payload.get('achromat_z')}"
+            )
+            report.failures.append(tr.note)
+    return report
+
+
+# ---------------------------------------------------------------------------
 # Recorder wrapper
 
 
@@ -604,6 +720,12 @@ def main() -> int:
 
         with _PhaseRecording(inspector, "phase1_ball_lens_telescope", args.recordings_dir) as rec:
             reports.append(phase1_ball_lens_telescope(app, inspector))
+        recordings.append(rec)
+        if not reports[-1].ok:
+            return _print_report(reports, recordings)
+
+        with _PhaseRecording(inspector, "phase2_dcv_achromat", args.recordings_dir) as rec:
+            reports.append(phase2_dcv_achromat_group(app, inspector))
         recordings.append(rec)
     finally:
         try:
