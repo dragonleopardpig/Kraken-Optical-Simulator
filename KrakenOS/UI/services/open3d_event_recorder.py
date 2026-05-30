@@ -30,6 +30,41 @@ RECORDING_DIR = _PROJECT_ROOT / "attachment" / "recorded_bug_repros"
 
 
 @dataclass
+class SceneSnapshot:
+    """Scene state captured alongside an event.
+
+    Each field is something a visual bug ("the axis suddenly shortened",
+    "edge highlight is offset from the body", "rotation handles popped
+    up after a snap") manifests in numerically. A diff between two
+    consecutive snapshots tells me what changed without needing a video.
+    """
+
+    interaction_mode: str = "idle"
+    picked_row_index: int | None = None
+    picked_row_indices: list[int] = field(default_factory=list)
+    picked_step_label: str | None = None
+    picked_ray_index: int | None = None
+    picked_optical_axis_id: str | None = None
+    selected_step_label: str | None = None
+    selected_step_rotation_active_label: str | None = None
+    optical_axis_records: list[dict[str, Any]] = field(default_factory=list)
+    row_actor_bounds: dict[int, list[float]] = field(default_factory=dict)
+    step_actor_counts: dict[str, int] = field(default_factory=dict)
+    rotation_handle_count: int = 0
+    placement_translate_handle_count: int = 0
+    placement_rotate_handle_count: int = 0
+    thickness_dimension_count: int = 0
+    ray_actor_count: int = 0
+    optical_axis_actor_count: int = 0
+    optical_axis_highlight_present: bool = False
+    show_rays: bool = False
+    camera_position: list[float] = field(default_factory=list)
+    camera_focal: list[float] = field(default_factory=list)
+    camera_view_up: list[float] = field(default_factory=list)
+    camera_parallel_scale: float = 0.0
+
+
+@dataclass
 class RecordedEvent:
     """One event captured during a recording."""
 
@@ -42,6 +77,7 @@ class RecordedEvent:
     modifiers: list[str] = field(default_factory=list)
     label: str = ""
     payload: dict[str, Any] = field(default_factory=dict)
+    scene_state: SceneSnapshot | None = None
 
 
 @dataclass
@@ -126,6 +162,7 @@ class Open3DEventRecorder:
                 y=y,
                 button=int(button),
                 modifiers=modifiers,
+                scene_state=self._snapshot_scene(),
             )
         )
 
@@ -139,6 +176,7 @@ class Open3DEventRecorder:
                 kind=kind,
                 key=str(keysym),
                 modifiers=self._modifiers_from_state(int(state or 0)),
+                scene_state=self._snapshot_scene(),
             )
         )
 
@@ -152,6 +190,7 @@ class Open3DEventRecorder:
                 kind="command",
                 label=str(label),
                 payload=dict(payload or {}),
+                scene_state=self._snapshot_scene(),
             )
         )
 
@@ -176,6 +215,152 @@ class Open3DEventRecorder:
         if state & 0x0010:
             mods.append("num_lock")
         return mods
+
+    def _snapshot_scene(self) -> SceneSnapshot | None:
+        """Capture renderer state at the moment of an event.
+
+        Designed to be cheap: reads existing inspector dicts, the
+        active camera, and currently-loaded optical-axis pick records.
+        Doesn't touch the picker, doesn't refresh the scene, doesn't
+        allocate VTK objects.
+        """
+        inspector = self._inspector
+        try:
+            snapshot = SceneSnapshot()
+        except Exception:
+            return None
+        try:
+            snapshot.interaction_mode = str(inspector.current_interaction_mode().value)
+        except Exception:
+            snapshot.interaction_mode = "idle"
+        try:
+            snapshot.picked_row_index = inspector._picked_row_index
+            snapshot.picked_row_indices = sorted(
+                int(value) for value in (inspector._picked_row_indices or set())
+            )
+            snapshot.picked_step_label = inspector._picked_step_label
+            snapshot.picked_ray_index = inspector._picked_ray_index
+            snapshot.picked_optical_axis_id = inspector._picked_optical_axis_id
+            snapshot.selected_step_label = getattr(inspector.editor, "_selected_step_label", None)
+            snapshot.selected_step_rotation_active_label = inspector._step_rotation_active_label
+        except Exception:
+            pass
+
+        # Optical-axis world points: tells us when "the axis suddenly
+        # shortened" by comparing two consecutive snapshots.
+        try:
+            for record in list(inspector._optical_axis_pick_records or []):
+                points = record.get("points")
+                point_list: list[list[float]] = []
+                try:
+                    import numpy as _np
+
+                    arr = _np.asarray(points, dtype=float)
+                    if arr.ndim == 2 and arr.shape[1] >= 3:
+                        point_list = [
+                            [float(v) for v in arr[i, :3]] for i in range(arr.shape[0])
+                        ]
+                except Exception:
+                    pass
+                snapshot.optical_axis_records.append(
+                    {
+                        "axis_id": str(record.get("axis_id", "") or ""),
+                        "axis_kind": str(record.get("axis_kind", "") or ""),
+                        "axis_label": str(record.get("axis_label", "") or ""),
+                        "points": point_list,
+                    }
+                )
+        except Exception:
+            pass
+
+        # Each row's actor bounding box: detects body movement /
+        # disappearance / edge-highlight offsets row-by-row.
+        try:
+            actor_by_key = inspector._actor_by_key or {}
+            for row_index, actor_keys in (inspector._row_actor_map or {}).items():
+                try:
+                    rk = int(row_index)
+                except Exception:
+                    continue
+                if not actor_keys:
+                    continue
+                bounds_min = [float("inf")] * 3
+                bounds_max = [float("-inf")] * 3
+                found = False
+                for actor_key in actor_keys:
+                    actor = actor_by_key.get(actor_key)
+                    if actor is None:
+                        continue
+                    try:
+                        bounds = actor.GetBounds()
+                    except Exception:
+                        continue
+                    if bounds is None or len(bounds) < 6:
+                        continue
+                    try:
+                        b = [float(v) for v in bounds]
+                    except Exception:
+                        continue
+                    if any(b[i] > b[i + 1] for i in (0, 2, 4)):
+                        continue
+                    bounds_min[0] = min(bounds_min[0], b[0])
+                    bounds_max[0] = max(bounds_max[0], b[1])
+                    bounds_min[1] = min(bounds_min[1], b[2])
+                    bounds_max[1] = max(bounds_max[1], b[3])
+                    bounds_min[2] = min(bounds_min[2], b[4])
+                    bounds_max[2] = max(bounds_max[2], b[5])
+                    found = True
+                if found:
+                    snapshot.row_actor_bounds[rk] = [
+                        bounds_min[0],
+                        bounds_max[0],
+                        bounds_min[1],
+                        bounds_max[1],
+                        bounds_min[2],
+                        bounds_max[2],
+                    ]
+        except Exception:
+            pass
+
+        # Per-STEP-overlay actor counts: a disappearing overlay shows
+        # up as 0 here.
+        try:
+            for label, keys in (inspector._step_actor_map or {}).items():
+                snapshot.step_actor_counts[str(label)] = len(list(keys or []))
+        except Exception:
+            pass
+
+        # Handle counts: tells us when handles popped up unexpectedly.
+        try:
+            snapshot.rotation_handle_count = len(inspector._actor_step_rotate_map or {})
+            snapshot.placement_translate_handle_count = len(inspector._actor_placement_move_map or {})
+            snapshot.placement_rotate_handle_count = len(inspector._actor_placement_rotate_map or {})
+            snapshot.thickness_dimension_count = len(inspector._actor_thickness_dimension_map or {})
+            snapshot.ray_actor_count = len(inspector._actor_ray_map or {})
+            snapshot.optical_axis_actor_count = len(inspector._actor_optical_axis_map or {})
+            snapshot.optical_axis_highlight_present = inspector._optical_axis_highlight_actor is not None
+        except Exception:
+            pass
+
+        try:
+            snapshot.show_rays = bool(inspector.show_rays_var.get())
+        except Exception:
+            pass
+
+        # Camera: detects orbit / view changes between events.
+        try:
+            renderer = inspector._renderer
+            if renderer is not None:
+                cam = renderer.GetActiveCamera()
+                if cam is not None:
+                    snapshot.camera_position = [float(v) for v in cam.GetPosition()]
+                    snapshot.camera_focal = [float(v) for v in cam.GetFocalPoint()]
+                    snapshot.camera_view_up = [float(v) for v in cam.GetViewUp()]
+                    snapshot.camera_parallel_scale = float(cam.GetParallelScale())
+        except Exception:
+            pass
+
+        return snapshot
 
     def _snapshot_prelude(self, note: str) -> RecordingPrelude:
         inspector = self._inspector
