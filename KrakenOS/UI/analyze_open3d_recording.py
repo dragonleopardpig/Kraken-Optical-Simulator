@@ -271,36 +271,51 @@ def _check_actor_disappearance(events: list[dict[str, Any]], findings: list[Find
 
 
 def _check_visible_bounds_mismatch(events: list[dict[str, Any]], findings: list[Finding]) -> None:
-    """If ComputeVisiblePropBounds Z span > axis Z span, the axis was built too early."""
+    """Heuristic: axis Z span should match at least the body envelope Z span.
+
+    The earlier version compared against ComputeVisiblePropBounds, but
+    that includes UI overlays (placement handles, rotation rings,
+    thickness dimensions) which legitimately extend past the body
+    envelope without belonging in the axis range. The body envelope
+    is the meaningful comparison; ``_check_axis_extent`` already
+    enforces a threshold there. Keep this check as an informational
+    spotlight for the visible-bounds delta so the analyzer report
+    still flags suspicious order-of-operations issues, but at
+    ``warning`` severity rather than ``error``.
+    """
     for i, ev in enumerate(events):
         snap = ev.get("scene_state") or {}
         vb = snap.get("scene_visible_bounds") or []
         axis_span = _axis_z_span(snap)
-        if len(vb) < 6 or axis_span is None:
+        body_span = _scene_bodies_z_span(snap)
+        if len(vb) < 6 or axis_span is None or body_span is None:
             continue
         try:
             vb_z = (float(vb[4]), float(vb[5]))
         except Exception:
             continue
-        vb_extent = vb_z[1] - vb_z[0]
+        body_extent = body_span[1] - body_span[0]
         axis_extent = axis_span[1] - axis_span[0]
-        if vb_extent <= 0:
+        if body_extent <= 0:
             continue
-        # axis should engulf the visible bounds (extended by 0.65 each side).
-        # If axis_extent < vb_extent, something is off.
-        if axis_extent < vb_extent * 0.95:
+        # Only fire when the axis is actually short relative to
+        # bodies AND visible-prop bounds, with a big margin so UI
+        # overlays don't trigger false positives.
+        if axis_extent < body_extent * 0.85 and axis_extent < (vb_z[1] - vb_z[0]) * 0.85:
             findings.append(
                 Finding(
-                    severity="error",
+                    severity="warning",
                     code="axis_shorter_than_visible_bounds",
                     event_index=i,
                     timestamp_ms=float(ev.get("timestamp_ms") or 0.0),
                     message=(
-                        f"axis extent {axis_extent:.3f} < ComputeVisiblePropBounds "
-                        f"extent {vb_extent:.3f} on Z"
+                        f"axis extent {axis_extent:.3f} short vs body "
+                        f"{body_extent:.3f} and visible bounds "
+                        f"{(vb_z[1] - vb_z[0]):.3f} on Z"
                     ),
                     detail={
                         "axis_z": list(axis_span),
+                        "body_z": list(body_span),
                         "visible_z": list(vb_z),
                     },
                 )
