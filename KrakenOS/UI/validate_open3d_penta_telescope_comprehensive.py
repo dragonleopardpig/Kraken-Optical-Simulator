@@ -51,54 +51,52 @@ from KrakenOS.UI.layout_editor import KrakenLayoutEditor, Kraken3DInspector
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# Edmund STEP fixtures for the analytic-promote path. Only the DCV
-# survives the current heuristic cleanly (singlet, 2 anti-parallel
-# spherical faces). Documented limitations for the others:
-#
-# * Ball lens: STEP collapses both hemispheres into one face group;
-#   sphere splitting isn't implemented yet -> auto-detect can't find
-#   a front/back pair. Workaround: ``Promote STEP to Native Rows``.
-# * Achromat (cemented doublet): the importer doesn't surface the
-#   interior cement face. Analytic promote sees only the 2 outer
-#   spheres; the doublet's middle Rc gets dropped. Workaround: same.
-#
-# This harness exercises what does work today: a triplet of DCV
-# imports (each a clean singlet). That gives 3 promoted lenses
-# strung along the optical axis so phases 5-7 (slide, thickness
-# edit, sweep) have multiple elements to push around.
+# Edmund STEP fixtures for the analytic-promote path. With the
+# sphere splitter (task #29) the ball lens now promotes cleanly;
+# the DCV singlet works directly. The cemented achromat still has
+# only 2 outer surfaces detected (the importer drops the interior
+# cement face), so analytic-promote omits the middle Rc -- usable
+# but not exact. Documented inline so a future sphere-doublet
+# splitter sees the open thread.
 LENS_FIXTURES: list[dict[str, Any]] = [
     {
-        "name": "DCV-1 (f=-50)",
-        "step": PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "step_32996.stp",
-        "glass": "N-BK7",
-    },
-    {
-        "name": "DCV-2 (f=-50)",
-        "step": PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "step_32996.stp",
-        "glass": "N-BK7",
-    },
-    {
-        "name": "DCV-3 (f=-50)",
-        "step": PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "step_32996.stp",
-        "glass": "N-BK7",
-    },
-]
-
-# Fixtures that DON'T promote cleanly today are kept here for the
-# multi-element pre-snap click test (Phase 2). The click + handle
-# behavior works on every overlay even when promote can't fit it.
-LENS_FIXTURES_CLICK_ONLY: list[dict[str, Any]] = LENS_FIXTURES + [
-    {
-        "name": "Ball Lens (sphere -- promote-to-analytic NA)",
+        # Edmund 63227 sapphire ball, 9.525 mm diameter, f = 5.48 mm.
+        # The penta-telescope cascade uses two of these as a 1:1
+        # confocal pair downstream of the prism cascade.
+        "name": "Ball Lens 1 (sapphire)",
         "step": PROJECT_ROOT / "attachment" / "Lens" / "ball_lens" / "step_63227.stp",
         "glass": "AL2O3",
     },
     {
-        "name": "Achromat (cemented -- promote-to-analytic partial)",
+        "name": "Ball Lens 2 (sapphire)",
+        "step": PROJECT_ROOT / "attachment" / "Lens" / "ball_lens" / "step_63227.stp",
+        "glass": "AL2O3",
+    },
+    {
+        # Edmund 32996 N-BK7 DCV, f = -50 mm. Clean singlet -> 2
+        # analytic rows, Rc = +/- 52.10 mm.
+        "name": "DCV (f=-50)",
+        "step": PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "step_32996.stp",
+        "glass": "N-BK7",
+    },
+    {
+        # Achromat (Edmund 32323) is a cemented doublet. Auto-detect
+        # currently sees only the outermost spheres (R=+34.53 front,
+        # R=-214.63 back) because the interior cement face isn't
+        # in the imported face metadata. Still promotable; user
+        # types only the OUTER glass (the doublet shows up as a
+        # single N-BAF10 block).
+        "name": "Achromat (f=+50, doublet-as-singlet)",
         "step": PROJECT_ROOT / "attachment" / "Lens" / "Achromatic_Lenses" / "step_32323.stp",
-        "glass": "N-BAF10, N-SF10",
+        "glass": "N-BAF10",
     },
 ]
+
+# Click-only fixtures = everything we promote, plus any extras we
+# might want to exercise the pre-snap pick lifecycle on. With the
+# ball lens fix landed, every fixture above promotes cleanly, so
+# the click-only set just mirrors LENS_FIXTURES.
+LENS_FIXTURES_CLICK_ONLY: list[dict[str, Any]] = LENS_FIXTURES
 
 
 # ---------------------------------------------------------------------------
