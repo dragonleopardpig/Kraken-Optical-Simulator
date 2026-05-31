@@ -105,12 +105,7 @@ SETTINGS = {'object_mode': 'Infinity',
  'metal_catalogs': [],
  'optimization_workers': 'Auto',
  'selected_operands': ['Spot RMS'],
- 'operands': {'Exit pupil z': {'weight': '1',
-                               'target': '0',
-                               'wavelength': '0.55',
-                               'field': '0',
-                               'surface': 'Auto'},
-              'EFFL': {'weight': '1',
+ 'operands': {'EFFL': {'weight': '1',
                        'target': '100',
                        'wavelength': '0.55',
                        'field': '0',
@@ -120,6 +115,16 @@ SETTINGS = {'object_mode': 'Infinity',
                                    'wavelength': '0.55',
                                    'field': '0',
                                    'surface': 'Auto'},
+              'Spot RMS': {'weight': '1',
+                           'target': '0',
+                           'wavelength': '0.55',
+                           'field': '0',
+                           'surface': 'Auto'},
+              'Exit pupil z': {'weight': '1',
+                               'target': '0',
+                               'wavelength': '0.55',
+                               'field': '0',
+                               'surface': 'Auto'},
               'MTF @ freq': {'weight': '1',
                              'target': '0.5',
                              'wavelength': '0.55',
@@ -130,23 +135,18 @@ SETTINGS = {'object_mode': 'Infinity',
                              'frequency': '5',
                              'mtf_mode': 'Average',
                              'mtf_algorithm': 'Diffraction FFT'},
-              'Magnification': {'weight': '1',
-                                'target': '1',
+              'Wavefront RMS': {'weight': '1',
+                                'target': '0',
                                 'wavelength': '0.55',
                                 'field': '0',
                                 'surface': 'Auto'},
-              'Spot RMS': {'weight': '1',
-                           'target': '0',
-                           'wavelength': '0.55',
-                           'field': '0',
-                           'surface': 'Auto'},
               'Thickness penalty': {'weight': '1',
                                     'target': '0.1',
                                     'wavelength': '0.55',
                                     'field': '0',
                                     'surface': 'Auto'},
-              'Wavefront RMS': {'weight': '1',
-                                'target': '0',
+              'Magnification': {'weight': '1',
+                                'target': '1',
                                 'wavelength': '0.55',
                                 'field': '0',
                                 'surface': 'Auto'}},
@@ -6388,7 +6388,7 @@ def build_system():
     surfaces.append({'surface': 'Standard', 'element': 'OPTICAL native STEP', 'name': 'OPTICAL native STEP S3: STEP native 3: sphere_exact', 'rc': -160.822, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.0, 'diameter': 25.4, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {'Note': 'Promoted from OpenCascade STEP topology into KrakenOS-native analytic rows. Geometry is reconstructed from STEP faces; glass/material sequence is user-supplied. Open 3D overlay placement/orientation is applied as row Tilt/Desp. Review fit diagnostics before treating vendor spline reconstruction as production optics.', 'ScenePlacement': {'enabled': True, 'anchor': 'row_pose', 'snap_enabled': True, 'snap_mm': 1.270000000000001, 'snap_deg': 5.0, 'grid_visible': True, 'grid_spacing_mm': 2.540000000000002, 'grid_extent_mm': 50.80000000000004, 'promotion_source': 'open3d_step_native_overlay', 'promotion_step_label': 'optical', 'promotion_source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/Achromatic_Lenses/AC254-125-A/AC254-125-A-Step.step', 'promotion_row_coordinates': 'native_reconstructed_prescription_with_open3d_pose'}, 'StepNativePromotion': {'step_label': 'optical', 'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/Achromatic_Lenses/AC254-125-A/AC254-125-A-Step.step', 'material_sequence': ['N-BK7', 'N-SF5', 'AIR'], 'step_rotation_deg': [0.0, 270.0, 0.0], 'axis_offset_xy': [0.0, 0.0], 'placement_offset_xyz': [-153.46086975061286, -0.0010065118572520702, 197.4964525230954], 'row_coordinates': 'native_reconstructed_prescription_with_open3d_pose', 'applied_row_pose': {'row_tilts_deg': [0.0, -90.0, 0.0], 'row_decenter_mm': [-153.46086975061286, -0.0010065118572519793, 97.4964525230954], 'z_station_mm': 100.0, 'native_axis_center_z_mm': 3.4167375000000177, 'native_axis_span_z_mm': 6.8334750000000355, 'pose_source': 'transformed_overlay_bounds_center', 'bounds_min_world': [-156.87760725061287, -12.701006511857274, 188.2131900230954], 'bounds_max_world': [-150.04413225061285, 12.69899348814277, 213.61319002309543], 'center_world': [-153.46086975061286, -0.0010065118572519793, 200.9131900230954], 'source': 'transformed_overlay_mesh_bounds'}, 'trace_ready': True, 'row_index_offset': 2, 'row_indices': [12, 13, 14], 'reconstruction': {'see_first_row': True}}, 'StepNativeReconstruction': {'surface_id': 'S002/F004+S002/F020', 'face_ids': ['S002/F004', 'S002/F020'], 'source_surface_types': ['sphere'], 'native_kind': 'sphere_exact', 'vertex_z_mm': 5.788681300497586, 'diameter_mm': 25.117157288458166, 'rc_mm': -160.82199999999997, 'conic_k': 0.0, 'aspher_data': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 'rms_error_mm': 4.515764117155093e-10, 'max_error_mm': 5.191722607378324e-10, 'sample_count': 82, 'supported': True, 'notes': []}, 'StepNativeSourcePath': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/Achromatic_Lenses/AC254-125-A/AC254-125-A-Step.step'}, 'tilt_x': 0.0, 'tilt_y': -90.0, 'tilt_z': 0.0, 'desp_x': -156.877607251, 'desp_y': -0.00100651185725, 'desp_z': 97.4964525231, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s15 = Kos.surf()
-    s15.Name = 'Cylindrical 1 f=+50 mm (N-BK7, plano-cyl)'
+    s15.Name = 'Cylindrical f=+50 mm (N-BK7, plano-cyl)'
     s15.Rc = 0.0
     s15.k = 0.0
     s15.Axicon = 0.0
@@ -6416,7 +6416,7 @@ def build_system():
  'row_offset': 0,
  'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step',
  'step_label': 'optical'}
-    surfaces.append({'surface': 'Standard', 'element': 'OPTICAL analytic STEP', 'name': 'Cylindrical 1 f=+50 mm (N-BK7, plano-cyl)', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.0, 'diameter': 35.6393041458, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {'StepAnalyticBodyStlPath': '/home/thinky/.cache/krakenos/cad/promoted_step_overlays/optical_analytic_d23121f61b04e620.stl', 'StepAnalyticPromotion': {'step_label': 'optical', 'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step', 'face_id': 'S001/F004', 'fit_kind': 'plane', 'fit_residual_mm': 0.0, 'glass_sequence': ['N-BK7', 'AIR'], 'row_offset': 0, 'row_count': 2}}, 'tilt_x': 0.0, 'tilt_y': -90.0, 'tilt_z': 0.0, 'desp_x': -241.11026847, 'desp_y': -0.00100651185725, 'desp_z': 97.4964525231, 'axis_move': 0.0, 'glass': 'N-BK7', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    surfaces.append({'surface': 'Standard', 'element': 'OPTICAL analytic STEP', 'name': 'Cylindrical f=+50 mm (N-BK7, plano-cyl)', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.0, 'diameter': 35.6393041458, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {'StepAnalyticBodyStlPath': '/home/thinky/.cache/krakenos/cad/promoted_step_overlays/optical_analytic_d23121f61b04e620.stl', 'StepAnalyticPromotion': {'step_label': 'optical', 'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step', 'face_id': 'S001/F004', 'fit_kind': 'plane', 'fit_residual_mm': 0.0, 'glass_sequence': ['N-BK7', 'AIR'], 'row_offset': 0, 'row_count': 2}}, 'tilt_x': 0.0, 'tilt_y': -90.0, 'tilt_z': 0.0, 'desp_x': -241.11026847, 'desp_y': -0.00100651185725, 'desp_z': 97.4964525231, 'axis_move': 0.0, 'glass': 'N-BK7', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s16 = Kos.surf()
     s16.Name = 'OPTICAL analytic S2: cylinder'
@@ -6450,7 +6450,7 @@ def build_system():
     surfaces.append({'surface': 'Standard', 'element': 'OPTICAL analytic STEP', 'name': 'OPTICAL analytic S2: cylinder', 'rc': -25.84, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.0, 'diameter': 35.6393041458, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {'Cylinder_Rxy_Ratio': 0.0, 'StepAnalyticPromotion': {'step_label': 'optical', 'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step', 'face_id': 'S001/F002', 'fit_kind': 'cylinder', 'fit_residual_mm': 0.0, 'glass_sequence': ['N-BK7', 'AIR'], 'row_offset': 1, 'row_count': 2}}, 'tilt_x': 0.0, 'tilt_y': -90.0, 'tilt_z': 0.0, 'desp_x': -265.811471031, 'desp_y': -0.00100651185725, 'desp_z': 97.4964525231, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s17 = Kos.surf()
-    s17.Name = 'Cylindrical 2 f=+50 mm (N-BK7, plano-cyl)'
+    s17.Name = 'Image'
     s17.Rc = 0.0
     s17.k = 0.0
     s17.Axicon = 0.0
@@ -6458,80 +6458,18 @@ def build_system():
     s17.Grating_D = 0.0
     s17.Grating_Angle = 0.0
     s17.Thickness = 0.0
-    s17.Diameter = 35.6393041459
+    s17.Diameter = 80.0
     s17.InDiameter = 0.0
     s17.Drawing = 1.0
     s17.TiltX = 0.0
     s17.TiltY = -90.0
     s17.TiltZ = 0.0
-    s17.DespX = -349.52598577
+    s17.DespX = -465.811471031
     s17.DespY = -0.00100651185725
     s17.DespZ = 97.4964525231
     s17.AxisMove = 0.0
-    s17.Glass = 'N-BK7'
-    s17.StepAnalyticBodyStlPath = '/home/thinky/.cache/krakenos/cad/promoted_step_overlays/optical_analytic_a753ac73aeaec0a5.stl'
-    s17.StepAnalyticPromotion = {'face_id': 'S001/F004',
- 'fit_kind': 'plane',
- 'fit_residual_mm': 0.0,
- 'glass_sequence': ['N-BK7', 'AIR'],
- 'row_count': 2,
- 'row_offset': 0,
- 'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step',
- 'step_label': 'optical'}
-    surfaces.append({'surface': 'Standard', 'element': 'OPTICAL analytic STEP', 'name': 'Cylindrical 2 f=+50 mm (N-BK7, plano-cyl)', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.0, 'diameter': 35.6393041459, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {'StepAnalyticBodyStlPath': '/home/thinky/.cache/krakenos/cad/promoted_step_overlays/optical_analytic_a753ac73aeaec0a5.stl', 'StepAnalyticPromotion': {'step_label': 'optical', 'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step', 'face_id': 'S001/F004', 'fit_kind': 'plane', 'fit_residual_mm': 0.0, 'glass_sequence': ['N-BK7', 'AIR'], 'row_offset': 0, 'row_count': 2}}, 'tilt_x': 0.0, 'tilt_y': -90.0, 'tilt_z': 0.0, 'desp_x': -349.52598577, 'desp_y': -0.00100651185725, 'desp_z': 97.4964525231, 'axis_move': 0.0, 'glass': 'N-BK7', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
-
-    s18 = Kos.surf()
-    s18.Name = 'OPTICAL analytic S2: cylinder'
-    s18.Rc = -25.84
-    s18.k = 0.0
-    s18.Axicon = 0.0
-    s18.Diff_Ord = 0.0
-    s18.Grating_D = 0.0
-    s18.Grating_Angle = 0.0
-    s18.Thickness = 0.0
-    s18.Diameter = 35.6393041458
-    s18.InDiameter = 0.0
-    s18.Drawing = 1.0
-    s18.TiltX = 0.0
-    s18.TiltY = -90.0
-    s18.TiltZ = 0.0
-    s18.DespX = -374.22718833
-    s18.DespY = -0.00100651185725
-    s18.DespZ = 97.4964525231
-    s18.AxisMove = 0.0
-    s18.Glass = 'AIR'
-    s18.Cylinder_Rxy_Ratio = 0.0
-    s18.StepAnalyticPromotion = {'face_id': 'S001/F002',
- 'fit_kind': 'cylinder',
- 'fit_residual_mm': 0.0,
- 'glass_sequence': ['N-BK7', 'AIR'],
- 'row_count': 2,
- 'row_offset': 1,
- 'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step',
- 'step_label': 'optical'}
-    surfaces.append({'surface': 'Standard', 'element': 'OPTICAL analytic STEP', 'name': 'OPTICAL analytic S2: cylinder', 'rc': -25.84, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.0, 'diameter': 35.6393041458, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {'Cylinder_Rxy_Ratio': 0.0, 'StepAnalyticPromotion': {'step_label': 'optical', 'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step', 'face_id': 'S001/F002', 'fit_kind': 'cylinder', 'fit_residual_mm': 0.0, 'glass_sequence': ['N-BK7', 'AIR'], 'row_offset': 1, 'row_count': 2}}, 'tilt_x': 0.0, 'tilt_y': -90.0, 'tilt_z': 0.0, 'desp_x': -374.22718833, 'desp_y': -0.00100651185725, 'desp_z': 97.4964525231, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
-
-    s19 = Kos.surf()
-    s19.Name = 'Image'
-    s19.Rc = 0.0
-    s19.k = 0.0
-    s19.Axicon = 0.0
-    s19.Diff_Ord = 0.0
-    s19.Grating_D = 0.0
-    s19.Grating_Angle = 0.0
-    s19.Thickness = 0.0
-    s19.Diameter = 80.0
-    s19.InDiameter = 0.0
-    s19.Drawing = 1.0
-    s19.TiltX = 0.0
-    s19.TiltY = 0.0
-    s19.TiltZ = 0.0
-    s19.DespX = 0.0
-    s19.DespY = 0.0
-    s19.DespZ = 0.0
-    s19.AxisMove = 0.0
-    s19.Glass = 'AIR'
-    surfaces.append({'surface': 'Image', 'element': '', 'name': 'Image', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.0, 'diameter': 80.0, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    s17.Glass = 'AIR'
+    surfaces.append({'surface': 'Image', 'element': '', 'name': 'Image', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.0, 'diameter': 80.0, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': -90.0, 'tilt_z': 0.0, 'desp_x': -465.811471031, 'desp_y': -0.00100651185725, 'desp_z': 97.4964525231, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     return surfaces
 

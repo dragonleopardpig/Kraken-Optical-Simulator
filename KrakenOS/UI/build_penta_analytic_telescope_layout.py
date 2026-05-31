@@ -171,7 +171,15 @@ LENS_SPECS: list[dict[str, Any]] = [
         # service -- OCC preserves surface_type=cylinder with the
         # exact radius_mm, which we encode as a Standard row with
         # Cylinder_Rxy_Ratio=0 (pure plano-cyl, no Y curvature).
-        "name": "Cylindrical 1 f=+50 mm (N-BK7, plano-cyl)",
+        #
+        # NOTE: only ONE cyl lens in the chain now (was a Keplerian
+        # pair earlier). Removing the second cyl lens makes the
+        # LINE FOCUS visible in the trace: parallel input ->
+        # converges to a line focus ~50 mm past this lens in the
+        # meridional axis; sagittal axis stays collimated. The
+        # "line shadow" downstream of the cyl proves cylindrical
+        # refraction is doing what it should.
+        "name": "Cylindrical f=+50 mm (N-BK7, plano-cyl)",
         "step": CYL_STEP,
         "glass": "N-BK7",
         "offset_along_exit_mm": (
@@ -181,29 +189,12 @@ LENS_SPECS: list[dict[str, Any]] = [
             + DCV_TO_ACHROMAT_GAP_MM
             + PHASE3_GAP_FROM_ACHROMAT_MM
         ),
-        # Cyl 1 -> Cyl 2 spacing (centroid-to-centroid) for a
-        # 1:1 Keplerian cyl telescope: parallel input -> line focus
-        # between the two cyl lenses -> parallel output. Computed
-        # from the PRINCIPAL planes, not thin-lens 2f, so the
-        # finite body thickness doesn't smear the collimation.
-        "gap_after_mm": CYL_KEPLERIAN_SPACING_MM,
-    },
-    {
-        # Second Edmund 34754, identical to Cyl 1. Together at the
-        # principal-plane-derived separation they re-collimate the
-        # line focus from Cyl 1, giving collimated output.
-        "name": "Cylindrical 2 f=+50 mm (N-BK7, plano-cyl)",
-        "step": CYL_STEP,
-        "glass": "N-BK7",
-        "offset_along_exit_mm": (
-            PHASE1_CLEARANCE_FROM_PRISM_MM
-            + BALL_LENS_GAP_MM
-            + PHASE2_GAP_FROM_BALL_2_MM
-            + DCV_TO_ACHROMAT_GAP_MM
-            + PHASE3_GAP_FROM_ACHROMAT_MM
-            + CYL_KEPLERIAN_SPACING_MM
-        ),
-        "gap_after_mm": 50.0,
+        # Image plane sits 200 mm past the cyl back vertex so the
+        # rays converge to the line focus (around 50 mm past the
+        # vertex) and then DIVERGE for another 150 mm. The focus
+        # waist + downstream divergence is what makes "cylindrical"
+        # visually obvious.
+        "gap_after_mm": 200.0,
     },
 ]
 
@@ -444,6 +435,31 @@ def _build_layout(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> dict
         )
         inspector.refresh_from_editor()
         inspector.update_idletasks()
+
+    # Move the Image row to sit ~200 mm past the last lens along
+    # the exit beam. The default Image (desp = 0, world (0,0,100))
+    # sits BEHIND the optics in world coords, so the non-sequential
+    # trace doesn't have an obvious stop and renders rays that just
+    # terminate at the back of the last refractive surface. Placing
+    # Image downstream of the line focus (around 50 mm past the
+    # cyl back for the current 1-cyl chain) gives the rays room to
+    # converge AND diverge -- showing the line focus visually.
+    try:
+        if len(app.rows) >= 2 and promoted_rows:
+            last_anchor = np.asarray(promoted_rows[-1].get("anchor_world", [0.0, 0.0, 0.0]), dtype=float)
+            optical_span = float(promoted_rows[-1].get("optical_span_mm", 0.0) or 0.0)
+            # Image sits 200 mm past the last lens's BACK vertex.
+            image_world = last_anchor + exit_dir * (0.5 * optical_span + 200.0)
+            image_row = app.rows[-1]
+            image_row.desp_x = float(image_world[0])
+            image_row.desp_y = float(image_world[1])
+            image_row.desp_z = float(image_world[2] - z_station_before_lenses)
+            image_row.tilt_x = float(row_tilt[0])
+            image_row.tilt_y = float(row_tilt[1])
+            image_row.tilt_z = float(row_tilt[2])
+            image_row.axis_move = 0.0
+    except Exception as exc:
+        print(f"WARN: image-plane placement: {exc}", file=sys.stderr)
 
     # When the same STEP fixture is promoted twice (e.g. cyl 1 +
     # cyl 2 for a cyl Keplerian telescope), the second promote
