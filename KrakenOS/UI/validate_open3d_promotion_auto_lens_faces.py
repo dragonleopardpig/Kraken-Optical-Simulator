@@ -31,9 +31,14 @@ from KrakenOS.UI.services.step_overlay_promotion import _auto_assign_lens_face_f
 
 def _lens_faces() -> list[dict]:
     return [
-        {"face_id": "F001", "role": "Unassigned", "function": "Unassigned", "normal": [0.0, 0.0, -1.0], "area_mm2": 285.0},
-        {"face_id": "F002", "role": "Unassigned", "function": "Unassigned", "normal": [0.0, 0.0,  1.0], "area_mm2": 285.0},
-        {"face_id": "F003", "role": "Unassigned", "function": "Unassigned", "normal": [1.0, 0.0,  0.0], "area_mm2":  60.0},
+        # Singlet: front face at z=-1.25 (normal -Z), back face at
+        # z=+1.25 (normal +Z), side cylinder at x=+12 (normal +X).
+        {"face_id": "F001", "role": "Unassigned", "function": "Unassigned",
+         "normal": [0.0, 0.0, -1.0], "area_mm2": 285.0, "centroid": [0.0, 0.0, -1.25]},
+        {"face_id": "F002", "role": "Unassigned", "function": "Unassigned",
+         "normal": [0.0, 0.0,  1.0], "area_mm2": 285.0, "centroid": [0.0, 0.0,  1.25]},
+        {"face_id": "F003", "role": "Unassigned", "function": "Unassigned",
+         "normal": [1.0, 0.0,  0.0], "area_mm2":  60.0, "centroid": [12.0, 0.0, 0.0]},
     ]
 
 
@@ -50,6 +55,7 @@ def _prism_faces() -> list[dict]:
             "function": "Unassigned",
             "normal": [math.cos(ang), math.sin(ang), 0.0],
             "area_mm2": 900.0,
+            "centroid": [12.0 * math.cos(ang), 12.0 * math.sin(ang), 0.0],
         })
     return faces
 

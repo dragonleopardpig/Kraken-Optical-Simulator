@@ -161,23 +161,32 @@ def fit_face(points: np.ndarray) -> SphereFit | PlaneFit | None:
 def _signed_rc_from_sphere(
     sphere: SphereFit,
     face_centroid: np.ndarray,
-    face_normal: np.ndarray,
+    source_axis: np.ndarray,
 ) -> float:
     """Convert raw sphere radius to KrakenOS signed Rc.
 
-    Convention: ``Rc > 0`` when the center of curvature is on the
-    ``-normal`` side of the face (i.e. surface is convex toward
-    ``+normal``). This matches the Zemax CURV sign for spherical
-    surfaces — verified to recover ``-52.10`` on the DCV and
-    ``+34.53`` on the Achromat front from their STEP files.
+    KrakenOS convention: ``Rc > 0`` when the center of curvature sits
+    on the ``+source_axis`` side of the surface (the side where light
+    continues after refraction). The sign must come from the
+    SHARED optical axis, not the per-face outward normal -- a DCV
+    has anti-parallel normals on its two end faces and the
+    previous "use the normal" rule collapsed both to the same sign,
+    so the back surface fit ``-52.10`` instead of ``+52.10``.
+
+    The sign rule recovers the Zemax CURV sign on every fixture:
+
+      * DCV front: centroid @ z=-1.25, sphere center @ z=-53.35
+        -> dot((center - centroid), +Z) = -52.10 < 0  ->  Rc = -52.10  (match)
+      * DCV back : centroid @ z=+1.25, sphere center @ z=+53.35
+        -> dot((center - centroid), +Z) = +52.10 > 0  ->  Rc = +52.10  (match)
     """
     center = np.asarray(sphere.center, dtype=float).reshape(3)
     centroid = np.asarray(face_centroid, dtype=float).reshape(3)
-    normal = _normalize(np.asarray(face_normal, dtype=float).reshape(3))
-    if np.linalg.norm(normal) < 1e-9:
+    axis = _normalize(np.asarray(source_axis, dtype=float).reshape(3))
+    if np.linalg.norm(axis) < 1e-9:
         return float(sphere.radius)
-    offset = float(np.dot(center - centroid, normal))
-    return float(sphere.radius) if offset < 0 else -float(sphere.radius)
+    offset = float(np.dot(center - centroid, axis))
+    return float(sphere.radius) if offset > 0 else -float(sphere.radius)
 
 
 def fit_step_overlay_analytic_surfaces(
@@ -241,7 +250,7 @@ def fit_step_overlay_analytic_surfaces(
         normal = np.asarray(face.get("normal") or [0.0, 0.0, 1.0], dtype=float).reshape(-1)[:3]
         normal = _normalize(normal)
         if isinstance(fit, SphereFit):
-            fit.signed_rc = _signed_rc_from_sphere(fit, centroid, normal)
+            fit.signed_rc = _signed_rc_from_sphere(fit, centroid, axis)
         # Lateral extent for the row's diameter: from the points
         # perpendicular to source_axis.
         rel = pts - centroid

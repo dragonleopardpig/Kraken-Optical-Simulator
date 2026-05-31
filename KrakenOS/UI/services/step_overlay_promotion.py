@@ -28,32 +28,40 @@ from KrakenOS.UI.surface_table_model import SurfaceRow
 
 
 def _auto_assign_lens_face_functions(faces: list[dict[str, Any]]) -> int:
-    """Conservatively assign Transmit/Port to the two refractive faces of a lens.
+    """Conservatively assign Transmit/Port to the refractive faces of a lens.
 
-    Heuristic: when the two largest preserved faces have anti-parallel
-    normals (cos(angle) <= -0.95), they're the front and back optical
-    surfaces of a simple lens (any sphere, biconvex, meniscus, plano,
-    cemented doublet front+back, or toroidal). Mark them as
-    ``Transmit/Port`` so KrakenOS does proper analytic refraction at
-    those faces instead of per-triangle refraction across the whole
-    STL. Every remaining preserved face becomes ``Absorber/Mechanical``
-    so stray rays through the lateral cylinder wall are blocked
-    instead of refracting unpredictably.
+    Heuristic (revised): every preserved face whose centroid normal
+    is parallel-or-anti-parallel to a shared optical axis is treated
+    as a refractive optical surface. The shared optical axis is
+    inferred from the largest-area face's normal -- it's the most
+    reliable indicator of the body's optical axis direction. Faces
+    whose normals are within ``cos > 0.95`` of ``+axis`` or
+    ``cos < -0.95`` of ``-axis`` are flagged ``Transmit/Port``;
+    everything else (cylinder side walls, oblique facets) becomes
+    ``Absorber/Mechanical``.
 
-    Returns the number of faces that were assigned. Returns 0 (no
-    changes made) when the body doesn't look like a simple lens -- in
-    particular for prisms, beam splitters, or any body whose two
-    largest faces aren't anti-parallel. Those keep their existing
-    ``Unassigned`` defaults and rely on the manual face-assignment
-    dialog.
+    Compared to the previous "two largest faces only" rule, this
+    correctly handles:
+      * singlets (2 axis-aligned faces -> 2 Transmit/Port surfaces)
+      * cemented doublets (3 axis-aligned faces if the importer
+        surfaces the interior cement face; otherwise only the 2
+        outer faces fire and the cement layer needs the OCC native
+        path)
+      * any body where the cement / interior faces happen to be
+        smaller than the side cylinder
 
-    Caller is responsible for re-normalizing the face metadata after
-    this so the role/function fields end up canonical.
+    Bodies whose largest face isn't paired with at least one
+    anti-parallel partner (e.g. a single-face sphere or a prism)
+    fall through to the existing ``Unassigned`` default so the
+    manual face-roles dialog still applies.
+
+    Returns the number of faces touched. Caller re-normalizes the
+    metadata afterward so role/function fields end up canonical.
     """
     if not faces:
         return 0
-    # Only touch faces that currently have an Unassigned function/role
-    # so user-assigned roles survive a re-promote.
+    # Only act when every face is currently Unassigned so a previous
+    # manual or upstream assignment survives a re-promote.
     target_indices: list[int] = []
     for index, face in enumerate(faces):
         if not isinstance(face, dict):
@@ -64,51 +72,130 @@ def _auto_assign_lens_face_functions(faces: list[dict[str, Any]]) -> int:
         target_indices.append(index)
     if len(target_indices) < 2:
         return 0
-    # Order by area descending.
-    ordered = sorted(
-        target_indices,
-        key=lambda i: float(faces[i].get("area_mm2", 0.0) or 0.0),
-        reverse=True,
-    )
-    a_idx, b_idx = ordered[0], ordered[1]
-    try:
-        n_a = np.asarray(faces[a_idx].get("normal") or (), dtype=float).reshape(-1)[:3]
-        n_b = np.asarray(faces[b_idx].get("normal") or (), dtype=float).reshape(-1)[:3]
-    except Exception:
+    # Normalize every face's normal once and stash beside its index.
+    normalized_normals: list[tuple[int, np.ndarray, float]] = []
+    for index in target_indices:
+        try:
+            normal = np.asarray(faces[index].get("normal") or (), dtype=float).reshape(-1)[:3]
+        except Exception:
+            continue
+        if normal.size < 3 or not np.all(np.isfinite(normal)):
+            continue
+        norm = float(np.linalg.norm(normal))
+        if norm < 1e-9:
+            continue
+        normalized_normals.append((index, normal / norm, float(faces[index].get("area_mm2", 0.0) or 0.0)))
+    if len(normalized_normals) < 2:
         return 0
-    if n_a.size < 3 or n_b.size < 3:
+    # Optical-axis direction = OPPOSITE the largest-area face's
+    # outward normal. The largest face is the body's front
+    # (largest aperture cap); its outward normal points TOWARD the
+    # incoming light, so the beam propagates ALONG -normal. Using
+    # axis = -largest_normal means:
+    #   * sorting axis_aligned faces by axial_pos ascending puts
+    #     the front first -> stamped role "Input"
+    #   * downstream Rc-sign computation in step_overlay_analytic_fit
+    #     correctly identifies "Rc > 0" as center-of-curvature on the
+    #     light-propagation side.
+    largest = max(normalized_normals, key=lambda t: t[2])
+    axis = -largest[1]
+    # An optical face has its normal parallel-or-anti-parallel to the
+    # axis (within ~18 deg). Compute axial position (signed projection
+    # of the centroid onto the axis) so faces at the same axial depth
+    # can be clustered -- a real lens surface tends to come with a
+    # small annular edge ring sitting at the SAME axial depth; only
+    # the largest face per cluster is the refractive surface.
+    axis_aligned: list[dict[str, Any]] = []
+    for index, normal, area in normalized_normals:
+        if abs(float(np.dot(normal, axis))) < 0.95:
+            continue
+        try:
+            centroid = np.asarray(faces[index].get("centroid") or (), dtype=float).reshape(-1)[:3]
+        except Exception:
+            continue
+        if centroid.size < 3 or not np.all(np.isfinite(centroid)):
+            continue
+        axial_pos = float(np.dot(centroid, axis))
+        axis_aligned.append({"index": index, "axial_pos": axial_pos, "area": area})
+    if len(axis_aligned) < 2:
         return 0
-    if not (np.all(np.isfinite(n_a)) and np.all(np.isfinite(n_b))):
+    # Drop tiny annular edge rings BEFORE clustering. The DCV's STEP
+    # decomposes each end into a big concave surface (~474 mm²) and a
+    # small annular ring on the edge (~23 mm²), and their centroids
+    # are far enough apart axially (~1.45 mm) that a clustering
+    # tolerance can't merge them without also fusing the front and
+    # back surfaces of a thin lens. Filtering by relative area is a
+    # cleaner separation: optical surfaces are by definition large
+    # compared to side-edge facets.
+    max_aligned_area = max(entry["area"] for entry in axis_aligned)
+    if max_aligned_area > 0:
+        axis_aligned = [
+            entry for entry in axis_aligned
+            if entry["area"] >= 0.1 * max_aligned_area
+        ]
+    if len(axis_aligned) < 2:
         return 0
-    na_norm = float(np.linalg.norm(n_a))
-    nb_norm = float(np.linalg.norm(n_b))
-    if na_norm < 1e-9 or nb_norm < 1e-9:
+    # Cluster by axial position. Tolerance is 0.5 mm absolute -- small
+    # enough that the front and back of a thin lens stay separate
+    # (DCV is 2.5 mm thick), big enough that a planar face split into
+    # several coplanar patches by the importer still merges.
+    axis_aligned.sort(key=lambda entry: entry["axial_pos"])
+    tolerance = 0.5
+    clusters: list[list[dict[str, Any]]] = [[axis_aligned[0]]]
+    for entry in axis_aligned[1:]:
+        if abs(entry["axial_pos"] - clusters[-1][-1]["axial_pos"]) < tolerance:
+            clusters[-1].append(entry)
+        else:
+            clusters.append([entry])
+    if len(clusters) < 2:
         return 0
-    cos_angle = float(np.dot(n_a / na_norm, n_b / nb_norm))
-    # Anti-parallel (within ~18 deg) means we're looking at the
-    # front+back of a lens. Plano-cylindrical lenses (one flat side,
-    # one curved) still produce face normals very close to anti-parallel
-    # because the centroid normal is along the optical axis.
-    if cos_angle > -0.95:
+    # Confirm the body has a genuine front+back: there must be one
+    # cluster with negative axial position (relative to the axis-aligned
+    # group) AND one with positive. Equivalently the largest face from
+    # the first cluster and the largest from the last cluster must
+    # have anti-parallel normals.
+    rep_indices: list[int] = [
+        max(cluster, key=lambda entry: entry["area"])["index"] for cluster in clusters
+    ]
+    def _unit(vec_obj):
+        try:
+            arr = np.asarray(vec_obj or (), dtype=float).reshape(3)
+        except Exception:
+            return None
+        if arr.size != 3 or not np.all(np.isfinite(arr)):
+            return None
+        norm = float(np.linalg.norm(arr))
+        if norm < 1e-9:
+            return None
+        return arr / norm
+
+    front_normal = _unit(faces[rep_indices[0]].get("normal"))
+    back_normal = _unit(faces[rep_indices[-1]].get("normal"))
+    if front_normal is None or back_normal is None:
+        return 0
+    if float(np.dot(front_normal, back_normal)) > -0.95:
         return 0
     assigned = 0
-    for index in (a_idx, b_idx):
-        face = faces[index]
+    transmit_set = set(rep_indices)
+    for order, idx in enumerate(rep_indices):
+        face = faces[idx]
         face["function"] = "Transmit/Port"
-        face["role"] = "Input" if index == a_idx else "Output"
+        # First face along the axis becomes Input; the rest are
+        # Output / interior. The renderer doesn't gate refraction on
+        # the role text -- it's purely cosmetic.
+        face["role"] = "Input" if order == 0 else "Output"
         face["assignment_origin"] = "auto_lens_promotion"
         assigned += 1
-    side_count = 0
     for index, face in enumerate(faces):
-        if index in (a_idx, b_idx):
+        if index in transmit_set:
             continue
         if not isinstance(face, dict):
             continue
         face["function"] = "Absorber/Mechanical"
         face["role"] = "Absorber/Mechanical"
         face["assignment_origin"] = "auto_lens_promotion"
-        side_count += 1
-    return assigned + side_count
+        assigned += 1
+    return assigned
 
 
 class StepOverlayPromotionService:

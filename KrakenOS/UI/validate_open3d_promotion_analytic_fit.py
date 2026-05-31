@@ -35,9 +35,18 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # these values to within ``tolerance_mm``.
 FIXTURES = [
     {
+        # DCV is the smoking-gun fixture for the sign-convention bug:
+        # the front surface (concave toward incoming light) has Rc<0
+        # in KrakenOS convention, and the back surface (concave toward
+        # outgoing light) has Rc>0. Earlier the fit used the per-face
+        # outward normal for sign, which made BOTH faces collapse to
+        # Rc=-52.10 -- so the rendered lens body looked wrong and a
+        # paraxial trace through it gave nonsense. The Rc-sign test
+        # below specifically asserts BOTH +52.10 and -52.10 are
+        # recovered, locking in the fix.
         "name": "DCV (32996)",
         "path": PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "step_32996.stp",
-        "expected_rc": (-52.10,),   # front face only (back is the same lens flipped)
+        "expected_rc": (-52.10, +52.10),
         "tolerance_mm": 0.01,
     },
     {
