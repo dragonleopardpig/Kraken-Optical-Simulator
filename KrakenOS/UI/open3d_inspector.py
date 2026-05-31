@@ -5270,30 +5270,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     scene_state = _asdict(snap)
         except Exception:
             scene_state = {}
-        # 2. Ask the user for a description.
-        description = ""
-        try:
-            description = simpledialog.askstring(
-                "Flag bug",
-                "Briefly describe the bug (Cancel discards this flag):",
-                parent=self,
-            ) or ""
-        except Exception:
-            description = ""
-        description = str(description).strip()
-        if not description:
-            try:
-                screenshot_path.unlink(missing_ok=True)
-                bundle_dir.rmdir()
-            except Exception:
-                pass
-            self.status_var.set("Flag bug cancelled (no description).")
-            return None
-        # 3. Save the bundle.
-        try:
-            (bundle_dir / "description.txt").write_text(description + "\n", encoding="utf-8")
-        except Exception as exc:
-            self.editor.append_debug(f"Open 3D flag description write failed: {exc}")
+        # 2. Save the bundle immediately with an empty description so
+        # the screenshot + scene state are safe even if the user is in
+        # the middle of a carry/drag and never finishes the dialog.
+        # The description prompt is non-modal; the user fills it in
+        # whenever convenient (or never -- the bundle is still useful).
         recording_info: dict[str, object] = {"recording_active": False}
         try:
             if recorder is not None and recorder.is_recording():
@@ -5309,40 +5290,156 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if cursor_xy_png is not None:
             cursor_block["png_xy"] = [int(cursor_xy_png[0]), int(cursor_xy_png[1])]
         try:
+            (bundle_dir / "description.txt").write_text("", encoding="utf-8")
+        except Exception:
+            pass
+        state_path = bundle_dir / "state.json"
+        try:
             payload = {
                 "version": 1,
                 "captured_at_iso": datetime.now().isoformat(timespec="seconds"),
-                "description": description,
+                "description": "",
                 "screenshot": "screenshot.png",
                 "cursor": cursor_block,
                 "recording": recording_info,
                 "scene_state": scene_state,
             }
-            (bundle_dir / "state.json").write_text(
+            state_path.write_text(
                 json.dumps(payload, indent=2),
                 encoding="utf-8",
             )
         except Exception as exc:
             self.editor.append_debug(f"Open 3D flag state write failed: {exc}")
-        # 4. If a recording is active, tag a flag event into the stream.
+        # 3. If a recording is active, tag a flag event into the stream
+        # immediately (with empty description). The non-modal dialog
+        # callback below will mutate the payload in place once the user
+        # types something, so the recording timeline ends up with the
+        # final description without needing a second event.
+        flag_event_payload: dict[str, object] | None = None
         try:
             if recorder is not None and recorder.is_recording():
                 event_payload: dict[str, object] = {"bundle_dir": str(bundle_dir)}
                 if cursor_block:
                     event_payload["cursor"] = cursor_block
                 recorder.record_flag(
-                    description,
+                    "",
                     str(screenshot_path),
                     payload=event_payload,
                 )
+                # Hold a reference to the just-appended event payload so
+                # the description, once typed, can be written through
+                # without inserting a second flag event.
+                try:
+                    last_event = recorder.events[-1]
+                    if str(last_event.kind) == "flag":
+                        flag_event_payload = last_event.payload
+                except Exception:
+                    flag_event_payload = None
         except Exception as exc:
             self.editor.append_debug(f"Open 3D flag record failed: {exc}")
-        self.status_var.set(f"Flagged bug: {bundle_dir.name}")
+        self.status_var.set(
+            f"Flagged bug: {bundle_dir.name}. Type description in the popup (carry stays live)."
+        )
         try:
             self.editor.append_progress(f"Flagged Open 3D bug: {bundle_dir}")
         except Exception:
             pass
+        # 4. Open the description dialog NON-MODALLY so any active
+        # carry / drag / placement stays interactive while the user
+        # types. The popup writes description.txt and updates
+        # state.json + the recording event payload on Save.
+        self._open_flag_description_dialog(
+            bundle_dir=bundle_dir,
+            state_path=state_path,
+            flag_event_payload=flag_event_payload,
+        )
         return bundle_dir
+
+    def _open_flag_description_dialog(
+        self,
+        *,
+        bundle_dir: Path,
+        state_path: Path,
+        flag_event_payload: dict[str, object] | None,
+    ) -> None:
+        """Non-modal Tk dialog for the flag description.
+
+        Stays open without grabbing focus so the user can keep carrying
+        a STEP body, finish a placement drag, etc., and circle back to
+        type the description later. ``Save`` writes description.txt and
+        updates state.json (and the recording event payload, if a
+        recording is live). ``Close`` leaves an empty description and
+        the bundle behind so the screenshot is still preserved.
+        """
+        try:
+            popup = tk.Toplevel(self)
+            popup.title(f"Flag: {bundle_dir.name}")
+            popup.transient(self)
+            popup.attributes("-topmost", True)
+            try:
+                popup.geometry("+%d+%d" % (self.winfo_rootx() + 24, self.winfo_rooty() + 24))
+            except Exception:
+                pass
+            frame = ttk.Frame(popup, padding=10)
+            frame.pack(fill="both", expand=True)
+            ttk.Label(
+                frame,
+                text=(
+                    "Describe the bug (carry / drag stays live while this is open).\n"
+                    "Press Save to persist; press Close to keep just the screenshot."
+                ),
+                justify="left",
+            ).pack(anchor="w")
+            entry = tk.Text(frame, height=4, width=60, wrap="word")
+            entry.pack(fill="both", expand=True, pady=(8, 8))
+            try:
+                entry.focus_set()
+            except Exception:
+                pass
+            buttons = ttk.Frame(frame)
+            buttons.pack(fill="x")
+
+            def _do_save(*_args) -> None:
+                text = entry.get("1.0", "end").strip()
+                if text:
+                    try:
+                        (bundle_dir / "description.txt").write_text(text + "\n", encoding="utf-8")
+                    except Exception as exc:
+                        self.editor.append_debug(f"Open 3D flag description save failed: {exc}")
+                    try:
+                        if state_path.exists():
+                            data = json.loads(state_path.read_text(encoding="utf-8"))
+                            data["description"] = text
+                            state_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                    except Exception as exc:
+                        self.editor.append_debug(f"Open 3D flag state update failed: {exc}")
+                    if isinstance(flag_event_payload, dict):
+                        try:
+                            flag_event_payload["description"] = text
+                        except Exception:
+                            pass
+                    self.status_var.set(f"Flag description saved: {bundle_dir.name}")
+                else:
+                    self.status_var.set(f"Flag kept without description: {bundle_dir.name}")
+                try:
+                    popup.destroy()
+                except Exception:
+                    pass
+
+            def _do_close(*_args) -> None:
+                try:
+                    popup.destroy()
+                except Exception:
+                    pass
+
+            ttk.Button(buttons, text="Save", command=_do_save).pack(side="right", padx=(8, 0))
+            ttk.Button(buttons, text="Close", command=_do_close).pack(side="right")
+            entry.bind("<Control-Return>", _do_save)
+            popup.bind("<Escape>", _do_close)
+            # Explicitly do NOT call grab_set / wait_window: the popup
+            # is non-modal so VTK drag/carry events keep flowing.
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D flag dialog open failed: {exc}")
 
     def cancel_active_3d_operation(self) -> bool:
         active_labels = self._active_3d_operation_labels()
