@@ -1178,23 +1178,26 @@ class StepOverlayPromotionService:
                 glass=str(materials[min(index, len(materials) - 1)]),
             )
             row.axis_move = 0.0
+            # Each row's desp must offset the cumulative z_station of
+            # PREVIOUS rows in the WHOLE system, not just the lens.
+            # The chain's z_station for row N is z_station_before +
+            # sum(thicknesses[insert_at..insert_at+N-1]). The target
+            # world position is placement[2] + sum(lens thicknesses
+            # up to this row). Subtracting gives desp_z = placement[2]
+            # - z_station_before for EVERY row in the promoted set.
+            # Anchor (index 0) also carries the rotation; subsequent
+            # rows ride the same chain-frame.
+            row.desp_x = float(placement[0]) if index == 0 else 0.0
+            row.desp_y = float(placement[1]) if index == 0 else 0.0
+            row.desp_z = float(placement[2] - z_station)
             if index == 0:
-                # Anchor row carries the overlay pose: same rotation
-                # the user dialed in via the rotation handles, and
-                # desp pulled from the overlay's placement_offset.
                 row.tilt_x = rotation_x
                 row.tilt_y = rotation_y
                 row.tilt_z = rotation_z
-                row.desp_x = float(placement[0])
-                row.desp_y = float(placement[1])
-                row.desp_z = float(placement[2] - z_station)
             else:
                 row.tilt_x = 0.0
                 row.tilt_y = 0.0
                 row.tilt_z = 0.0
-                row.desp_x = 0.0
-                row.desp_y = 0.0
-                row.desp_z = 0.0
             if arm_key:
                 self._apply_arm_key_metadata_to_row(row, arm_key)
             row.advanced = dict(row.advanced or {})
