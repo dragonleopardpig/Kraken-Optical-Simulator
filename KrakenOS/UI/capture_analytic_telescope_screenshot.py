@@ -326,7 +326,7 @@ def _aim_topdown_camera(app: KrakenLayoutEditor, inspector) -> None:
     try:
         ren = inspector._vtk_widget.GetRenderWindow().GetRenderers().GetFirstRenderer()
         cam = ren.GetActiveCamera()
-        d = span * 1.3
+        d = span * 1.6
         # Camera straight along +Y axis looking back toward -Y, with
         # world +X as the camera "up". That gives a top-down XZ view
         # with X up the page and Z to the right -- the layout the
@@ -334,7 +334,7 @@ def _aim_topdown_camera(app: KrakenLayoutEditor, inspector) -> None:
         cam.SetFocalPoint(cx, 0.0, cz)
         cam.SetPosition(cx, +d, cz)
         cam.SetViewUp(1.0, 0.0, 0.0)
-        cam.SetClippingRange(d * 0.05, d * 5.0)
+        cam.SetClippingRange(d * 0.02, d * 8.0)
         ren.ResetCameraClippingRange()
     except Exception as exc:
         print(f"WARN: top-down camera fit failed: {exc}", file=sys.stderr)
@@ -372,12 +372,14 @@ def _aim_iso_camera(app: KrakenLayoutEditor, inspector) -> None:
         ren = inspector._vtk_widget.GetRenderWindow().GetRenderers().GetFirstRenderer()
         cam = ren.GetActiveCamera()
         cam.SetFocalPoint(cx, cy, cz)
-        # Iso position in (+X, +Y, +Z) octant. Symmetric placement
-        # gives the splayed-Y/X/Z axis widget the user is used to.
-        d = span * 1.4
+        # Iso position in (+X, +Y, +Z) octant. Distance scales with
+        # the scene span so adding elements that widen the layout
+        # (e.g. the cyl lens out at world X = -265) doesn't crop the
+        # camera into a fixed earlier framing.
+        d = span * 1.8
         cam.SetPosition(cx + d * 0.9, cy + d * 0.7, cz + d * 1.1)
         cam.SetViewUp(0.0, 1.0, 0.0)
-        cam.SetClippingRange(d * 0.05, d * 5.0)
+        cam.SetClippingRange(d * 0.02, d * 8.0)
         ren.ResetCameraClippingRange()
     except Exception as exc:
         print(f"WARN: camera fit failed: {exc}", file=sys.stderr)
@@ -440,6 +442,15 @@ def main() -> int:
 
         inspector = _open_inspector(app)
         inspector.geometry("1920x1200+80+60")
+        # Force the embedded VTK widget to a known size -- when the
+        # surface table grows (e.g. cyl lens adds 2 more rows) the
+        # Tk geometry manager squeezes the 3D widget down to a few
+        # pixels wide, producing a 12x568 PNG. Setting the render
+        # window size directly bypasses that.
+        try:
+            inspector._vtk_widget.GetRenderWindow().SetSize(1280, 800)
+        except Exception:
+            pass
         _refresh_and_settle(inspector)
 
         OUTPUT_RAYS_OFF.parent.mkdir(parents=True, exist_ok=True)

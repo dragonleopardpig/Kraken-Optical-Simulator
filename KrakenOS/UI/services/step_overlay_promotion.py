@@ -20,12 +20,113 @@ from KrakenOS.UI.services.optical_solid_geometry import (
 )
 from KrakenOS.UI.services.step_native_reconstruction import reconstruct_step_native_surfaces
 from KrakenOS.UI.services.step_overlay_analytic_fit import (
+    PlaneFit,
     SphereFit,
+    ToroidFit,
+    fit_plane,
     fit_step_overlay_analytic_surfaces,
     maybe_split_full_sphere_face,
 )
 from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABEL_SET
 from KrakenOS.UI.surface_table_model import SurfaceRow
+
+
+def _refine_face_normals_from_mesh(
+    faces: list[dict[str, Any]],
+    mesh: Any,
+) -> None:
+    """Replace each face's metadata normal with body-centroid-derived normal.
+
+    Some STEP files (e.g. the Edmund 34754 plano-cylindrical lens)
+    arrive with face metadata where most faces report the same normal
+    direction even though they're actually perpendicular to different
+    body axes. The importer's centroid-area-weighting collapses badly
+    on bodies whose native frame doesn't align with world axes.
+
+    For axisymmetric optical bodies (lenses, prisms with paired flat
+    sides), the OUTWARD normal at each face's centroid is reliably
+    given by
+
+        face_outward_normal = normalize(face_centroid - body_centroid)
+
+    where body_centroid is the mean of all face centroids. This holds
+    for spheres, plano-convex, plano-concave, biconcave, biconvex,
+    cemented doublets, and plano-cylindrical lenses -- every face's
+    centroid sits on the outside of the body, so the offset direction
+    from the body interior IS the face's outward normal.
+
+    The refined normals are written in place; the original metadata
+    normal is preserved as ``normal_metadata`` for diagnostics.
+
+    Faces whose centroids sit essentially AT the body centroid
+    (radially-symmetric annulus faces, etc.) are left untouched
+    because the offset direction is degenerate. The same applies
+    when the mesh is missing.
+    """
+    if mesh is None or not faces:
+        return
+    # Guard: only refine when the metadata normals are missing the
+    # anti-parallel pair that would let the optical-axis detection
+    # work. If the metadata already has a pair (e.g. an achromat
+    # whose front and back sphere faces have opposite normals), the
+    # metadata is trustworthy and any "refine" would replace the
+    # rim's correctly-perpendicular normals with axis-pointing ones,
+    # making the rim incorrectly qualify as an optical face.
+    metadata_normals: list[np.ndarray] = []
+    for f in faces:
+        try:
+            n = np.asarray(f.get("normal") or (), dtype=float).reshape(-1)[:3]
+        except Exception:
+            n = np.empty((0,), dtype=float)
+        if n.size != 3:
+            continue
+        norm = float(np.linalg.norm(n))
+        if norm < 1e-9:
+            metadata_normals.append(np.zeros(3))
+        else:
+            metadata_normals.append(n / norm)
+    has_pair = False
+    for i in range(len(metadata_normals)):
+        for j in range(i + 1, len(metadata_normals)):
+            ni = metadata_normals[i]
+            nj = metadata_normals[j]
+            if float(np.linalg.norm(ni)) < 1e-6 or float(np.linalg.norm(nj)) < 1e-6:
+                continue
+            if float(np.dot(ni, nj)) < -0.95:
+                has_pair = True
+                break
+        if has_pair:
+            break
+    if has_pair:
+        return  # metadata is trustworthy, leave alone
+
+    face_centroids: list[np.ndarray] = []
+    keep_indices: list[int] = []
+    for index, f in enumerate(faces):
+        c = f.get("centroid")
+        if c is None:
+            continue
+        try:
+            cv = np.asarray(c, dtype=float).reshape(3)
+        except Exception:
+            continue
+        if not np.all(np.isfinite(cv)):
+            continue
+        face_centroids.append(cv)
+        keep_indices.append(index)
+    if len(face_centroids) < 2:
+        return
+    body_centroid = np.mean(np.asarray(face_centroids), axis=0)
+    for face_idx, fcentroid in zip(keep_indices, face_centroids):
+        offset = fcentroid - body_centroid
+        norm = float(np.linalg.norm(offset))
+        if norm < 1e-6:
+            continue  # face sits at body centroid - degenerate
+        outward = offset / norm
+        f = faces[face_idx]
+        if "normal_metadata" not in f:
+            f["normal_metadata"] = list(f.get("normal") or [])
+        f["normal"] = [float(outward[0]), float(outward[1]), float(outward[2])]
 
 
 def _auto_assign_lens_face_functions(faces: list[dict[str, Any]]) -> int:
@@ -1072,6 +1173,11 @@ class StepOverlayPromotionService:
                 faces.append(f)
             else:
                 faces.extend(split)
+        # Some STEP files (e.g. Edmund 34754 plano-cylindrical) ship
+        # with all face normals reporting the same direction. Refine
+        # those from the mesh point clouds so the pair-axis optical
+        # detection has reliable signals to work with.
+        _refine_face_normals_from_mesh(faces, mesh)
         face_copies = [dict(f) for f in faces]
         _auto_assign_lens_face_functions(face_copies)
         transmit_faces = [
@@ -1081,10 +1187,29 @@ class StepOverlayPromotionService:
         ]
         if not transmit_faces:
             return None
+        # Derive the body's actual optical axis from the auto-assigned
+        # transmit faces: the first face (lowest axial_pos in the
+        # auto-assign sort) has its OUTWARD normal pointing UPSTREAM
+        # (toward the incoming ray). So optical axis = -first_normal.
+        # For most STEP files this works out to +Z, but for bodies
+        # whose native frame puts the optical axis along Y or X (e.g.
+        # the rectangular plano-cylindrical lens in
+        # attachment/Lens/cylinder_lens_rectangle/) the actual axis
+        # differs. Falling back to (0,0,1) keeps the old behaviour
+        # when normals are missing.
+        try:
+            first_normal = np.asarray(
+                transmit_faces[0].get("normal") or (0.0, 0.0, -1.0),
+                dtype=float,
+            ).reshape(3)
+            first_normal /= max(float(np.linalg.norm(first_normal)), 1e-9)
+            optical_axis = (-first_normal).tolist()
+        except Exception:
+            optical_axis = [0.0, 0.0, 1.0]
         fit = fit_step_overlay_analytic_surfaces(
             mesh,
             transmit_faces,
-            source_axis=(0.0, 0.0, 1.0),
+            source_axis=tuple(float(v) for v in optical_axis),
         )
         specs = list(fit.specs)
         if not specs:
@@ -1099,10 +1224,18 @@ class StepOverlayPromotionService:
         rows_preview: list[dict[str, Any]] = []
         for index, spec in enumerate(specs):
             fit_info = spec.fit
+            cylinder_rxy_ratio = 1.0
+            rotation_z_deg = 0.0
             if isinstance(fit_info, SphereFit):
                 rc = float(getattr(fit_info, "signed_rc", 0.0))
                 kind = "sphere"
                 residual = float(fit_info.residual_mm)
+            elif isinstance(fit_info, ToroidFit):
+                rc = float(getattr(fit_info, "signed_rc", 0.0)) or float(fit_info.radius_meridional)
+                kind = "toroid" if fit_info.cylinder_rxy_ratio > 1e-6 else "cylinder"
+                residual = float(fit_info.residual_mm)
+                cylinder_rxy_ratio = float(fit_info.cylinder_rxy_ratio)
+                rotation_z_deg = float(fit_info.rotation_z_deg)
             else:
                 rc = 0.0
                 kind = "plane"
@@ -1119,6 +1252,8 @@ class StepOverlayPromotionService:
                     "thickness_mm": float(max(thickness, 0.0)),
                     "diameter_mm": float(spec.diameter_mm),
                     "residual_mm": residual,
+                    "cylinder_rxy_ratio": cylinder_rxy_ratio,
+                    "rotation_z_deg": rotation_z_deg,
                 }
             )
         return {
@@ -1292,10 +1427,22 @@ class StepOverlayPromotionService:
             # and the ray either grazes or misses.
             row.tilt_x = (rotation_x + chain_tilt[0]) % 360.0
             row.tilt_y = (rotation_y + chain_tilt[1]) % 360.0
-            row.tilt_z = (rotation_z + chain_tilt[2]) % 360.0
+            # For toroidal / cylindrical surfaces the tilt about the
+            # optical (chain-z) axis sets the orientation of the
+            # meridional (high-curvature) axis. fit_torus returned
+            # this in row_info["rotation_z_deg"].
+            torus_rotation_z = float(row_info.get("rotation_z_deg", 0.0) or 0.0)
+            row.tilt_z = (rotation_z + chain_tilt[2] + torus_rotation_z) % 360.0
+            # Encode the cylinder/torus ratio in the row's advanced
+            # dict so KrakenOS's conic__surf uses the right anamorphic
+            # scaling (Cylinder_Rxy_Ratio = 0 means pure plano-cyl,
+            # 0<gamma<1 means torus, 1 is sphere-equivalent).
+            cylinder_ratio = float(row_info.get("cylinder_rxy_ratio", 1.0) or 1.0)
             if arm_key:
                 self._apply_arm_key_metadata_to_row(row, arm_key)
             row.advanced = dict(row.advanced or {})
+            if abs(cylinder_ratio - 1.0) > 1e-6:
+                row.advanced["Cylinder_Rxy_Ratio"] = cylinder_ratio
             row.advanced["StepAnalyticPromotion"] = {
                 "step_label": label,
                 "source_step_path": str(source_path.resolve()),

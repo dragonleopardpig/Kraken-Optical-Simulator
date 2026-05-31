@@ -42,6 +42,7 @@ from KrakenOS.UI.layout_editor import KrakenLayoutEditor, Kraken3DInspector
 from KrakenOS.UI.validate_open3d_penta_telescope_chain import (
     PENTA_CASCADE_PATH,
     BALL_LENS_STEP,
+    CYL_STEP,
     BALL_LENS_GAP_MM,
     PHASE1_CLEARANCE_FROM_PRISM_MM,
     PHASE2_GAP_FROM_BALL_2_MM,
@@ -128,11 +129,26 @@ LENS_SPECS: list[dict[str, Any]] = [
         ),
         "gap_after_mm": PHASE3_GAP_FROM_ACHROMAT_MM,
     },
+    {
+        # Edmund 34754 plano-cylindrical lens: N-BK7, R=25.84 mm
+        # cylindrical (curved in one axis only), f=+50 mm. Promoted
+        # via the analytic_parameters fast-path in the analytic-fit
+        # service -- OCC preserves surface_type=cylinder with the
+        # exact radius_mm, which we encode as a Standard row with
+        # Cylinder_Rxy_Ratio=0 (pure plano-cyl, no Y curvature).
+        "name": "Cylindrical f=+50 mm (N-BK7, plano-cyl)",
+        "step": CYL_STEP,
+        "glass": "N-BK7",
+        "offset_along_exit_mm": (
+            PHASE1_CLEARANCE_FROM_PRISM_MM
+            + BALL_LENS_GAP_MM
+            + PHASE2_GAP_FROM_BALL_2_MM
+            + DCV_TO_ACHROMAT_GAP_MM
+            + PHASE3_GAP_FROM_ACHROMAT_MM
+        ),
+        "gap_after_mm": 50.0,
+    },
 ]
-# Cylindrical lens stays out of the analytic line-up for now -- its
-# toroidal face's centroid-averaged normal is perpendicular to the
-# flat face's normal, so the front/back detection can't trigger
-# without a proper torus fit (tracked separately).
 
 
 def _import_step(
