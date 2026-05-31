@@ -572,6 +572,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.bind("<BackSpace>", self._delete_selected_step_event)
             self._vtk_widget.bind("<Delete>", self._delete_selected_step_event, add="+")
             self._vtk_widget.bind("<BackSpace>", self._delete_selected_step_event, add="+")
+            # Flag-bug hotkey: bind at both Toplevel and 3D-pane level so
+            # `s` works whether focus is on the renderer or just inside
+            # the inspector window. The VTK observer in `_on_key_press`
+            # also handles `s`, but Tk's focus model means a non-focused
+            # render pane (e.g. after the user clicked the Record
+            # button) silently swallows the key without firing the VTK
+            # observer.
+            self.bind("<KeyPress-s>", self._flag_bug_event)
+            self.bind("<KeyPress-S>", self._flag_bug_event)
+            self._vtk_widget.bind("<KeyPress-s>", self._flag_bug_event, add="+")
+            self._vtk_widget.bind("<KeyPress-S>", self._flag_bug_event, add="+")
             ttk.Label(self, textvariable=self.status_var, padding=(8, 0, 8, 8)).grid(row=2, column=0, columnspan=3, sticky="ew")
             self.available = True
         except Exception as exc:
@@ -5168,6 +5179,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if self._vtk_widget is None:
             self.status_var.set("Flag bug unavailable: 3D window is not ready.")
             return None
+        # Immediate feedback so the user knows `s` was detected even if
+        # the screenshot capture or PIL overlay takes a beat.
+        self.status_var.set("Flag bug: capturing screenshot, please describe in the dialog...")
+        try:
+            self.update_idletasks()
+        except Exception:
+            pass
         recorder = getattr(self, "_event_recorder", None)
         # 1. Capture screenshot + scene state immediately (pre-dialog).
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
@@ -5427,6 +5445,26 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
     def _cancel_active_3d_operation_event(self, _event=None) -> str:
         self.cancel_active_3d_operation()
+        return "break"
+
+    def _flag_bug_event(self, _event=None) -> str:
+        """Tk binding shim for the `s` flag-bug hotkey.
+
+        Returns ``"break"`` to suppress further propagation so VTK's
+        default `s` (surface-display toggle) doesn't fire after the
+        flag dialog closes.
+        """
+        try:
+            # If focus is inside a text entry (e.g. the row spreadsheet
+            # cell editor), let `s` type normally instead of flagging.
+            focused = self.focus_get()
+            if focused is not None:
+                cls = focused.winfo_class()
+                if cls in {"Entry", "Text", "TEntry", "TCombobox", "Spinbox", "TSpinbox"}:
+                    return ""
+        except Exception:
+            pass
+        self.flag_bug()
         return "break"
 
     def _on_key_press(self, obj, _event) -> None:
