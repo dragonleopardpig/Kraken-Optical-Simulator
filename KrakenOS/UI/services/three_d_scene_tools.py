@@ -12,8 +12,10 @@ from __future__ import annotations
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import asdict
 import io
+import json
 from pathlib import Path
-import threading
+import subprocess
+import sys
 import time
 import tkinter as tk
 from tkinter import filedialog
@@ -178,84 +180,134 @@ class ThreeDSceneToolsMixin:
         specs = self._open3d_step_cache_warmup_specs()
         if not specs:
             return False
-        thread = getattr(self, "_open3d_step_cache_warmup_thread", None)
-        if thread is not None and thread.is_alive():
+        process = getattr(self, "_open3d_step_cache_warmup_process", None)
+        if process is not None and process.poll() is None:
             try:
                 inspector.status_var.set("Open 3D is warming STEP display cache...")
                 self.status_var.set("Open 3D is warming STEP display cache...")
             except Exception:
                 pass
             return True
+        if bool(getattr(self, "_open3d_step_cache_warmup_pending", False)):
+            try:
+                inspector.status_var.set("Open 3D is preparing STEP display cache warm-up...")
+                self.status_var.set("Open 3D is preparing STEP display cache warm-up...")
+            except Exception:
+                pass
+            return True
 
         names = ", ".join(f"{label}:{path.name}" for label, path, _largest in specs)
         try:
-            inspector.status_var.set(f"Open 3D warming STEP display cache: {names}")
-            self.status_var.set(f"Open 3D warming STEP display cache: {names}")
+            inspector.status_var.set(f"Open 3D warming STEP display cache outside the UI process: {names}")
+            self.status_var.set(f"Open 3D warming STEP display cache outside the UI process: {names}")
             self.update_idletasks()
         except Exception:
             pass
+        self._open3d_step_cache_warmup_pending = True
+        try:
+            self.after(50, lambda: self._launch_open3d_step_cache_warmup(inspector, specs, names))
+        except Exception:
+            self._launch_open3d_step_cache_warmup(inspector, specs, names)
+        return True
 
-        def worker() -> None:
-            started = time.perf_counter()
-            messages: list[str] = []
-            errors: list[str] = []
-            try:
-                from KrakenOS.UI.services.layout_polyline_display import LayoutPolylineDisplayMixin
+    def _launch_open3d_step_cache_warmup(self, inspector, specs: list[tuple[str, Path, bool]], names: str) -> None:
+        self._open3d_step_cache_warmup_pending = False
+        process = getattr(self, "_open3d_step_cache_warmup_process", None)
+        if process is not None and process.poll() is None:
+            return
+        command = [
+            sys.executable,
+            "-m",
+            "KrakenOS.UI.warm_open3d_step_cache",
+        ]
+        for label, path, largest in specs:
+            command.extend(
+                (
+                    "--spec",
+                    json.dumps(
+                        {
+                            "label": str(label),
+                            "path": str(path),
+                            "largest_component": bool(largest),
+                        },
+                        separators=(",", ":"),
+                    ),
+                )
+            )
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=str(PROJECT_ROOT),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except Exception as exc:
+            self.append_debug(f"Open 3D STEP cache subprocess failed to start: {exc}")
+            return
+        self._open3d_step_cache_warmup_process = process
+        self._open3d_step_cache_warmup_started = time.perf_counter()
+        self._poll_open3d_step_cache_warmup(inspector, names)
 
-                class _StepCacheWarmupLoader(LayoutPolylineDisplayMixin):
-                    def __init__(self) -> None:
-                        self._external_cad_mesh_cache = {}
-
-                    def append_debug(self, message: str) -> None:
-                        if message:
-                            messages.append(str(message))
-
-                loader = _StepCacheWarmupLoader()
-                for label, path, largest in specs:
-                    try:
-                        loader._load_step_mesh(path, largest_component=bool(largest))
-                    except Exception as exc:
-                        errors.append(f"{label}:{path.name}: {_short_error_message(exc)}")
-            except Exception as exc:
-                errors.append(_short_error_message(exc))
+    def _poll_open3d_step_cache_warmup(self, inspector, names: str) -> None:
+        process = getattr(self, "_open3d_step_cache_warmup_process", None)
+        if process is None:
+            return
+        started = float(getattr(self, "_open3d_step_cache_warmup_started", time.perf_counter()))
+        if process.poll() is None:
             elapsed = time.perf_counter() - started
-
-            def finish() -> None:
-                for message in messages[-8:]:
-                    try:
-                        self.append_debug(message)
-                    except Exception:
-                        pass
-                if errors:
-                    status = "Open 3D STEP cache warm-up completed with warnings."
-                    try:
-                        self.append_debug("Open 3D STEP cache warm-up warnings: " + "; ".join(errors))
-                    except Exception:
-                        pass
-                else:
-                    status = f"Open 3D STEP cache warm-up completed in {elapsed:.1f}s."
-                try:
-                    inspector.status_var.set(status)
-                    self.status_var.set(status)
-                    if inspector.winfo_exists() and bool(getattr(inspector, "available", False)):
-                        inspector.refresh_from_editor()
-                        self.status_var.set("Opened Kraken 3D inspector")
-                        self.append_debug("Opened Kraken 3D inspector after STEP cache warm-up")
-                except Exception as exc:
-                    try:
-                        self.append_debug(f"Open 3D refresh after STEP cache warm-up failed: {exc}")
-                    except Exception:
-                        pass
-
+            status = f"Open 3D warming STEP display cache outside the UI process ({elapsed:.1f}s): {names}"
             try:
-                self.after(0, finish)
+                inspector.status_var.set(status)
+                self.status_var.set(status)
             except Exception:
                 pass
+            try:
+                self.after(250, lambda: self._poll_open3d_step_cache_warmup(inspector, names))
+            except Exception:
+                pass
+            return
+        try:
+            stdout, stderr = process.communicate(timeout=0.1)
+        except Exception:
+            stdout, stderr = "", ""
+        self._open3d_step_cache_warmup_process = None
+        elapsed = time.perf_counter() - started
+        if stderr.strip():
+            self.append_debug("Open 3D STEP cache warm-up stderr: " + stderr.strip()[-1200:])
+        summary = self._open3d_step_cache_warmup_summary(stdout)
+        ok = process.returncode == 0 and bool(summary.get("ok", False))
+        if ok:
+            count = len(summary.get("results", []) or [])
+            status = f"Open 3D STEP cache warm-up completed in {elapsed:.1f}s ({count} file(s))."
+        else:
+            status = f"Open 3D STEP cache warm-up completed with warnings in {elapsed:.1f}s."
+            errors = list(summary.get("errors", []) or [])
+            if errors:
+                self.append_debug("Open 3D STEP cache warm-up warnings: " + "; ".join(str(error) for error in errors))
+        try:
+            inspector.status_var.set(status)
+            self.status_var.set(status)
+            if inspector.winfo_exists() and bool(getattr(inspector, "available", False)):
+                inspector.refresh_from_editor()
+                self.status_var.set("Opened Kraken 3D inspector")
+                self.append_debug("Opened Kraken 3D inspector after STEP cache warm-up")
+        except Exception as exc:
+            self.append_debug(f"Open 3D refresh after STEP cache warm-up failed: {exc}")
 
-        thread = threading.Thread(target=worker, name="KrakenOpen3DStepCacheWarmup", daemon=True)
-        self._open3d_step_cache_warmup_thread = thread
-        thread.start()
-        return True
+    @staticmethod
+    def _open3d_step_cache_warmup_summary(stdout: str) -> dict[str, object]:
+        for line in reversed(str(stdout or "").splitlines()):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                value = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(value, dict):
+                return value
+        return {"ok": False, "errors": ["warm-up subprocess produced no JSON summary"]}
 
     def _schedule_legacy_3d_poll(self) -> None:
         if self._legacy_3d_after_id is not None:

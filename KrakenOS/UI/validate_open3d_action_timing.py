@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 
 from KrakenOS.UI import diagnose_open3d_action_timing
+from KrakenOS.UI import warm_open3d_step_cache
 from KrakenOS import MeshRayTrace
 from KrakenOS import TraceLoopTool
 import KrakenOS as Kos
@@ -33,6 +34,7 @@ def main() -> int:
     trace_sampling_source = inspect.getsource(trace_preview_sampling.TracePreviewSamplingMixin._trace_selected_through_envelope)
     polyline_source = inspect.getsource(layout_polyline_display.LayoutPolylineDisplayMixin._load_step_mesh)
     three_d_tools_source = inspect.getsource(three_d_scene_tools.ThreeDSceneToolsMixin)
+    step_warmup_source = inspect.getsource(warm_open3d_step_cache)
     workbench_source = inspect.getsource(layout_table_workbench.LayoutTableWorkbenchMixin)
     diagnostic_source = inspect.getsource(diagnose_open3d_action_timing)
     checks = [
@@ -76,8 +78,10 @@ def main() -> int:
         (
             "Open 3D first-load STEP display cache warm-up does not block the Tk inspector",
             "def _start_open3d_step_cache_warmup" in three_d_tools_source
-            and "KrakenOpen3DStepCacheWarmup" in three_d_tools_source
-            and "LayoutPolylineDisplayMixin" in three_d_tools_source
+            and "subprocess.Popen" in three_d_tools_source
+            and "KrakenOS.UI.warm_open3d_step_cache" in three_d_tools_source
+            and "def _poll_open3d_step_cache_warmup" in three_d_tools_source
+            and "LayoutPolylineDisplayMixin" in step_warmup_source
             and "inspector.refresh_from_editor()" in three_d_tools_source,
         ),
         (
