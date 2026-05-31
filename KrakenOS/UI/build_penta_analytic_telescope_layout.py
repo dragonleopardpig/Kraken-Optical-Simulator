@@ -168,6 +168,16 @@ def _build_layout(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> dict
     # comes from the actual ray trace through the prisms.
     base = _load_penta_cascade(app)
     summary["cascade_rows"] = base["row_count"]
+    # Override the source aperture inherited from the cascade base
+    # (4 mm radius) -- too wide for analytic ball lenses (R=4.76 mm),
+    # so marginal rays at r/R=0.84 produce ~30 deg spherical
+    # aberration fans. 1.5 mm keeps r/R<0.31 inside the paraxial
+    # region; the saved layout's traced rays read cleanly through
+    # the whole chain instead of fanning out after the ball lenses.
+    try:
+        app.source_radius_var.set("1.5")
+    except Exception:
+        pass
     inspector.refresh_from_editor(force_retrace=True)
     inspector.update_idletasks()
     try:

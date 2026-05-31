@@ -38,6 +38,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LAYOUT = PROJECT_ROOT / "attachment" / "five_penta_prism_analytic_telescope_cascade.py"
 OUTPUT_RAYS_OFF = PROJECT_ROOT / "attachment" / "3D_analytic_check_off.png"
 OUTPUT_RAYS_ON = PROJECT_ROOT / "attachment" / "3D_analytic_check_on.png"
+OUTPUT_TOPDOWN = PROJECT_ROOT / "attachment" / "3D_analytic_check_topdown.png"
 
 
 # Expected row poses for the saved analytic layout. Tolerances are
@@ -301,6 +302,41 @@ def _write_png(inspector, path: Path) -> None:
     writer.Write()
 
 
+def _aim_topdown_camera(app: KrakenLayoutEditor, inspector) -> None:
+    """Place the VTK camera for a top-down (XZ plane) view, matching
+    the user's compare 3D.png orientation: X up, Z right, Y into page."""
+    rows = list(app.rows)
+    xs: list[float] = []
+    zs: list[float] = []
+    for row in rows:
+        try:
+            xs.append(float(getattr(row, "desp_x", 0.0) or 0.0))
+            zs.append(float(getattr(row, "desp_z", 0.0) or 0.0))
+        except Exception:
+            continue
+    zs = [z + 100.0 for z in zs]
+    if not xs:
+        return
+    cx = 0.5 * (min(xs) + max(xs))
+    cz = 0.5 * (min(zs) + max(zs))
+    span = max(max(xs) - min(xs), max(zs) - min(zs), 250.0)
+    try:
+        ren = inspector._vtk_widget.GetRenderWindow().GetRenderers().GetFirstRenderer()
+        cam = ren.GetActiveCamera()
+        d = span * 1.3
+        # Camera straight along +Y axis looking back toward -Y, with
+        # world +X as the camera "up". That gives a top-down XZ view
+        # with X up the page and Z to the right -- the layout the
+        # user shows in 3D.png.
+        cam.SetFocalPoint(cx, 0.0, cz)
+        cam.SetPosition(cx, +d, cz)
+        cam.SetViewUp(1.0, 0.0, 0.0)
+        cam.SetClippingRange(d * 0.05, d * 5.0)
+        ren.ResetCameraClippingRange()
+    except Exception as exc:
+        print(f"WARN: top-down camera fit failed: {exc}", file=sys.stderr)
+
+
 def _aim_iso_camera(app: KrakenLayoutEditor, inspector) -> None:
     """Place the VTK camera to match the user's compare-pair iso view.
 
@@ -351,7 +387,14 @@ def _refresh_and_settle(inspector, *, force_retrace: bool = False) -> None:
     time.sleep(0.25)
 
 
-def _capture(inspector, app: KrakenLayoutEditor, path: Path, *, rays_on: bool) -> None:
+def _capture(
+    inspector,
+    app: KrakenLayoutEditor,
+    path: Path,
+    *,
+    rays_on: bool,
+    view: str = "iso",
+) -> None:
     inspector.show_rays_var.set(bool(rays_on))
     _refresh_and_settle(inspector, force_retrace=True)
     if rays_on:
@@ -360,7 +403,10 @@ def _capture(inspector, app: KrakenLayoutEditor, path: Path, *, rays_on: bool) -
         except Exception as exc:
             print(f"WARN: trace_live raised {exc}", file=sys.stderr)
         _refresh_and_settle(inspector)
-    _aim_iso_camera(app, inspector)
+    if view == "topdown":
+        _aim_topdown_camera(app, inspector)
+    else:
+        _aim_iso_camera(app, inspector)
     inspector.update_idletasks()
     inspector.update()
     time.sleep(0.15)
@@ -395,8 +441,10 @@ def main() -> int:
 
         OUTPUT_RAYS_OFF.parent.mkdir(parents=True, exist_ok=True)
         print("Capturing iso views:")
-        _capture(inspector, app, OUTPUT_RAYS_OFF, rays_on=False)
-        _capture(inspector, app, OUTPUT_RAYS_ON, rays_on=True)
+        _capture(inspector, app, OUTPUT_RAYS_OFF, rays_on=False, view="iso")
+        _capture(inspector, app, OUTPUT_RAYS_ON, rays_on=True, view="iso")
+        print("Capturing top-down view:")
+        _capture(inspector, app, OUTPUT_TOPDOWN, rays_on=True, view="topdown")
 
         return 0 if failed == 0 else 1
     except Exception as exc:
