@@ -376,6 +376,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._actor_optical_axis_map: dict[str, dict[str, object]] = {}
         self._optical_axis_actor_map: dict[str, list[str]] = {}
         self._optical_axis_pick_records: list[dict[str, object]] = []
+        # Cache of the last live-trace's per-segment axis records so
+        # rays-off refreshes can still show the cascade's folded
+        # geometry. Cleared whenever rows change (refresh_from_editor
+        # invalidates it indirectly through the cache key check inside
+        # _optical_axis_records_for_3d).
+        self._cached_traced_axis_records: list[dict[str, object]] = []
+        self._cached_traced_axis_signature: tuple = ()
         self._optical_axis_highlight_actor = None
         self._actor_by_key: dict[str, object] = {}
         self._actor_step_map: dict[str, str] = {}
@@ -6238,7 +6245,31 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             show_rays = bool(self.show_rays_var.get())
         except Exception:
             show_rays = False
+        # Build a cache signature from the current rows so the cached
+        # traced segments stay valid as long as the scene topology
+        # hasn't changed. Edits to a row's pose / Rc / glass don't
+        # change the signature -- the user can keep the segments
+        # while still iterating on parameters -- but row insertions /
+        # removals do.
+        try:
+            cache_signature = tuple(
+                (
+                    str(getattr(row, "surface", "") or ""),
+                    str(getattr(row, "name", "") or ""),
+                )
+                for row in self.editor.rows
+            )
+        except Exception:
+            cache_signature = ()
+        if cache_signature != self._cached_traced_axis_signature:
+            self._cached_traced_axis_records = []
+            self._cached_traced_axis_signature = cache_signature
         if not show_rays:
+            # Serve the cache so the folded cascade segments stay
+            # visible when the user toggles rays off. Empty cache =>
+            # only the global guide, matching the prior behaviour.
+            if self._cached_traced_axis_records:
+                records.extend(self._cached_traced_axis_records)
             return records
         allow_traced_axis_guides = bool(getattr(scene_bundle, "has_off_axis", False)) or bool(
             list(getattr(scene_bundle, "optical_volumes", []) or [])
@@ -6317,7 +6348,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             physical_paths = [path for path in physical_paths if _path_has_non_refractive_steering(path)]
             if physical_paths:
                 chief = min(physical_paths, key=_path_score)
-                records.extend(_dotted_axis_records_from_ray_path(chief, bounds))
+                traced_segments = _dotted_axis_records_from_ray_path(chief, bounds)
+                records.extend(traced_segments)
+                # Stash a deep-enough copy so a later rays-off refresh
+                # can serve the same segments. Convert numpy point
+                # arrays into a plain list so the cache stays portable
+                # across refresh cycles.
+                cached: list[dict[str, object]] = []
+                for seg in traced_segments:
+                    seg_copy = dict(seg)
+                    pts = seg_copy.get("points")
+                    if pts is not None:
+                        try:
+                            seg_copy["points"] = np.asarray(pts, dtype=float).copy()
+                        except Exception:
+                            pass
+                    cached.append(seg_copy)
+                self._cached_traced_axis_records = cached
         return records
 
     def _add_optical_axis_pick_overlays(self, scene_bundle: SceneBundle | None) -> int:
