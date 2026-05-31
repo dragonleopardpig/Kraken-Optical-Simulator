@@ -326,11 +326,42 @@ def _check_visible_bounds_mismatch(events: list[dict[str, Any]], findings: list[
 # Public API
 
 
+def _surface_user_flags(events: list[dict[str, Any]], findings: list[Finding]) -> None:
+    """Surface every Flag-bug entry the user dropped while recording.
+
+    These are not regressions on their own -- they're the user's own
+    annotation that something looked wrong at a moment in time. Promote
+    them to ``info`` so the analyzer report keeps them visible at the
+    top.
+    """
+    for i, ev in enumerate(events):
+        if str(ev.get("kind") or "") != "flag":
+            continue
+        payload = ev.get("payload") or {}
+        description = str(payload.get("description") or "").strip()
+        screenshot = str(payload.get("screenshot_path") or "").strip()
+        findings.append(
+            Finding(
+                severity="info",
+                code="user_flag",
+                event_index=i,
+                timestamp_ms=float(ev.get("timestamp_ms") or 0.0),
+                message=f"USER FLAG: {description or '(no description)'}",
+                detail={
+                    "description": description,
+                    "screenshot_path": screenshot,
+                    "bundle_dir": str(payload.get("bundle_dir") or ""),
+                },
+            )
+        )
+
+
 def analyze_recording(path: Path) -> AnalysisReport:
     """Walk a recording JSON and produce a list of findings."""
     data = _load(path)
     events = list(data.get("events") or [])
     findings: list[Finding] = []
+    _surface_user_flags(events, findings)
     _check_axis_extent(events, findings)
     _check_handles_after_snap(events, findings)
     _check_view_up_drift(events, findings)

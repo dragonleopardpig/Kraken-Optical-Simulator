@@ -196,6 +196,34 @@ class Open3DEventRecorder:
             )
         )
 
+    def record_flag(self, description: str, screenshot_path: str, payload: dict[str, Any] | None = None) -> None:
+        """User clicked Flag bug: insert a flagged event into the timeline.
+
+        Use ``capture_scene_snapshot()`` from the inspector before this
+        if you need the snapshot to predate any dialog redraw; here we
+        just take the current state. ``screenshot_path`` and
+        ``description`` are stamped into the payload so the post-mortem
+        knows what the user was looking at and what they typed.
+        """
+        if not self.recording:
+            return
+        merged = dict(payload or {})
+        merged.setdefault("description", str(description or ""))
+        merged.setdefault("screenshot_path", str(screenshot_path or ""))
+        self._append(
+            RecordedEvent(
+                timestamp_ms=self._elapsed_ms(),
+                kind="flag",
+                label="flag_bug",
+                payload=merged,
+                scene_state=self._snapshot_scene(),
+            )
+        )
+
+    def capture_scene_snapshot(self) -> SceneSnapshot | None:
+        """Public hook so the inspector can sample state outside an event."""
+        return self._snapshot_scene()
+
     # ------------------------------------------------------------------
     # Internals
 

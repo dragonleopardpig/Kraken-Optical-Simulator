@@ -8,6 +8,7 @@ and panel wiring.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import time
 import tkinter as tk
@@ -5146,6 +5147,132 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self.editor.append_debug(f"Open 3D recorder toggle failed: {exc}")
             except Exception:
                 pass
+
+    def flag_bug(self) -> Path | None:
+        """One-click bug flag: screenshot + scene-state + user description.
+
+        Captures the renderer image and scene snapshot *before* opening
+        the description prompt so the saved state matches what the user
+        saw when they clicked. If a recording is active, also tags a
+        ``flag`` event into the recording's event stream so the
+        post-mortem timeline keeps a marker at the right moment.
+        Bundle is written to
+        ``attachment/recorded_bug_repros/flag_<timestamp>/``.
+        """
+        from datetime import datetime
+        if self._vtk_widget is None:
+            self.status_var.set("Flag bug unavailable: 3D window is not ready.")
+            return None
+        recorder = getattr(self, "_event_recorder", None)
+        # 1. Capture screenshot + scene state immediately (pre-dialog).
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+        bundle_dir = ATTACHMENT_DIR / "recorded_bug_repros" / f"flag_{stamp}"
+        try:
+            bundle_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            self.status_var.set(f"Flag bug failed: {_short_error_message(exc)}")
+            return None
+        screenshot_path = bundle_dir / "screenshot.png"
+        try:
+            from vtkmodules.vtkIOImage import vtkPNGWriter  # type: ignore
+            from vtkmodules.vtkRenderingCore import vtkWindowToImageFilter  # type: ignore
+
+            render_window = self._vtk_widget.GetRenderWindow()
+            render_window.Render()
+            capture = vtkWindowToImageFilter()
+            capture.SetInput(render_window)
+            try:
+                capture.SetInputBufferTypeToRGBA()
+            except Exception:
+                pass
+            try:
+                capture.ReadFrontBufferOff()
+            except Exception:
+                pass
+            capture.Update()
+            writer = vtkPNGWriter()
+            writer.SetFileName(str(screenshot_path))
+            writer.SetInputConnection(capture.GetOutputPort())
+            writer.Write()
+        except Exception as exc:
+            self.status_var.set(f"Flag bug screenshot failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D flag screenshot failed: {exc}")
+            return None
+        # Scene snapshot via the recorder's existing helper (works
+        # whether or not a recording is currently active).
+        scene_state: dict[str, object] = {}
+        try:
+            if recorder is not None:
+                snap = recorder.capture_scene_snapshot()
+                if snap is not None:
+                    from dataclasses import asdict as _asdict
+                    scene_state = _asdict(snap)
+        except Exception:
+            scene_state = {}
+        # 2. Ask the user for a description.
+        description = ""
+        try:
+            description = simpledialog.askstring(
+                "Flag bug",
+                "Briefly describe the bug (Cancel discards this flag):",
+                parent=self,
+            ) or ""
+        except Exception:
+            description = ""
+        description = str(description).strip()
+        if not description:
+            try:
+                screenshot_path.unlink(missing_ok=True)
+                bundle_dir.rmdir()
+            except Exception:
+                pass
+            self.status_var.set("Flag bug cancelled (no description).")
+            return None
+        # 3. Save the bundle.
+        try:
+            (bundle_dir / "description.txt").write_text(description + "\n", encoding="utf-8")
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D flag description write failed: {exc}")
+        recording_info: dict[str, object] = {"recording_active": False}
+        try:
+            if recorder is not None and recorder.is_recording():
+                recording_info = {
+                    "recording_active": True,
+                    "elapsed_ms": float(recorder._elapsed_ms()),
+                }
+        except Exception:
+            pass
+        try:
+            payload = {
+                "version": 1,
+                "captured_at_iso": datetime.now().isoformat(timespec="seconds"),
+                "description": description,
+                "screenshot": "screenshot.png",
+                "recording": recording_info,
+                "scene_state": scene_state,
+            }
+            (bundle_dir / "state.json").write_text(
+                json.dumps(payload, indent=2),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D flag state write failed: {exc}")
+        # 4. If a recording is active, tag a flag event into the stream.
+        try:
+            if recorder is not None and recorder.is_recording():
+                recorder.record_flag(
+                    description,
+                    str(screenshot_path),
+                    payload={"bundle_dir": str(bundle_dir)},
+                )
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D flag record failed: {exc}")
+        self.status_var.set(f"Flagged bug: {bundle_dir.name}")
+        try:
+            self.editor.append_progress(f"Flagged Open 3D bug: {bundle_dir}")
+        except Exception:
+            pass
+        return bundle_dir
 
     def cancel_active_3d_operation(self) -> bool:
         active_labels = self._active_3d_operation_labels()

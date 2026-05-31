@@ -109,6 +109,15 @@ class Open3DTopControlsPanel:
         )
         recorder_button.pack(side="right", padx=(8, 0))
         self.inspector._recorder_button = recorder_button
+        # One-click bug flag: screenshot + scene state + user note. Works
+        # standalone or alongside an active recording.
+        flag_button = ttk.Button(
+            view_toolbar,
+            text="⚑ Flag bug",
+            command=self.inspector.flag_bug,
+        )
+        flag_button.pack(side="right", padx=(8, 0))
+        self.inspector._flag_bug_button = flag_button
         return view_toolbar
 
     def build_scene_toolbar(self, parent: tk.Widget) -> ttk.Frame:
