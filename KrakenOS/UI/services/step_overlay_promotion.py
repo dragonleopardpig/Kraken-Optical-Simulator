@@ -1213,21 +1213,25 @@ class StepOverlayPromotionService:
                 dominant = int(np.argmax(np.abs(axis_vec)))
                 snapped = np.zeros(3, dtype=float)
                 snapped[dominant] = float(np.sign(axis_vec[dominant]))
-                # Map local +Z (surface normal) onto -exit_direction
-                # so the surface faces the incoming ray (which travels
-                # ALONG exit_direction).
+                # Map local +Z (the Standard surface's chain-z
+                # forward direction) ONTO exit_direction. KrakenOS
+                # places the sphere centre at vertex + Rc * (local
+                # +Z), so aligning local +Z with the ray direction
+                # makes Rc>0 centres land downstream of the vertex
+                # (inside the body) -- a ball lens's two hemispheres
+                # then share a single centre and render as a sphere.
                 if np.allclose(snapped, (0.0, 0.0, 1.0)):
-                    chain_tilt = (180.0, 0.0, 0.0)
-                elif np.allclose(snapped, (0.0, 0.0, -1.0)):
                     chain_tilt = (0.0, 0.0, 0.0)
+                elif np.allclose(snapped, (0.0, 0.0, -1.0)):
+                    chain_tilt = (180.0, 0.0, 0.0)
                 elif np.allclose(snapped, (1.0, 0.0, 0.0)):
-                    chain_tilt = (0.0, -90.0, 0.0)
-                elif np.allclose(snapped, (-1.0, 0.0, 0.0)):
                     chain_tilt = (0.0, 90.0, 0.0)
+                elif np.allclose(snapped, (-1.0, 0.0, 0.0)):
+                    chain_tilt = (0.0, -90.0, 0.0)
                 elif np.allclose(snapped, (0.0, 1.0, 0.0)):
-                    chain_tilt = (90.0, 0.0, 0.0)
-                elif np.allclose(snapped, (0.0, -1.0, 0.0)):
                     chain_tilt = (-90.0, 0.0, 0.0)
+                elif np.allclose(snapped, (0.0, -1.0, 0.0)):
+                    chain_tilt = (90.0, 0.0, 0.0)
         new_rows: list[SurfaceRow] = []
         for index, row_info in enumerate(rows_preview):
             row = SurfaceRow(

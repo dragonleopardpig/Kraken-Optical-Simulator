@@ -194,18 +194,26 @@ def _build_layout(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> dict
     summary["chain_exit_position"] = exit_pt.tolist()
     summary["chain_exit_direction"] = list(chain_exit)
 
-    # Tilt that points the surface normal (local +Z) along
-    # -exit_dir (against the incoming ray). For the penta cascade
-    # the exit direction is world -X so we want local +Z -> world +X
-    # which is tilt_y = +90.
+    # Tilt that aligns local +Z (the Standard surface's chain-z
+    # forward direction) with the cascade exit direction. KrakenOS
+    # places the sphere centre at vertex + Rc * (local +Z), so
+    # mapping local +Z to the ray-propagation direction makes:
+    #   * Rc>0 front face -> sphere centre downstream of vertex
+    #     (inside the glass body, which is correct -- the cap
+    #     bulges upstream into the incoming-ray side and the
+    #     hemisphere extends from the vertex toward the body
+    #     centre).
+    #   * Rc<0 back face -> sphere centre upstream of vertex
+    #     (also inside the body), so a ball lens's two hemispheres
+    #     share a single centre and render as one sphere.
     if np.allclose(exit_dir, (-1.0, 0.0, 0.0)):
-        row_tilt = (0.0, 90.0, 0.0)
+        row_tilt = (0.0, -90.0, 0.0)  # local +Z -> world -X
     elif np.allclose(exit_dir, (1.0, 0.0, 0.0)):
-        row_tilt = (0.0, -90.0, 0.0)
+        row_tilt = (0.0, 90.0, 0.0)   # local +Z -> world +X
     elif np.allclose(exit_dir, (0.0, -1.0, 0.0)):
-        row_tilt = (-90.0, 0.0, 0.0)
+        row_tilt = (90.0, 0.0, 0.0)   # local +Z -> world -Y
     elif np.allclose(exit_dir, (0.0, 1.0, 0.0)):
-        row_tilt = (90.0, 0.0, 0.0)
+        row_tilt = (-90.0, 0.0, 0.0)  # local +Z -> world +Y
     elif np.allclose(exit_dir, (0.0, 0.0, -1.0)):
         row_tilt = (180.0, 0.0, 0.0)
     else:
@@ -267,37 +275,44 @@ def _build_layout(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> dict
         # its world position along the exit beam.
         #
         # The promote service returns rows in optical order (front,
-        # cement, back) with thickness = optical path through that
-        # segment. Each row's surface vertex sits at:
-        #   world = anchor_world + cumulative_optical_offset * exit_dir
-        # where cumulative_optical_offset starts at 0 for the front
-        # row and increments by the previous row's thickness.
+        # [cement,] back) with thickness = optical path through that
+        # segment. To make the lens render symmetrically about the
+        # anchor (so a ball lens's front and back hemispheres share
+        # a centre, not two outward-bulging caps connected by a
+        # cylindrical shell), we centre the row group on
+        # anchor_world: the midpoint of the first and last row sits
+        # at the anchor; each row is then offset from that midpoint
+        # by its cumulative optical-path distance from the front,
+        # minus half the total optical path.
         #
         # Chain-z stays world +Z (AxisMove=0 everywhere), so each
         # row's desp_z = world_z_target - z_station_for_that_row.
-        # We collapse the chain advance to 0 inside the lens by
-        # zeroing thicknesses for the rows we just placed, so
-        # z_station stays equal to z_station_before_lenses for the
-        # entire scene -- desp_z is constant = anchor_z - z_station.
-        cumulative_offset = 0.0
-        # Iterate in REVERSE because we'll zero each row's thickness
-        # after using it -- but we want to use the ORIGINAL thickness
-        # to advance cumulative_offset for the NEXT row. So capture
-        # thicknesses first.
-        original_thicknesses = []
-        for idx_in_lens, row_idx in enumerate(indices):
+        # We zero the row thicknesses we placed so chain-z stays at
+        # z_station_before_lenses for every subsequent row.
+        original_thicknesses: list[float] = []
+        for row_idx in indices:
             try:
                 original_thicknesses.append(
                     float(getattr(app.rows[int(row_idx)], "thickness", 0.0) or 0.0)
                 )
             except Exception:
                 original_thicknesses.append(0.0)
+        # Optical path = sum of all thicknesses EXCEPT the last
+        # (the last row's thickness is the gap to the NEXT lens,
+        # which is bookkeeping, not a body distance).
+        body_segments = original_thicknesses[:-1] if len(original_thicknesses) > 1 else []
+        body_thickness = float(sum(body_segments))
+        front_to_centre = 0.5 * body_thickness
+        cumulative_offset = 0.0
         for idx_in_lens, row_idx in enumerate(indices):
             try:
                 row = app.rows[int(row_idx)]
             except Exception:
                 continue
-            row_world = anchor_world + exit_dir * cumulative_offset
+            # Offset of THIS row's vertex from the lens centre,
+            # measured along the exit beam.
+            centre_offset = front_to_centre - cumulative_offset
+            row_world = anchor_world + exit_dir * (-centre_offset)
             row.desp_x = float(row_world[0])
             row.desp_y = float(row_world[1])
             row.desp_z = float(row_world[2] - z_station_before_lenses)
@@ -305,11 +320,9 @@ def _build_layout(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> dict
             row.tilt_y = float(row_tilt[1])
             row.tilt_z = float(row_tilt[2])
             row.axis_move = 0.0
-            # Zero thickness so chain z stays at z_station_before_lenses
-            # for every following row. The optical thickness is now
-            # encoded entirely in desp_x along the exit beam.
             row.thickness = 0.0
-            cumulative_offset += original_thicknesses[idx_in_lens]
+            if idx_in_lens < len(body_segments):
+                cumulative_offset += body_segments[idx_in_lens]
         try:
             app._sync_table()
         except Exception:

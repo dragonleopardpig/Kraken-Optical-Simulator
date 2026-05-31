@@ -58,76 +58,79 @@ class RowExpectation:
     tol_tilt_deg: float = 0.5
 
 
+# Rows are now centred on each lens's anchor world position, so a
+# 2-row lens's front and back sit at anchor +/- thickness/2 (giving
+# a ball lens a single shared sphere centre at anchor).
 EXPECTED_ROWS: list[RowExpectation] = [
     RowExpectation(
         label="Ball Lens 1 front",
         name_prefix="Ball Lens 1",
-        desp=(+7.50, 0.0, +97.50),
-        tilt=(0.0, 90.0, 0.0),
+        desp=(+12.2625, 0.0, +97.50),  # anchor +R
+        tilt=(0.0, -90.0, 0.0),
         glass="AL2O3",
         rc_min=+4.7, rc_max=+4.8,
     ),
     RowExpectation(
         label="Ball Lens 1 back",
         name_prefix="OPTICAL analytic S2",
-        desp=(-2.025, 0.0, +97.50),
-        tilt=(0.0, 90.0, 0.0),
+        desp=(+2.7375, 0.0, +97.50),  # anchor -R
+        tilt=(0.0, -90.0, 0.0),
         glass="AIR",
         rc_min=-4.8, rc_max=-4.7,
     ),
     RowExpectation(
         label="Ball Lens 2 front",
         name_prefix="Ball Lens 2",
-        desp=(-3.46, 0.0, +97.50),
-        tilt=(0.0, 90.0, 0.0),
+        desp=(+1.3025, 0.0, +97.50),  # anchor -3.46 + R
+        tilt=(0.0, -90.0, 0.0),
         glass="AL2O3",
         rc_min=+4.7, rc_max=+4.8,
     ),
     RowExpectation(
         label="Ball Lens 2 back",
         name_prefix="OPTICAL analytic S2",
-        desp=(-12.985, 0.0, +97.50),
-        tilt=(0.0, 90.0, 0.0),
+        desp=(-8.2225, 0.0, +97.50),  # anchor -3.46 - R
+        tilt=(0.0, -90.0, 0.0),
         glass="AIR",
         rc_min=-4.8, rc_max=-4.7,
     ),
     RowExpectation(
         label="DCV front",
         name_prefix="DCV",
-        desp=(-53.46, 0.0, +97.50),
-        tilt=(0.0, 90.0, 0.0),
+        desp=(-52.21, 0.0, +97.50),  # anchor -53.46 + 1.25 (half thickness 2.5)
+        tilt=(0.0, -90.0, 0.0),
         glass="N-BK7",
         rc_min=-55.0, rc_max=-50.0,
     ),
     RowExpectation(
         label="DCV back",
         name_prefix="OPTICAL analytic S2",
-        desp=(-55.96, 0.0, +97.50),
-        tilt=(0.0, 90.0, 0.0),
+        desp=(-54.71, 0.0, +97.50),  # anchor -53.46 - 1.25
+        tilt=(0.0, -90.0, 0.0),
         glass="AIR",
         rc_min=+50.0, rc_max=+55.0,
     ),
     RowExpectation(
         label="Achromat front",
         name_prefix="Achromat",
-        desp=(-153.46, 0.0, +97.50),
-        tilt=(0.0, 90.0, 0.0),
+        desp=(-147.71, 0.0, +97.50),  # anchor -153.46 + 5.75 (half thickness 11.5)
+        tilt=(0.0, -90.0, 0.0),
         glass="N-BAF10",
         rc_min=+30.0, rc_max=+40.0,
     ),
     RowExpectation(
         label="Achromat cement",
         name_prefix="OPTICAL native STEP S2",
-        desp=(-162.46, 0.0, +97.50),
-        tilt=(0.0, 90.0, 0.0),
+        desp=(-156.71, 0.0, +97.50),  # anchor + 5.75 - 9
+        tilt=(0.0, -90.0, 0.0),
         glass="N-SF10",
         rc_min=-25.0, rc_max=-18.0,
     ),
     RowExpectation(
         label="Achromat back",
         name_prefix="OPTICAL native STEP S3",
-        desp=(-164.96, 0.0, +97.50),
-        tilt=(0.0, 90.0, 0.0),
+        desp=(-159.21, 0.0, +97.50),  # anchor - 5.75
+        tilt=(0.0, -90.0, 0.0),
         glass="AIR",
         rc_min=-220.0, rc_max=-205.0,
     ),

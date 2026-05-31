@@ -2234,22 +2234,23 @@ class ScenePlacementMixin:
             snapped[dominant] = float(_np.sign(axis_vec[dominant]))
         except Exception:
             return False
-        # Tilt mapping: rotate the overlay's local +Z (the lens
-        # optical axis convention in most STEP files) onto
-        # -exit_direction so the body's "front face" faces the
-        # incoming ray (which travels ALONG exit_direction).
-        if _np.allclose(snapped, (0.0, 0.0, -1.0)):
-            return False  # body's +Z already faces incoming ray
+        # Tilt mapping: align the overlay's local +Z (the lens
+        # optical axis convention in most STEP files) WITH
+        # exit_direction so the body's optical axis runs along the
+        # ray. Native promote rows inherit this same mapping via
+        # step_overlay_promotion's chain_tilt branch.
         if _np.allclose(snapped, (0.0, 0.0, 1.0)):
+            return False  # body's +Z already aligned with ray
+        if _np.allclose(snapped, (0.0, 0.0, -1.0)):
             tilt = (180.0, 0.0, 0.0)
         elif _np.allclose(snapped, (1.0, 0.0, 0.0)):
-            tilt = (0.0, -90.0, 0.0)
-        elif _np.allclose(snapped, (-1.0, 0.0, 0.0)):
             tilt = (0.0, 90.0, 0.0)
+        elif _np.allclose(snapped, (-1.0, 0.0, 0.0)):
+            tilt = (0.0, -90.0, 0.0)
         elif _np.allclose(snapped, (0.0, 1.0, 0.0)):
-            tilt = (90.0, 0.0, 0.0)
-        elif _np.allclose(snapped, (0.0, -1.0, 0.0)):
             tilt = (-90.0, 0.0, 0.0)
+        elif _np.allclose(snapped, (0.0, -1.0, 0.0)):
+            tilt = (90.0, 0.0, 0.0)
         else:
             return False
         for axis_name, deg in zip(("x", "y", "z"), tilt):
