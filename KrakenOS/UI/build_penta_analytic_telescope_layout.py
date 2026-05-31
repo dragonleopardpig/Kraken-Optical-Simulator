@@ -62,6 +62,41 @@ OUTPUT_LAYOUT = PROJECT_ROOT / "attachment" / "five_penta_prism_analytic_telesco
 # spacing). We swap in f=-25 DCV + f=+125 Achromat so the existing
 # 100 mm gap satisfies the collimation condition f1+f2=d for a 5x
 # beam expander (input 3 mm -> output 15 mm, fits 25 mm achromat).
+# Cyl-lens optics so we can place the Cyl 1 -> Cyl 2 pair at the
+# correct PRINCIPAL-PLANE separation for collimated->collimated.
+#
+# For a plano-cylindrical lens with curved face on the OUTPUT side
+# (S1 = plano, S2 = curved), Hecht 6e eq 6.20 gives:
+#   h_1 (H from S1, into body) = f * (n-1) * d / (n * |R|)
+#   h_2 (H' from S2) = 0  (H' is AT S2 because R1 = inf)
+# So front principal plane H sits h_1 mm inside the body from the
+# plano vertex; back principal plane H' is at the curved vertex.
+#
+# For a 1:1 Keplerian cyl telescope the back focal point F_2 of
+# Cyl 1 must coincide with the front focal point F_1 of Cyl 2,
+# which means the principal-plane separation H'_1 -> H_2 along
+# the propagation direction = 2f.
+#
+# Centroid-to-centroid spacing then works out to:
+#   spacing = 2f + d - h_1
+# (the +d term accounts for the body thickness between centroid
+# and the curved vertex of Cyl 1; the -h_1 term accounts for H
+# of Cyl 2 sitting inside Cyl 2's body by h_1 from S1).
+CYL_LENS_EFL_MM = 50.0           # Edmund 34754 plano-cyl, f = +50 mm
+CYL_LENS_RADIUS_MM = 25.84       # meridional R from the STEP analytic_parameters
+CYL_LENS_THICKNESS_MM = 24.7     # body thickness, measured world-X span
+CYL_LENS_GLASS_INDEX = 1.5168    # N-BK7 at d-line
+CYL_LENS_H1_MM = (
+    CYL_LENS_EFL_MM
+    * (CYL_LENS_GLASS_INDEX - 1.0)
+    * CYL_LENS_THICKNESS_MM
+    / (CYL_LENS_GLASS_INDEX * CYL_LENS_RADIUS_MM)
+)
+# Spacing used for Cyl 1 -> Cyl 2 anchor offsets below.
+CYL_KEPLERIAN_SPACING_MM = (
+    2.0 * CYL_LENS_EFL_MM + CYL_LENS_THICKNESS_MM - CYL_LENS_H1_MM
+)
+
 DCV_STEP = PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "32992" / "step_32992.stp"
 ACHROMAT_STEP = (
     PROJECT_ROOT
@@ -146,18 +181,17 @@ LENS_SPECS: list[dict[str, Any]] = [
             + DCV_TO_ACHROMAT_GAP_MM
             + PHASE3_GAP_FROM_ACHROMAT_MM
         ),
-        # Cyl 1 -> Cyl 2 separation = f1 + f2 = 50 + 50 = 100 mm
-        # (1:1 Keplerian cyl telescope: cyl 1 focuses parallel
-        # input to a LINE focus at +50 mm; cyl 2 collects the
-        # diverging beam from that line and re-collimates).
-        "gap_after_mm": 100.0,
+        # Cyl 1 -> Cyl 2 spacing (centroid-to-centroid) for a
+        # 1:1 Keplerian cyl telescope: parallel input -> line focus
+        # between the two cyl lenses -> parallel output. Computed
+        # from the PRINCIPAL planes, not thin-lens 2f, so the
+        # finite body thickness doesn't smear the collimation.
+        "gap_after_mm": CYL_KEPLERIAN_SPACING_MM,
     },
     {
-        # Second Edmund 34754, identical to Cyl 1. Together with
-        # Cyl 1 at 100 mm = 2f separation they form a 1:1 cyl
-        # Keplerian telescope: parallel input -> parallel output,
-        # but inverted in the meridional axis (sign flip of the X
-        # field component).
+        # Second Edmund 34754, identical to Cyl 1. Together at the
+        # principal-plane-derived separation they re-collimate the
+        # line focus from Cyl 1, giving collimated output.
         "name": "Cylindrical 2 f=+50 mm (N-BK7, plano-cyl)",
         "step": CYL_STEP,
         "glass": "N-BK7",
@@ -167,7 +201,7 @@ LENS_SPECS: list[dict[str, Any]] = [
             + PHASE2_GAP_FROM_BALL_2_MM
             + DCV_TO_ACHROMAT_GAP_MM
             + PHASE3_GAP_FROM_ACHROMAT_MM
-            + 100.0  # Cyl 1 -> Cyl 2 spacing
+            + CYL_KEPLERIAN_SPACING_MM
         ),
         "gap_after_mm": 50.0,
     },

@@ -105,31 +105,41 @@ SETTINGS = {'object_mode': 'Infinity',
  'metal_catalogs': [],
  'optimization_workers': 'Auto',
  'selected_operands': ['Spot RMS'],
- 'operands': {'EFFL': {'weight': '1',
+ 'operands': {'Wavefront RMS': {'weight': '1',
+                                'target': '0',
+                                'wavelength': '0.55',
+                                'field': '0',
+                                'surface': 'Auto'},
+              'Magnification': {'weight': '1',
+                                'target': '1',
+                                'wavelength': '0.55',
+                                'field': '0',
+                                'surface': 'Auto'},
+              'EFFL': {'weight': '1',
                        'target': '100',
                        'wavelength': '0.55',
                        'field': '0',
                        'surface': 'Auto'},
-              'Exit pupil z': {'weight': '1',
-                               'target': '0',
-                               'wavelength': '0.55',
-                               'field': '0',
-                               'surface': 'Auto'},
               'Spot RMS': {'weight': '1',
                            'target': '0',
                            'wavelength': '0.55',
                            'field': '0',
                            'surface': 'Auto'},
-              'Entrance pupil z': {'weight': '1',
-                                   'target': '0',
-                                   'wavelength': '0.55',
-                                   'field': '0',
-                                   'surface': 'Auto'},
               'Thickness penalty': {'weight': '1',
                                     'target': '0.1',
                                     'wavelength': '0.55',
                                     'field': '0',
                                     'surface': 'Auto'},
+              'Entrance pupil z': {'weight': '1',
+                                   'target': '0',
+                                   'wavelength': '0.55',
+                                   'field': '0',
+                                   'surface': 'Auto'},
+              'Exit pupil z': {'weight': '1',
+                               'target': '0',
+                               'wavelength': '0.55',
+                               'field': '0',
+                               'surface': 'Auto'},
               'MTF @ freq': {'weight': '1',
                              'target': '0.5',
                              'wavelength': '0.55',
@@ -139,17 +149,7 @@ SETTINGS = {'object_mode': 'Infinity',
                              'surface': 'Auto',
                              'frequency': '5',
                              'mtf_mode': 'Average',
-                             'mtf_algorithm': 'Diffraction FFT'},
-              'Wavefront RMS': {'weight': '1',
-                                'target': '0',
-                                'wavelength': '0.55',
-                                'field': '0',
-                                'surface': 'Auto'},
-              'Magnification': {'weight': '1',
-                                'target': '1',
-                                'wavelength': '0.55',
-                                'field': '0',
-                                'surface': 'Auto'}},
+                             'mtf_algorithm': 'Diffraction FFT'}},
  'tolerance_solve_presets': [],
  'tolerance_manufacturing_templates': [],
  'active_tolerance_solve_preset': ''}
@@ -6459,7 +6459,7 @@ def build_system():
     s17.TiltX = 0.0
     s17.TiltY = -90.0
     s17.TiltZ = 0.0
-    s17.DespX = -341.11026847
+    s17.DespX = -349.52598577
     s17.DespY = -0.00100651185725
     s17.DespZ = 97.4964525231
     s17.AxisMove = 0.0
@@ -6472,7 +6472,7 @@ def build_system():
  'row_offset': 0,
  'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step',
  'step_label': 'optical'}
-    surfaces.append({'surface': 'Standard', 'element': 'OPTICAL analytic STEP', 'name': 'Cylindrical 2 f=+50 mm (N-BK7, plano-cyl)', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.0, 'diameter': 35.6393041459, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {'StepAnalyticPromotion': {'step_label': 'optical', 'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step', 'face_id': 'S001/F004', 'fit_kind': 'plane', 'fit_residual_mm': 0.0, 'glass_sequence': ['N-BK7', 'AIR'], 'row_offset': 0, 'row_count': 2}}, 'tilt_x': 0.0, 'tilt_y': -90.0, 'tilt_z': 0.0, 'desp_x': -341.11026847, 'desp_y': -0.00100651185725, 'desp_z': 97.4964525231, 'axis_move': 0.0, 'glass': 'N-BK7', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    surfaces.append({'surface': 'Standard', 'element': 'OPTICAL analytic STEP', 'name': 'Cylindrical 2 f=+50 mm (N-BK7, plano-cyl)', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.0, 'diameter': 35.6393041459, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {'StepAnalyticPromotion': {'step_label': 'optical', 'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step', 'face_id': 'S001/F004', 'fit_kind': 'plane', 'fit_residual_mm': 0.0, 'glass_sequence': ['N-BK7', 'AIR'], 'row_offset': 0, 'row_count': 2}}, 'tilt_x': 0.0, 'tilt_y': -90.0, 'tilt_z': 0.0, 'desp_x': -349.52598577, 'desp_y': -0.00100651185725, 'desp_z': 97.4964525231, 'axis_move': 0.0, 'glass': 'N-BK7', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s18 = Kos.surf()
     s18.Name = 'OPTICAL analytic S2: cylinder'
@@ -6489,7 +6489,7 @@ def build_system():
     s18.TiltX = 0.0
     s18.TiltY = -90.0
     s18.TiltZ = 0.0
-    s18.DespX = -365.811471031
+    s18.DespX = -374.22718833
     s18.DespY = -0.00100651185725
     s18.DespZ = 97.4964525231
     s18.AxisMove = 0.0
@@ -6502,7 +6502,7 @@ def build_system():
  'row_offset': 1,
  'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step',
  'step_label': 'optical'}
-    surfaces.append({'surface': 'Standard', 'element': 'OPTICAL analytic STEP', 'name': 'OPTICAL analytic S2: cylinder', 'rc': -25.84, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.0, 'diameter': 35.6393041458, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {'StepAnalyticPromotion': {'step_label': 'optical', 'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step', 'face_id': 'S001/F002', 'fit_kind': 'cylinder', 'fit_residual_mm': 0.0, 'glass_sequence': ['N-BK7', 'AIR'], 'row_offset': 1, 'row_count': 2}}, 'tilt_x': 0.0, 'tilt_y': -90.0, 'tilt_z': 0.0, 'desp_x': -365.811471031, 'desp_y': -0.00100651185725, 'desp_z': 97.4964525231, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    surfaces.append({'surface': 'Standard', 'element': 'OPTICAL analytic STEP', 'name': 'OPTICAL analytic S2: cylinder', 'rc': -25.84, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.0, 'diameter': 35.6393041458, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {'StepAnalyticPromotion': {'step_label': 'optical', 'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step', 'face_id': 'S001/F002', 'fit_kind': 'cylinder', 'fit_residual_mm': 0.0, 'glass_sequence': ['N-BK7', 'AIR'], 'row_offset': 1, 'row_count': 2}}, 'tilt_x': 0.0, 'tilt_y': -90.0, 'tilt_z': 0.0, 'desp_x': -374.22718833, 'desp_y': -0.00100651185725, 'desp_z': 97.4964525231, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s19 = Kos.surf()
     s19.Name = 'Image'
