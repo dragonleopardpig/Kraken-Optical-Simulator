@@ -124,6 +124,15 @@ def _capture_window_image(widget) -> Image.Image:
     return image.convert("RGB")
 
 
+def _capture_widget_bounds_image(widget) -> Image.Image:
+    widget.update_idletasks()
+    x0 = int(widget.winfo_rootx())
+    y0 = int(widget.winfo_rooty())
+    x1 = x0 + int(widget.winfo_width())
+    y1 = y0 + int(widget.winfo_height())
+    return ImageGrab.grab(bbox=(x0, y0, x1, y1)).convert("RGB")
+
+
 def _save_window(app: KrakenLayoutEditor, output_dir: Path, filename: str) -> Path:
     path = output_dir / filename
     _capture_window_image(app).save(path, optimize=True)
@@ -158,7 +167,7 @@ def _save_source_report(app: KrakenLayoutEditor, output_dir: Path, filename: str
     time.sleep(0.35)
     window.update()
     path = output_dir / filename
-    _capture_window_image(window).save(path, optimize=True)
+    _capture_widget_bounds_image(window).save(path, optimize=True)
     return path
 
 

@@ -1422,6 +1422,13 @@ class AnalysisReportsMixin:
 
     def _source_illumination_target_index(self) -> int | None:
         target_var = self.__dict__.get("_source_illumination_target_var")
+        if target_var is None:
+            dialog = self.__dict__.get("_main_source_illumination_report_dialog_instance")
+            target_var = (
+                object.__getattribute__(dialog, "__dict__").get("_source_illumination_target_var")
+                if dialog is not None
+                else None
+            )
         value = (
             str(target_var.get()).strip()
             if target_var is not None
