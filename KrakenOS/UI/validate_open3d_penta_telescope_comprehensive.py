@@ -415,14 +415,23 @@ def phase_3_convert_to_analytic(
     promoted: list[dict[str, Any]] = []
     for fixture in LENS_FIXTURES:
         _import_step(app, fixture["step"])
-        inspector.refresh_from_editor()
+        inspector.refresh_from_editor(force_retrace=True)
         inspector.update_idletasks()
+        try:
+            inspector._trace_live_now()
+        except Exception:
+            pass
+        inspector.update_idletasks()
+        # Pull the chain's actual exit direction from the live trace so
+        # post-cascade rows get tilted to match the folded beam.
+        chain_exit = inspector._chain_exit_direction_from_trace()
         try:
             outcome = app.promote_imported_step_to_analytic_surfaces(
                 "optical",
                 glass_sequence=fixture["glass"],
                 clear_overlay=True,
                 refresh_open_3d=False,
+                chain_exit_direction=chain_exit,
             )
         except Exception as exc:
             result.notes.append(f"{fixture['name']}: promote raised {exc!r}")

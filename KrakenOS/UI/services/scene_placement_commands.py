@@ -2191,6 +2191,7 @@ class ScenePlacementMixin:
         insert_at: int | None = None,
         clear_overlay: bool = True,
         refresh_open_3d: bool = True,
+        chain_exit_direction: tuple[float, float, float] | None = None,
     ) -> dict[str, object] | None:
         return self._step_overlay_promotion_service().promote_imported_step_to_analytic_surfaces(
             label,
@@ -2198,6 +2199,7 @@ class ScenePlacementMixin:
             insert_at=insert_at,
             clear_overlay=clear_overlay,
             refresh_open_3d=refresh_open_3d,
+            chain_exit_direction=chain_exit_direction,
         )
 
 

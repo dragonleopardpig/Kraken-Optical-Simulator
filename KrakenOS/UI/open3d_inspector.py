@@ -4210,6 +4210,44 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         )
         return result
 
+    def _chain_exit_direction_from_trace(self) -> tuple[float, float, float] | None:
+        """Probe the current trace for the chief ray's last-segment direction.
+
+        Used by ``promote_selected_step_to_analytic_surfaces`` so the
+        emitted analytic rows automatically align with the upstream
+        beam direction -- in particular the folded exit beam of a
+        prism cascade. When the scene has no rays or no folded path,
+        returns ``None`` and the promote service falls back to the
+        un-tilted (along +Z) default.
+        """
+        bundle = self._current_scene_bundle
+        if bundle is None:
+            return None
+        paths = list(getattr(bundle, "ray_paths", []) or [])
+        if not paths:
+            return None
+        # Pick the chief ray: smallest launch-radius from the source.
+        def _start_radius(path) -> float:
+            pts = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
+            if pts.ndim != 2 or pts.shape[0] < 1 or pts.shape[1] < 3:
+                return float("inf")
+            return float(np.hypot(pts[0, 0], pts[0, 1]))
+
+        chief = min(paths, key=_start_radius)
+        pts = np.asarray(getattr(chief, "points_world", np.empty((0, 3))), dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+            return None
+        # Last-segment direction. If the trace runs straight along +Z
+        # (no folds), this returns (0,0,1) and the promote service
+        # naturally falls through to chain_tilt=(0,0,0). Real cascade
+        # folds return (-1,0,0) etc. (within snap tolerance).
+        seg = pts[-1] - pts[-2]
+        norm = float(np.linalg.norm(seg))
+        if not np.isfinite(norm) or norm <= 1e-9:
+            return None
+        d = seg / norm
+        return (float(d[0]), float(d[1]), float(d[2]))
+
     def _analytic_step_material_sequence_prompt(
         self,
         label: str,
@@ -4309,12 +4347,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if glass_sequence is None or not str(glass_sequence).strip():
             self.status_var.set("Analytic STEP promotion cancelled; glass sequence is required.")
             return None
+        # Probe the live trace for the chain's exit direction so the
+        # promoted rows align with the cascade-folded beam (if any).
+        # Returns None for an un-folded chain -> promote service
+        # uses its default along +Z, preserving the standalone case.
+        chain_exit_direction = self._chain_exit_direction_from_trace()
         try:
             result = self.editor.promote_imported_step_to_analytic_surfaces(
                 label,
                 glass_sequence=glass_sequence,
                 clear_overlay=True,
                 refresh_open_3d=False,
+                chain_exit_direction=chain_exit_direction,
             )
         except Exception as exc:
             self.status_var.set(f"Analytic STEP promotion failed: {_short_error_message(exc)}")

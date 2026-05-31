@@ -1110,6 +1110,7 @@ class StepOverlayPromotionService:
         insert_at: int | None = None,
         clear_overlay: bool = True,
         refresh_open_3d: bool = True,
+        chain_exit_direction: tuple[float, float, float] | None = None,
     ) -> dict[str, Any] | None:
         """Promote a STEP overlay into analytic Standard rows fit from geometry.
 
@@ -1178,6 +1179,52 @@ class StepOverlayPromotionService:
         # the front face's axial coordinate.
         z_station = float(sum(float(getattr(row, "thickness", 0.0) or 0.0) for row in self.rows[:resolved_insert_at]))
         front_axial = float(rows_preview[0].get("axial_position_mm", 0.0)) if "axial_position_mm" in rows_preview[0] else 0.0
+        # Derive the chain-frame tilt that aligns the analytic rows
+        # with the upstream beam direction. If ``chain_exit_direction``
+        # is supplied (e.g. the caller measured it from a live trace
+        # of the cascade), translate it into Euler tilts via the same
+        # cardinal-axis mapping the penta-telescope harness uses.
+        # The overlay's own rotation (rotation_x/y/z) is composed on
+        # TOP of the cascade tilt so a user-snapped lens still
+        # behaves correctly.
+        chain_tilt = (0.0, 0.0, 0.0)
+        chain_first_row_axis_move = 0.0
+        if chain_exit_direction is not None:
+            try:
+                axis_vec = np.asarray(chain_exit_direction, dtype=float).reshape(3)
+            except Exception:
+                axis_vec = None
+            if axis_vec is not None and float(np.linalg.norm(axis_vec)) > 1e-9:
+                axis_vec = axis_vec / float(np.linalg.norm(axis_vec))
+                # Snap to nearest cardinal axis: trace-derived
+                # directions tend to have 1e-6-scale noise that
+                # breaks np.allclose() against (-1, 0, 0) etc., so
+                # snapping gives the cardinal cases (which cover
+                # cascade exits along +/- X, Y, Z).
+                dominant = int(np.argmax(np.abs(axis_vec)))
+                snapped = np.zeros(3, dtype=float)
+                snapped[dominant] = float(np.sign(axis_vec[dominant]))
+                # Mapping local +Z (the chain's natural forward) onto
+                # the snapped world axis:
+                if np.allclose(snapped, (0.0, 0.0, 1.0)):
+                    chain_tilt = (0.0, 0.0, 0.0)
+                elif np.allclose(snapped, (0.0, 0.0, -1.0)):
+                    chain_tilt = (180.0, 0.0, 0.0)
+                elif np.allclose(snapped, (1.0, 0.0, 0.0)):
+                    chain_tilt = (0.0, 90.0, 0.0)
+                elif np.allclose(snapped, (-1.0, 0.0, 0.0)):
+                    chain_tilt = (0.0, -90.0, 0.0)
+                elif np.allclose(snapped, (0.0, 1.0, 0.0)):
+                    chain_tilt = (-90.0, 0.0, 0.0)
+                elif np.allclose(snapped, (0.0, -1.0, 0.0)):
+                    chain_tilt = (90.0, 0.0, 0.0)
+                # AxisMove > 0 propagates the first row's tilt into
+                # the chain frame so subsequent analytic rows
+                # advance their thickness ALONG the cascade exit
+                # beam direction, not along world +Z. KrakenOS uses
+                # AxisMove == 2 for "tilt + decenter propagates".
+                if any(abs(v) > 1e-9 for v in chain_tilt):
+                    chain_first_row_axis_move = 2.0
         new_rows: list[SurfaceRow] = []
         for index, row_info in enumerate(rows_preview):
             row = SurfaceRow(
@@ -1190,7 +1237,11 @@ class StepOverlayPromotionService:
                 diameter=float(row_info.get("diameter_mm", 0.0)),
                 glass=str(materials[min(index, len(materials) - 1)]),
             )
-            row.axis_move = 0.0
+            # Default AxisMove = 0 (transparent chain transition).
+            # The anchor (index 0) flips to 2.0 when chain_tilt is
+            # non-trivial so subsequent rows advance their thickness
+            # along the cascade exit direction.
+            row.axis_move = float(chain_first_row_axis_move) if index == 0 else 0.0
             # Each row's desp must offset the cumulative z_station of
             # PREVIOUS rows in the WHOLE system, not just the lens.
             # The chain's z_station for row N is z_station_before +
@@ -1204,9 +1255,15 @@ class StepOverlayPromotionService:
             row.desp_y = float(placement[1]) if index == 0 else 0.0
             row.desp_z = float(placement[2] - z_station)
             if index == 0:
-                row.tilt_x = rotation_x
-                row.tilt_y = rotation_y
-                row.tilt_z = rotation_z
+                # Compose chain_tilt with the overlay's own rotation
+                # by simple summation modulo 360. For the cardinal
+                # cascade cases this gives the right composition; for
+                # arbitrary rotations the user has already snapped
+                # the overlay correctly via Snap-to-Axis and the
+                # chain_tilt is (0,0,0) so this is a no-op.
+                row.tilt_x = (rotation_x + chain_tilt[0]) % 360.0
+                row.tilt_y = (rotation_y + chain_tilt[1]) % 360.0
+                row.tilt_z = (rotation_z + chain_tilt[2]) % 360.0
             else:
                 row.tilt_x = 0.0
                 row.tilt_y = 0.0
