@@ -28,6 +28,7 @@ from KrakenOS.UI.layout_editor import KrakenLayoutEditor, Kraken3DInspector
 
 
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "docs" / "source" / "_static" / "tutorials" / "3d_hardware_alignment"
+IMPORTED_STEP_FIXTURE = PROJECT_ROOT / "attachment" / "Lens" / "cylinder_lens_rectangle" / "step_34754.step"
 
 
 def _save_widget(widget, output_dir: Path, filename: str) -> Path:
@@ -68,9 +69,19 @@ def _save_stl_placement_handler(inspector: Kraken3DInspector, output_dir: Path) 
     return path
 
 
+def _hide_demo_layout_body(inspector: Kraken3DInspector) -> None:
+    for actor_key in list((getattr(inspector, "_row_actor_map", {}) or {}).get(1, []) or []):
+        actor = (getattr(inspector, "_actor_by_key", {}) or {}).get(actor_key)
+        if actor is not None:
+            try:
+                actor.SetVisibility(False)
+            except Exception:
+                pass
+
+
 def _save_center_step_badge(app: KrakenLayoutEditor, inspector: Kraken3DInspector, output_dir: Path) -> Path:
-    app.imported_lens_step_path = PRISM_42779_STEP
-    app._selected_step_label = "lens"
+    app.imported_optical_step_path = IMPORTED_STEP_FIXTURE
+    app._selected_step_label = "optical"
     app.start_any_step_axis_pick()
     inspector._update_mode_badge()
     inspector.lift()
@@ -91,14 +102,17 @@ def _save_step_rotation_handles(app: KrakenLayoutEditor, inspector: Kraken3DInsp
     app._cad_axis_pick_any = False
     app._cad_axis_pick_label = None
     app._cad_led_object_edge_pick = False
-    app.imported_lens_step_path = PRISM_42779_STEP
-    app.select_step_component("lens")
-    inspector.show_step_rotation_handler("lens")
+    app.imported_optical_step_path = IMPORTED_STEP_FIXTURE
+    app.select_step_component("optical")
+    app.optical_step_placement_offset_xyz = (0.0, -35.0, 35.0)
+    inspector.show_step_rotation_handler("optical")
     inspector.refresh_from_editor()
     if not getattr(inspector, "_actor_step_rotate_map", {}):
         raise RuntimeError("STEP rotation handles did not render")
+    _hide_demo_layout_body(inspector)
     inspector._set_axis_pick_cursor(False)
     inspector._update_mode_badge()
+    inspector.set_camera_preset("iso")
     inspector.lift()
     inspector.update_idletasks()
     inspector.update()
@@ -110,16 +124,18 @@ def _save_step_rotation_handles(app: KrakenLayoutEditor, inspector: Kraken3DInsp
 
 
 def _save_step_carry_snap(app: KrakenLayoutEditor, inspector: Kraken3DInspector, output_dir: Path) -> Path:
-    app.imported_lens_step_path = PRISM_42779_STEP
-    app.select_step_component("lens")
+    app.imported_optical_step_path = IMPORTED_STEP_FIXTURE
+    app.select_step_component("optical")
+    app.optical_step_placement_offset_xyz = (0.0, -35.0, 35.0)
     inspector.start_selected_step_carry()
     inspector.refresh_from_editor()
+    _hide_demo_layout_body(inspector)
     press_xy = (320, 260)
     inspector._left_drag_active = True
     inspector._left_drag_moved = False
     inspector._left_drag_start_xy = press_xy
     inspector._left_drag_last_xy = press_xy
-    inspector._step_carry_hold_candidate_label = "lens"
+    inspector._step_carry_hold_candidate_label = "optical"
     inspector._step_carry_hold_press_xy = press_xy
     inspector._step_carry_hold_pick_world = None
     inspector._activate_step_carry_hold()

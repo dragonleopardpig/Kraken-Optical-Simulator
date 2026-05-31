@@ -176,12 +176,13 @@ def _save_source_manager(app: KrakenLayoutEditor, output_dir: Path, filename: st
 
 
 def _save_source_report(app: KrakenLayoutEditor, output_dir: Path, filename: str) -> Path:
-    app.open_source_illumination_report()
-    window = app._source_illumination_window
+    dialog = app._main_source_illumination_report_dialog()
+    dialog.open_source_illumination_report()
+    window = dialog._source_illumination_window
     if window is None:
         raise RuntimeError("Source Illumination Report window did not open")
-    app._source_illumination_target_var.set(DETECTOR_TARGET)
-    app._refresh_source_illumination_report()
+    dialog._source_illumination_target_var.set(DETECTOR_TARGET)
+    dialog._refresh_source_illumination_report()
     window.update_idletasks()
     window.update()
     time.sleep(0.35)

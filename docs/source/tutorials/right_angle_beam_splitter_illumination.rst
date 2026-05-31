@@ -80,10 +80,12 @@ Now select:
 
 .. code-block:: text
 
-   Path 4: 45 deg 50/50 splitter coating to Camera sensor via Splitter exit face, Camera arm clear aperture
+   Path entry containing: 45 deg 50/50 splitter coating to Camera arm clear aperture via Splitter exit face
 
 This isolates the useful camera leg after the returning object branch passes
-through the splitter.
+through the splitter. The exact path number may change as terminal diagnostic
+branches are inserted, so use the discovered path label that reaches the camera
+arm clear aperture through the splitter exit face.
 
 .. figure:: ../_static/tutorials/right_angle_beam_splitter_illumination/04_camera_path_view_ui.png
    :alt: Camera path view for the right-angle beam-splitter layout

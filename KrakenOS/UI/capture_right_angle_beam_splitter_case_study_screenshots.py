@@ -23,7 +23,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "docs" / "source" / "_static" / "tutorials" / "right_angle_beam_splitter_illumination"
 LAYOUT_NAME = "Right-Angle Beam-Splitter Illumination"
 OBJECT_PATH_VIEW = "Path 2: 45 deg 50/50 splitter coating to 45 deg 50/50 splitter coating via Object target (specular proxy)"
-CAMERA_PATH_VIEW = "Path 4: 45 deg 50/50 splitter coating to Camera sensor via Splitter exit face, Camera arm clear aperture"
+CAMERA_PATH_VIEW = "45 deg 50/50 splitter coating to Camera arm clear aperture via Splitter exit face"
 OBJECT_TARGET = "3: Object target (specular proxy)"
 CAMERA_TARGET = "5: Camera sensor"
 CAMERA_OUTPUT_FILTER = "Output: Detector output port"
@@ -146,12 +146,13 @@ def _save_analysis_aoi(app: KrakenLayoutEditor, output_dir: Path, filename: str)
 
 
 def _save_source_report(app: KrakenLayoutEditor, output_dir: Path, filename: str, target: str) -> Path:
-    app.open_source_illumination_report()
-    window = app._source_illumination_window
+    dialog = app._main_source_illumination_report_dialog()
+    dialog.open_source_illumination_report()
+    window = dialog._source_illumination_window
     if window is None:
         raise RuntimeError("Source Illumination Report window did not open")
-    app._source_illumination_target_var.set(target)
-    app._refresh_source_illumination_report()
+    dialog._source_illumination_target_var.set(target)
+    dialog._refresh_source_illumination_report()
     window.update_idletasks()
     window.update()
     time.sleep(0.35)
@@ -182,9 +183,12 @@ def _set_dense_detector_demo(app: KrakenLayoutEditor) -> None:
 def _set_path_view(app: KrakenLayoutEditor, path_view: str) -> None:
     app._refresh_arm_view_choices()
     choices = list(app.arm_view_menu["values"])
-    if path_view not in choices:
+    selected = path_view if path_view in choices else ""
+    if not selected:
+        selected = next((choice for choice in choices if path_view in str(choice)), "")
+    if not selected:
         raise RuntimeError(f"{path_view!r} was not discovered; choices={choices!r}")
-    app.arm_view_var.set(path_view)
+    app.arm_view_var.set(selected)
     app.set_arm_view()
     app.update_idletasks()
     app.update()

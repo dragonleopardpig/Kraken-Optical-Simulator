@@ -6,6 +6,7 @@ import inspect
 from pathlib import Path
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector
+from KrakenOS.UI.services.open3d_step_rotation_handles import Open3DStepRotationHandleService
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -37,7 +38,7 @@ def main() -> int:
     stl_handler = inspect.getsource(Kraken3DInspector.show_stl_placement_handler)
     badge_text = inspect.getsource(Kraken3DInspector._active_mode_badge_text)
     step_handler = inspect.getsource(Kraken3DInspector.show_step_rotation_handler)
-    step_handles = inspect.getsource(Kraken3DInspector._add_step_rotation_handles)
+    step_handles = inspect.getsource(Open3DStepRotationHandleService.add_handles)
 
     checks = [
         ("case-study page exists", DOC_PATH.exists()),

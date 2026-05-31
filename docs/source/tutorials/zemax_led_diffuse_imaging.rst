@@ -82,11 +82,12 @@ Now select:
 
 .. code-block:: text
 
-   Path 5: 45 deg 50/50 beam splitter to Image plane via Splitter rear exit face, Imaging lens front, Imaging lens back
+   Path entry containing: 45 deg 50/50 beam splitter to Imaging lens back via Splitter rear exit face, Imaging lens front
 
 This isolates one useful image path through the splitter exit face and lens.
-Several path entries may terminate at the Image plane because diffuse scatter
-creates many deterministic child branch codes.
+The exact path number can change as deterministic diffuse child branches are
+inserted before the imaging leg, so select the discovered path whose label
+continues through ``Imaging lens front`` and ``Imaging lens back``.
 
 .. figure:: ../_static/tutorials/zemax_led_diffuse_imaging/04_image_path_view_ui.png
    :alt: Image path isolated in Path view for the Zemax LED diffuse-object layout

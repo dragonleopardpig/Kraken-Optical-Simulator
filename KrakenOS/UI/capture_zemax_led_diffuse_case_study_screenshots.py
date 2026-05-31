@@ -23,7 +23,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "docs" / "source" / "_static" / "tutorials" / "zemax_led_diffuse_imaging"
 LAYOUT_NAME = "Zemax LED Beam-Splitter Imaging"
 OBJECT_PATH_VIEW = "Path 2: 45 deg 50/50 beam splitter to 45 deg 50/50 beam splitter via Diffuse object target"
-IMAGE_PATH_VIEW = "Path 5: 45 deg 50/50 beam splitter to Image plane via Splitter rear exit face, Imaging lens front, Imaging lens back"
+IMAGE_PATH_VIEW = "45 deg 50/50 beam splitter to Imaging lens back via Splitter rear exit face, Imaging lens front"
 DIFFUSE_TARGET = "3: Diffuse object target"
 IMAGE_TARGET = "6: Image plane"
 
@@ -146,12 +146,13 @@ def _save_analysis_aoi(app: KrakenLayoutEditor, output_dir: Path, filename: str)
 
 
 def _save_source_report(app: KrakenLayoutEditor, output_dir: Path, filename: str, target: str) -> Path:
-    app.open_source_illumination_report()
-    window = app._source_illumination_window
+    dialog = app._main_source_illumination_report_dialog()
+    dialog.open_source_illumination_report()
+    window = dialog._source_illumination_window
     if window is None:
         raise RuntimeError("Source Illumination Report window did not open")
-    app._source_illumination_target_var.set(target)
-    app._refresh_source_illumination_report()
+    dialog._source_illumination_target_var.set(target)
+    dialog._refresh_source_illumination_report()
     window.update_idletasks()
     window.update()
     time.sleep(0.35)
@@ -183,9 +184,12 @@ def _save_diffuse_dialog(app: KrakenLayoutEditor, output_dir: Path, filename: st
 def _set_path_view(app: KrakenLayoutEditor, path_view: str) -> None:
     app._refresh_arm_view_choices()
     choices = list(app.arm_view_menu["values"])
-    if path_view not in choices:
+    selected = path_view if path_view in choices else ""
+    if not selected:
+        selected = next((choice for choice in choices if path_view in str(choice)), "")
+    if not selected:
         raise RuntimeError(f"{path_view!r} was not discovered; choices={choices!r}")
-    app.arm_view_var.set(path_view)
+    app.arm_view_var.set(selected)
     app.set_arm_view()
     app.update_idletasks()
     app.update()
