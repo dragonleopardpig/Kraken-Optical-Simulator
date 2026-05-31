@@ -1437,7 +1437,13 @@ class StepOverlayPromotionService:
             # dict so KrakenOS's conic__surf uses the right anamorphic
             # scaling (Cylinder_Rxy_Ratio = 0 means pure plano-cyl,
             # 0<gamma<1 means torus, 1 is sphere-equivalent).
-            cylinder_ratio = float(row_info.get("cylinder_rxy_ratio", 1.0) or 1.0)
+            # NB: `or 1.0` would silently treat gamma=0.0 (pure
+            # plano-cyl, the most common case) as "missing -> default
+            # to spherical", swallowing the cylindrical refraction.
+            # Read the value EXPLICITLY and only fall back when truly
+            # absent.
+            raw_ratio = row_info.get("cylinder_rxy_ratio")
+            cylinder_ratio = float(raw_ratio) if raw_ratio is not None else 1.0
             if arm_key:
                 self._apply_arm_key_metadata_to_row(row, arm_key)
             row.advanced = dict(row.advanced or {})
