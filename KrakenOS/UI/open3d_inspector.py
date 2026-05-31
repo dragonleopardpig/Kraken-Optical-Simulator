@@ -5153,10 +5153,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
         Captures the renderer image and scene snapshot *before* opening
         the description prompt so the saved state matches what the user
-        saw when they clicked. If a recording is active, also tags a
-        ``flag`` event into the recording's event stream so the
-        post-mortem timeline keeps a marker at the right moment.
-        Bundle is written to
+        saw when they pressed ``s`` (the cursor-preserving keyboard
+        shortcut) or clicked the toolbar button. The cursor's
+        render-window position at trigger time is overlaid on the
+        screenshot as a crosshair, so a bug like "wrong face highlighted
+        under the pointer" is still legible after the user moves the
+        mouse to dismiss the prompt. If a recording is active, also
+        tags a ``flag`` event into the recording's event stream so the
+        post-mortem timeline keeps a marker at the right moment. Bundle
+        is written to
         ``attachment/recorded_bug_repros/flag_<timestamp>/``.
         """
         from datetime import datetime
@@ -5172,6 +5177,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception as exc:
             self.status_var.set(f"Flag bug failed: {_short_error_message(exc)}")
             return None
+        # Cursor in render-window coords. VTK origin is bottom-left so
+        # we hold both forms; the PNG overlay converts to top-left.
+        cursor_xy_vtk: tuple[int, int] | None = None
+        try:
+            if self._vtk_interactor is not None:
+                cx, cy = self._vtk_interactor.GetEventPosition()
+                cursor_xy_vtk = (int(cx), int(cy))
+        except Exception:
+            cursor_xy_vtk = None
         screenshot_path = bundle_dir / "screenshot.png"
         try:
             from vtkmodules.vtkIOImage import vtkPNGWriter  # type: ignore
@@ -5198,6 +5212,35 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.status_var.set(f"Flag bug screenshot failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"Open 3D flag screenshot failed: {exc}")
             return None
+        # 1b. Overlay a cursor crosshair on the PNG so hover-state bugs
+        # stay legible. Failures here are non-fatal; the raw screenshot
+        # still saves to disk.
+        cursor_xy_png: tuple[int, int] | None = None
+        if cursor_xy_vtk is not None:
+            try:
+                from PIL import Image, ImageDraw  # type: ignore
+
+                with Image.open(screenshot_path) as img:
+                    img = img.convert("RGBA")
+                    width, height = img.size
+                    px = int(cursor_xy_vtk[0])
+                    py = int(height - cursor_xy_vtk[1])  # VTK bottom-left -> PNG top-left
+                    cursor_xy_png = (px, py)
+                    if 0 <= px < width and 0 <= py < height:
+                        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+                        draw = ImageDraw.Draw(overlay)
+                        # Lime-green outer ring + magenta inner ring +
+                        # crosshair for high contrast on any background.
+                        draw.ellipse((px - 16, py - 16, px + 16, py + 16), outline=(0, 255, 0, 255), width=3)
+                        draw.ellipse((px - 7, py - 7, px + 7, py + 7), outline=(255, 0, 255, 255), width=2)
+                        draw.line((px - 22, py, px - 8, py), fill=(0, 255, 0, 255), width=2)
+                        draw.line((px + 8, py, px + 22, py), fill=(0, 255, 0, 255), width=2)
+                        draw.line((px, py - 22, px, py - 8), fill=(0, 255, 0, 255), width=2)
+                        draw.line((px, py + 8, px, py + 22), fill=(0, 255, 0, 255), width=2)
+                        merged = Image.alpha_composite(img, overlay)
+                        merged.save(screenshot_path)
+            except Exception as exc:
+                self.editor.append_debug(f"Open 3D flag cursor overlay failed: {exc}")
         # Scene snapshot via the recorder's existing helper (works
         # whether or not a recording is currently active).
         scene_state: dict[str, object] = {}
@@ -5242,12 +5285,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 }
         except Exception:
             pass
+        cursor_block: dict[str, object] = {}
+        if cursor_xy_vtk is not None:
+            cursor_block["vtk_xy"] = [int(cursor_xy_vtk[0]), int(cursor_xy_vtk[1])]
+        if cursor_xy_png is not None:
+            cursor_block["png_xy"] = [int(cursor_xy_png[0]), int(cursor_xy_png[1])]
         try:
             payload = {
                 "version": 1,
                 "captured_at_iso": datetime.now().isoformat(timespec="seconds"),
                 "description": description,
                 "screenshot": "screenshot.png",
+                "cursor": cursor_block,
                 "recording": recording_info,
                 "scene_state": scene_state,
             }
@@ -5260,10 +5309,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # 4. If a recording is active, tag a flag event into the stream.
         try:
             if recorder is not None and recorder.is_recording():
+                event_payload: dict[str, object] = {"bundle_dir": str(bundle_dir)}
+                if cursor_block:
+                    event_payload["cursor"] = cursor_block
                 recorder.record_flag(
                     description,
                     str(screenshot_path),
-                    payload={"bundle_dir": str(bundle_dir)},
+                    payload=event_payload,
                 )
         except Exception as exc:
             self.editor.append_debug(f"Open 3D flag record failed: {exc}")
@@ -5394,6 +5446,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.cancel_active_3d_operation()
         elif key in {"Delete", "BackSpace", "Backspace", "KP_Delete"}:
             self.delete_selected_step()
+        elif key in {"s", "S"}:
+            # `s` (and shift-S) flag a bug. Triggered via key instead of a
+            # toolbar click so the user does not have to move the mouse off
+            # the hover-highlighted face / edge / handle they want to
+            # report.
+            self.flag_bug()
 
     def show_step_rotation_handler(self, label: str) -> None:
         label = str(label).strip().lower()

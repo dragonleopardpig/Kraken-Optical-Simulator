@@ -110,10 +110,12 @@ class Open3DTopControlsPanel:
         recorder_button.pack(side="right", padx=(8, 0))
         self.inspector._recorder_button = recorder_button
         # One-click bug flag: screenshot + scene state + user note. Works
-        # standalone or alongside an active recording.
+        # standalone or alongside an active recording. Press `s` while
+        # hovering over the bug to avoid moving the mouse and losing
+        # hover-highlight state.
         flag_button = ttk.Button(
             view_toolbar,
-            text="⚑ Flag bug",
+            text="⚑ Flag bug (s)",
             command=self.inspector.flag_bug,
         )
         flag_button.pack(side="right", padx=(8, 0))
