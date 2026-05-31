@@ -2316,6 +2316,23 @@ class ScenePlacementMixin:
                         try:
                             anchor = self.rows[int(indices[0])]
                             anchor.axis_move = 2.0
+                            # Native-rows promotion copies the same
+                            # decenter onto every row of the doublet,
+                            # so without zeroing the trailing rows'
+                            # desp they all SHARE the anchor's world
+                            # placement -- the chain advances via
+                            # AxisMove but the surfaces still get
+                            # placed back at the anchor's spot,
+                            # producing the visible "doublet overlap"
+                            # the user flagged.
+                            for offset in range(1, len(indices)):
+                                try:
+                                    follow = self.rows[int(indices[offset])]
+                                    follow.desp_x = 0.0
+                                    follow.desp_y = 0.0
+                                    follow.desp_z = 0.0
+                                except Exception:
+                                    continue
                             self._sync_table()
                         except Exception:
                             pass

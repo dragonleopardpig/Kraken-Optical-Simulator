@@ -65,29 +65,46 @@ OUTPUT_LAYOUT = PROJECT_ROOT / "attachment" / "five_penta_prism_analytic_telesco
 # the achromat passes its multi-glass doublet sequence so the
 # promote facade auto-routes through OCC Native Rows for cement-layer
 # recovery (Rc=-21.98 mm survives instead of getting averaged out).
+# Distance from each lens to the next (CENTER-to-CENTER along the
+# cascade exit beam). Same layout as build_penta_telescope_layout
+# (the STL version), so the analytic and STL files are directly
+# comparable in 3D space.
 LENS_SPECS: list[dict[str, Any]] = [
     {
         "name": "Ball Lens 1 (sapphire)",
         "step": BALL_LENS_STEP,
         "glass": "AL2O3",
-        "gap_after_mm": 1.435,  # 2f gap so the pair is confocal
+        "offset_along_exit_mm": PHASE1_CLEARANCE_FROM_PRISM_MM,
+        "gap_after_mm": 1.435,
     },
     {
         "name": "Ball Lens 2 (sapphire)",
         "step": BALL_LENS_STEP,
         "glass": "AL2O3",
+        "offset_along_exit_mm": PHASE1_CLEARANCE_FROM_PRISM_MM + BALL_LENS_GAP_MM,
         "gap_after_mm": PHASE2_GAP_FROM_BALL_2_MM,
     },
     {
         "name": "DCV f=-50 mm (N-BK7)",
         "step": DCV_STEP,
         "glass": "N-BK7",
+        "offset_along_exit_mm": (
+            PHASE1_CLEARANCE_FROM_PRISM_MM
+            + BALL_LENS_GAP_MM
+            + PHASE2_GAP_FROM_BALL_2_MM
+        ),
         "gap_after_mm": DCV_TO_ACHROMAT_GAP_MM,
     },
     {
         "name": "Achromat f=+50 mm (BAF10/SF10)",
         "step": ACHROMAT_STEP,
         "glass": "N-BAF10, N-SF10, AIR",  # triggers doublet -> Native Rows
+        "offset_along_exit_mm": (
+            PHASE1_CLEARANCE_FROM_PRISM_MM
+            + BALL_LENS_GAP_MM
+            + PHASE2_GAP_FROM_BALL_2_MM
+            + DCV_TO_ACHROMAT_GAP_MM
+        ),
         "gap_after_mm": PHASE3_GAP_FROM_ACHROMAT_MM,
     },
 ]
@@ -97,13 +114,22 @@ LENS_SPECS: list[dict[str, Any]] = [
 # without a proper torus fit (tracked separately).
 
 
-def _import_step(app: KrakenLayoutEditor, step_path: Path) -> None:
-    """Replicate the import-overlay path without the file dialog."""
+def _import_step(
+    app: KrakenLayoutEditor,
+    step_path: Path,
+    placement_offset_xyz: tuple[float, float, float] = (0.0, 0.0, 0.0),
+) -> None:
+    """Replicate the import-overlay path without the file dialog.
+
+    ``placement_offset_xyz`` becomes the row's ``desp`` (in chain
+    frame) when the overlay is promoted -- it's how we tell the
+    promote service WHERE in the world the lens body should sit.
+    """
     app.imported_optical_step_path = step_path
     app.optical_step_rotation_x_deg = 0.0
     app.optical_step_rotation_y_deg = 0.0
     app.optical_step_rotation_z_deg = 0.0
-    app.optical_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+    app.optical_step_placement_offset_xyz = tuple(float(v) for v in placement_offset_xyz)
     app.select_step_component("optical")
 
 
@@ -150,11 +176,23 @@ def _build_layout(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> dict
         pass
     inspector.update_idletasks()
 
-    # Pull the chain's exit direction from the trace. The promote
-    # facade will use this to auto-tilt the analytic rows so they
-    # align with the cascade output beam.
-    chain_exit = inspector._chain_exit_direction_from_trace()
-    summary["chain_exit_direction"] = list(chain_exit) if chain_exit else None
+    # Pull the chain's exit position and direction from the trace
+    # so we can place each lens at the correct WORLD position along
+    # the cascade exit beam. The penta cascade emits at ~ (37.5, 0,
+    # 197.5) going along world -X.
+    exit_axis = _set_exit_axis_from_trace(inspector)
+    if exit_axis is None:
+        raise RuntimeError("Could not derive exit position/direction from cascade trace")
+    exit_pt, exit_dir_raw = exit_axis
+    # Snap direction to nearest cardinal axis to kill ~1e-6 trace
+    # noise that would otherwise confuse downstream tilt mapping.
+    dominant = int(np.argmax(np.abs(exit_dir_raw)))
+    snapped = np.zeros(3, dtype=float)
+    snapped[dominant] = float(np.sign(exit_dir_raw[dominant]))
+    exit_dir = snapped
+    chain_exit = (float(exit_dir[0]), float(exit_dir[1]), float(exit_dir[2]))
+    summary["chain_exit_position"] = exit_pt.tolist()
+    summary["chain_exit_direction"] = list(chain_exit)
 
     promoted_rows: list[dict[str, Any]] = []
     for spec in LENS_SPECS:
@@ -162,7 +200,17 @@ def _build_layout(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> dict
             app.clear_step_imports()
         except Exception:
             pass
-        _import_step(app, spec["step"])
+        # World position where THIS lens's body centroid should sit.
+        target_world = exit_pt + exit_dir * float(spec["offset_along_exit_mm"])
+        _import_step(
+            app,
+            spec["step"],
+            placement_offset_xyz=(
+                float(target_world[0]),
+                float(target_world[1]),
+                float(target_world[2]),
+            ),
+        )
         inspector.refresh_from_editor()
         inspector.update_idletasks()
         try:

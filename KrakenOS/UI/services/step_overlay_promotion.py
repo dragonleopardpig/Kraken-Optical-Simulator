@@ -1242,18 +1242,32 @@ class StepOverlayPromotionService:
             # non-trivial so subsequent rows advance their thickness
             # along the cascade exit direction.
             row.axis_move = float(chain_first_row_axis_move) if index == 0 else 0.0
-            # Each row's desp must offset the cumulative z_station of
-            # PREVIOUS rows in the WHOLE system, not just the lens.
-            # The chain's z_station for row N is z_station_before +
-            # sum(thicknesses[insert_at..insert_at+N-1]). The target
-            # world position is placement[2] + sum(lens thicknesses
-            # up to this row). Subtracting gives desp_z = placement[2]
-            # - z_station_before for EVERY row in the promoted set.
-            # Anchor (index 0) also carries the rotation; subsequent
-            # rows ride the same chain-frame.
-            row.desp_x = float(placement[0]) if index == 0 else 0.0
-            row.desp_y = float(placement[1]) if index == 0 else 0.0
-            row.desp_z = float(placement[2] - z_station)
+            # When chain_exit_direction was supplied AND the anchor
+            # has AxisMove=2, the chain frame walks the lens body
+            # along its tilt-rotated +Z. Subsequent rows should sit
+            # at the chain's "natural advance" point -- desp=(0,0,0)
+            # in chain frame. The non-cascade case (AxisMove=0 on
+            # every row) needs the same desp for all rows so the
+            # un-rotated chain math (which doesn't propagate
+            # thickness through the lens) puts every surface at the
+            # same world position offset.
+            propagating_chain = chain_first_row_axis_move > 0.0
+            if index == 0:
+                row.desp_x = float(placement[0])
+                row.desp_y = float(placement[1])
+                row.desp_z = float(placement[2] - z_station)
+            elif propagating_chain:
+                row.desp_x = 0.0
+                row.desp_y = 0.0
+                row.desp_z = 0.0
+            else:
+                # Pre-cascade-aware behavior: every row carries the
+                # same world-frame offset because the chain doesn't
+                # advance through them. Preserves the standalone
+                # analytic-promote layout (no cascade).
+                row.desp_x = 0.0
+                row.desp_y = 0.0
+                row.desp_z = float(placement[2] - z_station)
             if index == 0:
                 # Compose chain_tilt with the overlay's own rotation
                 # by simple summation modulo 360. For the cardinal
