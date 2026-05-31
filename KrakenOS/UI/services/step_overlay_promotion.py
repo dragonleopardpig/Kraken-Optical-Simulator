@@ -1137,6 +1137,57 @@ class StepOverlayPromotionService:
             "diagnostics": diagnostics,
         }
 
+    def _cache_promoted_step_body_mesh(
+        self,
+        label: str,
+        source_path: Path,
+    ) -> str | None:
+        """Save the imported overlay's mesh to the STEP STL cache.
+
+        Returns the absolute path string (suitable for storing in a
+        row's advanced dict) or ``None`` when the mesh is missing.
+        Renderer reuse: see ``_iter_3d_optical_surface_meshes`` -- it
+        loads this STL via ``_stl_mesh_from_path_with_world_transform``
+        so the analytic-promoted lens body shows its ACTUAL STEP
+        geometry instead of KrakenOS's rotationally-symmetric
+        analytic mesh.
+        """
+        mesh = self._transformed_imported_step_mesh_for_label(label)
+        if mesh is None or int(getattr(mesh, "n_points", 0) or 0) <= 0:
+            return None
+        try:
+            mesh = mesh.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
+        except Exception:
+            try:
+                mesh = mesh.extract_surface(algorithm="dataset_surface").copy(deep=True)
+            except Exception:
+                mesh = mesh.copy(deep=True)
+        points = np.asarray(getattr(mesh, "points", np.empty((0, 3))), dtype=float)
+        if points.ndim != 2 or points.shape[0] == 0 or points.shape[1] < 3:
+            return None
+        if not np.all(np.isfinite(points[:, :3])):
+            return None
+        # Centre on the body centroid so the cached STL is BODY-LOCAL.
+        # The render branch then translates it by the row's desp + the
+        # row's tilt, matching the analytic-row placement. This is the
+        # same conventions used by the existing optical-solid path.
+        bounds_min = np.min(points[:, :3], axis=0)
+        bounds_max = np.max(points[:, :3], axis=0)
+        center_world = 0.5 * (bounds_min + bounds_max)
+        local_mesh = mesh.copy(deep=True)
+        local_mesh.points = points[:, :3] - center_world[:3]
+        digest = hashlib.sha1()
+        digest.update(str(source_path.resolve()).encode("utf-8", errors="ignore"))
+        digest.update(str(label).encode("utf-8"))
+        digest.update(np.ascontiguousarray(local_mesh.points, dtype=np.float64).tobytes())
+        digest.update(b"analytic-body")
+        cache_dir = cad_cache_paths.CAD_CACHE_DIR / "promoted_step_overlays"
+        mesh_path = cache_dir / f"{label}_analytic_{digest.hexdigest()[:16]}.stl"
+        if not mesh_path.exists() or mesh_path.stat().st_size <= 0:
+            mesh_path.parent.mkdir(parents=True, exist_ok=True)
+            local_mesh.save(str(mesh_path))
+        return str(mesh_path.resolve())
+
     def preview_imported_step_analytic_surfaces(
         self,
         label: str,
@@ -1310,6 +1361,20 @@ class StepOverlayPromotionService:
         rows_preview = list(preview["rows"])
         required = int(preview["required_glass_count"])
         materials = self._normalize_glass_sequence(glass_sequence)
+        # Cache the imported mesh as an STL so the renderer can show
+        # the body's ACTUAL geometry (rectangular for plano-cyl, etc)
+        # instead of KrakenOS's rotationally-symmetric analytic mesh.
+        # Stored on the first row's advanced dict as
+        # ``StepAnalyticBodyStlPath`` -- the renderer (see
+        # _iter_3d_optical_surface_meshes) checks for it and loads the
+        # STL when present. Trace is unaffected because we never
+        # write Solid_3d_stl, so the surface still uses Rc / k /
+        # Cylinder_Rxy_Ratio for refraction.
+        try:
+            body_stl_path = self._cache_promoted_step_body_mesh(label, source_path)
+        except Exception as exc:
+            self.append_debug(f"Analytic body mesh cache failed for {label}: {exc}")
+            body_stl_path = None
         if len(materials) < required:
             raise RuntimeError(
                 f"Analytic STEP promotion: need {required} glass name(s) for the "
@@ -1449,6 +1514,13 @@ class StepOverlayPromotionService:
             row.advanced = dict(row.advanced or {})
             if abs(cylinder_ratio - 1.0) > 1e-6:
                 row.advanced["Cylinder_Rxy_Ratio"] = cylinder_ratio
+            # Renderer hook: the FIRST row of each promoted lens
+            # carries a path to the cached STEP-derived body mesh.
+            # Trailing rows DELIBERATELY skip the path so the body
+            # is drawn once, not once per surface. Trace ignores
+            # this key (only the renderer reads it).
+            if body_stl_path and index == 0:
+                row.advanced["StepAnalyticBodyStlPath"] = body_stl_path
             row.advanced["StepAnalyticPromotion"] = {
                 "step_label": label,
                 "source_step_path": str(source_path.resolve()),

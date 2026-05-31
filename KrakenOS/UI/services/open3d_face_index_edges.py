@@ -17,6 +17,7 @@ from KrakenOS.UI.services.open3d_face_pick import FaceRayPick, pick_face_from_ra
 
 FACE_INDEX_CELL_DATA = "kraken_step_face_index"
 SELECTION_FACE_INDEX_CELL_DATA = "kraken_step_selection_face_index"
+_FACE_INDEX_CELL_DATA_NAMES = (SELECTION_FACE_INDEX_CELL_DATA, FACE_INDEX_CELL_DATA)
 
 
 def mesh_has_face_index(mesh) -> bool:
@@ -33,7 +34,7 @@ def mesh_has_face_index(mesh) -> bool:
 
 
 def _cell_face_index_values(surface, cell_count: int) -> np.ndarray:
-    for name in (SELECTION_FACE_INDEX_CELL_DATA, FACE_INDEX_CELL_DATA):
+    for name in _FACE_INDEX_CELL_DATA_NAMES:
         try:
             values = np.asarray(surface.cell_data.get(name, ()), dtype=int)
         except Exception:
@@ -43,6 +44,26 @@ def _cell_face_index_values(surface, cell_count: int) -> np.ndarray:
     return np.empty((0,), dtype=int)
 
 
+def _drop_invalid_cell_data(mesh):
+    if pv is None or mesh is None:
+        return mesh
+    try:
+        cleaned = pv.wrap(mesh).copy(deep=True)
+        cell_count = int(getattr(cleaned, "n_cells", 0))
+        for name in list(cleaned.cell_data.keys()):
+            try:
+                if len(cleaned.cell_data[name]) not in {0, cell_count}:
+                    del cleaned.cell_data[name]
+            except Exception:
+                try:
+                    del cleaned.cell_data[name]
+                except Exception:
+                    pass
+        return cleaned
+    except Exception:
+        return mesh
+
+
 def _surface_triangles_and_face_index(mesh):
     if pv is None or mesh is None:
         return None, np.empty((0, 3, 3), dtype=float), np.empty((0,), dtype=int)
@@ -50,12 +71,17 @@ def _surface_triangles_and_face_index(mesh):
         surface = pv.wrap(mesh)
         faces = np.asarray(surface.faces, dtype=np.int64).reshape((-1, 4))
         values = _cell_face_index_values(surface, int(faces.shape[0]))
-        if faces.shape[0] != values.shape[0] or not np.all(faces[:, 0] == 3):
+        if values.shape[0] != int(faces.shape[0]):
+            return surface, np.empty((0, 3, 3), dtype=float), np.empty((0,), dtype=int)
+        if not np.all(faces[:, 0] == 3):
             raise ValueError("not triangle surface")
         points = np.asarray(surface.points, dtype=float)
     except Exception:
         try:
-            surface = pv.wrap(mesh).extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
+            source = _drop_invalid_cell_data(mesh)
+            if _cell_face_index_values(source, int(getattr(source, "n_cells", 0))).size == 0:
+                return source, np.empty((0, 3, 3), dtype=float), np.empty((0,), dtype=int)
+            surface = source.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
             faces = np.asarray(surface.faces, dtype=np.int64).reshape((-1, 4))
             values = _cell_face_index_values(surface, int(faces.shape[0]))
             points = np.asarray(surface.points, dtype=float)
@@ -174,10 +200,10 @@ def display_feature_edges(mesh, *, feature_angle: float = 24.0, boundary_edges: 
     if face_edges is not None and int(getattr(face_edges, "n_points", 0)) > 0:
         return face_edges
     try:
-        surface = pv.wrap(mesh).extract_surface(algorithm="dataset_surface").copy(deep=True)
+        surface = _drop_invalid_cell_data(mesh).extract_surface(algorithm="dataset_surface").copy(deep=True)
     except Exception:
         try:
-            surface = pv.wrap(mesh).copy(deep=True)
+            surface = _drop_invalid_cell_data(mesh).copy(deep=True)
         except Exception:
             return None
     try:

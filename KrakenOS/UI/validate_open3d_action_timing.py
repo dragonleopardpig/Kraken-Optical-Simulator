@@ -32,6 +32,7 @@ def main() -> int:
     trace_loop_source = inspect.getsource(TraceLoopTool.NsTraceLoop)
     trace_sampling_source = inspect.getsource(trace_preview_sampling.TracePreviewSamplingMixin._trace_selected_through_envelope)
     polyline_source = inspect.getsource(layout_polyline_display.LayoutPolylineDisplayMixin._load_step_mesh)
+    three_d_tools_source = inspect.getsource(three_d_scene_tools.ThreeDSceneToolsMixin)
     workbench_source = inspect.getsource(layout_table_workbench.LayoutTableWorkbenchMixin)
     diagnostic_source = inspect.getsource(diagnose_open3d_action_timing)
     checks = [
@@ -71,6 +72,13 @@ def main() -> int:
             and "convert_step_to_stl" in polyline_source
             and "read_step_stl_mesh" in polyline_source
             and "load_step_mesh_memory_cache_hit" in polyline_source,
+        ),
+        (
+            "Open 3D first-load STEP display cache warm-up does not block the Tk inspector",
+            "def _start_open3d_step_cache_warmup" in three_d_tools_source
+            and "KrakenOpen3DStepCacheWarmup" in three_d_tools_source
+            and "LayoutPolylineDisplayMixin" in three_d_tools_source
+            and "inspector.refresh_from_editor()" in three_d_tools_source,
         ),
         (
             "Open 3D preview build records system/trace/scene bundle timings",

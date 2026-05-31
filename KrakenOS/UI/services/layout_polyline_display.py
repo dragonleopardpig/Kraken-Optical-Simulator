@@ -570,10 +570,39 @@ class LayoutPolylineDisplayMixin:
         try:
             cleaned = mesh.clean(tolerance=1.0e-9, absolute=True)
             cleaned = cleaned.extract_surface(algorithm="dataset_surface").copy(deep=True)
+            cleaned = self._drop_invalid_step_cell_data(cleaned, context="clean")
             if int(getattr(cleaned, "n_points", 0)) > 0 and self._step_display_mesh_cell_data_valid(cleaned):
                 return cleaned
         except Exception as exc:
             self.append_debug(f"STEP display mesh clean skipped: {exc}")
+        return mesh
+
+    def _drop_invalid_step_cell_data(self, mesh, *, context: str):
+        if mesh is None:
+            return mesh
+        try:
+            cell_count = int(getattr(mesh, "n_cells", 0))
+            dropped: list[str] = []
+            for name in list(mesh.cell_data.keys()):
+                try:
+                    if len(mesh.cell_data[name]) in {0, cell_count}:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    del mesh.cell_data[name]
+                    dropped.append(str(name))
+                except Exception:
+                    pass
+            if dropped:
+                self.append_debug(
+                    "STEP display mesh {context} dropped invalid cell-data arrays: {names}".format(
+                        context=str(context),
+                        names=", ".join(dropped),
+                    )
+                )
+        except Exception:
+            pass
         return mesh
 
     def _largest_connected_step_component(self, mesh):
@@ -594,6 +623,7 @@ class LayoutPolylineDisplayMixin:
                 preference="cell",
             )
             part = part.extract_surface(algorithm="dataset_surface").copy(deep=True)
+            part = self._drop_invalid_step_cell_data(part, context="largest-component")
             if int(getattr(part, "n_points", 0)) > 0:
                 self.append_debug(
                     f"STEP CAD component filter | kept region {largest_region} "

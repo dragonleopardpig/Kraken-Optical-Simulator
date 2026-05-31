@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -111,6 +112,30 @@ def main() -> int:
     grouped_outline = face_outline_from_face_indices(duplicated_points_mesh, (0, 1))
     if grouped_outline is None or int(getattr(grouped_outline, "n_cells", 0)) != 4:
         failures.append("Face-index outline extraction did not merge split analytic face groups.")
+    invalid_face_data_mesh = duplicated_points_mesh.copy(deep=True)
+    try:
+        from vtkmodules.vtkCommonCore import vtkIntArray
+
+        invalid_array = vtkIntArray()
+        invalid_array.SetName("kraken_step_face_index")
+        for value in range(4):
+            invalid_array.InsertNextValue(int(value))
+        invalid_face_data_mesh.GetCellData().RemoveArray("kraken_step_face_index")
+        invalid_face_data_mesh.GetCellData().AddArray(invalid_array)
+    except Exception as exc:
+        failures.append(f"Could not build invalid face-index warning fixture: {exc}")
+    else:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            triangles, face_index = triangle_array_and_face_index(invalid_face_data_mesh)
+            edges = open3d_face_index_edges.display_feature_edges(invalid_face_data_mesh)
+        if triangles.size != 0 or face_index.size != 0:
+            failures.append("Invalid-length analytic face cell-data should be ignored before face-index selection.")
+        warning_text = "\n".join(str(item.message) for item in caught)
+        if "InvalidMeshWarning" in warning_text or "incorrect length" in warning_text:
+            failures.append("Face-index helpers should not trigger PyVista InvalidMeshWarning on stale cached cell-data.")
+        if edges is None or int(getattr(edges, "n_points", 0)) <= 0:
+            failures.append("Invalid face-index data should still fall back to geometric feature edges.")
 
     project_root = Path(__file__).resolve().parents[2]
     fixture_paths = (

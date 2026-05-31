@@ -13,6 +13,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import asdict
 import io
 from pathlib import Path
+import threading
 import time
 import tkinter as tk
 from tkinter import filedialog
@@ -112,6 +113,8 @@ class ThreeDSceneToolsMixin:
                         self._three_d_inspector.deiconify()
                         self._three_d_inspector.lift()
                         self._three_d_inspector.focus_force()
+                        if self._start_open3d_step_cache_warmup(self._three_d_inspector):
+                            return
                         self._three_d_inspector.refresh_from_editor()
                         self.status_var.set("Opened Kraken 3D inspector")
                         self.append_debug("Opened Kraken 3D inspector")
@@ -150,6 +153,109 @@ class ThreeDSceneToolsMixin:
         except Exception as exc:
             self.append_debug(f"3D view error: {exc}")
             self.status_var.set(f"3D view failed: {exc}")
+
+    def _open3d_step_cache_warmup_specs(self) -> list[tuple[str, Path, bool]]:
+        specs: list[tuple[str, Path, bool]] = []
+        for label, attr, largest in (
+            ("lens", "imported_lens_step_path", bool(getattr(self, "lens_step_largest_component_only", True))),
+            ("camera", "imported_camera_step_path", True),
+            ("optical", "imported_optical_step_path", False),
+            ("led", "imported_led_step_path", False),
+        ):
+            path = getattr(self, attr, None)
+            if path is None:
+                continue
+            try:
+                source_path = Path(path).expanduser()
+            except Exception:
+                continue
+            if source_path.suffix.lower() not in {".step", ".stp"} or not source_path.exists():
+                continue
+            specs.append((label, source_path, bool(largest)))
+        return specs
+
+    def _start_open3d_step_cache_warmup(self, inspector) -> bool:
+        specs = self._open3d_step_cache_warmup_specs()
+        if not specs:
+            return False
+        thread = getattr(self, "_open3d_step_cache_warmup_thread", None)
+        if thread is not None and thread.is_alive():
+            try:
+                inspector.status_var.set("Open 3D is warming STEP display cache...")
+                self.status_var.set("Open 3D is warming STEP display cache...")
+            except Exception:
+                pass
+            return True
+
+        names = ", ".join(f"{label}:{path.name}" for label, path, _largest in specs)
+        try:
+            inspector.status_var.set(f"Open 3D warming STEP display cache: {names}")
+            self.status_var.set(f"Open 3D warming STEP display cache: {names}")
+            self.update_idletasks()
+        except Exception:
+            pass
+
+        def worker() -> None:
+            started = time.perf_counter()
+            messages: list[str] = []
+            errors: list[str] = []
+            try:
+                from KrakenOS.UI.services.layout_polyline_display import LayoutPolylineDisplayMixin
+
+                class _StepCacheWarmupLoader(LayoutPolylineDisplayMixin):
+                    def __init__(self) -> None:
+                        self._external_cad_mesh_cache = {}
+
+                    def append_debug(self, message: str) -> None:
+                        if message:
+                            messages.append(str(message))
+
+                loader = _StepCacheWarmupLoader()
+                for label, path, largest in specs:
+                    try:
+                        loader._load_step_mesh(path, largest_component=bool(largest))
+                    except Exception as exc:
+                        errors.append(f"{label}:{path.name}: {_short_error_message(exc)}")
+            except Exception as exc:
+                errors.append(_short_error_message(exc))
+            elapsed = time.perf_counter() - started
+
+            def finish() -> None:
+                for message in messages[-8:]:
+                    try:
+                        self.append_debug(message)
+                    except Exception:
+                        pass
+                if errors:
+                    status = "Open 3D STEP cache warm-up completed with warnings."
+                    try:
+                        self.append_debug("Open 3D STEP cache warm-up warnings: " + "; ".join(errors))
+                    except Exception:
+                        pass
+                else:
+                    status = f"Open 3D STEP cache warm-up completed in {elapsed:.1f}s."
+                try:
+                    inspector.status_var.set(status)
+                    self.status_var.set(status)
+                    if inspector.winfo_exists() and bool(getattr(inspector, "available", False)):
+                        inspector.refresh_from_editor()
+                        self.status_var.set("Opened Kraken 3D inspector")
+                        self.append_debug("Opened Kraken 3D inspector after STEP cache warm-up")
+                except Exception as exc:
+                    try:
+                        self.append_debug(f"Open 3D refresh after STEP cache warm-up failed: {exc}")
+                    except Exception:
+                        pass
+
+            try:
+                self.after(0, finish)
+            except Exception:
+                pass
+
+        thread = threading.Thread(target=worker, name="KrakenOpen3DStepCacheWarmup", daemon=True)
+        self._open3d_step_cache_warmup_thread = thread
+        thread.start()
+        return True
 
     def _schedule_legacy_3d_poll(self) -> None:
         if self._legacy_3d_after_id is not None:
@@ -877,6 +983,21 @@ class ThreeDSceneToolsMixin:
                 solid_mesh = self._stl_mesh_with_world_transform(row, row_transform)
                 if solid_mesh is not None and int(getattr(solid_mesh, "n_points", 0)) > 0:
                     mesh = solid_mesh
+            # Analytic-promoted lens body: the promote service caches
+            # the imported STEP overlay's mesh as STL and stores the
+            # path here. Using the actual STEP geometry instead of
+            # KrakenOS's rotationally-symmetric analytic mesh makes
+            # plano-cylindrical lenses render as their true
+            # rectangular shape, not as round discs. Trace ignores
+            # this key -- refraction still uses Rc / k /
+            # Cylinder_Rxy_Ratio.
+            analytic_body_stl = advanced.get("StepAnalyticBodyStlPath") if isinstance(advanced, dict) else None
+            if mesh is None and analytic_body_stl and row_transform is not None:
+                body_mesh = self._stl_mesh_from_path_with_world_transform(
+                    str(analytic_body_stl), row_transform
+                )
+                if body_mesh is not None and int(getattr(body_mesh, "n_points", 0)) > 0:
+                    mesh = body_mesh
             if mesh is None:
                 mesh = Kraken3DInspector._mesh_with_transform(surfaces[index], row_transform)
             if mesh is None and row_transform is not None:
@@ -965,6 +1086,47 @@ class ThreeDSceneToolsMixin:
             return scaled
         except Exception:
             return mesh
+
+    def _stl_mesh_from_path_with_world_transform(
+        self,
+        path: str,
+        transform: np.ndarray,
+    ) -> pv.DataSet | None:
+        """Load STL at ``path`` and return a pv.PolyData in world coords.
+
+        Used by the analytic-promote rendering branch -- the cached
+        STEP body STL is loaded once per render frame and transformed
+        by the row's tilt + desp matrix so the body appears in the
+        right world position.
+        """
+        _ensure_pv()
+        if pv is None:
+            return None
+        try:
+            _fmt, triangles = _read_stl_triangle_vertices(path)
+            triangles = np.asarray(triangles, dtype=float)
+            if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or triangles.shape[0] == 0:
+                return None
+            points = triangles.reshape((-1, 3))
+            local_h = np.column_stack(
+                (
+                    points[:, 0],
+                    points[:, 1],
+                    points[:, 2],
+                    np.ones(points.shape[0], dtype=float),
+                )
+            )
+            matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+            world = (matrix @ local_h.T).T[:, :3]
+            faces = np.column_stack(
+                (
+                    np.full(triangles.shape[0], 3, dtype=np.int64),
+                    np.arange(points.shape[0], dtype=np.int64).reshape((-1, 3)),
+                )
+            ).ravel()
+            return pv.PolyData(world, faces)
+        except Exception:
+            return None
 
     def _stl_mesh_with_world_transform(self, row: SurfaceRow, transform: np.ndarray) -> pv.DataSet | None:
         _ensure_pv()
