@@ -366,6 +366,21 @@ def _build_layout(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> dict
         # they belong to the same body.
         _rename_row(app, int(indices[0]), spec["name"])
 
+        # Stamp the spec's unique name onto EVERY row's ``element``
+        # field so the Scene Components browser groups them as one
+        # element (Ball Lens 1, DCV, Achromat, Cyl 1, ...) instead
+        # of lumping ALL analytic rows under a single shared
+        # "OPTICAL analytic STEP" element bucket. Without this, the
+        # browser would show one giant element with 11 surfaces;
+        # with it, each lens is its own collapsible parent with its
+        # 2-3 surface children.
+        element_key = str(spec["name"])
+        for row_idx in indices:
+            try:
+                app.rows[int(row_idx)].element = element_key
+            except Exception:
+                pass
+
         # Post-promote placement: walk each row of THIS lens and set
         # its world position along the exit beam.
         #

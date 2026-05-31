@@ -3202,31 +3202,29 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     "opacity": float(prop.GetOpacity()),
                     "ambient": float(prop.GetAmbient()),
                     "diffuse": float(prop.GetDiffuse()),
+                    "color": tuple(float(value) for value in prop.GetColor()),
                 }
                 actor._kraken_row_select_style = base
             except Exception:
                 base = {}
         is_file_backed_body = bool(getattr(actor, "_kraken_file_backed_row_body", False))
         if selected:
+            # You asked for "Red + Pink translucent body when selected"
+            # because the previous subtle orange edge highlight was
+            # almost invisible. New scheme: bright RED edges (line
+            # width 5) PLUS pink body fill at moderate opacity. Works
+            # for both analytic-cap actors and file-backed solid
+            # bodies (the cyl lens STEP body, achromat body, etc).
             try:
-                base_opacity = float(base.get("opacity", 1.0))
-                if base_opacity <= 0.38:
-                    selected_opacity = min(max(base_opacity, 0.30) + 0.08, 0.44)
-                else:
-                    selected_opacity = min(max(base_opacity, 0.35) + 0.12, 1.0)
-                if is_file_backed_body:
-                    # File-backed optical solids already receive explicit
-                    # feature-edge actors. Actor triangle edges make the
-                    # promoted STEP body look like a mesh instead of a
-                    # transparent solid.
-                    prop.SetEdgeVisibility(0)
-                    prop.SetLineWidth(float(base.get("line_width", 1.0)))
-                else:
-                    prop.SetEdgeVisibility(1)
-                    prop.SetEdgeColor(1.0, 0.55, 0.05)
-                    prop.SetLineWidth(max(float(base.get("line_width", 1.0)), 3.0))
-                prop.SetOpacity(selected_opacity)
-                prop.SetAmbient(max(float(base.get("ambient", 0.0)), 0.28))
+                prop.SetEdgeVisibility(1)
+                prop.SetEdgeColor(1.0, 0.0, 0.0)  # bright red edges
+                prop.SetLineWidth(max(float(base.get("line_width", 1.0)), 5.0))
+                # Pink body fill, more opaque than baseline so it
+                # reads through other geometry.
+                prop.SetColor(1.0, 0.45, 0.65)
+                prop.SetOpacity(max(float(base.get("opacity", 0.5)), 0.75))
+                prop.SetAmbient(max(float(base.get("ambient", 0.0)), 0.35))
+                prop.SetDiffuse(max(float(base.get("diffuse", 1.0)), 0.80))
             except Exception:
                 pass
             return
@@ -3239,6 +3237,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             prop.SetOpacity(float(base.get("opacity", 1.0)))
             prop.SetAmbient(float(base.get("ambient", 0.0)))
             prop.SetDiffuse(float(base.get("diffuse", 1.0)))
+            base_color = tuple(base.get("color", ()))
+            if len(base_color) == 3:
+                prop.SetColor(*base_color)
         except Exception:
             pass
 
