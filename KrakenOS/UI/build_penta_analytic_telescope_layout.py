@@ -136,7 +136,7 @@ LENS_SPECS: list[dict[str, Any]] = [
         # service -- OCC preserves surface_type=cylinder with the
         # exact radius_mm, which we encode as a Standard row with
         # Cylinder_Rxy_Ratio=0 (pure plano-cyl, no Y curvature).
-        "name": "Cylindrical f=+50 mm (N-BK7, plano-cyl)",
+        "name": "Cylindrical 1 f=+50 mm (N-BK7, plano-cyl)",
         "step": CYL_STEP,
         "glass": "N-BK7",
         "offset_along_exit_mm": (
@@ -145,6 +145,29 @@ LENS_SPECS: list[dict[str, Any]] = [
             + PHASE2_GAP_FROM_BALL_2_MM
             + DCV_TO_ACHROMAT_GAP_MM
             + PHASE3_GAP_FROM_ACHROMAT_MM
+        ),
+        # Cyl 1 -> Cyl 2 separation = f1 + f2 = 50 + 50 = 100 mm
+        # (1:1 Keplerian cyl telescope: cyl 1 focuses parallel
+        # input to a LINE focus at +50 mm; cyl 2 collects the
+        # diverging beam from that line and re-collimates).
+        "gap_after_mm": 100.0,
+    },
+    {
+        # Second Edmund 34754, identical to Cyl 1. Together with
+        # Cyl 1 at 100 mm = 2f separation they form a 1:1 cyl
+        # Keplerian telescope: parallel input -> parallel output,
+        # but inverted in the meridional axis (sign flip of the X
+        # field component).
+        "name": "Cylindrical 2 f=+50 mm (N-BK7, plano-cyl)",
+        "step": CYL_STEP,
+        "glass": "N-BK7",
+        "offset_along_exit_mm": (
+            PHASE1_CLEARANCE_FROM_PRISM_MM
+            + BALL_LENS_GAP_MM
+            + PHASE2_GAP_FROM_BALL_2_MM
+            + DCV_TO_ACHROMAT_GAP_MM
+            + PHASE3_GAP_FROM_ACHROMAT_MM
+            + 100.0  # Cyl 1 -> Cyl 2 spacing
         ),
         "gap_after_mm": 50.0,
     },
@@ -387,6 +410,37 @@ def _build_layout(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> dict
         )
         inspector.refresh_from_editor()
         inspector.update_idletasks()
+
+    # When the same STEP fixture is promoted twice (e.g. cyl 1 +
+    # cyl 2 for a cyl Keplerian telescope), the second promote
+    # sometimes inserts BEFORE the first lens's rows due to the
+    # insert_at logic in step_overlay_promotion. The chain rows
+    # end up out of geometric order, which breaks sequential
+    # trace. Reorder all "interior" rows (Object excluded at the
+    # start, Image excluded at the end) by their world-frame
+    # axial position along the exit beam so the row sequence
+    # matches the ray's actual path.
+    if len(app.rows) > 3:
+        body_rows = list(app.rows)
+        head = body_rows[: int(base["row_count"]) - 1]  # Object + prisms (kept as-is)
+        tail = body_rows[-1:]  # Image
+        middle = body_rows[int(base["row_count"]) - 1 : -1]
+        # Sort middle by axial-position along exit_dir descending.
+        def _axial_pos(row) -> float:
+            try:
+                return float(
+                    exit_dir[0] * float(getattr(row, "desp_x", 0.0) or 0.0)
+                    + exit_dir[1] * float(getattr(row, "desp_y", 0.0) or 0.0)
+                    + exit_dir[2] * float(getattr(row, "desp_z", 0.0) or 0.0)
+                )
+            except Exception:
+                return 0.0
+        middle.sort(key=_axial_pos)
+        app.rows = head + middle + tail
+        try:
+            app._sync_table()
+        except Exception:
+            pass
 
     summary["promoted"] = promoted_rows
     summary["final_row_count"] = len(app.rows)
