@@ -3024,10 +3024,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return
         degrees_per_pixel = 0.10
         try:
-            # Lock the orbit axis to world up before every drag tick so
-            # accumulated micro-drift in view-up can't flip the sign of
-            # Azimuth's rotation axis mid-drag.
-            camera.SetViewUp(0.0, 1.0, 0.0)
+            # Choose a view-up that's PERPENDICULAR to the current view
+            # direction. The previous code hardcoded SetViewUp(0,1,0)
+            # which is degenerate when the camera looks straight down
+            # +/-Y -- the XZ orthographic view. VTK then warns
+            # "Resetting view-up since view plane normal is parallel"
+            # and the canvas blanks out.
+            #
+            # Algorithm: prefer world +Y; if it's parallel to the
+            # view direction, fall back to +X; if THAT'S parallel,
+            # fall back to +Z. One of the three is always orthogonal
+            # to any view direction.
+            view_up = self._safe_view_up_for_camera(camera)
+            camera.SetViewUp(*view_up)
             # "Grab the scene" drag direction (reversed from the old
             # camera-orbit convention you found unintuitive). Drag
             # right -> scene rotates right under the cursor; drag up
@@ -3038,14 +3047,48 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # around it.
             camera.Azimuth(-dx_f * degrees_per_pixel)
             camera.Elevation(dy_f * degrees_per_pixel)
-            # Re-lock view-up after Elevation tilts view-direction --
-            # Azimuth on the next tick keeps rotating around world Y
-            # rather than whatever non-perpendicular axis would result.
-            camera.SetViewUp(0.0, 1.0, 0.0)
+            # Re-lock view-up after Elevation tilts view-direction so
+            # the NEXT tick's Azimuth rotates around a stable axis.
+            camera.SetViewUp(*self._safe_view_up_for_camera(camera))
             self._reset_camera_clipping_range_for_scene()
             self.render()
         except Exception as exc:
             self.editor.append_debug(f"3D fixed-drag rotation failed: {exc}")
+
+    @staticmethod
+    def _safe_view_up_for_camera(camera) -> tuple[float, float, float]:
+        """Return a world axis that's safe to use as view-up.
+
+        Prefers +Y (the convention the rest of the inspector uses),
+        but switches to +X or +Z when +Y is parallel-ish to the
+        current view direction (the degenerate case that produces
+        "Resetting view-up since view plane normal is parallel" and
+        blanks the canvas).
+        """
+        try:
+            cam_pos = np.asarray(camera.GetPosition(), dtype=float).reshape(3)
+            focal = np.asarray(camera.GetFocalPoint(), dtype=float).reshape(3)
+        except Exception:
+            return (0.0, 1.0, 0.0)
+        view_dir = focal - cam_pos
+        norm = float(np.linalg.norm(view_dir))
+        if norm < 1e-9:
+            return (0.0, 1.0, 0.0)
+        view_dir = view_dir / norm
+        # Threshold ~10 degrees: treat |cos(angle)| > 0.985 as
+        # "parallel enough to cause numerical trouble" and fall
+        # through to the next axis.
+        for candidate in (
+            (0.0, 1.0, 0.0),
+            (0.0, 0.0, 1.0),
+            (1.0, 0.0, 0.0),
+        ):
+            up = np.asarray(candidate, dtype=float)
+            if abs(float(np.dot(up, view_dir))) < 0.985:
+                return (float(up[0]), float(up[1]), float(up[2]))
+        # All three world axes happen to be near-parallel? Shouldn't
+        # be possible in 3-D but bail safely.
+        return (0.0, 1.0, 0.0)
 
     def _pan_camera_fixed_drag(self, dx: int | float, dy: int | float) -> None:
         """Pan the camera laterally in its current view plane."""
