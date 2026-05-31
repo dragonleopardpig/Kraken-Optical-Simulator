@@ -10,6 +10,7 @@ edits, then explains which UI controls map to optical design concepts.
 
    pcx_from_plate
    machine_vision_focus
+   machine_vision_pyrite_85_surrogate
    gaussian_beam_expander
    michelson_interferometer
    mach_zehnder_interferometer
