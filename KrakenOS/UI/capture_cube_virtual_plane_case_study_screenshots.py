@@ -239,6 +239,15 @@ def _capture_window_image(widget) -> Image.Image:
     return image.convert("RGB")
 
 
+def _capture_widget_bounds_image(widget) -> Image.Image:
+    widget.update_idletasks()
+    x0 = int(widget.winfo_rootx())
+    y0 = int(widget.winfo_rooty())
+    x1 = x0 + int(widget.winfo_width())
+    y1 = y0 + int(widget.winfo_height())
+    return ImageGrab.grab(bbox=(x0, y0, x1, y1)).convert("RGB")
+
+
 def _save_window(app: KrakenLayoutEditor, output_dir: Path, filename: str) -> Path:
     path = output_dir / filename
     _capture_window_image(app).save(path, optimize=True)
@@ -293,12 +302,20 @@ def _save_face_dialog(app: KrakenLayoutEditor, output_dir: Path, filename: str) 
     dialog = next((window for window in reversed(windows) if "CAD/STL Optical Faces" in str(window.title())), None)
     if dialog is None:
         raise RuntimeError("CAD/STL Optical Faces dialog did not open")
+    dialog.geometry("2200x980+80+80")
+    dialog.deiconify()
+    dialog.lift()
+    try:
+        dialog.attributes("-topmost", True)
+        dialog.after(250, lambda: dialog.attributes("-topmost", False))
+    except Exception:
+        pass
     dialog.update_idletasks()
     dialog.update()
     time.sleep(0.8)
     dialog.update()
     path = output_dir / filename
-    _capture_window_image(dialog).save(path, optimize=True)
+    _capture_widget_bounds_image(dialog).save(path, optimize=True)
     dialog.destroy()
     app.update_idletasks()
     app.update()
