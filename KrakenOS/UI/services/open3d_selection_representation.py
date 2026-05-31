@@ -52,7 +52,18 @@ class SelectionRepresentation:
             except Exception:
                 continue
         picked = min(selected_rows) if selected_rows else None
-        if selected_rows == set(getattr(self, "_picked_row_indices", set()) or set()):
+        current_plural = set(getattr(self, "_picked_row_indices", set()) or set())
+        current_singular = getattr(self, "_picked_row_index", None)
+        # Early-return only when BOTH the plural and singular state
+        # already match. The two fields can desync (anything that
+        # mutates ``_picked_row_index`` without updating
+        # ``_picked_row_indices`` would otherwise wedge the clear path
+        # into thinking the work is done). Caught by the comprehensive
+        # harness's Phase 4: a direct ``_picked_row_index = N``
+        # assignment was leaving the clear path as a no-op.
+        plural_matches = selected_rows == current_plural
+        singular_matches = current_singular == picked
+        if plural_matches and singular_matches:
             return
         if self._renderer is None:
             self._picked_row_index = picked
