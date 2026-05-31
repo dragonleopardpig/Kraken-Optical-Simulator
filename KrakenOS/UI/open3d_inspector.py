@@ -4203,6 +4203,130 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         )
         return result
 
+    def _analytic_step_material_sequence_prompt(
+        self,
+        label: str,
+        preview: dict,
+    ) -> str | None:
+        """Show the geometry-fit preview and ask for the glass sequence.
+
+        Some optical components are cemented compounds (an achromat
+        doublet has 3 spherical surfaces and 2 glass types), so the
+        prompt shows the user exactly how many glasses are expected
+        and includes the fitted Rc / thickness for each surface so
+        they can confirm the detection looks right before committing.
+        """
+        display_label = self.editor._step_overlay_display_label(label)
+        rows = list(preview.get("rows") or [])
+        required = int(preview.get("required_glass_count", 1))
+        if not rows:
+            return None
+        lines = [
+            f"{display_label.upper()} STEP -> analytic surfaces",
+            "",
+            "Fitted surfaces (front -> back):",
+        ]
+        for index, row in enumerate(rows):
+            kind = str(row.get("kind", "surface"))
+            rc = float(row.get("rc_mm", 0.0))
+            diameter = float(row.get("diameter_mm", 0.0))
+            thickness = float(row.get("thickness_mm", 0.0))
+            residual = float(row.get("residual_mm", 0.0))
+            if kind == "sphere":
+                rc_text = f"Rc = {rc:+.4f} mm"
+            else:
+                rc_text = "Rc = inf (planar)"
+            lines.append(
+                f"  S{index + 1}  {kind:6s}  {rc_text}  Diameter = {diameter:.2f} mm  "
+                f"-> next: {thickness:.3f} mm  (fit residual {residual:.4f} mm)"
+            )
+        lines.append("")
+        if required == 1:
+            example = "N-BK7"
+            descr = "one glass for this singlet"
+        elif required == 2:
+            example = "N-BAF10, N-SF10"
+            descr = "two glasses for this cemented doublet"
+        elif required == 3:
+            example = "N-BAF10, N-SF10, N-LAK9"
+            descr = "three glasses for this cemented triplet"
+        else:
+            example = ", ".join(["N-BK7"] * required)
+            descr = f"{required} glasses (one per region between adjacent surfaces)"
+        lines.append(f"Glass sequence ({descr}). Example: {example}")
+        lines.append("(The trailing region after the back surface is set to AIR automatically.)")
+        message = "\n".join(lines)
+        try:
+            return simpledialog.askstring(
+                "Promote STEP to Analytic Surfaces",
+                message,
+                initialvalue=example,
+                parent=self,
+            )
+        except Exception:
+            return None
+
+    def promote_selected_step_to_analytic_surfaces(
+        self,
+        glass_sequence: object | None = None,
+    ) -> dict[str, object] | None:
+        """Promote the selected STEP overlay to analytic Standard rows.
+
+        Geometry-only path: sphere/plane fit on every preserved face
+        marked Transmit/Port by the auto-assignment heuristic. The
+        user only provides the glass material(s); everything else
+        (Rc, thickness, diameter) is fit from the mesh, so this works
+        on STL imports as well as STEP files.
+        """
+        label = self._selected_imported_step_label()
+        if not label:
+            self.status_var.set(
+                "Select or import a STEP overlay before analytic promotion."
+            )
+            return None
+        try:
+            preview = self.editor.preview_imported_step_analytic_surfaces(label)
+        except Exception as exc:
+            self.status_var.set(f"Analytic STEP preview failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D analytic STEP preview failed: {exc}")
+            return None
+        if preview is None:
+            self.status_var.set(
+                "Analytic STEP promotion: could not auto-detect a front/back "
+                "optical pair. Try the Promote STEP to Optical Solid Row path or "
+                "assign faces manually via Faces..."
+            )
+            return None
+        if glass_sequence is None:
+            glass_sequence = self._analytic_step_material_sequence_prompt(label, preview)
+        if glass_sequence is None or not str(glass_sequence).strip():
+            self.status_var.set("Analytic STEP promotion cancelled; glass sequence is required.")
+            return None
+        try:
+            result = self.editor.promote_imported_step_to_analytic_surfaces(
+                label,
+                glass_sequence=glass_sequence,
+                clear_overlay=True,
+                refresh_open_3d=False,
+            )
+        except Exception as exc:
+            self.status_var.set(f"Analytic STEP promotion failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D analytic STEP promotion failed: {exc}")
+            return None
+        if result is None:
+            self.status_var.set(self.editor.status_var.get())
+            return None
+        row_indices = [int(v) for v in (result.get("row_indices") or [])]
+        self._stl_placement_dirty = True
+        self._clear_step_overlay_interaction_state(label)
+        try:
+            self.refresh_from_editor(force_retrace=True)
+            if row_indices:
+                self.highlight_row(row_indices[0])
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D analytic STEP promotion refresh failed: {exc}")
+        return result
+
     def start_selected_step_carry(self) -> None:
         transition = self.editor._open3d_step_state_service().resolve_carry_start(
             (self.editor._selected_step_label, self._step_rotation_active_label),

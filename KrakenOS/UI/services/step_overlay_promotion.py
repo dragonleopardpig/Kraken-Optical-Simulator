@@ -19,7 +19,12 @@ from KrakenOS.UI.services.optical_solid_geometry import (
     short_stl_mesh_diagnostics,
 )
 from KrakenOS.UI.services.step_native_reconstruction import reconstruct_step_native_surfaces
+from KrakenOS.UI.services.step_overlay_analytic_fit import (
+    SphereFit,
+    fit_step_overlay_analytic_surfaces,
+)
 from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABEL_SET
+from KrakenOS.UI.surface_table_model import SurfaceRow
 
 
 def _auto_assign_lens_face_functions(faces: list[dict[str, Any]]) -> int:
@@ -914,6 +919,234 @@ class StepOverlayPromotionService:
             "source_step_path": str(source_path.resolve()),
             "center_world": tuple(float(value) for value in center_world[:3]),
             "diagnostics": diagnostics,
+        }
+
+    def preview_imported_step_analytic_surfaces(
+        self,
+        label: str,
+    ) -> dict[str, Any] | None:
+        """Return the fitted analytic-surface plan without modifying the editor.
+
+        Used by the inspector dialog before the user commits the
+        promotion: show what was detected, ask for the glass sequence.
+        Returns ``None`` when the overlay is missing or the auto-
+        assignment heuristic can't find a clean front/back pair.
+        """
+        label = str(label).strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET:
+            return None
+        if self._step_path_for_label(label) is None:
+            return None
+        try:
+            mesh = self._transformed_imported_step_mesh_for_label(label)
+            face_md = self._step_overlay_face_metadata(label) or {}
+        except Exception:
+            return None
+        if mesh is None or int(getattr(mesh, "n_points", 0) or 0) <= 0:
+            return None
+        faces = list(face_md.get("faces") or [])
+        face_copies = [dict(f) for f in faces]
+        _auto_assign_lens_face_functions(face_copies)
+        transmit_faces = [
+            faces[i]
+            for i, f in enumerate(face_copies)
+            if f.get("function") == "Transmit/Port"
+        ]
+        if not transmit_faces:
+            return None
+        fit = fit_step_overlay_analytic_surfaces(
+            mesh,
+            transmit_faces,
+            source_axis=(0.0, 0.0, 1.0),
+        )
+        specs = list(fit.specs)
+        if not specs:
+            return None
+        # The user provides one glass per air-or-glass region between
+        # adjacent surfaces. N surfaces -> N regions, but the LAST
+        # region is always AIR (the row's glass after the back face).
+        # Number of user-provided glasses = N - 1 (one per interior /
+        # lens-body region). For a singlet (2 surfaces) that's 1 glass;
+        # for a cemented doublet (3 surfaces) that's 2 glasses.
+        required_glass_count = max(len(specs) - 1, 1)
+        rows_preview: list[dict[str, Any]] = []
+        for index, spec in enumerate(specs):
+            fit_info = spec.fit
+            if isinstance(fit_info, SphereFit):
+                rc = float(getattr(fit_info, "signed_rc", 0.0))
+                kind = "sphere"
+                residual = float(fit_info.residual_mm)
+            else:
+                rc = 0.0
+                kind = "plane"
+                residual = float(getattr(fit_info, "residual_mm", 0.0))
+            if index < len(specs) - 1:
+                thickness = float(specs[index + 1].axial_position - spec.axial_position)
+            else:
+                thickness = 0.0
+            rows_preview.append(
+                {
+                    "face_id": spec.face_id,
+                    "kind": kind,
+                    "rc_mm": rc,
+                    "thickness_mm": float(max(thickness, 0.0)),
+                    "diameter_mm": float(spec.diameter_mm),
+                    "residual_mm": residual,
+                }
+            )
+        return {
+            "label": label,
+            "row_count": len(rows_preview),
+            "rows": rows_preview,
+            "required_glass_count": int(required_glass_count),
+            "source_step_path": str(self._step_path_for_label(label) or ""),
+        }
+
+    def promote_imported_step_to_analytic_surfaces(
+        self,
+        label: str,
+        *,
+        glass_sequence: object,
+        insert_at: int | None = None,
+        clear_overlay: bool = True,
+        refresh_open_3d: bool = True,
+    ) -> dict[str, Any] | None:
+        """Promote a STEP overlay into analytic Standard rows fit from geometry.
+
+        Counterpart to ``promote_imported_step_to_optical_solid_row``
+        (which keeps the STL body and traces per-triangle) and
+        ``promote_imported_step_to_native_surface_rows`` (which reads
+        the STEP B-rep via OpenCascade). This path runs a least-
+        squares sphere/plane fit on each preserved face of the
+        already-loaded overlay mesh and emits analytic Standard
+        surface rows so refraction uses ``Rc``/``k`` instead of the
+        local triangle normal. Works on STL imports as well as STEP
+        files whose B-rep can't be reconstructed.
+
+        ``glass_sequence`` lists one material per interior region
+        between fitted surfaces (a comma-separated string or list of
+        names). For a singlet (2 surfaces) the sequence has one entry
+        (e.g. ``"N-BK7"``); for a cemented doublet (3 surfaces)
+        provide two glasses (e.g. ``"N-BAF10, N-SF10"``). The trailing
+        region after the back face is always set to ``AIR``.
+        """
+        label = str(label).strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET:
+            return None
+        source_path = self._step_path_for_label(label)
+        if source_path is None:
+            self.status_var.set(f"No {label} STEP is imported.")
+            return None
+        preview = self.preview_imported_step_analytic_surfaces(label)
+        if preview is None:
+            raise RuntimeError(
+                "Analytic STEP promotion: could not auto-detect a front/back "
+                "optical pair on this overlay. Use Faces... to assign roles "
+                "manually, or fall back to Promote STEP to Optical Solid Row."
+            )
+        rows_preview = list(preview["rows"])
+        required = int(preview["required_glass_count"])
+        materials = self._normalize_glass_sequence(glass_sequence)
+        if len(materials) < required:
+            raise RuntimeError(
+                f"Analytic STEP promotion: need {required} glass name(s) for the "
+                f"{len(rows_preview)} fitted surface(s); got {len(materials)}. "
+                "Provide one glass per region between adjacent surfaces "
+                "(comma-separated). The trailing region after the back surface "
+                "is always AIR."
+            )
+        materials = list(materials)[:required] + ["AIR"]
+
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            raise RuntimeError(f"Could not read the surface table: {exc}") from exc
+        resolved_insert_at, arm_key = self._step_overlay_insert_index(insert_at)
+        display_label = self._step_overlay_display_label(label)
+        element_name = f"{display_label.upper()} analytic STEP"
+        # Carry over the overlay's pose so the rows land where the
+        # body was sitting. The first analytic row owns the placement
+        # offset and rotations; subsequent rows ride on its thickness.
+        rotation_x = float(self._step_x_rotation_deg(label))
+        rotation_y = float(self._step_y_rotation_deg(label))
+        rotation_z = float(self._step_roll_deg(label))
+        placement = tuple(float(v) for v in self._step_placement_offset_xyz(label))
+        # The fit module reports each face's axial_position (signed
+        # projection of the centroid onto the source axis = local +Z).
+        # The first row needs desp_z shifted so its surface aligns with
+        # the front face's axial coordinate.
+        z_station = float(sum(float(getattr(row, "thickness", 0.0) or 0.0) for row in self.rows[:resolved_insert_at]))
+        front_axial = float(rows_preview[0].get("axial_position_mm", 0.0)) if "axial_position_mm" in rows_preview[0] else 0.0
+        new_rows: list[SurfaceRow] = []
+        for index, row_info in enumerate(rows_preview):
+            row = SurfaceRow(
+                label=str(resolved_insert_at + index),
+                surface="Standard",
+                element=element_name,
+                name=f"{display_label.upper()} analytic S{index + 1}: {row_info.get('kind', 'surface')}",
+                rc=float(row_info.get("rc_mm", 0.0)),
+                thickness=float(row_info.get("thickness_mm", 0.0)),
+                diameter=float(row_info.get("diameter_mm", 0.0)),
+                glass=str(materials[min(index, len(materials) - 1)]),
+            )
+            row.axis_move = 0.0
+            if index == 0:
+                # Anchor row carries the overlay pose: same rotation
+                # the user dialed in via the rotation handles, and
+                # desp pulled from the overlay's placement_offset.
+                row.tilt_x = rotation_x
+                row.tilt_y = rotation_y
+                row.tilt_z = rotation_z
+                row.desp_x = float(placement[0])
+                row.desp_y = float(placement[1])
+                row.desp_z = float(placement[2] - z_station)
+            else:
+                row.tilt_x = 0.0
+                row.tilt_y = 0.0
+                row.tilt_z = 0.0
+                row.desp_x = 0.0
+                row.desp_y = 0.0
+                row.desp_z = 0.0
+            if arm_key:
+                self._apply_arm_key_metadata_to_row(row, arm_key)
+            row.advanced = dict(row.advanced or {})
+            row.advanced["StepAnalyticPromotion"] = {
+                "step_label": label,
+                "source_step_path": str(source_path.resolve()),
+                "face_id": str(row_info.get("face_id", "?")),
+                "fit_kind": str(row_info.get("kind", "")),
+                "fit_residual_mm": float(row_info.get("residual_mm", 0.0)),
+                "glass_sequence": list(materials),
+                "row_offset": int(index),
+                "row_count": len(rows_preview),
+            }
+            new_rows.append(row)
+
+        for offset, row in enumerate(new_rows):
+            self.rows.insert(int(resolved_insert_at) + offset, row)
+        self._sync_table()
+        if clear_overlay:
+            self._clear_imported_step_overlay_state(label)
+        if refresh_open_3d:
+            try:
+                self._refresh_open_3d_views(step_label=label)
+            except Exception:
+                pass
+        rc_summary = ", ".join(
+            f"Rc={float(r.get('rc_mm', 0.0)):+.3g} mm" for r in rows_preview
+        )
+        self.status_var.set(
+            f"Promoted {display_label.upper()} STEP to {len(new_rows)} analytic Standard "
+            f"surface(s): {rc_summary}. Glass: {', '.join(materials)}."
+        )
+        return {
+            "label": label,
+            "row_indices": list(range(int(resolved_insert_at), int(resolved_insert_at) + len(new_rows))),
+            "row_count": len(new_rows),
+            "rows_preview": rows_preview,
+            "materials": list(materials),
+            "source_step_path": str(source_path.resolve()),
         }
 
     def promote_imported_step_to_native_surface_rows(

@@ -160,6 +160,7 @@ class Open3DTopControlsPanel:
                 MenuCommand("Accept STEP Placement", self.inspector.accept_selected_step_placement),
                 MenuCommand("Promote STEP to Optical Solid Row", self.inspector.promote_selected_step_to_optical_solid_row),
                 MenuCommand("Promote STEP to Native Rows", self.inspector.promote_selected_step_to_native_surface_rows),
+                MenuCommand("Promote STEP to Analytic Surfaces", self.inspector.promote_selected_step_to_analytic_surfaces),
                 None,
                 MenuCommand("Center STEP Axis", self.editor.start_any_step_axis_pick),
                 MenuCommand("Snap STEP Surface-Center Normal->Optical Axis", self.inspector.snap_selected_step_normal_to_optical_axis),

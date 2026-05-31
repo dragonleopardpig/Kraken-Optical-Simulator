@@ -2180,6 +2180,26 @@ class ScenePlacementMixin:
             refresh_open_3d=refresh_open_3d,
         )
 
+    def preview_imported_step_analytic_surfaces(self, label: str) -> dict[str, object] | None:
+        return self._step_overlay_promotion_service().preview_imported_step_analytic_surfaces(label)
+
+    def promote_imported_step_to_analytic_surfaces(
+        self,
+        label: str,
+        *,
+        glass_sequence: object,
+        insert_at: int | None = None,
+        clear_overlay: bool = True,
+        refresh_open_3d: bool = True,
+    ) -> dict[str, object] | None:
+        return self._step_overlay_promotion_service().promote_imported_step_to_analytic_surfaces(
+            label,
+            glass_sequence=glass_sequence,
+            insert_at=insert_at,
+            clear_overlay=clear_overlay,
+            refresh_open_3d=refresh_open_3d,
+        )
+
 
 
     def snap_step_overlay_center_to_world_point(
