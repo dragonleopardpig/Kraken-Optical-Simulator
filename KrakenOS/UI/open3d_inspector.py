@@ -3028,8 +3028,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # accumulated micro-drift in view-up can't flip the sign of
             # Azimuth's rotation axis mid-drag.
             camera.SetViewUp(0.0, 1.0, 0.0)
-            camera.Azimuth(dx_f * degrees_per_pixel)
-            camera.Elevation(-dy_f * degrees_per_pixel)
+            # "Grab the scene" drag direction (reversed from the old
+            # camera-orbit convention you found unintuitive). Drag
+            # right -> scene rotates right under the cursor; drag up
+            # -> scene tilts up toward the cursor. Achieved by
+            # NEGATING the azimuth and dropping the negation on the
+            # elevation -- both flips together so the rotation feels
+            # like dragging the actual body, not orbiting the camera
+            # around it.
+            camera.Azimuth(-dx_f * degrees_per_pixel)
+            camera.Elevation(dy_f * degrees_per_pixel)
             # Re-lock view-up after Elevation tilts view-direction --
             # Azimuth on the next tick keeps rotating around world Y
             # rather than whatever non-perpendicular axis would result.
@@ -3209,18 +3217,32 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 base = {}
         is_file_backed_body = bool(getattr(actor, "_kraken_file_backed_row_body", False))
         if selected:
-            # You asked for "Red + Pink translucent body when selected"
-            # because the previous subtle orange edge highlight was
-            # almost invisible. New scheme: bright RED edges (line
-            # width 5) PLUS pink body fill at moderate opacity. Works
-            # for both analytic-cap actors and file-backed solid
-            # bodies (the cyl lens STEP body, achromat body, etc).
+            # "Red + Pink translucent body when selected" -- the
+            # face fill flips to pink; outlines flip to red. Two
+            # sub-cases because the existing scene draws solid bodies
+            # with a SEPARATE feature-edge actor alongside the body
+            # mesh actor:
             try:
-                prop.SetEdgeVisibility(1)
-                prop.SetEdgeColor(1.0, 0.0, 0.0)  # bright red edges
-                prop.SetLineWidth(max(float(base.get("line_width", 1.0)), 5.0))
-                # Pink body fill, more opaque than baseline so it
-                # reads through other geometry.
+                if is_file_backed_body:
+                    # Body mesh of a Solid 3D STL / promoted STEP
+                    # solid: turning on triangle edges would paint a
+                    # dense red wireframe across every triangle of the
+                    # body, smothering the pink fill (the symptom you
+                    # reported on the penta prism: "selected become
+                    # RED, not pink translucent"). Skip the mesh's
+                    # triangle edges -- the body's separate
+                    # feature-edge actor gets the same selection
+                    # treatment via _set_row_actor_selected and
+                    # provides a clean pink outline on its own.
+                    prop.SetEdgeVisibility(0)
+                    prop.SetLineWidth(float(base.get("line_width", 1.0)))
+                else:
+                    prop.SetEdgeVisibility(1)
+                    prop.SetEdgeColor(1.0, 0.0, 0.0)  # bright red edges
+                    prop.SetLineWidth(max(float(base.get("line_width", 1.0)), 5.0))
+                # Pink body fill (1.0, 0.45, 0.65). Opacity is bumped
+                # well above the baseline 0.68 so the pink reads
+                # through other geometry without losing the body.
                 prop.SetColor(1.0, 0.45, 0.65)
                 prop.SetOpacity(max(float(base.get("opacity", 0.5)), 0.75))
                 prop.SetAmbient(max(float(base.get("ambient", 0.0)), 0.35))

@@ -191,8 +191,8 @@ def main() -> int:
         failures.append("Open 3D STEP hover outlines must use displayed analytic face-index boundaries.")
     if "face_pick_from_display_mesh" not in inspector_source or "triangle_array_and_face_index" not in face_index_source:
         failures.append("Open 3D STEP ray picking must use displayed analytic face-index triangles before STL fallback.")
-    if "camera.Azimuth(dx_f * degrees_per_pixel)" not in inspector_source or "camera.Elevation(-dy_f * degrees_per_pixel)" not in inspector_source:
-        failures.append("Open 3D fixed left-drag camera rotation must use the restored screen-following sign convention.")
+    if "camera.Azimuth(-dx_f * degrees_per_pixel)" not in inspector_source or "camera.Elevation(dy_f * degrees_per_pixel)" not in inspector_source:
+        failures.append("Open 3D fixed left-drag camera rotation must use the grab-the-scene sign convention (drag right rotates scene right).")
     refresh_source = __import__("inspect").getsource(open3d_step_overlay_refresh)
     if "boundary_edges=not round_lens_like" not in refresh_source:
         failures.append("Round lens-like STEP rendering must suppress tessellation patch-boundary edge overlays.")
