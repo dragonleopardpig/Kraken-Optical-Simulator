@@ -65,13 +65,48 @@ The model uses these public datasheet values:
      - Stop placement sanity check
    * - ``Σd``
      - 39.52 mm
-     - Optical vertex span used by the model
+     - Rounded optical vertex span; model uses the exact STEP glass span that rounds to this value
 
 The mechanical drawing also shows a 47.8 mm barrel length, 142.9 mm working
 distance and 149.4 mm image-side distance at beta prime ``-1.0``.  The
 surrogate's table distances are measured from optical vertex datums, not from
 the external mechanical shoulders, so they are close but not identical to those
 mechanical drawing dimensions.
+
+Vendor STEP Overlay
+-------------------
+
+The preset also records the local vendor STEP file:
+
+.. code-block:: text
+
+   attachment/Lens/1072517_00165969_001.stp
+
+The STEP is used as a mechanical overlay, while the KrakenOS table remains the
+paraxial blackbox optical surrogate.  OpenCascade extraction finds the two
+usable glass vertex surfaces as:
+
+.. list-table::
+   :header-rows: 1
+
+   * - STEP face
+     - Role in this surrogate
+     - STEP local axis coordinate
+   * - ``S001/F1030``
+     - First glass surface / front optical vertex
+     - ``+21.705462655 mm``
+   * - ``S001/F1032``
+     - Last glass surface / rear optical vertex
+     - ``-17.817554103 mm``
+
+Those two surfaces are separated by ``39.523016758 mm``.  That is the
+datasheet ``Σd = 39.52 mm`` rounded to the nearest 0.01 mm plus about
+``3 µm``.  The surrogate uses the exact STEP glass span for its front-to-rear
+vertex distance, which still rounds to the datasheet value.  It also stores a
+lens STEP placement offset of ``-3.547201484 mm`` so the STEP's first and last
+glass vertices overlay the surrogate's front and rear optical vertex datums.
+The mechanical front shoulder of the STEP is intentionally not used as the
+optical datum.
 
 How The Blackbox Is Built
 -------------------------
@@ -164,17 +199,19 @@ Known Limits
 * The two thin-lens groups reproduce first-order cardinal data; they do not
   reproduce the vendor's high-resolution aberration correction.
 * The mechanical V38 mount, lock screws, filter thread, and barrel outline are
-  documented by the datasheet but are not modelled as CAD solids in this
-  sequential surrogate.
-* For Open 3D mechanical clearance work, import the vendor STEP separately and
-  align it to this surrogate's optical axis.
+  represented by the STEP overlay rather than by the sequential surrogate rows.
+* The STEP overlay is for placement and clearance.  The ray trace still uses
+  the two-thin-group blackbox unless the STEP is promoted/rebuilt as native
+  optical surfaces with explicit glass assignments.
 
 Validation
 ----------
 
 The validation script checks that the layout is discoverable in the Machine
 Vision menu and that the two-thin-group paraxial matrix reproduces the published
-effective focal length, front focal distance, and back focal distance:
+effective focal length, front focal distance, and back focal distance.  It also
+loads the vendor STEP and checks that ``S001/F1030`` and ``S001/F1032`` remain
+the matched first and last glass surfaces:
 
 .. code-block:: bash
 

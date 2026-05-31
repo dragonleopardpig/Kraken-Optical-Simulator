@@ -11,9 +11,26 @@ TITLE = "Machine Vision 85 mm Pyrite (Datasheet 1X)"
 # Therefore H1 = 22.68 mm behind the first optical vertex and H2 = 17.57 mm
 # behind the first optical vertex.  Two thin-lens groups near the optical
 # vertex ends are solved to reproduce those cardinals exactly in air.
+#
+# The bundled vendor STEP is used as a mechanical overlay.  OpenCascade
+# extraction finds the first and last glass vertices at S001/F1030 and
+# S001/F1032, separated by 39.52301676 mm.  That is the rounded Sigma d value
+# from the datasheet plus about 3 microns, so the model keeps the datasheet
+# first-order values while placing the STEP glass surfaces on the same front and
+# rear optical vertex datums.
+
+STEP_PATH = "attachment/Lens/1072517_00165969_001.stp"
+STEP_FRONT_GLASS_FACE_ID = "S001/F1030"
+STEP_REAR_GLASS_FACE_ID = "S001/F1032"
+STEP_FRONT_GLASS_VERTEX_Z_MM = 21.70546265503834
+STEP_REAR_GLASS_VERTEX_Z_MM = -17.817554102799047
+STEP_GLASS_VERTEX_SPAN_MM = STEP_FRONT_GLASS_VERTEX_Z_MM - STEP_REAR_GLASS_VERTEX_Z_MM
+STEP_MECHANICAL_FRONT_Z_MM = 25.252664138647145
+STEP_GLASS_ALIGNMENT_Z_OFFSET_MM = STEP_FRONT_GLASS_VERTEX_Z_MM - STEP_MECHANICAL_FRONT_Z_MM
 
 EFFECTIVE_FOCAL_LENGTH = 85.13
-FRONT_VERTEX_TO_REAR_VERTEX = 39.52
+DATASHEET_FRONT_VERTEX_TO_REAR_VERTEX = 39.52
+FRONT_VERTEX_TO_REAR_VERTEX = STEP_GLASS_VERTEX_SPAN_MM
 FRONT_FOCAL_DISTANCE = -62.45
 BACK_FOCAL_DISTANCE = 63.18
 FRONT_PRINCIPAL_PLANE_Z = 22.68
@@ -62,6 +79,13 @@ SETTINGS = {
     "spot_view_mode": "Grid",
     "show_cardinals": True,
     "show_physical_distances": True,
+    "lens_step_path": STEP_PATH,
+    "lens_step_largest_component_only": True,
+    "lens_step_rotation_x_deg": 0.0,
+    "lens_step_rotation_y_deg": 0.0,
+    "lens_step_rotation_z_deg": 0.0,
+    "lens_step_axis_offset_xy": [0.0, 0.0],
+    "lens_step_placement_offset_xyz": [0.0, 0.0, STEP_GLASS_ALIGNMENT_Z_OFFSET_MM],
 }
 
 SURFACES = [
