@@ -42,13 +42,9 @@ from KrakenOS.UI.layout_editor import KrakenLayoutEditor, Kraken3DInspector
 from KrakenOS.UI.validate_open3d_penta_telescope_chain import (
     PENTA_CASCADE_PATH,
     BALL_LENS_STEP,
-    DCV_STEP,
-    ACHROMAT_STEP,
-    CYL_STEP,
     BALL_LENS_GAP_MM,
     PHASE1_CLEARANCE_FROM_PRISM_MM,
     PHASE2_GAP_FROM_BALL_2_MM,
-    DCV_TO_ACHROMAT_GAP_MM,
     PHASE3_GAP_FROM_ACHROMAT_MM,
     _load_penta_cascade,
     _open_inspector,
@@ -58,6 +54,28 @@ from KrakenOS.UI.validate_open3d_penta_telescope_chain import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_LAYOUT = PROJECT_ROOT / "attachment" / "five_penta_prism_analytic_telescope_cascade.py"
+
+# Local DCV + Achromat overrides: the chain validator points at
+# f=-50/f=+50 stock parts whose Galilean separation is degenerate
+# (DCV+Achromat with f_eye+f_obj = 0 cannot collimate at non-zero
+# spacing). We swap in f=-25 DCV + f=+125 Achromat so the existing
+# 100 mm gap satisfies the collimation condition f1+f2=d for a 5x
+# beam expander (input 3 mm -> output 15 mm, fits 25 mm achromat).
+DCV_STEP = PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "32992" / "step_32992.stp"
+ACHROMAT_STEP = (
+    PROJECT_ROOT
+    / "attachment"
+    / "Lens"
+    / "Achromatic_Lenses"
+    / "AC254-125-A"
+    / "AC254-125-A-Step.step"
+)
+# Override the inherited 100 mm so the relationship is explicit
+# in this file -- if the user later swaps lens powers, both the
+# value and the formula live here.
+F_DCV_MM = -25.0
+F_ACHROMAT_MM = +125.0
+DCV_TO_ACHROMAT_GAP_MM = float(F_ACHROMAT_MM + F_DCV_MM)  # 100 mm
 
 
 # Each lens is described by its STEP path, the friendly name to give
@@ -85,9 +103,9 @@ LENS_SPECS: list[dict[str, Any]] = [
         "gap_after_mm": PHASE2_GAP_FROM_BALL_2_MM,
     },
     {
-        "name": "DCV f=-50 mm (N-BK7)",
+        "name": "DCV f=-25 mm (N-SF11)",
         "step": DCV_STEP,
-        "glass": "N-BK7",
+        "glass": "N-SF11",
         "offset_along_exit_mm": (
             PHASE1_CLEARANCE_FROM_PRISM_MM
             + BALL_LENS_GAP_MM
@@ -96,9 +114,12 @@ LENS_SPECS: list[dict[str, Any]] = [
         "gap_after_mm": DCV_TO_ACHROMAT_GAP_MM,
     },
     {
-        "name": "Achromat f=+50 mm (BAF10/SF10)",
+        "name": "Achromat f=+125 mm (BK7/SF5)",
         "step": ACHROMAT_STEP,
-        "glass": "N-BAF10, N-SF10, AIR",  # triggers doublet -> Native Rows
+        # AC254-125-A is a cemented doublet: BK7 front + SF5 cement
+        # + AIR back. Three glasses -> promote service auto-routes
+        # through OCC Native Rows to preserve the cement-layer Rc.
+        "glass": "N-BK7, N-SF5, AIR",
         "offset_along_exit_mm": (
             PHASE1_CLEARANCE_FROM_PRISM_MM
             + BALL_LENS_GAP_MM

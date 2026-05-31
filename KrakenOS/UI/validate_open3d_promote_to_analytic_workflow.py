@@ -32,8 +32,8 @@ from KrakenOS.UI.layout_editor import KrakenLayoutEditor, Kraken3DInspector
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DCV_STEP = PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "step_32996.stp"
-ACHROMAT_STEP = PROJECT_ROOT / "attachment" / "Lens" / "Achromatic_Lenses" / "step_32323.stp"
+DCV_STEP = PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "32996" / "step_32996.stp"
+ACHROMAT_STEP = PROJECT_ROOT / "attachment" / "Lens" / "Achromatic_Lenses" / "32323" / "step_32323.stp"
 
 
 def _open_inspector(app: KrakenLayoutEditor) -> Kraken3DInspector:

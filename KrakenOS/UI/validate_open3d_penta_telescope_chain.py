@@ -50,8 +50,8 @@ SYNTHETIC_RECORDING_DIR = (
 
 # Fixture paths (verified to exist).
 BALL_LENS_STEP = PROJECT_ROOT / "attachment" / "Lens" / "ball_lens" / "step_63227.stp"
-DCV_STEP = PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "step_32996.stp"
-ACHROMAT_STEP = PROJECT_ROOT / "attachment" / "Lens" / "Achromatic_Lenses" / "step_32323.stp"
+DCV_STEP = PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "32996" / "step_32996.stp"
+ACHROMAT_STEP = PROJECT_ROOT / "attachment" / "Lens" / "Achromatic_Lenses" / "32323" / "step_32323.stp"
 CYL_STEP = PROJECT_ROOT / "attachment" / "Lens" / "cylinder_lens_rectangle" / "step_34754.step"
 
 # Optical specs harvested from the Zemax .zmx files alongside each STEP.

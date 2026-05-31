@@ -88,18 +88,45 @@ def _auto_assign_lens_face_functions(faces: list[dict[str, Any]]) -> int:
         normalized_normals.append((index, normal / norm, float(faces[index].get("area_mm2", 0.0) or 0.0)))
     if len(normalized_normals) < 2:
         return 0
-    # Optical-axis direction = OPPOSITE the largest-area face's
-    # outward normal. The largest face is the body's front
-    # (largest aperture cap); its outward normal points TOWARD the
-    # incoming light, so the beam propagates ALONG -normal. Using
-    # axis = -largest_normal means:
-    #   * sorting axis_aligned faces by axial_pos ascending puts
-    #     the front first -> stamped role "Input"
-    #   * downstream Rc-sign computation in step_overlay_analytic_fit
-    #     correctly identifies "Rc > 0" as center-of-curvature on the
-    #     light-propagation side.
-    largest = max(normalized_normals, key=lambda t: t[2])
-    axis = -largest[1]
+    # Optical-axis direction: find the largest PAIR of faces with
+    # anti-parallel normals -- those are a true front/back optical
+    # pair. The single-largest-face heuristic broke on parts where
+    # the cylindrical RIM happens to have more area than each curved
+    # cap (e.g. Edmund DCV 32992: rim 497 mm^2 > each curved face
+    # 479 mm^2). Picking the rim's normal misaligns the axis 90 deg
+    # from the actual optical axis and the curved faces get
+    # rejected.
+    #
+    # Algorithm: for every pair (i,j) with anti-parallel normals
+    # (cos(theta) < -0.95), record max(area_i, area_j) + min(...).
+    # The pair with the largest combined area defines the axis;
+    # the front of that pair is whichever has axial_pos < the other.
+    pair_axis: np.ndarray | None = None
+    best_pair_area = -1.0
+    for i in range(len(normalized_normals)):
+        idx_i, n_i, area_i = normalized_normals[i]
+        for j in range(i + 1, len(normalized_normals)):
+            idx_j, n_j, area_j = normalized_normals[j]
+            if float(np.dot(n_i, n_j)) > -0.95:
+                continue
+            combined = area_i + area_j
+            if combined > best_pair_area:
+                best_pair_area = combined
+                # Convention: axis points along the light-propagation
+                # direction. -n_i if i is the "front" (smaller
+                # axial_pos along axis = -n_i). If i and j are on
+                # opposite sides of the body centroid, either choice
+                # works topologically; we pick -n_i and let the
+                # later sort by axial_pos canonicalise the front.
+                pair_axis = -n_i
+    if pair_axis is None:
+        # No anti-parallel pair survived; fall back to the previous
+        # single-largest-face heuristic so a sphere / single-face
+        # body still gets a chance.
+        largest = max(normalized_normals, key=lambda t: t[2])
+        axis = -largest[1]
+    else:
+        axis = pair_axis
     # An optical face has its normal parallel-or-anti-parallel to the
     # axis (within ~18 deg). Compute axial position (signed projection
     # of the centroid onto the axis) so faces at the same axial depth
@@ -1329,7 +1356,18 @@ class StepOverlayPromotionService:
         if not material_sequence:
             raise RuntimeError("Native STEP promotion requires a comma-separated glass/material sequence.")
 
-        reconstruction = reconstruct_step_native_surfaces(source_path, glass_sequence=material_sequence)
+        # Drop unsupported (cone/etc) faces here only: vendor lens
+        # STEP files often have mechanical chamfer cones at the rim
+        # that we want to ignore so the optical sphere stack can be
+        # recovered. Other reconstruction call sites (saved-STEP-row
+        # tracing, live overlay tracing) keep the default strict
+        # behavior so prism STEP files with cone/plane envelopes
+        # correctly fall back to STL per-triangle tracing.
+        reconstruction = reconstruct_step_native_surfaces(
+            source_path,
+            glass_sequence=material_sequence,
+            drop_unsupported_faces=True,
+        )
         if not reconstruction.trace_ready:
             errors = [
                 str(diagnostic.message)

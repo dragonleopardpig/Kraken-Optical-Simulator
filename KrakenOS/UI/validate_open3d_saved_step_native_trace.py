@@ -19,7 +19,7 @@ from KrakenOS.UI.layout_editor import KrakenLayoutEditor, SurfaceRow
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DCV_STEP = PROJECT_ROOT / "attachment" / "Lens" / "DCV50mm" / "step_32996.stp"
+DCV_STEP = PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "32996" / "step_32996.stp"
 
 
 def _fixture_rows(source_path: Path) -> list[SurfaceRow]:

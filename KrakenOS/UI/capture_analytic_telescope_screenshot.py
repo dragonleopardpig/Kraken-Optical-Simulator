@@ -95,13 +95,14 @@ EXPECTED_ROWS: list[RowExpectation] = [
         glass="AIR",
         rc_min=-4.8, rc_max=-4.7,
     ),
+    # DCV 32992: N-SF11 biconcave, f=-25.2 mm, R=+/-39.78 mm, t=2.5 mm
     RowExpectation(
         label="DCV front",
         name_prefix="DCV",
-        desp=(-52.21, 0.0, +97.50),  # anchor -53.46 + 1.25 (half thickness 2.5)
+        desp=(-52.21, 0.0, +97.50),  # anchor -53.46 + 1.25 (half-thickness 2.5)
         tilt=(0.0, -90.0, 0.0),
-        glass="N-BK7",
-        rc_min=-55.0, rc_max=-50.0,
+        glass="N-SF11",
+        rc_min=-41.0, rc_max=-38.0,
     ),
     RowExpectation(
         label="DCV back",
@@ -109,31 +110,33 @@ EXPECTED_ROWS: list[RowExpectation] = [
         desp=(-54.71, 0.0, +97.50),  # anchor -53.46 - 1.25
         tilt=(0.0, -90.0, 0.0),
         glass="AIR",
-        rc_min=+50.0, rc_max=+55.0,
+        rc_min=+38.0, rc_max=+41.0,
     ),
+    # Achromat AC254-125-A: BK7 (R=+77.6, t=4.0) + SF5 (R=-55.9, t=2.83) + AIR (R=-160.8)
+    # body thickness = 4.0 + 2.83 = 6.83 mm; half = 3.42; centred on anchor -153.46
     RowExpectation(
         label="Achromat front",
         name_prefix="Achromat",
-        desp=(-147.71, 0.0, +97.50),  # anchor -153.46 + 5.75 (half thickness 11.5)
+        desp=(-150.04, 0.0, +97.50),
         tilt=(0.0, -90.0, 0.0),
-        glass="N-BAF10",
-        rc_min=+30.0, rc_max=+40.0,
+        glass="N-BK7",
+        rc_min=+75.0, rc_max=+80.0,
     ),
     RowExpectation(
         label="Achromat cement",
         name_prefix="OPTICAL native STEP S2",
-        desp=(-156.71, 0.0, +97.50),  # anchor + 5.75 - 9
+        desp=(-154.04, 0.0, +97.50),
         tilt=(0.0, -90.0, 0.0),
-        glass="N-SF10",
-        rc_min=-25.0, rc_max=-18.0,
+        glass="N-SF5",
+        rc_min=-58.0, rc_max=-54.0,
     ),
     RowExpectation(
         label="Achromat back",
         name_prefix="OPTICAL native STEP S3",
-        desp=(-159.21, 0.0, +97.50),  # anchor - 5.75
+        desp=(-156.88, 0.0, +97.50),
         tilt=(0.0, -90.0, 0.0),
         glass="AIR",
-        rc_min=-220.0, rc_max=-205.0,
+        rc_min=-165.0, rc_max=-155.0,
     ),
 ]
 

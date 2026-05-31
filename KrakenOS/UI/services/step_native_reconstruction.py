@@ -666,13 +666,14 @@ def reconstruct_step_native_document(
     *,
     glass_sequence: Sequence[str] | None = None,
     asphere_terms: int = DEFAULT_ASPHERE_TERMS,
+    drop_unsupported_faces: bool = False,
 ) -> StepNativeReconstruction:
     axis, axis_origin, aperture_diameter, diagnostics = _document_axis(document)
     basis_x, basis_y = _basis_from_axis(axis)
     candidates, candidate_diagnostics = _candidate_faces(document, axis, axis_origin, basis_x, basis_y)
     diagnostics.extend(candidate_diagnostics)
     groups = _group_candidates(candidates, aperture_diameter)
-    fits = tuple(
+    all_fits = tuple(
         sorted(
             (
                 _fit_group(
@@ -687,20 +688,48 @@ def reconstruct_step_native_document(
             key=lambda fit: float(fit.vertex_z_mm),
         )
     )
+    # Optionally filter unsupported surface kinds (cones, etc.).
+    # Opt-in via drop_unsupported_faces=True because changing the
+    # default would break callers that rely on "any unsupported
+    # face fails the whole reconstruction" -- notably the saved-STEP-
+    # row tracing in three_d_scene_tools, which treats failed
+    # reconstruction as the signal to fall back to per-triangle STL
+    # tracing (correct for prisms with cone/plane mechanical faces).
+    #
+    # The promote pipeline DOES opt in: vendor lens STEP files
+    # (Thorlabs AC254-* etc.) often have spherical optical caps +
+    # chamfer/bevel CONE rim faces. Dropping the cones lets the
+    # spherical optical surfaces through so the doublet/triplet
+    # recovery path can match each glass to its surface.
+    if drop_unsupported_faces:
+        supported_fits = tuple(fit for fit in all_fits if fit.supported)
+        dropped_unsupported = tuple(fit for fit in all_fits if not fit.supported)
+        for fit in dropped_unsupported:
+            diagnostics.append(
+                StepNativeDiagnostic(
+                    "warning",
+                    "unsupported_native_fit_dropped",
+                    f"{fit.surface_id} skipped from native reconstruction (kind={fit.native_kind}); treated as mechanical feature.",
+                    fit.face_ids,
+                )
+            )
+        fits = supported_fits
+    else:
+        fits = all_fits
+        for fit in all_fits:
+            if not fit.supported:
+                diagnostics.append(
+                    StepNativeDiagnostic(
+                        "error",
+                        "unsupported_native_fit",
+                        f"{fit.surface_id} cannot be used as an exact/native optical surface: {', '.join(fit.notes) or fit.native_kind}",
+                        fit.face_ids,
+                    )
+                )
     if not fits:
         diagnostics.append(
             StepNativeDiagnostic("error", "no_native_surfaces", "No STEP faces could be rebuilt as native KrakenOS surfaces.")
         )
-    for fit in fits:
-        if not fit.supported:
-            diagnostics.append(
-                StepNativeDiagnostic(
-                    "error",
-                    "unsupported_native_fit",
-                    f"{fit.surface_id} cannot be used as an exact/native optical surface: {', '.join(fit.notes) or fit.native_kind}",
-                    fit.face_ids,
-                )
-            )
     if glass_sequence is None or len(tuple(glass_sequence)) < len(fits):
         diagnostics.append(
             StepNativeDiagnostic(
@@ -735,6 +764,7 @@ def reconstruct_step_native_surfaces(
     *,
     glass_sequence: Sequence[str] | None = None,
     asphere_terms: int = DEFAULT_ASPHERE_TERMS,
+    drop_unsupported_faces: bool = False,
 ) -> StepNativeReconstruction:
     """Return a native KrakenOS surface stack for supported STEP optical faces."""
 
@@ -743,4 +773,5 @@ def reconstruct_step_native_surfaces(
         document,
         glass_sequence=glass_sequence,
         asphere_terms=asphere_terms,
+        drop_unsupported_faces=drop_unsupported_faces,
     )

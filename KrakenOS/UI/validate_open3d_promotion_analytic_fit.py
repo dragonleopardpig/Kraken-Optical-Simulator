@@ -58,13 +58,13 @@ FIXTURES = [
         # below specifically asserts BOTH +52.10 and -52.10 are
         # recovered, locking in the fix.
         "name": "DCV (32996)",
-        "path": PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "step_32996.stp",
+        "path": PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "32996" / "step_32996.stp",
         "expected_rc": (-52.10, +52.10),
         "tolerance_mm": 0.01,
     },
     {
         "name": "Achromat (32323) front",
-        "path": PROJECT_ROOT / "attachment" / "Lens" / "Achromatic_Lenses" / "step_32323.stp",
+        "path": PROJECT_ROOT / "attachment" / "Lens" / "Achromatic_Lenses" / "32323" / "step_32323.stp",
         "expected_rc": (+34.53,),    # only the front of the doublet is easy to extract
         "tolerance_mm": 0.01,
     },

@@ -81,7 +81,7 @@ LENS_FIXTURES: list[dict[str, Any]] = [
         # Edmund 32996 N-BK7 DCV, f = -50 mm. Clean singlet -> 2
         # analytic rows, Rc = +/- 52.10 mm.
         "name": "DCV (f=-50)",
-        "step": PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "step_32996.stp",
+        "step": PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "32996" / "step_32996.stp",
         "glass": "N-BK7",
     },
     {
@@ -94,7 +94,7 @@ LENS_FIXTURES: list[dict[str, Any]] = [
         # multi-glass / Native Rows variant has its own coverage
         # in validate_open3d_promote_to_analytic_workflow.
         "name": "Achromat (f=+50, singlet approx)",
-        "step": PROJECT_ROOT / "attachment" / "Lens" / "Achromatic_Lenses" / "step_32323.stp",
+        "step": PROJECT_ROOT / "attachment" / "Lens" / "Achromatic_Lenses" / "32323" / "step_32323.stp",
         "glass": "N-BAF10",
     },
 ]
@@ -889,7 +889,7 @@ def phase_9_real_focal_minimum(
         app.clear_step_imports()
     except Exception:
         pass
-    _import_step(app, PROJECT_ROOT / "attachment" / "Lens" / "Achromatic_Lenses" / "step_32323.stp")
+    _import_step(app, PROJECT_ROOT / "attachment" / "Lens" / "Achromatic_Lenses" / "32323" / "step_32323.stp")
     inspector.refresh_from_editor(force_retrace=True)
     inspector.update_idletasks()
     try:

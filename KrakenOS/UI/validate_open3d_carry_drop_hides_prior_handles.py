@@ -32,9 +32,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 def _candidate_step_paths() -> list[Path]:
     candidates = [
-        PROJECT_ROOT / "attachment" / "Lens" / "Achromatic_Lenses" / "step_32323.stp",
+        PROJECT_ROOT / "attachment" / "Lens" / "Achromatic_Lenses" / "32323" / "step_32323.stp",
         PROJECT_ROOT / "attachment" / "Lens" / "ball_lens" / "step_63227.stp",
-        PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "step_32996.stp",
+        PROJECT_ROOT / "attachment" / "Lens" / "DCV" / "32996" / "step_32996.stp",
     ]
     return [path for path in candidates if path.exists()]
 
