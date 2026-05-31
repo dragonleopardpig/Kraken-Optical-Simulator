@@ -87,6 +87,12 @@ def _cached_cad_mesh_path(path: Path) -> Path:
     return _layout_module()._cached_cad_mesh_path(path)
 
 
+def _cached_analytic_cad_mesh_path(path: Path, *, largest_component: bool = False) -> Path:
+    base_path = _cached_cad_mesh_path(path)
+    suffix = ".analytic_largest.vtp" if largest_component else ".analytic.vtp"
+    return base_path.with_name(f"{base_path.stem}{suffix}")
+
+
 def _cached_outer_cad_mesh_path(path: Path, solid_indices: tuple[int, ...]) -> Path:
     return _layout_module()._cached_outer_cad_mesh_path(path, solid_indices)
 
@@ -328,7 +334,11 @@ class LayoutPolylineDisplayMixin:
         if mesh is None:
             return np.empty((0, 3, 3), dtype=float), None
         try:
-            surface = mesh.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
+            faces = np.asarray(getattr(mesh, "faces", ()), dtype=np.int64).reshape((-1, 4))
+            if faces.shape[0] > 0 and np.all(faces[:, 0] == 3):
+                surface = mesh.copy(deep=True)
+            else:
+                surface = mesh.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
         except Exception:
             try:
                 surface = mesh.triangulate().copy(deep=True)
@@ -442,19 +452,72 @@ class LayoutPolylineDisplayMixin:
                 )
                 return cached.copy(deep=True)
             if source_path.suffix.lower() in {".step", ".stp"}:
+                analytic_cache_path = _cached_analytic_cad_mesh_path(
+                    source_path,
+                    largest_component=bool(largest_component),
+                )
+                if analytic_cache_path.exists() and analytic_cache_path.stat().st_size > 0:
+                    try:
+                        with open3d_timing_span(
+                            "read_step_analytic_mesh_cache",
+                            source_path=str(source_path),
+                            cache_path=str(analytic_cache_path),
+                            largest_component=bool(largest_component),
+                        ):
+                            mesh = pv.read(str(analytic_cache_path)).extract_surface(
+                                algorithm="dataset_surface"
+                            ).copy(deep=True)
+                        if mesh is not None and int(getattr(mesh, "n_points", 0)) > 0:
+                            if not self._step_display_mesh_cell_data_valid(mesh):
+                                raise RuntimeError("cached analytic STEP mesh has invalid cell-data lengths")
+                            self._external_cad_mesh_cache[cache_key] = mesh.copy(deep=True)
+                            open3d_timing_event(
+                                "load_step_mesh_analytic_disk_cache_hit",
+                                source_path=str(source_path),
+                                cache_path=str(analytic_cache_path),
+                                largest_component=bool(largest_component),
+                                points=int(getattr(mesh, "n_points", 0)),
+                                cells=int(getattr(mesh, "n_cells", 0)),
+                            )
+                            return mesh
+                    except Exception as exc:
+                        try:
+                            analytic_cache_path.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                        self.append_debug(
+                            f"Analytic STEP display cache ignored for {source_path.name}: {exc}"
+                        )
                 try:
                     document = self._load_step_analytic_document(source_path)
                     mesh = self._mesh_from_step_analytic_document(document)
                     if mesh is not None and int(getattr(mesh, "n_points", 0)) > 0:
+                        with open3d_timing_span(
+                            "clean_step_analytic_mesh",
+                            source_path=str(source_path),
+                            largest_component=bool(largest_component),
+                        ):
+                            mesh = self._clean_step_display_mesh(mesh)
+                        if largest_component:
+                            with open3d_timing_span("largest_step_component", source_path=str(source_path)):
+                                mesh = self._largest_connected_step_component(mesh)
                         try:
                             _cached_cad_mesh_path(source_path).unlink(missing_ok=True)
                         except Exception:
                             pass
+                        try:
+                            analytic_cache_path.parent.mkdir(parents=True, exist_ok=True)
+                            mesh.save(str(analytic_cache_path))
+                        except Exception as exc:
+                            self.append_debug(
+                                f"Analytic STEP display cache write skipped for {source_path.name}: {exc}"
+                            )
                         self._external_cad_mesh_cache[cache_key] = mesh.copy(deep=True)
                         open3d_timing_event(
                             "load_step_mesh_analytic_cached",
                             source_path=str(source_path),
                             largest_component_requested=bool(largest_component),
+                            cache_path=str(analytic_cache_path),
                             points=int(getattr(mesh, "n_points", 0)),
                             cells=int(getattr(mesh, "n_cells", 0)),
                             outer_faces=int(len(document.outer_faces)),
@@ -484,6 +547,34 @@ class LayoutPolylineDisplayMixin:
                 cells=int(getattr(mesh, "n_cells", 0)),
             )
             return mesh
+
+    @staticmethod
+    def _step_display_mesh_cell_data_valid(mesh) -> bool:
+        if mesh is None:
+            return False
+        try:
+            cell_count = int(getattr(mesh, "n_cells", 0))
+            for values in mesh.cell_data.values():
+                try:
+                    if len(values) not in {0, cell_count}:
+                        return False
+                except Exception:
+                    return False
+        except Exception:
+            return False
+        return True
+
+    def _clean_step_display_mesh(self, mesh):
+        if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
+            return mesh
+        try:
+            cleaned = mesh.clean(tolerance=1.0e-9, absolute=True)
+            cleaned = cleaned.extract_surface(algorithm="dataset_surface").copy(deep=True)
+            if int(getattr(cleaned, "n_points", 0)) > 0 and self._step_display_mesh_cell_data_valid(cleaned):
+                return cleaned
+        except Exception as exc:
+            self.append_debug(f"STEP display mesh clean skipped: {exc}")
+        return mesh
 
     def _largest_connected_step_component(self, mesh):
         if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:

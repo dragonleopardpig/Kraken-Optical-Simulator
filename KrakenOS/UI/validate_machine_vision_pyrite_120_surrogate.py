@@ -104,6 +104,8 @@ def main() -> int:
         "lens_step_rotation_z_deg",
         "lens_step_axis_offset_xy",
         "lens_step_placement_offset_xyz",
+        "optical_step_path",
+        "optical_step_placement_offset_xyz",
     }
     inherited_mismatches = [
         key
@@ -126,6 +128,7 @@ def main() -> int:
             and settings.get("camera_step_path") == reference_settings.get("camera_step_path")
             and settings.get("camera_step_rotation_z_deg") == reference_settings.get("camera_step_rotation_z_deg"),
         ),
+        ("does not preload auxiliary optical STEP overlay", settings.get("optical_step_path") == ""),
         ("docs page exists", DOC_PATH.exists() and "PYRITE 5.6/120/1.0x V38" in doc),
         ("docs page is indexed", "machine_vision_pyrite_120_surrogate" in index),
         ("layout screenshot exists", STATIC_IMAGE.exists() and STATIC_IMAGE.stat().st_size > 2048),

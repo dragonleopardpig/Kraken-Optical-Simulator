@@ -120,6 +120,8 @@ Only lens-specific defaults differ from the 150 mm measured layout:
   capability.
 * The lens STEP overlay uses ``attachment/Lens/1097277_00155156_002.stp`` and
   the glass-vertex alignment offset described above.
+* The auxiliary Open 3D optical STEP overlay is left empty; this avoids loading
+  an unrelated extra CAD component from the 150 mm development layout.
 
 How The Blackbox Is Built
 -------------------------
