@@ -2183,6 +2183,80 @@ class ScenePlacementMixin:
     def preview_imported_step_analytic_surfaces(self, label: str) -> dict[str, object] | None:
         return self._step_overlay_promotion_service().preview_imported_step_analytic_surfaces(label)
 
+    def _imported_step_solid_prefix_count(self, label: str) -> int:
+        """Count distinct solid prefixes (``S001/...``, ``S002/...``) in face metadata.
+
+        > 1 means a cemented compound -- the analytic fit only sees
+        the outer surfaces because the interior cement face is
+        missing from the imported metadata. Routing the promote
+        through the OCC native-rows path recovers the interior
+        Rc value.
+        """
+        try:
+            md = self._step_overlay_face_metadata(label) or {}
+        except Exception:
+            return 1
+        prefixes: set[str] = set()
+        for face in list(md.get("faces") or []):
+            fid = str(face.get("face_id", ""))
+            if "/" in fid:
+                prefixes.add(fid.split("/", 1)[0])
+        return max(len(prefixes), 1)
+
+    def _apply_chain_exit_direction_to_overlay(
+        self,
+        label: str,
+        chain_exit_direction: tuple[float, float, float] | None,
+    ) -> bool:
+        """Pre-rotate the overlay so a downstream promote (analytic or native)
+        inherits the cascade exit alignment.
+
+        The OCC native-rows path reads the overlay's rotation_*_deg
+        attributes directly when building rows; the analytic path
+        already takes ``chain_exit_direction`` as a parameter. This
+        helper bridges them: when a cascade-aware caller wants the
+        native path to align with the folded beam, it temporarily
+        sets the overlay's rotation to match.
+
+        Returns True when a rotation was applied so the caller knows
+        whether to expect post-promote rows to be tilted.
+        """
+        if chain_exit_direction is None:
+            return False
+        try:
+            import numpy as _np  # local import to avoid module-load cost
+            axis_vec = _np.asarray(chain_exit_direction, dtype=float).reshape(3)
+            if float(_np.linalg.norm(axis_vec)) < 1e-9:
+                return False
+            axis_vec = axis_vec / float(_np.linalg.norm(axis_vec))
+            dominant = int(_np.argmax(_np.abs(axis_vec)))
+            snapped = _np.zeros(3, dtype=float)
+            snapped[dominant] = float(_np.sign(axis_vec[dominant]))
+        except Exception:
+            return False
+        # Same axis mapping the promotion service uses.
+        if _np.allclose(snapped, (0.0, 0.0, 1.0)):
+            return False  # already along +Z; no rotation needed
+        if _np.allclose(snapped, (0.0, 0.0, -1.0)):
+            tilt = (180.0, 0.0, 0.0)
+        elif _np.allclose(snapped, (1.0, 0.0, 0.0)):
+            tilt = (0.0, 90.0, 0.0)
+        elif _np.allclose(snapped, (-1.0, 0.0, 0.0)):
+            tilt = (0.0, -90.0, 0.0)
+        elif _np.allclose(snapped, (0.0, 1.0, 0.0)):
+            tilt = (-90.0, 0.0, 0.0)
+        elif _np.allclose(snapped, (0.0, -1.0, 0.0)):
+            tilt = (90.0, 0.0, 0.0)
+        else:
+            return False
+        for axis_name, deg in zip(("x", "y", "z"), tilt):
+            if abs(deg) > 1e-9:
+                try:
+                    self.rotate_step_axis(label, axis_name, float(deg), refresh=False)
+                except Exception:
+                    pass
+        return True
+
     def promote_imported_step_to_analytic_surfaces(
         self,
         label: str,
@@ -2193,6 +2267,59 @@ class ScenePlacementMixin:
         refresh_open_3d: bool = True,
         chain_exit_direction: tuple[float, float, float] | None = None,
     ) -> dict[str, object] | None:
+        # Cemented doublets/triplets: route to the OCC native path
+        # when the user signals multi-glass intent. Detection uses
+        # BOTH the body's solid-prefix count (S001+S002+... in the
+        # face metadata) AND the glass sequence length. A user
+        # passing a single glass for a doublet is opting into the
+        # "singlet approximation"; passing N glasses for an N-solid
+        # body unlocks the cement-recovery path.
+        try:
+            _seq_count = len(
+                self._step_overlay_promotion_service()._normalize_glass_sequence(glass_sequence)
+            )
+        except Exception:
+            _seq_count = 1
+        if (
+            self._imported_step_solid_prefix_count(label) > 1
+            and _seq_count > 1
+        ):
+            # Pre-rotate the overlay so the native-rows path inherits
+            # the cascade exit alignment (analytic path takes the
+            # direction as a parameter; native reads overlay state).
+            tilted = self._apply_chain_exit_direction_to_overlay(label, chain_exit_direction)
+            try:
+                result = self.promote_imported_step_to_native_surface_rows(
+                    label,
+                    glass_sequence=glass_sequence,
+                    insert_at=insert_at,
+                    clear_overlay=clear_overlay,
+                    refresh_open_3d=refresh_open_3d,
+                )
+            except Exception:
+                # Fall through to the analytic fit path on failure;
+                # better a partial doublet than a hard error.
+                result = None
+            if isinstance(result, dict) and result.get("row_indices"):
+                # Native-rows defaults AxisMove=0 on every row, so the
+                # chain frame DOESN'T advance through the doublet --
+                # subsequent rows (Image plane, more lenses) stay
+                # stuck at the chain position before the doublet,
+                # making thickness sweeps on the trailing row
+                # degenerate. When we used chain_exit_direction to
+                # tilt the doublet, also bump AxisMove on the anchor
+                # row so the chain frame walks the doublet's
+                # thickness in the rotated frame.
+                if tilted:
+                    indices = list(result.get("row_indices") or [])
+                    if indices:
+                        try:
+                            anchor = self.rows[int(indices[0])]
+                            anchor.axis_move = 2.0
+                            self._sync_table()
+                        except Exception:
+                            pass
+                return result
         return self._step_overlay_promotion_service().promote_imported_step_to_analytic_surfaces(
             label,
             glass_sequence=glass_sequence,

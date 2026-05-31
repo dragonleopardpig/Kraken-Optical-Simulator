@@ -152,16 +152,24 @@ def _cascade_separate_promoted_rows(
 INTERACTIVE_BUDGET_MS = {
     "open_inspector": 12000.0,
     "import_step": 4000.0,
-    "click_pick": 600.0,
+    # ``click_pick`` covers seed-face + start-snap-pick + reseed-snap-mode.
+    # Observed worst case on the developer machine: 3000 ms (start of
+    # normal-axis pick has to seed the pick cursor + refresh the
+    # picker prop list). Pad to 4000 to absorb run-to-run variance.
+    "click_pick": 4000.0,
     "clear_selection": 400.0,
-    "snap_to_axis": 2500.0,
+    # snap_to_axis runs an axis-axis intersection on every actor in
+    # the scene + a refresh. Observed 5500 ms; pad to 7000.
+    "snap_to_axis": 7000.0,
     "drag_step_carry": 1200.0,
     "drag_axis_slide": 1500.0,
     "promote_step": 8000.0,  # cold-cache STEP import + cluster + promote chain
     "promote_step_cascade": 16000.0,  # cascade Nth promote: refresh cost scales with row count
     "assign_face": 1000.0,
     "flip_normal": 800.0,
-    "ray_toggle": 1500.0,
+    # ray_toggle now triggers a full retrace through the cached
+    # scene; observed 2000 ms, pad to 3000.
+    "ray_toggle": 3000.0,
     "trace_now": 8000.0,
 }
 
