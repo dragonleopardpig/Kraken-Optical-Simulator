@@ -109,6 +109,17 @@ class Open3DTopControlsPanel:
         )
         recorder_button.pack(side="right", padx=(8, 0))
         self.inspector._recorder_button = recorder_button
+        # Discard companion: throw away the in-progress recording so a
+        # mis-trigger doesn't leave a stray JSON on disk. Always visible
+        # for discoverability; no-ops with a status message when no
+        # recording is active.
+        discard_button = ttk.Button(
+            view_toolbar,
+            text="Discard rec",
+            command=self.inspector.discard_bug_recording,
+        )
+        discard_button.pack(side="right", padx=(8, 0))
+        self.inspector._discard_button = discard_button
         # One-click bug flag: screenshot + scene state + user note. Works
         # standalone or alongside an active recording. Press `s` while
         # hovering over the bug to avoid moving the mouse and losing

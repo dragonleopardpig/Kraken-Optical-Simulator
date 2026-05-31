@@ -391,7 +391,25 @@ class Open3DSceneRefreshService:
         assigned_face_overlays = self._add_optical_solid_assigned_face_overlays(system)
         face_role_markers = 0
         virtual_plane_markers = self._add_optical_solid_virtual_plane_overlays(system)
-        if step_carry_label is not None or not self._show_scene_placement_handles():
+        # Suppress placement handles while a STEP carry is active OR the
+        # user has just dropped a STEP overlay and not yet promoted it
+        # (the `_selected_step_label` still names a loaded but
+        # unpromoted import). Without the second check, dropping a
+        # carry sets carry_label back to None and the previous
+        # promoted row's placement handles re-appear underneath the
+        # just-placed STEP -- captured in flag_20260531_094024_040
+        # "this time carry seems OK, but once placed, handels for the
+        # first element come back."
+        selected_step_label = str(getattr(self.editor, "_selected_step_label", "") or "").strip().lower()
+        unpromoted_step_selected = bool(
+            selected_step_label
+            and self.editor._step_path_for_label(selected_step_label) is not None
+        )
+        if (
+            step_carry_label is not None
+            or unpromoted_step_selected
+            or not self._show_scene_placement_handles()
+        ):
             placement_grid_lines, placement_grid_summary = 0, ""
         else:
             placement_grid_lines, placement_grid_summary = self._add_scene_placement_grid_overlays(scene_bundle)

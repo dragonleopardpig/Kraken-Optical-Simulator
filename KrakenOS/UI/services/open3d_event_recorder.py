@@ -139,6 +139,19 @@ class Open3DEventRecorder:
                 pass
             return None
 
+    def discard(self) -> int:
+        """Throw away the in-progress recording without saving to disk.
+
+        Returns the number of events that were dropped so the caller can
+        report it. Leaves the prelude / events in a clean state ready
+        for the next ``start()`` call.
+        """
+        events_dropped = len(self.events)
+        self.recording = False
+        self.events = []
+        self.prelude = None
+        return events_dropped
+
     @property
     def last_path(self) -> Path | None:
         return self._last_record_path

@@ -5172,6 +5172,38 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 pass
 
+    def discard_bug_recording(self) -> bool:
+        """Drop the in-progress recording without writing it to disk.
+
+        No-op when no recording is active. Asks the user to confirm so
+        a misclicked button doesn't silently throw away events. Flag
+        bundles that the user already saved during the recording are
+        kept on disk -- only the events log is discarded.
+        """
+        recorder = getattr(self, "_event_recorder", None)
+        if recorder is None or not recorder.is_recording():
+            self.status_var.set("Discard recording: no recording in progress.")
+            return False
+        try:
+            from tkinter import messagebox
+            confirm = messagebox.askyesno(
+                "Discard recording",
+                "Throw away the in-progress recording? Flag bundles you already saved during "
+                "this session are kept; only the timeline of mouse/key events is discarded.",
+                parent=self,
+            )
+        except Exception:
+            confirm = True
+        if not confirm:
+            return False
+        dropped = recorder.discard()
+        try:
+            self.recorder_button_var.set("● Record bug")
+        except Exception:
+            pass
+        self.status_var.set(f"Recording discarded ({dropped} events dropped, no file written).")
+        return True
+
     def flag_bug(self) -> Path | None:
         """One-click bug flag: screenshot + scene-state + user description.
 

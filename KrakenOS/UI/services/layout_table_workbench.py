@@ -30,26 +30,33 @@ PATH_COMPONENT_DETECTOR = "Detector plane"
 
 _STEP_DISPLAY_HISTORY_SETTING_KEYS = frozenset(
     {
-        "camera_step_path",
+        # Pose-only STEP overlay settings -- undoing one of these keeps
+        # the same set of actors in the scene, so the inspector can take
+        # the fast translate-only path instead of a full plot refresh.
+        # `_step_path` keys are intentionally NOT in this set: when the
+        # path flips between None and a file, an overlay needs to be
+        # added or removed, which the translate path can't express.
+        # Captured in flag_20260531_094104_762 "pressing Ctrl-z to Undo:
+        # wierd changed of color and placement of elements." -- a path
+        # transition was treated as display-only and the scene was left
+        # with a stale STEP actor while the editor thought no overlay
+        # was selected.
         "camera_step_rotation_x_deg",
         "camera_step_rotation_y_deg",
         "camera_step_rotation_z_deg",
         "camera_step_axis_offset_xy",
         "camera_step_placement_offset_xyz",
-        "lens_step_path",
         "lens_step_largest_component_only",
         "lens_step_rotation_x_deg",
         "lens_step_rotation_y_deg",
         "lens_step_rotation_z_deg",
         "lens_step_axis_offset_xy",
         "lens_step_placement_offset_xyz",
-        "optical_step_path",
         "optical_step_rotation_x_deg",
         "optical_step_rotation_y_deg",
         "optical_step_rotation_z_deg",
         "optical_step_axis_offset_xy",
         "optical_step_placement_offset_xyz",
-        "led_step_path",
         "led_step_rotation_x_deg",
         "led_step_rotation_y_deg",
         "led_step_rotation_z_deg",
