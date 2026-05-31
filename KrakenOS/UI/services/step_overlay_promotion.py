@@ -22,6 +22,90 @@ from KrakenOS.UI.services.step_native_reconstruction import reconstruct_step_nat
 from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABEL_SET
 
 
+def _auto_assign_lens_face_functions(faces: list[dict[str, Any]]) -> int:
+    """Conservatively assign Transmit/Port to the two refractive faces of a lens.
+
+    Heuristic: when the two largest preserved faces have anti-parallel
+    normals (cos(angle) <= -0.95), they're the front and back optical
+    surfaces of a simple lens (any sphere, biconvex, meniscus, plano,
+    cemented doublet front+back, or toroidal). Mark them as
+    ``Transmit/Port`` so KrakenOS does proper analytic refraction at
+    those faces instead of per-triangle refraction across the whole
+    STL. Every remaining preserved face becomes ``Absorber/Mechanical``
+    so stray rays through the lateral cylinder wall are blocked
+    instead of refracting unpredictably.
+
+    Returns the number of faces that were assigned. Returns 0 (no
+    changes made) when the body doesn't look like a simple lens -- in
+    particular for prisms, beam splitters, or any body whose two
+    largest faces aren't anti-parallel. Those keep their existing
+    ``Unassigned`` defaults and rely on the manual face-assignment
+    dialog.
+
+    Caller is responsible for re-normalizing the face metadata after
+    this so the role/function fields end up canonical.
+    """
+    if not faces:
+        return 0
+    # Only touch faces that currently have an Unassigned function/role
+    # so user-assigned roles survive a re-promote.
+    target_indices: list[int] = []
+    for index, face in enumerate(faces):
+        if not isinstance(face, dict):
+            continue
+        function = str(face.get("function") or face.get("role") or "Unassigned").strip()
+        if function and function != "Unassigned":
+            return 0
+        target_indices.append(index)
+    if len(target_indices) < 2:
+        return 0
+    # Order by area descending.
+    ordered = sorted(
+        target_indices,
+        key=lambda i: float(faces[i].get("area_mm2", 0.0) or 0.0),
+        reverse=True,
+    )
+    a_idx, b_idx = ordered[0], ordered[1]
+    try:
+        n_a = np.asarray(faces[a_idx].get("normal") or (), dtype=float).reshape(-1)[:3]
+        n_b = np.asarray(faces[b_idx].get("normal") or (), dtype=float).reshape(-1)[:3]
+    except Exception:
+        return 0
+    if n_a.size < 3 or n_b.size < 3:
+        return 0
+    if not (np.all(np.isfinite(n_a)) and np.all(np.isfinite(n_b))):
+        return 0
+    na_norm = float(np.linalg.norm(n_a))
+    nb_norm = float(np.linalg.norm(n_b))
+    if na_norm < 1e-9 or nb_norm < 1e-9:
+        return 0
+    cos_angle = float(np.dot(n_a / na_norm, n_b / nb_norm))
+    # Anti-parallel (within ~18 deg) means we're looking at the
+    # front+back of a lens. Plano-cylindrical lenses (one flat side,
+    # one curved) still produce face normals very close to anti-parallel
+    # because the centroid normal is along the optical axis.
+    if cos_angle > -0.95:
+        return 0
+    assigned = 0
+    for index in (a_idx, b_idx):
+        face = faces[index]
+        face["function"] = "Transmit/Port"
+        face["role"] = "Input" if index == a_idx else "Output"
+        face["assignment_origin"] = "auto_lens_promotion"
+        assigned += 1
+    side_count = 0
+    for index, face in enumerate(faces):
+        if index in (a_idx, b_idx):
+            continue
+        if not isinstance(face, dict):
+            continue
+        face["function"] = "Absorber/Mechanical"
+        face["role"] = "Absorber/Mechanical"
+        face["assignment_origin"] = "auto_lens_promotion"
+        side_count += 1
+    return assigned + side_count
+
+
 class StepOverlayPromotionService:
     """Plan and promote imported STEP overlays into row-backed optical solids."""
 
@@ -122,6 +206,18 @@ class StepOverlayPromotionService:
                 record["point"] = [float(value) for value in (point[:3] - center[:3])]
             virtual_planes.append(record)
 
+        # Auto-assign Transmit/Port + Absorber/Mechanical to lens-shaped
+        # bodies BEFORE normalization runs. The trace path consumes the
+        # normalized face function to decide refract-vs-block, so
+        # without this every freshly promoted STL refracts per triangle
+        # and rays bend erratically (captured in 3D.png after the
+        # penta-telescope cascade build). Prisms and any body whose two
+        # largest faces aren't anti-parallel fall through to the
+        # Unassigned default and still need a manual face-roles pass.
+        try:
+            auto_assigned_count = _auto_assign_lens_face_functions(faces)
+        except Exception:
+            auto_assigned_count = 0
         source_stl = str(promoted_path)
         normalized = normalize_optical_solid_face_metadata(
             {
@@ -142,6 +238,8 @@ class StepOverlayPromotionService:
         normalized["source_step"] = str(source_path)
         normalized["promoted_face_metadata_source"] = "open3d_step_overlay"
         normalized["metadata_coordinates"] = "local_centered_promoted_row"
+        if auto_assigned_count:
+            normalized["auto_assigned_lens_face_count"] = int(auto_assigned_count)
         return normalized
 
     def _step_overlay_insert_index(self, insert_at: int | None, *, use_current_selection: bool = True) -> tuple[int, str]:
