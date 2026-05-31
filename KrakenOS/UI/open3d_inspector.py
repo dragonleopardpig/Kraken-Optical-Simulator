@@ -3059,15 +3059,22 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _safe_view_up_for_camera(camera) -> tuple[float, float, float]:
         """Return a world axis that's safe to use as view-up.
 
-        Prefers +Y (the convention the rest of the inspector uses),
-        but switches to +X or +Z when +Y is parallel-ish to the
-        current view direction (the degenerate case that produces
-        "Resetting view-up since view plane normal is parallel" and
-        blanks the canvas).
+        Strategy: keep the camera's CURRENT view-up if it's still
+        safe (not near-parallel to the view direction). Only fall
+        back to a fresh axis when the existing up is truly
+        degenerate. This avoids the camera "jumping" mid-drag when
+        a small rotation shifts the preferred axis (previously +Z
+        in XZ view would flip back to +Y after a few degrees,
+        producing a discontinuous 90 deg reorient).
+
+        When forced to pick fresh: prefer +Y (the inspector's
+        global convention), then +Z, then +X. One of the three is
+        always orthogonal-ish to any view direction.
         """
         try:
             cam_pos = np.asarray(camera.GetPosition(), dtype=float).reshape(3)
             focal = np.asarray(camera.GetFocalPoint(), dtype=float).reshape(3)
+            current_up = np.asarray(camera.GetViewUp(), dtype=float).reshape(3)
         except Exception:
             return (0.0, 1.0, 0.0)
         view_dir = focal - cam_pos
@@ -3075,9 +3082,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if norm < 1e-9:
             return (0.0, 1.0, 0.0)
         view_dir = view_dir / norm
-        # Threshold ~10 degrees: treat |cos(angle)| > 0.985 as
-        # "parallel enough to cause numerical trouble" and fall
-        # through to the next axis.
+        current_up_norm = float(np.linalg.norm(current_up))
+        # Stickiness threshold: keep the current view-up as long as
+        # it's at least 15 deg off the view direction (|cos| < 0.966).
+        # Switching threshold (below) uses a looser 10 deg gate so
+        # we don't oscillate at the boundary.
+        if current_up_norm > 1e-9:
+            normalised_current = current_up / current_up_norm
+            if abs(float(np.dot(normalised_current, view_dir))) < 0.966:
+                return (
+                    float(normalised_current[0]),
+                    float(normalised_current[1]),
+                    float(normalised_current[2]),
+                )
+        # Current up is degenerate or missing -- pick fresh.
         for candidate in (
             (0.0, 1.0, 0.0),
             (0.0, 0.0, 1.0),
@@ -3086,8 +3104,6 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             up = np.asarray(candidate, dtype=float)
             if abs(float(np.dot(up, view_dir))) < 0.985:
                 return (float(up[0]), float(up[1]), float(up[2]))
-        # All three world axes happen to be near-parallel? Shouldn't
-        # be possible in 3-D but bail safely.
         return (0.0, 1.0, 0.0)
 
     def _pan_camera_fixed_drag(self, dx: int | float, dy: int | float) -> None:
