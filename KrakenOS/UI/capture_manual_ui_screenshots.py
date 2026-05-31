@@ -60,6 +60,21 @@ def _settle(app: KrakenLayoutEditor, delay: float = 0.25) -> None:
     app.update()
 
 
+def _settle_toplevel(app: KrakenLayoutEditor, window: tk.Toplevel, delay: float = 0.25) -> None:
+    app.update_idletasks()
+    window.update_idletasks()
+    window.lift()
+    try:
+        window.attributes("-topmost", True)
+        window.after(120, lambda: window.attributes("-topmost", False))
+    except Exception:
+        pass
+    app.update()
+    window.update_idletasks()
+    time.sleep(delay)
+    app.update()
+
+
 def _set_sidebars(app: KrakenLayoutEditor, *, left: bool, right: bool) -> None:
     try:
         if app._pane_present(app.left_sidebar_host) != left:
@@ -103,6 +118,15 @@ def _capture_window_image(widget) -> Image.Image:
     return ImageGrab.grab(bbox=(x0, y0, x1, y1)).convert("RGB")
 
 
+def _capture_widget_bounds_image(widget) -> Image.Image:
+    widget.update_idletasks()
+    x0 = int(widget.winfo_rootx())
+    y0 = int(widget.winfo_rooty())
+    x1 = x0 + int(widget.winfo_width())
+    y1 = y0 + int(widget.winfo_height())
+    return ImageGrab.grab(bbox=(x0, y0, x1, y1)).convert("RGB")
+
+
 def _save_window_crop(app: KrakenLayoutEditor, output_dir: Path, filename: str, bbox: tuple[int, int, int, int]) -> Path:
     image = _capture_window_image(app)
     x0, y0, x1, y1 = bbox
@@ -114,6 +138,13 @@ def _save_window_crop(app: KrakenLayoutEditor, output_dir: Path, filename: str, 
 
 def _save_widget_image(widget, output_dir: Path, filename: str) -> Path:
     image = _capture_window_image(widget)
+    path = output_dir / filename
+    image.save(path, optimize=True)
+    return path
+
+
+def _save_widget_bounds_image(widget, output_dir: Path, filename: str) -> Path:
+    image = _capture_widget_bounds_image(widget)
     path = output_dir / filename
     image.save(path, optimize=True)
     return path
@@ -248,13 +279,17 @@ def _capture_top_menu(app: KrakenLayoutEditor, output_dir: Path, menu, filename:
     return _save_menu_excerpt(app, output_dir, filename, "Insert menu", _menu_excerpt_rows(menu))
 
 
-def _capture_latest_toplevel(app: KrakenLayoutEditor, output_dir: Path, filename: str) -> Path:
-    _settle(app, delay=0.35)
+def _capture_latest_toplevel(app: KrakenLayoutEditor, output_dir: Path, filename: str, *, geometry: str | None = None) -> Path:
+    app.update_idletasks()
+    app.update()
     windows = [child for child in app.winfo_children() if child.winfo_exists() and str(child.winfo_class()) == "Toplevel"]
     if not windows:
         raise RuntimeError(f"No Toplevel window found for {filename}")
     window = windows[-1]
-    return _save_widget_image(window, output_dir, filename)
+    if geometry:
+        window.geometry(geometry)
+    _settle_toplevel(app, window, delay=0.35)
+    return _save_widget_bounds_image(window, output_dir, filename)
 
 
 def _capture_lens_drawing_dialog(app: KrakenLayoutEditor, output_dir: Path) -> Path:
@@ -302,7 +337,7 @@ def _capture_cad_face_dialog(app: KrakenLayoutEditor, output_dir: Path) -> Path 
             return None
         app._select_table_row(index)
         app.open_optical_solid_face_role_editor(index)
-        path = _capture_latest_toplevel(app, output_dir, "cad_stl_face_assignment.png")
+        path = _capture_latest_toplevel(app, output_dir, "cad_stl_face_assignment.png", geometry="2200x980+80+80")
         for child in app.winfo_children():
             if child.winfo_exists() and str(child.winfo_class()) == "Toplevel" and "CAD/STL Optical Faces" in child.title():
                 child.destroy()
