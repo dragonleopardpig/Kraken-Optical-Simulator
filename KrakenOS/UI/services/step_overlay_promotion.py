@@ -1187,8 +1187,22 @@ class StepOverlayPromotionService:
         # The overlay's own rotation (rotation_x/y/z) is composed on
         # TOP of the cascade tilt so a user-snapped lens still
         # behaves correctly.
+        # Orient each row so its surface normal faces the incoming
+        # ray. KrakenOS Standard surfaces have the surface normal
+        # along local +Z; rotating the row's tilt brings that normal
+        # into alignment with the cascade exit direction.
+        #
+        # The chain frame stays world-aligned (AxisMove=0 everywhere)
+        # because rotating the chain via AxisMove=2 makes "thickness"
+        # advance along the rotated axis, but our trailing rows are
+        # also Standard surfaces that want their position set in
+        # world coordinates -- mixing world-coord desp with
+        # rotated-chain advance puts trailing rows in the wrong
+        # place. Cleaner: every row carries its own world placement
+        # and orientation, chain stays simple. Per-row world X
+        # offsets along the exit beam are applied by the caller
+        # AFTER promote returns.
         chain_tilt = (0.0, 0.0, 0.0)
-        chain_first_row_axis_move = 0.0
         if chain_exit_direction is not None:
             try:
                 axis_vec = np.asarray(chain_exit_direction, dtype=float).reshape(3)
@@ -1196,35 +1210,24 @@ class StepOverlayPromotionService:
                 axis_vec = None
             if axis_vec is not None and float(np.linalg.norm(axis_vec)) > 1e-9:
                 axis_vec = axis_vec / float(np.linalg.norm(axis_vec))
-                # Snap to nearest cardinal axis: trace-derived
-                # directions tend to have 1e-6-scale noise that
-                # breaks np.allclose() against (-1, 0, 0) etc., so
-                # snapping gives the cardinal cases (which cover
-                # cascade exits along +/- X, Y, Z).
                 dominant = int(np.argmax(np.abs(axis_vec)))
                 snapped = np.zeros(3, dtype=float)
                 snapped[dominant] = float(np.sign(axis_vec[dominant]))
-                # Mapping local +Z (the chain's natural forward) onto
-                # the snapped world axis:
+                # Map local +Z (surface normal) onto -exit_direction
+                # so the surface faces the incoming ray (which travels
+                # ALONG exit_direction).
                 if np.allclose(snapped, (0.0, 0.0, 1.0)):
-                    chain_tilt = (0.0, 0.0, 0.0)
-                elif np.allclose(snapped, (0.0, 0.0, -1.0)):
                     chain_tilt = (180.0, 0.0, 0.0)
+                elif np.allclose(snapped, (0.0, 0.0, -1.0)):
+                    chain_tilt = (0.0, 0.0, 0.0)
                 elif np.allclose(snapped, (1.0, 0.0, 0.0)):
-                    chain_tilt = (0.0, 90.0, 0.0)
-                elif np.allclose(snapped, (-1.0, 0.0, 0.0)):
                     chain_tilt = (0.0, -90.0, 0.0)
+                elif np.allclose(snapped, (-1.0, 0.0, 0.0)):
+                    chain_tilt = (0.0, 90.0, 0.0)
                 elif np.allclose(snapped, (0.0, 1.0, 0.0)):
-                    chain_tilt = (-90.0, 0.0, 0.0)
-                elif np.allclose(snapped, (0.0, -1.0, 0.0)):
                     chain_tilt = (90.0, 0.0, 0.0)
-                # AxisMove > 0 propagates the first row's tilt into
-                # the chain frame so subsequent analytic rows
-                # advance their thickness ALONG the cascade exit
-                # beam direction, not along world +Z. KrakenOS uses
-                # AxisMove == 2 for "tilt + decenter propagates".
-                if any(abs(v) > 1e-9 for v in chain_tilt):
-                    chain_first_row_axis_move = 2.0
+                elif np.allclose(snapped, (0.0, -1.0, 0.0)):
+                    chain_tilt = (-90.0, 0.0, 0.0)
         new_rows: list[SurfaceRow] = []
         for index, row_info in enumerate(rows_preview):
             row = SurfaceRow(
@@ -1237,51 +1240,28 @@ class StepOverlayPromotionService:
                 diameter=float(row_info.get("diameter_mm", 0.0)),
                 glass=str(materials[min(index, len(materials) - 1)]),
             )
-            # Default AxisMove = 0 (transparent chain transition).
-            # The anchor (index 0) flips to 2.0 when chain_tilt is
-            # non-trivial so subsequent rows advance their thickness
-            # along the cascade exit direction.
-            row.axis_move = float(chain_first_row_axis_move) if index == 0 else 0.0
-            # When chain_exit_direction was supplied AND the anchor
-            # has AxisMove=2, the chain frame walks the lens body
-            # along its tilt-rotated +Z. Subsequent rows should sit
-            # at the chain's "natural advance" point -- desp=(0,0,0)
-            # in chain frame. The non-cascade case (AxisMove=0 on
-            # every row) needs the same desp for all rows so the
-            # un-rotated chain math (which doesn't propagate
-            # thickness through the lens) puts every surface at the
-            # same world position offset.
-            propagating_chain = chain_first_row_axis_move > 0.0
-            if index == 0:
-                row.desp_x = float(placement[0])
-                row.desp_y = float(placement[1])
-                row.desp_z = float(placement[2] - z_station)
-            elif propagating_chain:
-                row.desp_x = 0.0
-                row.desp_y = 0.0
-                row.desp_z = 0.0
-            else:
-                # Pre-cascade-aware behavior: every row carries the
-                # same world-frame offset because the chain doesn't
-                # advance through them. Preserves the standalone
-                # analytic-promote layout (no cascade).
-                row.desp_x = 0.0
-                row.desp_y = 0.0
-                row.desp_z = float(placement[2] - z_station)
-            if index == 0:
-                # Compose chain_tilt with the overlay's own rotation
-                # by simple summation modulo 360. For the cardinal
-                # cascade cases this gives the right composition; for
-                # arbitrary rotations the user has already snapped
-                # the overlay correctly via Snap-to-Axis and the
-                # chain_tilt is (0,0,0) so this is a no-op.
-                row.tilt_x = (rotation_x + chain_tilt[0]) % 360.0
-                row.tilt_y = (rotation_y + chain_tilt[1]) % 360.0
-                row.tilt_z = (rotation_z + chain_tilt[2]) % 360.0
-            else:
-                row.tilt_x = 0.0
-                row.tilt_y = 0.0
-                row.tilt_z = 0.0
+            # AxisMove=0 everywhere: chain stays world-aligned, every
+            # row carries its own world-frame placement and tilt.
+            row.axis_move = 0.0
+            # Anchor sits at the caller-provided world target; every
+            # trailing row inherits the SAME world position by default.
+            # The caller (e.g. build_penta_analytic_telescope_layout)
+            # is responsible for shifting trailing rows along the
+            # exit beam to physically separate the surfaces. This
+            # default keeps standalone promote (no cascade caller)
+            # rendering correctly as one collapsed lens body.
+            row.desp_x = float(placement[0])
+            row.desp_y = float(placement[1])
+            row.desp_z = float(placement[2] - z_station)
+            # Every row gets the same surface-normal orientation: the
+            # overlay's own rotation composed with the chain_tilt that
+            # aligns local +Z with -exit_direction (so the surface
+            # faces the incoming ray). Trailing rows MUST share this
+            # tilt; if they keep (0,0,0) their normals point world +Z
+            # and the ray either grazes or misses.
+            row.tilt_x = (rotation_x + chain_tilt[0]) % 360.0
+            row.tilt_y = (rotation_y + chain_tilt[1]) % 360.0
+            row.tilt_z = (rotation_z + chain_tilt[2]) % 360.0
             if arm_key:
                 self._apply_arm_key_metadata_to_row(row, arm_key)
             row.advanced = dict(row.advanced or {})

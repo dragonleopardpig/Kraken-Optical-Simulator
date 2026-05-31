@@ -194,21 +194,49 @@ def _build_layout(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> dict
     summary["chain_exit_position"] = exit_pt.tolist()
     summary["chain_exit_direction"] = list(chain_exit)
 
+    # Tilt that points the surface normal (local +Z) along
+    # -exit_dir (against the incoming ray). For the penta cascade
+    # the exit direction is world -X so we want local +Z -> world +X
+    # which is tilt_y = +90.
+    if np.allclose(exit_dir, (-1.0, 0.0, 0.0)):
+        row_tilt = (0.0, 90.0, 0.0)
+    elif np.allclose(exit_dir, (1.0, 0.0, 0.0)):
+        row_tilt = (0.0, -90.0, 0.0)
+    elif np.allclose(exit_dir, (0.0, -1.0, 0.0)):
+        row_tilt = (-90.0, 0.0, 0.0)
+    elif np.allclose(exit_dir, (0.0, 1.0, 0.0)):
+        row_tilt = (90.0, 0.0, 0.0)
+    elif np.allclose(exit_dir, (0.0, 0.0, -1.0)):
+        row_tilt = (180.0, 0.0, 0.0)
+    else:
+        row_tilt = (0.0, 0.0, 0.0)
+
+    # First row's z_station equals the cumulative thickness of all
+    # rows BEFORE the first lens. For the cascade that's
+    # Object.thickness + sum(prism thicknesses=0) = 100 mm.
+    z_station_before_lenses = sum(
+        float(getattr(app.rows[i], "thickness", 0.0) or 0.0)
+        for i in range(int(base["row_count"]))
+    )
+
     promoted_rows: list[dict[str, Any]] = []
     for spec in LENS_SPECS:
         try:
             app.clear_step_imports()
         except Exception:
             pass
-        # World position where THIS lens's body centroid should sit.
-        target_world = exit_pt + exit_dir * float(spec["offset_along_exit_mm"])
+        # World position of the LENS BODY CENTROID along the exit
+        # beam. Each row of the lens will then be shifted further
+        # along -exit_dir by its cumulative optical thickness so the
+        # surface vertices are positioned correctly.
+        anchor_world = exit_pt + exit_dir * float(spec["offset_along_exit_mm"])
         _import_step(
             app,
             spec["step"],
             placement_offset_xyz=(
-                float(target_world[0]),
-                float(target_world[1]),
-                float(target_world[2]),
+                float(anchor_world[0]),
+                float(anchor_world[1]),
+                float(anchor_world[2]),
             ),
         )
         inspector.refresh_from_editor()
@@ -234,20 +262,67 @@ def _build_layout(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> dict
         # their auto-generated S2/S3/... suffix so it's still clear
         # they belong to the same body.
         _rename_row(app, int(indices[0]), spec["name"])
-        # Set the GAP after this lens by adjusting the LAST row's
-        # thickness. KrakenOS chains rows by thickness; the trailing
-        # row's thickness is the gap to whatever comes next.
+
+        # Post-promote placement: walk each row of THIS lens and set
+        # its world position along the exit beam.
+        #
+        # The promote service returns rows in optical order (front,
+        # cement, back) with thickness = optical path through that
+        # segment. Each row's surface vertex sits at:
+        #   world = anchor_world + cumulative_optical_offset * exit_dir
+        # where cumulative_optical_offset starts at 0 for the front
+        # row and increments by the previous row's thickness.
+        #
+        # Chain-z stays world +Z (AxisMove=0 everywhere), so each
+        # row's desp_z = world_z_target - z_station_for_that_row.
+        # We collapse the chain advance to 0 inside the lens by
+        # zeroing thicknesses for the rows we just placed, so
+        # z_station stays equal to z_station_before_lenses for the
+        # entire scene -- desp_z is constant = anchor_z - z_station.
+        cumulative_offset = 0.0
+        # Iterate in REVERSE because we'll zero each row's thickness
+        # after using it -- but we want to use the ORIGINAL thickness
+        # to advance cumulative_offset for the NEXT row. So capture
+        # thicknesses first.
+        original_thicknesses = []
+        for idx_in_lens, row_idx in enumerate(indices):
+            try:
+                original_thicknesses.append(
+                    float(getattr(app.rows[int(row_idx)], "thickness", 0.0) or 0.0)
+                )
+            except Exception:
+                original_thicknesses.append(0.0)
+        for idx_in_lens, row_idx in enumerate(indices):
+            try:
+                row = app.rows[int(row_idx)]
+            except Exception:
+                continue
+            row_world = anchor_world + exit_dir * cumulative_offset
+            row.desp_x = float(row_world[0])
+            row.desp_y = float(row_world[1])
+            row.desp_z = float(row_world[2] - z_station_before_lenses)
+            row.tilt_x = float(row_tilt[0])
+            row.tilt_y = float(row_tilt[1])
+            row.tilt_z = float(row_tilt[2])
+            row.axis_move = 0.0
+            # Zero thickness so chain z stays at z_station_before_lenses
+            # for every following row. The optical thickness is now
+            # encoded entirely in desp_x along the exit beam.
+            row.thickness = 0.0
+            cumulative_offset += original_thicknesses[idx_in_lens]
         try:
-            app.rows[int(indices[-1])].thickness = float(spec["gap_after_mm"])
             app._sync_table()
         except Exception:
             pass
+
         promoted_rows.append(
             {
                 "lens": spec["name"],
                 "first_row": int(indices[0]),
                 "rows_added": len(indices),
                 "glass_sequence": spec["glass"],
+                "anchor_world": [float(v) for v in anchor_world.tolist()],
+                "optical_span_mm": float(cumulative_offset),
             }
         )
         inspector.refresh_from_editor()

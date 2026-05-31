@@ -2234,19 +2234,22 @@ class ScenePlacementMixin:
             snapped[dominant] = float(_np.sign(axis_vec[dominant]))
         except Exception:
             return False
-        # Same axis mapping the promotion service uses.
-        if _np.allclose(snapped, (0.0, 0.0, 1.0)):
-            return False  # already along +Z; no rotation needed
+        # Tilt mapping: rotate the overlay's local +Z (the lens
+        # optical axis convention in most STEP files) onto
+        # -exit_direction so the body's "front face" faces the
+        # incoming ray (which travels ALONG exit_direction).
         if _np.allclose(snapped, (0.0, 0.0, -1.0)):
+            return False  # body's +Z already faces incoming ray
+        if _np.allclose(snapped, (0.0, 0.0, 1.0)):
             tilt = (180.0, 0.0, 0.0)
         elif _np.allclose(snapped, (1.0, 0.0, 0.0)):
-            tilt = (0.0, 90.0, 0.0)
-        elif _np.allclose(snapped, (-1.0, 0.0, 0.0)):
             tilt = (0.0, -90.0, 0.0)
+        elif _np.allclose(snapped, (-1.0, 0.0, 0.0)):
+            tilt = (0.0, 90.0, 0.0)
         elif _np.allclose(snapped, (0.0, 1.0, 0.0)):
-            tilt = (-90.0, 0.0, 0.0)
-        elif _np.allclose(snapped, (0.0, -1.0, 0.0)):
             tilt = (90.0, 0.0, 0.0)
+        elif _np.allclose(snapped, (0.0, -1.0, 0.0)):
+            tilt = (-90.0, 0.0, 0.0)
         else:
             return False
         for axis_name, deg in zip(("x", "y", "z"), tilt):
@@ -2301,41 +2304,12 @@ class ScenePlacementMixin:
                 # better a partial doublet than a hard error.
                 result = None
             if isinstance(result, dict) and result.get("row_indices"):
-                # Native-rows defaults AxisMove=0 on every row, so the
-                # chain frame DOESN'T advance through the doublet --
-                # subsequent rows (Image plane, more lenses) stay
-                # stuck at the chain position before the doublet,
-                # making thickness sweeps on the trailing row
-                # degenerate. When we used chain_exit_direction to
-                # tilt the doublet, also bump AxisMove on the anchor
-                # row so the chain frame walks the doublet's
-                # thickness in the rotated frame.
-                if tilted:
-                    indices = list(result.get("row_indices") or [])
-                    if indices:
-                        try:
-                            anchor = self.rows[int(indices[0])]
-                            anchor.axis_move = 2.0
-                            # Native-rows promotion copies the same
-                            # decenter onto every row of the doublet,
-                            # so without zeroing the trailing rows'
-                            # desp they all SHARE the anchor's world
-                            # placement -- the chain advances via
-                            # AxisMove but the surfaces still get
-                            # placed back at the anchor's spot,
-                            # producing the visible "doublet overlap"
-                            # the user flagged.
-                            for offset in range(1, len(indices)):
-                                try:
-                                    follow = self.rows[int(indices[offset])]
-                                    follow.desp_x = 0.0
-                                    follow.desp_y = 0.0
-                                    follow.desp_z = 0.0
-                                except Exception:
-                                    continue
-                            self._sync_table()
-                        except Exception:
-                            pass
+                # Native-rows path keeps AxisMove=0 throughout (chain
+                # stays world-aligned). The caller is responsible for
+                # adjusting per-row desp / tilt to position the
+                # doublet at its target world location -- see
+                # build_penta_analytic_telescope_layout for the cascade
+                # case.
                 return result
         return self._step_overlay_promotion_service().promote_imported_step_to_analytic_surfaces(
             label,
