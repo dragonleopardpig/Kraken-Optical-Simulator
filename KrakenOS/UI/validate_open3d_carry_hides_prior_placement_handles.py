@@ -117,29 +117,60 @@ def _run() -> int:
         # import_optical_step_overlay path with the underlying file dialog
         # stubbed so the test stays headless-clean. This is the SAME code
         # path the user hit when the bug fired.
+        #
+        # The visible bug fires during the *first* refresh inside
+        # import_optical_step_overlay -- that's when the user saw the
+        # prior-row handles draw on top of the new carried STEP. A later
+        # internal refresh from _start_step_carry_follow can mask the
+        # leak because by then _step_carry_active_label is set. So we
+        # wrap refresh_from_editor to snapshot the placement-handle
+        # actor counts the moment the first refresh inside the import
+        # finishes -- that's the regression-sensitive measurement.
         def _stub_import(dialog_parent=None, refresh_open_3d=False):
             app.imported_optical_step_path = second_step
             return second_step
 
-        original = app.import_optical_step
+        first_refresh_counts: dict[str, int] = {}
+        original_import = app.import_optical_step
+        original_refresh = inspector.refresh_from_editor
+
+        def _wrapped_refresh(*args, **kwargs):
+            result = original_refresh(*args, **kwargs)
+            if not first_refresh_counts:
+                first_refresh_counts.update(_count_placement_handles(inspector))
+                first_refresh_counts["carry_label"] = inspector._step_carry_active_label  # type: ignore[assignment]
+            return result
+
         app.import_optical_step = _stub_import  # type: ignore[method-assign]
+        inspector.refresh_from_editor = _wrapped_refresh  # type: ignore[assignment]
         try:
             inspector.import_optical_step_overlay()
         finally:
-            app.import_optical_step = original  # type: ignore[method-assign]
+            app.import_optical_step = original_import  # type: ignore[method-assign]
+            inspector.refresh_from_editor = original_refresh  # type: ignore[assignment]
         inspector.update_idletasks()
 
-        # Phase C: assert the prior row's placement handles are gone now
-        # that the new STEP is being carried.
+        # Phase C: assert the prior row's placement handles were gone
+        # at the FIRST refresh inside import_optical_step_overlay (the
+        # moment the user saw them), and also that the post-carry steady
+        # state has none.
         after_carry = _count_placement_handles(inspector)
-        total = after_carry["translate"] + after_carry["rotate"]
         carry_label = inspector._step_carry_active_label
-        if total > 0:
+        first_translate = int(first_refresh_counts.get("translate", -1))
+        first_rotate = int(first_refresh_counts.get("rotate", -1))
+        first_carry_label = first_refresh_counts.get("carry_label")
+        if first_translate + first_rotate > 0:
             print(
-                f"FAIL: prior-row placement handles leaked during carry of new STEP. "
-                f"translate={after_carry['translate']} rotate={after_carry['rotate']} "
-                f"carry_label={carry_label!r} (expected zero placement handles while "
-                f"_step_carry_active_label is set).",
+                "FAIL: prior-row placement handles leaked at the first refresh during "
+                f"import_optical_step_overlay. translate={first_translate} rotate={first_rotate} "
+                f"carry_label_at_refresh={first_carry_label!r} (expected zero because "
+                f"_step_carry_active_label must be set to the new label *before* the refresh).",
+                file=sys.stderr,
+            )
+            return 1
+        if after_carry["translate"] + after_carry["rotate"] > 0:
+            print(
+                f"FAIL: placement handles leaked in steady carry state. {after_carry}",
                 file=sys.stderr,
             )
             return 1
@@ -152,7 +183,8 @@ def _run() -> int:
             return 1
         print(
             "PASS: importing a 2nd optical STEP hides the prior promoted row's placement handles. "
-            f"baseline={before_carry}, after_carry={after_carry}, carry_label={carry_label!r}."
+            f"baseline={before_carry}, first_refresh={first_refresh_counts}, "
+            f"after_carry={after_carry}, carry_label={carry_label!r}."
         )
         return 0
     finally:

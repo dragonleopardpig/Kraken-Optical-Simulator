@@ -3899,7 +3899,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # and the user has to interact with stale UI on top of
             # the just-imported STEP. `_start_step_carry_follow` below
             # finalizes the follow state; if it fails for any reason
-            # it resets the label to None.
+            # it resets the label to None. We intentionally leave
+            # `_picked_row_index` alone -- clearing it forces the prior
+            # row's actor to redraw in its "not picked" wireframe style,
+            # which surprises users who see the selected element
+            # suddenly change color.
             self._step_carry_active_label = label
             self._step_carry_follow_state = None
             self._step_carry_snap_ray_mode = False
@@ -3913,13 +3917,6 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._selected_step_feature_center_world = None
             self._selected_step_feature_surface_center_world = None
             self._selected_step_feature_normal_world = None
-            # Drop the prior promoted-row selection so a stale
-            # `_picked_row_index` cannot flip
-            # `_show_scene_placement_handles()` back to True even if the
-            # carry gate is later released.
-            self._picked_row_index = None
-            self._picked_row_indices = set()
-            self._placement_handle_selected_row_index = None
             self.refresh_from_editor()
             self.show_step_rotation_handler(label)
             self._start_step_carry_follow(label)
