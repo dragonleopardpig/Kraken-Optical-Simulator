@@ -7308,22 +7308,44 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         distance = max(radius * 2.2, 50.0)
         aspect = self._render_aspect()
         parallel_scale = None
-        if preset == "zy":
+        # Cardinal viewport naming convention: "+PLANE" / "-PLANE"
+        # means LOOKING AT the named plane FROM the +/- normal axis.
+        # For example "+yz" -> camera sits on the +X side of the
+        # scene looking toward -X, so the YZ plane fills the viewport
+        # with +Y up and +Z to the right.
+        #
+        # Aliases (zy, xy, xz, bottom) kept for backward compatibility
+        # with stored preferences and the older toolbar.
+        if preset in {"-yz", "zy"}:
+            # YZ plane seen from -X side, looking +X.
             position = center + np.array([-distance, 0.0, 0.0], dtype=float)
             view_up = (0.0, 1.0, 0.0)
             parallel_scale = self._parallel_scale_for_orthographic_fit(span_z, span_y, aspect)
-        elif preset == "xy":
-            position = center + np.array([0.0, 0.0, distance], dtype=float)
+        elif preset == "+yz":
+            # YZ plane seen from +X side, looking -X.
+            position = center + np.array([+distance, 0.0, 0.0], dtype=float)
+            view_up = (0.0, 1.0, 0.0)
+            parallel_scale = self._parallel_scale_for_orthographic_fit(span_z, span_y, aspect)
+        elif preset in {"+xy", "xy"}:
+            # XY plane seen from +Z side, looking -Z (the "top of XY").
+            position = center + np.array([0.0, 0.0, +distance], dtype=float)
             view_up = (0.0, 1.0, 0.0)
             parallel_scale = self._parallel_scale_for_orthographic_fit(span_x, span_y, aspect)
-        elif preset == "xz":
-            position = center + np.array([0.0, distance, 0.0], dtype=float)
-            view_up = (1.0, 0.0, 0.0)
-            parallel_scale = self._parallel_scale_for_orthographic_fit(span_z, span_x, aspect)
-        elif preset == "bottom":
+        elif preset in {"-xy", "bottom"}:
+            # XY plane seen from -Z side, looking +Z.
             position = center + np.array([0.0, 0.0, -distance], dtype=float)
             view_up = (0.0, 1.0, 0.0)
             parallel_scale = self._parallel_scale_for_orthographic_fit(span_x, span_y, aspect)
+        elif preset in {"+xz", "xz"}:
+            # XZ plane seen from +Y side, looking -Y.
+            position = center + np.array([0.0, +distance, 0.0], dtype=float)
+            view_up = (1.0, 0.0, 0.0)
+            parallel_scale = self._parallel_scale_for_orthographic_fit(span_z, span_x, aspect)
+        elif preset == "-xz":
+            # XZ plane seen from -Y side, looking +Y.
+            position = center + np.array([0.0, -distance, 0.0], dtype=float)
+            view_up = (1.0, 0.0, 0.0)
+            parallel_scale = self._parallel_scale_for_orthographic_fit(span_z, span_x, aspect)
         else:
             position = center + np.array([-distance * 0.95, distance * 0.55, distance * 0.8], dtype=float)
             view_up = (0.0, 1.0, 0.0)

@@ -45,12 +45,18 @@ class Open3DTopControlsPanel:
         pack_command_button(view_toolbar, "Refresh", command=self.inspector.refresh_from_editor)
         pack_command_button(view_toolbar, "Snapshot", command=self.inspector.save_snapshot, padx=(8, 0))
         ttk.Label(view_toolbar, text="Camera").pack(side="left", padx=(10, 4))
+        # All 6 cardinal viewports (+/-PLANE = looking AT the plane
+        # FROM the +/- normal direction), plus an Iso default at the
+        # front. "+YZ" puts the camera on +X side looking -X; "-YZ"
+        # puts it on the -X side; etc.
         for label, preset in (
             ("Iso", "iso"),
-            ("YZ", "zy"),
-            ("XY", "xy"),
-            ("XZ", "xz"),
-            ("Bottom", "bottom"),
+            ("+YZ", "+yz"),
+            ("-YZ", "-yz"),
+            ("+XY", "+xy"),
+            ("-XY", "-xy"),
+            ("+XZ", "+xz"),
+            ("-XZ", "-xz"),
         ):
             pack_command_button(
                 view_toolbar,
