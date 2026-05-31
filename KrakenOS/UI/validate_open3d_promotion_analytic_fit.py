@@ -24,6 +24,7 @@ from KrakenOS.UI.layout_editor import KrakenLayoutEditor
 from KrakenOS.UI.services.step_overlay_analytic_fit import (
     SphereFit,
     fit_step_overlay_analytic_surfaces,
+    maybe_split_full_sphere_face,
 )
 from KrakenOS.UI.services.step_overlay_promotion import _auto_assign_lens_face_functions
 
@@ -34,6 +35,18 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # from the matching .zmx prescription. The fit is expected to recover
 # these values to within ``tolerance_mm``.
 FIXTURES = [
+    {
+        # Ball lens (Edmund 63227, sapphire R=4.7625 mm). The STEP
+        # importer collapses both hemispheres into a single face
+        # group with area = 4 pi R^2; previously the analytic-promote
+        # path failed entirely. After sphere-splitting in
+        # ``maybe_split_full_sphere_face`` the front gets Rc=+R and
+        # back gets Rc=-R (matching Zemax CURV = +/-0.20997).
+        "name": "Ball Lens (63227)",
+        "path": PROJECT_ROOT / "attachment" / "Lens" / "ball_lens" / "step_63227.stp",
+        "expected_rc": (+4.7625, -4.7625),
+        "tolerance_mm": 0.01,
+    },
     {
         # DCV is the smoking-gun fixture for the sign-convention bug:
         # the front surface (concave toward incoming light) has Rc<0
@@ -84,7 +97,18 @@ def _run() -> int:
             if mesh is None:
                 failures.append(f"{name}: transformed mesh unavailable")
                 continue
-            faces = list(face_md.get("faces") or [])
+            # Mirror the production preview pipeline: run the sphere
+            # splitter on each raw face BEFORE auto-assign so a ball
+            # lens (one full-sphere face) is decomposed into front /
+            # back hemispheres the same way the promote service does.
+            raw_faces = list(face_md.get("faces") or [])
+            faces: list[dict] = []
+            for f in raw_faces:
+                split = maybe_split_full_sphere_face(mesh, f, source_axis=(0.0, 0.0, 1.0))
+                if split is None:
+                    faces.append(f)
+                else:
+                    faces.extend(split)
             face_copies = [dict(f) for f in faces]
             _auto_assign_lens_face_functions(face_copies)
             transmit_faces = [

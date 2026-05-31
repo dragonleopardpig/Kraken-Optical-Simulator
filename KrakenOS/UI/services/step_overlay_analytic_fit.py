@@ -189,6 +189,164 @@ def _signed_rc_from_sphere(
     return float(sphere.radius) if offset > 0 else -float(sphere.radius)
 
 
+def _triangle_centroid(mesh, triangle_id: int) -> np.ndarray | None:
+    try:
+        cell = mesh.get_cell(int(triangle_id))
+    except Exception:
+        return None
+    if cell is None:
+        return None
+    try:
+        n = int(cell.n_points)
+    except Exception:
+        return None
+    if n <= 0:
+        return None
+    pts = []
+    for pid in range(n):
+        try:
+            pts.append(cell.points[pid])
+        except Exception:
+            continue
+    if not pts:
+        return None
+    return np.asarray(pts, dtype=float).mean(axis=0)
+
+
+def _face_vertex_cloud(mesh, triangle_ids: list[int], cap: int = 1500) -> np.ndarray:
+    out: list[list[float]] = []
+    for tid in triangle_ids[: max(int(cap), 0) or len(triangle_ids)]:
+        try:
+            cell = mesh.get_cell(int(tid))
+        except Exception:
+            continue
+        if cell is None:
+            continue
+        try:
+            n = int(cell.n_points)
+        except Exception:
+            continue
+        for pid in range(n):
+            try:
+                pt = cell.points[pid]
+            except Exception:
+                continue
+            out.append([float(pt[0]), float(pt[1]), float(pt[2])])
+    if not out:
+        return np.empty((0, 3), dtype=float)
+    return np.asarray(out, dtype=float)
+
+
+def maybe_split_full_sphere_face(
+    mesh: Any,
+    face: dict[str, Any],
+    *,
+    source_axis: tuple[float, float, float] = (0.0, 0.0, 1.0),
+    residual_tolerance_mm: float = 0.05,
+    coverage_threshold: float = 0.80,
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Detect a face that IS the entire sphere and split it.
+
+    Ball-lens STEPs often arrive as a SINGLE face group that wraps
+    both hemispheres -- the importer area-weighted-normals the whole
+    sphere and only the centroid normal sticks. The auto-assignment
+    heuristic looks for two anti-parallel faces, so it can't find a
+    front/back pair on a one-face sphere and the analytic-promote
+    path bails.
+
+    This helper:
+      1. Fits a sphere to the face's triangle vertices.
+      2. Verifies the fit is tight (residual < ``residual_tolerance_mm``)
+         AND the face area is ``>= coverage_threshold`` of the full
+         sphere area ``4 pi R^2``.
+      3. Splits the triangle list along the sphere-center plane
+         perpendicular to ``source_axis`` and returns two synthesized
+         face records (front + back) that the rest of the pipeline can
+         treat like any other anti-parallel face pair.
+
+    Returns ``None`` when the face isn't a clean full sphere.
+    """
+    tri_ids = list(face.get("triangle_indices") or [])
+    if len(tri_ids) < 20:
+        return None
+    sampling_step = max(1, len(tri_ids) // 300)
+    pts = _face_vertex_cloud(mesh, tri_ids[::sampling_step])
+    if pts.shape[0] < 6:
+        return None
+    sphere = fit_sphere(pts)
+    if sphere is None:
+        return None
+    if not np.isfinite(sphere.residual_mm) or sphere.residual_mm > float(residual_tolerance_mm):
+        return None
+    if not np.isfinite(sphere.radius) or sphere.radius <= 0:
+        return None
+    full_area = 4.0 * np.pi * sphere.radius * sphere.radius
+    face_area = float(face.get("area_mm2", 0.0) or 0.0)
+    if full_area <= 0 or face_area < float(coverage_threshold) * full_area:
+        return None
+    center = np.asarray(sphere.center, dtype=float)
+    axis = np.asarray(source_axis, dtype=float)
+    norm = float(np.linalg.norm(axis))
+    if norm < 1e-9:
+        return None
+    axis = axis / norm
+
+    front_tids: list[int] = []
+    back_tids: list[int] = []
+    for tid in tri_ids:
+        tri_c = _triangle_centroid(mesh, tid)
+        if tri_c is None:
+            continue
+        if float(np.dot(tri_c - center, axis)) < 0:
+            front_tids.append(int(tid))
+        else:
+            back_tids.append(int(tid))
+    if len(front_tids) < 10 or len(back_tids) < 10:
+        return None
+
+    # KrakenOS Standard surfaces position themselves at the surface
+    # VERTEX (the extreme point of the cap along the optical axis),
+    # NOT at the geometric centroid of the spherical patch. For a
+    # full ball lens with R = 4.7625 mm centered at z = 0, the
+    # vertex of the front hemisphere is at z = -R, the back vertex
+    # is at z = +R, and the "thickness" between them is 2R =
+    # 9.525 mm -- the physical diameter of the ball, matching the
+    # Zemax DISZ for surface 1. Using triangle-centroid averages
+    # would instead give ~R/2 which makes the analytic body half
+    # the right thickness, with the back surface ending up INSIDE
+    # the front sphere.
+    front_centroid = center - sphere.radius * axis
+    back_centroid = center + sphere.radius * axis
+
+    base = {k: v for k, v in face.items() if k not in {"triangle_indices", "centroid", "normal", "area_mm2"}}
+    half_area = float(face_area) * 0.5
+    front_face = dict(base)
+    front_face.update(
+        {
+            "face_id": f"{str(face.get('face_id') or 'sphere')}/front",
+            "triangle_indices": front_tids,
+            "centroid": [float(front_centroid[0]), float(front_centroid[1]), float(front_centroid[2])],
+            # Outward normal of the front hemisphere = -axis (it points
+            # back toward the incoming light direction).
+            "normal": [-float(axis[0]), -float(axis[1]), -float(axis[2])],
+            "area_mm2": half_area,
+            "split_origin": "auto_sphere_split",
+        }
+    )
+    back_face = dict(base)
+    back_face.update(
+        {
+            "face_id": f"{str(face.get('face_id') or 'sphere')}/back",
+            "triangle_indices": back_tids,
+            "centroid": [float(back_centroid[0]), float(back_centroid[1]), float(back_centroid[2])],
+            "normal": [float(axis[0]), float(axis[1]), float(axis[2])],
+            "area_mm2": half_area,
+            "split_origin": "auto_sphere_split",
+        }
+    )
+    return front_face, back_face
+
+
 def fit_step_overlay_analytic_surfaces(
     mesh: Any,
     faces: Sequence[dict[str, Any]],

@@ -22,6 +22,7 @@ from KrakenOS.UI.services.step_native_reconstruction import reconstruct_step_nat
 from KrakenOS.UI.services.step_overlay_analytic_fit import (
     SphereFit,
     fit_step_overlay_analytic_surfaces,
+    maybe_split_full_sphere_face,
 )
 from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABEL_SET
 from KrakenOS.UI.surface_table_model import SurfaceRow
@@ -1031,7 +1032,19 @@ class StepOverlayPromotionService:
             return None
         if mesh is None or int(getattr(mesh, "n_points", 0) or 0) <= 0:
             return None
-        faces = list(face_md.get("faces") or [])
+        # Pre-process: split any full-sphere face into front/back
+        # hemispheres so a ball lens (one face, area = 4 pi R^2) can be
+        # promoted. The splitter returns None for non-spherical faces
+        # and for spherical caps that aren't anywhere near full
+        # coverage (lens-cap front surfaces have area << 4 pi R^2).
+        raw_faces = list(face_md.get("faces") or [])
+        faces: list[dict[str, Any]] = []
+        for f in raw_faces:
+            split = maybe_split_full_sphere_face(mesh, f, source_axis=(0.0, 0.0, 1.0))
+            if split is None:
+                faces.append(f)
+            else:
+                faces.extend(split)
         face_copies = [dict(f) for f in faces]
         _auto_assign_lens_face_functions(face_copies)
         transmit_faces = [
