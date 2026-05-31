@@ -44,7 +44,7 @@ The model uses these public datasheet values:
      - Sanity check for the F/4.5 finite-conjugate model
    * - Maximum sensor size
      - 62.5 mm
-     - Image and object row diameter; real-image half-field 31.25 mm
+     - Image and object row diameter; the default sampled field uses the shared camera workflow below
    * - Maximum angle of view
      - 21 degrees
      - Field sanity check
@@ -107,6 +107,25 @@ lens STEP placement offset of ``-3.547201484 mm`` so the STEP's first and last
 glass vertices overlay the surrogate's front and rear optical vertex datums.
 The mechanical front shoulder of the STEP is intentionally not used as the
 optical datum.
+
+Default UI Settings
+-------------------
+
+The preset intentionally follows the same working defaults as
+``Machine Vision 150Mm Measured`` so the two layouts can be used the same way in
+Open 3D.  It inherits the same ray display, source, detector, non-sequential,
+tolerance, atmosphere, optimization, and CAD overlay defaults.  In particular,
+it opens with the same Allied Vision ``hr25MCX`` camera model and
+``attachment/Cameras/3D_CAD_HR25xCXP.STEP`` camera overlay.
+
+Only lens-specific defaults differ from the 150 mm measured layout:
+
+* The aperture default is ``F/4.5`` from the PYRITE datasheet.
+* The real-image field default is ``11.52 mm`` so the initial field sampling
+  matches the shared camera workflow rather than the full 62.5 mm image-circle
+  capability.
+* The lens STEP overlay uses ``attachment/Lens/1072517_00165969_001.stp`` and
+  the glass-vertex alignment offset described above.
 
 How The Blackbox Is Built
 -------------------------

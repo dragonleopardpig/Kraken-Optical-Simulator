@@ -12,6 +12,7 @@ from KrakenOS.UI.layout_library import discover_layouts, load_python_data
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LAYOUT_PATH = PROJECT_ROOT / "KrakenOS" / "common_optical_layouts" / "machine_vision_85mm_pyrite_datasheet_1x.py"
+REFERENCE_LAYOUT_PATH = PROJECT_ROOT / "KrakenOS" / "common_optical_layouts" / "machine_vision_150mm_measured.py"
 DOC_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "machine_vision_pyrite_85_surrogate.rst"
 INDEX_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "index.rst"
 STATIC_IMAGE = (
@@ -74,6 +75,7 @@ def _require(condition: bool, message: str) -> None:
 def main() -> int:
     module = importlib.import_module("KrakenOS.common_optical_layouts.machine_vision_85mm_pyrite_datasheet_1x")
     info = load_python_data(LAYOUT_PATH)
+    reference_info = load_python_data(REFERENCE_LAYOUT_PATH)
     layouts = discover_layouts(PROJECT_ROOT / "KrakenOS" / "common_optical_layouts")
 
     group_1_z = float(module.GROUP_1_Z)
@@ -96,6 +98,23 @@ def main() -> int:
     doc = DOC_PATH.read_text(encoding="utf-8")
     index = INDEX_PATH.read_text(encoding="utf-8")
     settings = dict(getattr(module, "SETTINGS", {}))
+    reference_settings = dict(reference_info.get("settings", {}))
+    override_keys = {
+        "aperture_value",
+        "field_value",
+        "lens_step_path",
+        "lens_step_largest_component_only",
+        "lens_step_rotation_x_deg",
+        "lens_step_rotation_y_deg",
+        "lens_step_rotation_z_deg",
+        "lens_step_axis_offset_xy",
+        "lens_step_placement_offset_xyz",
+    }
+    inherited_mismatches = [
+        key
+        for key, value in reference_settings.items()
+        if key not in override_keys and settings.get(key) != value
+    ]
     step_path = PROJECT_ROOT / str(module.STEP_PATH)
     glass_fits = _extract_step_glass_fits(step_path)
     rear_fit = glass_fits[0] if glass_fits else None
@@ -105,6 +124,13 @@ def main() -> int:
         ("layout file exists", LAYOUT_PATH.exists()),
         ("layout has seven rows", len(info["surfaces"]) == 7),
         ("layout is in Machine Vision menu", module.TITLE in layouts.machine_vision_files),
+        ("inherits 150 mm measured operational defaults", inherited_mismatches == []),
+        (
+            "inherits 150 mm measured camera",
+            settings.get("camera_model") == reference_settings.get("camera_model")
+            and settings.get("camera_step_path") == reference_settings.get("camera_step_path")
+            and settings.get("camera_step_rotation_z_deg") == reference_settings.get("camera_step_rotation_z_deg"),
+        ),
         ("docs page exists", DOC_PATH.exists() and "PYRITE 4.5/85/0.5x-2.0x V38" in doc),
         ("docs page is indexed", "machine_vision_pyrite_85_surrogate" in index),
         ("layout screenshot exists", STATIC_IMAGE.exists() and STATIC_IMAGE.stat().st_size > 2048),
@@ -154,6 +180,10 @@ def main() -> int:
         print("PYRITE 85 mm surrogate validation failed:")
         for name in failed:
             print(f"- {name}")
+        if inherited_mismatches:
+            print("Inherited-setting mismatches:")
+            for key in inherited_mismatches[:20]:
+                print(f"- {key}")
         return 1
     print(
         "PYRITE 85 mm surrogate validation passed: "
