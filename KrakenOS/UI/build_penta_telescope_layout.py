@@ -113,6 +113,21 @@ def _build_layout(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> dict
             "the runtime ray bundle is empty."
         )
     exit_pt, exit_dir = exit_axis
+    # Snap the runtime-derived direction to the nearest cardinal axis.
+    # The trace returns the direction with floating-point noise on the
+    # order of 1e-6 on the off-axis components; that noise breaks
+    # _tilts_to_align_local_axis_to_world's np.allclose match against
+    # the canonical (-1, 0, 0) and silently returns (0, 0, 0), which
+    # leaves every post-cascade lens un-rotated (optical axis along
+    # world +Z instead of -X). Snap to the dominant axis and override
+    # the global EXIT_DIRECTION so downstream helpers also see a clean
+    # vector.
+    dominant = int(np.argmax(np.abs(exit_dir)))
+    snapped = np.zeros(3, dtype=float)
+    snapped[dominant] = float(np.sign(exit_dir[dominant]))
+    exit_dir = snapped
+    import KrakenOS.UI.validate_open3d_penta_telescope_chain as _vptc
+    _vptc.EXIT_DIRECTION = snapped
     summary["exit_position_world"] = exit_pt.tolist()
     summary["exit_direction_world"] = exit_dir.tolist()
 
