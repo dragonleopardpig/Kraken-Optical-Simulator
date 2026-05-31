@@ -406,6 +406,23 @@ class Open3DStepAdminPanel:
         if tree is None:
             return
         previous = self._current_browser_selection_iid() or self._selected_item_id
+        # Capture each item's open state before destroying the tree so
+        # that selecting an item (which triggers refresh) doesn't
+        # collapse other expanded element groups. Without this every
+        # click would reset all elements to "open=False" -- the
+        # symptom: "when I click one sub-group, the other closes".
+        previous_open_state: dict[str, bool] = {}
+        try:
+            stack = list(tree.get_children(""))
+            while stack:
+                iid = stack.pop()
+                try:
+                    previous_open_state[str(iid)] = bool(tree.item(iid, "open"))
+                except Exception:
+                    pass
+                stack.extend(tree.get_children(iid))
+        except Exception:
+            previous_open_state = {}
         self._refreshing = True
         try:
             tree.delete(*tree.get_children(""))
@@ -413,7 +430,13 @@ class Open3DStepAdminPanel:
             category_counts: dict[str, int] = {}
             for key, title, _labels in self.CATEGORY_SPECS:
                 iid = f"category:{key}"
-                tree.insert("", "end", iid=iid, text=title, open=True)
+                tree.insert(
+                    "",
+                    "end",
+                    iid=iid,
+                    text=title,
+                    open=previous_open_state.get(iid, True),
+                )
                 category_iids[key] = iid
                 category_counts[key] = 0
             for _key, _title, labels in self.CATEGORY_SPECS:
@@ -444,7 +467,13 @@ class Open3DStepAdminPanel:
                     end = int(record.get("end", children[-1]))
                     element_iid = self._element_iid(start, end)
                     name = str(record.get("name", "") or "Element")
-                    tree.insert(parent, "end", iid=element_iid, text=f"{name} ({len(children)} surfaces)", open=False)
+                    tree.insert(
+                        parent,
+                        "end",
+                        iid=element_iid,
+                        text=f"{name} ({len(children)} surfaces)",
+                        open=previous_open_state.get(element_iid, False),
+                    )
                     category_counts[count_key] += 1
                     for row_index in children:
                         if row_index < 0 or row_index >= len(rows):
