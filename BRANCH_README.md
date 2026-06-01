@@ -1,6 +1,6 @@
 # KrakenOS Non-Sequential UI Branch
 
-Last updated: 2026-05-29
+Last updated: 2026-06-01
 
 This document summarizes the `nonseq-display-refactor` branch. The upstream
 `README.md` is intentionally left unchanged; this branch README is the public
@@ -79,7 +79,7 @@ and fast UI/non-sequential validators.
 | --- | --- | --- | --- |
 | Native STEP analytic reconstruction | Complete for supported axisymmetric lenses | `100% [##########]` | STEP topology is now imported before STL conversion, split/duplicated vendor faces are grouped into native optical surfaces, supported sphere/plane/B-spline surfaces are rebuilt as KrakenOS `SurfaceRow` prescriptions, B-spline faces are fitted into native asphere coefficients with residual diagnostics, cemented duplicate interfaces are collapsed into one internal surface, and geometry-only STEP files remain non-trace-ready until glass/materials are supplied. |
 | Native STEP Open 3D promotion | Complete for supported axisymmetric lenses | `100% [##########]` | Imported STEP overlays can now be promoted directly from Open 3D into native KrakenOS analytic rows with an explicit glass/material sequence, while applying the Open 3D overlay placement/orientation as row `Tilt`/`Desp` values. If the user snapped a selected STEP face center to an optical axis, that stored face-center anchor is preserved exactly during promotion. Show Rays/Trace Now also prefer the same native analytic rows for transient axisymmetric lens previews, and saved single-row STEP/STL optical-solid lenses now get a trace-only native analytic expansion when the source STEP is reconstructable. STL optical-solid promotion remains available for prisms, beam splitters, and freeform solids that should stay mesh-backed. Source/fit diagnostics remain in metadata. |
-| Open 3D CAD responsiveness hardening | Complete | `100% [##########]` | The reported Machine Vision 150 mm plus imported Aspherized Achromatic Lens workflow now has structured action timing, single-refresh Open 3D imports, cached CAD/STL artifacts, display-only hidden-ray placement and undo, grouped smooth CAD face picking, analytic face-ID edge/hover/pick routing for native STEP meshes, VTK-cell-to-grouped-face picking, axisymmetric lens patch grouping for split vendor optical faces, exterior-cap picking for round lens STEP bodies, round-lens axis-normal snapping, current-scene reuse for repeated Show Rays toggles, empty-gmsh-STL rejection, sidecar prescription warnings, per-bundle system/RayKeeper/mesh timing counters, repeated-mesh compatibility, batched slide-along-axis dragging, and pickable row-placement rotation arcs. The headless replay reduced the first live STEP non-sequential trace from about 16.5 s to about 2.7 s, with the full Open 3D refresh around 3.6 s on the test machine; larger vendor assemblies should be treated as new performance fixtures rather than blocking this gate. |
+| Open 3D CAD responsiveness hardening | Complete | `100% [##########]` | The reported Machine Vision 150 mm plus imported Aspherized Achromatic Lens workflow now has structured action timing, single-refresh Open 3D imports, cached CAD/STL artifacts, display-only hidden-ray placement and undo, grouped smooth CAD face picking, analytic face-ID edge/hover/pick routing for native STEP meshes, VTK-cell-to-grouped-face picking, axisymmetric lens patch grouping for split vendor optical faces, exterior-cap picking for round lens STEP bodies, round-lens axis-normal snapping, current-scene reuse for repeated Show Rays toggles, empty-gmsh-STL rejection, sidecar prescription warnings, per-bundle system/RayKeeper/mesh timing counters, repeated-mesh compatibility, batched slide-along-axis dragging, and pickable row-placement rotation arcs. Large camera CAD overlays now use a lightweight display proxy in Open 3D, and missing STEP display/axis caches warm in a subprocess instead of parsing in the Tk refresh path. Display-backed Pyrite 85 mm/120 mm replays now avoid foreground STEP parsing once the cache is ready; mesh transforms measured about 0.29 s/0.07 s for the 85/120 mm lens overlays and about 0.04 s for the proxied camera overlay on the test machine. Larger vendor assemblies should be treated as new performance fixtures rather than blocking this gate. |
 | Final UI theming polish | Deferred outside this gate | `0% [..........]` | Keep the UI on native ttk for now. Revisit `sv-ttk` or another visual layer only after upstream review, CAD responsiveness, physics/display contracts, packaging, and docs are stable. |
 
 The CadQuery/OCP topology study milestone is now complete for this branch
@@ -240,6 +240,14 @@ hides rays and thickness overlays, adds the optical STEP component, selects it,
 verifies imported STEP rotation without a full scene/physics rebuild, simulates
 a small display-only placement drop, applies Ctrl-Z undo,
 deselects it, and prints the slowest timed stages.
+
+The same timing tool is also used for the PYRITE machine-vision surrogate
+layouts:
+
+```bash
+python -m KrakenOS.UI.diagnose_open3d_action_timing --layout "Machine Vision 85 mm Pyrite (Datasheet 1X)" --step attachment/Lens/1072517_00165969_001.stp --output /tmp/kraken_open3d_pyrite85_timing.json
+python -m KrakenOS.UI.diagnose_open3d_action_timing --layout "Machine Vision 120 mm Pyrite (Datasheet 1X)" --step attachment/Lens/1097277_00155156_002.stp --output /tmp/kraken_open3d_pyrite120_timing.json
+```
 
 ## KrakenOS Base Features
 
@@ -410,7 +418,7 @@ Test-plan tiers:
 | Upstream-compatible pytest | Public API, package data, invalid traces, and build-zero contracts from upstream main adapted to the branch. | `python -m pytest tests/test_public_api.py tests/test_smoke.py tests/test_invalid_trace_results.py tests/test_build_modes.py` |
 | Focused contracts | Single-risk checks during development or review. | `python -m KrakenOS.UI.validate_fast_contracts --only ui-modular-maintainability`, `python -m KrakenOS.UI.validate_fast_contracts --only optimization-controls`, `python -m KrakenOS.UI.validate_fast_contracts --only step-native-reconstruction`, `python -m KrakenOS.UI.validate_fast_contracts --only step-native-promotion`, `python -m KrakenOS.UI.validate_fast_contracts --only open3d-lens-step-face-pick`, `python -m KrakenOS.UI.validate_open3d_saved_step_native_trace`, `python -m KrakenOS.UI.validate_axis_slide`, or `python -m KrakenOS.UI.validate_fast_contracts --only five-penta-with-lens-layout` |
 | Display-backed smoke | Open 3D, VTK, screenshots, STEP face picking, and visual regressions. | `python -m KrakenOS.UI.validate_step_carry_open3d_smoke`, `python -m KrakenOS.UI.capture_open3d_lens_face_selection_snap`, `python -m KrakenOS.UI.validate_open3d_center_row_face_visual`, `python -m KrakenOS.UI.validate_open3d_mxied_prism_selection`, `python -m KrakenOS.UI.diagnose_open3d_lens_ray_outlier` |
-| Open 3D responsiveness replay | Timed replay of Machine Vision 150 mm + imported optical STEP import/select/deselect. | `python -m KrakenOS.UI.diagnose_open3d_action_timing --output /tmp/kraken_open3d_action_timing_report.json` |
+| Open 3D responsiveness replay | Timed replay of Machine Vision 150 mm + imported optical STEP import/select/deselect, plus Pyrite 85 mm/120 mm vendor STEP overlays. | `python -m KrakenOS.UI.diagnose_open3d_action_timing --output /tmp/kraken_open3d_action_timing_report.json`, `python -m KrakenOS.UI.diagnose_open3d_action_timing --layout "Machine Vision 85 mm Pyrite (Datasheet 1X)" --step attachment/Lens/1072517_00165969_001.stp --output /tmp/kraken_open3d_pyrite85_timing.json`, `python -m KrakenOS.UI.diagnose_open3d_action_timing --layout "Machine Vision 120 mm Pyrite (Datasheet 1X)" --step attachment/Lens/1097277_00155156_002.stp --output /tmp/kraken_open3d_pyrite120_timing.json` |
 | CAD/prism physics | Real STEP/STL geometry, prism cascades, face roles, and ray-event audits. | `python -m KrakenOS.UI.validate_five_penta_prism_cascade` |
 | Install/package | Public `.[ui]` metadata and runtime dependency checks. | `python -m KrakenOS.UI.validate_ui_install_runtime` |
 | Docs/tutorials | Sphinx pages and generated tutorial assets. | `sphinx-build -b html docs/source docs/build/html` |

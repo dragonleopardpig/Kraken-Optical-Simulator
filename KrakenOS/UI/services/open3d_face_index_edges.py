@@ -50,10 +50,25 @@ def _drop_invalid_cell_data(mesh):
     try:
         cleaned = pv.wrap(mesh).copy(deep=True)
         cell_count = int(getattr(cleaned, "n_cells", 0))
-        for name in list(cleaned.cell_data.keys()):
+        cell_data = cleaned.GetCellData()
+        removals: list[tuple[int, str]] = []
+        for index in range(int(cell_data.GetNumberOfArrays())):
+            array = cell_data.GetArray(index)
+            if array is None:
+                continue
+            name = str(array.GetName() or f"#{index}")
             try:
-                if len(cleaned.cell_data[name]) not in {0, cell_count}:
-                    del cleaned.cell_data[name]
+                if int(array.GetNumberOfTuples()) in {0, cell_count}:
+                    continue
+            except Exception:
+                pass
+            removals.append((index, name))
+        for index, name in reversed(removals):
+            try:
+                if not name.startswith("#"):
+                    cell_data.RemoveArray(name)
+                else:
+                    cell_data.RemoveArray(int(index))
             except Exception:
                 try:
                     del cleaned.cell_data[name]

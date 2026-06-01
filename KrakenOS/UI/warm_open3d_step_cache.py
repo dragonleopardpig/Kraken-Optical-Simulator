@@ -27,14 +27,23 @@ class _StepCacheWarmupLoader:
     def messages(self) -> list[str]:
         return list(getattr(self._loader, "messages", []) or [])
 
-    def warm(self, path: Path, *, largest_component: bool) -> dict[str, object]:
+    def warm(self, path: Path, *, largest_component: bool, warm_axis: bool) -> dict[str, object]:
         start = time.perf_counter()
         mesh = self._loader._load_step_mesh(path, largest_component=bool(largest_component))
+        axis = None
+        axis_start = time.perf_counter()
+        if bool(warm_axis):
+            try:
+                axis = self._loader._step_primary_cylinder_axis(path)
+            except Exception:
+                axis = None
         return {
             "path": str(path),
             "largest_component": bool(largest_component),
             "points": int(getattr(mesh, "n_points", 0)),
             "cells": int(getattr(mesh, "n_cells", 0)),
+            "axis_cached": axis is not None,
+            "axis_duration_s": round(float(time.perf_counter() - axis_start), 3),
             "duration_s": round(float(time.perf_counter() - start), 3),
         }
 
@@ -53,6 +62,7 @@ def _parse_spec(raw: str) -> dict[str, object]:
         "label": str(value.get("label", "") or ""),
         "path": path,
         "largest_component": bool(value.get("largest_component", False)),
+        "warm_axis": bool(value.get("warm_axis", str(value.get("label", "") or "").strip().lower() == "lens")),
     }
 
 
@@ -67,7 +77,11 @@ def main(argv: list[str] | None = None) -> int:
         path = Path(spec["path"])
         label = str(spec.get("label", "") or path.stem)
         try:
-            result = loader.warm(path, largest_component=bool(spec.get("largest_component", False)))
+            result = loader.warm(
+                path,
+                largest_component=bool(spec.get("largest_component", False)),
+                warm_axis=bool(spec.get("warm_axis", False)),
+            )
             result["label"] = label
             results.append(result)
         except Exception as exc:

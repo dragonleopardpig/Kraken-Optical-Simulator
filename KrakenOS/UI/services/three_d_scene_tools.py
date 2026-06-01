@@ -173,8 +173,31 @@ class ThreeDSceneToolsMixin:
                 continue
             if source_path.suffix.lower() not in {".step", ".stp"} or not source_path.exists():
                 continue
+            if self._open3d_step_display_cache_ready(label, source_path, largest_component=bool(largest)):
+                continue
             specs.append((label, source_path, bool(largest)))
         return specs
+
+    def _open3d_step_display_cache_ready(self, label: str, source_path: Path, *, largest_component: bool) -> bool:
+        try:
+            from KrakenOS.UI.services.layout_polyline_display import (
+                _cached_analytic_cad_mesh_path,
+                _cached_step_axis_path,
+            )
+
+            mesh_cache = _cached_analytic_cad_mesh_path(
+                Path(source_path),
+                largest_component=bool(largest_component),
+            )
+            if not mesh_cache.exists() or mesh_cache.stat().st_size <= 0:
+                return False
+            if str(label or "").strip().lower() == "lens":
+                axis_cache = _cached_step_axis_path(Path(source_path))
+                if not axis_cache.exists() or axis_cache.stat().st_size <= 0:
+                    return False
+            return True
+        except Exception:
+            return False
 
     def _start_open3d_step_cache_warmup(self, inspector) -> bool:
         specs = self._open3d_step_cache_warmup_specs()
@@ -229,6 +252,7 @@ class ThreeDSceneToolsMixin:
                             "label": str(label),
                             "path": str(path),
                             "largest_component": bool(largest),
+                            "warm_axis": str(label).strip().lower() == "lens",
                         },
                         separators=(",", ":"),
                     ),

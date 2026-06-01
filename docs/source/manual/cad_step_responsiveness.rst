@@ -174,7 +174,11 @@ Phase 2: Cache The Existing Mesh Path
     intentionally lightweight: it does not pick dense CAD body actors. It only
     uses a rotation-handle actor pick list, then defers transparent face-ray
     testing, feature scanning, and outline generation to explicit click,
-    right-click assignment, or axis/face-pick commands.
+    right-click assignment, or axis/face-pick commands. Large camera/vendor
+    hardware overlays are also allowed to use lightweight display proxies in
+    Open 3D, and first-time STEP display/axis caches warm out of process. If a
+    foreground Open 3D refresh races the warm-up process, the heavy overlay is
+    deferred instead of parsing STEP topology in the Tk event loop.
 
 Phase 3: Add An OpenCascade Topology Adapter
     Build a new adapter using the installed ``pythonocc-core``/``OCC`` backend:

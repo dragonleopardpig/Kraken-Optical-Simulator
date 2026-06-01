@@ -78,11 +78,18 @@ def main() -> int:
         (
             "Open 3D first-load STEP display cache warm-up does not block the Tk inspector",
             "def _start_open3d_step_cache_warmup" in three_d_tools_source
+            and "def _open3d_step_display_cache_ready" in three_d_tools_source
             and "subprocess.Popen" in three_d_tools_source
             and "KrakenOS.UI.warm_open3d_step_cache" in three_d_tools_source
             and "def _poll_open3d_step_cache_warmup" in three_d_tools_source
             and "LayoutPolylineDisplayMixin" in step_warmup_source
             and "inspector.refresh_from_editor()" in three_d_tools_source,
+        ),
+        (
+            "Open 3D display refresh does not foreground-parse STEP while cache warm-up is active",
+            "allow_slow_import" in polyline_source
+            and "load_step_mesh_slow_import_deferred" in polyline_source
+            and "load_step_mesh_stl_import_deferred" in polyline_source,
         ),
         (
             "Open 3D preview build records system/trace/scene bundle timings",

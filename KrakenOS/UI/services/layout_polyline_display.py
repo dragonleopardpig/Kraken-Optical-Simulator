@@ -93,6 +93,11 @@ def _cached_analytic_cad_mesh_path(path: Path, *, largest_component: bool = Fals
     return base_path.with_name(f"{base_path.stem}{suffix}")
 
 
+def _cached_step_axis_path(path: Path) -> Path:
+    base_path = _cached_cad_mesh_path(path)
+    return base_path.with_name(f"{base_path.stem}.axis.json")
+
+
 def _cached_outer_cad_mesh_path(path: Path, solid_indices: tuple[int, ...]) -> Path:
     return _layout_module()._cached_outer_cad_mesh_path(path, solid_indices)
 
@@ -427,7 +432,22 @@ class LayoutPolylineDisplayMixin:
                 pass
             return mesh
 
-    def _load_step_mesh(self, source_path: Path, *, largest_component: bool = False):
+    def _open3d_step_cache_warmup_active(self) -> bool:
+        if bool(getattr(self, "_open3d_step_cache_warmup_pending", False)):
+            return True
+        process = getattr(self, "_open3d_step_cache_warmup_process", None)
+        try:
+            return bool(process is not None and process.poll() is None)
+        except Exception:
+            return False
+
+    def _load_step_mesh(
+        self,
+        source_path: Path,
+        *,
+        largest_component: bool = False,
+        allow_slow_import: bool = True,
+    ):
         source_path = Path(source_path).expanduser()
         with open3d_timing_span(
             "load_step_mesh",
@@ -488,6 +508,14 @@ class LayoutPolylineDisplayMixin:
                         self.append_debug(
                             f"Analytic STEP display cache ignored for {source_path.name}: {exc}"
                         )
+                if not bool(allow_slow_import):
+                    open3d_timing_event(
+                        "load_step_mesh_slow_import_deferred",
+                        source_path=str(source_path),
+                        cache_path=str(analytic_cache_path),
+                        largest_component=bool(largest_component),
+                    )
+                    return None
                 try:
                     document = self._load_step_analytic_document(source_path)
                     mesh = self._mesh_from_step_analytic_document(document)
@@ -529,6 +557,14 @@ class LayoutPolylineDisplayMixin:
             stl_path = _cached_cad_mesh_path(source_path)
             converted = False
             if not stl_path.exists() or stl_path.stat().st_size <= 0:
+                if not bool(allow_slow_import):
+                    open3d_timing_event(
+                        "load_step_mesh_stl_import_deferred",
+                        source_path=str(source_path),
+                        stl_path=str(stl_path),
+                        largest_component=bool(largest_component),
+                    )
+                    return None
                 with open3d_timing_span("convert_step_to_stl", source_path=str(source_path), stl_path=str(stl_path)):
                     _convert_step_to_stl(source_path, stl_path)
                 converted = True
@@ -554,11 +590,16 @@ class LayoutPolylineDisplayMixin:
             return False
         try:
             cell_count = int(getattr(mesh, "n_cells", 0))
-            for values in mesh.cell_data.values():
+            cell_data = mesh.GetCellData()
+            for index in range(int(cell_data.GetNumberOfArrays())):
+                array = cell_data.GetArray(index)
+                if array is None:
+                    continue
                 try:
-                    if len(values) not in {0, cell_count}:
-                        return False
+                    tuples = int(array.GetNumberOfTuples())
                 except Exception:
+                    return False
+                if tuples not in {0, cell_count}:
                     return False
         except Exception:
             return False
@@ -583,14 +624,25 @@ class LayoutPolylineDisplayMixin:
         try:
             cell_count = int(getattr(mesh, "n_cells", 0))
             dropped: list[str] = []
-            for name in list(mesh.cell_data.keys()):
+            cell_data = mesh.GetCellData()
+            removals: list[tuple[int, str]] = []
+            for index in range(int(cell_data.GetNumberOfArrays())):
+                array = cell_data.GetArray(index)
+                if array is None:
+                    continue
+                name = str(array.GetName() or f"#{index}")
                 try:
-                    if len(mesh.cell_data[name]) in {0, cell_count}:
+                    if int(array.GetNumberOfTuples()) in {0, cell_count}:
                         continue
                 except Exception:
                     pass
+                removals.append((index, name))
+            for index, name in reversed(removals):
                 try:
-                    del mesh.cell_data[name]
+                    if not name.startswith("#"):
+                        cell_data.RemoveArray(name)
+                    else:
+                        cell_data.RemoveArray(int(index))
                     dropped.append(str(name))
                 except Exception:
                     pass
@@ -640,6 +692,26 @@ class LayoutPolylineDisplayMixin:
         cached = self._external_cad_mesh_cache.get(cache_key)
         if cached is not None:
             return np.asarray(cached, dtype=float).copy()
+        axis_cache_path = _cached_step_axis_path(source_path)
+        if axis_cache_path.exists() and axis_cache_path.stat().st_size > 0:
+            try:
+                payload = json.loads(axis_cache_path.read_text(encoding="utf-8"))
+                axis = np.asarray(payload.get("axis", ()), dtype=float).reshape(-1)[:3]
+                norm = float(np.linalg.norm(axis[:3])) if axis.size >= 3 else 0.0
+                if axis.size >= 3 and norm > 1.0e-12 and np.isfinite(norm):
+                    axis = axis[:3] / norm
+                    self._external_cad_mesh_cache[cache_key] = axis.copy()
+                    open3d_timing_event(
+                        "load_step_axis_disk_cache_hit",
+                        source_path=str(source_path),
+                        cache_path=str(axis_cache_path),
+                    )
+                    return axis.copy()
+            except Exception:
+                try:
+                    axis_cache_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
         try:
             from OCC.Core.BRepAdaptor import BRepAdaptor_Surface
             from OCC.Core.GeomAbs import GeomAbs_Cylinder
@@ -682,6 +754,22 @@ class LayoutPolylineDisplayMixin:
                 return None
             axis = weighted / norm
             self._external_cad_mesh_cache[cache_key] = axis.copy()
+            try:
+                axis_cache_path.parent.mkdir(parents=True, exist_ok=True)
+                axis_cache_path.write_text(
+                    json.dumps(
+                        {
+                            "axis": [float(value) for value in axis[:3]],
+                            "source_path": str(source_path),
+                            "cylinder_count": int(len(axes)),
+                        },
+                        sort_keys=True,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+            except Exception as exc:
+                self.append_debug(f"STEP cylinder-axis cache write skipped for {source_path.name}: {exc}")
             self.append_debug(
                 "STEP CAD cylinder axis | {name} | axis=({x:.6f},{y:.6f},{z:.6f}) | cylinders={count}".format(
                     name=source_path.name,
@@ -873,13 +961,42 @@ class LayoutPolylineDisplayMixin:
             pass
         return mesh
 
+    def _heavy_step_display_proxy(self, mesh, *, label: str, max_cells: int = 50000):
+        if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
+            return mesh
+        try:
+            cell_count = int(getattr(mesh, "n_cells", 0))
+        except Exception:
+            cell_count = 0
+        if cell_count <= int(max_cells):
+            return mesh
+        _load_3d_backends()
+        if pv is None:
+            return mesh
+        try:
+            bounds = tuple(float(value) for value in mesh.bounds)
+            proxy = pv.Box(bounds=bounds).triangulate()
+            proxy.field_data["kraken_step_display_proxy"] = np.asarray([1], dtype=np.int8)
+            proxy.field_data["kraken_step_display_proxy_source_cells"] = np.asarray([cell_count], dtype=np.int32)
+            self.append_debug(
+                f"STEP CAD display proxy | {label} | source_cells={cell_count} | proxy_cells={int(proxy.n_cells)}"
+            )
+            return proxy
+        except Exception as exc:
+            self.append_debug(f"STEP CAD display proxy skipped for {label}: {exc}")
+            return mesh
+
     def _transformed_imported_lens_step_mesh(self):
         if self.imported_lens_step_path is None:
             return None
+        allow_slow_import = not self._open3d_step_cache_warmup_active()
         mesh = self._load_step_mesh(
             self.imported_lens_step_path,
             largest_component=bool(getattr(self, "lens_step_largest_component_only", True)),
+            allow_slow_import=allow_slow_import,
         )
+        if mesh is None:
+            return None
         cylinder_axis = self._step_primary_cylinder_axis(self.imported_lens_step_path)
         return self._cad_mesh_aligned_to_optical_axis(
             mesh,
@@ -897,7 +1014,13 @@ class LayoutPolylineDisplayMixin:
     def _transformed_imported_optical_step_mesh(self):
         if self.imported_optical_step_path is None:
             return None
-        mesh = self._load_step_mesh(self.imported_optical_step_path, largest_component=False)
+        mesh = self._load_step_mesh(
+            self.imported_optical_step_path,
+            largest_component=False,
+            allow_slow_import=not self._open3d_step_cache_warmup_active(),
+        )
+        if mesh is None:
+            return None
         return self._cad_mesh_aligned_to_optical_axis(
             mesh,
             source_axis="z",
@@ -914,9 +1037,15 @@ class LayoutPolylineDisplayMixin:
     def _transformed_imported_camera_step_mesh(self):
         if self.imported_camera_step_path is None:
             return None
-        mesh = self._load_step_mesh(self.imported_camera_step_path, largest_component=True)
+        mesh = self._load_step_mesh(
+            self.imported_camera_step_path,
+            largest_component=True,
+            allow_slow_import=not self._open3d_step_cache_warmup_active(),
+        )
+        if mesh is None:
+            return None
         camera_front_z = self._current_image_plane_z() - self._current_camera_front_to_sensor_mm()
-        return self._cad_mesh_aligned_to_optical_axis(
+        aligned = self._cad_mesh_aligned_to_optical_axis(
             mesh,
             source_axis="z",
             front_face="max",
@@ -928,11 +1057,18 @@ class LayoutPolylineDisplayMixin:
             axis_offset_xy=self._step_axis_offset_xy("camera"),
             placement_offset_xyz=self._step_placement_offset_xyz("camera"),
         )
+        return self._heavy_step_display_proxy(aligned, label="Camera STEP")
 
     def _transformed_imported_led_step_mesh(self):
         if self.imported_led_step_path is None:
             return None
-        mesh = self._load_step_mesh(self.imported_led_step_path, largest_component=False)
+        mesh = self._load_step_mesh(
+            self.imported_led_step_path,
+            largest_component=False,
+            allow_slow_import=not self._open3d_step_cache_warmup_active(),
+        )
+        if mesh is None:
+            return None
         return self._cad_mesh_aligned_to_optical_axis(
             mesh,
             source_axis="z",

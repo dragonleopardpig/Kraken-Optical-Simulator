@@ -575,6 +575,7 @@ class Open3DSceneRefreshService:
                 display_opacity = float(opacity)
                 if ray_visibility_requested and label == "optical":
                     display_opacity = max(display_opacity, 0.46)
+                heavy_cad_mesh = int(getattr(cad_mesh, "n_cells", 0)) > 50000
                 self._add_mesh_actor(
                     cad_mesh,
                     color=color,
@@ -590,11 +591,13 @@ class Open3DSceneRefreshService:
                         round_lens_like = bool(self._mesh_round_lens_axis(cad_mesh) is not None)
                     except Exception:
                         round_lens_like = False
-                    cad_edges = self._display_feature_edges(
-                        cad_mesh,
-                        feature_angle=75 if round_lens_like else 55,
-                        boundary_edges=not round_lens_like,
-                    )
+                    cad_edges = None
+                    if not heavy_cad_mesh:
+                        cad_edges = self._display_feature_edges(
+                            cad_mesh,
+                            feature_angle=75 if round_lens_like else 55,
+                            boundary_edges=not round_lens_like,
+                        )
                     if int(getattr(cad_edges, "n_points", 0)) > 0:
                         edge_color = _OPTICAL_STEP_EDGE_COLOR if label == "optical" else self._solid_edge_color_from_body(color)
                         silhouette_color = _OPTICAL_STEP_SILHOUETTE_COLOR if label == "optical" else self._solid_silhouette_edge_color()
