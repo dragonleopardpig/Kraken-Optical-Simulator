@@ -1803,8 +1803,15 @@ def main() -> int:
             and "_solid_silhouette_edge_color" in refresh
             and "if row_index in file_backed_rows:" in refresh
             and "continue" in refresh
-            and "line_width=5.0" in refresh
-            and "line_width=3.2" in refresh
+            # Glass elements (prisms + analytic lenses) share one edge
+            # palette and weight; legacy non-optical STEP solids keep the
+            # heavier 5.0/3.2 outline. Widths flow through named variables.
+            and "file_backed_silhouette_width = _GLASS_EDGE_SILHOUETTE_WIDTH" in refresh
+            and "file_backed_edge_width = _GLASS_EDGE_LINE_WIDTH" in refresh
+            and "file_backed_silhouette_width = 5.0" in refresh
+            and "file_backed_edge_width = 3.2" in refresh
+            and "line_width=file_backed_silhouette_width" in refresh
+            and "line_width=file_backed_edge_width" in refresh
             and "line_width=3.4" in legacy_open_3d,
         ),
         ("non-sequential scene bundles do not install YZ-only branch display overrides", 'not bool(trace_state.get("use_nonseq"))' in editor_build_scene_bundle and "_branch_output_display_path_overrides(rays)" in editor_build_scene_bundle),

@@ -1048,6 +1048,14 @@ class ThreeDSceneToolsMixin:
             row_transform = optical_solid_output_port_runtime_transform_override(system, self.rows, index)
             mesh = None
             advanced = row.advanced if isinstance(row.advanced, dict) else {}
+            # Trailing surface of an analytic-promoted lens whose
+            # front row owns the STEP body STL: skip entirely. The
+            # body mesh already includes this curved face; drawing
+            # KrakenOS's rotationally-symmetric analytic cap on top
+            # of a plano-cyl rectangular body would show a sphere
+            # poking through. Set by promote service.
+            if advanced.get("StepAnalyticBodyOmitMesh"):
+                continue
             file_backed_optical_solid = self._scene_graph_value_present(advanced.get("Solid_3d_stl"))
             if row.surface == "Mirror":
                 mesh = self._folded_preview_mirror_mesh_for_row(index, row, system=system)
@@ -1083,7 +1091,15 @@ class ThreeDSceneToolsMixin:
             mesh = ThreeDSceneToolsMixin._reference_mesh_with_row_diameter(mesh, row)
             surface = surface_descriptors[index]
             mesh_color = (0.10, 0.62, 0.72) if file_backed_optical_solid else Kraken3DInspector._surface_color(surface)
-            mesh_opacity = 0.30 if file_backed_optical_solid else (0.88 if row.surface == "Mirror" else 0.68)
+            # Default-opacity tuning: file-backed legacy STL bodies
+            # stay at 0.30 (their own glassy treatment lives in the
+            # scene-refresh clamp), mirrors near-opaque, all other
+            # Standard analytic caps drop to ~0.35 so the glassy
+            # Phong highlight reads as see-through glass rather
+            # than a painted disc. Object/Image planes are not
+            # caps; the reference-mesh fallback keeps them visible
+            # via their own paths.
+            mesh_opacity = 0.30 if file_backed_optical_solid else (0.88 if row.surface == "Mirror" else 0.35)
             mesh_items.append(
                 SurfaceMesh3D(
                     row_index=index,
@@ -1344,6 +1360,19 @@ class ThreeDSceneToolsMixin:
             if int(getattr(body, "n_points", 0)) == 0:
                 continue
             surface = surface_descriptors[row_index_int]
+            # Analytic-promoted STEP lens already shows its actual
+            # body mesh via StepAnalyticBodyStlPath (front row) and
+            # suppresses the trailing analytic cap. KrakenOS's
+            # auto-revolved BBB body would draw a rotational
+            # cylinder/torus over the rectangular STEP body, giving
+            # a ring-around-the-plate look on plano-cyl lenses.
+            # Render the BBB body at opacity 0 in that case: the
+            # downstream actor still exists (so _row_actor_map
+            # centroid queries -- e.g. Phase 6 of the harness --
+            # keep working) but it is visually invisible.
+            body_opacity = 0.18
+            if advanced.get("StepAnalyticBodyStlPath") or advanced.get("StepAnalyticBodyOmitMesh"):
+                body_opacity = 0.0
             mesh_items.append(
                 SurfaceMesh3D(
                     row_index=row_index_int,
@@ -1352,7 +1381,7 @@ class ThreeDSceneToolsMixin:
                     surface=surface,
                     mesh=body,
                     color=Kraken3DInspector._surface_color(surface),
-                    opacity=0.18,
+                    opacity=body_opacity,
                     is_stop=self._legacy_3d_is_stop_plane(row),
                     is_body=True,
                 )

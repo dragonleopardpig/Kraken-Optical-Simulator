@@ -4,11 +4,41 @@ from __future__ import annotations
 
 from pathlib import Path
 import tkinter as tk
+from tkinter import ttk
 from typing import Any
 
 import numpy as np
 
 from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABEL_SET
+
+
+def _parse_zemax_glass_sequence(path: Path) -> list[str]:
+    """Extract glass names from a Zemax ``.zmx`` sequence file.
+
+    The format is one block per ``SURF`` entry; a glass surface ships
+    a ``GLAS`` line whose first whitespace token is the catalog name
+    (``BK7``, ``N-BK7``, ``SF11``, ...). Air surfaces omit ``GLAS``
+    entirely. Returns the glass-name sequence in surface order; air
+    gaps are dropped so the result matches the analytic-fit ``rows -
+    1`` glass-sequence expectation (one glass per interior region).
+    """
+    try:
+        text = Path(path).read_text(errors="ignore")
+    except OSError:
+        return []
+    names: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.upper().startswith("GLAS"):
+            continue
+        tokens = stripped.split()
+        if len(tokens) < 2:
+            continue
+        name = tokens[1].strip()
+        if not name or name.upper() in {"AIR", "___BLANK___"}:
+            continue
+        names.append(name)
+    return names
 
 
 def _layout_module():
@@ -155,6 +185,14 @@ class StepOverlayImportService:
             self.status_var.set(f"Optical STEP imported: {path.name}. Carry and place it in Open 3D.")
         if refresh_open_3d:
             self._refresh_open_3d_views(step_label="optical")
+        # Offer auto-promote to analytic. Runs only when the surface
+        # fit cleanly recovers a front/back pair; otherwise the user
+        # keeps the STL body and can promote manually. The dialog
+        # carries Skip / Cancel so the existing CAD-solid workflow
+        # is never forced into analytic mode.
+        self._offer_auto_promote_step_to_analytic(
+            "optical", path, sidecars=sidecars, dialog_parent=dialog_parent
+        )
         return path
 
     def import_camera_step(
@@ -255,6 +293,156 @@ class StepOverlayImportService:
             "led": self.imported_led_step_path,
             "camera": self.imported_camera_step_path,
         }.get(label)
+
+    def _offer_auto_promote_step_to_analytic(
+        self,
+        label: str,
+        step_path: Path,
+        *,
+        sidecars: tuple[Path, ...] = (),
+        dialog_parent: tk.Misc | None = None,
+    ) -> None:
+        """Show a confirm dialog offering analytic promotion.
+
+        Runs the existing preview-fit pipeline; if the optical-pair
+        auto-detection succeeds the dialog displays the proposed
+        Rc / thickness / residual per surface plus a glass-sequence
+        entry (pre-filled from a Zemax sidecar if present). Promote
+        on confirm; on Skip the user keeps the STL body.
+        """
+        try:
+            preview = self.preview_imported_step_analytic_surfaces(label)
+        except Exception as exc:
+            self.append_debug(
+                f"Auto-promote preview unavailable for {label} STEP: {exc}"
+            )
+            return
+        if preview is None:
+            return
+        rows_preview = list(preview.get("rows") or [])
+        if not rows_preview:
+            return
+        required_glass_count = max(int(preview.get("required_glass_count", 1)), 1)
+        sidecar_glasses: list[str] = []
+        sidecar_source: Path | None = None
+        for candidate in sidecars:
+            if candidate.suffix.lower() != ".zmx":
+                continue
+            parsed = _parse_zemax_glass_sequence(candidate)
+            if parsed:
+                sidecar_glasses = parsed[:required_glass_count]
+                sidecar_source = candidate
+                break
+        default_glass_text = ", ".join(sidecar_glasses) if sidecar_glasses else "N-BK7"
+        choice = self._ask_analytic_promote_confirm(
+            label,
+            step_path,
+            preview,
+            default_glass_text=default_glass_text,
+            sidecar_source=sidecar_source,
+            dialog_parent=dialog_parent,
+        )
+        if choice is None:
+            return
+        try:
+            self.promote_imported_step_to_analytic_surfaces(
+                label,
+                glass_sequence=choice,
+                refresh_open_3d=True,
+            )
+        except Exception as exc:
+            self.append_debug(f"Auto-promote of {label} STEP failed: {exc}")
+            self.status_var.set(
+                f"Auto-promote failed: {exc}. STEP kept as CAD body; "
+                "use Faces... / Promote menu to retry."
+            )
+
+    def _ask_analytic_promote_confirm(
+        self,
+        label: str,
+        step_path: Path,
+        preview: dict[str, Any],
+        *,
+        default_glass_text: str,
+        sidecar_source: Path | None,
+        dialog_parent: tk.Misc | None,
+    ) -> str | None:
+        rows_preview = list(preview.get("rows") or [])
+        required_glass_count = max(int(preview.get("required_glass_count", 1)), 1)
+        parent = dialog_parent or self
+        dialog = tk.Toplevel(parent)
+        dialog.withdraw()
+        dialog.title(f"Auto-promote {label.upper()} STEP to analytic")
+        dialog.transient(parent)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        header_text = (
+            f"Imported STEP: {step_path.name}\n"
+            f"Detected {len(rows_preview)} surface(s); proposed analytic rows:"
+        )
+        ttk.Label(dialog, text=header_text, justify="left").grid(
+            row=0, column=0, columnspan=4, padx=12, pady=(12, 6), sticky="w"
+        )
+
+        cols = ("idx", "kind", "rc", "thickness", "residual")
+        tree = ttk.Treeview(dialog, columns=cols, show="headings", height=min(len(rows_preview), 6))
+        headers = (("idx", "#"), ("kind", "Fit"), ("rc", "Rc [mm]"), ("thickness", "T [mm]"), ("residual", "Res [µm]"))
+        widths = {"idx": 36, "kind": 80, "rc": 110, "thickness": 100, "residual": 90}
+        for col_id, col_label in headers:
+            tree.heading(col_id, text=col_label)
+            tree.column(col_id, width=widths.get(col_id, 80), anchor="center", stretch=False)
+        for i, row in enumerate(rows_preview, start=1):
+            rc = float(row.get("rc_mm", 0.0))
+            kind = str(row.get("kind", ""))
+            thickness = float(row.get("thickness_mm", 0.0))
+            residual_um = float(row.get("residual_mm", 0.0)) * 1000.0
+            rc_text = "plano" if abs(rc) < 1e-9 and kind == "plane" else f"{rc:+.3g}"
+            tree.insert(
+                "",
+                "end",
+                values=(i, kind, rc_text, f"{thickness:.3g}", f"{residual_um:.2g}"),
+            )
+        tree.grid(row=1, column=0, columnspan=4, padx=12, pady=(0, 8), sticky="ew")
+
+        glass_label_text = f"Glass sequence ({required_glass_count} interior region(s), comma-separated):"
+        if sidecar_source is not None:
+            glass_label_text += f"\nPre-filled from sidecar {sidecar_source.name}."
+        ttk.Label(dialog, text=glass_label_text, justify="left").grid(
+            row=2, column=0, columnspan=4, padx=12, pady=(4, 4), sticky="w"
+        )
+        glass_var = tk.StringVar(value=default_glass_text)
+        glass_entry = ttk.Entry(dialog, textvariable=glass_var, width=48)
+        glass_entry.grid(row=3, column=0, columnspan=4, padx=12, pady=(0, 12), sticky="ew")
+
+        result: dict[str, str] = {}
+
+        def accept() -> None:
+            text = glass_var.get().strip()
+            if not text:
+                self.status_var.set("Auto-promote: glass sequence is required.")
+                return
+            result["glass"] = text
+            dialog.destroy()
+
+        def skip() -> None:
+            dialog.destroy()
+
+        ttk.Button(dialog, text="Promote", command=accept).grid(
+            row=4, column=2, padx=(4, 4), pady=(0, 12), sticky="e"
+        )
+        ttk.Button(dialog, text="Skip", command=skip).grid(
+            row=4, column=3, padx=(4, 12), pady=(0, 12), sticky="w"
+        )
+        dialog.bind("<Return>", lambda _event: accept())
+        dialog.bind("<Escape>", lambda _event: skip())
+        try:
+            self._show_centered_dialog(dialog)
+        except Exception:
+            dialog.deiconify()
+        glass_entry.focus_set()
+        self.wait_window(dialog)
+        return result.get("glass")
 
     def clear_imported_step_overlay_state(self, label: str) -> None:
         label = str(label).strip().lower()

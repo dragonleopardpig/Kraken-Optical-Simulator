@@ -3468,6 +3468,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         wireframe: bool = False,
         flat_shading: bool = False,
         backface_culling: bool = True,
+        glassy: bool = False,
     ):
         if self._renderer is None or vtkActor is None or vtkDataSetMapper is None:
             return None
@@ -3491,6 +3492,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 prop.SetSpecular(0.0)
                 prop.SetDiffuse(0.15)
                 prop.SetAmbient(0.85)
+            elif glassy:
+                # Glassy translucent: Phong with a strong narrow
+                # highlight for the wet-glass sheen, plus enough
+                # ambient/diffuse that thick curved bodies (a sphere,
+                # a revolved lens drum) stay bright glass instead of
+                # turning into a dark blob on their shadowed side.
+                # Caller picks an opacity in the 0.25-0.45 range; this
+                # routine only shapes how the visible fraction is lit.
+                prop.SetInterpolationToPhong()
+                prop.SetAmbient(0.30)
+                prop.SetDiffuse(0.82)
+                prop.SetSpecular(0.85)
+                prop.SetSpecularPower(48.0)
+                prop.SetSpecularColor(1.0, 1.0, 1.0)
             else:
                 prop.SetInterpolationToPhong()
                 prop.SetSpecular(0.18)
@@ -3557,6 +3572,78 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self._register_thickness_dimension_actor(actor, int(pick_thickness_dimension))
         self._renderer.AddActor(actor)
         return actor
+
+    @staticmethod
+    def _lens_rim_circle_polyline(mesh, *, segments: int = 144):
+        """Return the geometric rim circle of a *circular* lens body.
+
+        A smooth revolved lens body (a sphere, a doublet drum) has no
+        sharp feature edges, so feature-edge extraction leaves it without
+        an outline. Its true edge is the rim: a real 3-D circle at the
+        widest cross-section. Drawing that circle as geometry gives a
+        view-independent outline that never disappears as the user orbits
+        (unlike a view-dependent silhouette). Returns ``None`` when the
+        cross-section is not actually circular (e.g. a square plano-cyl
+        plate), so those keep their feature-edge outline instead.
+        """
+        if pv is None or mesh is None:
+            return None
+        info = Kraken3DInspector._mesh_round_lens_axis(mesh)
+        if info is None:
+            return None
+        center, axis, points = info
+        try:
+            center = np.asarray(center, dtype=float).reshape(3)
+            axis = np.asarray(axis, dtype=float).reshape(3)
+            points = np.asarray(points, dtype=float).reshape(-1, 3)
+        except Exception:
+            return None
+        axis_norm = float(np.linalg.norm(axis))
+        if axis_norm <= 1e-12 or points.shape[0] < 8:
+            return None
+        axis = axis / axis_norm
+        centered = points - center
+        proj = centered @ axis
+        radial_vecs = centered - np.outer(proj, axis)
+        radial = np.linalg.norm(radial_vecs, axis=1)
+        rmax = float(np.percentile(radial, 97))
+        if rmax <= 1e-9:
+            return None
+        outer = radial >= 0.8 * rmax
+        if not np.any(outer):
+            return None
+        ring_r = radial[outer]
+        ring_mean = float(np.mean(ring_r))
+        if ring_mean <= 1e-9:
+            return None
+        # Circular cross-section => the outer ring radius is nearly
+        # constant. A square plate's outer ring runs from side to corner
+        # (ratio ~sqrt(2)), so its spread is large and we bail out.
+        if float(np.std(ring_r) / ring_mean) > 0.045:
+            return None
+        radius = ring_mean
+        rim_axial = float(np.mean(proj[outer]))
+        rim_center = center + axis * rim_axial
+        ref = np.array([1.0, 0.0, 0.0]) if abs(float(axis[0])) < 0.9 else np.array([0.0, 1.0, 0.0])
+        u = np.cross(axis, ref)
+        u_norm = float(np.linalg.norm(u))
+        if u_norm <= 1e-12:
+            return None
+        u = u / u_norm
+        v = np.cross(axis, u)
+        theta = np.linspace(0.0, 2.0 * np.pi, int(segments), endpoint=False)
+        circle = (
+            rim_center[None, :]
+            + radius * (np.cos(theta)[:, None] * u[None, :] + np.sin(theta)[:, None] * v[None, :])
+        )
+        lines = np.empty(int(segments) + 2, dtype=np.int64)
+        lines[0] = int(segments) + 1
+        lines[1 : 1 + int(segments)] = np.arange(int(segments), dtype=np.int64)
+        lines[-1] = 0
+        try:
+            return pv.PolyData(circle, lines=lines)
+        except Exception:
+            return None
 
     def _register_thickness_dimension_actor(self, actor, row_index: int) -> None:
         actor_key = self._actor_key(actor)

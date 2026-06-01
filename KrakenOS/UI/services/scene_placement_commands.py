@@ -2270,6 +2270,7 @@ class ScenePlacementMixin:
         clear_overlay: bool = True,
         refresh_open_3d: bool = True,
         chain_exit_direction: tuple[float, float, float] | None = None,
+        flip_optical_axis: bool = False,
     ) -> dict[str, object] | None:
         # Cemented doublets/triplets: route to the OCC native path
         # when the user signals multi-glass intent. Detection uses
@@ -2319,6 +2320,7 @@ class ScenePlacementMixin:
             clear_overlay=clear_overlay,
             refresh_open_3d=refresh_open_3d,
             chain_exit_direction=chain_exit_direction,
+            flip_optical_axis=flip_optical_axis,
         )
 
 

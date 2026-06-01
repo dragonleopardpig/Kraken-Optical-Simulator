@@ -1141,6 +1141,8 @@ class StepOverlayPromotionService:
         self,
         label: str,
         source_path: Path,
+        *,
+        optical_axis: tuple[float, float, float] | None = None,
     ) -> str | None:
         """Save the imported overlay's mesh to the STEP STL cache.
 
@@ -1151,6 +1153,17 @@ class StepOverlayPromotionService:
         so the analytic-promoted lens body shows its ACTUAL STEP
         geometry instead of KrakenOS's rotationally-symmetric
         analytic mesh.
+
+        ``optical_axis`` is the body's optical-axis direction in the
+        STEP's native frame (typically ``(0, 0, 1)`` for spherical
+        lenses where the front-face normal already points along Z,
+        but some catalogs - e.g. Edmund 34754 plano-cyl - use Y as
+        the optical axis). When supplied, the cached STL is rotated
+        so its local +Z matches this axis. The renderer applies the
+        row's tilt (which aligns the row's local +Z with the cascade
+        exit direction), so failing to normalise here would leave
+        the lens body 90 degrees off-axis in the 3-D view while the
+        analytic refraction kept working correctly.
         """
         mesh = self._transformed_imported_step_mesh_for_label(label)
         if mesh is None or int(getattr(mesh, "n_points", 0) or 0) <= 0:
@@ -1167,15 +1180,51 @@ class StepOverlayPromotionService:
             return None
         if not np.all(np.isfinite(points[:, :3])):
             return None
+        local_points = points[:, :3].astype(float)
+        # Re-orient so the body's optical axis lands on +Z. Without
+        # this, STEP files whose native optical axis is +Y or +X show
+        # up rotated 90 degrees in the 3-D view (the analytic refraction
+        # math handles the rotation correctly because it carries an
+        # explicit ``source_axis``; the body mesh just rides on the
+        # row's tilt).
+        if optical_axis is not None:
+            try:
+                axis_vec = np.asarray(optical_axis, dtype=float).reshape(3)
+                axis_norm = float(np.linalg.norm(axis_vec))
+                if axis_norm > 1e-9:
+                    axis_vec = axis_vec / axis_norm
+                    z_world = np.array([0.0, 0.0, 1.0])
+                    dot = float(np.clip(np.dot(axis_vec, z_world), -1.0, 1.0))
+                    if abs(dot - 1.0) > 1e-6:
+                        if abs(dot + 1.0) < 1e-6:
+                            # Anti-parallel: 180-deg rotation around X.
+                            rot = np.array(
+                                [[1.0, 0.0, 0.0],
+                                 [0.0, -1.0, 0.0],
+                                 [0.0, 0.0, -1.0]]
+                            )
+                        else:
+                            v = np.cross(axis_vec, z_world)
+                            s = float(np.linalg.norm(v))
+                            c = dot
+                            vx = np.array(
+                                [[0.0, -v[2], v[1]],
+                                 [v[2], 0.0, -v[0]],
+                                 [-v[1], v[0], 0.0]]
+                            )
+                            rot = np.eye(3) + vx + vx @ vx * ((1.0 - c) / (s * s))
+                        local_points = local_points @ rot.T
+            except Exception:
+                pass
         # Centre on the body centroid so the cached STL is BODY-LOCAL.
         # The render branch then translates it by the row's desp + the
         # row's tilt, matching the analytic-row placement. This is the
         # same conventions used by the existing optical-solid path.
-        bounds_min = np.min(points[:, :3], axis=0)
-        bounds_max = np.max(points[:, :3], axis=0)
+        bounds_min = np.min(local_points, axis=0)
+        bounds_max = np.max(local_points, axis=0)
         center_world = 0.5 * (bounds_min + bounds_max)
         local_mesh = mesh.copy(deep=True)
-        local_mesh.points = points[:, :3] - center_world[:3]
+        local_mesh.points = local_points - center_world[:3]
         digest = hashlib.sha1()
         digest.update(str(source_path.resolve()).encode("utf-8", errors="ignore"))
         digest.update(str(label).encode("utf-8"))
@@ -1191,6 +1240,8 @@ class StepOverlayPromotionService:
     def preview_imported_step_analytic_surfaces(
         self,
         label: str,
+        *,
+        flip_optical_axis: bool = False,
     ) -> dict[str, Any] | None:
         """Return the fitted analytic-surface plan without modifying the editor.
 
@@ -1198,6 +1249,13 @@ class StepOverlayPromotionService:
         promotion: show what was detected, ask for the glass sequence.
         Returns ``None`` when the overlay is missing or the auto-
         assignment heuristic can't find a clean front/back pair.
+
+        ``flip_optical_axis`` negates the auto-detected optical-axis
+        direction before sorting faces by axial position. Use it
+        when the catalog STEP has its curved face on the side that
+        ought to be the INPUT but the auto-detect orders it as
+        back -- e.g. Edmund 34754 plano-cyl, where the user wants
+        curved-in / plano-out for better aberration.
         """
         label = str(label).strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET:
@@ -1257,6 +1315,8 @@ class StepOverlayPromotionService:
             optical_axis = (-first_normal).tolist()
         except Exception:
             optical_axis = [0.0, 0.0, 1.0]
+        if flip_optical_axis:
+            optical_axis = [-float(v) for v in optical_axis]
         fit = fit_step_overlay_analytic_surfaces(
             mesh,
             transmit_faces,
@@ -1313,6 +1373,11 @@ class StepOverlayPromotionService:
             "rows": rows_preview,
             "required_glass_count": int(required_glass_count),
             "source_step_path": str(self._step_path_for_label(label) or ""),
+            # The detected optical axis in the STEP's native frame.
+            # Body-mesh caching needs this so it can rotate the STL
+            # into a +Z-axis frame; otherwise lenses whose native
+            # axis is Y or X show up 90 degrees off in the 3-D view.
+            "optical_axis": tuple(float(v) for v in optical_axis),
         }
 
     def promote_imported_step_to_analytic_surfaces(
@@ -1324,6 +1389,7 @@ class StepOverlayPromotionService:
         clear_overlay: bool = True,
         refresh_open_3d: bool = True,
         chain_exit_direction: tuple[float, float, float] | None = None,
+        flip_optical_axis: bool = False,
     ) -> dict[str, Any] | None:
         """Promote a STEP overlay into analytic Standard rows fit from geometry.
 
@@ -1351,7 +1417,9 @@ class StepOverlayPromotionService:
         if source_path is None:
             self.status_var.set(f"No {label} STEP is imported.")
             return None
-        preview = self.preview_imported_step_analytic_surfaces(label)
+        preview = self.preview_imported_step_analytic_surfaces(
+            label, flip_optical_axis=flip_optical_axis
+        )
         if preview is None:
             raise RuntimeError(
                 "Analytic STEP promotion: could not auto-detect a front/back "
@@ -1371,7 +1439,10 @@ class StepOverlayPromotionService:
         # write Solid_3d_stl, so the surface still uses Rc / k /
         # Cylinder_Rxy_Ratio for refraction.
         try:
-            body_stl_path = self._cache_promoted_step_body_mesh(label, source_path)
+            preview_optical_axis = preview.get("optical_axis") if isinstance(preview, dict) else None
+            body_stl_path = self._cache_promoted_step_body_mesh(
+                label, source_path, optical_axis=preview_optical_axis
+            )
         except Exception as exc:
             self.append_debug(f"Analytic body mesh cache failed for {label}: {exc}")
             body_stl_path = None
@@ -1521,6 +1592,17 @@ class StepOverlayPromotionService:
             # this key (only the renderer reads it).
             if body_stl_path and index == 0:
                 row.advanced["StepAnalyticBodyStlPath"] = body_stl_path
+            # Trailing rows of a promoted lens whose front row carries
+            # the body STL must NOT also draw their own analytic mesh.
+            # KrakenOS's Standard mesh ignores Cylinder_Rxy_Ratio and
+            # always renders a rotationally-symmetric sphere section,
+            # which for plano-cyl/torus surfaces pokes through the
+            # rectangular STEP body. This flag tells the 3-D
+            # renderer to skip the analytic cap entirely; the
+            # front-row body STL already includes the curved back
+            # face. Trace ignores this key.
+            if body_stl_path and index > 0:
+                row.advanced["StepAnalyticBodyOmitMesh"] = True
             row.advanced["StepAnalyticPromotion"] = {
                 "step_label": label,
                 "source_step_path": str(source_path.resolve()),

@@ -9,8 +9,16 @@ import numpy as np
 
 
 _OPTICAL_STEP_BODY_COLOR = (0.10, 0.62, 0.72)
-_OPTICAL_STEP_EDGE_COLOR = (0.02, 0.48, 0.68)
-_OPTICAL_STEP_SILHOUETTE_COLOR = (0.01, 0.26, 0.38)
+# Shared "glass" edge palette: deep-teal tones derived from the analytic
+# glass body colour, used for BOTH imported file-backed STEP solids (the
+# prisms) and analytic optic surfaces so every glass element outlines with
+# the same colour and weight. The silhouette tone is the deepest; the edge
+# tone is the brighter highlight line drawn on top.
+_OPTICAL_STEP_EDGE_COLOR = (0.026, 0.512, 0.528)
+_OPTICAL_STEP_SILHOUETTE_COLOR = (0.014, 0.279, 0.288)
+# Shared outline weights (line widths) for glass elements.
+_GLASS_EDGE_SILHOUETTE_WIDTH = 2.8
+_GLASS_EDGE_LINE_WIDTH = 2.0
 
 
 def _layout_module():
@@ -272,6 +280,33 @@ class Open3DSceneRefreshService:
             mesh_color = _OPTICAL_STEP_BODY_COLOR if row_step_label == "optical" and row_index in file_backed_rows else tuple(mesh_item.color)
             mesh_opacity = float(getattr(mesh_item, "opacity", 1.0))
             row_surface = str(getattr(getattr(mesh_item, "row", None), "surface", "") or "")
+            row_surface_str = row_surface.lower()
+            row_kind = str(getattr(mesh_item, "kind", "") or "").lower()
+            row_is_body = bool(getattr(mesh_item, "is_body", False))
+            row_advanced_attrs = getattr(getattr(mesh_item, "row", None), "advanced", None)
+            row_advanced_attrs = row_advanced_attrs if isinstance(row_advanced_attrs, dict) else {}
+            # Analytic STEP-promoted lens: the cached STEP body STL is the
+            # real shape (rectangular plano-cyl plate, true sphere, etc.).
+            # KrakenOS's auto-revolved BBB drum is redundant and would draw
+            # a round shell/ring around it -- keep that drum invisible.
+            analytic_promoted_step = bool(
+                row_advanced_attrs.get("StepAnalyticBodyStlPath")
+                or row_advanced_attrs.get("StepAnalyticBodyOmitMesh")
+                or isinstance(row_advanced_attrs.get("StepAnalyticPromotion"), dict)
+            )
+            # Any analytic optic surface/body (Standard / thin-lens) that is
+            # not a UI/reference/file-backed surface. These render as glassy
+            # translucent glass like the file-backed STEP prisms -- never as
+            # an opaque disc + wireframe overlay.
+            analytic_optic_surface = (
+                row_surface not in {"Object", "Image"}
+                and row_surface_str not in {"aperture", "grating", "mirror"}
+                and row_index not in file_backed_rows
+                and (row_kind.startswith("standard") or row_kind.startswith("thin_lens"))
+            )
+            analytic_hidden_drum = analytic_promoted_step and row_is_body
+            if analytic_hidden_drum:
+                mesh_opacity = 0.0
             if row_index in file_backed_rows:
                 mesh_opacity = min(max(mesh_opacity, 0.14), 0.28)
                 if row_step_label == "optical":
@@ -279,9 +314,15 @@ class Open3DSceneRefreshService:
             if row_step_label == "optical":
                 file_backed_edge_color = _OPTICAL_STEP_EDGE_COLOR
                 file_backed_silhouette_color = _OPTICAL_STEP_SILHOUETTE_COLOR
+                # Imported optical STEP solids (the prisms) share the glass
+                # edge colour AND weight with the analytic lenses.
+                file_backed_silhouette_width = _GLASS_EDGE_SILHOUETTE_WIDTH
+                file_backed_edge_width = _GLASS_EDGE_LINE_WIDTH
             else:
                 file_backed_edge_color = self._solid_edge_color_from_body(getattr(mesh_item, "color", (0.04, 0.06, 0.10)))
                 file_backed_silhouette_color = self._solid_silhouette_edge_color()
+                file_backed_silhouette_width = 5.0
+                file_backed_edge_width = 3.2
             if show_launch_reference_surface and not show_reference_surfaces and row_surface == "Object":
                 mesh_opacity = min(mesh_opacity, 0.18)
             row_round_lens_like = False
@@ -299,11 +340,28 @@ class Open3DSceneRefreshService:
                     mesh_opacity = min(max(mesh_opacity, 0.14), 0.24)
                     if row_step_label == "optical":
                         mesh_opacity = min(max(mesh_opacity, 0.30), 0.36)
+                elif analytic_hidden_drum:
+                    # Redundant auto-revolved drum on a promoted STEP lens:
+                    # stay invisible even with rays on (its actor is kept
+                    # only for picking / centroid queries).
+                    mesh_opacity = 0.0
+                elif analytic_optic_surface:
+                    # Glassy translucent lens body, matching the look of the
+                    # file-backed STEP prisms. No opaque fill, no wireframe
+                    # overlay -- the feature edges below outline the shape.
+                    mesh_opacity = min(max(mesh_opacity, 0.26), 0.40)
                 else:
                     mesh_opacity = max(mesh_opacity, 0.86)
                     wire_color = mesh_color
                     wire_width = 1.35
                     ray_surface_wire_overlays.append((mesh, wire_color, wire_width, row_index))
+            # Glassy lens look for analytic lens surfaces. Applies to
+            # Standard analytic caps, STEP-promoted lens body STLs
+            # (StepAnalyticBodyStlPath) and ordinary revolved lens
+            # bodies (e.g. the achromat). Skip object/image reference
+            # planes, mirrors, apertures/grating UI surfaces, the
+            # hidden auto-revolved STEP drum, and anything invisible.
+            glassy_lens = analytic_optic_surface and mesh_opacity > 0.0
             body_actor = self._add_mesh_actor(
                 mesh,
                 color=mesh_color,
@@ -312,12 +370,87 @@ class Open3DSceneRefreshService:
                 pick_step_label=transient_step_label,
                 follow_step_label=transient_step_label,
                 backface_culling=False,
+                glassy=glassy_lens,
             )
             if body_actor is not None and row_index in file_backed_rows:
                 try:
                     body_actor._kraken_file_backed_row_body = bool(mesh_item.is_body)
                 except Exception:
                     pass
+            # Promoted-STEP analytic body owns multiple surface rows
+            # (front + trailing). Trailing rows skip their own mesh
+            # (StepAnalyticBodyOmitMesh) so the body STL doesn't get
+            # double-drawn; register this single body actor under
+            # each trailing row's _row_actor_map entry so picks,
+            # centroid queries and selection still resolve.
+            if body_actor is not None and isinstance(getattr(mesh_item, "row", None), object):
+                try:
+                    row_advanced = getattr(mesh_item.row, "advanced", None)
+                    promotion = row_advanced.get("StepAnalyticPromotion") if isinstance(row_advanced, dict) else None
+                    if (
+                        isinstance(promotion, dict)
+                        and row_advanced.get("StepAnalyticBodyStlPath")
+                        and int(promotion.get("row_offset", -1)) == 0
+                    ):
+                        row_count = int(promotion.get("row_count", 1) or 1)
+                        actor_key = self._actor_key(body_actor)
+                        if actor_key is not None and row_count > 1:
+                            for trailing_offset in range(1, row_count):
+                                trailing_row = int(mesh_item.row_index) + trailing_offset
+                                self._row_actor_map.setdefault(trailing_row, []).append(actor_key)
+                except Exception:
+                    pass
+            # Analytic optic surfaces / bodies (Standard caps, STEP-
+            # promoted body plates, revolved lens drums) get a deep
+            # body-tone outline instead of a black wireframe: sharp
+            # internal feature edges plus a live view-silhouette so
+            # curved bodies (the achromat drum, the plano-cyl arc) read
+            # as a continuous glass rim rather than a broken outline.
+            if analytic_optic_surface and mesh_opacity > 0.0:
+                # Identical glass-edge palette + weights as the file-backed
+                # optical prisms (shared module constants), so lenses and
+                # prisms outline the same way.
+                outline_tone = _OPTICAL_STEP_SILHOUETTE_COLOR
+                edge_tone = _OPTICAL_STEP_EDGE_COLOR
+                # View-independent outline. A truly circular lens body (a
+                # sphere, a revolved doublet drum) has no sharp feature
+                # edges, so its rim is drawn as a real 3-D circle -- it
+                # never disappears when the view tilts (a view-dependent
+                # silhouette did). A square plano-cyl plate returns no
+                # circle and falls back to feature edges below.
+                rim = None
+                try:
+                    rim = self._lens_rim_circle_polyline(mesh)
+                except Exception:
+                    rim = None
+                if rim is not None and int(getattr(rim, "n_points", 0)) > 0:
+                    feature_angle = 75.0
+                    boundary_edges = False
+                    self._add_mesh_actor(rim, color=outline_tone, opacity=1.0, line_width=_GLASS_EDGE_SILHOUETTE_WIDTH, track_row_index=row_index, follow_step_label=transient_step_label)
+                    self._add_mesh_actor(rim, color=edge_tone, opacity=1.0, line_width=_GLASS_EDGE_LINE_WIDTH, track_row_index=row_index, follow_step_label=transient_step_label)
+                    if ray_visibility_requested:
+                        ray_surface_edge_overlays.append((rim, outline_tone, _GLASS_EDGE_SILHOUETTE_WIDTH + 0.6, row_index))
+                        ray_surface_edge_overlays.append((rim, edge_tone, _GLASS_EDGE_LINE_WIDTH + 0.4, row_index))
+                else:
+                    feature_angle = 24.0
+                    boundary_edges = True
+                # Sharp internal / plate edges (the plano-cyl rectangle and
+                # its curved-face arcs). For a circular lens this adds
+                # little; for the plano-cyl plate it is the whole outline.
+                try:
+                    edges = self._display_feature_edges(
+                        mesh,
+                        feature_angle=feature_angle,
+                        boundary_edges=boundary_edges,
+                    )
+                    if edges is not None and int(getattr(edges, "n_points", 0)) > 0:
+                        self._add_mesh_actor(edges, color=edge_tone, opacity=1.0, line_width=_GLASS_EDGE_LINE_WIDTH, track_row_index=row_index, follow_step_label=transient_step_label)
+                        if ray_visibility_requested:
+                            ray_surface_edge_overlays.append((edges, edge_tone, _GLASS_EDGE_LINE_WIDTH + 0.4, row_index))
+                except Exception:
+                    pass
+                drew_surfaces += 1
+                continue
             if not mesh_item.is_body:
                 if row_index in file_backed_rows:
                     try:
@@ -327,11 +460,11 @@ class Open3DSceneRefreshService:
                             boundary_edges=row_edge_boundary_edges,
                         )
                         if edges is not None and int(getattr(edges, "n_points", 0)) > 0:
-                            self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0, track_row_index=row_index, follow_step_label=transient_step_label)
-                            self._add_mesh_actor(edges, color=file_backed_edge_color, opacity=1.0, line_width=3.2, track_row_index=row_index, follow_step_label=transient_step_label)
+                            self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=file_backed_silhouette_width, track_row_index=row_index, follow_step_label=transient_step_label)
+                            self._add_mesh_actor(edges, color=file_backed_edge_color, opacity=1.0, line_width=file_backed_edge_width, track_row_index=row_index, follow_step_label=transient_step_label)
                             if ray_visibility_requested:
-                                ray_surface_edge_overlays.append((edges, file_backed_silhouette_color, 5.8, row_index))
-                                ray_surface_edge_overlays.append((edges, file_backed_edge_color, 3.8, row_index))
+                                ray_surface_edge_overlays.append((edges, file_backed_silhouette_color, file_backed_silhouette_width + 0.8, row_index))
+                                ray_surface_edge_overlays.append((edges, file_backed_edge_color, file_backed_edge_width + 0.6, row_index))
                     except Exception:
                         pass
                     drew_surfaces += 1
@@ -378,10 +511,10 @@ class Open3DSceneRefreshService:
                     )
                     if int(getattr(edges, "n_points", 0)) > 0:
                         if ray_visibility_requested:
-                            ray_surface_edge_overlays.append((edges, file_backed_silhouette_color, 5.8, row_index))
-                            ray_surface_edge_overlays.append((edges, file_backed_edge_color, 3.8, row_index))
-                        self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0, track_row_index=row_index, follow_step_label=transient_step_label)
-                        self._add_mesh_actor(edges, color=file_backed_edge_color, opacity=1.0, line_width=3.2, track_row_index=row_index, follow_step_label=transient_step_label)
+                            ray_surface_edge_overlays.append((edges, file_backed_silhouette_color, file_backed_silhouette_width + 0.8, row_index))
+                            ray_surface_edge_overlays.append((edges, file_backed_edge_color, file_backed_edge_width + 0.6, row_index))
+                        self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=file_backed_silhouette_width, track_row_index=row_index, follow_step_label=transient_step_label)
+                        self._add_mesh_actor(edges, color=file_backed_edge_color, opacity=1.0, line_width=file_backed_edge_width, track_row_index=row_index, follow_step_label=transient_step_label)
                 except Exception:
                     pass
             drew_surfaces += 1

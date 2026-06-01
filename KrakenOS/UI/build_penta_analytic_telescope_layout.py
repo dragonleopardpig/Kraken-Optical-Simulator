@@ -182,6 +182,13 @@ LENS_SPECS: list[dict[str, Any]] = [
         "name": "Cylindrical f=+50 mm (N-BK7, plano-cyl)",
         "step": CYL_STEP,
         "glass": "N-BK7",
+        # Edmund 34754 STEP's auto-assigned face order gives front=
+        # plano, back=curve. For most plano-cyl deployments the
+        # curved face should be the INPUT (better spherical
+        # aberration, easier collimation). Negate the auto-detected
+        # optical-axis direction so the axial-position sort picks
+        # the curved face first.
+        "flip_optical_axis": True,
         "offset_along_exit_mm": (
             PHASE1_CLEARANCE_FROM_PRISM_MM
             + BALL_LENS_GAP_MM
@@ -351,6 +358,7 @@ def _build_layout(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> dict
                 clear_overlay=True,
                 refresh_open_3d=False,
                 chain_exit_direction=chain_exit,
+                flip_optical_axis=bool(spec.get("flip_optical_axis", False)),
             )
         except Exception as exc:
             print(f"WARN: {spec['name']}: promote raised {exc}; skipping", file=sys.stderr)
