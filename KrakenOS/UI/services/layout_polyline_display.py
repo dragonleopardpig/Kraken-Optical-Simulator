@@ -9,6 +9,7 @@ main window class smaller without changing trace or scene state ownership.
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -986,101 +987,206 @@ class LayoutPolylineDisplayMixin:
             self.append_debug(f"STEP CAD display proxy skipped for {label}: {exc}")
             return mesh
 
+    @staticmethod
+    def _step_overlay_stat_key(path) -> tuple:
+        """Stable identity for a STEP file: resolved path + mtime + size."""
+        try:
+            resolved = Path(path).expanduser()
+            st = resolved.stat()
+            return (str(resolved), int(st.st_mtime_ns), int(st.st_size))
+        except Exception:
+            return (str(path), 0, 0)
+
+    def _display_overlay_rebuild_suppressed(self) -> bool:
+        """While a transient analysis sweep is running, heavy display-only
+        STEP CAD overlays (camera body, vendor lens housing) are served
+        from cache instead of being re-transformed every step."""
+        return bool(self.__dict__.get("_suppress_display_step_overlay_rebuild", False))
+
+    @contextmanager
+    def _suppress_display_step_overlay_rebuilds(self):
+        previous = bool(self.__dict__.get("_suppress_display_step_overlay_rebuild", False))
+        self.__dict__["_suppress_display_step_overlay_rebuild"] = True
+        try:
+            yield
+        finally:
+            self.__dict__["_suppress_display_step_overlay_rebuild"] = previous
+
+    def _cached_transformed_step_overlay(self, label, signature, builder):
+        """Memoize a transformed display STEP overlay mesh.
+
+        The heavy non-optical CAD overlays (e.g. a 113k-cell camera body)
+        were re-transformed and re-proxied at every call site -- 3D
+        refresh, 2D projection, placement, trace, step-overlay refresh --
+        so a single ``Refresh`` or focus diagnostic re-transformed the
+        full mesh many times. Cache the transformed result keyed on every
+        input that affects it (file identity, pose, design-driven datum),
+        so unchanged state is reused and only a genuine change rebuilds.
+        ``None`` results are never cached, so an overlay that was not ready
+        during STEP-cache warm-up still appears once the cache is warm.
+        """
+        cache = self.__dict__.get("_transformed_step_overlay_cache")
+        if cache is None:
+            cache = {}
+            self.__dict__["_transformed_step_overlay_cache"] = cache
+        entry = cache.get(label)
+        if entry is not None:
+            cached_signature, cached_mesh = entry
+            if cached_signature == signature or self._display_overlay_rebuild_suppressed():
+                return cached_mesh
+        mesh = builder()
+        if mesh is not None:
+            cache[label] = (signature, mesh)
+        return mesh
+
     def _transformed_imported_lens_step_mesh(self):
         if self.imported_lens_step_path is None:
             return None
-        allow_slow_import = not self._open3d_step_cache_warmup_active()
-        mesh = self._load_step_mesh(
-            self.imported_lens_step_path,
-            largest_component=bool(getattr(self, "lens_step_largest_component_only", True)),
-            allow_slow_import=allow_slow_import,
+        largest = bool(getattr(self, "lens_step_largest_component_only", True))
+        signature = (
+            self._step_overlay_stat_key(self.imported_lens_step_path),
+            largest,
+            round(float(self._lens_front_datum_z()), 6),
+            round(float(getattr(self, "lens_step_rotation_z_deg", 0.0)), 6),
+            round(float(getattr(self, "lens_step_rotation_x_deg", 0.0)), 6),
+            round(float(getattr(self, "lens_step_rotation_y_deg", 0.0)), 6),
+            tuple(round(float(v), 6) for v in self._step_axis_offset_xy("lens")),
+            tuple(round(float(v), 6) for v in self._step_placement_offset_xyz("lens")),
         )
-        if mesh is None:
-            return None
-        cylinder_axis = self._step_primary_cylinder_axis(self.imported_lens_step_path)
-        return self._cad_mesh_aligned_to_optical_axis(
-            mesh,
-            source_axis=cylinder_axis if cylinder_axis is not None else "pca0",
-            front_face="max",
-            target_front_z=self._lens_front_datum_z(),
-            label="Lens STEP",
-            roll_deg=float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
-            x_rotation_deg=float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
-            y_rotation_deg=float(getattr(self, "lens_step_rotation_y_deg", 0.0)),
-            axis_offset_xy=self._step_axis_offset_xy("lens"),
-            placement_offset_xyz=self._step_placement_offset_xyz("lens"),
-        )
+
+        def build():
+            allow_slow_import = not self._open3d_step_cache_warmup_active()
+            mesh = self._load_step_mesh(
+                self.imported_lens_step_path,
+                largest_component=largest,
+                allow_slow_import=allow_slow_import,
+            )
+            if mesh is None:
+                return None
+            cylinder_axis = self._step_primary_cylinder_axis(self.imported_lens_step_path)
+            return self._cad_mesh_aligned_to_optical_axis(
+                mesh,
+                source_axis=cylinder_axis if cylinder_axis is not None else "pca0",
+                front_face="max",
+                target_front_z=self._lens_front_datum_z(),
+                label="Lens STEP",
+                roll_deg=float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
+                x_rotation_deg=float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
+                y_rotation_deg=float(getattr(self, "lens_step_rotation_y_deg", 0.0)),
+                axis_offset_xy=self._step_axis_offset_xy("lens"),
+                placement_offset_xyz=self._step_placement_offset_xyz("lens"),
+            )
+
+        return self._cached_transformed_step_overlay("lens", signature, build)
 
     def _transformed_imported_optical_step_mesh(self):
         if self.imported_optical_step_path is None:
             return None
-        mesh = self._load_step_mesh(
-            self.imported_optical_step_path,
-            largest_component=False,
-            allow_slow_import=not self._open3d_step_cache_warmup_active(),
+        signature = (
+            self._step_overlay_stat_key(self.imported_optical_step_path),
+            round(float(getattr(self, "optical_step_rotation_z_deg", 0.0)), 6),
+            round(float(getattr(self, "optical_step_rotation_x_deg", 0.0)), 6),
+            round(float(getattr(self, "optical_step_rotation_y_deg", 0.0)), 6),
+            tuple(round(float(v), 6) for v in self._step_axis_offset_xy("optical")),
+            tuple(round(float(v), 6) for v in self._step_placement_offset_xyz("optical")),
         )
-        if mesh is None:
-            return None
-        return self._cad_mesh_aligned_to_optical_axis(
-            mesh,
-            source_axis="z",
-            front_face="min",
-            target_front_z=0.0,
-            label="Optical STEP",
-            roll_deg=float(getattr(self, "optical_step_rotation_z_deg", 0.0)),
-            x_rotation_deg=float(getattr(self, "optical_step_rotation_x_deg", 0.0)),
-            y_rotation_deg=float(getattr(self, "optical_step_rotation_y_deg", 0.0)),
-            axis_offset_xy=self._step_axis_offset_xy("optical"),
-            placement_offset_xyz=self._step_placement_offset_xyz("optical"),
-        )
+
+        def build():
+            mesh = self._load_step_mesh(
+                self.imported_optical_step_path,
+                largest_component=False,
+                allow_slow_import=not self._open3d_step_cache_warmup_active(),
+            )
+            if mesh is None:
+                return None
+            return self._cad_mesh_aligned_to_optical_axis(
+                mesh,
+                source_axis="z",
+                front_face="min",
+                target_front_z=0.0,
+                label="Optical STEP",
+                roll_deg=float(getattr(self, "optical_step_rotation_z_deg", 0.0)),
+                x_rotation_deg=float(getattr(self, "optical_step_rotation_x_deg", 0.0)),
+                y_rotation_deg=float(getattr(self, "optical_step_rotation_y_deg", 0.0)),
+                axis_offset_xy=self._step_axis_offset_xy("optical"),
+                placement_offset_xyz=self._step_placement_offset_xyz("optical"),
+            )
+
+        return self._cached_transformed_step_overlay("optical", signature, build)
 
     def _transformed_imported_camera_step_mesh(self):
         if self.imported_camera_step_path is None:
             return None
-        mesh = self._load_step_mesh(
-            self.imported_camera_step_path,
-            largest_component=True,
-            allow_slow_import=not self._open3d_step_cache_warmup_active(),
-        )
-        if mesh is None:
-            return None
         camera_front_z = self._current_image_plane_z() - self._current_camera_front_to_sensor_mm()
-        aligned = self._cad_mesh_aligned_to_optical_axis(
-            mesh,
-            source_axis="z",
-            front_face="max",
-            target_front_z=camera_front_z,
-            label="Camera STEP",
-            roll_deg=float(getattr(self, "camera_step_rotation_z_deg", 0.0)),
-            x_rotation_deg=float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
-            y_rotation_deg=float(getattr(self, "camera_step_rotation_y_deg", 0.0)),
-            axis_offset_xy=self._step_axis_offset_xy("camera"),
-            placement_offset_xyz=self._step_placement_offset_xyz("camera"),
+        signature = (
+            self._step_overlay_stat_key(self.imported_camera_step_path),
+            round(float(camera_front_z), 6),
+            round(float(getattr(self, "camera_step_rotation_z_deg", 0.0)), 6),
+            round(float(getattr(self, "camera_step_rotation_x_deg", 0.0)), 6),
+            round(float(getattr(self, "camera_step_rotation_y_deg", 0.0)), 6),
+            tuple(round(float(v), 6) for v in self._step_axis_offset_xy("camera")),
+            tuple(round(float(v), 6) for v in self._step_placement_offset_xyz("camera")),
         )
-        return self._heavy_step_display_proxy(aligned, label="Camera STEP")
+
+        def build():
+            mesh = self._load_step_mesh(
+                self.imported_camera_step_path,
+                largest_component=True,
+                allow_slow_import=not self._open3d_step_cache_warmup_active(),
+            )
+            if mesh is None:
+                return None
+            aligned = self._cad_mesh_aligned_to_optical_axis(
+                mesh,
+                source_axis="z",
+                front_face="max",
+                target_front_z=camera_front_z,
+                label="Camera STEP",
+                roll_deg=float(getattr(self, "camera_step_rotation_z_deg", 0.0)),
+                x_rotation_deg=float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
+                y_rotation_deg=float(getattr(self, "camera_step_rotation_y_deg", 0.0)),
+                axis_offset_xy=self._step_axis_offset_xy("camera"),
+                placement_offset_xyz=self._step_placement_offset_xyz("camera"),
+            )
+            return self._heavy_step_display_proxy(aligned, label="Camera STEP")
+
+        return self._cached_transformed_step_overlay("camera", signature, build)
 
     def _transformed_imported_led_step_mesh(self):
         if self.imported_led_step_path is None:
             return None
-        mesh = self._load_step_mesh(
-            self.imported_led_step_path,
-            largest_component=False,
-            allow_slow_import=not self._open3d_step_cache_warmup_active(),
+        signature = (
+            self._step_overlay_stat_key(self.imported_led_step_path),
+            round(float(self._led_step_z_translation()), 6),
+            round(float(getattr(self, "led_step_rotation_z_deg", 0.0)), 6),
+            round(float(getattr(self, "led_step_rotation_x_deg", 0.0)), 6),
+            round(float(getattr(self, "led_step_rotation_y_deg", 0.0)), 6),
+            tuple(round(float(v), 6) for v in self._step_axis_offset_xy("led")),
+            tuple(round(float(v), 6) for v in self._step_placement_offset_xyz("led")),
         )
-        if mesh is None:
-            return None
-        return self._cad_mesh_aligned_to_optical_axis(
-            mesh,
-            source_axis="z",
-            front_face="min",
-            target_front_z=self._led_step_z_translation(),
-            label="LED STEP",
-            roll_deg=float(getattr(self, "led_step_rotation_z_deg", 0.0)),
-            x_rotation_deg=float(getattr(self, "led_step_rotation_x_deg", 0.0)),
-            y_rotation_deg=float(getattr(self, "led_step_rotation_y_deg", 0.0)),
-            axis_offset_xy=self._step_axis_offset_xy("led"),
-            placement_offset_xyz=self._step_placement_offset_xyz("led"),
-        )
+
+        def build():
+            mesh = self._load_step_mesh(
+                self.imported_led_step_path,
+                largest_component=False,
+                allow_slow_import=not self._open3d_step_cache_warmup_active(),
+            )
+            if mesh is None:
+                return None
+            return self._cad_mesh_aligned_to_optical_axis(
+                mesh,
+                source_axis="z",
+                front_face="min",
+                target_front_z=self._led_step_z_translation(),
+                label="LED STEP",
+                roll_deg=float(getattr(self, "led_step_rotation_z_deg", 0.0)),
+                x_rotation_deg=float(getattr(self, "led_step_rotation_x_deg", 0.0)),
+                y_rotation_deg=float(getattr(self, "led_step_rotation_y_deg", 0.0)),
+                axis_offset_xy=self._step_axis_offset_xy("led"),
+                placement_offset_xyz=self._step_placement_offset_xyz("led"),
+            )
+
+        return self._cached_transformed_step_overlay("led", signature, build)
 
     def _transformed_external_camera_mesh(self) -> pv.DataSet | None:
         spec = self._current_external_camera_spec()

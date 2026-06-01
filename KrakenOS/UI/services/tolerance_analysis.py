@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import functools
 import re
 
 import numpy as np
@@ -13,6 +14,20 @@ def _layout_module():
     from KrakenOS.UI import layout_editor as layout_editor_module
 
     return layout_editor_module
+
+
+def _skip_display_overlay_rebuilds(method):
+    """Run a tolerance sweep with heavy display-only STEP CAD overlays
+    (camera body, vendor lens housing) served from cache instead of
+    re-transformed per perturbed sample. The sweep perturbs the design
+    many times; the display only needs the nominal overlay."""
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._suppress_display_step_overlay_rebuilds():
+            return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class ToleranceAnalysisService:
@@ -30,6 +45,7 @@ class ToleranceAnalysisService:
             return
         setattr(self.editor, name, value)
 
+    @_skip_display_overlay_rebuilds
     def run_tolerance_monte_carlo(
         self,
         *,
@@ -321,6 +337,7 @@ class ToleranceAnalysisService:
                         row.advanced.pop(TOLERANCE_MANUFACTURING_ADVANCED_ATTR, None)
         return dict(preset)
 
+    @_skip_display_overlay_rebuilds
     def run_tolerance_compensator_sweep(
         self,
         summary: dict[str, object] | None = None,
@@ -449,6 +466,7 @@ class ToleranceAnalysisService:
         self._last_tolerance_compensator_summary = summary_out
         return summary_out
 
+    @_skip_display_overlay_rebuilds
     def run_tolerance_multi_compensator_solve(
         self,
         summary: dict[str, object] | None = None,
