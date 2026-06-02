@@ -2882,15 +2882,21 @@ class ScenePlacementMixin:
         return metadata
 
     # STEP overlay labels whose analytic-face metadata is dropped
-    # because the geometry is display-only. The camera body is a typical
-    # offender -- a 51 MB vendor CAD whose pythonocc-core analytic
-    # tessellation takes ~35 seconds on first call, even though the
-    # camera never participates in optical face routing (it has no
-    # refractive interface, no glass sequence, no front/back roles).
-    # The planar-clustering fallback below produces metadata that's
-    # good enough for the display-only placement preview without any
-    # OCC work at all.
-    _DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC: frozenset[str] = frozenset({"camera", "led"})
+    # because the geometry is display-only. None of these slots is
+    # eligible for auto-promotion to analytic Standard rows -- only the
+    # ``optical`` label triggers ``_offer_auto_promote_step_to_analytic``
+    # (see ``import_optical_step``). So the per-face analytic
+    # descriptors from pythonocc-core have no consumer here: the
+    # planar-clustering fallback below produces metadata that's good
+    # enough for placement preview, snap, and pick UX without any OCC
+    # work at all.
+    #
+    # The motivating freeze was a 51 MB camera body taking 35 s on the
+    # first call. A large vendor imaging-lens housing in the ``lens``
+    # slot has the same shape -- big vendor CAD, no optical role, no
+    # consumer of analytic faces -- so it gets the same treatment to
+    # avoid the next bug report.
+    _DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC: frozenset[str] = frozenset({"camera", "led", "lens"})
 
     def _step_overlay_face_metadata(self, label: str) -> dict[str, object]:
         label = str(label).strip().lower()
