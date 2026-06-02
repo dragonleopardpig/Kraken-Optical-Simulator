@@ -8711,6 +8711,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.render()
 
     def _update_hover_status(self, text: str, *, display_xy=None, render: bool = True) -> None:
+        if not open3d_trace_enabled():
+            return self._update_hover_status_impl(text, display_xy=display_xy, render=render)
+        from KrakenOS.UI.services.open3d_timing import open3d_trace_span as _span
+        with _span("update_hover_status", has_text=bool(text), render=bool(render)):
+            return self._update_hover_status_impl(text, display_xy=display_xy, render=render)
+
+    def _update_hover_status_impl(self, text: str, *, display_xy=None, render: bool = True) -> None:
         if self._renderer is None:
             return
         text = str(text or "").strip()
@@ -9843,6 +9850,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._open3d_step_rotation_handle_service().set_hover(actor_key)
 
     def _set_step_hover_outline(self, outline_mesh, hover_key, *, render: bool = True) -> None:
+        if not open3d_trace_enabled():
+            return self._set_step_hover_outline_impl(outline_mesh, hover_key, render=render)
+        from KrakenOS.UI.services.open3d_timing import open3d_trace_span as _span
+        with _span(
+            "set_step_hover_outline",
+            has_outline=outline_mesh is not None,
+            has_key=hover_key is not None,
+            same_key=bool(hover_key is not None and hover_key == self._hover_step_cell_key),
+        ):
+            return self._set_step_hover_outline_impl(outline_mesh, hover_key, render=render)
+
+    def _set_step_hover_outline_impl(self, outline_mesh, hover_key, *, render: bool = True) -> None:
         if hover_key is not None and hover_key == self._hover_step_cell_key:
             return
         if self._renderer is None:
@@ -10513,6 +10532,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         return self._hover_overlay_for_feature(center, outline)
 
     def _hover_overlay_for_step_face(self, label: str, face: dict[str, object] | None):
+        if pv is None or not isinstance(face, dict):
+            return None
+        if not open3d_trace_enabled():
+            return self._hover_overlay_for_step_face_impl(label, face)
+        from KrakenOS.UI.services.open3d_timing import open3d_trace_span as _span
+        face_id = str(face.get("face_id", "") or "")[:20]
+        with _span("hover_overlay_for_step_face", label=str(label), face_id=face_id):
+            return self._hover_overlay_for_step_face_impl(label, face)
+
+    def _hover_overlay_for_step_face_impl(self, label: str, face: dict[str, object] | None):
         if pv is None or not isinstance(face, dict):
             return None
         try:

@@ -2972,13 +2972,36 @@ class ScenePlacementMixin:
                             pass
         except Exception:
             pass
+        # ``extract_surface`` itself appends ``vtkOriginalCellIds`` and
+        # ``triangulate`` then changes the cell count, so the array
+        # immediately becomes stale and the next ``copy`` / ``save``
+        # call triggers PyVista's InvalidMeshWarning chorus. We strip
+        # after each step so neither intermediate carries a misaligned
+        # array forward.
+        def _strip_cell_data(m):
+            try:
+                cd = getattr(m, "cell_data", None)
+                if cd is not None:
+                    try:
+                        cd.clear()
+                    except Exception:
+                        for stale_key in list(cd.keys()):
+                            try:
+                                del cd[stale_key]
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+            return m
         try:
-            mesh = mesh.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
+            surface = _strip_cell_data(mesh.extract_surface(algorithm="dataset_surface"))
+            mesh = _strip_cell_data(surface.triangulate()).copy(deep=True)
         except Exception:
             try:
-                mesh = mesh.extract_surface(algorithm="dataset_surface").copy(deep=True)
+                mesh = _strip_cell_data(mesh.extract_surface(algorithm="dataset_surface")).copy(deep=True)
             except Exception:
                 mesh = mesh.copy(deep=True)
+        mesh = _strip_cell_data(mesh)
         points = np.asarray(getattr(mesh, "points", np.empty((0, 3))), dtype=float)
         if points.ndim != 2 or points.shape[0] < 3 or points.shape[1] < 3 or not np.all(np.isfinite(points[:, :3])):
             return normalize_optical_solid_face_metadata({})
