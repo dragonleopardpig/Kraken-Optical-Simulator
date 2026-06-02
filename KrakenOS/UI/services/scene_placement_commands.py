@@ -2902,6 +2902,36 @@ class ScenePlacementMixin:
         label = str(label).strip().lower()
         if label not in _step_overlay_label_set() or self._step_path_for_label(label) is None:
             return normalize_optical_solid_face_metadata({})
+        # Memoise on (label, source-path stat key). The expensive
+        # analytic-face metadata pipeline below iterates every outer
+        # face, applies an affine fit, normalises records, and writes
+        # a snap STL. None of that depends on mouse position, but the
+        # hover-overlay path was calling this *per mouse move*, so a
+        # 30-second hover freeze had been showing up in the
+        # KRAKEN_OPEN3D_TRACE=1 log on the aspherized achromat scene.
+        # The path stat key invalidates the cache whenever the user
+        # replaces the STEP file underneath; transforming the overlay
+        # does not change face roles so we don't need to invalidate
+        # on pose changes.
+        cache = self.__dict__.setdefault("_step_overlay_face_metadata_cache", {})
+        source_path_obj = self._step_path_for_label(label)
+        try:
+            cache_key = (label, self._step_overlay_stat_key(source_path_obj))
+        except Exception:
+            cache_key = None
+        if cache_key is not None:
+            cached = cache.get(cache_key)
+            if isinstance(cached, dict):
+                return cached
+        from KrakenOS.UI.services.open3d_timing import open3d_timing_span as _span
+
+        with _span("step_overlay_face_metadata", label=label):
+            metadata = self._step_overlay_face_metadata_compute(label)
+        if cache_key is not None and isinstance(metadata, dict):
+            cache[cache_key] = metadata
+        return metadata
+
+    def _step_overlay_face_metadata_compute(self, label: str) -> dict[str, object]:
         if label not in self._DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC:
             try:
                 analytic_metadata = self._step_overlay_analytic_face_metadata(label)
