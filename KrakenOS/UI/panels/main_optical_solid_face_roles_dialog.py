@@ -55,19 +55,42 @@ class MainOpticalSolidFaceRolesDialog:
         window.transient(self.editor)
 
         # The `s` bug-flag / scene-snapshot hotkey is bound on the Open 3D
-        # inspector window; this face editor is a separate Toplevel, so it
-        # never saw the key. Forward `s`/`S` here to the inspector's flag
-        # handler (which already no-ops while typing in an entry/combobox),
-        # so the user can snapshot while the face editor is open.
+        # inspector window; this face editor is a separate Toplevel whose
+        # Treeview swallows `s` before a Toplevel-level binding can fire (a
+        # plain window.bind did not work). Use an application-wide bind_all,
+        # scoped by focused-toplevel to this window so it never double-fires
+        # alongside the inspector's own `s`, and torn down when the window
+        # closes. It forwards to the inspector's _flag_bug_event, which itself
+        # no-ops while the user is typing in an entry/combobox.
         def _forward_snapshot_key(event=None):
             inspector = getattr(self.editor, '_three_d_inspector', None)
             handler = getattr(inspector, '_flag_bug_event', None) if inspector is not None else None
-            if callable(handler):
-                return handler(event)
-            return ''
+            if not callable(handler):
+                return None
+            try:
+                focused = window.focus_get()
+                if focused is None or focused.winfo_toplevel() is not window:
+                    return None  # focus elsewhere -> let the inspector's own binding handle it
+            except Exception:
+                return None
+            return handler(event)
 
-        window.bind('<KeyPress-s>', _forward_snapshot_key, add='+')
-        window.bind('<KeyPress-S>', _forward_snapshot_key, add='+')
+        for _seq in ('<KeyPress-s>', '<KeyPress-S>'):
+            try:
+                self.editor.bind_all(_seq, _forward_snapshot_key, add='+')
+            except Exception:
+                pass
+
+        def _release_snapshot_key(event=None):
+            if event is not None and getattr(event, 'widget', None) is not window:
+                return  # child <Destroy> events bubble up; only act on the window's own
+            for _seq in ('<KeyPress-s>', '<KeyPress-S>'):
+                try:
+                    self.editor.unbind_all(_seq)
+                except Exception:
+                    pass
+
+        window.bind('<Destroy>', _release_snapshot_key, add='+')
         window.columnconfigure(0, weight=1)
         window.rowconfigure(1, weight=1)
         header = ttk.Frame(window, padding=(10, 10, 10, 4))

@@ -60,6 +60,30 @@ def _mesh_without_cell_data(mesh):
     return clean
 
 
+def _clean_surface_triangulate(mesh):
+    """Surface-extract + triangulate ``mesh`` with cell data cleared at each
+    step, so no stale per-cell array survives the topology changes.
+
+    Clearing only the input is not enough: ``extract_surface`` itself adds a
+    ``vtkOriginalCellIds`` cell array sized to its output, and the subsequent
+    ``triangulate`` can change the cell count again (the cemented-doublet
+    surface collapses 2227 -> 1115), leaving that array stale and tripping
+    pyvista's InvalidMeshWarning. We therefore drop cell data before
+    extract_surface, again before triangulate, and once more on the result.
+    Safe because promotion saves the geometry as STL (no cell data) and
+    recovers face metadata separately.
+    """
+    base = _mesh_without_cell_data(mesh)
+    try:
+        surface = _mesh_without_cell_data(base.extract_surface(algorithm="dataset_surface"))
+        return _mesh_without_cell_data(surface.triangulate().copy(deep=True))
+    except Exception:
+        try:
+            return _mesh_without_cell_data(base.extract_surface(algorithm="dataset_surface").copy(deep=True))
+        except Exception:
+            return base.copy(deep=True)
+
+
 def _refine_face_normals_from_mesh(
     faces: list[dict[str, Any]],
     mesh: Any,
@@ -801,16 +825,10 @@ class StepOverlayPromotionService:
             if not quiet:
                 self.status_var.set(f"{label.upper()} STEP mesh unavailable for optical-solid promotion.")
             return None
-        # Drop stale per-triangle face-index cell arrays before the
-        # surface/triangulate topology change (see _mesh_without_cell_data).
-        mesh = _mesh_without_cell_data(mesh)
-        try:
-            mesh = mesh.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
-        except Exception:
-            try:
-                mesh = mesh.extract_surface(algorithm="dataset_surface").copy(deep=True)
-            except Exception:
-                mesh = mesh.copy(deep=True)
+        # Surface-extract + triangulate with cell data cleared at every step
+        # so stale per-cell face-index / vtkOriginalCellIds arrays cannot trip
+        # pyvista's InvalidMeshWarning (see _clean_surface_triangulate).
+        mesh = _clean_surface_triangulate(mesh)
         points = np.asarray(getattr(mesh, "points", np.empty((0, 3))), dtype=float)
         if points.ndim != 2 or points.shape[0] == 0 or points.shape[1] < 3 or not np.all(np.isfinite(points[:, :3])):
             if not quiet:
@@ -984,16 +1002,10 @@ class StepOverlayPromotionService:
         if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
             self.status_var.set(f"{label.upper()} STEP mesh unavailable for optical-solid promotion.")
             return None
-        # Drop stale per-triangle face-index cell arrays before the
-        # surface/triangulate topology change (see _mesh_without_cell_data).
-        mesh = _mesh_without_cell_data(mesh)
-        try:
-            mesh = mesh.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
-        except Exception:
-            try:
-                mesh = mesh.extract_surface(algorithm="dataset_surface").copy(deep=True)
-            except Exception:
-                mesh = mesh.copy(deep=True)
+        # Surface-extract + triangulate with cell data cleared at every step
+        # so stale per-cell face-index / vtkOriginalCellIds arrays cannot trip
+        # pyvista's InvalidMeshWarning (see _clean_surface_triangulate).
+        mesh = _clean_surface_triangulate(mesh)
         points = np.asarray(getattr(mesh, "points", np.empty((0, 3))), dtype=float)
         if points.ndim != 2 or points.shape[0] == 0 or points.shape[1] < 3 or not np.all(np.isfinite(points[:, :3])):
             self.status_var.set(f"{label.upper()} STEP promotion found no finite mesh points.")
@@ -1225,16 +1237,10 @@ class StepOverlayPromotionService:
         re-orientation, centroid centring, hash naming, and disk-cache
         write are identical.
         """
-        # Drop stale per-triangle face-index cell arrays before the
-        # surface/triangulate topology change (see _mesh_without_cell_data).
-        mesh = _mesh_without_cell_data(mesh)
-        try:
-            mesh = mesh.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
-        except Exception:
-            try:
-                mesh = mesh.extract_surface(algorithm="dataset_surface").copy(deep=True)
-            except Exception:
-                mesh = mesh.copy(deep=True)
+        # Surface-extract + triangulate with cell data cleared at every step
+        # so stale per-cell face-index / vtkOriginalCellIds arrays cannot trip
+        # pyvista's InvalidMeshWarning (see _clean_surface_triangulate).
+        mesh = _clean_surface_triangulate(mesh)
         points = np.asarray(getattr(mesh, "points", np.empty((0, 3))), dtype=float)
         if points.ndim != 2 or points.shape[0] == 0 or points.shape[1] < 3:
             return None

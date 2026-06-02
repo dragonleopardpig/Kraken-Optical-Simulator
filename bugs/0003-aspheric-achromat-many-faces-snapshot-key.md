@@ -1,8 +1,10 @@
 # 0003 — Aspheric achromat: "so many faces", snapshot key dead in face editor, InvalidMeshWarning
 
-**Status:** Partially fixed — snapshot hotkey + InvalidMeshWarning fixed; the
-all-red selection render and face-count reduction are analysed and deferred to
-the offscreen-render environment (see below).
+**Status:** Snapshot hotkey + InvalidMeshWarning fixed. The all-red selection
+render and the 160-face reduction are still open but **no longer env-blocked**:
+the earlier "blank offscreen render" turned out to be transient — offscreen VTK
+rendering works (a fresh Xvfb renders the selection snapshot; the comprehensive
+validator passes Phase 10), so those two can now be fixed and visually verified.
 **Component:** Open 3D inspector — STEP promotion + face editor + selection render
 **Reported via:** in-app recorder, `attachment/recorded_bug_repros/flag_20260602_205444_993/`
 plus the `InvalidMeshWarning`s printed by `python -m KrakenOS.UI.layout_editor`.
@@ -29,9 +31,18 @@ separate `tk.Toplevel` (`panels/main_optical_solid_face_roles_dialog.py:51`), so
 while it held focus the key went nowhere.
 
 ### Fix
-Bind `<KeyPress-s>` / `<KeyPress-S>` on the face-editor Toplevel and forward to
-the inspector's `_flag_bug_event` (which already no-ops while typing in an
-entry/combobox). `panels/main_optical_solid_face_roles_dialog.py`.
+A plain `window.bind('<KeyPress-s>')` on the Toplevel was **not** enough — the
+face editor's `ttk.Treeview` swallows `s` (its class binding) before a
+Toplevel-level binding fires (verified: a Toplevel binding fires for combobox
+focus but not Treeview focus). So instead use an application-wide
+`self.editor.bind_all('<KeyPress-s>' / '<KeyPress-S>')`, scoped by focused-toplevel
+to the face-editor window (so it never double-fires with the inspector's own `s`
+binding), forwarding to the inspector's `_flag_bug_event` (which itself no-ops
+while typing in an entry/combobox), and torn down on the window's `<Destroy>`.
+`panels/main_optical_solid_face_roles_dialog.py`. Note: `_flag_bug_event` →
+`flag_bug` captures the **3-D scene** screenshot (the inspector render window),
+not the face-editor dialog pixels; capturing the dialog window itself would be a
+separate enhancement.
 
 ## Issue 2 — `InvalidMeshWarning` during STEP promotion (FIXED)
 
@@ -47,18 +58,24 @@ collapsed 1115-cell outer surface of the cemented doublet), which pyvista flags
 on the triangulate / save.
 
 ### Fix
-`step_overlay_promotion._mesh_without_cell_data(mesh)` returns a deep copy with
-cell-data cleared; it is applied before both `extract_surface().triangulate()`
-chains. Root-cause and safe: the promotion output is an STL (stores no cell
-data) and face metadata is recovered separately via `_step_overlay_face_metadata`,
-so the arrays are not needed past this point.
+Clearing only the *input* was insufficient: `extract_surface` itself adds a
+`vtkOriginalCellIds` cell array sized to its output, and `triangulate` then
+changes the cell count again (the 2227 → 1115 collapse), leaving *that* array
+stale — so after the first fix the warning re-appeared as
+`vtkOriginalCellIds (2227)`. The complete fix is
+`step_overlay_promotion._clean_surface_triangulate(mesh)`: it drops cell data
+before extract_surface, again before triangulate, and once more on the result,
+and is applied at both promote sites. Safe because the promotion output is an STL
+(stores no cell data) and face metadata is recovered separately via
+`_step_overlay_face_metadata`.
 
 ### Test
-`validate_open3d_step_promotion_mesh_warning_free` (display-free): injects a
-length-mismatched `kraken_step_face_index` cell array at the VTK layer, confirms
-the raw chain warns, then confirms `_mesh_without_cell_data` clears it and the
-chain (`extract_surface(...).triangulate().save(stl)`) is warning-free, and that
-the input mesh is left untouched (helper copies).
+`validate_open3d_step_promotion_mesh_warning_free` (display-free): a
+length-mismatched cell array makes the raw chain warn; `_clean_surface_triangulate`
+clears it and is warning-free (incl. STL save) with the input left untouched. When
+a cached analytic `.vtp` is present it also reproduces the real `vtkOriginalCellIds`
+case — confirming clear-input-only still warns while `_clean_surface_triangulate`
+does not.
 
 ## Issue 3 — "160 faces" (explained; reduction deferred)
 
