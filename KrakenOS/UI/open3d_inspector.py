@@ -3689,6 +3689,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return None
         u = u / u_norm
         v = np.cross(axis, u)
+        # Reject non-circular rims (e.g. the square plano-cyl plate). A
+        # true circular rim spreads across every azimuth; a square's
+        # outer band clusters at its four corners, leaving ~90deg gaps.
+        # The radial-spread check above can be fooled by the corner-only
+        # band at the tighter 0.92 threshold, so guard on angular gaps.
+        ring_vecs = radial_vecs[outer]
+        ang = np.sort(np.arctan2(ring_vecs @ v, ring_vecs @ u))
+        if ang.shape[0] >= 8:
+            gaps = np.diff(ang)
+            wrap = (ang[0] + 2.0 * np.pi) - ang[-1]
+            if float(max(float(np.max(gaps)), float(wrap))) > (np.pi / 4.0):
+                return None
         theta = np.linspace(0.0, 2.0 * np.pi, int(segments), endpoint=False)
         circle = (
             rim_center[None, :]
