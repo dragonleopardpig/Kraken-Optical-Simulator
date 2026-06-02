@@ -2881,16 +2881,28 @@ class ScenePlacementMixin:
         metadata["interior_duplicate_count"] = int(document.interior_duplicate_count)
         return metadata
 
+    # STEP overlay labels whose analytic-face metadata is dropped
+    # because the geometry is display-only. The camera body is a typical
+    # offender -- a 51 MB vendor CAD whose pythonocc-core analytic
+    # tessellation takes ~35 seconds on first call, even though the
+    # camera never participates in optical face routing (it has no
+    # refractive interface, no glass sequence, no front/back roles).
+    # The planar-clustering fallback below produces metadata that's
+    # good enough for the display-only placement preview without any
+    # OCC work at all.
+    _DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC: frozenset[str] = frozenset({"camera", "led"})
+
     def _step_overlay_face_metadata(self, label: str) -> dict[str, object]:
         label = str(label).strip().lower()
         if label not in _step_overlay_label_set() or self._step_path_for_label(label) is None:
             return normalize_optical_solid_face_metadata({})
-        try:
-            analytic_metadata = self._step_overlay_analytic_face_metadata(label)
-            if analytic_metadata is not None:
-                return analytic_metadata
-        except Exception as exc:
-            self.append_debug(f"Analytic STEP face metadata fell back to planar clustering for {label}: {_short_error_message(exc)}")
+        if label not in self._DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC:
+            try:
+                analytic_metadata = self._step_overlay_analytic_face_metadata(label)
+                if analytic_metadata is not None:
+                    return analytic_metadata
+            except Exception as exc:
+                self.append_debug(f"Analytic STEP face metadata fell back to planar clustering for {label}: {_short_error_message(exc)}")
         mesh = self._transformed_imported_step_mesh_for_label(label)
         if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
             return normalize_optical_solid_face_metadata({})
