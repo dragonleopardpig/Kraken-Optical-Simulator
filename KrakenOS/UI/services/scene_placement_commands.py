@@ -2912,6 +2912,26 @@ class ScenePlacementMixin:
         mesh = self._transformed_imported_step_mesh_for_label(label)
         if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
             return normalize_optical_solid_face_metadata({})
+        # Strip the analytic ``kraken_step_*`` face-tagging cell
+        # arrays before extract_surface / triangulate. Those arrays
+        # carry per-cell face IDs sized to the *original* tessellation;
+        # extract_surface() + triangulate() can change the cell count
+        # (a single quad becomes two triangles) and leave the arrays
+        # stale, which trips PyVista's InvalidMeshWarning ("Mesh has 6
+        # cell arrays with incorrect length") on every refresh. The
+        # planar-clustering branch only reads the surface geometry
+        # (points + cells), so the face-tag arrays are dead weight
+        # here -- the analytic branch above is the only consumer.
+        try:
+            cell_data = getattr(mesh, "cell_data", None)
+            if cell_data is not None:
+                for stale_key in [k for k in list(cell_data.keys()) if str(k).startswith("kraken_step_")]:
+                    try:
+                        del cell_data[stale_key]
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         try:
             mesh = mesh.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
         except Exception:
