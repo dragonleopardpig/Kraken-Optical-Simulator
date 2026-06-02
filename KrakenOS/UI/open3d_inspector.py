@@ -9,6 +9,7 @@ and panel wiring.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import time
 import tkinter as tk
@@ -63,7 +64,13 @@ from KrakenOS.UI.services.open3d_step_overlay_refresh import Open3DStepOverlayRe
 from KrakenOS.UI.services.open3d_step_rotation_handles import Open3DStepRotationHandleService
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService, StepFeatureSelection
 from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
-from KrakenOS.UI.services.open3d_timing import reset_open3d_timing_log
+from KrakenOS.UI.services.open3d_timing import (
+    open3d_timing_event,
+    open3d_trace_enabled,
+    open3d_trace_event,
+    reset_open3d_timing_log,
+    start_open3d_heartbeat,
+)
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.optical_solid_geometry import (
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
@@ -482,6 +489,26 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._open3d_debug_seq = 0
         self._open3d_timing_slow_ms = 100.0
         self._open3d_timing_log_path = reset_open3d_timing_log(reason="inspector_init")
+        # Deep-trace mode (KRAKEN_OPEN3D_TRACE=1). The heartbeat thread
+        # writes an "alive" event every 250 ms so a main-thread stall
+        # in VTK / pythonocc / Tk becomes a visible gap in the log
+        # rather than looking identical to "no user activity". The
+        # heartbeat is harmless in normal use (one extra JSON line per
+        # quarter-second) but we only run it when the env var is set so
+        # the typical session leaves no trace noise.
+        self._open3d_heartbeat_stop = None
+        if open3d_trace_enabled():
+            try:
+                self._open3d_heartbeat_stop = start_open3d_heartbeat()
+            except Exception as exc:
+                open3d_timing_event(
+                    "heartbeat_start_failed",
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+            open3d_trace_event(
+                "inspector_init_trace_mode",
+                pid=int(os.getpid()),
+            )
         self._show_rays_before_axis_pick = False
         self.stl_axis_var = tk.StringVar(value="+Z")
         self.orient_axis_var = tk.StringVar(value="+Z")
@@ -555,6 +582,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self._vtk_interactor.AddObserver("LeftButtonPressEvent", self._on_left_button_press)
                 self._vtk_interactor.AddObserver("MouseMoveEvent", self._on_mouse_move)
                 self._vtk_interactor.AddObserver("KeyPressEvent", self._on_key_press)
+            # Deep-trace VTK render-window resize: maximising the Open
+            # 3D window is a known trigger for hover-freeze reports, so
+            # we log every Configure / Resize so the post-mortem can
+            # tell whether the freeze starts on the resize event itself
+            # or only on the next mouse-move after it.
+            if open3d_trace_enabled():
+                self._bind_trace_window_observers(render_window)
+                self._bind_trace_tk_configure()
 
             if vtkCellPicker is not None:
                 self._picker = vtkCellPicker()
@@ -9716,7 +9751,81 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         return self._interaction_service()._on_left_button_press(obj, _event)
 
     def _on_mouse_move(self, obj, _event) -> None:
-        return self._interaction_service()._on_mouse_move(obj, _event)
+        # Deep-trace wrap: log every entry / exit, including position
+        # and which interaction modes are active. The interaction
+        # service applies its own throttle (so the baseline timing log
+        # gets one event per ~50 ms), but the deep-trace wrapper has
+        # no throttle -- we want one entry per VTK callback so a hang
+        # mid-handler shows up as an _on_mouse_move_start with no
+        # matching _done.
+        if not open3d_trace_enabled():
+            return self._interaction_service()._on_mouse_move(obj, _event)
+        x = y = -1
+        try:
+            if self._vtk_interactor is not None:
+                x, y = self._vtk_interactor.GetEventPosition()
+        except Exception:
+            pass
+        from KrakenOS.UI.services.open3d_timing import open3d_trace_span as _span
+
+        with _span("inspector_on_mouse_move", x=int(x), y=int(y)):
+            return self._interaction_service()._on_mouse_move(obj, _event)
+
+    def _bind_trace_window_observers(self, render_window) -> None:
+        """Log every VTK render-window resize / modified event."""
+        if render_window is None:
+            return
+        try:
+            render_window.AddObserver("ModifiedEvent", self._on_trace_render_window_modified)
+        except Exception:
+            pass
+        try:
+            render_window.AddObserver("WindowResizeEvent", self._on_trace_render_window_resized)
+        except Exception:
+            pass
+
+    def _on_trace_render_window_modified(self, obj, _event) -> None:
+        try:
+            size = obj.GetSize() if obj is not None else (-1, -1)
+        except Exception:
+            size = (-1, -1)
+        open3d_trace_event("vtk_render_window_modified", w=int(size[0]), h=int(size[1]))
+
+    def _on_trace_render_window_resized(self, obj, _event) -> None:
+        try:
+            size = obj.GetSize() if obj is not None else (-1, -1)
+        except Exception:
+            size = (-1, -1)
+        open3d_trace_event("vtk_render_window_resized", w=int(size[0]), h=int(size[1]))
+
+    def _bind_trace_tk_configure(self) -> None:
+        """Log every Tk <Configure> on the inspector window itself.
+
+        Captures maximize / restore / window-drag events that VTK's
+        own observer chain might miss because Tk forwards them
+        asynchronously into the VTK widget.
+        """
+        try:
+            self.bind("<Configure>", self._on_trace_tk_configure, add="+")
+        except Exception:
+            pass
+
+    def _on_trace_tk_configure(self, event) -> None:
+        try:
+            width = int(getattr(event, "width", -1))
+            height = int(getattr(event, "height", -1))
+        except Exception:
+            width = height = -1
+        try:
+            wm_state = self.wm_state()
+        except Exception:
+            wm_state = ""
+        open3d_trace_event(
+            "tk_configure",
+            w=width,
+            h=height,
+            wm_state=str(wm_state),
+        )
 
     def _set_axis_pick_cursor(self, hand: bool) -> None:
         try:

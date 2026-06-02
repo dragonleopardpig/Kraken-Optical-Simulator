@@ -10,6 +10,50 @@ from KrakenOS.UI.services.open3d_interaction_event import (
     InteractionEventData,
     PickClassifier,
 )
+from KrakenOS.UI.services.open3d_timing import (
+    open3d_trace_enabled,
+    open3d_trace_event,
+)
+
+
+def _traced_pick(picker, x: float, y: float, z: float, renderer, *, site: str) -> None:
+    """Run picker.Pick with a deep-trace span when tracing is on.
+
+    The fast path -- tracing disabled -- is a single ``if`` and one
+    method call, identical in cost to the original inline ``Pick``.
+    When tracing is on, we log the cell id and actor type of whatever
+    the picker hit so the post-mortem can tell whether one specific
+    actor (the heavy camera body, a translucent ray, the orientation
+    widget) is dominating hover cost.
+    """
+    if not open3d_trace_enabled():
+        picker.Pick(x, y, z, renderer)
+        return
+    import time as _time
+
+    start = _time.perf_counter()
+    picker.Pick(x, y, z, renderer)
+    duration_ms = (_time.perf_counter() - start) * 1000.0
+    try:
+        cell_id = int(picker.GetCellId())
+    except Exception:
+        cell_id = -1
+    actor_name = ""
+    try:
+        actor = picker.GetActor()
+        if actor is not None:
+            actor_name = type(actor).__name__
+    except Exception:
+        pass
+    open3d_trace_event(
+        "vtk_picker_pick",
+        site=str(site),
+        x=int(x),
+        y=int(y),
+        duration_ms=round(float(duration_ms), 3),
+        cell_id=int(cell_id),
+        actor=actor_name,
+    )
 
 
 def _layout_module():
@@ -78,7 +122,7 @@ class Open3DInteractionService:
         pick_start = self._timing_start("left_click_vtk_pick", x=int(x), y=int(y))
         actor = None
         try:
-            self._picker.Pick(x, y, 0.0, self._renderer)
+            _traced_pick(self._picker, x, y, 0.0, self._renderer, site="left_click")
             actor = self._picker.GetActor()
             if actor is None:
                 get_view_prop = getattr(self._picker, "GetViewProp", None)
@@ -648,6 +692,25 @@ class Open3DInteractionService:
         return actor, actor_key, cell_id
 
     def _on_mouse_move(self, obj, _event) -> None:
+        # When the deep-trace mode is on, log every entry regardless of
+        # the throttle so a hang inside this handler can be located to
+        # the exact mouse-move callback. Cheap: one ``if`` per move
+        # when tracing is off.
+        if open3d_trace_enabled():
+            try:
+                _x, _y = self._vtk_interactor.GetEventPosition() if self._vtk_interactor is not None else (-1, -1)
+            except Exception:
+                _x = _y = -1
+            open3d_trace_event(
+                "on_mouse_move_entry",
+                x=int(_x),
+                y=int(_y),
+                carry_drag=self._step_carry_drag_state is not None,
+                carry_follow=self._step_carry_follow_state is not None,
+                center_row_to_ray=bool(self._center_row_to_ray_mode),
+                step_normal_axis=bool(self._step_normal_axis_pick_mode),
+                step_surface_center=bool(self._step_surface_center_axis_pick_mode),
+            )
         hover_critical = bool(self._center_row_to_ray_mode or self._step_normal_axis_pick_mode or self._step_surface_center_axis_pick_mode)
         if (
             self._step_carry_drag_state is None
@@ -655,6 +718,7 @@ class Open3DInteractionService:
             and not hover_critical
             and not self._mouse_move_due()
         ):
+            open3d_trace_event("on_mouse_move_throttled")
             return
         try:
             x, y = self._vtk_interactor.GetEventPosition() if self._vtk_interactor is not None else (-1, -1)
@@ -797,7 +861,7 @@ class Open3DInteractionService:
             if self._renderer is not None and self._vtk_interactor is not None:
                 try:
                     x, y = self._vtk_interactor.GetEventPosition()
-                    self._picker.Pick(x, y, 0.0, self._renderer)
+                    _traced_pick(self._picker, x, y, 0.0, self._renderer, site="hover_center_row_to_ray")
                     actor_key = self._actor_key(self._picker.GetActor())
                     axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
                     axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=28.0)
@@ -821,7 +885,7 @@ class Open3DInteractionService:
             if self._picker is not None and self._renderer is not None and self._vtk_interactor is not None:
                 try:
                     x, y = self._vtk_interactor.GetEventPosition()
-                    self._picker.Pick(x, y, 0.0, self._renderer)
+                    _traced_pick(self._picker, x, y, 0.0, self._renderer, site="hover_step_normal_axis")
                     actor_key = self._actor_key(self._picker.GetActor())
                     axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
                     axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=28.0)
@@ -846,7 +910,7 @@ class Open3DInteractionService:
             if self._picker is not None and self._renderer is not None and self._vtk_interactor is not None:
                 try:
                     x, y = self._vtk_interactor.GetEventPosition()
-                    self._picker.Pick(x, y, 0.0, self._renderer)
+                    _traced_pick(self._picker, x, y, 0.0, self._renderer, site="hover_step_surface_center")
                     actor_key = self._actor_key(self._picker.GetActor())
                     axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
                     axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=28.0)
@@ -972,7 +1036,7 @@ class Open3DInteractionService:
             return
         try:
             x, y = self._vtk_interactor.GetEventPosition()
-            self._picker.Pick(x, y, 0.0, self._renderer)
+            _traced_pick(self._picker, x, y, 0.0, self._renderer, site="hover_default")
             actor = self._picker.GetActor()
         except Exception:
             actor = None
