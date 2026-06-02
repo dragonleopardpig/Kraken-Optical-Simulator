@@ -455,6 +455,7 @@ python -m KrakenOS.UI.validate_attachment_paths
 python -m KrakenOS.UI.validate_optimization_backend
 python -m KrakenOS.UI.validate_cad_scene_cache
 python -m KrakenOS.UI.validate_step_analytic_import
+python -m KrakenOS.UI.validate_open3d_optical_import_carry_first
 python -m KrakenOS.UI.validate_3d_interaction_contract
 python -m KrakenOS.UI.validate_native_nonseq_closure
 python -m KrakenOS.UI.validate_2d_3d_projection_sync
@@ -643,12 +644,11 @@ red / pink fill present), AND be visually confirmed by eye. Records so far:
   `validate_open3d_analytic_lens_selection_snapshot` and the Phase 10 image
   check.
 
-## Requested UI Changes (2026-06-02, pending)
+## Requested UI Changes (2026-06-02)
 
-User-requested behavior changes captured for follow-up (work continues on
-another machine). None are implemented yet.
+User-requested behavior changes. Status: **#2 and #3 implemented; #1 pending.**
 
-### 1. Slide-along-axis needs visible drag handles (approved to build)
+### 1. Slide-along-axis needs visible drag handles (approved to build — PENDING)
 
 Today slide-along-axis is a *mode* (`slide_along_axis_mode_var` in
 `open3d_inspector.py`), not a handle: with the mode on, the user clicks an
@@ -662,30 +662,33 @@ direct instead of a hidden drag mode. This is a *visual* change, so it must
 follow the bug-tracking workflow above: image-snapshot test + a penta-validator
 phase. (Context recorded in `bugs/0002`, "Issue 2".)
 
-### 2. STEP import should start in carry mode, not auto-snap to the optical axis
+### 2. STEP import should start in carry mode, not auto-snap to the optical axis — DONE
 
-Current behavior: importing an optical STEP snaps the body straight onto the
-optical axis. **Desired:** import should START in carry mode with all rotation
-handles shown (the prior behavior), let the user correct the orientation first,
-and snap to the optical axis only later, as an explicit action. Auto-snapping on
-import removes the chance to fix orientation before the body is constrained.
-Note: this README already documents a carry mode with an *explicit* optical-axis
-snap that "exits carry mode" (see the Branch Status / CadQuery milestone prose),
-so the auto-snap-on-import looks like a regression away from carry-first — start
-the investigation at the transient-STEP import path and `select_step_component`.
+**Root cause:** the auto-promote-on-import added with the glassy-analytic work
+(`b046889`) ran a modal promote dialog *inside* `import_optical_step`; accepting
+it promoted the overlay to analytic Standard rows and snapped the body onto the
+optical axis before the inspector's carry-follow ever started — pre-empting the
+carry-first orientation step. **Fix:** `import_optical_step` no longer
+auto-promotes or auto-snaps; the overlay arrives in carry mode with rotation
+handles (the inspector import handler starts `_start_step_carry_follow`), so the
+user corrects orientation first. Promotion + axis-snap is now the explicit
+"Promote STEP to Analytic Surfaces" action, whose glass-sequence prompt still
+pre-fills from a Zemax `.zmx` sidecar when present. The now-dead import-time
+dialog methods (`_offer_auto_promote_step_to_analytic`,
+`_ask_analytic_promote_confirm`) were removed. Guarded by
+`validate_open3d_optical_import_carry_first`.
 
-### 3. Auto-promote glass prompt assumes a single element
+### 3. Auto-promote glass prompt assumes a single element — DONE
 
-The Promote-to-Analytic flow asks for ONE glass/material. **Open question the
-user raised:** what happens when the imported STEP is a cemented doublet
-(achromat, 2 glasses) or a triplet (3 glasses)? A single-glass prompt cannot
-describe a multi-element cemented stack. **Desired:** the promote dialog must
-accept a glass *sequence* matched to the reconstructed element/interface count
-(e.g. `N-BK7, N-SF2, AIR` for a cemented doublet) and validate the count against
-the detected interfaces. The native reconstruction path
-(`step_native_reconstruction`) already collapses cemented interfaces and emits
-multiple `SurfaceRow`s, so the glass prompt needs to follow the same element
-count rather than assuming a singlet.
+Already implemented by the analytic-promote work (`b046889`): the promote dialog
+asks for a comma-separated glass **sequence** ("N interior region(s)") matched
+to the reconstructed surface count, pre-fills from a Zemax sidecar, and the
+promote service **validates** the count against the detected interfaces
+(`step_overlay_promotion.py` raises if fewer glasses than regions are given, so
+a cemented doublet/triplet needs `N-BK7, N-SF2` / three names). The native
+reconstruction (`step_native_reconstruction`) supplies the region count via
+`required_glass_count`. (This item predated the implementation; recorded here as
+closed.)
 
 ## Historical Notes
 

@@ -4612,13 +4612,34 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             example = ", ".join(["N-BK7"] * required)
             descr = f"{required} glasses (one per region between adjacent surfaces)"
         lines.append(f"Glass sequence ({descr}). Example: {example}")
+        # Pre-fill from a Zemax (.zmx) prescription sidecar next to the
+        # source STEP when present (matched to the region count). This is
+        # the same convenience the import-time prompt used to offer, now
+        # on the explicit promote action so import can stay carry-first.
+        initial = example
+        try:
+            source_path = self.editor._step_path_for_label(label)
+            if source_path is not None:
+                from KrakenOS.UI.services.step_overlay_import import _parse_zemax_glass_sequence
+
+                sidecars = self.editor._step_overlay_import_service()._optical_prescription_sidecars(source_path)
+                for sidecar in sidecars:
+                    if sidecar.suffix.lower() != ".zmx":
+                        continue
+                    parsed = _parse_zemax_glass_sequence(sidecar)
+                    if parsed:
+                        initial = ", ".join(parsed[:required])
+                        lines.append(f"(Pre-filled from sidecar {sidecar.name}.)")
+                        break
+        except Exception:
+            initial = example
         lines.append("(The trailing region after the back surface is set to AIR automatically.)")
         message = "\n".join(lines)
         try:
             return simpledialog.askstring(
                 "Promote STEP to Analytic Surfaces",
                 message,
-                initialvalue=example,
+                initialvalue=initial,
                 parent=self,
             )
         except Exception:

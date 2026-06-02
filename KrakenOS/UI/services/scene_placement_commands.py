@@ -2883,9 +2883,10 @@ class ScenePlacementMixin:
 
     # STEP overlay labels whose analytic-face metadata is dropped
     # because the geometry is display-only. None of these slots is
-    # eligible for auto-promotion to analytic Standard rows -- only the
-    # ``optical`` label triggers ``_offer_auto_promote_step_to_analytic``
-    # (see ``import_optical_step``). So the per-face analytic
+    # eligible for promotion to analytic Standard rows -- only the
+    # ``optical`` label is promotable, via the explicit "Promote STEP to
+    # Analytic Surfaces" action (import itself stays carry-first). So the
+    # per-face analytic
     # descriptors from pythonocc-core have no consumer here: the
     # planar-clustering fallback below produces metadata that's good
     # enough for placement preview, snap, and pick UX without any OCC
