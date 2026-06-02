@@ -39,6 +39,7 @@ which phase / sub-check failed.
 from __future__ import annotations
 
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1155,7 +1156,8 @@ def phase_8_extras(
 def phase_10_analytic_lens_selection_not_all_red(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """bugs/0001: selecting a promoted analytic lens must not render solid red.
+    """bugs/0001 + bugs/0002: selecting a promoted analytic lens must render a
+    pink translucent body, never solid/ghost red.
 
     A promoted analytic lens body is a dense glassy solid. The scene flags it
     (``_kraken_glassy_lens_body``) so the selection highlight suppresses its
@@ -1166,6 +1168,15 @@ def phase_10_analytic_lens_selection_not_all_red(
     the live recolor path (``_set_row_highlights`` -> ``apply_row_selection`` ->
     ``_set_row_actor_selected``), and asserts the body actor is flagged and its
     edges stay suppressed (pink, not red) while selected.
+
+    The property checks alone are not enough: the all-red fix passed every
+    vtkProperty assertion yet a second, baseline-invisible companion surface
+    still painted a "ghost red block" because selection bumped its opacity and
+    turned on red edges (bugs/0002). So this phase ALSO renders the selected
+    scene to a PNG and counts pixels -- the selected lens must be dominated by
+    pink with only negligible red. The image check is best-effort: if the
+    environment can't render off-screen it is recorded as a note and the
+    property checks still gate.
     """
     result = PhaseResult(name="Phase 10: analytic lens selection not all-red")
     if not LENS_FIXTURES:
@@ -1230,6 +1241,17 @@ def phase_10_analytic_lens_selection_not_all_red(
             promoted_lens = fixture["name"]
             break
 
+    # Rays off BEFORE capturing the body actors: refresh_from_editor rebuilds
+    # the scene actors, so the glassy-body handles must be re-fetched after it
+    # (otherwise selection recolors the live actors while we'd inspect stale,
+    # detached ones). Rays off also isolates the body for the pixel check.
+    try:
+        inspector.show_rays_var.set(False)
+        inspector.refresh_from_editor(force_retrace=False)
+        inspector.update_idletasks()
+    except Exception:
+        pass
+
     by_row = _glassy_body_actors_by_row()
     result.detail["lens"] = promoted_lens
     result.detail["glassy_body_rows"] = sorted(by_row.keys())
@@ -1252,6 +1274,42 @@ def phase_10_analytic_lens_selection_not_all_red(
     selected_colors = [
         tuple(round(float(c), 2) for c in a.GetProperty().GetColor()) for a in target_actors
     ]
+
+    # Image-snapshot check (bugs/0002): render the SELECTED scene and count
+    # pixels. Property assertions can't see a stray actor painting red; a
+    # rendered image can. Best-effort -- a render failure is a note, not a fail.
+    try:
+        from KrakenOS.UI.validate_open3d_analytic_lens_selection_snapshot import (
+            classify_red_pink,
+            render_window_to_png,
+            RED_MAX_PIXELS,
+            PINK_MIN_PIXELS,
+        )
+
+        png_path = Path(tempfile.gettempdir()) / "penta_phase10_lens_selected.png"
+        inspector.update()
+        render_window_to_png(inspector, png_path)
+        red_px, pink_px = classify_red_pink(png_path)
+        result.detail.update({
+            "snapshot_png": str(png_path),
+            "snapshot_red_pixels": red_px,
+            "snapshot_pink_pixels": pink_px,
+        })
+        if red_px >= RED_MAX_PIXELS:
+            result.notes.append(
+                f"selected lens render has {red_px} red pixels (limit "
+                f"{RED_MAX_PIXELS}): a ghost red block is painting the body "
+                "(bugs/0002 regression) -- see " + str(png_path)
+            )
+        if pink_px <= PINK_MIN_PIXELS:
+            result.notes.append(
+                f"selected lens render has only {pink_px} pink pixels (need "
+                f">{PINK_MIN_PIXELS}): the pink translucent fill is missing "
+                "-- see " + str(png_path)
+            )
+    except Exception as exc:
+        result.detail["snapshot_skipped"] = repr(exc)
+
     inspector._clear_open3d_selection(render=False)
     inspector.update_idletasks()
     cleared_edge_vis = [int(a.GetProperty().GetEdgeVisibility()) for a in target_actors]

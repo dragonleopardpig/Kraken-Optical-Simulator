@@ -3309,6 +3309,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 actor._kraken_row_select_style = base
             except Exception:
                 base = {}
+        # A baseline-invisible actor (opacity ~0) is a pick-only / hidden
+        # companion surface -- e.g. the second, undrawn lens-body
+        # representation that backs an analytic lens alongside the visible
+        # glassy drum. Selection must leave it untouched: bumping its
+        # opacity and painting red triangle edges would resurrect it as a
+        # solid "ghost red block" trailing the lens (bugs/0002). An
+        # undrawn surface can show no meaningful selection feedback anyway.
+        if float(base.get("opacity", 1.0)) <= 1e-3:
+            return
         is_file_backed_body = bool(getattr(actor, "_kraken_file_backed_row_body", False))
         is_glassy_lens_body = bool(getattr(actor, "_kraken_glassy_lens_body", False))
         suppress_select_edges = is_file_backed_body or is_glassy_lens_body

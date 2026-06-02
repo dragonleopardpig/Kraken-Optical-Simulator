@@ -15,7 +15,14 @@ comprehensive penta-telescope regression validator.
 3. **Test immediately** — write a small, specific test that fails before
    the fix and passes after. Prefer a display-free unit test against the
    narrowest seam (e.g. a `@staticmethod` on a real VTK actor) so it runs
-   without an X server.
+   without an X server. **For a *visual* bug (selection color, ghost /
+   leftover actors, handles — anything about what the user sees), a
+   property-only test is NOT sufficient:** it must also render the scene to
+   a PNG (off-screen under Xvfb) and check pixels (e.g. "negligible red,
+   pink fill present"), and the fixer must open that PNG and visually confirm
+   it. The all-red fix (0001) passed every vtkProperty assertion yet a
+   second actor still painted a red block (0002) — only a rendered image
+   caught it.
 4. **Integrate** — add a phase to
    `KrakenOS/UI/validate_open3d_penta_telescope_comprehensive.py` so the
    bug is re-checked end-to-end on the real penta-prism cascade (load,
@@ -36,6 +43,9 @@ snapshot. Analyze the newest by mtime; correlate with the matching
 
 - **Unit / display-free** — `KrakenOS/UI/validate_open3d_<bug>.py`, run via
   `.devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_<bug>`.
+- **Image-snapshot (visual bugs)** — `validate_open3d_<bug>_snapshot.py`
+  renders the real scene to a PNG and counts pixels; it boots its own Xvfb
+  when `DISPLAY` is unset. Inspect the PNG by eye, not just the counts.
 - **Regression / end-to-end** — a numbered phase in
   `validate_open3d_penta_telescope_comprehensive.py`, gated on push by
   `.githooks/pre-push` -> `tools/penta_validator_gate.py` (boots Xvfb,
@@ -46,3 +56,4 @@ snapshot. Analyze the newest by mtime; correlate with the matching
 | ID | Title | Status | Fix tests |
 |----|-------|--------|-----------|
 | [0001](0001-analytic-lens-selection-all-red.md) | Selecting an analytic lens renders solid red, no slide handle | Fixed | `validate_open3d_analytic_lens_select_not_all_red` + Phase 10 |
+| [0002](0002-analytic-lens-selection-ghost-red-block.md) | Selected analytic lens leaves a "ghost red block"; slide-along-axis has no handle | Fixed (red block); slide-handle is a UX gap, not a bug | `validate_open3d_analytic_lens_selection_snapshot` + Phase 10 image check |
