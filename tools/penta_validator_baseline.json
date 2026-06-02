@@ -1,0 +1,28 @@
+{
+  "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
+  "generated_at": "2026-06-02T06:12:07+00:00",
+  "phases": {
+    "0": "pass",
+    "1": "pass",
+    "2": "pass",
+    "3": "pass",
+    "4": "pass",
+    "5": "pass",
+    "6": "pass",
+    "7": "pass",
+    "8": "pass",
+    "9": "pass"
+  },
+  "titles": {
+    "0": "load 5-penta-prism cascade",
+    "1": "pre-snap click + unclick highlight",
+    "2": "multi-element pre-snap click",
+    "3": "Promote each STEP to Analytic Surfaces",
+    "4": "post-promotion click + axis records",
+    "5": "slide-along-axis drag",
+    "6": "direct thickness input",
+    "7": "best-focus parameter sweep",
+    "8": "proposed extras",
+    "9": "real focal-minimum on Achromat-only chain"
+  }
+}

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Pre-push gate: run the comprehensive penta-telescope validator on a
+# private virtual X display and block the push on a new PASS->FAIL
+# regression vs tools/penta_validator_baseline.json.
+#
+# Activated by:  python tools/penta_validator_gate.py --install
+# Bypass once with:  git push --no-verify
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+
+# Prefer the devenv venv (has pyvista + OCC), else fall back.
+py="$repo_root/.devenv/state/venv/bin/python"
+if [ ! -x "$py" ]; then
+    py="$(command -v python3 || command -v python || true)"
+fi
+if [ -z "${py:-}" ]; then
+    echo "[pre-push] no Python interpreter found; skipping validator gate." >&2
+    exit 0
+fi
+
+exec "$py" "$repo_root/tools/penta_validator_gate.py"
