@@ -470,6 +470,19 @@ class LayoutTableWorkbenchMixin:
             self._apply_layout_settings(info.get("settings", {}))
 
         self._normalize_special_rows()
+        # Prompt for any missing on-disk CAD references *before* the
+        # table sync and first plot refresh. ``load_layout_by_name`` is
+        # the entry point used by the Common Optical Layout / Machine
+        # Vision Lens / Examples menus -- without this hook, layouts
+        # loaded through those menus skipped the prompt that
+        # ``open_layout`` already has, so missing-asset bugs fell
+        # silently through the same fallback path. Best-effort wrapped
+        # so headless tests that monkeypatch out the dialog don't blow
+        # up the load.
+        try:
+            self._prompt_for_missing_cad_assets()
+        except Exception:
+            pass
         self._sync_table()
         if append_to_existing:
             self._select_inserted_layout_rows(loaded_rows, insert_after=insert_after)

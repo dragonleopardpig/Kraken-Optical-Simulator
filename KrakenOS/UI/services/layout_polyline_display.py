@@ -368,8 +368,26 @@ class LayoutPolylineDisplayMixin:
         cached = self._external_cad_mesh_cache.get(cache_key)
         if isinstance(cached, StepAnalyticDocument):
             return cached
+        # Negative-existence cache: the analytic-document loader is the
+        # one that took 1.1 seconds per probe on missing files in the
+        # live log (it walks pythonocc-core's STEP reader before the
+        # exists() check inside step_analytic_geometry). One extra
+        # exists() check up front turns that into a syscall.
+        try:
+            is_missing_cached = self._path_is_missing_cached(str(source_path))
+        except Exception:
+            is_missing_cached = False
+        if is_missing_cached:
+            raise FileNotFoundError(f"STEP file not found: {source_path}")
         with open3d_timing_span("load_step_analytic_document", source_path=str(source_path)):
-            document = load_step_analytic_document(source_path)
+            try:
+                document = load_step_analytic_document(source_path)
+            except FileNotFoundError:
+                try:
+                    self._record_missing_path(str(source_path))
+                except Exception:
+                    pass
+                raise
         self._external_cad_mesh_cache[cache_key] = document
         open3d_timing_event(
             "load_step_analytic_document_cached",
@@ -450,6 +468,18 @@ class LayoutPolylineDisplayMixin:
         allow_slow_import: bool = True,
     ):
         source_path = Path(source_path).expanduser()
+        # Negative cache: a layout that references a missing STEP file
+        # used to get this path probed up to 18 times per refresh (every
+        # analytic-fit lookup, every face-metadata pass, every body STL
+        # load). The cache short-circuits the second-and-subsequent hits
+        # with the same FileNotFoundError so callers see consistent
+        # behaviour without paying the syscall.
+        try:
+            is_missing_cached = self._path_is_missing_cached(str(source_path))
+        except Exception:
+            is_missing_cached = False
+        if is_missing_cached:
+            raise FileNotFoundError(f"STEP file not found: {source_path}")
         with open3d_timing_span(
             "load_step_mesh",
             source_path=str(source_path),
@@ -460,6 +490,10 @@ class LayoutPolylineDisplayMixin:
             if pv is None:
                 raise RuntimeError("PyVista is required for STEP import")
             if not source_path.exists():
+                try:
+                    self._record_missing_path(str(source_path))
+                except Exception:
+                    pass
                 raise FileNotFoundError(f"STEP file not found: {source_path}")
             cache_prefix = "step-largest" if largest_component else "step"
             cache_key = f"{cache_prefix}:{source_path.resolve()}"

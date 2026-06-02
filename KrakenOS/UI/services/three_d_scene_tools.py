@@ -1287,7 +1287,13 @@ class ThreeDSceneToolsMixin:
     # in mid-session and the renderer recovers without a restart.
     # ------------------------------------------------------------------
 
-    _MISSING_PATH_CACHE_TTL_S: float = 5.0
+    # 60 s is long enough that the negative cache covers a full
+    # interactive editing burst (open layout → orbit → toggle rays →
+    # edit a row) without re-paying any probe. The Missing-assets
+    # dialog explicitly calls ``_clear_missing_path`` after a successful
+    # relocate so the renderer picks up the new file immediately, with
+    # no need to wait for the TTL.
+    _MISSING_PATH_CACHE_TTL_S: float = 60.0
 
     def _path_is_missing_cached(self, path) -> bool:
         """Return True if ``path`` was seen missing within the TTL."""

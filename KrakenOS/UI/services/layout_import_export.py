@@ -298,6 +298,15 @@ class LayoutImportExportMixin:
         self._auto_assign_missing_elements(self.rows)
         self._apply_layout_settings(info.get("settings", {}))
         self._normalize_special_rows()
+        # Zemax NSC imports often reference CAD geometry files that the
+        # user no longer has -- prompt before the first table sync /
+        # plot refresh so a relocation feeds straight into the first
+        # render. Best-effort wrapped: a broken prompt must not block
+        # an otherwise-successful import.
+        try:
+            self._prompt_for_missing_cad_assets()
+        except Exception:
+            pass
         self._sync_table()
         self.layout_var.set("Common Optical Layout")
         self.machine_vision_var.set("Machine Vision Lens")
