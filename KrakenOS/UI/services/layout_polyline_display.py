@@ -1182,7 +1182,19 @@ class LayoutPolylineDisplayMixin:
                 axis_offset_xy=self._step_axis_offset_xy("camera"),
                 placement_offset_xyz=self._step_placement_offset_xyz("camera"),
             )
-            return self._heavy_step_display_proxy(aligned, label="Camera STEP")
+            # Render the full camera body geometry. The 12-cell box
+            # proxy from commit 3875b38 ("Reduce Open 3D heavy STEP
+            # display work") swapped any mesh above 50 k cells for a
+            # bounding-box stand-in, which turned the 113 972-cell
+            # vendor camera body into an obvious cube and lost the
+            # actual machined detail that 150 mm / 120 mm / 85 mm
+            # measured layouts have been displaying since their first
+            # use. The transformed mesh is now memoised by
+            # _cached_transformed_step_overlay (see commit 6323231),
+            # so building the full geometry once per layout-load is
+            # cheap and the per-frame cost is only VTK's actor render,
+            # which 100 k cells handle comfortably.
+            return aligned
 
         return self._cached_transformed_step_overlay("camera", signature, build)
 
