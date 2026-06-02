@@ -52,31 +52,52 @@ def _face_triangle_indices(face: dict[str, object]) -> tuple[int, ...]:
     return _nonnegative_indices(face.get("triangle_indices", face.get("cell_indices", ())))
 
 
-def _ray_triangle_intersection(origin: np.ndarray, direction: np.ndarray, triangle: np.ndarray) -> tuple[float, np.ndarray] | None:
-    vertices = np.asarray(triangle, dtype=float).reshape(3, 3)
-    v0, v1, v2 = vertices
-    edge1 = v1 - v0
-    edge2 = v2 - v0
-    pvec = np.cross(direction, edge2)
-    det = float(np.dot(edge1, pvec))
-    if not np.isfinite(det) or abs(det) <= 1e-10:
+def _ray_triangles_nearest_hit(origin: np.ndarray, direction: np.ndarray, triangles: np.ndarray):
+    """Vectorized Moller-Trumbore: nearest forward hit over an (N,3,3) batch.
+
+    Replaces a per-triangle Python loop that dominated round-lens hover --
+    a ~114k-triangle body intersected every triangle one at a time on each
+    mouse move (~1.7 s). Returns ``(distance, point, triangle)`` for the
+    closest non-negative intersection, or ``None``.
+    """
+    tris = np.asarray(triangles, dtype=float)
+    if tris.ndim != 3 or tris.shape[1:] != (3, 3) or tris.shape[0] == 0:
         return None
-    inv_det = 1.0 / det
-    tvec = origin - v0
-    u = float(np.dot(tvec, pvec) * inv_det)
-    if u < -1e-8 or u > 1.0 + 1e-8:
+    v0 = tris[:, 0, :3]
+    edge1 = tris[:, 1, :3] - v0
+    edge2 = tris[:, 2, :3] - v0
+    pvec = np.cross(direction[:3], edge2)
+    det = np.einsum("ij,ij->i", edge1, pvec)
+    valid = np.isfinite(det) & (np.abs(det) > 1e-10)
+    if not np.any(valid):
         return None
+    inv_det = np.zeros_like(det)
+    inv_det[valid] = 1.0 / det[valid]
+    tvec = origin[:3] - v0
+    u = np.einsum("ij,ij->i", tvec, pvec) * inv_det
     qvec = np.cross(tvec, edge1)
-    v = float(np.dot(direction, qvec) * inv_det)
-    if v < -1e-8 or u + v > 1.0 + 1e-8:
+    v = np.einsum("j,ij->i", direction[:3], qvec) * inv_det
+    distance = np.einsum("ij,ij->i", edge2, qvec) * inv_det
+    mask = (
+        valid
+        & (u >= -1e-8)
+        & (u <= 1.0 + 1e-8)
+        & (v >= -1e-8)
+        & (u + v <= 1.0 + 1e-8)
+        & np.isfinite(distance)
+        & (distance >= -1e-8)
+    )
+    if not np.any(mask):
         return None
-    distance = float(np.dot(edge2, qvec) * inv_det)
-    if not np.isfinite(distance) or distance < -1e-8:
+    masked_distance = np.where(mask, distance, np.inf)
+    idx = int(np.argmin(masked_distance))
+    if not np.isfinite(masked_distance[idx]):
         return None
-    point = origin + max(distance, 0.0) * direction
+    dist = max(float(distance[idx]), 0.0)
+    point = origin[:3] + dist * direction[:3]
     if not np.all(np.isfinite(point[:3])):
         return None
-    return max(distance, 0.0), np.asarray(point[:3], dtype=float)
+    return dist, np.asarray(point[:3], dtype=float), np.asarray(tris[idx], dtype=float)
 
 
 def _face_normal(face: dict[str, object], fallback_triangle: np.ndarray | None = None) -> np.ndarray | None:
@@ -156,14 +177,7 @@ def pick_face_from_ray(
         if not indices:
             continue
         face_triangles = np.asarray(triangle_array[np.asarray(indices, dtype=int)], dtype=float)
-        best_hit: tuple[float, np.ndarray, np.ndarray] | None = None
-        for triangle in face_triangles:
-            hit = _ray_triangle_intersection(origin[:3], direction[:3], triangle)
-            if hit is None:
-                continue
-            distance, point = hit
-            if best_hit is None or distance < best_hit[0]:
-                best_hit = (float(distance), point, np.asarray(triangle, dtype=float))
+        best_hit = _ray_triangles_nearest_hit(origin[:3], direction[:3], face_triangles)
         if best_hit is None:
             continue
         normal = _face_normal(face, best_hit[2])
