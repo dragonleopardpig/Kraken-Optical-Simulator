@@ -1,6 +1,6 @@
 # KrakenOS Non-Sequential UI Branch
 
-Last updated: 2026-06-01
+Last updated: 2026-06-02
 
 This document summarizes the `nonseq-display-refactor` branch. The upstream
 `README.md` is intentionally left unchanged; this branch README is the public
@@ -615,6 +615,78 @@ across `Open3DSceneRefreshService` and the inspector.
   CadQuery/OCP remains a long-horizon optional adapter if the current
   OpenCascade/mesh cache boundary proves insufficient for exact topology tools.
 
+## Bug Tracking (added 2026-06-02)
+
+User-flagged Open 3D bugs now get a tracked record under `bugs/` (see
+`bugs/README.md` for the register and per-bug workflow). The cadence per bug:
+document `bugs/NNNN-slug.md`, fix the root cause, write a small specific test,
+add a numbered phase to
+`KrakenOS/UI/validate_open3d_penta_telescope_comprehensive.py`, then regenerate
+the pre-push gate baseline (`python tools/penta_validator_gate.py
+--update-baseline`). The comprehensive validator is gated on push by
+`.githooks/pre-push` -> `tools/penta_validator_gate.py`, which boots Xvfb and
+blocks only a PASS->FAIL flip versus `tools/penta_validator_baseline.json`.
+
+**Visual bugs require an image-snapshot test, not just vtkProperty assertions.**
+The first all-red fix (0001) passed every property assertion yet a second actor
+still painted a red block (0002) — only a rendered PNG caught it. So a visual
+fix must render the scene off-screen to a PNG, count pixels (e.g. negligible
+red / pink fill present), AND be visually confirmed by eye. Records so far:
+
+- `bugs/0001` — selecting an analytic lens rendered solid red (red triangle
+  wireframe over the pink fill). Fixed: flag glassy lens bodies and suppress
+  their per-triangle edges on selection.
+- `bugs/0002` — a selected analytic lens left a "ghost red block": selection
+  was resurrecting a hidden, baseline-invisible companion surface (opacity 0)
+  by bumping its opacity and painting red edges. Fixed: `_set_row_actor_selected`
+  early-outs for any actor whose baseline opacity is ~0. Guarded by
+  `validate_open3d_analytic_lens_selection_snapshot` and the Phase 10 image
+  check.
+
+## Requested UI Changes (2026-06-02, pending)
+
+User-requested behavior changes captured for follow-up (work continues on
+another machine). None are implemented yet.
+
+### 1. Slide-along-axis needs visible drag handles (approved to build)
+
+Today slide-along-axis is a *mode* (`slide_along_axis_mode_var` in
+`open3d_inspector.py`), not a handle: with the mode on, the user clicks an
+eligible promoted optical body and drags along Z (status line "click an optical
+element body and drag along Z"). There is no on-screen grip, so the feature is
+undiscoverable — the user expected a handle to "pop up" and saw nothing.
+**Build:** a visible, draggable axial slide handle per eligible element (an
+actor grip, in the same family as the existing placement/rotation handles in
+the Slicer-pattern `open3d_abstract_widget` / `WidgetRegistry`), so sliding is
+direct instead of a hidden drag mode. This is a *visual* change, so it must
+follow the bug-tracking workflow above: image-snapshot test + a penta-validator
+phase. (Context recorded in `bugs/0002`, "Issue 2".)
+
+### 2. STEP import should start in carry mode, not auto-snap to the optical axis
+
+Current behavior: importing an optical STEP snaps the body straight onto the
+optical axis. **Desired:** import should START in carry mode with all rotation
+handles shown (the prior behavior), let the user correct the orientation first,
+and snap to the optical axis only later, as an explicit action. Auto-snapping on
+import removes the chance to fix orientation before the body is constrained.
+Note: this README already documents a carry mode with an *explicit* optical-axis
+snap that "exits carry mode" (see the Branch Status / CadQuery milestone prose),
+so the auto-snap-on-import looks like a regression away from carry-first — start
+the investigation at the transient-STEP import path and `select_step_component`.
+
+### 3. Auto-promote glass prompt assumes a single element
+
+The Promote-to-Analytic flow asks for ONE glass/material. **Open question the
+user raised:** what happens when the imported STEP is a cemented doublet
+(achromat, 2 glasses) or a triplet (3 glasses)? A single-glass prompt cannot
+describe a multi-element cemented stack. **Desired:** the promote dialog must
+accept a glass *sequence* matched to the reconstructed element/interface count
+(e.g. `N-BK7, N-SF2, AIR` for a cemented doublet) and validate the count against
+the detected interfaces. The native reconstruction path
+(`step_native_reconstruction`) already collapses cemented interfaces and emits
+multiple `SurfaceRow`s, so the glass prompt needs to follow the same element
+count rather than assuming a singlet.
+
 ## Historical Notes
 
 Older planning files were consolidated into this branch README to reduce
@@ -630,3 +702,9 @@ merge note that names the branch contracts, test commands, known deferred
 items, and screenshots/reports a reviewer should inspect. Keep the CAD
 scene-cache boundary, passive-hover handle-pick contract, and hover-latency
 diagnostic intact during any follow-up cleanup.
+
+Active near-term UI work is the three items in **Requested UI Changes
+(2026-06-02, pending)** above: visible slide-along-axis handles, carry-first
+STEP import (no auto-snap to the optical axis), and a multi-glass promote prompt
+for cemented doublets/triplets. The slide-handle work is approved; the other two
+need confirmation of the exact behavior before implementation.
