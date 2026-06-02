@@ -1,10 +1,9 @@
 # 0003 — Aspheric achromat: "so many faces", snapshot key dead in face editor, InvalidMeshWarning
 
-**Status:** Snapshot hotkey + InvalidMeshWarning fixed. The all-red selection
-render and the 160-face reduction are still open but **no longer env-blocked**:
-the earlier "blank offscreen render" turned out to be transient — offscreen VTK
-rendering works (a fresh Xvfb renders the selection snapshot; the comprehensive
-validator passes Phase 10), so those two can now be fixed and visually verified.
+**Status:** All four issues fixed — snapshot hotkey, InvalidMeshWarning, all-red
+selection render, and the "160 faces" (via display-only grouping in the face
+editor). The earlier "blank offscreen render" turned out to be transient
+(offscreen VTK rendering works; the comprehensive validator passes Phase 10).
 **Component:** Open 3D inspector — STEP promotion + face editor + selection render
 **Reported via:** in-app recorder, `attachment/recorded_bug_repros/flag_20260602_205444_993/`
 plus the `InvalidMeshWarning`s printed by `python -m KrakenOS.UI.layout_editor`.
@@ -77,29 +76,27 @@ a cached analytic `.vtp` is present it also reproduces the real `vtkOriginalCell
 case — confirming clear-input-only still warns while `_clean_surface_triangulate`
 does not.
 
-## Issue 3 — "160 faces" (explained; reduction deferred)
+## Issue 3 — "160 faces" (FIXED via display-only grouping)
 
 The face editor lists planar face *candidates* from
 `cluster_optical_solid_planar_faces`, which groups STL triangles by **plane**
 (rounded normal + offset). A flat face → 1 cluster; a *curved* aspheric surface →
 one micro-cluster per triangle → capped at `max_faces=160`. So the 160 are the
-curved front/back surfaces fragmented, not real optical faces. Spherical lenses
-are handled by the analytic sphere-fit promote path, but an asphere has no clean
-sphere fit, so it stays a file-backed CAD solid whose curved faces fragment.
+curved front/back surfaces fragmented, not real optical faces.
 
-**Status: open — needs a design decision, not a blind change.** The whole
-face-assignment system is built around *planar* faces (the function name, the
-`plane_offset`, the face-snapping/role logic). Two candidate fixes, each with a
-trade-off:
-  1. **Region-growing clustering** (group connected triangles whose normals vary
-     slowly into one curved face) — collapses 160 → a handful, but a "face
-     candidate" is then curved, and the planar snapping/role code would need to
-     tolerate a non-planar face. Cross-cutting; affects prisms and every
-     file-backed solid, so it needs broad verification.
-  2. **Display-only grouping** in the face editor — keep the 160 planar
-     candidates for snapping, but collapse them in the tree (e.g. "Curved face 1
-     — 143 patches") and let the user assign a role to the whole group.
-     Contained to the dialog; lower risk; doesn't change the geometry layer.
+**Fix (display-only, chosen over a clustering rewrite to avoid disturbing the
+planar snapping/role system):** `group_optical_solid_face_candidates`
+(`optical_solid_geometry.py`) region-grows the STL by mesh connectivity + normal
+continuity (edge-adjacent triangles within ~35° = same surface; sharp dihedral =
+boundary) and returns a group id per candidate. The candidates and their planar
+fits are **unchanged**. The face editor (`main_optical_solid_face_roles_dialog.py`)
+shows a **Group** column when grouping consolidates (>1 fewer groups than
+candidates) and a right-click **"Select all N faces in group G…"**, so the
+existing multi-select bulk-apply lets the user role-assign a whole curved surface
+at once. Verified: the aspheric achromat collapses 160 → **3 groups**
+(front/back/edge); a penta prism stays **7 → 7** (flat faces untouched, so the
+Group column does not even appear). Guarded by
+`validate_open3d_optical_solid_face_grouping`.
 
 ## Issue 4 — selected lens renders all-red ("so many faces" as red triangles) (FIXED)
 

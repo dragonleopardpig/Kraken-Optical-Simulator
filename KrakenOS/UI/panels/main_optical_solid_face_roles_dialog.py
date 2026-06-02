@@ -48,6 +48,32 @@ class MainOpticalSolidFaceRolesDialog:
         records: list[dict[str, object]] = [le.normalize_optical_solid_face_record(face) for face in list(metadata.get('faces', []) or [])]
         records = le.suggest_optical_solid_face_roles(records)
         virtual_planes: list[dict[str, object]] = [le.normalize_optical_solid_virtual_plane_record(plane) for plane in list(metadata.get('virtual_planes', []) or []) if isinstance(plane, dict)]
+        # Display-only grouping: a curved (aspheric/spherical) lens face is
+        # fragmented by the planar clusterer into many candidates (e.g. 160).
+        # Group them by mesh connectivity + normal continuity so the editor can
+        # show a few logical surfaces and "Select all in group" lets the user
+        # role-assign a whole curved face at once. The candidates themselves
+        # (and their planar fits/snapping) are unchanged.
+        try:
+            _face_group_ids = le.group_optical_solid_face_candidates(path, records, angle_deg=35.0)
+        except Exception:
+            _face_group_ids = [-1] * len(records)
+        group_index_by_record_index: dict[int, int] = {i: int(g) for i, g in enumerate(_face_group_ids)}
+        group_member_counts: dict[int, int] = {}
+        for _g in _face_group_ids:
+            if int(_g) >= 0:
+                group_member_counts[int(_g)] = group_member_counts.get(int(_g), 0) + 1
+        # Only surface the Group column when grouping actually consolidates
+        # (more candidates than groups); for a few flat faces it is just noise.
+        _distinct_groups = len(group_member_counts)
+        show_face_groups = bool(_distinct_groups) and len(records) > _distinct_groups + 1
+        def group_label_for_record_index(index: int) -> str:
+            gid = group_index_by_record_index.get(int(index), -1)
+            return f"G{gid + 1}" if gid >= 0 else ""
+        group_label_by_face_id: dict[str, str] = {
+            str(records[i].get('face_id', '') or ''): group_label_for_record_index(i)
+            for i in range(len(records))
+        }
         window = tk.Toplevel(self.editor)
         window.title(f'CAD/STL Optical Faces - S{row_index}')
         window.geometry('1440x760')
@@ -95,21 +121,25 @@ class MainOpticalSolidFaceRolesDialog:
         window.rowconfigure(1, weight=1)
         header = ttk.Frame(window, padding=(10, 10, 10, 4))
         header.grid(row=0, column=0, sticky='ew')
-        ttk.Label(header, text=f'S{row_index}: {row.name or row.surface} | {Path(path).name} | {len(records)} planar face candidate(s), {len(virtual_planes)} virtual plane(s). Assign optical intent; tracing still follows the STL solid.').pack(side='left', fill='x', expand=True)
+        _group_hint = (
+            f' | {_distinct_groups} surface group(s) -- right-click a row to "Select all in group" (a curved lens face is split into many planar candidates).'
+            if show_face_groups else ''
+        )
+        ttk.Label(header, text=f'S{row_index}: {row.name or row.surface} | {Path(path).name} | {len(records)} planar face candidate(s), {len(virtual_planes)} virtual plane(s).{_group_hint} Assign optical intent; tracing still follows the STL solid.').pack(side='left', fill='x', expand=True)
         body = ttk.Panedwindow(window, orient='horizontal')
         body.grid(row=1, column=0, sticky='nsew', padx=10, pady=6)
         tree_frame = ttk.Frame(body)
         tree_frame.columnconfigure(0, weight=1)
         tree_frame.rowconfigure(0, weight=1)
-        columns = ('face', 'side', 'function', 'port', 'suggestion', 'fit_ref', 'area', 'triangles', 'normal', 'centroid', 'split', 'flip')
+        columns = ('face',) + (('group',) if show_face_groups else ()) + ('side', 'function', 'port', 'suggestion', 'fit_ref', 'area', 'triangles', 'normal', 'centroid', 'split', 'flip')
         tree_style = f'OpticalSolidFaces{row_index}.Treeview'
         try:
             ttk.Style(window).configure(tree_style, rowheight=30)
         except Exception:
             tree_style = 'Treeview'
         tree = ttk.Treeview(tree_frame, columns=columns, show='headings', selectmode='extended', style=tree_style)
-        headings = {'face': 'Face', 'side': '2D Side', 'function': 'Function', 'port': 'Port Role', 'suggestion': 'Suggested', 'fit_ref': 'Fit Ref', 'area': 'Area [mm2]', 'triangles': 'Triangles', 'normal': 'Normal', 'centroid': 'Centroid', 'split': 'Split', 'flip': 'Flip'}
-        widths = {'face': 62, 'side': 76, 'function': 130, 'port': 126, 'suggestion': 168, 'fit_ref': 92, 'area': 90, 'triangles': 76, 'normal': 180, 'centroid': 190, 'split': 68, 'flip': 48}
+        headings = {'face': 'Face', 'group': 'Group', 'side': '2D Side', 'function': 'Function', 'port': 'Port Role', 'suggestion': 'Suggested', 'fit_ref': 'Fit Ref', 'area': 'Area [mm2]', 'triangles': 'Triangles', 'normal': 'Normal', 'centroid': 'Centroid', 'split': 'Split', 'flip': 'Flip'}
+        widths = {'face': 62, 'group': 56, 'side': 76, 'function': 130, 'port': 126, 'suggestion': 168, 'fit_ref': 92, 'area': 90, 'triangles': 76, 'normal': 180, 'centroid': 190, 'split': 68, 'flip': 48}
         for column in columns:
             tree.heading(column, text=headings[column])
             tree.column(column, width=widths[column], minwidth=min(widths[column], 70), anchor='e' if column in {'area', 'triangles', 'split'} else 'w', stretch=False)
@@ -299,7 +329,7 @@ class MainOpticalSolidFaceRolesDialog:
         def raw_tree_values(record: dict[str, object]) -> dict[str, str]:
             function = le._normalize_optical_solid_face_function(record.get('function'), legacy_role=record.get('role'))
             authored_port = le._optical_solid_face_authored_port_role(record)
-            return {'face': str(record.get('face_id', '') or ''), 'side': le._normalize_optical_solid_face_side(record.get('side_2d')), 'function': le._optical_solid_face_function_display(function, legacy_role=record.get('role')), 'port': authored_port, 'suggestion': le._optical_solid_face_suggestion_label(record), 'fit_ref': '' if le._normalize_optical_solid_face_fit_reference(record.get('fit_reference')) == le.OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT else le._normalize_optical_solid_face_fit_reference(record.get('fit_reference')), 'area': f"{float(record.get('area_mm2', 0.0) or 0.0):.6g}", 'triangles': str(int(record.get('triangle_count', 0) or 0)), 'normal': format_vector(record.get('normal', [0, 0, 1])), 'centroid': format_vector(record.get('centroid', [0, 0, 0])), 'split': f"{float(record.get('split_ratio', 0.5) or 0.0):.4g}" if function == 'Beam Splitter' else '', 'flip': 'yes' if bool(record.get('flip_normal', False)) else ''}
+            return {'face': str(record.get('face_id', '') or ''), 'group': group_label_by_face_id.get(str(record.get('face_id', '') or ''), ''), 'side': le._normalize_optical_solid_face_side(record.get('side_2d')), 'function': le._optical_solid_face_function_display(function, legacy_role=record.get('role')), 'port': authored_port, 'suggestion': le._optical_solid_face_suggestion_label(record), 'fit_ref': '' if le._normalize_optical_solid_face_fit_reference(record.get('fit_reference')) == le.OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT else le._normalize_optical_solid_face_fit_reference(record.get('fit_reference')), 'area': f"{float(record.get('area_mm2', 0.0) or 0.0):.6g}", 'triangles': str(int(record.get('triangle_count', 0) or 0)), 'normal': format_vector(record.get('normal', [0, 0, 1])), 'centroid': format_vector(record.get('centroid', [0, 0, 0])), 'split': f"{float(record.get('split_ratio', 0.5) or 0.0):.4g}" if function == 'Beam Splitter' else '', 'flip': 'yes' if bool(record.get('flip_normal', False)) else ''}
 
         def wrap_cell_text(column: str, value: str) -> str:
             text = str(value)
@@ -1541,10 +1571,62 @@ class MainOpticalSolidFaceRolesDialog:
         ttk.Button(footer, text='Save Roles', command=save_roles).pack(side='right')
         ttk.Button(footer, text='Copy Summary', command=copy_summary).pack(side='right', padx=(0, 8))
         ttk.Button(footer, text='Close', command=window.destroy).pack(side='right', padx=(0, 8))
+        def select_face_group_for_iid(iid: str) -> None:
+            try:
+                idx = int(str(iid).split('_', 1)[1])
+            except Exception:
+                return
+            gid = group_index_by_record_index.get(idx, -1)
+            if gid < 0:
+                return
+            existing = set(tree.get_children(''))
+            members = [
+                f'face_{j}' for j, g in group_index_by_record_index.items()
+                if g == gid and f'face_{j}' in existing
+            ]
+            if not members:
+                return
+            tree.selection_set(members)
+            tree.focus(members[0])
+            tree.see(members[0])
+            try:
+                preview_status_var.set(
+                    f"Selected {len(members)} face(s) in group G{gid + 1}. Set a 2D side / "
+                    "function / port on the right, then it applies to the whole surface."
+                )
+            except Exception:
+                pass
+
+        def show_face_group_menu(event) -> None:
+            if not show_face_groups:
+                return
+            iid = tree.identify_row(event.y)
+            if not iid:
+                return
+            try:
+                idx = int(str(iid).split('_', 1)[1])
+            except Exception:
+                return
+            gid = group_index_by_record_index.get(idx, -1)
+            if gid < 0:
+                return
+            count = group_member_counts.get(gid, 0)
+            menu = tk.Menu(window, tearoff=0)
+            menu.add_command(
+                label=f"Select all {count} faces in group G{gid + 1}",
+                command=lambda chosen=iid: select_face_group_for_iid(chosen),
+            )
+            try:
+                menu.tk_popup(int(event.x_root), int(event.y_root))
+            finally:
+                menu.grab_release()
+
         tree.bind('<<TreeviewSelect>>', load_selected, add='+')
         tree.bind('<ButtonRelease-1>', schedule_tree_rewrap, add='+')
         tree.bind('<Configure>', schedule_tree_rewrap, add='+')
         tree.bind('<Double-Button-1>', on_tree_column_double_click, add='+')
+        if show_face_groups:
+            tree.bind('<Button-3>', show_face_group_menu, add='+')
         side_menu.bind('<<ComboboxSelected>>', auto_apply_selected_face_identity, add='+')
         function_menu.bind('<<ComboboxSelected>>', auto_apply_selected_face_identity, add='+')
         port_menu.bind('<<ComboboxSelected>>', auto_apply_selected_face_identity, add='+')

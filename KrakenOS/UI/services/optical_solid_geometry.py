@@ -341,6 +341,110 @@ def cluster_optical_solid_planar_faces(path: Path, *, max_faces: int = 160) -> l
     return candidates
 
 
+def group_optical_solid_face_candidates(path: Path, faces, *, angle_deg: float = 35.0) -> list[int]:
+    """Assign a display group id to each planar face candidate by mesh
+    connectivity + normal continuity.
+
+    ``cluster_optical_solid_planar_faces`` fragments a *curved* surface (an
+    aspheric/spherical lens face) into one micro-cluster per triangle, so a
+    single lens can list ~160 candidates. Connectivity region-growing -- add an
+    edge-adjacent triangle to the same region when its normal is within
+    ``angle_deg`` of its neighbour -- collapses each smooth surface into one
+    region while still splitting at sharp dihedral edges (face boundaries). This
+    is **display-only**: the candidates and their planar fits are unchanged; the
+    returned ids just let the face editor group rows so a whole curved surface
+    can be role-assigned at once. Returns a list of group ids parallel to
+    ``faces`` (each item is an ``OpticalSolidFaceCandidate`` or a record dict
+    carrying ``triangle_indices``), renumbered 0..k-1 by descending member count.
+    """
+    faces = list(faces or [])
+    if not faces:
+        return []
+    _file_format, triangles = _read_stl_triangle_vertices(Path(path).expanduser())
+    n_tris = int(triangles.shape[0]) if triangles.size else 0
+    if n_tris == 0:
+        return list(range(len(faces)))
+
+    v0, v1, v2 = triangles[:, 0, :], triangles[:, 1, :], triangles[:, 2, :]
+    cross = np.cross(v1 - v0, v2 - v0)
+    norms = np.linalg.norm(cross, axis=1)
+    valid = norms > 1e-12
+    normals = np.zeros((n_tris, 3), dtype=float)
+    normals[valid] = cross[valid] / norms[valid][:, None]
+
+    flat = triangles.reshape((-1, 3))
+    max_extent = max(float(np.max(np.ptp(flat, axis=0))), 1.0)
+    merge_decimals = 5 if max_extent < 100.0 else 4
+    quantized = np.round(flat, merge_decimals)
+    _unique, inverse = np.unique(quantized, axis=0, return_inverse=True)
+    tri_vertex_ids = np.asarray(inverse, dtype=np.int64).reshape(n_tris, 3)
+
+    from collections import defaultdict
+
+    edge_triangles: dict[tuple[int, int], list[int]] = defaultdict(list)
+    for tri_index in range(n_tris):
+        if not valid[tri_index]:
+            continue
+        a, b, c = (int(v) for v in tri_vertex_ids[tri_index])
+        for u, w in ((a, b), (b, c), (c, a)):
+            edge_triangles[(min(u, w), max(u, w))].append(tri_index)
+    adjacency: dict[int, set[int]] = defaultdict(set)
+    for shared in edge_triangles.values():
+        for i in range(len(shared)):
+            for j in range(i + 1, len(shared)):
+                adjacency[shared[i]].add(shared[j])
+                adjacency[shared[j]].add(shared[i])
+
+    cos_threshold = float(np.cos(np.deg2rad(angle_deg)))
+    region = np.full(n_tris, -1, dtype=int)
+    next_region = 0
+    for seed in range(n_tris):
+        if region[seed] != -1 or not valid[seed]:
+            continue
+        region[seed] = next_region
+        stack = [seed]
+        while stack:
+            current = stack.pop()
+            for neighbour in adjacency.get(current, ()):  # type: ignore[arg-type]
+                if region[neighbour] != -1 or not valid[neighbour]:
+                    continue
+                if float(np.dot(normals[current], normals[neighbour])) >= cos_threshold:
+                    region[neighbour] = next_region
+                    stack.append(neighbour)
+        next_region += 1
+
+    def _triangle_indices(face) -> list[int]:
+        raw = getattr(face, "triangle_indices", None)
+        if raw is None and isinstance(face, dict):
+            raw = face.get("triangle_indices", face.get("cell_indices"))
+        out: list[int] = []
+        for value in raw or ():
+            try:
+                idx = int(value)
+            except Exception:
+                continue
+            if 0 <= idx < n_tris and region[idx] >= 0:
+                out.append(idx)
+        return out
+
+    raw_group_per_face: list[int] = []
+    for face in faces:
+        indices = _triangle_indices(face)
+        if not indices:
+            raw_group_per_face.append(-1)
+            continue
+        values, counts = np.unique(region[np.asarray(indices, dtype=int)], return_counts=True)
+        raw_group_per_face.append(int(values[int(np.argmax(counts))]))
+
+    # Renumber groups 0..k-1 by descending number of member faces so the
+    # biggest logical surfaces get the lowest, stable labels (-1 stays -1).
+    from collections import Counter
+
+    order = [g for g, _ in Counter(g for g in raw_group_per_face if g >= 0).most_common()]
+    remap = {g: i for i, g in enumerate(order)}
+    return [remap.get(g, -1) for g in raw_group_per_face]
+
+
 def optical_solid_face_candidate_triangles(path: Path, candidate: OpticalSolidFaceCandidate) -> np.ndarray:
     """Return STL triangles that belong to a clustered planar face candidate."""
     _file_format, triangles = _read_stl_triangle_vertices(Path(path).expanduser())
