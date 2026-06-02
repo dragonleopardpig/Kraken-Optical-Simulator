@@ -66,6 +66,12 @@ class SurfaceMesh3D:
     opacity: float = 0.68
     is_stop: bool = False
     is_body: bool = False
+    # When True the mesh is a synthetic "missing CAD asset" placeholder
+    # (red wireframe box). The scene refresh draws it with a dedicated
+    # style instead of routing through the analytic / glassy paths so
+    # the user can immediately tell which rows have unresolved CAD
+    # references without digging through ~/.cache/krakenos logs.
+    is_missing_placeholder: bool = False
 
 
 @dataclass(slots=True)

@@ -486,10 +486,37 @@ class LayoutImportExportMixin:
         self._auto_assign_missing_elements(self.rows)
         self._apply_layout_settings(info.get("settings", {}))
         self._normalize_special_rows()
+        # Surface missing CAD references *before* the first table sync
+        # and plot refresh -- if the user relocates files in the dialog,
+        # the subsequent table + plot reflect the new paths and no
+        # silent fallback ever fires. The prompt itself is best-effort:
+        # any failure (missing Tk display in headless tests, scanner
+        # exception on a malformed row) is swallowed so a broken prompt
+        # never blocks the load.
+        try:
+            self._prompt_for_missing_cad_assets()
+        except Exception:
+            pass
         self._sync_table()
         self.refresh_plot(suppress_analysis=True)
         self._mark_saved_state()
         self.status_var.set(f"Opened {Path(path).name}. Click Update to run analysis.")
+
+    def _prompt_for_missing_cad_assets(self) -> None:
+        """Show the Missing CAD assets dialog if the layout has any.
+
+        Imported lazily so headless harnesses (no Tk display) that call
+        ``open_layout`` only to verify parsing don't drag in the panel
+        module just to confirm the scanner found zero entries.
+        """
+        from KrakenOS.UI.services.missing_assets_scan import scan_missing_assets
+
+        assets = scan_missing_assets(self.rows, editor=self)
+        if not assets:
+            return
+        from KrakenOS.UI.panels.missing_assets_dialog import MissingAssetsDialog
+
+        MissingAssetsDialog.run(self, editor=self, assets=assets)
 
     def save_layout(self) -> bool:
         self._commit_pending_table_edit()

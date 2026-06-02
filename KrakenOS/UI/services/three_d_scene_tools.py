@@ -47,6 +47,23 @@ from KrakenOS.UI.nonseq_output_ports import (
     optical_solid_output_port_runtime_transform_override,
 )
 from KrakenOS.UI.services.legacy_3d_scene import Legacy3DSceneService
+from KrakenOS.UI.services.missing_assets_scan import (
+    MISSING_RESOURCE_STATE_ATTR,
+)
+
+
+def _row_has_skipped_missing_asset(advanced: dict) -> bool:
+    """Return True if the row's advanced dict carries a non-empty skip list.
+
+    Mirrors :func:`row_has_missing_resource` from the scanner module but
+    reads the ``advanced`` dict that's already in scope at the call
+    site, so we don't pay an attribute lookup per row per refresh.
+    """
+    state = advanced.get(MISSING_RESOURCE_STATE_ATTR)
+    if not isinstance(state, dict):
+        return False
+    keys = state.get("keys")
+    return bool(keys) if isinstance(keys, (list, tuple, set, frozenset)) else False
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timing_span
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
@@ -1048,6 +1065,33 @@ class ThreeDSceneToolsMixin:
             row_transform = optical_solid_output_port_runtime_transform_override(system, self.rows, index)
             mesh = None
             advanced = row.advanced if isinstance(row.advanced, dict) else {}
+            # User explicitly skipped a missing CAD asset in the
+            # Missing-assets dialog: emit a visible placeholder instead
+            # of falling through to the silent analytic single-face
+            # fallback. The placeholder is a red wireframe box sized
+            # from the row's aperture diameter so the row's position is
+            # still meaningful in the scene; the renderer keys off
+            # ``is_missing_placeholder`` and draws no glassy body / rim
+            # outline for it.
+            if _row_has_skipped_missing_asset(advanced):
+                placeholder = ThreeDSceneToolsMixin._missing_asset_placeholder_mesh(
+                    row, transforms[index] if 0 <= index < len(transforms) else None
+                )
+                if placeholder is not None:
+                    mesh_items.append(
+                        SurfaceMesh3D(
+                            row_index=index,
+                            kind="missing_asset",
+                            row=row,
+                            surface=surface_descriptors[index] if 0 <= index < surface_count else None,
+                            mesh=placeholder,
+                            color=(0.92, 0.18, 0.22),
+                            opacity=0.18,
+                            is_body=True,
+                            is_missing_placeholder=True,
+                        )
+                    )
+                continue
             # Trailing surface of an analytic-promoted lens whose
             # front row owns the STEP body STL: skip entirely. The
             # body mesh already includes this curved face; drawing
@@ -1179,6 +1223,115 @@ class ThreeDSceneToolsMixin:
         except Exception:
             return mesh
 
+    @staticmethod
+    def _missing_asset_placeholder_mesh(row: SurfaceRow, transform):
+        """Return a red wireframe box sized from the row's aperture.
+
+        Drawn for rows where the user clicked Skip in the Missing-assets
+        dialog. The point is to make the broken row visibly different
+        from a normal lens: the renderer wraps this mesh in a red edge
+        outline (no glassy body, no rim circle) so it reads as "this
+        row references a CAD file that is not on disk" at a glance.
+        """
+        _ensure_pv()
+        if pv is None:
+            return None
+        try:
+            diameter = float(getattr(row, "diameter", 0.0) or 0.0)
+        except Exception:
+            diameter = 0.0
+        radius = max(diameter * 0.5, 1.0)  # never less than 1 mm so the
+                                            # marker stays visible even
+                                            # for tiny apertures
+        try:
+            thickness = float(getattr(row, "thickness", 0.0) or 0.0)
+        except Exception:
+            thickness = 0.0
+        # A small but non-zero axial depth: even an Object/Image plane
+        # gets a flat-ish marker rather than a degenerate box.
+        depth = max(abs(thickness) * 0.5, radius * 0.20, 1.0)
+        try:
+            box = pv.Box(
+                bounds=(
+                    -radius, radius,
+                    -radius, radius,
+                    -depth, depth,
+                )
+            )
+        except Exception:
+            return None
+        if transform is None:
+            return box
+        try:
+            matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+        except Exception:
+            return box
+        try:
+            pts = np.asarray(box.points, dtype=float)
+            local_h = np.column_stack((pts, np.ones(pts.shape[0], dtype=float)))
+            box.points = (matrix @ local_h.T).T[:, :3]
+        except Exception:
+            return None
+        return box
+
+    # ------------------------------------------------------------------
+    # Negative-existence cache for STEP / STL paths.
+    #
+    # Without this, a missing file gets probed up to 18 times per scene
+    # refresh (every analytic-fit lookup, every face metadata pass,
+    # every body STL load). Each probe is a ``Path.exists`` syscall plus
+    # a Python exception construction -- individually fast but cumulative
+    # enough to feel in the live log when 5 rows reference missing
+    # files. The cache is keyed on the resolved absolute path string
+    # and expires after a short TTL so the user can drop the file back
+    # in mid-session and the renderer recovers without a restart.
+    # ------------------------------------------------------------------
+
+    _MISSING_PATH_CACHE_TTL_S: float = 5.0
+
+    def _path_is_missing_cached(self, path) -> bool:
+        """Return True if ``path`` was seen missing within the TTL."""
+        if path is None:
+            return False
+        try:
+            key = str(path)
+        except Exception:
+            return False
+        cache = self.__dict__.setdefault("_missing_path_cache", {})
+        import time as _time
+
+        last_miss = cache.get(key)
+        if last_miss is None:
+            return False
+        if (_time.monotonic() - float(last_miss)) > self._MISSING_PATH_CACHE_TTL_S:
+            cache.pop(key, None)
+            return False
+        return True
+
+    def _record_missing_path(self, path) -> None:
+        if path is None:
+            return
+        try:
+            key = str(path)
+        except Exception:
+            return
+        cache = self.__dict__.setdefault("_missing_path_cache", {})
+        import time as _time
+
+        cache[key] = _time.monotonic()
+
+    def _clear_missing_path(self, path) -> None:
+        """Forget a cached miss (call after a successful relocate)."""
+        if path is None:
+            return
+        try:
+            key = str(path)
+        except Exception:
+            return
+        cache = self.__dict__.get("_missing_path_cache")
+        if isinstance(cache, dict):
+            cache.pop(key, None)
+
     def _stl_mesh_from_path_with_world_transform(
         self,
         path: str,
@@ -1193,6 +1346,12 @@ class ThreeDSceneToolsMixin:
         """
         _ensure_pv()
         if pv is None:
+            return None
+        # Negative cache short-circuit: if we already saw this path
+        # missing within the TTL, don't re-stat it. This is the path
+        # the analytic-promote body STL goes through, which used to get
+        # probed once per row per refresh per session.
+        if self._path_is_missing_cached(path):
             return None
         try:
             _fmt, triangles = _read_stl_triangle_vertices(path)
@@ -1217,6 +1376,9 @@ class ThreeDSceneToolsMixin:
                 )
             ).ravel()
             return pv.PolyData(world, faces)
+        except FileNotFoundError:
+            self._record_missing_path(path)
+            return None
         except Exception:
             return None
 

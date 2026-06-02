@@ -267,6 +267,16 @@ class Open3DSceneRefreshService:
                 row_index = int(getattr(mesh_item, "row_index", -1))
             except Exception:
                 row_index = -1
+            # Missing-CAD placeholder rows render as a tinted red
+            # wireframe box and short-circuit every other branch
+            # (no glassy body, no rim outline, no file-backed edge
+            # styling). The dedicated branch keeps the surrounding
+            # logic free of "is_missing_placeholder" checks at every
+            # step.
+            if bool(getattr(mesh_item, "is_missing_placeholder", False)) and mesh is not None:
+                self._add_missing_asset_placeholder_actors(mesh, row_index)
+                drew_surfaces += 1
+                continue
             transient_step_label = live_trace_step_labels_by_row.get(row_index)
             if transient_step_label is not None and bool(getattr(mesh_item, "is_body", False)):
                 live_trace_step_mesh_by_label.setdefault(str(transient_step_label), mesh)

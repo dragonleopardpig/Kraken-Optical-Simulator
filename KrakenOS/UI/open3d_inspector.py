@@ -3585,10 +3585,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         (unlike a view-dependent silhouette). Returns ``None`` when the
         cross-section is not actually circular (e.g. a square plano-cyl
         plate), so those keep their feature-edge outline instead.
+
+        Tries the strict thin-disc detector first; if that rejects (a
+        full sphere has minor/mid==1, a thick lens body has
+        thickness/diameter>0.85), falls back to a permissive axis
+        detector that still rejects elongated rods. The downstream
+        circularity check below filters out rectangular cross-sections
+        (the cyl plate) regardless of which detector found the axis.
         """
         if pv is None or mesh is None:
             return None
         info = Kraken3DInspector._mesh_round_lens_axis(mesh)
+        if info is None:
+            info = Kraken3DInspector._lens_rim_axis_loose(mesh)
         if info is None:
             return None
         center, axis, points = info
@@ -3609,18 +3618,32 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         rmax = float(np.percentile(radial, 97))
         if rmax <= 1e-9:
             return None
-        outer = radial >= 0.8 * rmax
-        if not np.any(outer):
+        # 0.8 picks up the rim of a thin revolved drum (the achromat
+        # drum's side wall sits at radial == R, dominates the outer
+        # band, std/mean tiny). A full sphere's surface points span
+        # all radii smoothly, so 0.8 catches a wide band where radial
+        # varies from 0.8 R to R and the circularity check below would
+        # reject it. Try the wide band first to keep the disc path
+        # unchanged, then tighten to 0.92 to admit spheres / thick
+        # rotationally-symmetric bodies. The cyl plate's outer ring
+        # still exceeds the circularity tolerance at both thresholds.
+        outer = None
+        ring_r = None
+        for outer_threshold in (0.8, 0.92):
+            candidate_mask = radial >= outer_threshold * rmax
+            if not np.any(candidate_mask):
+                continue
+            candidate = radial[candidate_mask]
+            candidate_mean = float(np.mean(candidate))
+            if candidate_mean <= 1e-9:
+                continue
+            if float(np.std(candidate) / candidate_mean) <= 0.045:
+                outer = candidate_mask
+                ring_r = candidate
+                break
+        if outer is None or ring_r is None:
             return None
-        ring_r = radial[outer]
         ring_mean = float(np.mean(ring_r))
-        if ring_mean <= 1e-9:
-            return None
-        # Circular cross-section => the outer ring radius is nearly
-        # constant. A square plate's outer ring runs from side to corner
-        # (ratio ~sqrt(2)), so its spread is large and we bail out.
-        if float(np.std(ring_r) / ring_mean) > 0.045:
-            return None
         radius = ring_mean
         rim_axial = float(np.mean(proj[outer]))
         rim_center = center + axis * rim_axial
@@ -3656,6 +3679,66 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             actor.PickableOn()
         except Exception:
             pass
+
+    def _add_missing_asset_placeholder_actors(self, mesh, row_index: int) -> None:
+        """Render the red wireframe placeholder for a missing-CAD row.
+
+        Draws three actors:
+
+        * A faint red translucent body so the row's footprint reads at a
+          glance from any orbit angle (otherwise the wireframe alone
+          would disappear into the background on a busy scene).
+        * A bright red wireframe edge on top, so the row is impossible
+          to mistake for a normal glassy lens.
+        * Pull the row's surface descriptor into the picker map via the
+          standard ``_add_mesh_actor`` path so the user can still click
+          on the placeholder and see "this row references a missing CAD
+          file" via the existing selection UI.
+
+        We deliberately do not draw a rim circle or feature edges
+        here: the placeholder is meant to look obviously wrong, not
+        like a half-finished lens.
+        """
+        if pv is None or mesh is None:
+            return
+        placeholder_color = (0.92, 0.18, 0.22)
+        try:
+            body_actor = self._add_mesh_actor(
+                mesh,
+                color=placeholder_color,
+                opacity=0.18,
+                pick_row_index=row_index,
+                follow_step_label=None,
+                backface_culling=False,
+            )
+        except Exception:
+            body_actor = None
+        if body_actor is not None:
+            try:
+                body_actor._kraken_missing_asset_placeholder = True
+            except Exception:
+                pass
+        try:
+            edges = mesh.extract_feature_edges(
+                feature_angle=10,
+                boundary_edges=True,
+                feature_edges=True,
+                manifold_edges=False,
+            )
+        except Exception:
+            edges = None
+        if edges is not None and int(getattr(edges, "n_points", 0)) > 0:
+            try:
+                self._add_mesh_actor(
+                    edges,
+                    color=placeholder_color,
+                    opacity=1.0,
+                    line_width=2.4,
+                    track_row_index=row_index,
+                    follow_step_label=None,
+                )
+            except Exception:
+                pass
 
     def _set_step_highlight(self, step_label: str | None, *, render: bool = True) -> None:
         self._selection_representation.apply_step_selection(step_label, render=render)
@@ -9924,6 +10007,63 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         diameter = 2.0 * float(np.percentile(radial_norm, 95))
         if diameter <= 1e-9 or thickness <= 1e-9 or thickness / diameter > 0.85:
             return None
+        return center, axis, points[:, :3]
+
+    @staticmethod
+    def _lens_rim_axis_loose(data) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+        """Permissive rim-axis detector for promoted-STEP lens bodies.
+
+        The strict `_mesh_round_lens_axis` is tuned for thin auto-
+        revolved BBB drums and rejects anything that doesn't read as a
+        thin disc -- full spheres (ball-lens body STL, minor/mid==1),
+        thick lens bodies (DCV with edge thickness near radius, where
+        thickness/diameter exceeds 0.85), and so on. The rim-circle
+        path needs to accept those: a sphere's rim is just a great
+        circle perpendicular to any axis, and a thick rotationally
+        symmetric body still has a well-defined widest cross-section.
+        Only `major/mid > 1.75` is retained, to keep rejecting clearly
+        elongated rods. The downstream `std/mean > 0.045` circularity
+        check in `_lens_rim_circle_polyline` still rejects rectangular
+        cross-sections (plano-cyl plate), so this fallback never emits
+        a rim circle for a square body.
+        """
+        if data is None:
+            return None
+        try:
+            points = np.asarray(getattr(data, "points", None), dtype=float)
+        except Exception:
+            try:
+                points = np.asarray(
+                    [data.GetPoint(index) for index in range(int(data.GetNumberOfPoints()))],
+                    dtype=float,
+                )
+            except Exception:
+                return None
+        if (
+            points.ndim != 2
+            or points.shape[0] < 24
+            or points.shape[0] > 120000
+            or points.shape[1] < 3
+            or not np.all(np.isfinite(points[:, :3]))
+        ):
+            return None
+        center = np.mean(points[:, :3], axis=0)
+        centered = points[:, :3] - center
+        try:
+            _u, singular, vh = np.linalg.svd(centered, full_matrices=False)
+        except Exception:
+            return None
+        if singular.size < 3 or vh.shape != (3, 3):
+            return None
+        major = float(max(singular[0], 1e-12))
+        mid = float(max(singular[1], 1e-12))
+        if major / mid > 1.75:
+            return None
+        axis = np.asarray(vh[2], dtype=float)
+        axis_norm = float(np.linalg.norm(axis))
+        if axis_norm <= 1e-12 or not np.isfinite(axis_norm):
+            return None
+        axis = axis / axis_norm
         return center, axis, points[:, :3]
 
     @staticmethod

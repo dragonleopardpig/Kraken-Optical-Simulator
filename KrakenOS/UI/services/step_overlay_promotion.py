@@ -1168,6 +1168,28 @@ class StepOverlayPromotionService:
         mesh = self._transformed_imported_step_mesh_for_label(label)
         if mesh is None or int(getattr(mesh, "n_points", 0) or 0) <= 0:
             return None
+        return self._write_promoted_body_stl_from_mesh(
+            mesh, label=label, source_path=source_path, optical_axis=optical_axis
+        )
+
+    def _write_promoted_body_stl_from_mesh(
+        self,
+        mesh,
+        *,
+        label: str,
+        source_path: Path,
+        optical_axis: tuple[float, float, float] | None = None,
+    ) -> str | None:
+        """Core mesh → cached-STL pipeline used by both the live promote
+        path and the missing-asset auto-regenerate path.
+
+        Splits out of :meth:`_cache_promoted_step_body_mesh` so it can
+        be called with a mesh loaded directly from a source STEP path
+        (no editor overlay required) when the user relocates a missing
+        source STEP via the Missing-assets dialog. The body-frame
+        re-orientation, centroid centring, hash naming, and disk-cache
+        write are identical.
+        """
         try:
             mesh = mesh.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
         except Exception:
@@ -1236,6 +1258,50 @@ class StepOverlayPromotionService:
             mesh_path.parent.mkdir(parents=True, exist_ok=True)
             local_mesh.save(str(mesh_path))
         return str(mesh_path.resolve())
+
+    def regenerate_promoted_body_stl_from_source(
+        self,
+        source_step_path: Path,
+        *,
+        label: str = "optical",
+        optical_axis: tuple[float, float, float] | None = None,
+    ) -> str | None:
+        """Rebuild a cached body STL directly from a source STEP file.
+
+        Used by the Missing-assets dialog: when the user relocates a
+        ``StepAnalyticPromotion.source_step_path`` and the sibling
+        ``StepAnalyticBodyStlPath`` is still missing on disk, this
+        regenerates the body STL without requiring the user to re-run
+        the full Promote workflow. The result is identical in shape
+        (same hash inputs, same orientation pipeline) to what the
+        original promote produced.
+
+        Returns the new STL path string, or ``None`` if the STEP could
+        not be loaded.
+
+        The caller is responsible for writing the returned path back
+        into ``row.advanced["StepAnalyticBodyStlPath"]``.
+        """
+        source_path = Path(source_step_path).expanduser()
+        try:
+            if not source_path.exists():
+                return None
+        except Exception:
+            return None
+        editor = self.editor
+        try:
+            mesh = editor._load_step_mesh(
+                source_path,
+                largest_component=False,
+                allow_slow_import=True,
+            )
+        except Exception:
+            return None
+        if mesh is None or int(getattr(mesh, "n_points", 0) or 0) <= 0:
+            return None
+        return self._write_promoted_body_stl_from_mesh(
+            mesh, label=str(label or "optical"), source_path=source_path, optical_axis=optical_axis
+        )
 
     def preview_imported_step_analytic_surfaces(
         self,
