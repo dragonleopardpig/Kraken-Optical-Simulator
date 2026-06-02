@@ -12,6 +12,7 @@ from KrakenOS.UI.services.open3d_face_index_edges import (
     triangles_for_face_indices,
 )
 from KrakenOS.UI.services.open3d_face_pick import FaceRayPick
+from KrakenOS.UI.services.open3d_timing import open3d_trace_span
 
 
 def _metadata_round_lens_cap_pick(inspector: Any, label: str, display_xy):
@@ -114,7 +115,8 @@ def round_lens_feature_for_display_xy(inspector: Any, label: str, display_xy):
     label = str(label or "").strip().lower()
     if not label or not inspector._step_label_is_round_lens_like(label):
         return None
-    metadata_pick = _metadata_round_lens_cap_pick(inspector, label, display_xy)
+    with open3d_trace_span("round_lens_metadata_cap_pick", label=label):
+        metadata_pick = _metadata_round_lens_cap_pick(inspector, label, display_xy)
     if metadata_pick is not None:
         return metadata_pick
     ray = inspector._display_pick_ray(display_xy)

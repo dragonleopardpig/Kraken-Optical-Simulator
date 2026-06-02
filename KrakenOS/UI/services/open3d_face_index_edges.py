@@ -79,9 +79,52 @@ def _drop_invalid_cell_data(mesh):
         return mesh
 
 
+# Building the displayed triangle array + face-index map means a full
+# ``pv.wrap`` + reshape over every cell. The round-lens cap picker calls
+# this twice per analytic group face on every mouse move, so a 114k-cell
+# vendor body re-materialised a ~10 MB float array a dozen times per
+# hover (~1.8 s stalls). The transformed display mesh is itself memoised
+# (one stable object per layout pose), so cache the derived arrays keyed
+# on mesh identity plus a content token; a genuine geometry change bumps
+# the VTK MTime / cell count and invalidates the entry.
+_SURFACE_TRIANGLE_CACHE: dict[int, tuple] = {}
+_SURFACE_TRIANGLE_CACHE_ORDER: list[int] = []
+_SURFACE_TRIANGLE_CACHE_MAX = 8
+
+
+def _mesh_cache_token(mesh):
+    try:
+        mtime = int(mesh.GetMTime())
+    except Exception:
+        mtime = -1
+    return (
+        int(getattr(mesh, "n_points", -1)),
+        int(getattr(mesh, "n_cells", -1)),
+        mtime,
+    )
+
+
 def _surface_triangles_and_face_index(mesh):
     if pv is None or mesh is None:
         return None, np.empty((0, 3, 3), dtype=float), np.empty((0,), dtype=int)
+    key = id(mesh)
+    token = _mesh_cache_token(mesh)
+    cached = _SURFACE_TRIANGLE_CACHE.get(key)
+    if cached is not None and cached[0] == token:
+        return cached[1]
+    result = _surface_triangles_and_face_index_compute(mesh)
+    _SURFACE_TRIANGLE_CACHE[key] = (token, result)
+    if key in _SURFACE_TRIANGLE_CACHE_ORDER:
+        _SURFACE_TRIANGLE_CACHE_ORDER.remove(key)
+    _SURFACE_TRIANGLE_CACHE_ORDER.append(key)
+    while len(_SURFACE_TRIANGLE_CACHE_ORDER) > _SURFACE_TRIANGLE_CACHE_MAX:
+        evicted = _SURFACE_TRIANGLE_CACHE_ORDER.pop(0)
+        if evicted != key:
+            _SURFACE_TRIANGLE_CACHE.pop(evicted, None)
+    return result
+
+
+def _surface_triangles_and_face_index_compute(mesh):
     try:
         surface = pv.wrap(mesh)
         faces = np.asarray(surface.faces, dtype=np.int64).reshape((-1, 4))
@@ -131,7 +174,7 @@ def triangles_for_face_indices(mesh, target_face_indices) -> np.ndarray:
     _surface, triangles, face_index = _surface_triangles_and_face_index(mesh)
     if triangles.size == 0 or face_index.size != triangles.shape[0]:
         return np.empty((0, 3, 3), dtype=float)
-    mask = np.asarray([int(value) in targets for value in face_index], dtype=bool)
+    mask = np.isin(np.asarray(face_index, dtype=int), np.asarray(sorted(targets), dtype=int))
     if mask.shape[0] != triangles.shape[0] or not np.any(mask):
         return np.empty((0, 3, 3), dtype=float)
     return np.asarray(triangles[mask], dtype=float)
