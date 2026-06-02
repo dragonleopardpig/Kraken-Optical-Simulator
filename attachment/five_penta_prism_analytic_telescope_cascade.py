@@ -6411,16 +6411,17 @@ def build_system():
     s15.AxisMove = 0.0
     s15.Glass = 'N-BK7'
     s15.Cylinder_Rxy_Ratio = 0.0
-    s15.StepAnalyticBodyStlPath = '/home/thinky/.cache/krakenos/cad/promoted_step_overlays/optical_analytic_9c403c33038e1b90.stl'
+    s15.StepAnalyticBodyStlPath = '/home/thinky/.cache/krakenos/cad/promoted_step_overlays/optical_analytic_802bef47dbb5d2c4.stl'
     s15.StepAnalyticPromotion = {'face_id': 'S001/F002',
  'fit_kind': 'cylinder',
  'fit_residual_mm': 0.0,
  'glass_sequence': ['N-BK7', 'AIR'],
+ 'optical_axis': (0.0, -1.0, 0.0),
  'row_count': 2,
  'row_offset': 0,
  'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step',
  'step_label': 'optical'}
-    surfaces.append({'surface': 'Standard', 'element': 'Cylindrical f=+50 mm (N-BK7, plano-cyl)', 'name': 'Cylindrical f=+50 mm (N-BK7, plano-cyl)', 'rc': 25.84, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.0, 'diameter': 35.6393041458, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {'Cylinder_Rxy_Ratio': 0.0, 'StepAnalyticBodyStlPath': '/home/thinky/.cache/krakenos/cad/promoted_step_overlays/optical_analytic_9c403c33038e1b90.stl', 'StepAnalyticPromotion': {'step_label': 'optical', 'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step', 'face_id': 'S001/F002', 'fit_kind': 'cylinder', 'fit_residual_mm': 0.0, 'glass_sequence': ['N-BK7', 'AIR'], 'row_offset': 0, 'row_count': 2}}, 'tilt_x': 0.0, 'tilt_y': -90.0, 'tilt_z': 0.0, 'desp_x': -241.11026847, 'desp_y': -0.00100651185725, 'desp_z': 97.4964525231, 'axis_move': 0.0, 'glass': 'N-BK7', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    surfaces.append({'surface': 'Standard', 'element': 'Cylindrical f=+50 mm (N-BK7, plano-cyl)', 'name': 'Cylindrical f=+50 mm (N-BK7, plano-cyl)', 'rc': 25.84, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 0.0, 'diameter': 35.6393041458, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {'Cylinder_Rxy_Ratio': 0.0, 'StepAnalyticBodyStlPath': '/home/thinky/.cache/krakenos/cad/promoted_step_overlays/optical_analytic_802bef47dbb5d2c4.stl', 'StepAnalyticPromotion': {'step_label': 'optical', 'source_step_path': '/home/thinky/Projects/Kraken-Optical-Simulator/attachment/Lens/cylinder_lens_rectangle/step_34754.step', 'face_id': 'S001/F002', 'fit_kind': 'cylinder', 'fit_residual_mm': 0.0, 'glass_sequence': ['N-BK7', 'AIR'], 'optical_axis': (0.0, -1.0, 0.0), 'row_offset': 0, 'row_count': 2}}, 'tilt_x': 0.0, 'tilt_y': -90.0, 'tilt_z': 0.0, 'desp_x': -241.11026847, 'desp_y': -0.00100651185725, 'desp_z': 97.4964525231, 'axis_move': 0.0, 'glass': 'N-BK7', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s16 = Kos.surf()
     s16.Name = 'OPTICAL analytic S2: plane'
