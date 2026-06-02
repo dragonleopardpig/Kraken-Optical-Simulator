@@ -3320,7 +3320,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return
         is_file_backed_body = bool(getattr(actor, "_kraken_file_backed_row_body", False))
         is_glassy_lens_body = bool(getattr(actor, "_kraken_glassy_lens_body", False))
-        suppress_select_edges = is_file_backed_body or is_glassy_lens_body
+        # A round-lens-like solid body (e.g. an aspheric achromat promoted to a
+        # file-backed optical solid) is a dense mesh: painting per-triangle red
+        # edges on selection reads as a solid red block of "many faces" instead
+        # of pink translucent (bugs/0003). It carries the round-lens flag even
+        # when it misses the file-backed/glassy flags, so suppress its triangle
+        # edges too -- its separate rim/feature-edge actor still outlines it.
+        is_round_lens_like = bool(getattr(actor, "_kraken_round_lens_like_step_body", False))
+        suppress_select_edges = is_file_backed_body or is_glassy_lens_body or is_round_lens_like
         if selected:
             # "Red + Pink translucent body when selected" -- the
             # face fill flips to pink; outlines flip to red. Two

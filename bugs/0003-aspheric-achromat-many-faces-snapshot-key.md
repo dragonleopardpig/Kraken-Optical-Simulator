@@ -79,25 +79,43 @@ does not.
 
 ## Issue 3 — "160 faces" (explained; reduction deferred)
 
-The face editor lists planar face *candidates* (`_step_overlay_face_metadata` →
-planar clustering of the STL). An aspheric surface is curved, so it cannot be a
-single planar face: clustering fragments it into ~160 small planar patches.
-Spherical lenses are handled by the analytic sphere-fit promote path, but an
-asphere has no clean sphere fit, so it stays a file-backed CAD solid whose curved
-faces fragment. This is a known limitation, not a data error. A future
-enhancement could cluster co-axial/curved patches into one logical optical face
-(or fit an even-asphere surface). **Deferred** — needs design + the offscreen
-render to verify.
+The face editor lists planar face *candidates* from
+`cluster_optical_solid_planar_faces`, which groups STL triangles by **plane**
+(rounded normal + offset). A flat face → 1 cluster; a *curved* aspheric surface →
+one micro-cluster per triangle → capped at `max_faces=160`. So the 160 are the
+curved front/back surfaces fragmented, not real optical faces. Spherical lenses
+are handled by the analytic sphere-fit promote path, but an asphere has no clean
+sphere fit, so it stays a file-backed CAD solid whose curved faces fragment.
 
-## Issue 4 — selected lens renders all-red ("so many faces" as red triangles) (DEFERRED)
+**Status: open — needs a design decision, not a blind change.** The whole
+face-assignment system is built around *planar* faces (the function name, the
+`plane_offset`, the face-snapping/role logic). Two candidate fixes, each with a
+trade-off:
+  1. **Region-growing clustering** (group connected triangles whose normals vary
+     slowly into one curved face) — collapses 160 → a handful, but a "face
+     candidate" is then curved, and the planar snapping/role code would need to
+     tolerate a non-planar face. Cross-cutting; affects prisms and every
+     file-backed solid, so it needs broad verification.
+  2. **Display-only grouping** in the face editor — keep the 160 planar
+     candidates for snapping, but collapse them in the tree (e.g. "Curved face 1
+     — 143 patches") and let the user assign a role to the whole group.
+     Contained to the dialog; lower risk; doesn't change the geometry layer.
 
-When selected, the lens fills the screen with dense red triangle edges instead of
-the pink translucent fill. In `_set_row_actor_selected`
-(`open3d_inspector.py:3322`) `suppress_select_edges = is_file_backed_body or
-is_glassy_lens_body`; the aspheric lens's body actor carries neither flag, so per-
-triangle red edges are drawn (same family as 0001/0002). The exact reason the flag
-is unset on this actor, and any fix, **require the offscreen renderer** to
-reproduce and visually verify per this workflow — and offscreen rendering is
-currently producing blank frames on this machine (an Xvfb/GL environment issue,
-tracked separately). **Deferred** until rendering works so the image-snapshot
-test + Phase-10 check can be authored honestly.
+## Issue 4 — selected lens renders all-red ("so many faces" as red triangles) (FIXED)
+
+When selected, the lens filled the screen with dense red triangle edges instead
+of the pink translucent fill. Root cause confirmed by promoting the aspheric
+achromat to a file-backed optical-solid row and dumping its row-1 actors: the
+body actor has `_kraken_file_backed_row_body=False` and
+`_kraken_glassy_lens_body=False` (it is rendered through the glassy analytic path
+but, being file-backed-with-an-on-disk-STL, misses both flags), so
+`_set_row_actor_selected`'s `suppress_select_edges = is_file_backed_body or
+is_glassy_lens_body` was False and per-triangle red edges were painted (same
+family as 0001/0002). The body actor *does* carry `_kraken_round_lens_like_step_body
+=True`. **Fix:** include that flag in `suppress_select_edges`
+(`open3d_inspector.py`) — a round-lens-like dense body should never show a red
+per-triangle wireframe on selection; its separate rim/feature-edge actor still
+outlines it. Verified the existing DCV glassy-selection snapshot still passes
+(pink fill, negligible red). The offscreen render was confirmed working (the
+earlier "blank" was transient), so the bug-0002 snapshot check guards the
+glassy case end-to-end.
