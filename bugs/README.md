@@ -57,3 +57,4 @@ snapshot. Analyze the newest by mtime; correlate with the matching
 |----|-------|--------|-----------|
 | [0001](0001-analytic-lens-selection-all-red.md) | Selecting an analytic lens renders solid red, no slide handle | Fixed | `validate_open3d_analytic_lens_select_not_all_red` + Phase 10 |
 | [0002](0002-analytic-lens-selection-ghost-red-block.md) | Selected analytic lens leaves a "ghost red block"; slide-along-axis has no handle | Fixed (red block); slide-handle is a UX gap, not a bug | `validate_open3d_analytic_lens_selection_snapshot` + Phase 10 image check |
+| [0003](0003-aspheric-achromat-many-faces-snapshot-key.md) | Aspheric achromat: "so many faces", `s` snapshot key dead in face editor, InvalidMeshWarning | Snapshot key + InvalidMeshWarning fixed; all-red render + face-count reduction deferred to render-env | `validate_open3d_step_promotion_mesh_warning_free` |

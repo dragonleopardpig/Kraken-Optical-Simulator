@@ -53,6 +53,21 @@ class MainOpticalSolidFaceRolesDialog:
         window.geometry('1440x760')
         window.minsize(1080, 560)
         window.transient(self.editor)
+
+        # The `s` bug-flag / scene-snapshot hotkey is bound on the Open 3D
+        # inspector window; this face editor is a separate Toplevel, so it
+        # never saw the key. Forward `s`/`S` here to the inspector's flag
+        # handler (which already no-ops while typing in an entry/combobox),
+        # so the user can snapshot while the face editor is open.
+        def _forward_snapshot_key(event=None):
+            inspector = getattr(self.editor, '_three_d_inspector', None)
+            handler = getattr(inspector, '_flag_bug_event', None) if inspector is not None else None
+            if callable(handler):
+                return handler(event)
+            return ''
+
+        window.bind('<KeyPress-s>', _forward_snapshot_key, add='+')
+        window.bind('<KeyPress-S>', _forward_snapshot_key, add='+')
         window.columnconfigure(0, weight=1)
         window.rowconfigure(1, weight=1)
         header = ttk.Frame(window, padding=(10, 10, 10, 4))

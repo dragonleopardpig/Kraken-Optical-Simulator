@@ -32,6 +32,34 @@ from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABEL_SET
 from KrakenOS.UI.surface_table_model import SurfaceRow
 
 
+def _mesh_without_cell_data(mesh):
+    """Return a deep copy of ``mesh`` with cell-data arrays cleared.
+
+    Imported STEP meshes carry per-triangle face-index cell arrays
+    (``kraken_step_face_index`` etc.) sized to the source tessellation. A
+    surface-extract / triangulate changes the cell count, leaving those
+    arrays stale (wrong length), which trips pyvista's InvalidMeshWarning
+    on the following triangulate / STL save (seen on the aspheric achromat
+    fixture: arrays of length 2227 on a 1115-cell mesh). Promotion saves
+    geometry as STL (which stores no cell data) and recovers face metadata
+    separately, so dropping the arrays before the topology change is safe
+    and removes the warning at the root.
+    """
+    try:
+        clean = mesh.copy(deep=True)
+    except Exception:
+        return mesh
+    try:
+        clean.clear_cell_data()
+    except Exception:
+        try:
+            for name in list(clean.cell_data.keys()):
+                del clean.cell_data[name]
+        except Exception:
+            pass
+    return clean
+
+
 def _refine_face_normals_from_mesh(
     faces: list[dict[str, Any]],
     mesh: Any,
@@ -773,6 +801,9 @@ class StepOverlayPromotionService:
             if not quiet:
                 self.status_var.set(f"{label.upper()} STEP mesh unavailable for optical-solid promotion.")
             return None
+        # Drop stale per-triangle face-index cell arrays before the
+        # surface/triangulate topology change (see _mesh_without_cell_data).
+        mesh = _mesh_without_cell_data(mesh)
         try:
             mesh = mesh.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
         except Exception:
@@ -953,6 +984,9 @@ class StepOverlayPromotionService:
         if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
             self.status_var.set(f"{label.upper()} STEP mesh unavailable for optical-solid promotion.")
             return None
+        # Drop stale per-triangle face-index cell arrays before the
+        # surface/triangulate topology change (see _mesh_without_cell_data).
+        mesh = _mesh_without_cell_data(mesh)
         try:
             mesh = mesh.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
         except Exception:
@@ -1191,6 +1225,9 @@ class StepOverlayPromotionService:
         re-orientation, centroid centring, hash naming, and disk-cache
         write are identical.
         """
+        # Drop stale per-triangle face-index cell arrays before the
+        # surface/triangulate topology change (see _mesh_without_cell_data).
+        mesh = _mesh_without_cell_data(mesh)
         try:
             mesh = mesh.extract_surface(algorithm="dataset_surface").triangulate().copy(deep=True)
         except Exception:
