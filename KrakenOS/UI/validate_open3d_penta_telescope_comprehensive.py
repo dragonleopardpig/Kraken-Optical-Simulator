@@ -1152,6 +1152,135 @@ def phase_8_extras(
     return result
 
 
+def phase_10_analytic_lens_selection_not_all_red(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0001: selecting a promoted analytic lens must not render solid red.
+
+    A promoted analytic lens body is a dense glassy solid. The scene flags it
+    (``_kraken_glassy_lens_body``) so the selection highlight suppresses its
+    per-triangle edges and the pink translucent fill reads through. Before the
+    fix the body fell into the sparse-surface branch, which paints bright red
+    edges across every triangle, so the lens read as solid red with no visible
+    handle. This phase promotes a real lens onto a clean chain, selects it via
+    the live recolor path (``_set_row_highlights`` -> ``apply_row_selection`` ->
+    ``_set_row_actor_selected``), and asserts the body actor is flagged and its
+    edges stay suppressed (pink, not red) while selected.
+    """
+    result = PhaseResult(name="Phase 10: analytic lens selection not all-red")
+    if not LENS_FIXTURES:
+        result.notes.append(
+            "skipped: no lens STEP fixtures checked out under attachment/Lens/"
+        )
+        result.detail["skipped"] = True
+        result.passed = True
+        return result
+
+    from KrakenOS.UI.layout_editor import SurfaceRow
+
+    def _glassy_body_actors_by_row() -> dict[int, list]:
+        by_row: dict[int, list] = {}
+        renderer = getattr(inspector, "_renderer", None)
+        if renderer is None:
+            return by_row
+        collection = renderer.GetActors()
+        collection.InitTraversal()
+        for _ in range(collection.GetNumberOfItems()):
+            actor = collection.GetNextActor()
+            if not bool(getattr(actor, "_kraken_glassy_lens_body", False)):
+                continue
+            key = inspector._actor_key(actor)
+            row = inspector._actor_row_map.get(key) if key is not None else None
+            try:
+                row = int(row)
+            except Exception:
+                continue
+            by_row.setdefault(row, []).append(actor)
+        return by_row
+
+    promoted_lens: str | None = None
+    for fixture in LENS_FIXTURES:
+        app.rows = [
+            SurfaceRow(label="0", surface="Object", element="", name="Object",
+                       thickness=50.0, diameter=12.0, glass="AIR"),
+            SurfaceRow(label="1", surface="Image", element="", name="Image",
+                       thickness=0.0, diameter=12.0, glass="AIR"),
+        ]
+        app._sync_table()
+        try:
+            app.clear_step_imports()
+        except Exception:
+            pass
+        _import_step(app, fixture["step"])
+        inspector.refresh_from_editor(force_retrace=True)
+        inspector.update_idletasks()
+        try:
+            app.promote_imported_step_to_analytic_surfaces(
+                "optical",
+                glass_sequence=fixture["glass"],
+                clear_overlay=True,
+                refresh_open_3d=False,
+            )
+        except Exception as exc:
+            result.notes.append(f"{fixture['name']}: promote raised {exc!r}")
+            continue
+        inspector.refresh_from_editor(force_retrace=True)
+        inspector.update_idletasks()
+        if _glassy_body_actors_by_row():
+            promoted_lens = fixture["name"]
+            break
+
+    by_row = _glassy_body_actors_by_row()
+    result.detail["lens"] = promoted_lens
+    result.detail["glassy_body_rows"] = sorted(by_row.keys())
+    if not by_row:
+        result.notes.append(
+            "no glassy analytic lens body actor was flagged after promote "
+            "(_kraken_glassy_lens_body never set -- scene-refresh flag regressed)"
+        )
+        result.passed = False
+        return result
+
+    target_row = sorted(by_row.keys())[0]
+    target_actors = by_row[target_row]
+    baseline_edge_vis = [int(a.GetProperty().GetEdgeVisibility()) for a in target_actors]
+
+    # Drive the real selection recolor path and inspect the body actor.
+    inspector._set_row_highlights([target_row])
+    inspector.update_idletasks()
+    selected_edge_vis = [int(a.GetProperty().GetEdgeVisibility()) for a in target_actors]
+    selected_colors = [
+        tuple(round(float(c), 2) for c in a.GetProperty().GetColor()) for a in target_actors
+    ]
+    inspector._clear_open3d_selection(render=False)
+    inspector.update_idletasks()
+    cleared_edge_vis = [int(a.GetProperty().GetEdgeVisibility()) for a in target_actors]
+
+    result.detail.update({
+        "target_row": target_row,
+        "baseline_edge_visibility": baseline_edge_vis,
+        "selected_edge_visibility": selected_edge_vis,
+        "selected_fill_color": selected_colors,
+        "cleared_edge_visibility": cleared_edge_vis,
+    })
+    if any(v != 0 for v in selected_edge_vis):
+        result.notes.append(
+            f"selected lens body shows triangle edges (edge_visibility={selected_edge_vis}); "
+            "the red wireframe smothers the pink fill -> lens reads as solid red (all-red bug)"
+        )
+    if not all(color == (1.0, 0.45, 0.65) for color in selected_colors):
+        result.notes.append(
+            f"selected lens body fill is not pink translucent (got {selected_colors})"
+        )
+    if cleared_edge_vis != baseline_edge_vis:
+        result.notes.append(
+            f"deselect did not restore baseline edge visibility "
+            f"({baseline_edge_vis} -> {cleared_edge_vis})"
+        )
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -1198,6 +1327,7 @@ def main() -> int:
             phase_7_best_focus_sweep,
             phase_8_extras,
             phase_9_real_focal_minimum,
+            phase_10_analytic_lens_selection_not_all_red,
         ]
         for phase in phases:
             try:

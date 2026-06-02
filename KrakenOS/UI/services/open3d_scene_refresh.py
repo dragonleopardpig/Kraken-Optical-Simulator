@@ -387,6 +387,18 @@ class Open3DSceneRefreshService:
                     body_actor._kraken_file_backed_row_body = bool(mesh_item.is_body)
                 except Exception:
                     pass
+            # Glassy analytic lens bodies (revolved drums, Standard caps,
+            # promoted-STEP body plates with no on-disk STL) are dense
+            # solids that are NOT file-backed, so they miss the flag above.
+            # Mark them so the selection highlight suppresses per-triangle
+            # edges the same way -- otherwise selecting one paints a red
+            # wireframe over every triangle and it reads as solid red
+            # instead of pink translucent (bugs/0001).
+            if body_actor is not None and glassy_lens:
+                try:
+                    body_actor._kraken_glassy_lens_body = True
+                except Exception:
+                    pass
             # Promoted-STEP analytic body owns multiple surface rows
             # (front + trailing). Trailing rows skip their own mesh
             # (StepAnalyticBodyOmitMesh) so the body STL doesn't get

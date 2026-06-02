@@ -3310,6 +3310,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 base = {}
         is_file_backed_body = bool(getattr(actor, "_kraken_file_backed_row_body", False))
+        is_glassy_lens_body = bool(getattr(actor, "_kraken_glassy_lens_body", False))
+        suppress_select_edges = is_file_backed_body or is_glassy_lens_body
         if selected:
             # "Red + Pink translucent body when selected" -- the
             # face fill flips to pink; outlines flip to red. Two
@@ -3317,17 +3319,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # with a SEPARATE feature-edge actor alongside the body
             # mesh actor:
             try:
-                if is_file_backed_body:
-                    # Body mesh of a Solid 3D STL / promoted STEP
-                    # solid: turning on triangle edges would paint a
+                if suppress_select_edges:
+                    # Dense solid body -- a Solid 3D STL / promoted STEP
+                    # solid (file-backed) OR a glassy analytic lens body
+                    # (revolved drum, Standard cap, promoted-STEP body
+                    # plate). Turning on triangle edges would paint a
                     # dense red wireframe across every triangle of the
-                    # body, smothering the pink fill (the symptom you
-                    # reported on the penta prism: "selected become
-                    # RED, not pink translucent"). Skip the mesh's
-                    # triangle edges -- the body's separate
-                    # feature-edge actor gets the same selection
-                    # treatment via _set_row_actor_selected and
-                    # provides a clean pink outline on its own.
+                    # body, smothering the pink fill (the symptom
+                    # reported on the penta prism and, for analytic
+                    # lenses, bugs/0001: "selected become RED, not pink
+                    # translucent"). Skip the mesh's triangle edges --
+                    # the body's separate feature-edge / rim actor gets
+                    # the same selection treatment via
+                    # _set_row_actor_selected and provides a clean
+                    # outline on its own.
                     prop.SetEdgeVisibility(0)
                     prop.SetLineWidth(float(base.get("line_width", 1.0)))
                 else:
