@@ -1,6 +1,14 @@
 # 0010 — Hover edge highlights stranded after the Center-Row→Optical-Axis snap ("ghosts")
 
-**Status:** Open — documented from the flag, not yet fixed.
+**Status:** Fixed — verified by the user (2026-06-03): the stranded "ghost"
+edge highlights no longer appear after Place → Center Row → Optical axis. No
+dedicated 0010-specific code change was needed; it resolved in practice with the
+session's refresh-ordering / hover-clear changes (and a fresh app start clearing
+stale renderer state). The recorder instrumentation added for it
+(`hover_outline_bounds`, `hover_step_cell_key`, `stray_props_above_body`) is kept
+as a tripwire — if a ghost recurs, the next flag will pin exactly what/where it
+is so a targeted fix can be made. The investigation below (which falsified the
+stranded-actor and stale-builder hypotheses) is retained for that contingency.
 **Component:** Open 3D inspector — the lens **hover edge highlight**
 (`Kraken3DInspector._set_step_hover_outline` /
 `_set_step_hover_outline_impl`, open3d_inspector.py ~10588; the cached actor
