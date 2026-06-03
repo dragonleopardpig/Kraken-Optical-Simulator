@@ -59,6 +59,14 @@ class SceneSnapshot:
     ray_actor_count: int = 0
     optical_axis_actor_count: int = 0
     optical_axis_highlight_present: bool = False
+    # bugs/0010: capture the STEP face-hover edge highlight so a "ghost edges"
+    # flag pins what/where the stray highlight is. ``hover_outline_bounds`` is the
+    # gold hover-outline actor's world bounds (empty if none); ``hover_step_cell_key``
+    # is its cache key; ``stray_props_above_body`` lists any visible prop whose
+    # y-extent sits clearly above the optical body (the stranded "ghost").
+    hover_outline_bounds: list[float] = field(default_factory=list)
+    hover_step_cell_key: str | None = None
+    stray_props_above_body: list[dict[str, Any]] = field(default_factory=list)
     show_rays: bool = False
     camera_position: list[float] = field(default_factory=list)
     camera_focal: list[float] = field(default_factory=list)
@@ -442,6 +450,44 @@ class Open3DEventRecorder:
             snapshot.ray_actor_count = len(inspector._actor_ray_map or {})
             snapshot.optical_axis_actor_count = len(inspector._actor_optical_axis_map or {})
             snapshot.optical_axis_highlight_present = inspector._optical_axis_highlight_actor is not None
+        except Exception:
+            pass
+
+        # bugs/0010: pin the "ghost edges" -- the STEP face hover outline and any
+        # stray prop stranded above the optical body after a Center-Row snap.
+        try:
+            outline_actor = getattr(inspector, "_hover_step_outline_actor", None)
+            if outline_actor is not None:
+                b = outline_actor.GetBounds()
+                if b is not None and len(b) >= 6:
+                    snapshot.hover_outline_bounds = [float(v) for v in b[:6]]
+            key = getattr(inspector, "_hover_step_cell_key", None)
+            snapshot.hover_step_cell_key = None if key is None else str(key)
+        except Exception:
+            pass
+        try:
+            body_top = None
+            for span in (snapshot.step_actor_bounds or {}).values():
+                if len(span) >= 4:
+                    body_top = float(span[3]) if body_top is None else max(body_top, float(span[3]))
+            for span in (snapshot.row_actor_bounds or {}).values():
+                if len(span) >= 4:
+                    body_top = float(span[3]) if body_top is None else max(body_top, float(span[3]))
+            if body_top is not None:
+                actor_by_key = getattr(inspector, "_actor_by_key", {}) or {}
+                for actor_key, actor in list(actor_by_key.items()):
+                    try:
+                        b = actor.GetBounds()
+                    except Exception:
+                        continue
+                    if b is None or len(b) < 6:
+                        continue
+                    ymin, ymax = float(b[2]), float(b[3])
+                    # ymin <= ymax skips degenerate/NaN bounds (NaN compares False).
+                    if ymin <= ymax and ymin > body_top + 2.0:
+                        snapshot.stray_props_above_body.append(
+                            {"key": str(actor_key), "bounds": [round(float(v), 3) for v in b[:6]]}
+                        )
         except Exception:
             pass
 
