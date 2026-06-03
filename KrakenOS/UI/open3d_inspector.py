@@ -2894,11 +2894,25 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor.append_debug(f"STEP translate commit failed for {label}: {exc}")
             return
         if not physics_requested:
-            refreshed = False
+            # bugs/0011: the persistent thickness dimensions span every
+            # component (Object/Image rows plus any imported body), so the
+            # per-label partial overlay refresh moves the body but leaves the
+            # "gap = .. mm" arrows anchored at the body's pre-move position --
+            # the live drag readout was correct, only the committed overlay
+            # went stale. When the dimensions are shown, do a full refresh so
+            # they recompute at the new position; keep the fast per-label path
+            # when they're hidden.
+            dims_shown = False
             try:
-                refreshed = bool(self.refresh_imported_step_overlay(label))
-            except Exception as exc:
-                self.editor.append_debug(f"STEP translate partial refresh failed for {label}: {exc}")
+                dims_shown = bool(self.editor.show_physical_distances_var.get())
+            except Exception:
+                dims_shown = False
+            refreshed = False
+            if not dims_shown:
+                try:
+                    refreshed = bool(self.refresh_imported_step_overlay(label))
+                except Exception as exc:
+                    self.editor.append_debug(f"STEP translate partial refresh failed for {label}: {exc}")
             if not refreshed:
                 try:
                     self.refresh_from_editor(force_retrace=False)

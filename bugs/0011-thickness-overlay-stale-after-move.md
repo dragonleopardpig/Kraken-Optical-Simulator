@@ -1,10 +1,13 @@
 # 0011 — Thickness overlay not auto-updated after moving the lens (stale gaps)
 
-**Status:** Open — documented from the flag, not yet fixed.
+**Status:** Fixed. After a STEP Move/Rotate gizmo commit the persistent
+thickness overlay now recomputes at the body's new position (when the dimensions
+are shown), so the two `gap = .. mm` arrows follow the lens instead of freezing
+at its old position.
 **Component:** Open 3D inspector — persistent thickness overlay
 (`Open3DThicknessDimensionService.add_overlays`, the split from bug 0009) and
 the STEP move-commit path (`Kraken3DInspector._finish_step_translate_drag`).
-The live drag readout is correct; the *committed* persistent overlay is stale.
+The live drag readout is correct; the *committed* persistent overlay was stale.
 **Reported via:** in-app recorder, flag `flag_20260603_171735_941`
 (2026-06-03T17:17:36). **Repro bundles are gitignored**, so the evidence below
 is transcribed here.
@@ -35,32 +38,49 @@ But the screenshot reads **`gap = 46.25 mm`** (left) and **`gap = 42.17 mm`**
 the lens centred at z ≈ **52.04** (front 46.25, back 57.83) — its *previous*
 position. So the overlay was computed before the move and never refreshed.
 
-## Lead / suspected root cause (to confirm at fix time)
+## Root cause
 
-The gizmo move commits the new placement (the body actor and
-`step_actor_bounds` show the new z = 70.75..82.33), but the persistent overlay
-is not recomputed at the new position. The live drag readout updates during the
-drag (bug 0009 confirmed it reads the already-populated `_step_actor_map`), yet
-on release the committed `gap =` arrows keep the pre-move values. Likely
-`_finish_step_translate_drag` applies the offset without triggering the scene
-refresh that re-runs `_add_thickness_dimension_overlays` at the new bounds (or
-it re-adds before the committed transform lands in `_step_actor_map`). This is
-newly visible *because* bug 0009 made the persistent overlay position-dependent
-(a split around the body), where before it was a fixed row→row span.
+`_finish_step_translate_drag` commits the move via `translate_step_overlay`,
+then refreshes. When live physics is **off** (`inspector_physics_requested` →
+`live_mode_var` is False, the flag's case — `show_rays` was off too), it took
+the fast per-label path: `refresh_imported_step_overlay(label)`. That helper
+rebuilds **only** the moved body (mesh, edges, handles) and returns True; it
+never touches the thickness-dimension actors. The persistent dimensions span
+*every* component (Object/Image rows plus the imported body), so a per-label
+overlay refresh leaves the `gap =` arrows + framed labels anchored at the body's
+pre-move position. The body slid; the committed overlay didn't.
 
-## Planned fix
+The live drag readout was unaffected (it recomputes on demand from the already
+up-to-date `_step_actor_map`), which is why the user saw it as correct. The
+staleness is newly visible *because* bug 0009 made the persistent overlay
+position-dependent (a split around the body), where before it was a fixed
+row→row span.
 
-TBD — once root-caused, ensure the move-commit path recomputes the persistent
-thickness overlay at the committed position (e.g. trigger the same scene
-refresh / `add_overlays` pass the live readout already relies on), so the
-persistent gaps match the live readout after release.
+Reproduced headlessly: centre the lens at z=40 → overlay reads
+`gap = 27.5 / 47.5`; commit a +24 mm axial move (body → centre 64, span
+51.5..76.5) → overlay **stayed** `27.5 / 47.5`; a full `refresh_from_editor`
+then corrected it to `51.5 / 23.5`.
 
-## Planned tests
+## Fix
 
-* Display-free unit test: move the imported body, commit, and assert the
-  recomputed persistent `gap =` values match the new edge gaps (and the live
-  readout) — pinning that the overlay tracks the body.
-* **Image-snapshot** (visual): render after a committed move; assert the two
-  `gap =` arrows straddle the body at its new position (no stale span).
-* Regression phase in `validate_open3d_penta_telescope_comprehensive.py`, then
-  regenerate the gate baseline.
+**`KrakenOS/UI/open3d_inspector.py`** — in `_finish_step_translate_drag`'s
+non-physics branch, consult `show_physical_distances_var`: when the thickness
+dimensions are shown, do a full `refresh_from_editor(force_retrace=False)` (which
+recomputes the dimensions at the new position, per bug 0009's draw ordering)
+instead of the per-label `refresh_imported_step_overlay`. The fast per-label
+path is kept when the dimensions are hidden. (The carry-drag commit
+`_finish_step_carry_drag` already does a full refresh, so only the translate
+path needed this.)
+
+## Tests
+
+* **`validate_open3d_thickness_overlay_live_update`** (boots its own Xvfb) —
+  places the tracked prism at z=40 between Object(0)/Image(100), turns the
+  dimensions on, commits a +24 mm axial Move, and asserts the rendered `gap =`
+  labels change by the moved distance AND the gap-arrow geometry's clear band
+  moves to the lens's new span (an arrow now covers the vacated old centre and
+  none crosses the new centre). It also source-couples the
+  `show_physical_distances_var` guard. Fails before the fix (stale labels, arrows
+  still split at the old position), passes after.
+* **Regression / end-to-end** — `Phase 17` in
+  `validate_open3d_penta_telescope_comprehensive.py`.

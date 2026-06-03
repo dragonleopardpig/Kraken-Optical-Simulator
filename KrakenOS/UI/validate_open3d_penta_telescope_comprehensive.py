@@ -2085,6 +2085,25 @@ def _thickness_dimension_label_texts(inspector: Kraken3DInspector) -> list[str]:
     return texts
 
 
+def _thickness_dimension_arrow_spans(inspector: Kraken3DInspector) -> list[tuple[float, float]]:
+    """Per-actor axial [zmin, zmax] of the thickness-dimension arrow meshes
+    (vtkActor shafts, excluding the billboard labels)."""
+    spans: list[tuple[float, float]] = []
+    for key in list(getattr(inspector, "_actor_thickness_dimension_map", {}).keys()):
+        actor = inspector._actor_by_key.get(key)
+        if actor is None:
+            continue
+        try:
+            if actor.IsA("vtkBillboardTextActor3D") or not actor.IsA("vtkActor"):
+                continue
+            bounds = np.asarray(actor.GetBounds(), dtype=float)
+        except Exception:
+            continue
+        if bounds.size == 6 and bounds[4] <= bounds[5]:
+            spans.append((float(bounds[4]), float(bounds[5])))
+    return spans
+
+
 def phase_16_thickness_overlay_skips_lens(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
@@ -2234,6 +2253,180 @@ def phase_16_thickness_overlay_skips_lens(
     return result
 
 
+def phase_17_thickness_overlay_tracks_move(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0011: the persistent thickness overlay must follow the lens when it
+    is moved, not freeze the ``gap = .. mm`` arrows at the body's old position.
+
+    With live physics off, the Move/Rotate gizmo commit
+    (``_finish_step_translate_drag``) took the fast per-label
+    ``refresh_imported_step_overlay`` path, which rebuilds only the moved body
+    and never recomputes the all-component thickness dimensions -- so the body
+    slid but the overlay stayed stale (flag 941: body at z=70.75..82.33 while
+    the overlay still read 46.25 / 42.17, the lens's previous centre ~52). This
+    phase centres the tracked prism at z=40 between Object(0)/Image(100), turns
+    the dimensions on, commits a +24 mm axial Move, and asserts the rendered gap
+    labels AND the gap-arrow geometry both track the new position (the clear
+    band the two arrows leave moves to the new lens span). The fix does a full
+    refresh when the dimensions are shown. Uses the tracked prism, so it always
+    runs.
+    """
+    from KrakenOS.UI.layout_editor import SurfaceRow
+    from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
+
+    move_mm = 24.0
+    tol = 0.6
+    result = PhaseResult(name="Phase 17: thickness overlay follows a moved lens")
+    if not PRISM_42779_STEP.exists():
+        result.notes.append("skipped: tracked prism STEP fixture missing")
+        result.detail["skipped"] = True
+        result.passed = True
+        return result
+
+    def _optical_z_center() -> float | None:
+        zmin, zmax = np.inf, -np.inf
+        for key in (inspector._step_actor_map or {}).get("optical", []):
+            actor = inspector._actor_by_key.get(key)
+            if actor is None:
+                continue
+            bounds = np.asarray(actor.GetBounds(), dtype=float)
+            if bounds.size == 6 and bounds[4] <= bounds[5]:
+                zmin = min(zmin, float(bounds[4]))
+                zmax = max(zmax, float(bounds[5]))
+        if not (np.isfinite(zmin) and np.isfinite(zmax)):
+            return None
+        return 0.5 * (zmin + zmax)
+
+    def _gap_values(labels: list[str]) -> list[float]:
+        out: list[float] = []
+        for text in labels:
+            if "gap =" not in str(text):
+                continue
+            try:
+                out.append(round(float(str(text).split("=")[1].strip().split()[0]), 3))
+            except Exception:
+                pass
+        return sorted(out)
+
+    def _covers(spans, z, margin=1.5) -> bool:
+        return any(lo + margin <= z <= hi - margin for lo, hi in spans)
+
+    app.rows = [
+        SurfaceRow(label="0", surface="Object", element="", name="Object",
+                   thickness=100.0, diameter=25.0, glass="AIR"),
+        SurfaceRow(label="1", surface="Image", element="", name="Image",
+                   thickness=0.0, diameter=25.0, glass="AIR"),
+    ]
+    app._sync_table()
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    inspector.show_rays_var.set(False)
+    try:
+        inspector.show_rotation_handles_var.set(False)
+    except Exception:
+        pass
+
+    _import_step(app, PRISM_42779_STEP)
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+    native_center = _optical_z_center()
+    if native_center is None:
+        result.notes.append("setup: optical STEP overlay did not import; cannot evaluate move")
+        result.passed = False
+        return result
+    old_center = 40.0
+    new_center = old_center + move_mm
+    app.optical_step_placement_offset_xyz = (0.0, 0.0, old_center - native_center)
+    app.select_step_component("optical")
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+    try:
+        inspector._clear_open3d_selection()
+    except Exception:
+        pass
+    app._selected_step_label = None
+
+    app.show_physical_distances_var.set(True)
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+
+    before_gaps = _gap_values(_thickness_dimension_label_texts(inspector))
+    before_spans = _thickness_dimension_arrow_spans(inspector)
+    result.detail["before_gaps"] = before_gaps
+    if len(before_gaps) != 2:
+        result.notes.append(f"expected two gap dimensions before the move, got {before_gaps}")
+
+    # Commit a +move_mm axial Move (no live physics -> the formerly-stale path).
+    state = {
+        "label": "optical",
+        "axis": "z",
+        "applied_delta_mm": move_mm,
+        "axis_unit": np.array([0.0, 0.0, 1.0], dtype=float),
+    }
+    inspector._finish_step_translate_drag(state)
+    inspector.update_idletasks()
+
+    after_gaps = _gap_values(_thickness_dimension_label_texts(inspector))
+    after_spans = _thickness_dimension_arrow_spans(inspector)
+    result.detail["after_gaps"] = after_gaps
+    result.detail["after_center"] = _optical_z_center()
+
+    if len(after_gaps) != 2:
+        result.notes.append(f"expected two gap dimensions after the move, got {after_gaps}")
+    elif before_gaps == after_gaps:
+        result.notes.append(
+            f"thickness overlay did not update after the move (stale {after_gaps}) -- bugs/0011 "
+            "regression: the committed overlay froze at the body's old position"
+        )
+    elif len(before_gaps) == 2:
+        expected = sorted([round(before_gaps[0] + move_mm, 3), round(before_gaps[1] - move_mm, 3)])
+        if any(abs(a - e) > tol for a, e in zip(after_gaps, expected)):
+            result.notes.append(
+                f"thickness overlay updated but not by the moved distance: {after_gaps} "
+                f"(expected ~{expected} after a {move_mm:+g} mm move)"
+            )
+
+    if after_spans:
+        if not _covers(after_spans, old_center):
+            result.notes.append(
+                f"after move: no arrow covers the vacated old lens centre z={old_center} "
+                f"(arrows did not slide) {after_spans}"
+            )
+        if _covers(after_spans, new_center):
+            result.notes.append(
+                f"after move: an arrow crosses the lens's new centre z={new_center} "
+                f"(arrows did not split around the moved body) {after_spans}"
+            )
+
+    # Source-couple the fix: the commit refresh routing consults the dimension
+    # visibility so it does a full refresh when the dimensions are shown.
+    import inspect as _inspect
+    try:
+        src = _inspect.getsource(type(inspector)._finish_step_translate_drag)
+    except Exception:
+        src = ""
+    result.detail["consults_dims_var"] = "show_physical_distances_var" in src
+    if "show_physical_distances_var" not in src:
+        result.notes.append(
+            "_finish_step_translate_drag no longer consults show_physical_distances_var "
+            "(bugs/0011 fix removed; the fast partial refresh can leave the overlay stale)"
+        )
+
+    try:
+        app.show_physical_distances_var.set(False)
+    except Exception:
+        pass
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -2287,6 +2480,7 @@ def main() -> int:
             phase_14_thickness_dimension_off_axis,
             phase_15_step_delete_requires_selection,
             phase_16_thickness_overlay_skips_lens,
+            phase_17_thickness_overlay_tracks_move,
         ]
         for phase in phases:
             try:
