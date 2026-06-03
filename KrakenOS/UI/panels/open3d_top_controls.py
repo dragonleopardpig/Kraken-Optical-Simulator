@@ -244,7 +244,7 @@ class Open3DTopControlsPanel:
         ttk.Label(carry_toolbar, text="Hold-drag STEP to move freely; Ctrl+drag rotates view.").pack(side="left")
         pack_commit_checkbutton(
             carry_toolbar,
-            "Rotation handles",
+            "Move/Rotate handles",
             variable=self.inspector.show_rotation_handles_var,
             command=self.inspector._toggle_rotation_handles,
             padx=(12, 0),
@@ -263,13 +263,6 @@ class Open3DTopControlsPanel:
             "Placement handles",
             variable=self.inspector.show_placement_handles_var,
             command=self.inspector._on_scene_visibility_changed,
-            padx=(12, 0),
-        )
-        pack_commit_checkbutton(
-            carry_toolbar,
-            "Slide along axis",
-            variable=self.inspector.slide_along_axis_mode_var,
-            command=self.inspector._toggle_axis_slide_mode,
             padx=(12, 0),
         )
         return carry_toolbar

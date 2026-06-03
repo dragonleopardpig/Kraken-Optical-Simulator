@@ -44,11 +44,25 @@ def main() -> int:
 
         count = inspector._add_step_rotation_handles("lens", mesh)
         pick_records = [record for record in records if record[1].get("pick_step_rotate") is not None]
-        visual_records = [record for record in records if record[1].get("pick_step_rotate") is None]
-        if count != 6 or len(pick_records) != 6 or len(visual_records) != 3:
+        translate_records = [record for record in records if record[1].get("pick_step_translate") is not None]
+        arc_records = [
+            record
+            for record in records
+            if record[1].get("pick_step_rotate") is None
+            and record[1].get("pick_step_translate") is None
+        ]
+        # One combined Move/Rotate gizmo (bug 0004): three visual rotation arcs,
+        # six signed rotation arrowheads, and three free-translation arrows.
+        if (
+            count != 9
+            or len(pick_records) != 6
+            or len(translate_records) != 3
+            or len(arc_records) != 3
+        ):
             raise AssertionError(
-                "Expected three visual arcs plus six signed STEP rotation arrows, "
-                f"got count={count}, pick_records={len(pick_records)}, visual_records={len(visual_records)}."
+                "Expected three visual arcs, six signed rotation arrows, and three "
+                f"translate arrows, got count={count}, rotate={len(pick_records)}, "
+                f"translate={len(translate_records)}, arcs={len(arc_records)}."
             )
         rotate_specs = sorted(
             tuple(record[1].get("pick_step_rotate", ())) for record in pick_records
@@ -65,6 +79,33 @@ def main() -> int:
         )
         if rotate_specs != expected_specs:
             raise AssertionError(f"Unexpected STEP rotation pick specs: {rotate_specs!r}")
+        translate_axes = sorted(
+            str(record[1].get("pick_step_translate", ("", "", 0.0))[1]) for record in translate_records
+        )
+        if translate_axes != ["x", "y", "z"]:
+            raise AssertionError(f"Unexpected STEP translate axes: {translate_axes!r}")
+        if any(
+            str(record[1].get("pick_step_translate", ("", "", 0.0))[0]) != "lens"
+            for record in translate_records
+        ):
+            raise AssertionError("STEP translate arrows must carry the 'lens' label.")
+        # The translate arrows MUST extend past the rotation arcs so their grab
+        # heads are never occluded by the rings (the explicit bug-0004 ask).
+        center_np = le.np.asarray(center, dtype=float).reshape(3)
+
+        def _max_reach(handle_mesh) -> float:
+            points = le.np.asarray(handle_mesh.points, dtype=float)
+            if points.size == 0:
+                return 0.0
+            return float(le.np.max(le.np.linalg.norm(points[:, :3] - center_np, axis=1)))
+
+        arc_reach = max(_max_reach(record[0]) for record in arc_records)
+        translate_reach = min(_max_reach(record[0]) for record in translate_records)
+        if not translate_reach > arc_reach:
+            raise AssertionError(
+                "Translate arrows must reach past the rotation arcs "
+                f"(translate_reach={translate_reach:.3f} <= arc_reach={arc_reach:.3f})."
+            )
         if any(int(getattr(record[0], "n_points", 0)) <= 0 for record in records):
             raise AssertionError("A STEP rotation handle mesh was empty.")
         if not all(int(getattr(record[0], "n_cells", 0)) >= 20 for record in pick_records):

@@ -78,28 +78,37 @@ class Open3DMouseBindingsService:
                 self._thickness_drag_state = None
                 self._step_carry_drag_state = None
                 self._axis_slide_drag_state = None
+                self._step_translate_drag_state = None
             else:
-                self._axis_slide_drag_state = self._axis_slide_state_from_current_pick()
-                if self._axis_slide_drag_state is not None:
+                self._step_translate_drag_state = self._step_translate_state_from_current_pick()
+                if self._step_translate_drag_state is not None:
+                    self._axis_slide_drag_state = None
                     self._placement_drag_state = None
                     self._thickness_drag_state = None
                     self._step_carry_drag_state = None
                     self._row_carry_drag_state = None
                 else:
-                    self._placement_drag_state = self._placement_drag_state_from_current_pick()
-                    self._thickness_drag_state = None
-                    self._step_carry_drag_state = None
-                    self._row_carry_drag_state = None
-                    if self._placement_drag_state is None:
-                        self._thickness_drag_state = self._thickness_drag_state_from_current_pick()
-                    if self._placement_drag_state is None and self._thickness_drag_state is None:
-                        step_label = self._step_carry_label_from_current_pick()
-                        if step_label is not None:
-                            self._arm_step_carry_hold(step_label, (int(event.x), int(event.y)))
-                        else:
-                            row_index = self._row_carry_index_from_current_pick()
-                            if row_index is not None:
-                                self._arm_row_carry_hold(row_index, (int(event.x), int(event.y)))
+                    self._axis_slide_drag_state = self._axis_slide_state_from_current_pick()
+                    if self._axis_slide_drag_state is not None:
+                        self._placement_drag_state = None
+                        self._thickness_drag_state = None
+                        self._step_carry_drag_state = None
+                        self._row_carry_drag_state = None
+                    else:
+                        self._placement_drag_state = self._placement_drag_state_from_current_pick()
+                        self._thickness_drag_state = None
+                        self._step_carry_drag_state = None
+                        self._row_carry_drag_state = None
+                        if self._placement_drag_state is None:
+                            self._thickness_drag_state = self._thickness_drag_state_from_current_pick()
+                        if self._placement_drag_state is None and self._thickness_drag_state is None:
+                            step_label = self._step_carry_label_from_current_pick()
+                            if step_label is not None:
+                                self._arm_step_carry_hold(step_label, (int(event.x), int(event.y)))
+                            else:
+                                row_index = self._row_carry_index_from_current_pick()
+                                if row_index is not None:
+                                    self._arm_row_carry_hold(row_index, (int(event.x), int(event.y)))
             return "break"
 
         def left_motion(event):
@@ -122,6 +131,9 @@ class Open3DMouseBindingsService:
                     self._cancel_step_carry_hold_timer()
                     self._ctrl_left_camera_active = True
                     self._rotate_camera_fixed_drag(dx, dy)
+                elif self._step_translate_drag_state is not None:
+                    self._cancel_step_carry_hold_timer()
+                    self._apply_step_translate_drag_motion(dx, dy)
                 elif self._axis_slide_drag_state is not None:
                     self._cancel_step_carry_hold_timer()
                     self._apply_axis_slide_drag_motion(dx, dy)
@@ -184,6 +196,7 @@ class Open3DMouseBindingsService:
             step_carry_follow_state = self._step_carry_follow_state
             row_carry_drag_state = self._row_carry_drag_state
             axis_slide_drag_state = self._axis_slide_drag_state
+            step_translate_drag_state = self._step_translate_drag_state
             self._cancel_step_carry_hold_timer()
             self._cancel_row_carry_hold_timer()
             self._left_drag_active = False
@@ -195,6 +208,7 @@ class Open3DMouseBindingsService:
             self._step_carry_drag_state = None
             self._row_carry_drag_state = None
             self._axis_slide_drag_state = None
+            self._step_translate_drag_state = None
             self._ctrl_left_camera_active = False
             if step_carry_follow_state is not None:
                 if should_pick and not ctrl_active:
@@ -206,6 +220,8 @@ class Open3DMouseBindingsService:
                 self._finish_step_carry_drag(step_carry_drag_state)
             elif row_carry_drag_state is not None:
                 self._finish_row_carry_drag(row_carry_drag_state)
+            elif step_translate_drag_state is not None and not should_pick and not ctrl_active:
+                self._finish_step_translate_drag(step_translate_drag_state)
             elif axis_slide_drag_state is not None and not should_pick and not ctrl_active:
                 self._finish_axis_slide_drag(axis_slide_drag_state)
             elif thickness_drag_state is not None and not should_pick and not ctrl_active:

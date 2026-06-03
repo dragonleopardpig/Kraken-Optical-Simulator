@@ -23,10 +23,12 @@ class Open3DStepRotationHandleService:
         removed = False
         actor_keys = set(inspector._actor_step_rotate_map)
         actor_keys.update(inspector._actor_step_rotate_visual_keys)
+        actor_keys.update(inspector._actor_step_translate_map)
         for actor_key in list(actor_keys):
             actor = inspector._actor_by_key.pop(actor_key, None)
             inspector._actor_step_rotate_map.pop(actor_key, None)
             inspector._actor_step_rotate_visual_keys.discard(actor_key)
+            inspector._actor_step_translate_map.pop(actor_key, None)
             inspector._actor_step_follow_map.pop(actor_key, None)
             for keys in list(inspector._step_follow_actor_map.values()):
                 try:
@@ -159,6 +161,35 @@ class Open3DStepRotationHandleService:
                 )
                 if actor is not None:
                     count += 1
+        translate_len = inspector._transform_translate_arrow_length(extent)
+        translate_step_mm = max(float(extent) * 0.02, 0.05)
+        axis_directions = {
+            "x": (1.0, 0.0, 0.0),
+            "y": (0.0, 1.0, 0.0),
+            "z": (0.0, 0.0, 1.0),
+        }
+        start = tuple(float(v) for v in center)
+        for axis, color in axes:
+            direction = axis_directions[axis]
+            try:
+                arrow_mesh = self.pv.Arrow(
+                    start=start,
+                    direction=direction,
+                    scale=float(translate_len),
+                )
+            except Exception:
+                continue
+            actor = inspector._add_mesh_actor(
+                arrow_mesh,
+                color=color,
+                opacity=0.92,
+                pick_step_translate=(label, axis, float(translate_step_mm)),
+                follow_step_label=label,
+                flat_shading=True,
+                backface_culling=False,
+            )
+            if actor is not None:
+                count += 1
         return count
 
     def apply_handle(self, label: str, axis: str, delta_deg: float) -> None:

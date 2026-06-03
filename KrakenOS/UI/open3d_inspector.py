@@ -398,6 +398,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_follow_actor_map: dict[str, list[str]] = {}
         self._actor_step_rotate_map: dict[str, tuple[str, str, float]] = {}
         self._actor_step_rotate_visual_keys: set[str] = set()
+        self._actor_step_translate_map: dict[str, tuple[str, str, float]] = {}
         self._actor_placement_move_map: dict[str, tuple[int, str, float]] = {}
         self._actor_placement_rotate_map: dict[str, tuple[int, str, float]] = {}
         self._actor_placement_rotate_visual_keys: set[str] = set()
@@ -478,6 +479,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._row_carry_hold_pick_world: tuple[float, float, float] | None = None
         self._row_carry_drag_state: dict[str, object] | None = None
         self._axis_slide_drag_state: dict[str, object] | None = None
+        self._step_translate_drag_state: dict[str, object] | None = None
+        self._step_translate_gap_actors: list[Any] = []
         self._open3d_carry_grip_service = Open3DCarryGripService(self)
         self._selected_step_feature: StepFeatureSelection | None = None
         self._selected_step_feature_label: str | None = None
@@ -1695,6 +1698,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if (
             actor_key in self._actor_step_map
             or actor_key in self._actor_step_rotate_map
+            or actor_key in self._actor_step_translate_map
             or actor_key in self._actor_placement_move_map
             or actor_key in self._actor_placement_rotate_map
             or actor_key in self._actor_optical_axis_map
@@ -1765,7 +1769,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             actor_key = None
             pick_world = np.asarray([], dtype=float)
-        if actor_key is None or actor_key in self._actor_step_rotate_map:
+        if actor_key is None or actor_key in self._actor_step_rotate_map or actor_key in self._actor_step_translate_map:
             return None
         if actor_key in self._actor_placement_move_map or actor_key in self._actor_placement_rotate_map:
             return None
@@ -2757,6 +2761,375 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         else:
             self.status_var.set(f"Placement {kind} drag S{row_index} {axis}: applied {applied_steps} snap step(s).")
 
+    def _step_translate_state_from_current_pick(self) -> dict[str, object] | None:
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return None
+        if (
+            self._source_target_pick_mode
+            or self._center_row_to_ray_mode
+            or self._placement_target_pick_mode
+            or self._placement_orient_pick_mode
+            or self._placement_orient_ray_mode
+            or self._step_carry_snap_ray_mode
+            or self._step_carry_snap_target_mode
+            or self._step_normal_axis_pick_mode
+            or self._step_surface_center_axis_pick_mode
+            or bool(getattr(self.editor, "_cad_axis_pick_any", False))
+        ):
+            return None
+        try:
+            if int(self._vtk_interactor.GetControlKey()):
+                return None
+        except Exception:
+            pass
+        try:
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor = self._picker.GetActor()
+        except Exception:
+            return None
+        actor_key = self._actor_key(actor) if actor is not None else None
+        if actor_key is None:
+            return None
+        info = self._actor_step_translate_map.get(actor_key)
+        if info is None:
+            return None
+        label, axis, _step_mm = info
+        label = str(label).strip().lower()
+        axis = str(axis).strip().lower()
+        if self.editor._step_path_for_label(label) is None:
+            return None
+        # Project a 1 mm world-axis step to the screen once at press (the camera
+        # is fixed for the drag): the unit screen direction plus pixels-per-mm
+        # let the body track the cursor 1:1 along the axis.
+        try:
+            origin = np.asarray(actor.GetCenter(), dtype=float).reshape(-1)[:3]
+        except Exception:
+            origin = None
+        if origin is None or origin.size < 3 or not np.all(np.isfinite(origin[:3])):
+            origin = self._scene_bounds()[0]
+        axis_unit = self._placement_axis_vector(axis)
+        start2d = self._world_to_display_2d(np.asarray(origin, dtype=float))
+        end2d = self._world_to_display_2d(np.asarray(origin, dtype=float) + axis_unit)
+        pixels_per_mm = 0.0
+        unit_dir = None
+        if start2d is not None and end2d is not None:
+            diff = np.asarray(end2d, dtype=float) - np.asarray(start2d, dtype=float)
+            norm = float(np.linalg.norm(diff))
+            if np.isfinite(norm) and norm > 1e-6:
+                pixels_per_mm = norm
+                unit_dir = diff / norm
+        if unit_dir is None:
+            unit_dir = self._placement_drag_display_direction("translate", axis, 1.0, actor)
+            pixels_per_mm = float(self._placement_drag_pixels_per_step())
+        self._step_rotation_active_label = label
+        display = self.editor._step_overlay_display_label(label).upper()
+        self.status_var.set(
+            f"Drag {display} STEP along {axis.upper()} to move freely; release to commit."
+        )
+        return {
+            "label": label,
+            "axis": axis,
+            "axis_unit": np.asarray(axis_unit, dtype=float),
+            "display_direction": np.asarray(unit_dir, dtype=float),
+            "pixels_per_mm": float(pixels_per_mm),
+            "applied_delta_mm": 0.0,
+        }
+
+    def _apply_step_translate_drag_motion(self, dx: int | float, dy: int | float) -> None:
+        state = self._step_translate_drag_state
+        if state is None:
+            return
+        try:
+            cursor_delta = np.asarray((float(dx), -float(dy)), dtype=float)
+            direction = np.asarray(state.get("display_direction"), dtype=float).reshape(-1)[:2]
+            signed_pixels = float(np.dot(cursor_delta, direction))
+        except Exception:
+            return
+        if not np.isfinite(signed_pixels) or abs(signed_pixels) <= 1.0e-9:
+            return
+        pixels_per_mm = float(state.get("pixels_per_mm", 0.0))
+        if not np.isfinite(pixels_per_mm) or pixels_per_mm <= 1.0e-9:
+            return
+        mm_inc = signed_pixels / pixels_per_mm
+        if not np.isfinite(mm_inc) or abs(mm_inc) <= 1.0e-9:
+            return
+        axis_unit = np.asarray(state.get("axis_unit"), dtype=float).reshape(-1)[:3]
+        delta_xyz = axis_unit * float(mm_inc)
+        if self._translate_step_overlay_actors(str(state.get("label", "")), delta_xyz) <= 0:
+            return
+        state["applied_delta_mm"] = float(state.get("applied_delta_mm", 0.0)) + float(mm_inc)
+        self._update_step_translate_drag_overlay(state)
+
+    def _finish_step_translate_drag(self, state: dict[str, object]) -> None:
+        label = str(state.get("label", "")).strip().lower()
+        axis = str(state.get("axis", "")).strip().lower()
+        total_mm = float(state.get("applied_delta_mm", 0.0))
+        self._clear_step_translate_drag_overlay()
+        display = self.editor._step_overlay_display_label(label).upper() if label else "STEP"
+        if not label or abs(total_mm) <= 1.0e-9:
+            self.status_var.set(f"{display} STEP move: no movement applied.")
+            if label:
+                try:
+                    self.refresh_imported_step_overlay(label)
+                except Exception:
+                    pass
+            return
+        axis_unit = np.asarray(state.get("axis_unit"), dtype=float).reshape(-1)[:3]
+        delta_xyz = axis_unit * total_mm
+        try:
+            physics_requested = bool(
+                self.editor._open3d_trace_refresh_service().inspector_physics_requested(self)
+            )
+        except Exception:
+            physics_requested = True
+        try:
+            self.editor.translate_step_overlay(
+                label,
+                (float(delta_xyz[0]), float(delta_xyz[1]), float(delta_xyz[2])),
+                refresh=physics_requested,
+                record_history=True,
+            )
+        except Exception as exc:
+            self.editor.append_debug(f"STEP translate commit failed for {label}: {exc}")
+            return
+        if not physics_requested:
+            refreshed = False
+            try:
+                refreshed = bool(self.refresh_imported_step_overlay(label))
+            except Exception as exc:
+                self.editor.append_debug(f"STEP translate partial refresh failed for {label}: {exc}")
+            if not refreshed:
+                try:
+                    self.refresh_from_editor(force_retrace=False)
+                except Exception as exc:
+                    self.editor.append_debug(f"STEP translate fallback refresh failed for {label}: {exc}")
+        self.status_var.set(f"{display} STEP moved {axis.upper()} {total_mm:+.4g} mm.")
+
+    def _axial_extent_from_actor_keys(self, actor_keys, axis_unit) -> dict[str, object] | None:
+        axis = np.asarray(axis_unit, dtype=float).reshape(-1)[:3]
+        norm = float(np.linalg.norm(axis))
+        if not np.isfinite(norm) or norm <= 1.0e-12:
+            return None
+        axis = axis / norm
+        mins = np.array((np.inf, np.inf, np.inf), dtype=float)
+        maxs = np.array((-np.inf, -np.inf, -np.inf), dtype=float)
+        found = False
+        for actor_key in list(actor_keys or []):
+            actor = self._actor_by_key.get(actor_key)
+            if actor is None:
+                continue
+            try:
+                bounds = np.asarray(actor.GetBounds(), dtype=float).reshape(6)
+            except Exception:
+                continue
+            if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[0] > bounds[1]:
+                continue
+            mins = np.minimum(mins, (bounds[0], bounds[2], bounds[4]))
+            maxs = np.maximum(maxs, (bounds[1], bounds[3], bounds[5]))
+            found = True
+        if not found or not (np.all(np.isfinite(mins)) and np.all(np.isfinite(maxs))):
+            return None
+        corners = np.array(
+            [
+                (mins[0], mins[1], mins[2]),
+                (maxs[0], mins[1], mins[2]),
+                (mins[0], maxs[1], mins[2]),
+                (mins[0], mins[1], maxs[2]),
+                (maxs[0], maxs[1], mins[2]),
+                (maxs[0], mins[1], maxs[2]),
+                (mins[0], maxs[1], maxs[2]),
+                (maxs[0], maxs[1], maxs[2]),
+            ],
+            dtype=float,
+        )
+        projections = corners @ axis
+        centroid = 0.5 * (mins + maxs)
+        return {
+            "axis": axis,
+            "proj_min": float(np.min(projections)),
+            "proj_max": float(np.max(projections)),
+            "proj_center": float(np.dot(centroid, axis)),
+            "centroid": centroid,
+        }
+
+    def _scene_component_axial_extents(
+        self, axis_unit, *, exclude_step: str | None = None
+    ) -> list[dict[str, object]]:
+        exclude = str(exclude_step or "").strip().lower()
+        extents: list[dict[str, object]] = []
+        for step_label, actor_keys in list(self._step_actor_map.items()):
+            if str(step_label).strip().lower() == exclude:
+                continue
+            extent = self._axial_extent_from_actor_keys(actor_keys, axis_unit)
+            if extent is not None:
+                extents.append(extent)
+        for row_index, actor_keys in list(self._row_actor_map.items()):
+            try:
+                if int(row_index) < 0:
+                    continue
+            except Exception:
+                continue
+            extent = self._axial_extent_from_actor_keys(actor_keys, axis_unit)
+            if extent is not None:
+                extents.append(extent)
+        return extents
+
+    def _step_overlay_axial_gap(
+        self, label: str, axis_unit=None
+    ) -> tuple[np.ndarray, np.ndarray, float] | None:
+        """Edge-to-edge axial gap between a STEP overlay and the component just
+        before it along ``axis_unit`` (defaults to the world optical/Z axis).
+
+        Returns ``(near_point, prev_far_point, gap_mm)`` with both points on the
+        dragged component's lateral center line so the dimension reads as a pure
+        axial distance. Kept as a clean, side-effect-free seam so a future
+        focus/collimation quick-solve can query spacing while sweeping position.
+        """
+        label = str(label or "").strip().lower()
+        if not label:
+            return None
+        if axis_unit is None:
+            axis_unit = (0.0, 0.0, 1.0)
+        me = self._axial_extent_from_actor_keys(self._step_actor_map.get(label, []), axis_unit)
+        if me is None:
+            return None
+        axis = me["axis"]
+        me_center = float(me["proj_center"])
+        previous: dict[str, object] | None = None
+        for extent in self._scene_component_axial_extents(axis, exclude_step=label):
+            if float(extent["proj_center"]) >= me_center:
+                continue
+            if previous is None or float(extent["proj_max"]) > float(previous["proj_max"]):
+                previous = extent
+        if previous is None:
+            return None
+        base = np.asarray(me["centroid"], dtype=float).reshape(3)
+        base_axial = float(np.dot(base, axis))
+        near_axial = float(me["proj_min"])
+        far_axial = float(previous["proj_max"])
+        near_point = base + axis * (near_axial - base_axial)
+        prev_far_point = base + axis * (far_axial - base_axial)
+        return near_point, prev_far_point, float(near_axial - far_axial)
+
+    def _draw_step_translate_gap_overlay(
+        self, near_point, prev_far_point, gap_mm: float
+    ) -> None:
+        service = self._open3d_thickness_dimension_service()
+        if service is None or service.pv is None:
+            return
+        near = np.asarray(near_point, dtype=float).reshape(3)
+        far = np.asarray(prev_far_point, dtype=float).reshape(3)
+        segment = near - far
+        seg_len = float(np.linalg.norm(segment))
+        _center, scene_span = self._row_scene_bounds()
+        base_offset = max(float(scene_span) * 0.06, 2.0)
+        side = service.offset_direction(
+            segment if seg_len > 1.0e-9 else np.asarray((0.0, 0.0, 1.0), dtype=float)
+        )
+        offset = side * base_offset
+        start = far + offset
+        end = near + offset
+        color = (0.95, 0.55, 0.10)
+        mesh = service.arrow_mesh(start, end, scene_span=scene_span)
+        if mesh is not None:
+            actor = self._add_mesh_actor(
+                mesh, color=color, opacity=0.95, flat_shading=True, backface_culling=False
+            )
+            if actor is not None:
+                self._step_translate_gap_actors.append(actor)
+        for tip, anchor in ((far, start), (near, end)):
+            try:
+                line = service.pv.Line(
+                    tuple(float(v) for v in tip), tuple(float(v) for v in anchor)
+                )
+            except Exception:
+                continue
+            leader = self._add_mesh_actor(
+                line, color=(0.95, 0.72, 0.36), opacity=0.65, line_width=1.4, backface_culling=False
+            )
+            if leader is not None:
+                self._step_translate_gap_actors.append(leader)
+        midpoint = 0.5 * (start + end) + side * max(base_offset * 0.25, 0.8)
+        self._add_step_translate_gap_label(midpoint, f"gap = {gap_mm:.4g} mm")
+
+    def _add_step_translate_gap_label(self, position, text: str) -> None:
+        if self._renderer is None or vtkBillboardTextActor3D is None:
+            return
+        point = np.asarray(position, dtype=float).reshape(-1)[:3]
+        if point.size < 3 or not np.all(np.isfinite(point[:3])):
+            return
+        try:
+            actor = vtkBillboardTextActor3D()
+            actor.SetInput(str(text))
+            actor.SetPosition(float(point[0]), float(point[1]), float(point[2]))
+            try:
+                actor.PickableOff()
+            except Exception:
+                pass
+            try:
+                text_prop = actor.GetTextProperty()
+                text_prop.SetFontSize(13)
+                text_prop.SetColor(0.20, 0.10, 0.0)
+                text_prop.SetBackgroundColor(1.0, 0.96, 0.86)
+                text_prop.SetBackgroundOpacity(0.85)
+                text_prop.SetFrame(1)
+                text_prop.SetFrameColor(0.95, 0.55, 0.10)
+            except Exception:
+                pass
+            self._add_renderer_view_prop(actor)
+            self._step_translate_gap_actors.append(actor)
+        except Exception as exc:
+            self.editor.append_debug(f"3D STEP gap label skipped: {exc}")
+
+    def _update_step_translate_drag_overlay(self, state: dict[str, object]) -> None:
+        label = str(state.get("label", "")).strip().lower()
+        axis = str(state.get("axis", "")).strip().lower()
+        total_mm = float(state.get("applied_delta_mm", 0.0))
+        display = self.editor._step_overlay_display_label(label).upper() if label else "STEP"
+        # Rebuild the transient gap dimension each motion. Do NOT render here: the
+        # body move already issued a render this event, so the refreshed dimension
+        # shows on the next motion frame (one-frame lag, imperceptible) while the
+        # body keeps tracking the cursor at one render per event.
+        self._clear_step_translate_drag_overlay()
+        gap = None
+        try:
+            gap = self._step_overlay_axial_gap(label, state.get("axis_unit"))
+        except Exception as exc:
+            self.editor.append_debug(f"STEP translate gap query failed for {label}: {exc}")
+            gap = None
+        if gap is None:
+            self.status_var.set(
+                f"{display} STEP {axis.upper()} move: {total_mm:+.4g} mm (release to commit)."
+            )
+            return
+        near_point, prev_far_point, gap_mm = gap
+        try:
+            self._draw_step_translate_gap_overlay(near_point, prev_far_point, gap_mm)
+        except Exception as exc:
+            self.editor.append_debug(f"STEP translate gap draw failed for {label}: {exc}")
+        self.status_var.set(
+            f"{display} STEP {axis.upper()} move {total_mm:+.4g} mm | "
+            f"edge gap to previous = {gap_mm:.4g} mm (release to commit)."
+        )
+
+    def _clear_step_translate_drag_overlay(self, *, render: bool = False) -> None:
+        actors = list(self._step_translate_gap_actors)
+        self._step_translate_gap_actors = []
+        for actor in actors:
+            try:
+                self._remove_renderer_view_prop(actor)
+            except Exception:
+                pass
+            actor_key = self._actor_key(actor)
+            if actor_key is not None:
+                self._actor_by_key.pop(actor_key, None)
+        if render and actors:
+            try:
+                self.render()
+            except Exception:
+                pass
+
     def _axis_slide_mode_active(self) -> bool:
         try:
             return bool(self.slide_along_axis_mode_var.get())
@@ -3515,6 +3888,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         pick_step_label: str | None = None,
         pick_optical_axis: dict[str, object] | None = None,
         pick_step_rotate: tuple[str, str, float] | None = None,
+        pick_step_translate: tuple[str, str, float] | None = None,
         pick_placement_move: tuple[int, str, float] | None = None,
         pick_placement_rotate: tuple[int, str, float] | None = None,
         pick_thickness_dimension: int | None = None,
@@ -3597,6 +3971,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             and pick_step_label is None
             and pick_optical_axis is None
             and pick_step_rotate is None
+            and pick_step_translate is None
             and pick_placement_move is None
             and pick_placement_rotate is None
             and pick_thickness_dimension is None
@@ -3618,6 +3993,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if actor_key is not None and pick_step_rotate is not None:
                 step_label, axis, delta_deg = pick_step_rotate
                 self._actor_step_rotate_map[actor_key] = (str(step_label), str(axis), float(delta_deg))
+            if actor_key is not None and pick_step_translate is not None:
+                step_label, axis, delta_mm = pick_step_translate
+                self._actor_step_translate_map[actor_key] = (str(step_label), str(axis), float(delta_mm))
             if actor_key is not None and pick_placement_move is not None:
                 row_index, axis, delta_mm = pick_placement_move
                 self._actor_placement_move_map[actor_key] = (int(row_index), str(axis), float(delta_mm))
@@ -8434,6 +8812,71 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return None
         return combined_center(require_body=False)
 
+    def _row_display_body_extent(self, row_index: int) -> float | None:
+        """Largest world bounding-box dimension of a row's *visible solid body*,
+        excluding gizmo / overlay / label actors. The placement gizmo is sized
+        from this so it fits the object (the glass), not the scene grid.
+
+        Accepts any of the three body markers a row body can carry: a
+        file-backed STL/STEP solid, an analytic glassy lens drum, or a dense
+        round-lens-like optical solid. A STEP promoted to an analytic-lens row
+        carries the glassy / round-lens marker but NOT the file-backed one, so
+        keying off the file marker alone (as ``_row_display_actor_center``'s
+        body branch does) would miss it and the gizmo would fall back to the
+        grid extent -- the bugs/0006 'arrows shrink on promotion' regression.
+        Returns None when the row has no such body actor.
+        """
+        try:
+            row_index = int(row_index)
+        except Exception:
+            return None
+        actor_keys = list(dict.fromkeys(self._row_actor_map.get(row_index, []) or []))
+        if not actor_keys:
+            return None
+        body_markers = (
+            "_kraken_file_backed_row_body",
+            "_kraken_glassy_lens_body",
+            "_kraken_round_lens_like_step_body",
+        )
+        bounds_list: list[np.ndarray] = []
+        for actor_key in actor_keys:
+            actor = self._actor_by_key.get(actor_key)
+            if actor is None:
+                continue
+            if not any(bool(getattr(actor, marker, False)) for marker in body_markers):
+                continue
+            try:
+                bounds = np.asarray(actor.GetBounds(), dtype=float).reshape(6)
+            except Exception:
+                continue
+            if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[0] > bounds[1]:
+                continue
+            bounds_list.append(bounds)
+        if not bounds_list:
+            return None
+        stacked = np.vstack(bounds_list)
+        extent = max(
+            float(np.max(stacked[:, 1]) - np.min(stacked[:, 0])),
+            float(np.max(stacked[:, 3]) - np.min(stacked[:, 2])),
+            float(np.max(stacked[:, 5]) - np.min(stacked[:, 4])),
+            1.0,
+        )
+        return float(extent)
+
+    @staticmethod
+    def _transform_translate_arrow_length(extent: float) -> float:
+        """Length of a Move-gizmo translate arrow, sized so it clears the
+        rotation arcs and stays grabbable. Driven by the *body* extent (the
+        visible solid's bounding box), never the scene-grid extent: a STEP
+        promoted to an analytic-lens row must keep the same big arrows it had
+        as a STEP overlay rather than shrinking to a grid-scaled stub
+        (bugs/0006). Mirrors ``Open3DStepRotationHandleService``'s arrow length
+        exactly so the gizmo looks identical before and after promotion.
+        """
+        extent = max(float(extent), 1.0)
+        arc_radius = max(extent * 0.62, 3.0)
+        return max(extent * 1.05, arc_radius * 1.55)
+
     def _scene_placements_for_3d(self, scene_bundle: SceneBundle | None) -> list[ScenePlacement3D]:
         if (
             scene_bundle is not None
@@ -8666,7 +9109,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if not (0 <= row_index < len(self.editor.rows)):
             return 0
         step = self._scene_placement_translate_step(placement, spacing)
-        length = max(min(max(float(extent) * 0.18, float(spacing) * 1.5), max(float(extent) * 0.35, 1.0)), 1.0)
+        body_extent = self._row_display_body_extent(row_index)
+        if body_extent is not None:
+            # File-backed / promoted-lens row: size the arrow to the visible
+            # body so it matches the STEP overlay's big arrows instead of
+            # shrinking to a grid-scaled stub when the STEP is promoted to a
+            # row (bugs/0006).
+            length = self._transform_translate_arrow_length(body_extent)
+        else:
+            # Abstract scene placement with no rendered body: keep the
+            # grid-scaled arrow.
+            length = max(min(max(float(extent) * 0.18, float(spacing) * 1.5), max(float(extent) * 0.35, 1.0)), 1.0)
         radius = max(length * 0.035, 0.08)
         axes = (
             ("x", np.asarray((1.0, 0.0, 0.0), dtype=float), (0.88, 0.18, 0.18)),
@@ -8850,8 +9303,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if not (0 <= row_index < len(self.editor.rows)):
             return 0
         step = self._rotation_handle_step_deg()
-        radius = max(float(spacing) * 2.0, float(extent) * 0.28, 2.0)
-        radius = min(radius, max(float(extent) * 0.48, 2.0))
+        # Size the arcs off the visible body when the row has one, so a
+        # promoted-lens row's gizmo fits the glass (and the translate arrows,
+        # sized the same way, clear the arcs) instead of ballooning to the
+        # scene grid (bugs/0006). Abstract placements fall back to grid extent.
+        body_extent = self._row_display_body_extent(row_index)
+        arc_extent = float(body_extent) if body_extent is not None else float(extent)
+        radius = max(float(spacing) * 2.0, arc_extent * 0.28, 2.0)
+        radius = min(radius, max(arc_extent * 0.48, 2.0))
         tube_radius = max(radius * 0.018, 0.045)
         axes = (
             ("x", (0.88, 0.18, 0.18)),
@@ -10097,6 +10556,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _set_rotation_handle_hover(self, actor_key: str | None) -> None:
         self._open3d_step_rotation_handle_service().set_hover(actor_key)
 
+    @staticmethod
+    def _step_hover_outline_style(has_surface: bool) -> tuple[tuple[float, float, float], float, float]:
+        """Style for the STEP face hover highlight: (rgb, opacity, line_width).
+
+        Uses the shared hover-gold accent (1.0, 0.78, 0.08) -- never red. A
+        red highlight reads edge-on as a "ghost red edge" bar through the lens
+        (bug 0005), and clashes with the pink selection / gold hover language.
+        """
+        gold = (1.0, 0.78, 0.08)
+        if has_surface:
+            return gold, 0.42, 4.0
+        return gold, 0.9, 4.0
+
     def _set_step_hover_outline(self, outline_mesh, hover_key, *, render: bool = True) -> None:
         if not open3d_trace_enabled():
             return self._set_step_hover_outline_impl(outline_mesh, hover_key, render=render)
@@ -10137,18 +10609,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 actor = vtkActor()
                 actor.SetMapper(mapper)
                 prop = actor.GetProperty()
+                color, opacity, line_width = self._step_hover_outline_style(has_surface)
+                prop.SetColor(*color)
+                prop.SetOpacity(opacity)
+                prop.SetLineWidth(line_width)
                 if has_surface:
-                    prop.SetColor(1.0, 0.26, 0.0)
-                    prop.SetOpacity(0.58)
-                    prop.SetLineWidth(6.0)
                     try:
                         prop.EdgeVisibilityOff()
                     except Exception:
                         pass
-                else:
-                    prop.SetColor(1.0, 0.18, 0.0)
-                    prop.SetOpacity(1.0)
-                    prop.SetLineWidth(8.0)
                 try:
                     prop.SetAmbient(1.0)
                     prop.SetDiffuse(0.0)

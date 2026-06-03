@@ -655,6 +655,7 @@ class Open3DInteractionService:
         if picker is None or self._renderer is None:
             return None, None, -1
         handle_keys = set(getattr(self, "_actor_step_rotate_map", {}) or {})
+        handle_keys.update(set(getattr(self, "_actor_step_translate_map", {}) or {}))
         handle_keys.update(set(getattr(self, "_actor_placement_rotate_map", {}) or {}))
         if not handle_keys:
             return None, None, -1
@@ -967,6 +968,7 @@ class Open3DInteractionService:
                     x, y = self._vtk_interactor.GetEventPosition()
                     actor, actor_key, _cell_id = self._passive_hover_pick_rotation_handle(x, y)
                     step_rotate = self._actor_step_rotate_map.get(actor_key) if actor_key is not None else None
+                    step_translate = self._actor_step_translate_map.get(actor_key) if actor_key is not None else None
                     placement_rotate = self._actor_placement_rotate_map.get(actor_key) if actor_key is not None else None
                     if step_rotate is not None:
                         self._set_step_hover_outline(None, None)
@@ -976,6 +978,16 @@ class Open3DInteractionService:
                         display = self.editor._step_overlay_display_label(str(label)).upper()
                         self.status_var.set(
                             f"{display} STEP rotation handle: click {str(axis).upper()}{float(delta):+.0f} deg."
+                        )
+                        return
+                    if step_translate is not None:
+                        self._set_step_hover_outline(None, None)
+                        self._set_rotation_handle_hover(actor_key)
+                        self._update_hover_status("", render=False)
+                        label, axis, _delta = step_translate
+                        display = self.editor._step_overlay_display_label(str(label)).upper()
+                        self.status_var.set(
+                            f"{display} STEP move handle: hold-drag {str(axis).upper()} to translate freely."
                         )
                         return
                     if placement_rotate is not None:
@@ -1042,6 +1054,7 @@ class Open3DInteractionService:
             actor = None
         actor_key = self._actor_key(actor)
         step_rotate = self._actor_step_rotate_map.get(actor_key) if actor_key is not None else None
+        step_translate = self._actor_step_translate_map.get(actor_key) if actor_key is not None else None
         placement_rotate = self._actor_placement_rotate_map.get(actor_key) if actor_key is not None else None
         if step_rotate is not None:
             self._set_step_hover_outline(None, None)
@@ -1051,6 +1064,15 @@ class Open3DInteractionService:
             self._set_axis_pick_cursor(False)
             display = self.editor._step_overlay_display_label(str(label)).upper()
             self.status_var.set(f"{display} STEP rotation handle: click {str(axis).upper()}{float(delta):+.0f} deg.")
+            return
+        if step_translate is not None:
+            self._set_step_hover_outline(None, None)
+            self._set_rotation_handle_hover(actor_key)
+            self._update_hover_status("", render=False)
+            label, axis, _delta = step_translate
+            self._set_axis_pick_cursor(False)
+            display = self.editor._step_overlay_display_label(str(label)).upper()
+            self.status_var.set(f"{display} STEP move handle: hold-drag {str(axis).upper()} to translate freely.")
             return
         if placement_rotate is not None:
             self._set_step_hover_outline(None, None)

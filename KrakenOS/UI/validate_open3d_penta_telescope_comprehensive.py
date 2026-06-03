@@ -1339,6 +1339,629 @@ def phase_10_analytic_lens_selection_not_all_red(
     return result
 
 
+def phase_11_step_translate_handles_and_gap(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0004: one combined Move/Rotate gizmo on a selected optical STEP.
+
+    The single "Move/Rotate handles" checkbox now arms BOTH the three
+    rotation arcs (six signed pick arrowheads) and three FREE-translation
+    arrows. The arrows reach past the arcs so their grab heads are never
+    occluded, drag the body 1:1 with the cursor along a virtually-infinite
+    axis (no track-length clamp), and -- while dragging -- show a live
+    edge-gap thickness overlay to the previous component.
+
+    This phase arms the gizmo on a real imported optical STEP, asserts the
+    handle population (6 rotate + 3 translate), drives a synthetic +Z
+    translate drag built exactly like ``_step_translate_state_from_current_pick``,
+    and checks the body tracked the cursor, the offset committed verbatim
+    (a large 150 mm delta survives uncapped), and the drag overlay cleared
+    on release. Gap-math correctness and the draw/clear lifecycle have
+    their own display-free coverage in validate_open3d_step_translate_gap;
+    here we only confirm the wiring holds in a fully rendered scene.
+    """
+    result = PhaseResult(
+        name="Phase 11: STEP combined Move/Rotate gizmo + edge-gap overlay"
+    )
+    if not LENS_FIXTURES_CLICK_ONLY:
+        result.notes.append(
+            "skipped: no lens STEP fixtures checked out under attachment/Lens/"
+        )
+        result.detail["skipped"] = True
+        result.passed = True
+        return result
+
+    from KrakenOS.UI.layout_editor import SurfaceRow
+
+    # Clean Object + Image chain with the lens imported as an optical STEP
+    # overlay -- the prism cascade from Phase 0 is irrelevant to the gizmo,
+    # and a fresh scene keeps the offset bookkeeping unambiguous.
+    app.rows = [
+        SurfaceRow(label="0", surface="Object", element="", name="Object",
+                   thickness=50.0, diameter=12.0, glass="AIR"),
+        SurfaceRow(label="1", surface="Image", element="", name="Image",
+                   thickness=0.0, diameter=12.0, glass="AIR"),
+    ]
+    app._sync_table()
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    fixture = LENS_FIXTURES_CLICK_ONLY[0]
+    _import_step(app, fixture["step"])
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+
+    # ONE checkbox arms the whole gizmo. show_step_rotation_handler
+    # delegates to the rotation-handle service, which (bug 0004) appends
+    # the three translate arrows after the six rotation arrowheads.
+    inspector.show_rotation_handles_var.set(True)
+    inspector.show_step_rotation_handler("optical")
+    inspector.update_idletasks()
+
+    rotate_handles = len(getattr(inspector, "_actor_step_rotate_map", {}) or {})
+    translate_handles = len(getattr(inspector, "_actor_step_translate_map", {}) or {})
+    result.detail.update(
+        {
+            "fixture": fixture["name"],
+            "rotate_handles": rotate_handles,
+            "translate_handles": translate_handles,
+        }
+    )
+    if rotate_handles != 6:
+        result.notes.append(f"expected 6 rotation pick handles, got {rotate_handles}")
+    if translate_handles != 3:
+        result.notes.append(f"expected 3 translate arrows, got {translate_handles}")
+    if result.notes:
+        result.passed = False
+        return result
+
+    # The +Z translate arrow is the one we drag.
+    z_actor = None
+    for key, (lbl, axis, _step) in inspector._actor_step_translate_map.items():
+        if str(lbl) == "optical" and str(axis) == "z":
+            z_actor = inspector._actor_by_key.get(key)
+            break
+    if z_actor is None:
+        result.notes.append("no +Z translate arrow actor registered")
+        result.passed = False
+        return result
+
+    def _body_centroid() -> np.ndarray | None:
+        keys = list(dict.fromkeys(inspector._step_actor_map.get("optical", []) or []))
+        bmin = np.full(3, np.inf)
+        bmax = np.full(3, -np.inf)
+        for k in keys:
+            a = inspector._actor_by_key.get(k)
+            if a is None:
+                continue
+            try:
+                b = np.asarray(a.GetBounds(), dtype=float).reshape(6)
+            except Exception:
+                continue
+            if b.size != 6 or not np.all(np.isfinite(b)) or b[0] > b[1]:
+                continue
+            bmin = np.minimum(bmin, (b[0], b[2], b[4]))
+            bmax = np.maximum(bmax, (b[1], b[3], b[5]))
+        if not np.all(np.isfinite(bmin)):
+            return None
+        return 0.5 * (bmin + bmax)
+
+    # Build the drag state the same way the press path does (project a 1 mm
+    # axis step to the screen for pixels-per-mm + unit direction, with the
+    # placement-helper fallback). See _step_translate_state_from_current_pick.
+    axis_unit = inspector._placement_axis_vector("z")
+    try:
+        origin = np.asarray(z_actor.GetCenter(), dtype=float).reshape(-1)[:3]
+    except Exception:
+        origin = None
+    if origin is None or origin.size < 3 or not np.all(np.isfinite(origin[:3])):
+        origin = inspector._scene_bounds()[0]
+    start2d = inspector._world_to_display_2d(np.asarray(origin, dtype=float))
+    end2d = inspector._world_to_display_2d(np.asarray(origin, dtype=float) + axis_unit)
+    pixels_per_mm = 0.0
+    unit_dir = None
+    if start2d is not None and end2d is not None:
+        diff = np.asarray(end2d, dtype=float) - np.asarray(start2d, dtype=float)
+        norm = float(np.linalg.norm(diff))
+        if np.isfinite(norm) and norm > 1e-6:
+            pixels_per_mm = norm
+            unit_dir = diff / norm
+    if unit_dir is None:
+        unit_dir = inspector._placement_drag_display_direction("translate", "z", 1.0, z_actor)
+        pixels_per_mm = float(inspector._placement_drag_pixels_per_step())
+    if not np.isfinite(pixels_per_mm) or pixels_per_mm <= 1e-9:
+        result.notes.append(
+            f"could not derive pixels-per-mm for the +Z drag (got {pixels_per_mm})"
+        )
+        result.passed = False
+        return result
+
+    inspector._step_translate_drag_state = {
+        "label": "optical",
+        "axis": "z",
+        "axis_unit": np.asarray(axis_unit, dtype=float),
+        "display_direction": np.asarray(unit_dir, dtype=float),
+        "pixels_per_mm": float(pixels_per_mm),
+        "applied_delta_mm": 0.0,
+    }
+
+    # Drive a deliberately LARGE +150 mm cursor drag: the optical axis is
+    # virtually infinite, so a delta many times the lens diameter must pass
+    # through uncapped. cursor_delta=(dx,-dy) has to align with the stored
+    # display direction (VTK display Y-up), hence the dy sign flip.
+    mm_target = 150.0
+    pixel_reach = mm_target * pixels_per_mm
+    unit2d = np.asarray(unit_dir, dtype=float).reshape(-1)[:2]
+    drag_dx = float(unit2d[0] * pixel_reach)
+    drag_dy = float(-unit2d[1] * pixel_reach)
+
+    app._set_step_placement_offset_xyz("optical", (0.0, 0.0, 0.0))
+    centroid_before = _body_centroid()
+    inspector._apply_step_translate_drag_motion(drag_dx, drag_dy)
+    inspector.update_idletasks()
+    centroid_after = _body_centroid()
+    applied = float((inspector._step_translate_drag_state or {}).get("applied_delta_mm", 0.0))
+
+    if centroid_before is None or centroid_after is None:
+        result.notes.append(
+            f"could not read body centroid (before/after = {centroid_before}, {centroid_after})"
+        )
+        result.passed = False
+        return result
+    move_vec = np.asarray(centroid_after, dtype=float) - np.asarray(centroid_before, dtype=float)
+    axial_move = float(move_vec[2])
+    lateral_move = float(np.hypot(move_vec[0], move_vec[1]))
+    result.detail.update(
+        {
+            "applied_delta_mm": applied,
+            "body_axial_move_mm": axial_move,
+            "body_lateral_move_mm": lateral_move,
+            "pixels_per_mm": float(pixels_per_mm),
+        }
+    )
+    # The body must track the cursor along +Z and not drift laterally.
+    if abs(applied - mm_target) > max(2.0, 0.05 * mm_target):
+        result.notes.append(
+            f"applied translate {applied:.3f} mm strayed from the {mm_target} mm cursor drag "
+            "(cursor tracking is off)"
+        )
+    if abs(axial_move - applied) > max(2.0, 0.05 * mm_target):
+        result.notes.append(
+            f"body moved {axial_move:.3f} mm axially but {applied:.3f} mm was applied "
+            "(live actors did not follow the drag)"
+        )
+    if lateral_move > 1.0:
+        result.notes.append(
+            f"body drifted {lateral_move:.3f} mm laterally during a pure +Z drag"
+        )
+    gap_actors_during = len(getattr(inspector, "_step_translate_gap_actors", []) or [])
+    result.detail["gap_actors_during_drag"] = gap_actors_during
+
+    # Release: commit the total delta once and clear the drag overlay.
+    state = inspector._step_translate_drag_state
+    inspector._finish_step_translate_drag(state)
+    inspector._step_translate_drag_state = None
+    inspector.update_idletasks()
+    offset = app._step_placement_offset_xyz("optical")
+    gap_actors_after = len(getattr(inspector, "_step_translate_gap_actors", []) or [])
+    result.detail.update(
+        {
+            "committed_offset_xyz": [round(float(v), 4) for v in offset],
+            "gap_actors_after_release": gap_actors_after,
+        }
+    )
+    # Verbatim, uncapped commit: a 150 mm delta lands as a 150 mm offset.
+    if abs(float(offset[2]) - applied) > 1e-4:
+        result.notes.append(
+            f"committed Z offset {offset[2]:.4f} mm != applied {applied:.4f} mm "
+            "(commit clamped or double-counted)"
+        )
+    if float(offset[2]) <= 100.0:
+        result.notes.append(
+            f"committed Z offset {offset[2]:.4f} mm <= 100 mm: a track-length clamp "
+            "is limiting the virtually-infinite optical axis (bug 0004 regression)"
+        )
+    if abs(float(offset[0])) > 1e-6 or abs(float(offset[1])) > 1e-6:
+        result.notes.append(
+            f"pure +Z drag wrote lateral offset {(offset[0], offset[1])}"
+        )
+    if gap_actors_after != 0:
+        result.notes.append(
+            f"release left {gap_actors_after} edge-gap overlay actors (overlay not cleared)"
+        )
+
+    # Restore a neutral offset so the harness leaves no residue.
+    try:
+        app._set_step_placement_offset_xyz("optical", (0.0, 0.0, 0.0))
+    except Exception:
+        pass
+    result.passed = not result.notes
+    return result
+
+
+def phase_12_step_face_hover_not_red(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0005: the imported-STEP face hover highlight must be gold, not red.
+
+    Hovering a STEP face builds an overlay (face fill + outline edges) that
+    ``_set_step_hover_outline`` paints. A lens viewed edge-on collapses that
+    outline to a vertical line, so a red highlight rendered as a red bar
+    straight through the glass -- the user's "ghost red edges". This phase
+    imports a real optical STEP, builds the hover overlay for a face exactly as
+    ``_on_mouse_move`` does, applies it, and asserts the LIVE hover-outline
+    actor's property colour is the shared hover-gold accent (large green
+    channel ⇒ not red). The rendered-pixel guarantee lives in
+    validate_open3d_step_face_hover_not_red_snapshot; here we confirm the wiring
+    paints gold in a fully built scene. SKIP-passes when no lens fixture is
+    checked out.
+    """
+    result = PhaseResult(name="Phase 12: STEP face hover highlight not red")
+    if not LENS_FIXTURES_CLICK_ONLY:
+        result.notes.append(
+            "skipped: no lens STEP fixtures checked out under attachment/Lens/"
+        )
+        result.detail["skipped"] = True
+        result.passed = True
+        return result
+
+    from KrakenOS.UI.layout_editor import SurfaceRow
+
+    app.rows = [
+        SurfaceRow(label="0", surface="Object", element="", name="Object",
+                   thickness=50.0, diameter=12.0, glass="AIR"),
+        SurfaceRow(label="1", surface="Image", element="", name="Image",
+                   thickness=0.0, diameter=12.0, glass="AIR"),
+    ]
+    app._sync_table()
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    # Gizmo off: isolate the face hover highlight, no Move/Rotate handles.
+    inspector.show_rotation_handles_var.set(False)
+    fixture = LENS_FIXTURES_CLICK_ONLY[0]
+    _import_step(app, fixture["step"])
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+
+    meta = app._step_overlay_face_metadata("optical")
+    faces = list(meta.get("faces", []) or []) if isinstance(meta, dict) else []
+    result.detail.update({"fixture": fixture["name"], "face_count": len(faces)})
+    if not faces:
+        result.notes.append("imported STEP produced no pickable faces")
+        result.passed = False
+        return result
+
+    # Build + apply the hover overlay for the first face that yields one, just
+    # like _on_mouse_move would on a passive hover.
+    applied_face = None
+    color = None
+    for face in faces:
+        inspector._set_step_hover_outline(None, None, render=False)
+        overlay = inspector._hover_overlay_for_step_face("optical", face)
+        if overlay is None or int(getattr(overlay, "n_points", 0)) <= 0:
+            continue
+        inspector._set_step_hover_outline(overlay, ("phase12", str(face.get("face_id", ""))), render=False)
+        actor = getattr(inspector, "_hover_step_outline_actor", None)
+        if actor is None:
+            continue
+        color = tuple(round(float(c), 3) for c in actor.GetProperty().GetColor())
+        applied_face = str(face.get("face_id", ""))
+        break
+
+    result.detail.update({"hover_face": applied_face, "hover_color": list(color) if color else None})
+    if color is None:
+        result.notes.append("no face produced a hover-outline actor to inspect")
+        result.passed = False
+        return result
+
+    r, g, b = color
+    # Red highlight ⇒ high R, low G. The fix's gold has a large green channel.
+    if g < 0.5:
+        result.notes.append(
+            f"hover-outline colour {color} is red (green channel {g} < 0.5): "
+            "the 'ghost red edges' regression (bugs/0005) is back"
+        )
+    if b > 0.2:
+        result.notes.append(f"hover-outline colour {color} has an unexpected blue channel {b}")
+
+    # Leave no residue.
+    inspector._set_step_hover_outline(None, None, render=False)
+    result.passed = not result.notes
+    return result
+
+
+def _max_handle_axis_length(inspector: Kraken3DInspector, map_name: str) -> float:
+    """Largest single-axis bounding-box span across a handle map's actors. An
+    axis-aligned translate arrow's longest bbox dimension equals its length."""
+    handle_map = getattr(inspector, map_name, {}) or {}
+    best = 0.0
+    for key in handle_map:
+        actor = inspector._actor_by_key.get(key)
+        if actor is None:
+            continue
+        try:
+            bounds = np.asarray(actor.GetBounds(), dtype=float).reshape(6)
+        except Exception:
+            continue
+        if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[0] > bounds[1]:
+            continue
+        span = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4])
+        best = max(best, float(span))
+    return best
+
+
+def phase_13_promoted_row_handle_length(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0006: a STEP promoted to an analytic-lens row must keep the big
+    Move-gizmo translate arrows it had as a STEP overlay, not shrink to the
+    short scene-grid stub.
+
+    Two gizmos draw the same handles: the STEP overlay (sized off the body) and
+    the row placement (was sized off the 100 mm scene grid). On promotion the
+    lens switches paths, so a big lens's arrows used to drop from ~body*1.05 to
+    a grid-capped stub. This phase imports a real lens, measures the STEP-overlay
+    translate-arrow length, promotes the STEP, builds the row-placement gizmo,
+    and asserts the row arrow matches the STEP overlay within tolerance and is at
+    least as long as the body. SKIP-passes when no promotable lens fixture is
+    checked out.
+    """
+    result = PhaseResult(name="Phase 13: promoted-row Move gizmo keeps big arrows")
+    if not LENS_FIXTURES:
+        result.notes.append("skipped: no promotable lens STEP fixtures under attachment/Lens/")
+        result.detail["skipped"] = True
+        result.passed = True
+        return result
+
+    from KrakenOS.UI.layout_editor import SurfaceRow
+    from KrakenOS.UI.scene_geometry import ScenePlacement3D
+
+    app.rows = [
+        SurfaceRow(label="0", surface="Object", element="", name="Object",
+                   thickness=50.0, diameter=12.0, glass="AIR"),
+        SurfaceRow(label="1", surface="Image", element="", name="Image",
+                   thickness=0.0, diameter=12.0, glass="AIR"),
+    ]
+    app._sync_table()
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    inspector.show_rotation_handles_var.set(True)
+    try:
+        inspector.show_rays_var.set(False)
+    except Exception:
+        pass
+
+    fixture = LENS_FIXTURES[0]
+    _import_step(app, fixture["step"])
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+    step_len = _max_handle_axis_length(inspector, "_actor_step_translate_map")
+    result.detail.update({"fixture": fixture["name"], "step_overlay_arrow_len": round(step_len, 3)})
+    if step_len <= 0.0:
+        result.notes.append("imported STEP produced no STEP-overlay translate handles to compare against")
+        result.passed = False
+        return result
+
+    try:
+        chain_exit = inspector._chain_exit_direction_from_trace()
+    except Exception:
+        chain_exit = None
+    try:
+        app.promote_imported_step_to_analytic_surfaces(
+            "optical", glass_sequence=fixture["glass"], clear_overlay=True,
+            refresh_open_3d=False, chain_exit_direction=chain_exit,
+        )
+    except Exception as exc:
+        result.notes.append(f"promote raised {exc!r}")
+        result.passed = False
+        return result
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+
+    std_rows = [i for i, r in enumerate(app.rows) if str(getattr(r, "surface", "")) == "Standard"]
+    if not std_rows:
+        result.notes.append("promotion produced no Standard rows")
+        result.passed = False
+        return result
+    row = std_rows[0]
+    body_extent = inspector._row_display_body_extent(row)
+    body_center = inspector._row_display_actor_center(row, body_only=False)
+    if body_center is None:
+        body_center = np.zeros(3, dtype=float)
+    body_center = np.asarray(body_center, dtype=float)
+
+    try:
+        inspector._remove_placement_rotation_handle_actors()
+    except Exception:
+        pass
+    placement = ScenePlacement3D(
+        row_index=row, center_world=body_center,
+        grid_spacing_mm=10.0, grid_extent_mm=100.0,
+    )
+    n_move = inspector._add_scene_placement_translate_handles(
+        placement, center=body_center, spacing=10.0, extent=100.0)
+    inspector._add_scene_placement_rotate_handles(
+        placement, center=body_center, spacing=10.0, extent=100.0)
+    row_len = _max_handle_axis_length(inspector, "_actor_placement_move_map")
+    result.detail.update({
+        "row_placement_arrow_len": round(row_len, 3),
+        "body_extent": round(float(body_extent), 3) if body_extent else None,
+        "move_handles": int(n_move),
+    })
+
+    if row_len <= 0.0:
+        result.notes.append("row placement built no measurable translate arrow")
+    elif abs(row_len - step_len) > 0.10 * step_len:
+        result.notes.append(
+            f"row arrow {row_len:.3f} differs from STEP overlay {step_len:.3f} by more than "
+            "10%: the gizmo shrank on promotion (bugs/0006 regression)"
+        )
+    if body_extent is not None and row_len < float(body_extent):
+        result.notes.append(
+            f"row arrow {row_len:.3f} is shorter than the body extent {float(body_extent):.3f}: "
+            "arrows no longer clear the glass"
+        )
+
+    try:
+        inspector._remove_placement_rotation_handle_actors()
+    except Exception:
+        pass
+    result.passed = not result.notes
+    return result
+
+
+def phase_14_thickness_dimension_off_axis(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0007: the Thickness dimension must stand off the optical axis in the
+    *screen plane*, not vanish into depth.
+
+    The dimension's sideways offset came from ``offset_direction``, whose old
+    purely geometric perpendicular sent an optical-axis (world-Z) segment along
+    world -X -- exactly the depth axis of the default side view -- so the
+    double-ended arrow projected onto the axis and the label landed unreadably on
+    the glass. The fix makes ``offset_direction`` camera-aware (offset
+    perpendicular to *both* the segment and the view direction). This phase builds
+    a simple two-gap system, turns the dimensions on, and for every rendered
+    dimension actor checks that its offset from the on-axis reference midpoint has
+    a negligible component along the camera view direction (it lies in the screen
+    plane) and a real in-screen magnitude. Needs no external fixture, so it always
+    runs. Rendered-pixel proof lives in
+    validate_open3d_thickness_dimension_offset_snapshot.
+    """
+    result = PhaseResult(name="Phase 14: thickness dimension offset off the optical axis")
+    from KrakenOS.UI.layout_editor import SurfaceRow
+
+    app.rows = [
+        SurfaceRow(label="0", surface="Object", element="", name="Object",
+                   thickness=120.0, diameter=30.0, glass="AIR"),
+        SurfaceRow(label="1", surface="Standard", element="", name="Lens",
+                   thickness=80.0, diameter=30.0, glass="BK7"),
+        SurfaceRow(label="2", surface="Image", element="", name="Image",
+                   thickness=0.0, diameter=30.0, glass="AIR"),
+    ]
+    app._sync_table()
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    inspector.show_rays_var.set(False)
+    try:
+        inspector.show_rotation_handles_var.set(False)
+    except Exception:
+        pass
+    app.show_physical_distances_var.set(True)
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+
+    view = inspector._camera_view_normal()
+    axes = inspector._camera_screen_world_axes()
+    if view is None or axes is None:
+        result.notes.append("camera vectors unavailable; cannot evaluate the offset direction")
+        result.passed = False
+        return result
+    view = np.asarray(view, dtype=float).reshape(3)
+    screen_up = np.asarray(axes[1], dtype=float).reshape(3)
+
+    drag_map = inspector._thickness_dimension_drag_map or {}
+    depth_fracs: list[float] = []
+    screen_mags: list[float] = []
+    last_segment: np.ndarray | None = None
+    evaluated = 0
+    for key, record in drag_map.items():
+        actor = inspector._actor_by_key.get(key)
+        if actor is None or not isinstance(record, dict):
+            continue
+        try:
+            bounds = np.asarray(actor.GetBounds(), dtype=float).reshape(6)
+        except Exception:
+            continue
+        if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[0] > bounds[1]:
+            continue
+        center = np.array([
+            0.5 * (bounds[0] + bounds[1]),
+            0.5 * (bounds[2] + bounds[3]),
+            0.5 * (bounds[4] + bounds[5]),
+        ], dtype=float)
+        try:
+            start = np.asarray(record.get("start"), dtype=float).reshape(3)
+            end = np.asarray(record.get("end"), dtype=float).reshape(3)
+        except Exception:
+            continue
+        midpoint = 0.5 * (start + end)
+        offset_vec = center - midpoint
+        segment = end - start
+        seg_len = float(np.linalg.norm(segment))
+        if seg_len > 1e-9:
+            seg_dir = segment / seg_len
+            last_segment = segment
+            # Drop any along-axis component (the arrow/label sit mid-span).
+            offset_vec = offset_vec - seg_dir * float(np.dot(offset_vec, seg_dir))
+        mag = float(np.linalg.norm(offset_vec))
+        if mag <= 1e-6:
+            continue
+        depth = abs(float(np.dot(offset_vec, view)))
+        screen = float(np.linalg.norm(offset_vec - view * float(np.dot(offset_vec, view))))
+        depth_fracs.append(depth / mag)
+        screen_mags.append(screen)
+        evaluated += 1
+
+    result.detail.update({
+        "dimension_actors_evaluated": evaluated,
+        "max_depth_fraction": round(max(depth_fracs), 4) if depth_fracs else None,
+        "min_screen_offset_mm": round(min(screen_mags), 3) if screen_mags else None,
+    })
+
+    if evaluated == 0:
+        result.notes.append("no rendered thickness-dimension actors found to evaluate")
+        result.passed = False
+        try:
+            app.show_physical_distances_var.set(False)
+        except Exception:
+            pass
+        return result
+
+    # Each dimension actor must be offset essentially in the screen plane: a large
+    # component along the view direction is the depth bug (label sits on the axis).
+    if max(depth_fracs) > 0.20:
+        result.notes.append(
+            f"a dimension actor is offset {max(depth_fracs):.2f} along the view direction "
+            "(> 0.20): the offset goes into depth, not across the screen (bugs/0007 regression)"
+        )
+    if min(screen_mags) <= 1e-6:
+        result.notes.append("a dimension actor has no in-screen offset from the axis")
+
+    # The live-camera seam itself must yield an in-screen, perpendicular offset.
+    if last_segment is not None:
+        side = np.asarray(
+            inspector._open3d_thickness_dimension_service().offset_direction(
+                last_segment, view, screen_up),
+            dtype=float,
+        ).reshape(3)
+        seg_unit = last_segment / max(float(np.linalg.norm(last_segment)), 1e-12)
+        if abs(float(np.dot(side, view))) > 1e-6:
+            result.notes.append(
+                f"offset_direction is not in the screen plane: |dot(view)|={abs(float(np.dot(side, view))):.3e}"
+            )
+        if abs(float(np.dot(side, seg_unit))) > 1e-6:
+            result.notes.append(
+                f"offset_direction is not perpendicular to the segment: "
+                f"|dot(seg)|={abs(float(np.dot(side, seg_unit))):.3e}"
+            )
+
+    try:
+        app.show_physical_distances_var.set(False)
+    except Exception:
+        pass
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -1386,6 +2009,10 @@ def main() -> int:
             phase_8_extras,
             phase_9_real_focal_minimum,
             phase_10_analytic_lens_selection_not_all_red,
+            phase_11_step_translate_handles_and_gap,
+            phase_12_step_face_hover_not_red,
+            phase_13_promoted_row_handle_length,
+            phase_14_thickness_dimension_off_axis,
         ]
         for phase in phases:
             try:

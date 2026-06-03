@@ -84,12 +84,63 @@ class Open3DThicknessDimensionService:
         return merged
 
     @staticmethod
-    def offset_direction(segment_direction: np.ndarray) -> np.ndarray:
+    def offset_direction(
+        segment_direction: np.ndarray,
+        view_normal: np.ndarray | None = None,
+        screen_up: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """Unit direction to push a dimension arrow off the segment it measures.
+
+        With a camera ``view_normal`` the offset is forced into the screen plane:
+        ``cross(view, segment)`` is perpendicular to *both* the view direction and
+        the segment, so it reads as a visible sideways offset in the rendered
+        view. The purely geometric perpendicular (no camera) put an optical-axis
+        (Z) dimension along world -X, which is exactly the depth axis of the
+        default side view -- so the arrow vanished into the screen and the label
+        landed on the axis (bugs/0007). ``screen_up`` (optional) only fixes the
+        sign so the dimension sits consistently below the axis on screen.
+        """
         direction = np.asarray(segment_direction, dtype=float).reshape(3)
         norm = float(np.linalg.norm(direction))
         if not np.isfinite(norm) or norm <= 1e-12:
-            return np.asarray((1.0, 0.0, 0.0), dtype=float)
-        direction = direction / norm
+            direction = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        else:
+            direction = direction / norm
+
+        view = None
+        if view_normal is not None:
+            candidate = np.asarray(view_normal, dtype=float).reshape(3)
+            candidate_norm = float(np.linalg.norm(candidate))
+            if np.isfinite(candidate_norm) and candidate_norm > 1e-12:
+                view = candidate / candidate_norm
+
+        up_unit = None
+        if screen_up is not None:
+            up_candidate = np.asarray(screen_up, dtype=float).reshape(3)
+            up_norm = float(np.linalg.norm(up_candidate))
+            if np.isfinite(up_norm) and up_norm > 1e-12:
+                up_unit = up_candidate / up_norm
+
+        if view is not None:
+            side = np.cross(view, direction)
+            side_norm = float(np.linalg.norm(side))
+            if np.isfinite(side_norm) and side_norm > 1e-6:
+                side = side / side_norm
+            elif up_unit is not None:
+                # Segment runs (almost) along the view axis -> it projects to a
+                # point; any in-screen direction reads as an offset.
+                side = up_unit
+            else:
+                trial = np.asarray((0.0, 0.0, 1.0), dtype=float)
+                if abs(float(np.dot(view, trial))) > 0.90:
+                    trial = np.asarray((0.0, 1.0, 0.0), dtype=float)
+                side = np.cross(view, trial)
+                side_norm = float(np.linalg.norm(side))
+                side = side / side_norm if side_norm > 1e-12 else np.asarray((0.0, 1.0, 0.0), dtype=float)
+            if up_unit is not None and float(np.dot(side, up_unit)) > 0.0:
+                side = -side
+            return side
+
         reference = np.asarray((0.0, 0.0, 1.0), dtype=float)
         if abs(float(np.dot(direction, reference))) > 0.90:
             reference = np.asarray((0.0, 1.0, 0.0), dtype=float)
@@ -171,8 +222,22 @@ class Open3DThicknessDimensionService:
         if len(rows) < 2:
             return 0
         _center, scene_span = self.inspector._row_scene_bounds()
-        base_offset = max(float(scene_span) * 0.045, 2.0)
+        # Match the 2D layout's physical-distance arrows, which stand ~8% of the
+        # view span off the axis -- a clearly readable margin (bugs/0007). At the
+        # old 0.045 the double-ended arrow hugged the optical-axis line.
+        base_offset = max(float(scene_span) * 0.08, 2.0)
         color = (0.05, 0.42, 0.70)
+        # Offset the dimension into the screen plane so it reads to the side of
+        # the optical axis instead of vanishing into depth (bugs/0007).
+        try:
+            view_normal = self.inspector._camera_view_normal()
+        except Exception:
+            view_normal = None
+        try:
+            screen_axes = self.inspector._camera_screen_world_axes()
+        except Exception:
+            screen_axes = None
+        screen_up = screen_axes[1] if screen_axes else None
         count = 0
         for row_index, row in enumerate(rows[:-1]):
             try:
@@ -193,7 +258,7 @@ class Open3DThicknessDimensionService:
             segment_length = float(np.linalg.norm(segment))
             if not np.isfinite(segment_length) or segment_length <= 1e-9:
                 continue
-            side = self.offset_direction(segment)
+            side = self.offset_direction(segment, view_normal=view_normal, screen_up=screen_up)
             row_band = 1.0 + 0.38 * float(row_index % 3)
             offset = side * base_offset * row_band
             start = p0 + offset
