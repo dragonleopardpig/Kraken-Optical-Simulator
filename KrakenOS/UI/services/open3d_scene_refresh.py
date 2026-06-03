@@ -573,7 +573,14 @@ class Open3DSceneRefreshService:
             include_footprints=bool(self.show_detector_overlays_var.get()),
             include_miss_crosshairs=bool(self.show_terminal_diagnostics_var.get()),
         )
-        thickness_dimensions = self._add_thickness_dimension_overlays(system, scene_bundle)
+        # bugs/0009: the thickness dimensions must be added *after* the imported
+        # STEP overlay loop below registers the optical body into
+        # ``_step_actor_map`` -- otherwise ``add_overlays`` measures against an
+        # empty map and paints one row->row arrow straight through the lens
+        # instead of splitting around it. Deferred to ``thickness_dimensions``
+        # right after the step bodies exist (matching how the live drag readout
+        # reads the same already-populated map).
+        thickness_dimensions = 0
         overlay_ms = (time.perf_counter() - overlay_start) * 1000.0
 
         ray_actor_start = time.perf_counter()
@@ -793,6 +800,11 @@ class Open3DSceneRefreshService:
                 pick_row_index=None,
                 flat_shading=True,
             )
+
+        # bugs/0009: now that the imported STEP bodies are registered in
+        # ``_step_actor_map``, draw the thickness dimensions so each row->row
+        # span splits around any lens between its two surfaces.
+        thickness_dimensions = self._add_thickness_dimension_overlays(system, scene_bundle)
 
         from KrakenOS.UI.services.open3d_camera_state import apply_camera_state
 

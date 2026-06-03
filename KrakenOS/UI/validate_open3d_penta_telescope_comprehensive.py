@@ -2069,6 +2069,171 @@ def phase_15_step_delete_requires_selection(
     return result
 
 
+def _thickness_dimension_label_texts(inspector: Kraken3DInspector) -> list[str]:
+    """Billboard label strings of the rendered thickness dimensions."""
+    texts: list[str] = []
+    for key in list(getattr(inspector, "_actor_thickness_dimension_map", {}).keys()):
+        actor = inspector._actor_by_key.get(key)
+        if actor is None:
+            continue
+        try:
+            if not actor.IsA("vtkBillboardTextActor3D"):
+                continue
+            texts.append(str(actor.GetInput()))
+        except Exception:
+            continue
+    return texts
+
+
+def phase_16_thickness_overlay_skips_lens(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0009: the persistent thickness overlay must break around an imported
+    lens between two surfaces instead of painting one arrow straight through it.
+
+    The persistent overlay walked analytic rows only, so an imported lens between
+    Object(z=0) and Image(z=100) was painted across by a single
+    ``S0 Thickness = 100 mm`` arrow (flag 743: optical body at z=44.12..55.70,
+    ``thickness_dimension_count: 2`` -- one arrow + one label). The fix teaches
+    ``add_overlays`` to split the span at any intervening overlay AND -- the part
+    this phase guards end-to-end -- moves the dimension draw in
+    ``Open3DSceneRefreshService.refresh_scene`` to *after* the STEP overlay loop
+    registers the body into ``_step_actor_map``, so the split has the lens to
+    split around at render time. This phase imports the tracked prism, centres it
+    between the surfaces, turns the dimensions on, and asserts the rendered
+    overlay splits into two ``gap = .. mm`` labels with no ``Thickness =`` arrow
+    across the lens; as a positive control it removes the lens and asserts the
+    overlay reverts to the single ``S0 Thickness = 100 mm`` span. It source-couples
+    the refresh ordering and the shared thicker-line knobs so neither half can
+    silently regress. Uses the tracked prism fixture, so it always runs.
+    Rendered-pixel proof lives in
+    validate_open3d_thickness_overlay_skips_lens_snapshot.
+    """
+    import inspect
+
+    from KrakenOS.UI.layout_editor import SurfaceRow
+    from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
+    from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
+
+    result = PhaseResult(name="Phase 16: thickness overlay splits around an imported lens")
+    if not PRISM_42779_STEP.exists():
+        result.notes.append("skipped: tracked prism STEP fixture missing")
+        result.detail["skipped"] = True
+        result.passed = True
+        return result
+
+    def _optical_z_center() -> float | None:
+        zmin, zmax = np.inf, -np.inf
+        for key in (inspector._step_actor_map or {}).get("optical", []):
+            actor = inspector._actor_by_key.get(key)
+            if actor is None:
+                continue
+            bounds = np.asarray(actor.GetBounds(), dtype=float)
+            if bounds.size == 6 and bounds[4] <= bounds[5]:
+                zmin = min(zmin, float(bounds[4]))
+                zmax = max(zmax, float(bounds[5]))
+        if not (np.isfinite(zmin) and np.isfinite(zmax)):
+            return None
+        return 0.5 * (zmin + zmax)
+
+    app.rows = [
+        SurfaceRow(label="0", surface="Object", element="", name="Object",
+                   thickness=100.0, diameter=25.0, glass="AIR"),
+        SurfaceRow(label="1", surface="Image", element="", name="Image",
+                   thickness=0.0, diameter=25.0, glass="AIR"),
+    ]
+    app._sync_table()
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    inspector.show_rays_var.set(False)
+    try:
+        inspector.show_rotation_handles_var.set(False)
+    except Exception:
+        pass
+
+    _import_step(app, PRISM_42779_STEP)
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+    native_center = _optical_z_center()
+    if native_center is None:
+        result.notes.append("setup: optical STEP overlay did not import; cannot evaluate split")
+        result.passed = False
+        return result
+    # Centre the lens strictly between Object(0) and Image(100).
+    app.optical_step_placement_offset_xyz = (0.0, 0.0, 50.0 - native_center)
+    app.select_step_component("optical")
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+    try:
+        inspector._clear_open3d_selection()
+    except Exception:
+        pass
+    app._selected_step_label = None
+
+    app.show_physical_distances_var.set(True)
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+
+    labels = _thickness_dimension_label_texts(inspector)
+    gap_labels = [t for t in labels if "gap =" in t]
+    thickness_labels = [t for t in labels if "Thickness =" in t]
+    result.detail["lens_present_labels"] = labels
+    if len(gap_labels) != 2 or thickness_labels:
+        result.notes.append(
+            f"overlay did not split around the lens: labels={labels!r} "
+            "(expected two 'gap = .. mm' and no 'Thickness =' arrow) -- bugs/0009 regression "
+            "(the dimension draw runs before the STEP body registers, or the split was lost)"
+        )
+
+    # Positive control: with no lens, the row span reverts to one Thickness arrow.
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    app.imported_optical_step_path = None
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+    ctrl_labels = _thickness_dimension_label_texts(inspector)
+    result.detail["lens_removed_labels"] = ctrl_labels
+    if not any("Thickness =" in t for t in ctrl_labels) or any("gap =" in t for t in ctrl_labels):
+        result.notes.append(
+            f"control failed: lens-removed labels={ctrl_labels!r} "
+            "(expected a single 'S0 Thickness = 100 mm' span): the split is not lens-driven"
+        )
+
+    # Source-couple the refresh ordering: the thickness dimensions must be drawn
+    # AFTER the imported STEP overlay loop populates _step_actor_map.
+    refresh_src = inspect.getsource(type(inspector._scene_refresh_service()).refresh_scene)
+    dim_at = refresh_src.find("self._add_thickness_dimension_overlays(")
+    step_loop_at = refresh_src.find("_transformed_imported_optical_step_mesh")
+    result.detail["dim_after_step_loop"] = dim_at > step_loop_at >= 0
+    if not (dim_at > step_loop_at >= 0):
+        result.notes.append(
+            "refresh_scene draws thickness dimensions before the imported STEP overlay loop "
+            "(dim_at=%r, step_loop_at=%r): the split runs against an empty _step_actor_map "
+            "(bugs/0009 ordering regression)" % (dim_at, step_loop_at)
+        )
+
+    # Source-couple the shared thicker-line knobs (both distances).
+    if Open3DThicknessDimensionService.DIMENSION_TUBE_RADIUS_FACTOR < 0.30:
+        result.notes.append("dimension tube radius factor regressed below 0.30 (lines too thin)")
+    if Open3DThicknessDimensionService.DIMENSION_LEADER_LINE_WIDTH < 2.0:
+        result.notes.append("dimension leader line width regressed below 2.0 (lines too thin)")
+
+    try:
+        app.show_physical_distances_var.set(False)
+    except Exception:
+        pass
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -2121,6 +2286,7 @@ def main() -> int:
             phase_13_promoted_row_handle_length,
             phase_14_thickness_dimension_off_axis,
             phase_15_step_delete_requires_selection,
+            phase_16_thickness_overlay_skips_lens,
         ]
         for phase in phases:
             try:

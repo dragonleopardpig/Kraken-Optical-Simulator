@@ -17,6 +17,16 @@ from tkinter import ttk
 class Open3DThicknessDimensionService:
     """Render and edit Open 3D dimensions backed by table Thickness rows."""
 
+    # bugs/0009: the dimension shaft + leader lines read too thin against the
+    # lens body. These knobs are shared by the persistent overlay (arrow_mesh /
+    # _emit_span_dimension) and the live drag readout
+    # (Kraken3DInspector._draw_step_translate_gap_overlay, which reads
+    # DIMENSION_LEADER_LINE_WIDTH and calls arrow_mesh), so bumping them here
+    # thickens *both* distances the user compared.
+    DIMENSION_TUBE_RADIUS_FACTOR = 0.36
+    DIMENSION_TUBE_RADIUS_FLOOR = 0.06
+    DIMENSION_LEADER_LINE_WIDTH = 2.2
+
     def __init__(
         self,
         inspector: Any,
@@ -51,7 +61,7 @@ class Open3DThicknessDimensionService:
         direction = delta / length
         head = min(max(float(scene_span) * 0.018, 0.75), max(length * 0.28, 0.75))
         radius = max(head * 0.20, 0.12)
-        tube_radius = max(radius * 0.18, 0.025)
+        tube_radius = max(radius * self.DIMENSION_TUBE_RADIUS_FACTOR, self.DIMENSION_TUBE_RADIUS_FLOOR)
         parts: list[Any] = []
         try:
             line = pv.Line(tuple(float(value) for value in start), tuple(float(value) for value in end))
@@ -258,47 +268,174 @@ class Open3DThicknessDimensionService:
             segment_length = float(np.linalg.norm(segment))
             if not np.isfinite(segment_length) or segment_length <= 1e-9:
                 continue
+            axis = segment / segment_length
+            a0 = float(np.dot(p0, axis))
+            a1 = float(np.dot(p1, axis))
+            # bugs/0009: an imported optical body sitting between S{row} and the
+            # next surface used to be painted straight through -- the dimension
+            # "skipped the lens and measured the next element". Break the span at
+            # any overlay so each arrow reads the real edge-to-edge gap (the same
+            # quantity the live drag readout shows), instead of one row->row arrow.
+            overlay_spans = self._overlay_axial_spans_within(axis, a0, a1)
+            gaps = self.split_span_at_overlays(a0, a1, overlay_spans)
+            split = len(gaps) > 1
             side = self.offset_direction(segment, view_normal=view_normal, screen_up=screen_up)
             row_band = 1.0 + 0.38 * float(row_index % 3)
             offset = side * base_offset * row_band
-            start = p0 + offset
-            end = p1 + offset
-            mesh = self.arrow_mesh(start, end, scene_span=scene_span)
-            if mesh is None:
-                continue
-            actor = self.inspector._add_mesh_actor(
-                mesh,
-                color=color,
-                opacity=0.92,
-                pick_thickness_dimension=row_index,
-                flat_shading=True,
-                backface_culling=False,
-            )
-            if actor is None:
-                continue
-            self._register_drag_actor(actor, row_index, p0, p1)
-            count += 1
+            for gap_lo, gap_hi in gaps:
+                gap_mm = float(gap_hi - gap_lo)
+                if gap_mm <= max(segment_length * 1e-3, 1e-6):
+                    continue
+                frac_lo = (gap_lo - a0) / (a1 - a0)
+                frac_hi = (gap_hi - a0) / (a1 - a0)
+                base_lo = p0 + segment * frac_lo
+                base_hi = p0 + segment * frac_hi
+                if split:
+                    label = f"gap = {gap_mm:.4g} mm"
+                else:
+                    label = f"S{row_index} Thickness = {thickness:.6g} mm"
+                count += self._emit_span_dimension(
+                    row_index=row_index,
+                    base_lo=base_lo,
+                    base_hi=base_hi,
+                    side=side,
+                    offset=offset,
+                    base_offset=base_offset,
+                    scene_span=scene_span,
+                    color=color,
+                    label=label,
+                    drag_start=p0,
+                    drag_end=p1,
+                )
+        return count
+
+    def _overlay_axial_spans_within(
+        self, axis: np.ndarray, a0: float, a1: float
+    ) -> list[tuple[float, float]]:
+        """Axial ``[min, max]`` spans of imported STEP overlays whose center
+        falls strictly between the two surface projections ``a0``/``a1`` along
+        ``axis``.
+
+        Only imported solid bodies can lie between two *consecutive* table rows,
+        so these are the bodies the row->row dimension must not paint across
+        (bugs/0009). Spans are clamped to the row span.
+        """
+        lo, hi = (a0, a1) if a0 <= a1 else (a1, a0)
+        margin = max((hi - lo) * 1e-3, 1e-6)
+        spans: list[tuple[float, float]] = []
+        step_map = getattr(self.inspector, "_step_actor_map", {}) or {}
+        for actor_keys in list(step_map.values()):
             try:
-                self.inspector._add_mesh_actor(
-                    pv.Line(tuple(float(value) for value in p0), tuple(float(value) for value in start)),
-                    color=(0.62, 0.72, 0.80),
-                    opacity=0.52,
-                    line_width=1.0,
-                    backface_culling=False,
-                )
-                self.inspector._add_mesh_actor(
-                    pv.Line(tuple(float(value) for value in p1), tuple(float(value) for value in end)),
-                    color=(0.62, 0.72, 0.80),
-                    opacity=0.52,
-                    line_width=1.0,
-                    backface_culling=False,
-                )
+                extent = self.inspector._axial_extent_from_actor_keys(actor_keys, axis)
             except Exception:
-                pass
-            label = f"S{row_index} Thickness = {thickness:.6g} mm"
-            label_position = 0.5 * (start + end) + side * max(base_offset * 0.22, 0.8)
-            if self.add_label_actor(row_index, label_position, label, drag_start=p0, drag_end=p1):
-                count += 1
+                extent = None
+            if extent is None:
+                continue
+            center = float(extent.get("proj_center", float("nan")))
+            if not np.isfinite(center) or center <= lo + margin or center >= hi - margin:
+                continue
+            pmin = max(float(extent.get("proj_min", lo)), lo)
+            pmax = min(float(extent.get("proj_max", hi)), hi)
+            if pmax - pmin > margin:
+                spans.append((pmin, pmax))
+        return spans
+
+    @staticmethod
+    def split_span_at_overlays(
+        a0: float,
+        a1: float,
+        overlay_spans: list[tuple[float, float]],
+        *,
+        min_gap: float = 1e-6,
+    ) -> list[tuple[float, float]]:
+        """Clear-gap intervals of a row span ``[a0, a1]`` once the solid
+        ``overlay_spans`` are carved out.
+
+        No overlays -> ``[(a0, a1)]`` (the original row->row dimension). One
+        overlay between the surfaces -> ``[(a0, near), (far, a1)]`` -- the
+        physical gaps on each side of the lens, so the dimension never paints
+        across it (bugs/0009). If overlays cover the whole span, falls back to
+        the full span so something is still drawn.
+        """
+        lo, hi = (a0, a1) if a0 <= a1 else (a1, a0)
+        spans = sorted(
+            (
+                (max(float(s), lo), min(float(e), hi))
+                for s, e in overlay_spans
+                if float(e) > float(s)
+            ),
+            key=lambda se: se[0],
+        )
+        gaps: list[tuple[float, float]] = []
+        cursor = lo
+        for s, e in spans:
+            if s - cursor > min_gap:
+                gaps.append((cursor, s))
+            cursor = max(cursor, e)
+        if hi - cursor > min_gap:
+            gaps.append((cursor, hi))
+        if not gaps:
+            return [(lo, hi)]
+        return gaps
+
+    def _emit_span_dimension(
+        self,
+        *,
+        row_index: int,
+        base_lo: np.ndarray,
+        base_hi: np.ndarray,
+        side: np.ndarray,
+        offset: np.ndarray,
+        base_offset: float,
+        scene_span: float,
+        color: tuple[float, float, float],
+        label: str,
+        drag_start: np.ndarray,
+        drag_end: np.ndarray,
+    ) -> int:
+        """Draw one dimension (shaft + leaders + label) between ``base_lo`` and
+        ``base_hi``, offset to ``side``.
+
+        Editing/drag always maps back to the table thickness of ``row_index``
+        (``drag_start``/``drag_end`` span the whole row), so a split lens-gap
+        arrow still edits the row it belongs to (bugs/0009). Returns the number
+        of pickable dimension actors added.
+        """
+        pv = self.pv
+        start = base_lo + offset
+        end = base_hi + offset
+        mesh = self.arrow_mesh(start, end, scene_span=scene_span)
+        if mesh is None:
+            return 0
+        actor = self.inspector._add_mesh_actor(
+            mesh,
+            color=color,
+            opacity=0.92,
+            pick_thickness_dimension=row_index,
+            flat_shading=True,
+            backface_culling=False,
+        )
+        if actor is None:
+            return 0
+        self._register_drag_actor(actor, row_index, drag_start, drag_end)
+        count = 1
+        try:
+            for tip, anchor in ((base_lo, start), (base_hi, end)):
+                self.inspector._add_mesh_actor(
+                    pv.Line(
+                        tuple(float(value) for value in tip),
+                        tuple(float(value) for value in anchor),
+                    ),
+                    color=(0.62, 0.72, 0.80),
+                    opacity=0.52,
+                    line_width=self.DIMENSION_LEADER_LINE_WIDTH,
+                    backface_culling=False,
+                )
+        except Exception:
+            pass
+        label_position = 0.5 * (start + end) + side * max(base_offset * 0.22, 0.8)
+        if self.add_label_actor(row_index, label_position, label, drag_start=drag_start, drag_end=drag_end):
+            count += 1
         return count
 
     def _display_direction_for_drag(self, start: np.ndarray, end: np.ndarray) -> tuple[np.ndarray, float]:

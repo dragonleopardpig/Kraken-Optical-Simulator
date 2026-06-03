@@ -3046,7 +3046,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 continue
             leader = self._add_mesh_actor(
-                line, color=(0.95, 0.72, 0.36), opacity=0.65, line_width=1.4, backface_culling=False
+                line,
+                color=(0.95, 0.72, 0.36),
+                opacity=0.65,
+                line_width=service.DIMENSION_LEADER_LINE_WIDTH,
+                backface_culling=False,
             )
             if leader is not None:
                 self._step_translate_gap_actors.append(leader)
