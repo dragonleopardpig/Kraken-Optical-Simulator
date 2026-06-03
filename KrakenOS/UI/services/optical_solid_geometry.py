@@ -489,6 +489,49 @@ def optical_solid_face_candidate_triangles(path: Path, candidate: OpticalSolidFa
     return np.asarray(selected, dtype=float)
 
 
+def optical_solid_face_record_triangles(path: Path, record: dict[str, object]) -> np.ndarray:
+    """Return STL triangles for a face record via its ``triangle_indices``.
+
+    The B-Rep path writes the displayed STL from the same OCC tessellation that
+    produced the face metadata, so a face's ``triangle_indices`` select that
+    face's exact triangles -- no plane re-derivation, unlike the cluster path.
+    """
+    _file_format, triangles = _read_stl_triangle_vertices(Path(path).expanduser())
+    if triangles.size == 0:
+        return np.empty((0, 3, 3), dtype=float)
+    count = int(triangles.shape[0])
+    indices: list[int] = []
+    for value in (record or {}).get("triangle_indices", ()) or ():
+        try:
+            index = int(value)
+        except Exception:
+            continue
+        if 0 <= index < count:
+            indices.append(index)
+    if not indices:
+        return np.empty((0, 3, 3), dtype=float)
+    return np.asarray(triangles[np.asarray(indices, dtype=int)], dtype=float)
+
+
+def optical_solid_metadata_is_brep(metadata: dict[str, object] | None) -> bool:
+    """True if face metadata carries native B-Rep faces (any face has a surface_type).
+
+    Cluster candidates never set ``surface_type``; the OCC analytic path always
+    does, and ``surface_type`` survives metadata normalization, so its presence
+    is the durable marker that the editor should trust the saved faces verbatim
+    instead of re-clustering the STL.
+    """
+    if not isinstance(metadata, dict):
+        return False
+    faces = metadata.get("faces")
+    if not isinstance(faces, (list, tuple)):
+        return False
+    return any(
+        isinstance(face, dict) and str(face.get("surface_type") or "").strip()
+        for face in faces
+    )
+
+
 def optical_solid_face_record_from_candidate(candidate: OpticalSolidFaceCandidate) -> dict[str, object]:
     return optical_solid_metadata.optical_solid_face_record_from_candidate(candidate)
 

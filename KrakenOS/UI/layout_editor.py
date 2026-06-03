@@ -1096,6 +1096,8 @@ from KrakenOS.UI.services.optical_solid_geometry import (
     cluster_optical_solid_planar_faces,
     group_optical_solid_face_candidates,
     optical_solid_face_candidate_triangles,
+    optical_solid_face_record_triangles,
+    optical_solid_metadata_is_brep,
     optical_solid_face_record_from_candidate,
     normalize_optical_solid_face_record,
     normalize_optical_solid_virtual_plane_record,

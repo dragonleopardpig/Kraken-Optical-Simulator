@@ -240,13 +240,28 @@ class LayoutOpticalSolidWorkflowMixin:
         path: Path,
         existing: object | None = None,
     ) -> dict[str, object] | None:
-        try:
-            candidates = cluster_optical_solid_planar_faces(Path(path))
-        except Exception:
-            return None
-        if not candidates:
-            return None
-        metadata = normalize_optical_solid_face_metadata(existing or {}, candidates, source_stl=str(path))
+        from KrakenOS.UI.services.optical_solid_geometry import optical_solid_metadata_is_brep
+        from KrakenOS.UI.services.step_optical_solid_brep import load_face_sidecar
+
+        # Prefer native OCC B-Rep faces over STL plane-clustering: a curved
+        # optical surface is one B-Rep face but shatters into ~160 planar
+        # clusters. Already-B-Rep `existing` wins (keeps user roles); else the
+        # OCC sidecar written beside the cached STL; else cluster the STL.
+        metadata: dict[str, object] | None = None
+        if optical_solid_metadata_is_brep(existing):
+            metadata = normalize_optical_solid_face_metadata(existing, source_stl=str(path))
+        else:
+            sidecar = load_face_sidecar(Path(path))
+            if optical_solid_metadata_is_brep(sidecar):
+                metadata = normalize_optical_solid_face_metadata(sidecar, source_stl=str(path))
+        if metadata is None:
+            try:
+                candidates = cluster_optical_solid_planar_faces(Path(path))
+            except Exception:
+                return None
+            if not candidates:
+                return None
+            metadata = normalize_optical_solid_face_metadata(existing or {}, candidates, source_stl=str(path))
         faces: list[dict[str, object]] = []
         for face in list(metadata.get("faces", []) or []):
             if not isinstance(face, dict):

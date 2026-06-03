@@ -1,9 +1,13 @@
 # 0003 — Aspheric achromat: "so many faces", snapshot key dead in face editor, InvalidMeshWarning
 
 **Status:** All four issues fixed — snapshot hotkey, InvalidMeshWarning, all-red
-selection render, and the "160 faces" (via display-only grouping in the face
-editor). The earlier "blank offscreen render" turned out to be transient
-(offscreen VTK rendering works; the comprehensive validator passes Phase 10).
+selection render, and the "160 faces". The "160 faces" first got a display-only
+grouping fallback, then a **root-cause fix**: STEP optical solids are now meshed
+by their OpenCascade B-Rep faces (the achromat shows 7 real faces, not 160),
+behind `KRAKENOS_BREP_OPTICAL_SOLID` with a gmsh fallback — see the Issue 3
+root-cause section below. The earlier "blank offscreen render" turned out to be
+transient (offscreen VTK rendering works; the comprehensive validator passes
+Phase 10).
 **Component:** Open 3D inspector — STEP promotion + face editor + selection render
 **Reported via:** in-app recorder, `attachment/recorded_bug_repros/flag_20260602_205444_993/`
 plus the `InvalidMeshWarning`s printed by `python -m KrakenOS.UI.layout_editor`.
@@ -102,7 +106,7 @@ a cached analytic `.vtp` is present it also reproduces the real `vtkOriginalCell
 case — confirming clear-input-only still warns while `_clean_surface_triangulate`
 does not.
 
-## Issue 3 — "160 faces" (FIXED via display-only grouping)
+## Issue 3 — "160 faces" (FIXED — display-only grouping first, then root-cause B-Rep import)
 
 The face editor lists planar face *candidates* from
 `cluster_optical_solid_planar_faces`, which groups STL triangles by **plane**
@@ -123,6 +127,71 @@ at once. Verified: the aspheric achromat collapses 160 → **3 groups**
 (front/back/edge); a penta prism stays **7 → 7** (flat faces untouched, so the
 Group column does not even appear). Guarded by
 `validate_open3d_optical_solid_face_grouping`.
+
+### Root-cause fix — mesh STEP optical solids by their OCC B-Rep faces (2026-06-03)
+
+The 160 were an artifact of the *import path*, not the lens: the optical-solid
+import went STEP → gmsh → STL → re-cluster-triangles-by-plane, which discards
+the B-Rep topology OpenCascade already computes. The aspheric achromat is **7
+outer faces** (4 cylinder + 1 sphere + 2 bspline; 2 coincident cemented-interface
+spheres dropped as interior duplicates), not 160. The grouping above is a good
+*display* fallback but still operates on the shattered clusters.
+
+**Fix:** a new service `KrakenOS/UI/services/step_optical_solid_brep.py` meshes
+the STEP **in process** via `load_step_analytic_document` and emits two aligned
+artifacts:
+
+* the displayed binary STL, written from `doc.triangles` **in order**
+  (`write_triangles_binary_stl`), so every existing triangle-index-based picker /
+  highlighter — which indexes into the displayed STL — stays aligned with the
+  face metadata with **no rewrite**; and
+* a sidecar `*.kraken_brep_faces.json` of the per-face metadata
+  (`surface_type` + `triangle_indices`) from the **same** document.
+
+Because both come from one tessellation, the displayed mesh and the metadata
+share triangle indices. Wiring (all behind `KRAKENOS_BREP_OPTICAL_SOLID`, default
+on; set `0`/`false`/`no`/`off` to fall back to gmsh):
+
+* `cad_import_service.optical_solid_mesh_path_from_source` routes `.step`/`.stp`
+  through `build_step_optical_solid_mesh` (`_build_optical_solid_cad_mesh`),
+  falling back to `convert_step_to_stl` (gmsh) on any failure — and removing a
+  stale sidecar first so a fallback STL is never mis-read as B-Rep-backed. IGES
+  still uses gmsh.
+* `optical_solid_workflow._default_uncoated_optical_solid_face_metadata` seeds
+  the row's face metadata from the sidecar (`load_face_sidecar`) when present,
+  applying the same uncoated-transmit defaults, instead of clustering.
+* `optical_solid_geometry` gains `optical_solid_metadata_is_brep` (a face with a
+  `surface_type` is the durable B-Rep marker — it survives normalization, and
+  clusters never set it) and `optical_solid_face_record_triangles` (pull a
+  record's triangles by `triangle_indices`); both exported onto `le`.
+* `main_optical_solid_face_roles_dialog._open_optical_solid_faces_for_row`
+  branches on `brep_backed`: when B-Rep it lists the saved faces verbatim (no
+  cluster, no grouping) and `candidate_mesh` / the matplotlib preview pull
+  triangles via `optical_solid_face_record_triangles`. The flat-STL path is
+  byte-for-byte unchanged.
+
+The face editor now shows the achromat's **7 real optical faces**, and selection
+/ picking / highlight keep working because the indices still address the same
+displayed STL.
+
+### Tests (root-cause fix)
+* `validate_open3d_brep_optical_solid_faces` (display-free): the achromat meshes
+  to 7 B-Rep faces (sphere/cylinder/bspline); the STL is written in
+  `doc.triangles` order (max vertex error ~1e-6, float32); every face's
+  `triangle_indices` are in range and together cover all 1115 triangles;
+  `optical_solid_metadata_is_brep` accepts the result and rejects cluster-shaped
+  metadata; `optical_solid_face_record_triangles` returns exactly the STL rows at
+  a face's indices; and the import-time default metadata is those 7 B-Rep faces,
+  not 160 clusters. The `KRAKENOS_BREP_OPTICAL_SOLID` flag is exercised.
+* `validate_open3d_brep_optical_solid_faces_snapshot` (image): renders the
+  **written STL colored by the sidecar's `triangle_indices`** (the real
+  round-trip) off-screen and asserts several large single-color regions
+  (6/7 faces visible in one iso view, 7th occluded), not a fragmented soup —
+  opened and confirmed by eye.
+
+Note: an already-cached gmsh STL (no sidecar, e.g. imported before this change)
+keeps clustering until the source is re-imported or the CAD cache is cleared;
+fresh imports take the OCC path.
 
 ## Issue 4 — selected lens renders all-red ("so many faces" as red triangles) (FIXED)
 

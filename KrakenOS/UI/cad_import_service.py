@@ -146,6 +146,35 @@ def convert_step_to_stl(source_path: Path, target_path: Path, *, gmsh_bin: str |
         raise RuntimeError(message.splitlines()[0] if message else "CAD conversion failed")
 
 
+def _build_optical_solid_cad_mesh(source_path: Path, stl_path: Path, suffix: str) -> None:
+    """Mesh a CAD source into ``stl_path``, preferring in-process OCC for STEP.
+
+    STEP/STP goes through OpenCascade (``build_step_optical_solid_mesh``) when the
+    ``KRAKENOS_BREP_OPTICAL_SOLID`` flag is on: it writes the STL from the same
+    tessellation as the face metadata sidecar, so the editor can list the real
+    B-Rep faces. On any failure (OCC missing, unreadable STEP) it falls back to
+    the gmsh STL path -- and removes a stale sidecar first so the fallback STL is
+    never mis-read as B-Rep-backed. IGES and the flag-off case use gmsh directly.
+    """
+    from KrakenOS.UI.services.step_optical_solid_brep import (
+        brep_optical_solid_enabled,
+        build_step_optical_solid_mesh,
+        face_sidecar_path,
+    )
+
+    if suffix in {".step", ".stp"} and brep_optical_solid_enabled():
+        try:
+            build_step_optical_solid_mesh(source_path, stl_path)
+            return
+        except Exception:
+            sidecar = face_sidecar_path(stl_path)
+            try:
+                sidecar.unlink()
+            except OSError:
+                pass
+    convert_step_to_stl(source_path, stl_path)
+
+
 def optical_solid_mesh_path_from_source(
     source_path: Path,
     *,
@@ -162,7 +191,7 @@ def optical_solid_mesh_path_from_source(
     if suffix in cad_suffixes:
         stl_path = cached_cad_mesh_path(source_path, cache_dir)
         if not stl_mesh_has_facets(stl_path):
-            convert_step_to_stl(source_path, stl_path)
+            _build_optical_solid_cad_mesh(source_path, stl_path, suffix)
         return stl_path, source_path, suffix.lstrip(".").upper()
     raise ValueError("Unsupported optical solid file. Use STL, STEP/STP, or IGES/IGS.")
 

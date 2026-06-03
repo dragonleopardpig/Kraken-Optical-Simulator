@@ -36,17 +36,37 @@ class MainOpticalSolidFaceRolesDialog:
 
     def _open_optical_solid_faces_for_row(self, row_index: int, row: Any, path: Path) -> None:
         le = _layout_module()
-        try:
-            candidates = le.cluster_optical_solid_planar_faces(path)
-        except Exception as exc:
-            messagebox.showerror('Assign CAD/STL Optical Faces', f'Could not read STL face candidates:\n\n{exc}', parent=self.editor)
-            return
-        if not candidates:
-            messagebox.showinfo('Assign CAD/STL Optical Faces', 'No planar STL face candidates were found.', parent=self.editor)
-            return
-        metadata = le.normalize_optical_solid_face_metadata((row.advanced or {}).get(le.OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}), candidates, source_stl=str(path))
+        saved_metadata = (row.advanced or {}).get(le.OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+        # Native OCC B-Rep faces (each a real optical surface, tagged with a
+        # surface_type and triangle indices into the displayed STL) are listed
+        # verbatim -- no STL plane-clustering, which would re-shatter a curved
+        # face into ~160 planar candidates. The flat-STL path is unchanged.
+        brep_backed = le.optical_solid_metadata_is_brep(saved_metadata)
+        candidates: list = []
+        if brep_backed:
+            metadata = le.normalize_optical_solid_face_metadata(saved_metadata, source_stl=str(path))
+        else:
+            try:
+                candidates = le.cluster_optical_solid_planar_faces(path)
+            except Exception as exc:
+                messagebox.showerror('Assign CAD/STL Optical Faces', f'Could not read STL face candidates:\n\n{exc}', parent=self.editor)
+                return
+            if not candidates:
+                messagebox.showinfo('Assign CAD/STL Optical Faces', 'No planar STL face candidates were found.', parent=self.editor)
+                return
+            metadata = le.normalize_optical_solid_face_metadata(saved_metadata, candidates, source_stl=str(path))
         records: list[dict[str, object]] = [le.normalize_optical_solid_face_record(face) for face in list(metadata.get('faces', []) or [])]
         records = le.suggest_optical_solid_face_roles(records)
+
+        def _face_source_triangles(index: int) -> np.ndarray:
+            """Triangles for face ``index``: by B-Rep triangle_indices, else planar cluster."""
+            if brep_backed:
+                if 0 <= index < len(records):
+                    return le.optical_solid_face_record_triangles(path, records[index])
+                return np.empty((0, 3, 3), dtype=float)
+            if 0 <= index < len(candidates):
+                return le.optical_solid_face_candidate_triangles(path, candidates[index])
+            return np.empty((0, 3, 3), dtype=float)
         virtual_planes: list[dict[str, object]] = [le.normalize_optical_solid_virtual_plane_record(plane) for plane in list(metadata.get('virtual_planes', []) or []) if isinstance(plane, dict)]
         # Display-only grouping: a curved (aspheric/spherical) lens face is
         # fragmented by the planar clusterer into many candidates (e.g. 160).
@@ -54,10 +74,15 @@ class MainOpticalSolidFaceRolesDialog:
         # show a few logical surfaces and "Select all in group" lets the user
         # role-assign a whole curved face at once. The candidates themselves
         # (and their planar fits/snapping) are unchanged.
-        try:
-            _face_group_ids = le.group_optical_solid_face_candidates(path, records, angle_deg=35.0)
-        except Exception:
+        if brep_backed:
+            # Each B-Rep face is already one whole optical surface -- nothing to
+            # consolidate, so the Group column stays hidden.
             _face_group_ids = [-1] * len(records)
+        else:
+            try:
+                _face_group_ids = le.group_optical_solid_face_candidates(path, records, angle_deg=35.0)
+            except Exception:
+                _face_group_ids = [-1] * len(records)
         group_index_by_record_index: dict[int, int] = {i: int(g) for i, g in enumerate(_face_group_ids)}
         group_member_counts: dict[int, int] = {}
         for _g in _face_group_ids:
@@ -571,10 +596,10 @@ class MainOpticalSolidFaceRolesDialog:
         def candidate_mesh(index: int):
             if index in candidate_mesh_cache:
                 return candidate_mesh_cache[index]
-            if not 0 <= index < len(candidates):
+            if not 0 <= index < len(records):
                 return None
             try:
-                local_mesh = mesh_from_triangles(le.optical_solid_face_candidate_triangles(path, candidates[index]))
+                local_mesh = mesh_from_triangles(_face_source_triangles(index))
                 mesh = transformed_mesh(local_mesh) if local_mesh is not None else None
             except Exception as exc:
                 self.append_debug(f'CAD/STL face preview mesh failed for F{index + 1}: {exc}')
@@ -915,10 +940,10 @@ class MainOpticalSolidFaceRolesDialog:
             def transformed_triangles(index: int) -> np.ndarray:
                 if index in transformed_tri_cache:
                     return transformed_tri_cache[index]
-                if not 0 <= index < len(candidates):
+                if not 0 <= index < len(records):
                     return np.empty((0, 3, 3), dtype=float)
                 try:
-                    triangles = le.optical_solid_face_candidate_triangles(path, candidates[index])
+                    triangles = _face_source_triangles(index)
                 except Exception as exc:
                     self.append_debug(f'Matplotlib CAD/STL face triangles failed for S{row_index} F{index + 1}: {exc}')
                     triangles = np.empty((0, 3, 3), dtype=float)
