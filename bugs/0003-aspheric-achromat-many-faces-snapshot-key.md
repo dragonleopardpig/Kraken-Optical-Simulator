@@ -38,10 +38,36 @@ focus but not Treeview focus). So instead use an application-wide
 to the face-editor window (so it never double-fires with the inspector's own `s`
 binding), forwarding to the inspector's `_flag_bug_event` (which itself no-ops
 while typing in an entry/combobox), and torn down on the window's `<Destroy>`.
-`panels/main_optical_solid_face_roles_dialog.py`. Note: `_flag_bug_event` →
-`flag_bug` captures the **3-D scene** screenshot (the inspector render window),
-not the face-editor dialog pixels; capturing the dialog window itself would be a
-separate enhancement.
+`panels/main_optical_solid_face_roles_dialog.py`.
+
+### Follow-up — capture the dialog pixels, not the 3-D scene (FIXED 2026-06-03)
+Originally `_flag_bug_event` → `flag_bug` only screenshotted the **3-D scene**
+(the VTK render window), so pressing `s` in the face editor saved the scene
+*behind* the dialog, never the face list the user was looking at (confirmed from
+the in-app flag `flag_20260603_072730_717` "still 160 faces": the saved PNG is
+the 3-D scene). `flag_bug` now detects whether a popup Toplevel is the focused
+window (`_focused_foreign_toplevel`, built on the pure, unit-tested
+`_classify_dialog_toplevel`); if so it saves the **dialog's own pixels** as
+`screenshot.png` and keeps the 3-D render as `scene_3d.png` (the cursor
+crosshair stays on the 3-D image; `state.json` records `screenshot_kind`). With
+no popup focused the behaviour is unchanged (3-D render → `screenshot.png`, no
+`scene_3d.png`). Capture is universal via the `@staticmethod`
+`_capture_toplevel_png`, first success wins: ImageMagick `import -window <xid>`
+(Linux X11/XWayland), PIL `ImageGrab` over the window rect (native on
+macOS/Windows; Linux with a backend), then `grim -g` (Wayland). If no backend
+works the 3-D render is promoted to `screenshot.png` so the bundle always has
+one. Note: ImageMagick's X11 grab does **not** work under XWayland, so on a
+Wayland/Hyprland session `import` fails fast (rc≠0, no file) and capture falls
+through to `grim`.
+
+### Test (follow-up)
+`validate_open3d_flag_dialog_capture` (display-free seam): forces a private
+Xvfb and masks Wayland, checks `_classify_dialog_toplevel` routes a focused
+popup to a dialog grab (and the inspector/root windows to the 3-D scene), and
+asserts a solid-red Toplevel comes back from `_capture_toplevel_png` as a
+mostly-red PNG of the right size (exercises the `import -window <xid>` X11 path).
+No penta phase: the face editor is not part of the penta cascade, so the
+standalone validator guards it.
 
 ## Issue 2 — `InvalidMeshWarning` during STEP promotion (FIXED)
 

@@ -5766,6 +5766,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             cursor_xy_vtk = None
         screenshot_path = bundle_dir / "screenshot.png"
+        scene_3d_path = bundle_dir / "scene_3d.png"
+        # If a popup dialog (e.g. the CAD/STL face editor) is the focused
+        # window, the user is looking at *it*, not the 3D scene -- so save
+        # the dialog as screenshot.png and keep the 3D render as
+        # scene_3d.png. With no dialog focused this is unchanged: the 3D
+        # render is screenshot.png and there is no scene_3d.png.
+        dialog_window = None
+        try:
+            dialog_window = self._focused_foreign_toplevel()
+        except Exception:
+            dialog_window = None
+        vtk_image_path = scene_3d_path if dialog_window is not None else screenshot_path
+        scene_render_ok = False
         try:
             from vtkmodules.vtkIOImage import vtkPNGWriter  # type: ignore
             from vtkmodules.vtkRenderingCore import vtkWindowToImageFilter  # type: ignore
@@ -5784,22 +5797,52 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 pass
             capture.Update()
             writer = vtkPNGWriter()
-            writer.SetFileName(str(screenshot_path))
+            writer.SetFileName(str(vtk_image_path))
             writer.SetInputConnection(capture.GetOutputPort())
             writer.Write()
+            scene_render_ok = True
         except Exception as exc:
-            self.status_var.set(f"Flag bug screenshot failed: {_short_error_message(exc)}")
-            self.editor.append_debug(f"Open 3D flag screenshot failed: {exc}")
+            self.editor.append_debug(f"Open 3D flag 3D-scene capture failed: {exc}")
+            if dialog_window is None:
+                self.status_var.set(f"Flag bug screenshot failed: {_short_error_message(exc)}")
+                return None
+        # When a dialog is in front, capture its own pixels as
+        # screenshot.png. If that fails (no screenshot backend on this
+        # platform), promote the 3D render to screenshot.png so the bundle
+        # always has one.
+        screenshot_is_dialog = False
+        if dialog_window is not None:
+            try:
+                if self._capture_toplevel_png(dialog_window, screenshot_path):
+                    screenshot_is_dialog = True
+            except Exception as exc:
+                self.editor.append_debug(f"Open 3D flag dialog capture failed: {exc}")
+            if not screenshot_is_dialog and scene_render_ok:
+                try:
+                    import shutil as _shutil
+
+                    _shutil.copyfile(scene_3d_path, screenshot_path)
+                    scene_3d_path.unlink()
+                except Exception:
+                    pass
+                self.editor.append_debug(
+                    "Open 3D flag: dialog capture unavailable on this platform; saved the 3D render instead."
+                )
+        if not screenshot_path.exists():
+            self.status_var.set("Flag bug screenshot failed.")
             return None
+        # The cursor crosshair marks the pointer in the 3D render window, so
+        # overlay it onto whichever file holds that render.
+        overlay_target = scene_3d_path if screenshot_is_dialog else screenshot_path
         # 1b. Overlay a cursor crosshair on the PNG so hover-state bugs
         # stay legible. Failures here are non-fatal; the raw screenshot
         # still saves to disk.
         cursor_xy_png: tuple[int, int] | None = None
-        if cursor_xy_vtk is not None:
+        if cursor_xy_vtk is not None and scene_render_ok and overlay_target.exists():
             try:
                 from PIL import Image, ImageDraw  # type: ignore
 
-                with Image.open(screenshot_path) as img:
+                with Image.open(overlay_target) as img:
                     img = img.convert("RGBA")
                     width, height = img.size
                     px = int(cursor_xy_vtk[0])
@@ -5817,7 +5860,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                         draw.line((px, py - 22, px, py - 8), fill=(0, 255, 0, 255), width=2)
                         draw.line((px, py + 8, px, py + 22), fill=(0, 255, 0, 255), width=2)
                         merged = Image.alpha_composite(img, overlay)
-                        merged.save(screenshot_path)
+                        merged.save(overlay_target)
             except Exception as exc:
                 self.editor.append_debug(f"Open 3D flag cursor overlay failed: {exc}")
         # Scene snapshot via the recorder's existing helper (works
@@ -5861,10 +5904,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 "captured_at_iso": datetime.now().isoformat(timespec="seconds"),
                 "description": "",
                 "screenshot": "screenshot.png",
+                "screenshot_kind": "dialog" if screenshot_is_dialog else "scene_3d",
                 "cursor": cursor_block,
                 "recording": recording_info,
                 "scene_state": scene_state,
             }
+            if screenshot_is_dialog and scene_3d_path.exists():
+                payload["scene_3d"] = "scene_3d.png"
             state_path.write_text(
                 json.dumps(payload, indent=2),
                 encoding="utf-8",
@@ -5915,6 +5961,154 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             flag_event_payload=flag_event_payload,
         )
         return bundle_dir
+
+    @staticmethod
+    def _classify_dialog_toplevel(focused, own_toplevel, root_toplevel):
+        """Decide whether a popup dialog is in front (pure, testable).
+
+        Given the app-wide focused widget plus the windows that are *not*
+        popups (the inspector's own Toplevel and the editor root), return
+        the Toplevel to screenshot, or ``None`` to fall back to the 3D
+        render. A focused widget living in any other Toplevel (e.g. the
+        CAD/STL face editor) means the user is looking at that dialog.
+        """
+        if focused is None:
+            return None
+        try:
+            toplevel = focused.winfo_toplevel()
+        except Exception:
+            return None
+        if toplevel is None or toplevel is own_toplevel or toplevel is root_toplevel:
+            return None
+        return toplevel
+
+    def _focused_foreign_toplevel(self):
+        """Return the focused popup Toplevel (e.g. the face editor) or None.
+
+        ``None`` means capture the 3D scene as today; a window means the
+        user pressed ``s`` while a dialog was in front, so that dialog is
+        what should be screenshotted.
+        """
+        try:
+            focused = self.focus_get()
+        except Exception:
+            return None
+        try:
+            own = self.winfo_toplevel()
+        except Exception:
+            own = None
+        try:
+            root = self.editor.winfo_toplevel()
+        except Exception:
+            root = None
+        return self._classify_dialog_toplevel(focused, own, root)
+
+    @staticmethod
+    def _capture_toplevel_png(window, out_path) -> bool:
+        """Best-effort capture of a Tk Toplevel's pixels to ``out_path``.
+
+        Cross-platform so the in-app ``s`` bug-flag grabs the dialog the
+        user is actually looking at on any KrakenOS install, not just this
+        dev box. Strategies, first success wins:
+
+          1. ImageMagick ``import -window <xid>`` -- Linux X11 and XWayland
+             (Tk is an X client, so a Toplevel has a real X window id).
+             Exact window, no monitor-offset math.
+          2. ``PIL.ImageGrab.grab(bbox)`` over the window's screen rect --
+             native on macOS and Windows (no extra deps); also Linux when a
+             backend (gnome-screenshot/grim) is present.
+          3. ``grim -g`` over the window rect -- Wayland fallback.
+
+        Returns True only if a non-empty PNG was written.
+        """
+        import platform
+        import shutil
+        import subprocess
+
+        if window is None:
+            return False
+        try:
+            window.update_idletasks()
+        except Exception:
+            pass
+        try:
+            rx = int(window.winfo_rootx())
+            ry = int(window.winfo_rooty())
+            width = int(window.winfo_width())
+            height = int(window.winfo_height())
+        except Exception:
+            rx = ry = width = height = 0
+        out_path = str(out_path)
+        system = platform.system()
+
+        def _wrote_image() -> bool:
+            try:
+                if not os.path.exists(out_path) or os.path.getsize(out_path) <= 0:
+                    return False
+            except Exception:
+                return False
+            try:
+                from PIL import Image  # type: ignore
+
+                with Image.open(out_path) as img:
+                    img.verify()
+            except Exception:
+                # File exists and is non-empty; trust it if PIL can't verify.
+                return True
+            return True
+
+        # 1. Linux X11 / XWayland: capture the exact X window by id.
+        if system not in {"Darwin", "Windows"} and os.environ.get("DISPLAY"):
+            magick = shutil.which("import")
+            try:
+                xid = int(window.winfo_id())
+            except Exception:
+                xid = 0
+            if magick and xid:
+                try:
+                    subprocess.run(
+                        [magick, "-window", hex(xid), out_path],
+                        check=True,
+                        timeout=20,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    if _wrote_image():
+                        return True
+                except Exception:
+                    pass
+
+        # 2. Native screen-rectangle grab (macOS/Windows native; Linux if a
+        #    backend tool is installed).
+        if width > 0 and height > 0:
+            try:
+                from PIL import ImageGrab  # type: ignore
+
+                image = ImageGrab.grab(bbox=(rx, ry, rx + width, ry + height))
+                image.save(out_path)
+                if _wrote_image():
+                    return True
+            except Exception:
+                pass
+
+        # 3. Wayland region capture.
+        if os.environ.get("WAYLAND_DISPLAY") and width > 0 and height > 0:
+            grim = shutil.which("grim")
+            if grim:
+                try:
+                    subprocess.run(
+                        [grim, "-g", f"{rx},{ry} {width}x{height}", out_path],
+                        check=True,
+                        timeout=20,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    if _wrote_image():
+                        return True
+                except Exception:
+                    pass
+
+        return False
 
     def _open_flag_description_dialog(
         self,
