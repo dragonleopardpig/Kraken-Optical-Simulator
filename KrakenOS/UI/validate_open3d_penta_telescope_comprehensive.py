@@ -1962,6 +1962,113 @@ def phase_14_thickness_dimension_off_axis(
     return result
 
 
+def phase_15_step_delete_requires_selection(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0008: a bare Delete/BackSpace with nothing selected must not erase
+    the imported optical STEP overlay.
+
+    ``delete_selected_step`` resolved its target through the shared
+    ``_selected_imported_step_label_candidates``, whose last entry is a hardcoded
+    ``"optical"`` fallback (correct for the non-destructive carry/promote
+    resolvers, which act on "the current overlay"). With nothing selected the
+    three real selection slots are ``None``, yet the fallback still resolved
+    ``"optical"`` -- so a stray Delete (the VTK key handler has no focus guard)
+    removed the imported lens (flag 341: ``selected_step_label: null``, body
+    gone, rows + axis preserved). The fix gives delete its own
+    ``_delete_target_import_label_candidates`` with no fallback. This phase
+    imports a STEP overlay onto a clean Object+Image chain, deselects everything,
+    fires ``delete_selected_step``, and asserts the overlay survives; then selects
+    it and deletes it to prove a genuine, selected delete still works. It
+    source-couples the destructive path so a refactor can't route it back through
+    the permissive fallback. Uses the tracked prism fixture, so it always runs.
+    Rendered-pixel proof lives in
+    validate_open3d_step_delete_requires_selection_snapshot.
+    """
+    import inspect
+
+    from KrakenOS.UI.layout_editor import SurfaceRow
+    from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
+
+    result = PhaseResult(name="Phase 15: STEP delete requires a selection")
+    if not PRISM_42779_STEP.exists():
+        result.notes.append("skipped: tracked prism STEP fixture missing")
+        result.detail["skipped"] = True
+        result.passed = True
+        return result
+
+    app.rows = [
+        SurfaceRow(label="0", surface="Object", element="", name="Object",
+                   thickness=100.0, diameter=25.0, glass="AIR"),
+        SurfaceRow(label="1", surface="Image", element="", name="Image",
+                   thickness=0.0, diameter=25.0, glass="AIR"),
+    ]
+    app._sync_table()
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    inspector.show_rays_var.set(False)
+    _import_step(app, PRISM_42779_STEP)
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+
+    result.detail["import_present_before"] = app.imported_optical_step_path is not None
+    result.detail["optical_body_before"] = bool((inspector._step_actor_map or {}).get("optical"))
+    if app.imported_optical_step_path is None:
+        result.notes.append("setup: optical STEP overlay did not import; cannot evaluate delete")
+        result.passed = False
+        return result
+
+    # Flag-341 state: nothing selected.
+    try:
+        inspector._clear_open3d_selection()
+    except Exception:
+        pass
+    app._selected_step_label = None
+    inspector._step_rotation_active_label = None
+    inspector._step_carry_active_label = None
+    inspector._picked_row_index = None
+    inspector._stl_placement_row_index = None
+    inspector._row_carry_hold_candidate_index = None
+
+    # Bug trigger: delete with nothing selected -- the lens must survive.
+    inspector.delete_selected_step()
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+    result.detail["import_present_after_unselected_delete"] = app.imported_optical_step_path is not None
+    result.detail["optical_body_after_unselected_delete"] = bool((inspector._step_actor_map or {}).get("optical"))
+    if app.imported_optical_step_path is None:
+        result.notes.append(
+            "unselected Delete cleared imported_optical_step_path -- the lens was deleted "
+            "with nothing selected (bugs/0008 regression)"
+        )
+
+    # Positive control: a genuine, selected delete still removes the overlay.
+    app.select_step_component("optical")
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+    inspector.delete_selected_step()
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+    result.detail["import_present_after_selected_delete"] = app.imported_optical_step_path is not None
+    if app.imported_optical_step_path is not None:
+        result.notes.append("selected Delete did not remove the overlay (legit delete regressed)")
+
+    delete_src = inspect.getsource(type(inspector).delete_selected_step)
+    if "_delete_target_import_label_candidates" not in delete_src:
+        result.notes.append("delete_selected_step no longer uses _delete_target_import_label_candidates")
+    if "_selected_imported_step_label_candidates" in delete_src:
+        result.notes.append("delete_selected_step routes back through the permissive optical-fallback candidate list")
+
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -2013,6 +2120,7 @@ def main() -> int:
             phase_12_step_face_hover_not_red,
             phase_13_promoted_row_handle_length,
             phase_14_thickness_dimension_off_axis,
+            phase_15_step_delete_requires_selection,
         ]
         for phase in phases:
             try:

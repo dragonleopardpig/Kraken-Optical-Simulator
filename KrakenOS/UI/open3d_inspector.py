@@ -4686,7 +4686,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 pass
         selection = service.resolve_delete_selection(
-            import_label_candidates=self._selected_imported_step_label_candidates(),
+            import_label_candidates=self._delete_target_import_label_candidates(),
             row_index_candidates=sorted(candidate_indices),
         )
         label = selection.import_label
@@ -4753,6 +4753,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._step_rotation_active_label,
             self._step_carry_active_label,
             "optical",
+        )
+
+    def _delete_target_import_label_candidates(self) -> tuple[object, ...]:
+        # Delete must only target an overlay the user has actually selected or is
+        # actively manipulating -- never the bare "optical" fallback used by the
+        # non-destructive carry/promote resolvers. With the fallback, a stray
+        # Delete/BackSpace in the 3D view (the VTK key handler has no focus guard)
+        # silently removed the imported optical lens even with nothing selected.
+        return (
+            self.editor._selected_step_label,
+            self._step_rotation_active_label,
+            self._step_carry_active_label,
         )
 
     def _selected_imported_step_label(self) -> str:
