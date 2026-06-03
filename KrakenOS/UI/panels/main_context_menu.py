@@ -5,6 +5,8 @@ from __future__ import annotations
 import tkinter as tk
 from typing import Any
 
+from KrakenOS.Optimization.variables import OpticalVariable
+
 
 class MainContextMenu:
     """Own the main surface-table context menu while delegating actions to the editor."""
