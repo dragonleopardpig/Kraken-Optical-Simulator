@@ -131,16 +131,30 @@ which surfaced two issues on re-test:
   handles weren't moved during the live drag (only the body was). Fixed by
   `_translate_placement_handle_actors`, which `AddPosition`s the row's Move +
   Rotate handle actors by the same delta each step so the gizmo tracks the lens.
-* **20:38 "releasing mouse hold, the lens go back to its original location"** —
-  reported revert on release. Could not be reproduced headlessly (the deferred
-  commit held — `desp_z` committed, body rigidly slid — in every probe, live on
-  and off). The committed approach keeps the model authoritative on release (one
-  `_apply_scene_placement_translate_handle` → rebuild from the committed pose),
-  so the position sticks by construction. A *per-step* model commit was also
-  tried but rejected: `translate_scene_row_pose` → `_sync_table` costs ~300 ms,
-  reintroducing the lag. **If the revert persists, capture the exact lens** (and
-  whether it carries a tilt — a tilted row would make the world-axis live move
-  diverge from the local-`desp_z` commit, which could read as a jump).
+* **20:38 / 21:14 / 21:16 "releasing mouse hold, the lens goes back to its
+  original location"** — a real revert, root-caused after the recorder
+  instrumentation. The before/after-slide flags had **identical**
+  `row_actor_bounds` while the user noted "the distance overlay change value":
+  the model committed (`desp_z` → gap overlay updated) but the body never moved.
+  The 3-D body of a promoted optical-solid row is positioned by
+  `ThreeDSceneToolsMixin._saved_step_native_center_world` (via
+  `_file_backed_row_display_transform`), which returned the cached promotion-time
+  `StepOverlayPromotion.center_world` snapshot — freezing the body so the slide
+  reverted. (My earlier probes missed it because a fresh promotion took the
+  `system.TRANS_2A` transform path, which already honours `desp_z`; only the
+  saved-native display-transform path reads `center_world`.) Verified the cache
+  equals the live pose at promotion (`desp_z=-87.5`, `z_station=100`,
+  `center_world.z=12.5`).
+  **Fix:** `_saved_step_native_center_world` now returns the *live* world centre
+  `(desp_x, desp_y, z_station + desp_z)` (its own historical fallback), using the
+  cached `center_world` only if the live pose is non-finite — so the body tracks
+  the slide and the new position sticks. Pinned by
+  `validate_open3d_saved_native_center_tracks_pose` (display-free, fails before)
+  + Phase 19.
+
+A *per-step* model commit during the drag was also tried but rejected:
+`translate_scene_row_pose` → `_sync_table` costs ~300 ms/step, reintroducing the
+lag; the deferred path holds ~7 ms/step.
 
 ## Tests
 

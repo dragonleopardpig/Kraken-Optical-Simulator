@@ -599,6 +599,25 @@ class ThreeDSceneToolsMixin:
 
     @staticmethod
     def _saved_step_native_center_world(row: SurfaceRow, z_station: float) -> np.ndarray:
+        # bugs/0012: the world centre of a promoted optical-solid row follows its
+        # *live* row pose -- world (x, y, z) = (desp_x, desp_y, z_station + desp_z).
+        # ``StepOverlayPromotion.center_world`` is only the promotion-time snapshot
+        # of that (the two are equal at promotion: e.g. desp_z=-87.5, z_station=100,
+        # center_world.z=12.5). Returning the cached snapshot froze the body, so
+        # dragging the placement Move handle updated desp / the gap overlay but the
+        # body never moved -- it reverted to the cached centre on release. Use the
+        # live pose (which is this function's own historical fallback); fall back
+        # to the cache only if the live pose is unusable.
+        live = np.asarray(
+            (
+                float(getattr(row, "desp_x", 0.0) or 0.0),
+                float(getattr(row, "desp_y", 0.0) or 0.0),
+                float(z_station) + float(getattr(row, "desp_z", 0.0) or 0.0),
+            ),
+            dtype=float,
+        )
+        if np.all(np.isfinite(live)):
+            return live
         advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
         promotion = advanced.get("StepOverlayPromotion", {})
         if isinstance(promotion, dict):
@@ -608,14 +627,7 @@ class ThreeDSceneToolsMixin:
                 center = np.asarray([], dtype=float)
             if center.size >= 3 and np.all(np.isfinite(center[:3])):
                 return center[:3]
-        return np.asarray(
-            (
-                float(getattr(row, "desp_x", 0.0) or 0.0),
-                float(getattr(row, "desp_y", 0.0) or 0.0),
-                float(z_station) + float(getattr(row, "desp_z", 0.0) or 0.0),
-            ),
-            dtype=float,
-        )
+        return live
 
     @staticmethod
     def _native_reconstruction_center_z(reconstruction) -> float:

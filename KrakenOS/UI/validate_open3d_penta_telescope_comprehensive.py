@@ -2597,6 +2597,59 @@ def phase_18_promoted_row_slides(
     return result
 
 
+def phase_19_saved_native_center_tracks_pose(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0012 (revert on release): a promoted optical-solid row's 3-D body is
+    positioned by ``_saved_step_native_center_world`` (via
+    ``_file_backed_row_display_transform``). It used to return the cached
+    promotion-time ``StepOverlayPromotion.center_world``, so a placement slide
+    updated ``desp`` (and the gap overlay) but the body stayed pinned and
+    reverted on release (flags 21:14 / 21:16). The world centre must follow the
+    live pose ``(desp_x, desp_y, z_station + desp_z)``. This phase checks the
+    positioning seam directly (no saved-native scene needed) + source-couples it.
+    """
+    from KrakenOS.UI.services.three_d_scene_tools import ThreeDSceneToolsMixin
+
+    result = PhaseResult(name="Phase 19: promoted-solid body centre tracks the live pose")
+
+    class _Row:
+        def __init__(self, desp, advanced):
+            self.desp_x, self.desp_y, self.desp_z = (float(v) for v in desp)
+            self.advanced = advanced
+
+    fn = ThreeDSceneToolsMixin._saved_step_native_center_world
+    z_station = 100.0
+    advanced = {"StepOverlayPromotion": {"center_world": [0.0, 0.0, 12.5]}}
+    row = _Row((0.0, 0.0, -87.5), advanced)
+
+    c0 = np.asarray(fn(row, z_station), dtype=float).reshape(-1)[:3]
+    result.detail["at_promotion_z"] = round(float(c0[2]), 3)
+    if abs(float(c0[2]) - 12.5) > 1e-6:
+        result.notes.append(f"at promotion expected world z=12.5, got {c0[2]:.3f}")
+    row.desp_z = -77.5
+    c1 = np.asarray(fn(row, z_station), dtype=float).reshape(-1)[:3]
+    result.detail["after_axial_slide_z"] = round(float(c1[2]), 3)
+    if abs(float(c1[2]) - 22.5) > 1e-6:
+        result.notes.append(
+            f"after a +10 mm slide expected world z=22.5, got {c1[2]:.3f} -- body pinned to the "
+            "cached center_world (bugs/0012 revert)"
+        )
+    row.desp_x = 3.0
+    c2 = np.asarray(fn(row, z_station), dtype=float).reshape(-1)[:3]
+    if abs(float(c2[0]) - 3.0) > 1e-6:
+        result.notes.append(f"after a +3 mm x-slide expected world x=3.0, got {c2[0]:.3f}")
+
+    # Cache is still honoured when the live pose is unusable (no crash/drift).
+    nan_row = _Row((float("nan"), 0.0, 0.0), advanced)
+    c3 = np.asarray(fn(nan_row, z_station), dtype=float).reshape(-1)[:3]
+    if not np.all(np.isfinite(c3)) or abs(float(c3[2]) - 12.5) > 1e-6:
+        result.notes.append(f"with a non-finite live pose, expected the cached center_world, got {c3}")
+
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -2652,6 +2705,7 @@ def main() -> int:
             phase_16_thickness_overlay_skips_lens,
             phase_17_thickness_overlay_tracks_move,
             phase_18_promoted_row_slides,
+            phase_19_saved_native_center_tracks_pose,
         ]
         for phase in phases:
             try:
