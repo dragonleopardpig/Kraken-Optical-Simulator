@@ -95,13 +95,21 @@ isn't following the reposition.
 
 Could not reproduce headlessly yet: driving `_on_mouse_move` at the body's
 projected centre produced **no** hover outline at all, because outline creation
-is gated (a pick-mode / `target_label` match) and needs a precise cell pick the
-offscreen harness didn't satisfy. Reproducing this faithfully needs a fuller
-interaction harness (real hover → Center-Row→Optical-axis snap → re-hover) or a
-live confirmation. **Open question:** at the time of the ghost, was the aspheric
-lens still an imported STEP overlay or already promoted to a row? (The
-clear-on-snap path differs: the STEP-face branch clears the hover; the
-promoted-row snap `_apply_center_row_to_optical_axis` does not.)
+is gated and needs a precise cell pick the offscreen harness didn't satisfy.
+
+**User confirmed (2026-06-03): the lens was still an imported STEP** (not yet
+promoted). That narrows it: a STEP face hover only builds the outline while a
+pick mode is armed — i.e. *during* Center-Row mode (the
+`if self._center_row_to_ray_mode:` hover branch builds it via
+`_hover_overlay_for_feature` + `_set_step_hover_outline`), not in plain idle
+hover. The STEP-face *click* then calls `_set_step_hover_outline(None, None)` and
+arms `start_step_normal_axis_pick`; the axis click runs
+`_apply_step_normal_axis_pick` (a normal-to-axis snap that can rotate/translate
+the body). So the ghost is the hover outline / pick re-created on a later hover
+from **stale face geometry** that didn't follow the snap, not a leftover actor.
+Reproducing faithfully needs the full armed-mode sequence (arm Center-Row →
+hover face (outline built) → click face → click axis (snap) → re-hover the old
+region) headlessly, or a live confirmation with tracing. Still open.
 
 ## Planned fix
 
