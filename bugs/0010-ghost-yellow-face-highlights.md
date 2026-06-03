@@ -81,12 +81,35 @@ State corroboration: in `flag_20260603_171626_741` nothing is selected, the lens
 body tops out at y ≈ +12.46, yet `scene_visible_bounds` y-max = **29.71** — a
 visible prop ~17 mm above the body, i.e. a stranded highlight from a prior hover.
 
+## Investigation (2026-06-03, headless)
+
+Traced the seams: `_set_step_hover_outline_impl` stores `_hover_step_outline_actor`
++ `_hover_step_cell_key`; the scene refresh **does** clear both
+(`open3d_scene_refresh.py` `RemoveAllViewProps()` + resets the two fields), and
+the STEP-face branch of the Center-Row click already calls
+`_set_step_hover_outline(None, None)`. So a stale *visible* outline shouldn't
+survive a refresh — consistent with the user's "invisible until I hover again".
+That points the finger at **stale pick geometry**: re-hovering the now-empty old
+region re-picks a face there and redraws the outline, i.e. the face/pick data
+isn't following the reposition.
+
+Could not reproduce headlessly yet: driving `_on_mouse_move` at the body's
+projected centre produced **no** hover outline at all, because outline creation
+is gated (a pick-mode / `target_label` match) and needs a precise cell pick the
+offscreen harness didn't satisfy. Reproducing this faithfully needs a fuller
+interaction harness (real hover → Center-Row→Optical-axis snap → re-hover) or a
+live confirmation. **Open question:** at the time of the ghost, was the aspheric
+lens still an imported STEP overlay or already promoted to a row? (The
+clear-on-snap path differs: the STEP-face branch clears the hover; the
+promoted-row snap `_apply_center_row_to_optical_axis` does not.)
+
 ## Planned fix
 
-TBD — once root-caused, keep it minimal: clear the hover outline **and** refresh
-the hover/pick geometry whenever the lens is repositioned (the Center-Row snap
-and any move/refresh), and reset `_hover_step_cell_key` so a re-hover rebuilds
-at the new position. No stale outline should survive a reposition.
+TBD — pending a confirmed repro. Likely minimal: clear the hover outline **and**
+refresh the hover/pick geometry whenever the lens is repositioned (the
+Center-Row snap and any move/refresh), and reset `_hover_step_cell_key` so a
+re-hover rebuilds at the new position. No stale outline/pick should survive a
+reposition.
 
 ## Planned tests
 

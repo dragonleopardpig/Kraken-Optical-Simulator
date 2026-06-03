@@ -60,10 +60,47 @@ Contrast: bug 0006 fixed the promoted-row arrows *shrinking*; this is the
 arrows being present but the *drag doing nothing*. Confirm whether this is a
 regression from the 0004/0006 gizmo unification or a never-wired analytic path.
 
+## Investigation (2026-06-03, headless)
+
+Reproduced the three promotion paths against the tracked prism (display-backed
+probes) to find where the slide breaks:
+
+* **Optical-solid-row** promotion (`promote_imported_step_to_optical_solid_row`)
+  → one solid row, **6 placement move handles** (x/y/z ±, matching the flag's
+  `placement_translate_handle_count = 6`). Simulating the full left-drag on the
+  +Z handle (pick → `_placement_drag_state_from_current_pick` → repeated
+  `_apply_placement_drag_motion`) **rigidly slides** the body (zmin and zmax both
+  move together). No `_step_translate`/`_axis_slide` preemption. So this path
+  works end-to-end in the harness.
+* **Analytic-surfaces** promotion (`promote_imported_step_to_analytic_surfaces`)
+  → plain Standard rows, `_is_any_promoted_optical_solid_row = False` → **0
+  placement handles**. If the user took this menu, "can't slide" = there is no
+  Move handle at all.
+* **Native-surface-rows** promotion
+  (`promote_imported_step_to_native_surface_rows`, the path that sets
+  `StepNativePromotion` and so is handle-eligible — the closest match to the
+  flag's Standard `S1 Thickness = 40 mm` row *with* handles) → applying the +Z
+  handle **stretched** the body (zmin +10, zmax unchanged) instead of sliding.
+  But the prism promotes *degenerately* to a single `plane_exact` row whose body
+  spans to z=100, so this result is not a faithful stand-in for the user's
+  multi-surface aspheric lens.
+
+So the behaviour is **promotion-path- and fixture-dependent**, and the only
+portable fixture (the penta prism) cannot reproduce the user's aspheric-lens
+case cleanly. Not fixed yet — shipping a blind change here risks regressing the
+optical-solid-row path that already slides correctly.
+
+**Open questions for a confirmed repro:** (1) which menu produced the
+"analytical lens" — Convert to Analytic Surfaces, Promote to native surface
+rows, or optical solid row? (2) on drag, does *nothing* move, or does the lens
+*deform/partly move*? Candidate fix if it is the native multi-surface case:
+translate every row in `_lens_row_group_for_row(row)` together (rigid group
+slide, free axial travel) rather than only the picked surface row.
+
 ## Planned fix
 
-TBD — once root-caused, wire the promoted-row placement drag to actually slide
-the analytic row along the axis (free axial travel, no track-length
+TBD — pending a confirmed repro (see Investigation). Likely: slide the whole
+lens-row group together along the axis (free axial travel, no track-length
 preservation), matching the raw-STEP-body behaviour the user expects.
 
 ## Planned tests
