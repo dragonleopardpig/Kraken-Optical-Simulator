@@ -2746,7 +2746,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if str(state.get("kind")) == "rotate":
             self._apply_scene_placement_rotate_handle(row_index, axis, delta)
         else:
-            self._apply_scene_placement_translate_handle(row_index, axis, delta)
+            # bugs/0012: a promoted optical-solid row forces a full optical
+            # retrace on every refresh (~0.5 s per step), so committing each drag
+            # step made the axial slide "compute hard in the background but never
+            # move". Move the row's body actors live (cheap AddPosition, no
+            # retrace) and defer the single model commit + heavy refresh to
+            # _finish_placement_drag, matching the STEP-translate/row-carry drags.
+            axis_unit = self._placement_axis_vector(axis)
+            self._translate_row_actors(row_index, axis_unit * float(delta))
+            state["pending_translate_mm"] = float(state.get("pending_translate_mm", 0.0)) + float(delta)
 
     def _finish_placement_drag(self, state: dict[str, object]) -> None:
         try:
@@ -2756,6 +2764,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             axis = str(state.get("axis", "")).upper()
         except Exception:
             return
+        # bugs/0012: commit the deferred translate as a single model update +
+        # refresh (the per-step live drag only moved actors via a cheap
+        # transform, so the heavy promoted-solid retrace runs once, on release).
+        pending = float(state.get("pending_translate_mm", 0.0))
+        if str(state.get("kind")) != "rotate" and abs(pending) > 1.0e-9:
+            try:
+                self._apply_scene_placement_translate_handle(
+                    row_index, str(state.get("axis", "")).strip().lower(), pending
+                )
+            except Exception as exc:
+                self.editor.append_debug(f"Placement translate commit failed for S{row_index}: {exc}")
         if applied_steps <= 0:
             self.status_var.set(f"Placement {kind} drag S{row_index} {axis}: no snap step crossed.")
         else:

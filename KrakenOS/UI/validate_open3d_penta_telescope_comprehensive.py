@@ -2427,6 +2427,153 @@ def phase_17_thickness_overlay_tracks_move(
     return result
 
 
+def phase_18_promoted_row_slides(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0012: a promoted optical-solid row must slide along the optical axis
+    when its Move handle is dragged, instead of "computing hard but not moving".
+
+    A promoted optical-solid row forces a full optical retrace on every refresh,
+    and the placement-translate drag committed each snap step with a full
+    ``refresh_from_editor`` (~0.5 s/step), so an interactive drag fired a heavy
+    retrace every 18 px and felt frozen (flag 255: 6 move handles render, picked
+    row 1, drag a practical no-op). The fix moves the body actors live with a
+    cheap ``_translate_row_actors`` during the drag and defers the single model
+    commit + heavy refresh to ``_finish_placement_drag``. This phase promotes the
+    tracked prism to an optical-solid row, runs a multi-step placement-translate
+    drag, and asserts the body moves live while ``desp_z`` stays *uncommitted*
+    (deferred -- no per-step retrace), then commits rigidly on release.
+    """
+    import inspect
+
+    from KrakenOS.UI.layout_editor import SurfaceRow
+    from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
+
+    tol = 0.6
+    result = PhaseResult(name="Phase 18: promoted optical-solid row slides along the axis")
+    if not PRISM_42779_STEP.exists():
+        result.notes.append("skipped: tracked prism STEP fixture missing")
+        result.detail["skipped"] = True
+        result.passed = True
+        return result
+
+    def _row_z(ri):
+        zmin, zmax = np.inf, -np.inf
+        for key in (inspector._row_actor_map or {}).get(int(ri), []):
+            actor = inspector._actor_by_key.get(key)
+            if actor is None:
+                continue
+            bounds = np.asarray(actor.GetBounds(), dtype=float)
+            if bounds.size == 6 and bounds[4] <= bounds[5]:
+                zmin = min(zmin, float(bounds[4])); zmax = max(zmax, float(bounds[5]))
+        return (float(zmin), float(zmax)) if np.isfinite(zmin) else None
+
+    app.rows = [
+        SurfaceRow(label="0", surface="Object", element="", name="Object",
+                   thickness=100.0, diameter=25.0, glass="AIR"),
+        SurfaceRow(label="1", surface="Image", element="", name="Image",
+                   thickness=0.0, diameter=25.0, glass="AIR"),
+    ]
+    app._sync_table()
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    inspector.show_rays_var.set(False)
+    try:
+        inspector.show_rotation_handles_var.set(True)
+    except Exception:
+        pass
+
+    _import_step(app, PRISM_42779_STEP)
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+    out = app.promote_imported_step_to_optical_solid_row(
+        "optical", open_face_editor=False, clear_overlay=True, refresh_open_3d=False
+    )
+    if not isinstance(out, dict) or out.get("row_index") is None:
+        result.notes.append("setup: optical-solid-row promotion did not produce a row")
+        result.passed = False
+        return result
+    target = int(out["row_index"])
+    inspector._placement_handle_selected_row_index = target
+    inspector._set_row_highlight(target)
+    app._select_table_row(target)
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+
+    move_map = inspector._actor_placement_move_map or {}
+    z_steps = [float(dl) for (ri, ax, dl) in move_map.values() if ax == "z" and float(dl) > 0]
+    result.detail["placement_move_handles"] = len(move_map)
+    if not z_steps:
+        result.notes.append("no +Z placement move handle on the promoted optical-solid row (cannot slide)")
+        result.passed = False
+        return result
+    z_step = z_steps[0]
+
+    state = {
+        "kind": "translate",
+        "row_index": target,
+        "axis": "z",
+        "signed_step": float(z_step),
+        "display_direction": np.asarray((1.0, 0.0), dtype=float),
+        "pixel_accumulator": 0.0,
+        "applied_steps": 0,
+    }
+    inspector._placement_drag_state = state
+    z0 = _row_z(target)
+    desp0 = float(getattr(app.rows[target], "desp_z", 0.0))
+
+    n_steps = 6
+    for _ in range(n_steps):
+        inspector._apply_placement_drag_motion(20.0, 0.0)
+    inspector.update_idletasks()
+    z_mid = _row_z(target)
+    desp_mid = float(getattr(app.rows[target], "desp_z", 0.0))
+    pending = float(state.get("pending_translate_mm", 0.0))
+    expected = n_steps * z_step
+    result.detail["pending_mm"] = round(pending, 3)
+    result.detail["desp_z_mid_committed"] = round(desp_mid - desp0, 3)
+
+    if z_mid is None or z0 is None or abs(z_mid[0] - z0[0]) < tol:
+        result.notes.append(f"body did not move live during the drag (z {z0} -> {z_mid})")
+    if abs(desp_mid - desp0) > tol:
+        result.notes.append(
+            f"desp_z committed mid-drag ({desp0:.3f} -> {desp_mid:.3f}): the per-step heavy retrace "
+            "is back (bugs/0012 regression)"
+        )
+    if abs(pending - expected) > tol:
+        result.notes.append(f"pending translate {pending:.3f} != expected {expected:.3f}")
+
+    inspector._finish_placement_drag(state)
+    inspector.update_idletasks()
+    z_fin = _row_z(target)
+    desp1 = float(getattr(app.rows[target], "desp_z", 0.0))
+    result.detail["desp_z_committed"] = round(desp1 - desp0, 3)
+    if abs((desp1 - desp0) - expected) > tol:
+        result.notes.append(f"committed desp_z delta {desp1 - desp0:.3f} != dragged total {expected:.3f}")
+    if z_fin is not None and z0 is not None:
+        dz_min, dz_max = z_fin[0] - z0[0], z_fin[1] - z0[1]
+        if abs(dz_min - expected) > tol or abs(dz_max - expected) > tol:
+            result.notes.append(f"body did not rigidly slide by {expected:.3f} (zmin {dz_min:.3f}, zmax {dz_max:.3f})")
+
+    motion_src = inspect.getsource(type(inspector)._apply_placement_drag_motion)
+    finish_src = inspect.getsource(type(inspector)._finish_placement_drag)
+    result.detail["defers_translate"] = "_translate_row_actors" in motion_src and "pending_translate_mm" in motion_src
+    if not result.detail["defers_translate"]:
+        result.notes.append("_apply_placement_drag_motion no longer defers the translate (bugs/0012 fix removed)")
+    if "pending_translate_mm" not in finish_src or "_apply_scene_placement_translate_handle" not in finish_src:
+        result.notes.append("_finish_placement_drag no longer commits the deferred translate (bugs/0012 fix removed)")
+
+    inspector._placement_drag_state = None
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -2481,6 +2628,7 @@ def main() -> int:
             phase_15_step_delete_requires_selection,
             phase_16_thickness_overlay_skips_lens,
             phase_17_thickness_overlay_tracks_move,
+            phase_18_promoted_row_slides,
         ]
         for phase in phases:
             try:

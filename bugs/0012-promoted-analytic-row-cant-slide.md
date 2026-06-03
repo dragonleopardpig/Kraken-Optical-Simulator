@@ -1,10 +1,13 @@
 # 0012 — After promoting to an analytic lens, the Move gizmo can't slide it
 
-**Status:** Open — documented from the flag, not yet fixed.
+**Status:** Fixed. The placement-translate drag on a promoted optical-solid row
+now moves the body live with a cheap actor transform and defers the single heavy
+optical retrace to drag release, so the lens slides smoothly instead of firing a
+~0.5 s retrace on every snap step.
 **Component:** Open 3D inspector — placement-handle (Move arrow) drag for a
-*promoted/analytic* row. Suspects: `_placement_drag_state_from_current_pick`
-and `_apply_placement_drag_motion` (the drag→apply seam) for a row that is now
-an analytic surface rather than a raw imported STEP body.
+promoted optical-solid row (`_apply_placement_drag_motion` /
+`_finish_placement_drag`), and the forced full retrace for promoted solids
+(`Open3DTraceRefreshService.has_promoted_step_optical_solid_rows`).
 **Reported via:** in-app recorder, flag `flag_20260603_171838_255`
 (2026-06-03T17:18:38). **Repro bundles are gitignored**, so the evidence below
 is transcribed here.
@@ -85,23 +88,55 @@ probes) to find where the slide breaks:
   spans to z=100, so this result is not a faithful stand-in for the user's
   multi-surface aspheric lens.
 
-So the behaviour is **promotion-path- and fixture-dependent**, and the only
-portable fixture (the penta prism) cannot reproduce the user's aspheric-lens
-case cleanly. Not fixed yet — shipping a blind change here risks regressing the
-optical-solid-row path that already slides correctly.
+## Root cause (confirmed)
 
-**Open questions for a confirmed repro:** (1) which menu produced the
-"analytical lens" — Convert to Analytic Surfaces, Promote to native surface
-rows, or optical solid row? (2) on drag, does *nothing* move, or does the lens
-*deform/partly move*? Candidate fix if it is the native multi-surface case:
-translate every row in `_lens_row_group_for_row(row)` together (rigid group
-slide, free axial travel) rather than only the picked surface row.
+The user clarified: they used the **bottom option of the right-click menu** —
+"Promote STEP to Optical Solid Row" — and on drag "it seems to compute something
+in the background hard, but not moving." That is the optical-solid-row path,
+whose handle-drag *apply* slides correctly. The real defect is **performance**:
 
-## Planned fix
+* A promoted optical-solid row makes
+  `has_promoted_step_optical_solid_rows()` true, which forces
+  `requires_open3d_retrace = True` on **every** `refresh_from_editor` —
+  a full optical retrace (measured **~228 ms**).
+* `_apply_scene_placement_translate_handle` committed **each snap step** of the
+  drag with a full `refresh_from_editor`, so a single placement step cost
+  **~578 ms**. A real drag fires one step per ~18 px, so the slide pegged the
+  CPU and barely advanced — "computes hard, doesn't move."
 
-TBD — pending a confirmed repro (see Investigation). Likely: slide the whole
-lens-row group together along the axis (free axial travel, no track-length
-preservation), matching the raw-STEP-body behaviour the user expects.
+So the body *was* moving, just one ~0.5 s retrace at a time — unusable as an
+interactive slide.
+
+## Fix
+
+* **`KrakenOS/UI/open3d_inspector.py`** — `_apply_placement_drag_motion`'s
+  translate branch no longer commits per step. It moves the row's body actors
+  live with `_translate_row_actors` (a cheap `AddPosition`, **no retrace**) and
+  accumulates the delta in `state["pending_translate_mm"]`.
+  `_finish_placement_drag` then commits the accumulated total once via
+  `_apply_scene_placement_translate_handle` (one model update + one heavy
+  refresh on release). This mirrors the existing STEP-translate / row-carry
+  drags. Per-step cost drops ~578 ms → ~5 ms; the body slides live and the final
+  committed position matches the live preview (rigid slide). Rotation handles
+  keep their per-step apply (out of scope; same retrace cost, separate follow-up).
+
+## Tests
+
+* **`validate_open3d_promoted_row_slide`** (boots its own Xvfb) — promotes the
+  tracked prism to an optical-solid row, runs a 6-step placement-translate drag,
+  and asserts the body moves **live** while `desp_z` stays **uncommitted**
+  (deferred — proving no per-step retrace), then on release `desp_z` commits by
+  the dragged total and the body slid **rigidly**. Fails before the fix (desp_z
+  committed mid-drag), passes after.
+* **Regression / end-to-end** — `Phase 18` in
+  `validate_open3d_penta_telescope_comprehensive.py`.
+
+## Note on the other promotion paths (from the headless investigation)
+
+Recorded in case they resurface as separate reports: *Convert to Analytic
+Surfaces* renders **0 placement handles** (a different "can't slide"), and
+*native surface rows* on the prism stretched a degenerate single-plane body.
+Neither is what this flag hit; both are out of scope here.
 
 ## Planned tests
 
