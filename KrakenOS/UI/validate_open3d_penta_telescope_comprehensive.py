@@ -2521,8 +2521,18 @@ def phase_18_promoted_row_slides(
         "applied_steps": 0,
     }
     inspector._placement_drag_state = state
+
+    def _zhandle():
+        for key, (ri, ax, dl) in (inspector._actor_placement_move_map or {}).items():
+            if ax == "z" and float(dl) > 0:
+                actor = inspector._actor_by_key.get(key)
+                if actor is not None:
+                    return float(np.asarray(actor.GetCenter(), dtype=float)[2])
+        return None
+
     z0 = _row_z(target)
     desp0 = float(getattr(app.rows[target], "desp_z", 0.0))
+    h0 = _zhandle()
 
     n_steps = 6
     for _ in range(n_steps):
@@ -2545,6 +2555,17 @@ def phase_18_promoted_row_slides(
     if abs(pending - expected) > tol:
         result.notes.append(f"pending translate {pending:.3f} != expected {expected:.3f}")
 
+    # 20:37 follow-up: the Move handles must track the body during the drag.
+    h_mid = _zhandle()
+    body_moved = None if (z_mid is None or z0 is None) else 0.5 * ((z_mid[0] + z_mid[1]) - (z0[0] + z0[1]))
+    if h0 is not None and h_mid is not None and body_moved is not None:
+        result.detail["handle_moved"] = round(h_mid - h0, 3)
+        if abs((h_mid - h0) - body_moved) > max(tol, 0.1 * abs(body_moved)):
+            result.notes.append(
+                f"placement Move handles did not track the body during the drag "
+                f"(handle moved {h_mid - h0:.3f} vs body {body_moved:.3f}) -- bugs/0012 handle-lag regression"
+            )
+
     inspector._finish_placement_drag(state)
     inspector.update_idletasks()
     z_fin = _row_z(target)
@@ -2562,6 +2583,8 @@ def phase_18_promoted_row_slides(
     result.detail["defers_translate"] = "_translate_row_actors" in motion_src and "pending_translate_mm" in motion_src
     if not result.detail["defers_translate"]:
         result.notes.append("_apply_placement_drag_motion no longer defers the translate (bugs/0012 fix removed)")
+    if "_translate_placement_handle_actors" not in motion_src:
+        result.notes.append("_apply_placement_drag_motion no longer moves the handles with the body (bugs/0012 handle-lag fix removed)")
     if "pending_translate_mm" not in finish_src or "_apply_scene_placement_translate_handle" not in finish_src:
         result.notes.append("_finish_placement_drag no longer commits the deferred translate (bugs/0012 fix removed)")
 

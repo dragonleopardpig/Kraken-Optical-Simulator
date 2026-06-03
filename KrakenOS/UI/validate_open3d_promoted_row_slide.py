@@ -53,6 +53,16 @@ def _row_z(insp, ri):
     return (float(zmin), float(zmax)) if np.isfinite(zmin) else None
 
 
+def _zhandle_center(insp):
+    """Axial centre of the +Z placement move-handle actor (or None)."""
+    for k, (ri, ax, dl) in (insp._actor_placement_move_map or {}).items():
+        if ax == "z" and float(dl) > 0:
+            a = insp._actor_by_key.get(k)
+            if a is not None:
+                return float(np.asarray(a.GetCenter(), dtype=float)[2])
+    return None
+
+
 def main() -> int:
     if not PRISM_42779_STEP.exists():
         print("SKIP: tracked prism STEP fixture missing")
@@ -111,6 +121,7 @@ def main() -> int:
 
     z0 = _row_z(insp, target)
     desp0 = float(getattr(app.rows[target], "desp_z", 0.0))
+    h0 = _zhandle_center(insp)
 
     # Drag: each call crosses one 18 px snap step (dx=20 along +display_direction).
     n_steps = 6
@@ -135,6 +146,20 @@ def main() -> int:
     if abs(pending - expected) > TOL:
         failures.append(f"pending translate {pending:.3f} != expected {expected:.3f}")
 
+    # Problem A (20:37): the Move/Rotate handles must track the body during the
+    # drag, not stay behind. (Before the handle-move fix the body slid via
+    # AddPosition but the gizmo stayed put.)
+    h_mid = _zhandle_center(insp)
+    body_moved = None if (z_mid is None or z0 is None) else 0.5 * ((z_mid[0] + z_mid[1]) - (z0[0] + z0[1]))
+    if h0 is not None and h_mid is not None and body_moved is not None:
+        handle_moved = h_mid - h0
+        print(f"  handles: z-handle {h0:.3f} -> {h_mid:.3f} (moved {handle_moved:.3f}) vs body moved {body_moved:.3f}")
+        if abs(handle_moved - body_moved) > max(TOL, 0.1 * abs(body_moved)):
+            failures.append(
+                f"placement Move handles did not track the body during the drag "
+                f"(handle moved {handle_moved:.3f} vs body {body_moved:.3f}) -- bugs/0012 handle-lag regression"
+            )
+
     # Release -> single commit.
     insp._finish_placement_drag(state)
     insp.update_idletasks()
@@ -154,6 +179,8 @@ def main() -> int:
     finish_src = inspect.getsource(type(insp)._finish_placement_drag)
     if "_translate_row_actors" not in motion_src or "pending_translate_mm" not in motion_src:
         failures.append("_apply_placement_drag_motion no longer defers the translate (bugs/0012 fix removed)")
+    if "_translate_placement_handle_actors" not in motion_src:
+        failures.append("_apply_placement_drag_motion no longer moves the handles with the body (bugs/0012 handle-lag fix removed)")
     if "pending_translate_mm" not in finish_src or "_apply_scene_placement_translate_handle" not in finish_src:
         failures.append("_finish_placement_drag no longer commits the deferred translate (bugs/0012 fix removed)")
 

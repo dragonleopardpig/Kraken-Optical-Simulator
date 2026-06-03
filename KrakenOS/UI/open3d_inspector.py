@@ -1940,6 +1940,34 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.render()
         return moved
 
+    def _translate_placement_handle_actors(self, row_index: int, delta_xyz) -> int:
+        """bugs/0012: move a row's placement Move/Rotate handle actors by the same
+        cheap ``AddPosition`` as its body during a live placement drag, so the
+        gizmo tracks the lens instead of staying behind (no rebuild/retrace)."""
+        try:
+            delta = np.asarray(delta_xyz, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return 0
+        if delta.size < 3 or not np.all(np.isfinite(delta[:3])):
+            return 0
+        moved = 0
+        for handle_map in (self._actor_placement_move_map, self._actor_placement_rotate_map):
+            for actor_key, info in list(handle_map.items()):
+                try:
+                    if int(info[0]) != int(row_index):
+                        continue
+                except Exception:
+                    continue
+                actor = self._actor_by_key.get(actor_key)
+                if actor is None:
+                    continue
+                try:
+                    actor.AddPosition(float(delta[0]), float(delta[1]), float(delta[2]))
+                    moved += 1
+                except Exception:
+                    pass
+        return moved
+
     def _apply_row_carry_drag_motion(self, *, current_xy: tuple[int, int] | None = None) -> None:
         state = self._row_carry_drag_state
         if state is None or current_xy is None:
@@ -2746,13 +2774,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if str(state.get("kind")) == "rotate":
             self._apply_scene_placement_rotate_handle(row_index, axis, delta)
         else:
-            # bugs/0012: a promoted optical-solid row forces a full optical
-            # retrace on every refresh (~0.5 s per step), so committing each drag
-            # step made the axial slide "compute hard in the background but never
-            # move". Move the row's body actors live (cheap AddPosition, no
-            # retrace) and defer the single model commit + heavy refresh to
-            # _finish_placement_drag, matching the STEP-translate/row-carry drags.
+            # bugs/0012 (+ 20:37/20:38 follow-ups): a promoted optical-solid row
+            # forces a full optical retrace on every refresh (~0.5 s), and even a
+            # bare model commit (translate_scene_row_pose -> _sync_table) costs
+            # ~0.3 s, so doing either per drag step made the axial slide "compute
+            # hard but never move". Move the body AND its Move/Rotate handles
+            # together with a cheap actor transform (AddPosition, no retrace,
+            # ~5 ms) so the lens and its gizmo track the cursor, and defer the
+            # single model commit + heavy refresh to _finish_placement_drag.
             axis_unit = self._placement_axis_vector(axis)
+            self._translate_placement_handle_actors(row_index, axis_unit * float(delta))
             self._translate_row_actors(row_index, axis_unit * float(delta))
             state["pending_translate_mm"] = float(state.get("pending_translate_mm", 0.0)) + float(delta)
 
@@ -2764,9 +2795,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             axis = str(state.get("axis", "")).upper()
         except Exception:
             return
-        # bugs/0012: commit the deferred translate as a single model update +
-        # refresh (the per-step live drag only moved actors via a cheap
-        # transform, so the heavy promoted-solid retrace runs once, on release).
+        # bugs/0012: the drag only moved the body + handles via a cheap actor
+        # transform (no model change). Commit the accumulated slide once here --
+        # a single model update + the one heavy promoted-solid retrace -- which
+        # rebuilds the body and handles from the committed pose so the new
+        # position sticks (no revert on release).
         pending = float(state.get("pending_translate_mm", 0.0))
         if str(state.get("kind")) != "rotate" and abs(pending) > 1.0e-9:
             try:

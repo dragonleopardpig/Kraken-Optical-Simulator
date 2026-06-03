@@ -111,14 +111,36 @@ interactive slide.
 
 * **`KrakenOS/UI/open3d_inspector.py`** — `_apply_placement_drag_motion`'s
   translate branch no longer commits per step. It moves the row's body actors
-  live with `_translate_row_actors` (a cheap `AddPosition`, **no retrace**) and
+  **and** its Move/Rotate handle actors live with `_translate_row_actors` /
+  `_translate_placement_handle_actors` (cheap `AddPosition`, **no retrace**) and
   accumulates the delta in `state["pending_translate_mm"]`.
   `_finish_placement_drag` then commits the accumulated total once via
   `_apply_scene_placement_translate_handle` (one model update + one heavy
   refresh on release). This mirrors the existing STEP-translate / row-carry
-  drags. Per-step cost drops ~578 ms → ~5 ms; the body slides live and the final
-  committed position matches the live preview (rigid slide). Rotation handles
-  keep their per-step apply (out of scope; same retrace cost, separate follow-up).
+  drags. Per-step cost drops ~578 ms → ~7 ms; the body and its gizmo slide live
+  together and the final committed position matches the live preview (rigid
+  slide). Rotation handles keep their per-step apply (out of scope; same retrace
+  cost, separate follow-up).
+
+### Follow-up regressions from the first cut (flags 20:37 / 20:38)
+
+The first version moved only the *body* actors live and deferred the commit,
+which surfaced two issues on re-test:
+
+* **20:37 "the lens slide, but the handler stay where they are"** — the gizmo
+  handles weren't moved during the live drag (only the body was). Fixed by
+  `_translate_placement_handle_actors`, which `AddPosition`s the row's Move +
+  Rotate handle actors by the same delta each step so the gizmo tracks the lens.
+* **20:38 "releasing mouse hold, the lens go back to its original location"** —
+  reported revert on release. Could not be reproduced headlessly (the deferred
+  commit held — `desp_z` committed, body rigidly slid — in every probe, live on
+  and off). The committed approach keeps the model authoritative on release (one
+  `_apply_scene_placement_translate_handle` → rebuild from the committed pose),
+  so the position sticks by construction. A *per-step* model commit was also
+  tried but rejected: `translate_scene_row_pose` → `_sync_table` costs ~300 ms,
+  reintroducing the lag. **If the revert persists, capture the exact lens** (and
+  whether it carries a tilt — a tilted row would make the world-axis live move
+  diverge from the local-`desp_z` commit, which could read as a jump).
 
 ## Tests
 
