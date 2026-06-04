@@ -3180,15 +3180,47 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 continue
             if previous is None or float(extent["proj_max"]) > float(previous["proj_max"]):
                 previous = extent
-        if previous is None:
-            return None
         base = np.asarray(me["centroid"], dtype=float).reshape(3)
         base_axial = float(np.dot(base, axis))
         near_axial = float(me["proj_min"])
-        far_axial = float(previous["proj_max"])
+        if previous is not None:
+            far_axial = float(previous["proj_max"])
+        else:
+            # No preceding rendered SOLID body -- e.g. a lone promoted lens with
+            # only the non-solid Object surface before it (flag_20260604_111615_630:
+            # the recorder scene had row 1 as the ONLY body). Fall back to the
+            # previous optical SURFACE position from the model, the same reference
+            # the persistent "S{n} Thickness =" dimension uses, so the live gap
+            # still appears (and reads identically to that dimension). The surface
+            # is static during the drag, so the gap tracks the lens's live near
+            # edge exactly as the body-to-body case does.
+            far_axial = self._model_previous_surface_axial(min(rows), axis)
+            if far_axial is None:
+                return None
         near_point = base + axis * (near_axial - base_axial)
         prev_far_point = base + axis * (far_axial - base_axial)
         return near_point, prev_far_point, float(near_axial - far_axial)
+
+    def _model_previous_surface_axial(self, first_row: int, axis_unit) -> float | None:
+        """Axial projection of the optical surface just before ``first_row``,
+        read from the MODEL (not rendered actors), or ``None`` if there is no
+        prior surface. Used by ``_row_overlay_axial_gap`` as the gap reference
+        when nothing solid precedes the dragged lens, so the live readout matches
+        the persistent "S{n} Thickness =" dimension (which is built from the same
+        ``_surface_reference_world_point``)."""
+        prev_row = int(first_row) - 1
+        if prev_row < 0:
+            return None
+        try:
+            point = np.asarray(
+                self.editor._surface_reference_world_point(prev_row), dtype=float
+            ).reshape(-1)[:3]
+        except Exception:
+            return None
+        if point.size < 3 or not np.all(np.isfinite(point[:3])):
+            return None
+        axis = np.asarray(axis_unit, dtype=float).reshape(-1)[:3]
+        return float(np.dot(point, axis))
 
     def _draw_step_translate_gap_overlay(
         self, near_point, prev_far_point, gap_mm: float

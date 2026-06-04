@@ -3010,6 +3010,186 @@ def phase_22_promoted_slide_gap_overlay(
     return result
 
 
+def phase_23_lone_lens_slide_gap_overlay(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """flag_20260604_111615_630 (follow-up): the recorder scene was a SINGLE
+    promoted lens (row 1 the ONLY rendered body) preceded only by the non-solid
+    Object surface -- so the gizmo slide STILL showed no live gap even after the
+    first fix, because every gap reader (``_row_overlay_axial_gap`` /
+    ``_step_overlay_axial_gap`` / ``_row_slide_axial_gap``) measured only to a
+    preceding rendered SOLID body, of which a lone leading lens has none.
+
+    Phase 22 masked this by deliberately picking the LAST cascade body (a solid
+    predecessor always exists). This phase picks the FIRST body row -- preceded
+    only by the Object surface -- and slides it -Z (so it never leapfrogs a
+    neighbour into a solid predecessor), asserting the live gap now appears via
+    the model-surface fallback (``_model_previous_surface_axial``, the same
+    ``_surface_reference_world_point`` the persistent "S{n} Thickness =" dimension
+    uses), tracks the slide, and clears on release.
+    """
+    import inspect
+
+    result = PhaseResult(
+        name="Phase 23: lone leading promoted lens shows the live gap (model-surface fallback)"
+    )
+    if not PENTA_CASCADE_PATH.exists():
+        result.notes.append("skipped: penta cascade fixture missing")
+        result.detail["skipped"] = True
+        result.passed = True
+        return result
+
+    # Same scene-reset + flattened cascade as Phase 22 (sequence-robust).
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    inspector._placement_drag_state = None
+    try:
+        inspector._clear_step_translate_drag_overlay(render=False)
+    except Exception:
+        pass
+
+    module = _load_layout_module(PENTA_CASCADE_PATH)
+    app.rows = _rows_from_layout_info(
+        {"surfaces": list(getattr(module, "SURFACES", []) or [])}
+    )
+    try:
+        app._apply_layout_settings(dict(getattr(module, "SETTINGS", {}) or {}))
+    except Exception:
+        pass
+    for index, row in enumerate(app.rows):
+        row.tilt_x = row.tilt_y = row.tilt_z = 0.0
+        row.desp_x = row.desp_y = row.desp_z = 0.0
+        row.axis_move = 0.0
+        if index < len(app.rows) - 1:
+            row.thickness = 25.0
+    app._sync_table()
+    inspector.show_rays_var.set(False)
+    inspector.refresh_from_editor(force_retrace=True)
+    inspector.update_idletasks()
+
+    body_rows = sorted((inspector._row_actor_map or {}).keys())
+    result.detail["body_rows"] = body_rows
+    if not body_rows:
+        result.notes.append("no rendered body rows in the flattened cascade")
+        result.passed = False
+        return result
+    first = body_rows[0]
+    result.detail["target_row"] = first
+
+    axis = (0.0, 0.0, 1.0)
+    grp_first = app._lens_row_group_for_row(first) or [first]
+    group_keys = [
+        k for r in grp_first for k in (inspector._row_actor_map.get(int(r), []) or [])
+    ]
+    me = inspector._axial_extent_from_actor_keys(group_keys, axis)
+    preds = [
+        e
+        for e in inspector._scene_component_axial_extents(
+            axis, exclude_rows={int(r) for r in grp_first}
+        )
+        if me is not None and float(e["proj_center"]) < float(me["proj_center"])
+    ]
+    result.detail["solid_predecessors"] = len(preds)
+    if preds:
+        result.notes.append(
+            "first body has a solid predecessor; not the lone-lens fallback case"
+        )
+        result.passed = False
+        return result
+
+    def _row_gap(ri):
+        grp = app._lens_row_group_for_row(ri)
+        g = inspector._row_overlay_axial_gap(list(grp) if grp else [ri])
+        return None if g is None else float(g[2])
+
+    # THE FIX: a finite gap is now reported for the lone leading lens via the
+    # model surface (was None before the fallback -> the gizmo slide drew nothing).
+    gap_before = _row_gap(first)
+    result.detail["gap_mm_before"] = None if gap_before is None else round(gap_before, 3)
+    if gap_before is None:
+        result.notes.append(
+            "lone leading lens reports no gap -- model-surface fallback missing "
+            "(flag_20260604_111615_630 follow-up)"
+        )
+
+    inspector._placement_handle_selected_row_index = first
+    try:
+        inspector._set_row_highlight(first)
+    except Exception:
+        pass
+    app._select_table_row(first)
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+
+    # Slide -Z by a modest amount so the lens stays the leading element (never
+    # leapfrogs a neighbour into a solid predecessor) and the gap to the Object
+    # surface stays positive while shrinking.
+    state = {
+        "kind": "translate",
+        "row_index": first,
+        "axis": "z",
+        "signed_step": -2.0,
+        "display_direction": np.asarray((1.0, 0.0), dtype=float),
+        "pixel_accumulator": 0.0,
+        "applied_steps": 0,
+    }
+    inspector._placement_drag_state = state
+    for _ in range(3):
+        inspector._apply_placement_drag_motion(20.0, 0.0)
+    inspector.update_idletasks()
+
+    gap_actors_during = len(getattr(inspector, "_step_translate_gap_actors", []) or [])
+    gap_after = _row_gap(first)
+    slid_mm = float(state.get("pending_translate_mm", 0.0))
+    result.detail.update(
+        {
+            "gap_actors_during_drag": gap_actors_during,
+            "gap_mm_during": None if gap_after is None else round(gap_after, 3),
+            "slid_mm": round(slid_mm, 3),
+        }
+    )
+    if abs(slid_mm) < 1.0:
+        result.notes.append(f"placement drag did not move the body (slid {slid_mm:.3f} mm)")
+    # The regression: ZERO gap actors while sliding the lone leading lens.
+    if gap_actors_during <= 0:
+        result.notes.append(
+            "no live gap overlay drawn while sliding the lone leading promoted lens "
+            "(flag_20260604_111615_630 follow-up regression)"
+        )
+    # The overlay must track the slide: sliding -Z toward the Object surface
+    # shrinks the leading gap by the dragged total.
+    if gap_before is not None and gap_after is not None:
+        grew = gap_after - gap_before
+        if abs(grew - slid_mm) > max(1.0, 0.1 * abs(slid_mm)):
+            result.notes.append(
+                f"live gap did not track the slide (changed {grew:.3f} mm, "
+                f"expected ~{slid_mm:.3f} mm) -- overlay is static, not live"
+            )
+
+    inspector._finish_placement_drag(state)
+    inspector._placement_drag_state = None
+    inspector.update_idletasks()
+    gap_actors_after = len(getattr(inspector, "_step_translate_gap_actors", []) or [])
+    result.detail["gap_actors_after_release"] = gap_actors_after
+    if gap_actors_after != 0:
+        result.notes.append(
+            f"release left {gap_actors_after} gap overlay actors (overlay not cleared on finish)"
+        )
+
+    # Source-couple the fallback so removing it regresses HERE (end-to-end), not
+    # just in the display-free unit.
+    gap_src = inspect.getsource(type(inspector)._row_overlay_axial_gap)
+    if "_model_previous_surface_axial" not in gap_src:
+        result.notes.append(
+            "_row_overlay_axial_gap dropped the model-surface fallback (lone-lens gap lost)"
+        )
+
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3069,6 +3249,7 @@ def main() -> int:
             phase_20_overlay_metadata_tracks_pose,
             phase_21_brep_lens_rim_grouped,
             phase_22_promoted_slide_gap_overlay,
+            phase_23_lone_lens_slide_gap_overlay,
         ]
         for phase in phases:
             try:

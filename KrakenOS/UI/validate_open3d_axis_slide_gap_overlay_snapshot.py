@@ -62,6 +62,21 @@ class _FakeActor:
         return self._bounds
 
 
+class _FakeEditor:
+    """Minimal editor stub: the model-surface gap fallback only calls
+    ``_surface_reference_world_point``. Missing rows raise, mirroring the real
+    method, so the fallback's graceful-None path is exercised too."""
+
+    def __init__(self, surface_points):
+        self._surface_points = dict(surface_points)
+
+    def _surface_reference_world_point(self, row_index, *, face_id="", system=None):
+        key = int(row_index)
+        if key not in self._surface_points:
+            raise RuntimeError(f"no surface reference for row {key}")
+        return self._surface_points[key]
+
+
 def _bare_inspector():
     from KrakenOS.UI.open3d_inspector import Kraken3DInspector
 
@@ -140,10 +155,68 @@ def check_placement_gap_math() -> list[str]:
         got = "None" if gap2 is None else f"{float(gap2[1][2]):.3f}"
         fails.append(f"placement exclude_rows failed: anchored to the dragged group itself (far z={got}, want 10)")
 
-    # First element (no preceding body) -> no overlay, not a crash.
+    # No preceding body AND no model surface available (bare inspector has no
+    # .editor) -> graceful None, not a crash. (The model-surface fallback for a
+    # lone lens WITH a prior surface is covered by check_placement_gap_model_fallback.)
     insp._row_actor_map = {2: ["r2"]}
     if insp._row_overlay_axial_gap([2]) is not None:
-        fails.append("placement: expected None when there is no preceding component")
+        fails.append("placement: expected None with no preceding body and no model surface")
+    return fails
+
+
+def check_placement_gap_model_fallback() -> list[str]:
+    """flag_20260604_111615_630 follow-up: a lone promoted lens with NO preceding
+    solid body (only the non-solid Object surface before it) must STILL show a
+    live gap, measured to the previous optical SURFACE position from the model --
+    the same reference the persistent "S{n} Thickness =" dimension uses. Before
+    the fix ``_row_overlay_axial_gap`` returned None here, so the gizmo slide of a
+    single promoted lens drew nothing. Display-free: a fake editor supplies the
+    surface position and a fake actor the live body edge."""
+    fails: list[str] = []
+    insp = _bare_inspector()
+
+    # Lone dragged body at z[40,55]; NO other body. Previous SURFACE (row 1) at
+    # z=7 (deliberately != any body edge so the assertions have teeth).
+    insp._actor_by_key = {"r2": _FakeActor(40, 55)}
+    insp._row_actor_map = {2: ["r2"]}
+    insp.editor = _FakeEditor({1: (0.0, 0.0, 7.0)})
+
+    # The helper itself: previous surface axial = 7; nothing before row 0 -> None.
+    if insp._model_previous_surface_axial(2, (0.0, 0.0, 1.0)) != 7.0:
+        fails.append("_model_previous_surface_axial(2) != 7 (model surface lookup wrong)")
+    if insp._model_previous_surface_axial(0, (0.0, 0.0, 1.0)) is not None:
+        fails.append("_model_previous_surface_axial(0) should be None (no surface before the first)")
+
+    # The gap falls back to the model surface: far=7, near=40 (live edge), value=33.
+    gap = insp._row_overlay_axial_gap([2])
+    if gap is None:
+        fails.append("lone-lens gap returned None -- model-surface fallback missing (flag_20260604_111615_630)")
+    else:
+        near, far, value = gap
+        if abs(float(far[2]) - 7.0) > 1e-6:
+            fails.append(f"lone-lens gap far end not the model surface (z={float(far[2]):.3f}, want 7)")
+        if abs(float(near[2]) - 40.0) > 1e-6:
+            fails.append(f"lone-lens gap near end not the live near edge (z={float(near[2]):.3f}, want 40)")
+        if abs(value - 33.0) > 1e-6:
+            fails.append(f"lone-lens gap value {value} != 33 (40 - 7)")
+
+    # A SOLID predecessor still WINS over the model surface (interior bodies are
+    # unchanged): add a body at z[0,10] -> the geometric far edge (10) is used,
+    # not the model surface (7).
+    insp._actor_by_key["r1"] = _FakeActor(0, 10)
+    insp._row_actor_map = {1: ["r1"], 2: ["r2"]}
+    g_solid = insp._row_overlay_axial_gap([2])
+    if g_solid is None or abs(float(g_solid[1][2]) - 10.0) > 1e-6:
+        got = "None" if g_solid is None else f"{float(g_solid[1][2]):.3f}"
+        fails.append(f"solid predecessor no longer preferred over the model surface (far z={got}, want 10)")
+
+    # No body, no prior surface in the model -> graceful None (no crash).
+    insp_empty = _bare_inspector()
+    insp_empty._actor_by_key = {"r2": _FakeActor(40, 55)}
+    insp_empty._row_actor_map = {2: ["r2"]}
+    insp_empty.editor = _FakeEditor({})  # surface lookup raises -> fallback None
+    if insp_empty._row_overlay_axial_gap([2]) is not None:
+        fails.append("expected None when neither a preceding body nor a model surface exists")
     return fails
 
 
@@ -183,6 +256,12 @@ def check_source_coupling() -> list[str]:
         fails.append("_update_placement_drag_gap_overlay no longer reads the live geometric gap")
     if "_clear_step_translate_drag_overlay" not in inspect.getsource(K._finish_placement_drag):
         fails.append("placement-slide finish no longer clears the gap overlay")
+    # Lone-lens model-surface fallback (flag_20260604_111615_630): _row_overlay_axial_gap
+    # must reach for the model surface when no solid body precedes the lens.
+    if "_model_previous_surface_axial" not in inspect.getsource(K._row_overlay_axial_gap):
+        fails.append("_row_overlay_axial_gap dropped the model-surface fallback (lone-lens gap lost)")
+    if "_surface_reference_world_point" not in inspect.getsource(K._model_previous_surface_axial):
+        fails.append("_model_previous_surface_axial no longer reads the model surface position")
     return fails
 
 
@@ -279,6 +358,7 @@ def main() -> int:
     fails = (
         check_gap_math()
         + check_placement_gap_math()
+        + check_placement_gap_model_fallback()
         + check_color_distinct()
         + check_source_coupling()
     )

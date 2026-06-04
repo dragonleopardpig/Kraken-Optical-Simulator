@@ -1,8 +1,11 @@
 # 0014 — Promoted lens slid with the Move gizmo shows no live gap overlay
 
-**Status:** Fixed (2026-06-04). The placement Move-gizmo z-translate of a
+**Status:** Fixed (2026-06-04), with a same-day follow-up for a **lone leading
+lens** (see "Follow-up" below). The placement Move-gizmo z-translate of a
 promoted optical-solid row now draws the same live emerald leading-gap arrow +
-label that the imported-STEP drag and the "Slide along axis" mode already drew.
+label that the imported-STEP drag and the "Slide along axis" mode already drew —
+and, after the follow-up, also when the lens is the only solid body in the scene
+(measured to the previous optical surface from the model).
 **Component:** Open 3D inspector — placement Move-gizmo translate drag
 (`_apply_placement_drag_motion`) of a promoted optical-solid row, and the
 transient gap overlay (`_draw_step_translate_gap_overlay`).
@@ -106,3 +109,53 @@ overlay from #65, so all three slide paths now read identically.
   live gap overlay **appears** during the drag (the bug was zero actors), that
   the gap **tracks** the slide (grows by the dragged ~40 mm), and that release
   **clears** it. Gate baseline regenerated (`tools/penta_validator_baseline.json`).
+
+## Follow-up (2026-06-04): lone leading lens still showed no gap
+
+After the fix above the user retested and reported the gap **still** did not
+appear. Reproduced headlessly: the first fix only draws a gap when a preceding
+rendered **solid body** exists. The recorder scene
+(`flag_20260604_111615_630`) is a **single** promoted lens — `row_actor_bounds`
+has only key `"1"`, `step_actor_counts {}` — preceded only by the **non-solid
+Object surface** (which renders no body). All three gap readers
+(`_row_overlay_axial_gap`, the imported-STEP `_step_overlay_axial_gap`, and the
+axis-slide `_row_slide_axial_gap`) scan only `_scene_component_axial_extents`
+(rendered actors), so a lone leading lens has no predecessor → gap `None` → no
+overlay. The persistent `S0 Thickness = 100 mm` dimension still showed, because
+**it** is built from the model (`_surface_reference_world_point`), not from
+rendered bodies — which is exactly the asymmetry the user saw. Phase 22 missed
+this because it deliberately selects the **last** cascade body (a solid
+predecessor always exists).
+
+**Fix:** `_row_overlay_axial_gap` now falls back to the previous optical
+**surface** position from the model when no preceding solid body is found —
+`_model_previous_surface_axial(min(group_rows), axis)` projects
+`editor._surface_reference_world_point(prev_row)` onto the axis, the **same**
+reference the persistent `S{n} Thickness =` dimension uses, so the live readout
+and that dimension now agree. The surface is static during a drag, so the gap
+tracks the lens's live near edge exactly as the body-to-body case does. A solid
+predecessor still wins when one exists (interior bodies unchanged); the fallback
+returns `None` only when there is also no prior surface (the true first element)
+or the model lookup fails. Scoped to the promoted-row path the user reported; the
+imported-STEP path keeps its solid-body-only behaviour (an overlay isn't tied to
+a row index, so it has no clean "previous surface").
+
+**Follow-up tests:**
+
+* **Display-free unit** — `check_placement_gap_model_fallback` in
+  `validate_open3d_axis_slide_gap_overlay_snapshot.py`: a lone dragged body
+  z[40,55] with the prior **surface** stubbed at z=7 (via a fake editor) now
+  reports a gap (far=7, near=40, value=33); `_model_previous_surface_axial`
+  returns 7 for that row and `None` before row 0; a **solid** predecessor at
+  z[0,10] still wins (far=10, not 7); and with neither a body nor a model
+  surface it returns `None` (graceful, no crash). Source-coupling asserts
+  `_row_overlay_axial_gap` keeps the `_model_previous_surface_axial` call and
+  that helper keeps reading `_surface_reference_world_point`. Teeth verified:
+  stubbing the fallback to `None` flips it to a clean FAIL.
+* **Regression / end-to-end** — `Phase 23`
+  (`phase_23_lone_lens_slide_gap_overlay`): flattened penta cascade, selects the
+  **first** body row (preceded only by the Object surface — asserts it has zero
+  solid predecessors so it really is the lone-lens case), slides it **−Z**, and
+  asserts the gap now appears (was zero actors), tracks the slide (shrinks by the
+  dragged total toward the Object surface), and clears on release. Gate baseline
+  regenerated.
