@@ -48,7 +48,12 @@ class Open3DThicknessDimensionService:
         end: np.ndarray,
         *,
         scene_span: float,
+        thickness_scale: float = 1.0,
     ) -> Any | None:
+        # ``thickness_scale`` fattens the shaft tube + arrowheads without
+        # changing their length. The persistent dimension overlay leaves it at
+        # 1.0 (geometry unchanged); the live drag readout passes >1 so the
+        # moving gap arrow reads thicker than the static dimensions (#65).
         pv = self.pv
         if pv is None:
             return None
@@ -59,8 +64,10 @@ class Open3DThicknessDimensionService:
         if not np.isfinite(length) or length <= 1e-9:
             return None
         direction = delta / length
-        head = min(max(float(scene_span) * 0.018, 0.75), max(length * 0.28, 0.75))
-        radius = max(head * 0.20, 0.12)
+        scale = max(float(thickness_scale), 1.0e-3)
+        base_head = min(max(float(scene_span) * 0.018, 0.75), max(length * 0.28, 0.75))
+        head = base_head * (0.6 + 0.4 * scale)
+        radius = max(base_head * 0.20, 0.12) * scale
         tube_radius = max(radius * self.DIMENSION_TUBE_RADIUS_FACTOR, self.DIMENSION_TUBE_RADIUS_FLOOR)
         parts: list[Any] = []
         try:

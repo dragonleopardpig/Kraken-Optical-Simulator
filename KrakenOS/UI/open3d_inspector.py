@@ -3020,9 +3020,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         }
 
     def _scene_component_axial_extents(
-        self, axis_unit, *, exclude_step: str | None = None
+        self,
+        axis_unit,
+        *,
+        exclude_step: str | None = None,
+        exclude_rows: set[int] | None = None,
     ) -> list[dict[str, object]]:
         exclude = str(exclude_step or "").strip().lower()
+        skip_rows: set[int] = set()
+        for value in exclude_rows or ():
+            try:
+                skip_rows.add(int(value))
+            except Exception:
+                continue
         extents: list[dict[str, object]] = []
         for step_label, actor_keys in list(self._step_actor_map.items()):
             if str(step_label).strip().lower() == exclude:
@@ -3032,9 +3042,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 extents.append(extent)
         for row_index, actor_keys in list(self._row_actor_map.items()):
             try:
-                if int(row_index) < 0:
-                    continue
+                idx = int(row_index)
             except Exception:
+                continue
+            if idx < 0 or idx in skip_rows:
                 continue
             extent = self._axial_extent_from_actor_keys(actor_keys, axis_unit)
             if extent is not None:
@@ -3078,6 +3089,54 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         prev_far_point = base + axis * (far_axial - base_axial)
         return near_point, prev_far_point, float(near_axial - far_axial)
 
+    def _row_slide_axial_gap(
+        self, group_indices, leading_gap_mm: float, axis_unit=None
+    ) -> tuple[np.ndarray, np.ndarray, float] | None:
+        """Live leading-gap dimension for a promoted optical-solid row slide.
+
+        Unlike the STEP translate overlay, the promoted body's actors do NOT
+        move during a continuous drag (the body refresh is debounced), so a
+        geometric edge-to-edge read off the actors would be stale. The model is
+        mutated every motion frame, though, so ``leading_gap_mm`` (the preceding
+        row's post-slide thickness) is the authoritative live spacing.
+
+        The arrow's far end is pinned to the previous *visible* component's far
+        edge (static during the drag); the near end is placed exactly
+        ``leading_gap_mm`` along the axis from it, so the arrow + label track the
+        cursor every frame even while the lens body lags to the next refresh.
+        Returns ``(near_point, far_point, gap_mm)`` on the lens group's lateral
+        centre line, or ``None`` when there's no preceding component to measure.
+        """
+        rows = {int(r) for r in (group_indices or []) if r is not None and int(r) >= 0}
+        if not rows:
+            return None
+        if axis_unit is None:
+            axis_unit = (0.0, 0.0, 1.0)
+        group_keys: list[str] = []
+        for r in rows:
+            group_keys.extend(self._row_actor_map.get(r, []) or [])
+        me = self._axial_extent_from_actor_keys(group_keys, axis_unit)
+        if me is None:
+            return None
+        axis = me["axis"]
+        me_center = float(me["proj_center"])
+        previous: dict[str, object] | None = None
+        for extent in self._scene_component_axial_extents(axis, exclude_rows=rows):
+            if float(extent["proj_center"]) >= me_center:
+                continue
+            if previous is None or float(extent["proj_max"]) > float(previous["proj_max"]):
+                previous = extent
+        if previous is None:
+            return None
+        base = np.asarray(me["centroid"], dtype=float).reshape(3)
+        base_axial = float(np.dot(base, axis))
+        far_axial = float(previous["proj_max"])
+        gap = float(leading_gap_mm)
+        near_axial = far_axial + gap
+        near_point = base + axis * (near_axial - base_axial)
+        far_point = base + axis * (far_axial - base_axial)
+        return near_point, far_point, gap
+
     def _draw_step_translate_gap_overlay(
         self, near_point, prev_far_point, gap_mm: float
     ) -> None:
@@ -3096,8 +3155,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         offset = side * base_offset
         start = far + offset
         end = near + offset
-        color = (0.95, 0.55, 0.10)
-        mesh = service.arrow_mesh(start, end, scene_span=scene_span)
+        # Gap dimension colour: emerald green, deliberately distinct from BOTH
+        # the optical axis (blue 0,0.43,0.88) and the highlighted optical axis
+        # (gold 1.0,0.68,0.05). The old orange (0.95,0.55,0.10) was almost the
+        # highlight gold, so the live gap melted into a highlighted axis; green
+        # also dodges the pink selection / red edge / gold hover accents (#65).
+        color = (0.10, 0.90, 0.45)
+        leader_color = (0.50, 0.95, 0.68)
+        # Thicker than the persistent dimensions: the live readout still shares
+        # the dimension knobs (DIMENSION_LEADER_LINE_WIDTH / arrow_mesh) but
+        # scales them up so the moving gap stands out while dragging (#65).
+        mesh = service.arrow_mesh(start, end, scene_span=scene_span, thickness_scale=1.8)
         if mesh is not None:
             actor = self._add_mesh_actor(
                 mesh, color=color, opacity=0.95, flat_shading=True, backface_culling=False
@@ -3113,17 +3181,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 continue
             leader = self._add_mesh_actor(
                 line,
-                color=(0.95, 0.72, 0.36),
-                opacity=0.65,
-                line_width=service.DIMENSION_LEADER_LINE_WIDTH,
+                color=leader_color,
+                opacity=0.75,
+                line_width=service.DIMENSION_LEADER_LINE_WIDTH * 2.0,
                 backface_culling=False,
             )
             if leader is not None:
                 self._step_translate_gap_actors.append(leader)
         midpoint = 0.5 * (start + end) + side * max(base_offset * 0.25, 0.8)
-        self._add_step_translate_gap_label(midpoint, f"gap = {gap_mm:.4g} mm")
+        self._add_step_translate_gap_label(midpoint, f"gap = {gap_mm:.4g} mm", frame_color=color)
 
-    def _add_step_translate_gap_label(self, position, text: str) -> None:
+    def _add_step_translate_gap_label(self, position, text: str, *, frame_color=(0.10, 0.90, 0.45)) -> None:
         if self._renderer is None or vtkBillboardTextActor3D is None:
             return
         point = np.asarray(position, dtype=float).reshape(-1)[:3]
@@ -3144,7 +3212,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 text_prop.SetBackgroundColor(1.0, 0.96, 0.86)
                 text_prop.SetBackgroundOpacity(0.85)
                 text_prop.SetFrame(1)
-                text_prop.SetFrameColor(0.95, 0.55, 0.10)
+                fc = tuple(float(c) for c in frame_color)[:3]
+                text_prop.SetFrameColor(fc[0], fc[1], fc[2])
             except Exception:
                 pass
             self._add_renderer_view_prop(actor)
@@ -3199,6 +3268,39 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self.render()
             except Exception:
                 pass
+
+    def _update_axis_slide_gap_overlay(
+        self, state: dict[str, object], result: dict[str, object]
+    ) -> None:
+        """Redraw the live leading-gap dimension during a promoted-row slide.
+
+        Nothing else renders while the slide drag is in flight (the body refresh
+        is debounced), so this clears the previous transient gap actors, draws
+        the restyled green arrow + label from the live model gap, and issues the
+        one render that makes the moving dimension visible.
+        """
+        self._clear_step_translate_drag_overlay()
+        group = list(state.get("group_indices", [])) or [int(result.get("row_index", -1))]
+        try:
+            leading_gap = float(result.get("preceding_thickness_after", 0.0))
+        except Exception:
+            leading_gap = 0.0
+        gap = None
+        try:
+            gap = self._row_slide_axial_gap(group, leading_gap)
+        except Exception as exc:
+            self.editor.append_debug(f"axis-slide gap query failed: {exc}")
+            gap = None
+        if gap is not None:
+            near_point, far_point, gap_mm = gap
+            try:
+                self._draw_step_translate_gap_overlay(near_point, far_point, gap_mm)
+            except Exception as exc:
+                self.editor.append_debug(f"axis-slide gap draw failed: {exc}")
+        try:
+            self.render()
+        except Exception:
+            pass
 
     def _axis_slide_mode_active(self) -> bool:
         try:
@@ -3431,8 +3533,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 tt=float(result.get("trailing_thickness_after", 0.0)),
             )
         )
+        self._update_axis_slide_gap_overlay(state, result)
 
     def _finish_axis_slide_drag(self, state: dict[str, object]) -> None:
+        self._clear_step_translate_drag_overlay(render=False)
         try:
             applied_delta = float(state.get("applied_delta_mm", 0.0))
             group = list(state.get("group_indices", []))
@@ -6724,6 +6828,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._set_step_carry_cursor(False)
         self._open3d_carry_grip_service.clear(render=False)
         self._set_axis_pick_cursor(False)
+        self._clear_step_translate_drag_overlay(render=False)
         self._update_mode_badge()
 
         restored = False
