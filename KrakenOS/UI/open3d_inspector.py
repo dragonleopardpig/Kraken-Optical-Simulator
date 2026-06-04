@@ -2786,6 +2786,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._translate_placement_handle_actors(row_index, axis_unit * float(delta))
             self._translate_row_actors(row_index, axis_unit * float(delta))
             state["pending_translate_mm"] = float(state.get("pending_translate_mm", 0.0)) + float(delta)
+            # Live leading-gap readout for the gizmo slide, matching the
+            # imported-STEP drag and axis-slide mode (flag_20260604_111615_630).
+            self._update_placement_drag_gap_overlay(state)
 
     def _finish_placement_drag(self, state: dict[str, object]) -> None:
         try:
@@ -2795,6 +2798,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             axis = str(state.get("axis", "")).upper()
         except Exception:
             return
+        # Drop the transient live-gap overlay drawn during the slide. render=True
+        # is self-gating (renders only if gap actors existed), so a drag that
+        # nets to zero -- no commit, hence no refresh-render below -- still can't
+        # leave a ghost arrow behind.
+        self._clear_step_translate_drag_overlay(render=True)
         # bugs/0012: the drag only moved the body + handles via a cheap actor
         # transform (no model change). Commit the accumulated slide once here --
         # a single model update + the one heavy promoted-solid retrace -- which
@@ -3137,6 +3145,51 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         far_point = base + axis * (far_axial - base_axial)
         return near_point, far_point, gap
 
+    def _row_overlay_axial_gap(
+        self, group_indices, axis_unit=None
+    ) -> tuple[np.ndarray, np.ndarray, float] | None:
+        """Edge-to-edge axial gap for a row group whose body actors are LIVE.
+
+        The placement Move gizmo slides a promoted optical-solid row by moving
+        its body actors every frame (``_translate_row_actors`` -> AddPosition,
+        bugs/0012), so -- unlike the debounced axis-slide mode that must read the
+        live MODEL gap (``_row_slide_axial_gap``) -- the spacing is read
+        GEOMETRICALLY off the moved actor bounds, exactly like the imported-STEP
+        drag (``_step_overlay_axial_gap``). Finds the previous *visible*
+        component along ``axis_unit`` (excluding the dragged group's own rows so
+        a sub-body can't be picked as its own predecessor) and returns
+        ``(near_point, prev_far_point, gap_mm)`` on the group's lateral centre
+        line, or ``None`` when there is nothing before it to measure against.
+        """
+        rows = {int(r) for r in (group_indices or []) if r is not None and int(r) >= 0}
+        if not rows:
+            return None
+        if axis_unit is None:
+            axis_unit = (0.0, 0.0, 1.0)
+        group_keys: list[str] = []
+        for r in rows:
+            group_keys.extend(self._row_actor_map.get(r, []) or [])
+        me = self._axial_extent_from_actor_keys(group_keys, axis_unit)
+        if me is None:
+            return None
+        axis = me["axis"]
+        me_center = float(me["proj_center"])
+        previous: dict[str, object] | None = None
+        for extent in self._scene_component_axial_extents(axis, exclude_rows=rows):
+            if float(extent["proj_center"]) >= me_center:
+                continue
+            if previous is None or float(extent["proj_max"]) > float(previous["proj_max"]):
+                previous = extent
+        if previous is None:
+            return None
+        base = np.asarray(me["centroid"], dtype=float).reshape(3)
+        base_axial = float(np.dot(base, axis))
+        near_axial = float(me["proj_min"])
+        far_axial = float(previous["proj_max"])
+        near_point = base + axis * (near_axial - base_axial)
+        prev_far_point = base + axis * (far_axial - base_axial)
+        return near_point, prev_far_point, float(near_axial - far_axial)
+
     def _draw_step_translate_gap_overlay(
         self, near_point, prev_far_point, gap_mm: float
     ) -> None:
@@ -3301,6 +3354,51 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.render()
         except Exception:
             pass
+
+    def _update_placement_drag_gap_overlay(self, state: dict[str, object]) -> None:
+        """Live leading-gap dimension while a promoted optical-solid row is slid
+        along the optical axis with the placement Move gizmo.
+
+        Without this the gizmo slide showed no live spacing, even though the
+        imported-STEP drag and the axis-slide mode both do (recorder flag
+        ``flag_20260604_111615_630``: "sliding of promoted analytical lens still
+        not showing dynamic gap highlight similar to the unpromoted one").
+
+        Only an axial (Z = optical axis) *translate* is measured: X/Y decenters
+        have no axial gap to report, and rotation isn't a slide. The Move-gizmo
+        translate moves the body actors live (bugs/0012), so the gap is read
+        geometrically off the moved actors (``_row_overlay_axial_gap``). No
+        render here -- ``_translate_row_actors`` already issued one this event, so
+        the refreshed dimension shows on the next motion frame (the same
+        imperceptible one-frame lag as the STEP overlay)."""
+        if str(state.get("kind")) == "rotate":
+            return
+        if str(state.get("axis", "")).strip().lower() != "z":
+            return
+        try:
+            row_index = int(state.get("row_index", -1))
+        except Exception:
+            return
+        if row_index < 0:
+            return
+        try:
+            group = list(self.editor._lens_row_group_for_row(row_index)) or [row_index]
+        except Exception:
+            group = [row_index]
+        self._clear_step_translate_drag_overlay()
+        gap = None
+        try:
+            gap = self._row_overlay_axial_gap(group)
+        except Exception as exc:
+            self.editor.append_debug(f"placement-slide gap query failed for S{row_index}: {exc}")
+            gap = None
+        if gap is None:
+            return
+        near_point, prev_far_point, gap_mm = gap
+        try:
+            self._draw_step_translate_gap_overlay(near_point, prev_far_point, gap_mm)
+        except Exception as exc:
+            self.editor.append_debug(f"placement-slide gap draw failed for S{row_index}: {exc}")
 
     def _axis_slide_mode_active(self) -> bool:
         try:

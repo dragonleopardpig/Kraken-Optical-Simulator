@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Regression for the slide-along-axis live gap readout (requests #65 + #66).
+"""Regression for the live gap readout shown while a lens is slid (#65, #66 +
+the promoted Move-gizmo slide, flag_20260604_111615_630).
 
 #66: dragging a row in "Slide along axis" mode used to show NO live gap
 dimension -- the body's refresh is debounced, so ``_apply_axis_slide_drag_motion``
@@ -9,15 +10,25 @@ anchors the gap arrow's far end to the previous *visible* component (static
 during the drag) and places the near end exactly the live model gap
 (``preceding_thickness_after``) along the axis.
 
+Promoted Move-gizmo slide (flag_20260604_111615_630, "sliding of promoted
+analytical lens still not showing dynamic gap highlight similar to the
+unpromoted one"): sliding a promoted optical-solid row with the placement Move
+arrow drew no gap either. That path (``_apply_placement_drag_motion``) moves the
+body actors LIVE (bugs/0012), so the fix reads the gap GEOMETRICALLY off the
+moved actors (``_row_overlay_axial_gap``, the row twin of the imported-STEP
+``_step_overlay_axial_gap``) and wires ``_update_placement_drag_gap_overlay``
+into the gizmo's z-translate branch.
+
 #65: that gap readout is drawn THICK and EMERALD GREEN (0.10, 0.90, 0.45),
 deliberately distinct from the optical axis (blue 0,0.43,0.88) and the
 highlighted optical axis (gold 1.0,0.68,0.05) it used to collide with.
 
 The default run is **display-free and fast**: it exercises the real
-``_row_slide_axial_gap`` / ``_scene_component_axial_extents`` /
-``_axial_extent_from_actor_keys`` geometry against hand-placed fake bodies (so
-no Tk / VTK / Xvfb / optical retrace), proves the emerald colour stays distinct
-from the axis colours, and source-couples the styling + the #66 wiring. The
+``_row_slide_axial_gap`` / ``_row_overlay_axial_gap`` /
+``_scene_component_axial_extents`` / ``_axial_extent_from_actor_keys`` geometry
+against hand-placed fake bodies (so no Tk / VTK / Xvfb / optical retrace),
+proves the emerald colour stays distinct from the axis colours, and
+source-couples the styling + the #66 and Move-gizmo wiring. The
 heavy full render (boot inspector, slide a flattened penta cascade, write a PNG
 to eyeball) is opt-in via ``--render`` -- the visual was verified once by hand;
 this keeps the regression guard cheap.
@@ -97,6 +108,45 @@ def check_gap_math() -> list[str]:
     return fails
 
 
+def check_placement_gap_math() -> list[str]:
+    """The promoted Move-gizmo slide reads the gap GEOMETRICALLY off the live
+    actors (``_row_overlay_axial_gap``), NOT from a model gap like the debounced
+    axis-slide path. Same hand-placed fake bodies, still display-free."""
+    fails: list[str] = []
+    insp = _bare_inspector()
+
+    # Dragged lens body at z[40,55] preceded by a body at z[0,10]: the live
+    # geometric gap is 40 - 10 = 30 (NOT supplied -- read off the moved actors).
+    insp._actor_by_key = {"r1": _FakeActor(0, 10), "r2": _FakeActor(40, 55)}
+    insp._row_actor_map = {1: ["r1"], 2: ["r2"]}
+    gap = insp._row_overlay_axial_gap([2])
+    if gap is None:
+        fails.append("placement gap returned None even though a preceding body exists")
+    else:
+        near, far, value = gap
+        if abs(float(far[2]) - 10.0) > 1e-6:
+            fails.append(f"placement arrow far end not pinned to the preceding body (z={float(far[2]):.3f}, want 10)")
+        if abs(float(near[2]) - 40.0) > 1e-6:
+            fails.append(f"placement arrow near end not the live near edge (z={float(near[2]):.3f}, want 40)")
+        if abs(value - 30.0) > 1e-6:
+            fails.append(f"placement gap value {value} != geometric edge gap 30")
+
+    # exclude_rows teeth: a sub-row of the dragged GROUP (r3 at z[50,70]) must
+    # NOT be picked as the 'previous' body -- the far end stays on r1 at z=10.
+    insp._actor_by_key["r3"] = _FakeActor(50, 70)
+    insp._row_actor_map = {1: ["r1"], 2: ["r2"], 3: ["r3"]}
+    gap2 = insp._row_overlay_axial_gap([2, 3])
+    if gap2 is None or abs(float(gap2[1][2]) - 10.0) > 1e-6:
+        got = "None" if gap2 is None else f"{float(gap2[1][2]):.3f}"
+        fails.append(f"placement exclude_rows failed: anchored to the dragged group itself (far z={got}, want 10)")
+
+    # First element (no preceding body) -> no overlay, not a crash.
+    insp._row_actor_map = {2: ["r2"]}
+    if insp._row_overlay_axial_gap([2]) is not None:
+        fails.append("placement: expected None when there is no preceding component")
+    return fails
+
+
 def check_color_distinct() -> list[str]:
     fails: list[str] = []
     for name, color in FORBIDDEN.items():
@@ -126,6 +176,13 @@ def check_source_coupling() -> list[str]:
         fails.append("slide finish no longer clears the gap overlay")
     if "_clear_step_translate_drag_overlay" not in inspect.getsource(K.cancel_active_3d_operation):
         fails.append("cancel no longer clears the gap overlay")
+    # Promoted Move-gizmo slide (flag_20260604_111615_630).
+    if "_update_placement_drag_gap_overlay" not in inspect.getsource(K._apply_placement_drag_motion):
+        fails.append("placement Move-gizmo slide no longer draws the gap overlay (promoted-lens gap lost)")
+    if "_row_overlay_axial_gap" not in inspect.getsource(K._update_placement_drag_gap_overlay):
+        fails.append("_update_placement_drag_gap_overlay no longer reads the live geometric gap")
+    if "_clear_step_translate_drag_overlay" not in inspect.getsource(K._finish_placement_drag):
+        fails.append("placement-slide finish no longer clears the gap overlay")
     return fails
 
 
@@ -219,13 +276,21 @@ def render_png() -> int:
 
 
 def main() -> int:
-    fails = check_gap_math() + check_color_distinct() + check_source_coupling()
+    fails = (
+        check_gap_math()
+        + check_placement_gap_math()
+        + check_color_distinct()
+        + check_source_coupling()
+    )
     if fails:
-        print("FAIL: axis-slide gap overlay (#65/#66)")
+        print("FAIL: slide gap overlay (#65/#66 + promoted Move-gizmo slide)")
         for item in fails:
             print(f"  ! {item}")
         return 1
-    print("PASS: gap anchoring math + exclude_rows + emerald distinctness + #66 wiring (display-free).")
+    print(
+        "PASS: axis-slide + Move-gizmo gap anchoring math + exclude_rows + emerald "
+        "distinctness + #66/gizmo wiring (display-free)."
+    )
     if "--render" in sys.argv:
         return render_png()
     return 0

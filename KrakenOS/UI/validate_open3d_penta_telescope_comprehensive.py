@@ -2818,6 +2818,198 @@ def phase_21_brep_lens_rim_grouped(
     return result
 
 
+def phase_22_promoted_slide_gap_overlay(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """flag_20260604_111615_630: sliding a promoted optical-solid row with the
+    placement Move gizmo must show the SAME live leading-gap overlay that the
+    imported-STEP drag (Phase 11) and the axis-slide mode (#66) draw -- before
+    the fix the gizmo slide drew nothing ("sliding of promoted analytical lens
+    still not showing dynamic gap highlight similar to the unpromoted one").
+
+    The gizmo translate moves the body actors LIVE (bugs/0012), so the gap is
+    read GEOMETRICALLY off the moved actors (``_row_overlay_axial_gap``, the row
+    twin of the imported-STEP ``_step_overlay_axial_gap``) and drawn by
+    ``_update_placement_drag_gap_overlay``. This phase loads the flattened penta
+    cascade (5 abutting solid bodies on +Z), selects the LAST body row (so a
+    preceding body exists to measure against and the +Z slide moves into free
+    space without leapfrogging a neighbour), drives a multi-step +Z placement
+    drag straight through ``_apply_placement_drag_motion`` (the gizmo-translate
+    handler), and asserts the live gap overlay appears during the drag, tracks
+    the slide, and clears on release -- then source-couples the wiring.
+    """
+    import inspect
+
+    result = PhaseResult(
+        name="Phase 22: promoted Move-gizmo slide shows the live gap overlay"
+    )
+    if not PENTA_CASCADE_PATH.exists():
+        result.notes.append("skipped: penta cascade fixture missing")
+        result.detail["skipped"] = True
+        result.passed = True
+        return result
+
+    # In-sequence robustness: prior phases run on the SAME app+inspector and
+    # leave imported STEP bodies, promoted rows, and transient gizmo/gap-overlay
+    # state behind. Clear them so the leading gap is measured against ONLY this
+    # cascade (a leftover STEP body wedged between rows would break the "gap
+    # tracks the slide" assertion) and so no stale gap arrow is mistaken for the
+    # one this phase draws.
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    inspector._placement_drag_state = None
+    try:
+        inspector._clear_step_translate_drag_overlay(render=False)
+    except Exception:
+        pass
+
+    # Fresh, flattened cascade: zero every tilt/decenter so the 5 solid bodies
+    # lie along +Z in optical order with real gaps, exactly like the recorder
+    # scene (a single on-axis lens chain).
+    module = _load_layout_module(PENTA_CASCADE_PATH)
+    app.rows = _rows_from_layout_info(
+        {"surfaces": list(getattr(module, "SURFACES", []) or [])}
+    )
+    try:
+        app._apply_layout_settings(dict(getattr(module, "SETTINGS", {}) or {}))
+    except Exception:
+        pass
+    for index, row in enumerate(app.rows):
+        row.tilt_x = row.tilt_y = row.tilt_z = 0.0
+        row.desp_x = row.desp_y = row.desp_z = 0.0
+        row.axis_move = 0.0
+        if index < len(app.rows) - 1:
+            row.thickness = 25.0
+    app._sync_table()
+    inspector.show_rays_var.set(False)
+    inspector.refresh_from_editor(force_retrace=True)
+    inspector.update_idletasks()
+
+    # Pick the LAST body row that has a preceding component: sliding it +Z moves
+    # it into free space (nothing beyond it but the Image plane), so the leading
+    # gap to its predecessor grows cleanly by the dragged total. Targeting an
+    # interior row instead would leapfrog later bodies and the gap would
+    # correctly re-measure to a new (overlapping) neighbour -- live, but awkward
+    # to assert against.
+    rows = sorted((inspector._row_actor_map or {}).keys())
+    target = None
+    for candidate in reversed(rows):
+        group = app._lens_row_group_for_row(candidate)
+        if inspector._row_overlay_axial_gap(list(group) if group else [candidate]) is not None:
+            target = candidate
+            break
+    result.detail["body_rows"] = rows
+    if target is None:
+        result.notes.append("no cascade body row has a preceding component to measure a gap against")
+        result.passed = False
+        return result
+
+    inspector._placement_handle_selected_row_index = target
+    try:
+        inspector._set_row_highlight(target)
+    except Exception:
+        pass
+    app._select_table_row(target)
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+
+    result.detail["target_row"] = target
+    # Drive the gizmo-translate handler directly with a fixed +Z snap step. The
+    # fix under test -- the live gap overlay in ``_apply_placement_drag_motion``
+    # -> ``_update_placement_drag_gap_overlay`` -> ``_row_overlay_axial_gap`` --
+    # runs off ``_placement_drag_state`` and the row actors, NOT the placement
+    # gizmo handle actors; and Phases 18/19 already prove a promoted row's gizmo
+    # handles exist and drag the body. Reading the step from
+    # ``_actor_placement_move_map`` would couple this overlay check to
+    # row-promotion state (the handles only appear for a promoted/STL row), which
+    # prior phases perturb -- so a fixed step keeps it sequence-robust while
+    # exercising the identical translate code path the real gizmo invokes.
+    z_step = 10.0
+
+    def _row_gap(ri):
+        grp = app._lens_row_group_for_row(ri)
+        g = inspector._row_overlay_axial_gap(list(grp) if grp else [ri])
+        return None if g is None else float(g[2])
+
+    gap_before = _row_gap(target)
+    state = {
+        "kind": "translate",
+        "row_index": target,
+        "axis": "z",
+        "signed_step": float(z_step),
+        "display_direction": np.asarray((1.0, 0.0), dtype=float),
+        "pixel_accumulator": 0.0,
+        "applied_steps": 0,
+    }
+    inspector._placement_drag_state = state
+    n_steps = 4
+    for _ in range(n_steps):
+        inspector._apply_placement_drag_motion(20.0, 0.0)
+    inspector.update_idletasks()
+
+    gap_actors_during = len(getattr(inspector, "_step_translate_gap_actors", []) or [])
+    gap_after = _row_gap(target)
+    # The body's real displacement this drag -- assert the gap grew by exactly
+    # this, read from the accumulator rather than n_steps*z_step so the check
+    # can't drift if the pixel->snap-step accounting ever changes.
+    slid_mm = float(state.get("pending_translate_mm", 0.0))
+    result.detail.update(
+        {
+            "gap_actors_during_drag": gap_actors_during,
+            "gap_mm_before": None if gap_before is None else round(gap_before, 3),
+            "gap_mm_during": None if gap_after is None else round(gap_after, 3),
+            "slid_mm": round(slid_mm, 3),
+        }
+    )
+    # Sanity: the drag must actually have moved the body, else "gap tracks slide"
+    # below is vacuously true.
+    if abs(slid_mm) < 1.0:
+        result.notes.append(f"placement drag did not move the body (slid {slid_mm:.3f} mm)")
+    # The bug: ZERO gap actors while sliding the promoted gizmo.
+    if gap_actors_during <= 0:
+        result.notes.append(
+            "no live gap overlay drawn while sliding the promoted row with the Move gizmo "
+            "(flag_20260604_111615_630 regression)"
+        )
+    # The overlay must track the slide: sliding +Z away from the preceding body
+    # grows the leading gap by the dragged total.
+    if gap_before is not None and gap_after is not None:
+        grew = gap_after - gap_before
+        if abs(grew - slid_mm) > max(1.0, 0.1 * abs(slid_mm)):
+            result.notes.append(
+                f"live gap did not track the slide (grew {grew:.3f} mm, "
+                f"expected ~{slid_mm:.3f} mm) -- overlay is static, not live"
+            )
+
+    inspector._finish_placement_drag(state)
+    inspector._placement_drag_state = None
+    inspector.update_idletasks()
+    gap_actors_after = len(getattr(inspector, "_step_translate_gap_actors", []) or [])
+    result.detail["gap_actors_after_release"] = gap_actors_after
+    if gap_actors_after != 0:
+        result.notes.append(
+            f"release left {gap_actors_after} gap overlay actors (overlay not cleared on finish)"
+        )
+
+    motion_src = inspect.getsource(type(inspector)._apply_placement_drag_motion)
+    update_src = inspect.getsource(type(inspector)._update_placement_drag_gap_overlay)
+    finish_src = inspect.getsource(type(inspector)._finish_placement_drag)
+    if "_update_placement_drag_gap_overlay" not in motion_src:
+        result.notes.append(
+            "_apply_placement_drag_motion no longer draws the gizmo-slide gap overlay "
+            "(flag_20260604_111615_630 fix removed)"
+        )
+    if "_row_overlay_axial_gap" not in update_src:
+        result.notes.append("_update_placement_drag_gap_overlay no longer reads the live geometric gap")
+    if "_clear_step_translate_drag_overlay" not in finish_src:
+        result.notes.append("_finish_placement_drag no longer clears the gizmo-slide gap overlay")
+
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -2876,6 +3068,7 @@ def main() -> int:
             phase_19_saved_native_center_tracks_pose,
             phase_20_overlay_metadata_tracks_pose,
             phase_21_brep_lens_rim_grouped,
+            phase_22_promoted_slide_gap_overlay,
         ]
         for phase in phases:
             try:
