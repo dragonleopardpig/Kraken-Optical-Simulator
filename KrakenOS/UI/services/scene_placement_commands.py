@@ -2787,11 +2787,6 @@ class ScenePlacementMixin:
         except Exception:
             grouped_records = ()
         if grouped_records:
-            try:
-                source_triangles = np.asarray(document.triangles, dtype=float).reshape((-1, 3, 3))
-                affine = _affine_from_point_sets(source_triangles.reshape((-1, 3)), triangles.reshape((-1, 3)))
-            except Exception:
-                affine = None
             for grouped in grouped_records:
                 record = dict(grouped)
                 indices = tuple(
@@ -2803,28 +2798,27 @@ class ScenePlacementMixin:
                     continue
                 source_ids = tuple(str(value) for value in list(record.get("source_face_ids", ())) if str(value))
                 grouped_face_ids.update(source_ids)
-                try:
-                    center = np.asarray(record.get("centroid", ()), dtype=float).reshape(-1)[:3]
-                    normal = np.asarray(record.get("normal", ()), dtype=float).reshape(-1)[:3]
-                except Exception:
-                    center = np.asarray([], dtype=float)
-                    normal = np.asarray([], dtype=float)
-                if affine is not None and center.size >= 3 and normal.size >= 3:
-                    center = (affine @ np.asarray((center[0], center[1], center[2], 1.0), dtype=float))[:3]
-                    normal = np.asarray(affine[:3, :3], dtype=float) @ normal[:3]
+                # triangle_indices already index the display-transformed
+                # `triangles`, so derive the cap centroid/normal from those
+                # (area-weighted, exactly like the non-grouped faces) rather
+                # than affine-transforming the source-frame analytic centroid:
+                # that fit goes degenerate whenever the source and display
+                # triangle counts differ (affine None) and silently froze the
+                # cap at the body's pre-move pose, stranding the round-lens
+                # hover outline at the old location (bug 0010).
+                selected = np.asarray(triangles[np.asarray(indices, dtype=int)], dtype=float)
+                cap_record = self._analytic_step_face_record_from_triangles(
+                    document.outer_faces[0],
+                    indices,
+                    selected,
+                )
+                center = np.asarray(cap_record.get("centroid", ()), dtype=float).reshape(-1)[:3]
+                normal = np.asarray(cap_record.get("normal", ()), dtype=float).reshape(-1)[:3]
                 if center.size < 3 or not np.all(np.isfinite(center[:3])):
-                    selected = np.asarray(triangles[np.asarray(indices, dtype=int)], dtype=float)
                     center = np.mean(selected.reshape((-1, 3)), axis=0)
                 normal_norm = float(np.linalg.norm(normal[:3])) if normal.size >= 3 else 0.0
                 if normal.size < 3 or normal_norm <= 1.0e-12 or not np.isfinite(normal_norm):
-                    selected = np.asarray(triangles[np.asarray(indices, dtype=int)], dtype=float)
-                    fallback_record = self._analytic_step_face_record_from_triangles(
-                        document.outer_faces[0],
-                        indices,
-                        selected,
-                    )
-                    normal = fallback_record.get("normal", (0.0, 0.0, 1.0))
-                    normal = np.asarray(normal, dtype=float).reshape(-1)[:3]
+                    normal = np.asarray(record.get("normal", (0.0, 0.0, 1.0)), dtype=float).reshape(-1)[:3]
                     normal_norm = float(np.linalg.norm(normal[:3])) if normal.size >= 3 else 0.0
                 normal = np.asarray(normal[:3] / max(normal_norm, 1.0e-12), dtype=float)
                 record.update(
@@ -2899,25 +2893,54 @@ class ScenePlacementMixin:
     # avoid the next bug report.
     _DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC: frozenset[str] = frozenset({"camera", "led", "lens"})
 
+    def _step_overlay_pose_cache_signature(self, label: str) -> tuple:
+        """Transform inputs that move an imported overlay body in world space.
+
+        These mirror the signature the overlay mesh builder keys on
+        (``_transformed_imported_optical_step_mesh``): rotation, axis offset,
+        and placement offset. The analytic face metadata bakes world-space
+        ``centroid_world``/``normal_world`` from the transformed mesh, so its
+        cache must invalidate on exactly these inputs or the hover outline is
+        drawn at the body's former pose (bug 0010).
+        """
+        label = str(label).strip().lower()
+        try:
+            return (
+                round(float(getattr(self, f"{label}_step_rotation_z_deg", 0.0)), 6),
+                round(float(getattr(self, f"{label}_step_rotation_x_deg", 0.0)), 6),
+                round(float(getattr(self, f"{label}_step_rotation_y_deg", 0.0)), 6),
+                tuple(round(float(v), 6) for v in self._step_axis_offset_xy(label)),
+                tuple(round(float(v), 6) for v in self._step_placement_offset_xyz(label)),
+            )
+        except Exception:
+            return ()
+
     def _step_overlay_face_metadata(self, label: str) -> dict[str, object]:
         label = str(label).strip().lower()
         if label not in _step_overlay_label_set() or self._step_path_for_label(label) is None:
             return normalize_optical_solid_face_metadata({})
-        # Memoise on (label, source-path stat key). The expensive
-        # analytic-face metadata pipeline below iterates every outer
-        # face, applies an affine fit, normalises records, and writes
-        # a snap STL. None of that depends on mouse position, but the
-        # hover-overlay path was calling this *per mouse move*, so a
-        # 30-second hover freeze had been showing up in the
-        # KRAKEN_OPEN3D_TRACE=1 log on the aspherized achromat scene.
-        # The path stat key invalidates the cache whenever the user
-        # replaces the STEP file underneath; transforming the overlay
-        # does not change face roles so we don't need to invalidate
-        # on pose changes.
+        # Memoise on (label, source-path stat key[, pose signature]). The
+        # expensive analytic-face metadata pipeline below iterates every outer
+        # face, applies an affine fit, normalises records, and writes a snap
+        # STL -- none of which depends on mouse position, so the per-mouse-move
+        # hover path must not pay it (a 51 MB display-only camera body took
+        # 35 s on the first call).
+        #
+        # But each record carries world-space ``centroid_world``/``normal_world``
+        # baked from the *currently transformed* mesh. A pose change (Center
+        # Row -> Optical Axis, a normal-axis snap, a STEP translate) moves the
+        # body, and a stat-key-only cache would keep handing back old-pose world
+        # coords -- so the hover outline got redrawn at the body's former
+        # location (bug 0010, the "ghost" edge highlights). The analytic
+        # ``optical`` recompute is ~22 ms, so analytic labels add a pose
+        # signature to the key; the slow display-only labels keep the stat-only
+        # key to avoid reintroducing the 35 s freeze.
         cache = self.__dict__.setdefault("_step_overlay_face_metadata_cache", {})
         source_path_obj = self._step_path_for_label(label)
         try:
             cache_key = (label, self._step_overlay_stat_key(source_path_obj))
+            if label not in self._DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC:
+                cache_key = cache_key + (self._step_overlay_pose_cache_signature(label),)
         except Exception:
             cache_key = None
         if cache_key is not None:

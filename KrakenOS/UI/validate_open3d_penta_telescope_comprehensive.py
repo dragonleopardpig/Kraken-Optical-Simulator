@@ -2650,6 +2650,105 @@ def phase_19_saved_native_center_tracks_pose(
     return result
 
 
+def phase_20_overlay_metadata_tracks_pose(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0010 (stranded "ghost" hover edge highlights): an imported STEP
+    overlay's per-face metadata -- the world-space centroids the round-lens cap
+    pick and hover outline are built from -- must follow the body when it is
+    moved, instead of staying frozen at the former pose, which re-picked a face
+    in the now-empty old region and drew its outline as a "ghost" floating above
+    the moved lens (flag 20260603_171626_741).
+
+    Two seams stranded those records: (1) the metadata cache key omitted the
+    placement/rotation pose, so re-reading after a move returned the
+    first-computed (stale) world coords; and (2) the grouped axisymmetric *cap*
+    faces derived their centroid by affine-transforming the source-frame centroid
+    -- and that fit silently degenerates (source vs display triangle-count
+    mismatch -> affine None -> stale source coords), so the caps never moved.
+
+    This moves the optical overlay +20 mm in z and asserts EVERY face centroid
+    (including the grouped caps) tracks the move, re-reading the metadata WITHOUT
+    a cache clear in between -- exactly what the hover path does (so a pose-blind
+    cache key is caught, seam 1). The tracked prism always runs (seam 1); a round
+    lens with grouped caps additionally exercises seam 2. Rendered-pixel proof
+    lives in validate_open3d_step_overlay_hover_tracks_move_snapshot. This phase
+    imports the standalone validator's core so the two stay in lockstep.
+    """
+    import inspect as _inspect
+
+    from KrakenOS.UI.layout_editor import SurfaceRow
+    from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
+    from KrakenOS.UI.validate_open3d_step_overlay_metadata_tracks_pose import (
+        _evaluate_fixture,
+        _first_lens_with_grouped_caps,
+    )
+
+    result = PhaseResult(name="Phase 20: imported STEP face metadata tracks the body move")
+
+    app.rows = [
+        SurfaceRow(label="0", surface="Object", element="", name="Object",
+                   thickness=50.0, diameter=25.0, glass="AIR"),
+        SurfaceRow(label="1", surface="Image", element="", name="Image",
+                   thickness=0.0, diameter=25.0, glass="AIR"),
+    ]
+    app._sync_table()
+    inspector.show_rays_var.set(False)
+    try:
+        inspector.show_rotation_handles_var.set(False)
+    except Exception:
+        pass
+
+    ran_any = False
+
+    # Tracked prism: always runs, guards the pose-aware cache key (seam 1).
+    if PRISM_42779_STEP.exists():
+        ran_any = True
+        prism_fail, prism_detail = _evaluate_fixture(app, inspector, PRISM_42779_STEP)
+        result.detail["prism"] = prism_detail
+        result.notes += [f"[prism] {m}" for m in prism_fail]
+    else:
+        result.detail["prism"] = "skipped (tracked prism fixture missing)"
+
+    # Round lens: best-effort, exercises the grouped axisymmetric caps (seam 2).
+    lens_fix = _first_lens_with_grouped_caps(app, inspector, LENS_FIXTURES)
+    if lens_fix is not None:
+        ran_any = True
+        lens_fail, lens_detail = _evaluate_fixture(app, inspector, lens_fix["step"])
+        result.detail[f"lens:{lens_fix['name']}"] = lens_detail
+        if not lens_detail.get("grouped_cap_faces"):
+            result.detail["lens_note"] = "this lens produced no grouped caps; seam 2 not exercised"
+        result.notes += [f"[lens {lens_fix['name']}] {m}" for m in lens_fail]
+    else:
+        result.detail["lens"] = "skipped (no round-lens fixture with grouped caps)"
+
+    if not ran_any:
+        result.detail["skipped"] = True
+        result.passed = True
+        return result
+
+    # Source-couple seam 1: the metadata cache key must fold in the pose
+    # signature, else a move returns the stale first-computed world coords.
+    try:
+        src = _inspect.getsource(type(app)._step_overlay_face_metadata)
+    except Exception:
+        src = ""
+    result.detail["cache_key_consults_pose"] = "_step_overlay_pose_cache_signature" in src
+    if "_step_overlay_pose_cache_signature" not in src:
+        result.notes.append(
+            "_step_overlay_face_metadata no longer folds _step_overlay_pose_cache_signature "
+            "into its cache key (bugs/0010 seam 1 fix removed; a move would return stale "
+            "first-computed world coords)"
+        )
+
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -2706,6 +2805,7 @@ def main() -> int:
             phase_17_thickness_overlay_tracks_move,
             phase_18_promoted_row_slides,
             phase_19_saved_native_center_tracks_pose,
+            phase_20_overlay_metadata_tracks_pose,
         ]
         for phase in phases:
             try:

@@ -1,14 +1,13 @@
 # 0010 — Hover edge highlights stranded after the Center-Row→Optical-Axis snap ("ghosts")
 
-**Status:** Fixed — verified by the user (2026-06-03): the stranded "ghost"
-edge highlights no longer appear after Place → Center Row → Optical axis. No
-dedicated 0010-specific code change was needed; it resolved in practice with the
-session's refresh-ordering / hover-clear changes (and a fresh app start clearing
-stale renderer state). The recorder instrumentation added for it
-(`hover_outline_bounds`, `hover_step_cell_key`, `stray_props_above_body`) is kept
-as a tripwire — if a ghost recurs, the next flag will pin exactly what/where it
-is so a targeted fix can be made. The investigation below (which falsified the
-stranded-actor and stale-builder hypotheses) is retained for that contingency.
+**Status:** Fixed (2026-06-04) — real root cause found and corrected in
+`KrakenOS/UI/services/scene_placement_commands.py`. The earlier sign-off
+(2026-06-03, commit `69fdf4d`) was a **false fix**: it flipped the status to
+"Fixed" with **no code change**, so the ghost recurred ("supposed to be solved,
+but now I see them come back"). The true cause was **two seams that stranded the
+overlay's per-face metadata at the pre-move pose** (details below); both are now
+fixed, covered by a display-free metadata test, an image-snapshot test, and
+validator **Phase 20** (gate baseline regenerated).
 **Component:** Open 3D inspector — the lens **hover edge highlight**
 (`Kraken3DInspector._set_step_hover_outline` /
 `_set_step_hover_outline_impl`, open3d_inspector.py ~10588; the cached actor
@@ -61,81 +60,91 @@ rectangle floating high above it, the hover crosshair, and the
 `OPTICAL STEP S002/F002 face` tooltip — i.e. the face-hover highlight for face
 F002 is being drawn as a tiny box up in empty space instead of on the face.
 
-## Lead / suspected root cause (to confirm at fix time)
+## Root cause (confirmed 2026-06-04, headless)
 
-The snap repositions the lens but leaves the hover highlight (and the geometry
-it is picked from) anchored at the *old* location. Threads to chase:
+The snap moves the body, but the **per-face overlay metadata** the hover/pick
+read stayed frozen at the pre-move pose. The hover/pick path reads
+`_step_overlay_face_metadata(label)` (in
+`KrakenOS/UI/services/scene_placement_commands.py`), which memoises analytic
+face records carrying world-space `centroid_world` / `normal_world`. **Two
+independent seams** stranded those records:
 
-1. **Snap doesn't clear the highlight.** `_apply_center_row_to_optical_axis`
-   moves the lens body onto the axis and rebuilds/repositions the body mesh, but
-   does not appear to clear the active hover outline
-   (`_set_step_hover_outline(None, None)`). The cached
-   `_hover_step_outline_actor` lingers in the renderer at the pre-snap
-   position. The many existing `_set_step_hover_outline(None, None, render=...)`
-   clears fire on hover transitions and selection changes — but evidently *not*
-   on this placement snap.
-2. **Stale pick geometry.** "Invisible until I hover the region again, then they
-   highlight" implies the face/edge geometry used for hover-picking still sits
-   at the lens's former position after the snap, so hovering that now-empty
-   region re-picks the stale face and re-draws its edge outline there. The snap
-   needs to refresh the pick/hover geometry to the new position, not just the
-   visible body.
-3. **Hover-key short-circuit.** `_set_step_hover_outline` early-returns when
-   `hover_key == _hover_step_cell_key`. After a move, re-hovering the *same*
-   face key must still rebuild the outline at the new position — confirm the key
-   is reset on reposition so the rebuild isn't skipped.
+1. **Pose-blind cache key.** `_step_overlay_face_metadata` keyed its cache on
+   `(label, source-file stat)` only — *not* the placement offset / rotation. So
+   the first hover computed the records at the original pose and cached them; a
+   later move re-read the **same cache entry** and got the original world coords
+   back. (The hover path re-reads **without** clearing the cache, which is why
+   this is the dominant seam.)
+2. **Affine-transformed cap centroid that silently degenerates.** Grouped
+   axisymmetric **cap** faces (the round-lens front/back caps) derived their
+   centroid by affine-transforming the *source-frame* analytic centroid:
+   `affine @ source_centroid`, where `affine = _affine_from_point_sets(source_tris,
+   display_tris)`. That fit returns `None` whenever the source and display
+   triangle counts differ (they routinely do), and the code then **fell back to
+   the raw source coords** — so even on a forced recompute the caps never moved.
+   Commit `69fdf4d` had already renamed `assignment_source` to
+   `…_group_transformed` but still affine-transformed the centre, so the fix was
+   only cosmetic — hence the recurrence.
 
-State corroboration: in `flag_20260603_171626_741` nothing is selected, the lens
-body tops out at y ≈ +12.46, yet `scene_visible_bounds` y-max = **29.71** — a
-visible prop ~17 mm above the body, i.e. a stranded highlight from a prior hover.
+**Why the ghost is the cap pick / marker, not the outline.** The hover *outline*
+geometry is rebuilt from the record's stored `triangle_indices` →
+`face_indices_for_record` → all triangles of that face-id selected from the
+**moved** display mesh, so the outline always tracks the body. The stale-able
+consumers are: (a) the **cap pick decision** —
+`_metadata_round_lens_cap_pick` ray-tests the stale `centroid_world`/`normal`
+plane, so a pick at the cap's *new* screen position misses while a pick at the
+*vacated old* region hits the stale plane; and (b) the **centre-anchored marker
+/ tooltip** (`surface_center`, from `centroid_world`/`centroid`), which is the
+gold rounded-rect + crosshair the user saw floating ~17 mm above the body
+(`scene_visible_bounds` y-max 29.71 vs body top 12.46 in
+`flag_20260603_171626_741`). Re-hovering the now-empty old region re-picks the
+stale-plane face and redraws its marker/outline there — the "ghost".
 
-## Investigation (2026-06-03, headless)
+## Fix
 
-Traced the seams: `_set_step_hover_outline_impl` stores `_hover_step_outline_actor`
-+ `_hover_step_cell_key`; the scene refresh **does** clear both
-(`open3d_scene_refresh.py` `RemoveAllViewProps()` + resets the two fields), and
-the STEP-face branch of the Center-Row click already calls
-`_set_step_hover_outline(None, None)`. So a stale *visible* outline shouldn't
-survive a refresh — consistent with the user's "invisible until I hover again".
-That points the finger at **stale pick geometry**: re-hovering the now-empty old
-region re-picks a face there and redraws the outline, i.e. the face/pick data
-isn't following the reposition.
+`KrakenOS/UI/services/scene_placement_commands.py`:
 
-Could not reproduce headlessly yet: driving `_on_mouse_move` at the body's
-projected centre produced **no** hover outline at all, because outline creation
-is gated and needs a precise cell pick the offscreen harness didn't satisfy.
+1. **Seam 1 — pose-aware cache key.** New
+   `_step_overlay_pose_cache_signature(label)` returns the rounded live pose
+   `(rot_z, rot_x, rot_y, axis_offset_xy, placement_offset_xyz)`.
+   `_step_overlay_face_metadata` now folds it into the cache key, so a move
+   invalidates the entry and recomputes world coords at the new pose. Labels in
+   `_DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC = {"camera", "led", "lens"}` keep the
+   stat-only key (they have no analytic metadata to strand, and re-keying them
+   triggered a ~35 s recompute on every pose nudge).
+2. **Seam 2 — derive the cap record from the display-transformed triangles.**
+   Dropped the `_affine_from_point_sets` / `affine @ source_centroid` path. The
+   grouped cap record is now built straight from the moved display triangles via
+   `_analytic_step_face_record_from_triangles(...)`, so **both** the centre and
+   the normal come from the current pose. `assignment_source` stays
+   `step_analytic_axisymmetric_group_transformed`.
 
-**User confirmed (2026-06-03): the lens was still an imported STEP** (not yet
-promoted). That narrows it: a STEP face hover only builds the outline while a
-pick mode is armed — i.e. *during* Center-Row mode (the
-`if self._center_row_to_ray_mode:` hover branch builds it via
-`_hover_overlay_for_feature` + `_set_step_hover_outline`), not in plain idle
-hover. The STEP-face *click* then calls `_set_step_hover_outline(None, None)` and
-arms `start_step_normal_axis_pick`; the axis click runs
-`_apply_step_normal_axis_pick` (a normal-to-axis snap that can rotate/translate
-the body). So the ghost is the hover outline / pick re-created on a later hover
-from **stale face geometry** that didn't follow the snap, not a leftover actor.
-Reproducing faithfully needs the full armed-mode sequence (arm Center-Row →
-hover face (outline built) → click face → click axis (snap) → re-hover the old
-region) headlessly, or a live confirmation with tracing. Still open.
+## Tests
 
-## Planned fix
-
-TBD — pending a confirmed repro. Likely minimal: clear the hover outline **and**
-refresh the hover/pick geometry whenever the lens is repositioned (the
-Center-Row snap and any move/refresh), and reset `_hover_step_cell_key` so a
-re-hover rebuilds at the new position. No stale outline/pick should survive a
-reposition.
-
-## Planned tests
-
-* Display-free unit test: arm `start_center_row_to_ray`, hover a face to create
-  an outline, run the snap, and assert no hover-outline actor / hover key
-  survives at the old position (and a re-hover rebuilds at the new one) — without
-  an X server.
-* **Image-snapshot** (visual bug, mandatory): hover the aspheric lens (edges
-  highlight), snap it to the axis, then assert **no** highlight pixels remain at
-  the old location and a re-hover lights up the lens at its new position.
-  Inspect by eye.
-* Regression phase in `validate_open3d_penta_telescope_comprehensive.py`, then
-  regenerate the gate baseline.
+* **Display-free metadata test** —
+  `KrakenOS/UI/validate_open3d_step_overlay_metadata_tracks_pose.py`. Imports an
+  optical STEP, reads the metadata, moves the overlay +20 mm in z **with no cache
+  clear between reads** (exactly what the hover path does), and asserts every
+  face centroid — including the grouped caps — tracks the move. The tracked
+  prism always runs (guards seam 1); a round lens with grouped caps additionally
+  exercises seam 2. Teeth verified: reverting either fix flips it to FAIL
+  (`worst_track_err_mm = 20`).
+* **Image-snapshot test** (visual bug, mandatory) —
+  `KrakenOS/UI/validate_open3d_step_overlay_hover_tracks_move_snapshot.py`. Uses
+  an **oblique** camera (a side-on view makes the cap-plane ray test degenerate,
+  `|ray·normal|≈0`, so the pick never fires) on a round-lens-like fixture. It
+  picks the cap at its projected screen-xy before a 25 mm move, then picks again
+  at both the **vacated old** and the **new** screen positions, and anchors a
+  marker sphere on the pick's `surface_center` so the rendered PNGs show
+  ghost-vs-tracked by eye. The discriminator with teeth is
+  `ghost_stale = (old-region pick returns a `surface_center.z` still at the old
+  z)`; a whole-frame outline diff has **no** teeth because the outline always
+  tracks. With the fix: the new pick tracks (same cap, z follows) and the
+  old-region pick returns nothing or a correctly-moved cap.
+* **Validator Phase 20** —
+  `phase_20_overlay_metadata_tracks_pose` in
+  `validate_open3d_penta_telescope_comprehensive.py` imports the display-free
+  validator's core (`_evaluate_fixture` / `_first_lens_with_grouped_caps`) so the
+  two stay in lockstep, and source-couples seam 1 (asserts the cache key still
+  folds in `_step_overlay_pose_cache_signature`). Gate baseline regenerated
+  (`tools/penta_validator_baseline.json`).
