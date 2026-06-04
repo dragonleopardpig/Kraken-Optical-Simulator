@@ -1291,8 +1291,17 @@ class AnalysisReportsMixin:
         target_index = self._current_nonseq_target_surface_index()
         if target_index is not None and 0 <= target_index < len(self.rows):
             detectors.add(int(target_index))
-        if not use_nonseq and self.rows and self.rows[-1].surface == "Image":
-            detectors.add(len(self.rows) - 1)
+        # The final prescription surface is the system's terminal image plane for
+        # display/terminal-status purposes, even when the user has changed its
+        # optical type (e.g. dropped a beam splitter onto the last row). Physics
+        # is unchanged — branches still split — but the forward branch reaching
+        # the terminus must register as a detector hit so the ray-display filter
+        # does not silently drop every physically-traced ray. Object/source rows
+        # never terminate a path, so they are excluded.
+        if self.rows:
+            last_surface = str(getattr(self.rows[-1], "surface", "") or "").strip()
+            if last_surface not in {"Object", OBJECT_TARGET_SURFACE, DIFFUSE_OBJECT_SURFACE}:
+                detectors.add(len(self.rows) - 1)
         return detectors
 
     def _source_illumination_target_priority(self, surface_index: int) -> int:

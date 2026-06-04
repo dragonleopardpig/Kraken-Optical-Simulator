@@ -3190,6 +3190,42 @@ def phase_23_lone_lens_slide_gap_overlay(
     return result
 
 
+def phase_24_random_terminal_element_ray_display(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0015: rays must trace per physics regardless of which element is
+    dropped where along the path — especially on the terminal surface.
+
+    A beam splitter (or any non-"Image" element) placed on the terminal
+    prescription row used to strip that surface's detector role, so the default
+    "hide clipped rays" filter silently dropped every physically-traced ray.
+    The guard lives in the display-free module
+    ``validate_random_terminal_element_ray_display`` so it runs without a GUI;
+    this phase wires it into the comprehensive harness and additionally
+    drops a random optical element at a random position to confirm rays never
+    vanish silently (North Star invariant 4).
+    """
+    result = PhaseResult(
+        name="Phase 24: random element along path (terminal beam splitter shows rays)"
+    )
+    try:
+        from KrakenOS.UI.validate_random_terminal_element_ray_display import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"random-terminal-element guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    # Only surface the failing lines to keep the report readable.
+    for note in notes:
+        if note.startswith("FAIL"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("display-free guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3250,6 +3286,7 @@ def main() -> int:
             phase_21_brep_lens_rim_grouped,
             phase_22_promoted_slide_gap_overlay,
             phase_23_lone_lens_slide_gap_overlay,
+            phase_24_random_terminal_element_ray_display,
         ]
         for phase in phases:
             try:
