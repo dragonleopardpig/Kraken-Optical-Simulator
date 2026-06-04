@@ -2749,6 +2749,75 @@ def phase_20_overlay_metadata_tracks_pose(
     return result
 
 
+def phase_21_brep_lens_rim_grouped(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0013 (lens rim "sub-edges" + stray edge highlight): the OCC importer
+    splits a lens edge into several co-axial, co-radial cylinder B-Rep faces, and
+    the face-roles editor used to leave native B-Rep faces ungrouped
+    (``_face_group_ids = [-1] * len(records)``) AND draw every face's
+    ``extract_feature_edges(feature_angle=5)`` at opacity 0.82 -- so a lens rim
+    lit up as a busy coloured wireframe band even with a cap selected (flags
+    20260604_0800xx).
+
+    The fix groups the rim's cylinder faces (``group_brep_optical_solid_faces``)
+    and draws feature edges PER GROUP (merged + cleaned, feature_angle=18,
+    non-selected faint). This imports the display-free validator's core (so the
+    two stay in lockstep) and source-couples both seams: the dialog must call the
+    grouping helper in its B-Rep branch, and ``render_face_preview`` must bucket
+    edges by group. Rendered-pixel proof lives in
+    validate_open3d_brep_lens_rim_preview_snapshot.
+    """
+    import inspect as _inspect
+
+    from KrakenOS.UI.panels.main_optical_solid_face_roles_dialog import (
+        MainOpticalSolidFaceRolesDialog,
+    )
+    from KrakenOS.UI.validate_open3d_brep_lens_rim_grouping import (
+        _STEP_FIXTURE,
+        rim_grouping_failures,
+    )
+
+    result = PhaseResult(name="Phase 21: imported lens rim groups to one edge (no sub-edges/stray highlight)")
+
+    # Display-free grouping check (best-effort: skip if fixture/OCC absent).
+    if _STEP_FIXTURE.exists():
+        try:
+            rim_fail, rim_detail = rim_grouping_failures()
+            result.detail["rim_grouping"] = rim_detail
+            result.notes += [f"[rim] {m}" for m in rim_fail]
+        except (RuntimeError, ImportError) as exc:
+            result.detail["rim_grouping"] = f"skipped (OCC backend unavailable: {exc})"
+    else:
+        result.detail["rim_grouping"] = "skipped (achromat STEP fixture missing)"
+
+    # Source-couple seam 1 + seam 2 from the dialog method (render_face_preview
+    # is nested inside it, so one getsource covers both).
+    try:
+        src = _inspect.getsource(MainOpticalSolidFaceRolesDialog._open_optical_solid_faces_for_row)
+    except Exception:
+        src = ""
+    groups_brep = "group_brep_optical_solid_faces(" in src
+    edges_per_group = "edge_groups" in src and "group_index_by_record_index.get(index" in src
+    angle_18 = "feature_angle=18" in src
+    result.detail["dialog_groups_brep_rim"] = groups_brep
+    result.detail["render_draws_edges_per_group"] = edges_per_group and angle_18
+    if not groups_brep:
+        result.notes.append(
+            "face-roles dialog no longer calls group_brep_optical_solid_faces in its B-Rep "
+            "branch (bugs/0013 seam 1 fix removed; the rim splits back into sub-edges)"
+        )
+    if not (edges_per_group and angle_18):
+        result.notes.append(
+            "render_face_preview no longer draws feature edges per group at feature_angle=18 "
+            "(bugs/0013 seam 2 fix removed; the rim's per-face wireframe returns as a stray "
+            "highlight)"
+        )
+
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -2806,6 +2875,7 @@ def main() -> int:
             phase_18_promoted_row_slides,
             phase_19_saved_native_center_tracks_pose,
             phase_20_overlay_metadata_tracks_pose,
+            phase_21_brep_lens_rim_grouped,
         ]
         for phase in phases:
             try:

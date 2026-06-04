@@ -445,6 +445,76 @@ def group_optical_solid_face_candidates(path: Path, faces, *, angle_deg: float =
     return [remap.get(g, -1) for g in raw_group_per_face]
 
 
+def group_brep_optical_solid_faces(records) -> list[int]:
+    """Assign a display group id to native B-Rep face records that belong to
+    the same logical optical surface.
+
+    The OCC importer splits a lens **rim** into several co-axial, co-radial
+    *cylinder* faces -- e.g. two half-cylinders per element, and a cemented
+    doublet repeats that on each element. Ungrouped, the editor lists them as
+    separate "sub-edges" and ``render_face_preview`` draws each one's edges, so
+    a single physical lens edge reads as several highlighted strips (bugs/0013).
+
+    Cylinder faces are bucketed by ``(rounded radius, canonical axis-line)``,
+    where the axis-line is the unit ``axis_direction`` (canonical sign) plus the
+    perpendicular foot from the world origin onto the axis -- invariant to where
+    along the axis ``axis_origin`` sits and to which solid the face came from, so
+    a doublet's two elements share one rim group. Non-cylinder faces and lone
+    cylinders stay ungrouped (``-1``). Groups are renumbered ``0..k-1`` by
+    descending member count, matching ``group_optical_solid_face_candidates``.
+    Returns a list of group ids parallel to ``records`` (display-only; the face
+    records themselves are unchanged).
+    """
+    records = list(records or [])
+    if not records:
+        return []
+
+    def _axis_line_key(parameters: dict) -> tuple | None:
+        try:
+            radius = float(parameters.get("radius_mm"))
+        except (TypeError, ValueError):
+            return None
+        if not np.isfinite(radius) or radius <= 0.0:
+            return None
+        direction = np.asarray(parameters.get("axis_direction") or (0.0, 0.0, 1.0), dtype=float).reshape(-1)[:3]
+        norm = float(np.linalg.norm(direction))
+        if norm <= 1e-9 or not np.all(np.isfinite(direction)):
+            return None
+        direction = direction / norm
+        if direction[int(np.argmax(np.abs(direction)))] < 0.0:  # canonical sign
+            direction = -direction
+        origin = np.asarray(parameters.get("axis_origin") or (0.0, 0.0, 0.0), dtype=float).reshape(-1)[:3]
+        if origin.size < 3 or not np.all(np.isfinite(origin)):
+            origin = np.zeros(3, dtype=float)
+        foot = origin - float(np.dot(origin, direction)) * direction  # perpendicular foot from origin
+        return (
+            round(radius, 2),
+            round(float(direction[0]), 3), round(float(direction[1]), 3), round(float(direction[2]), 3),
+            round(float(foot[0]), 2), round(float(foot[1]), 2), round(float(foot[2]), 2),
+        )
+
+    bucket_ids: dict[tuple, int] = {}
+    raw_group_per_face: list[int] = []
+    for record in records:
+        surface_type = str((record or {}).get("surface_type", "") or "").strip().lower()
+        parameters = (record or {}).get("analytic_parameters", {}) or {}
+        key = _axis_line_key(parameters) if surface_type == "cylinder" else None
+        if key is None:
+            raw_group_per_face.append(-1)
+            continue
+        if key not in bucket_ids:
+            bucket_ids[key] = len(bucket_ids)
+        raw_group_per_face.append(bucket_ids[key])
+
+    from collections import Counter
+
+    counts = Counter(g for g in raw_group_per_face if g >= 0)
+    # A lone cylinder is not a consolidation -- leave it ungrouped.
+    order = [g for g, n in counts.most_common() if n >= 2]
+    remap = {g: i for i, g in enumerate(order)}
+    return [remap.get(g, -1) for g in raw_group_per_face]
+
+
 def optical_solid_face_candidate_triangles(path: Path, candidate: OpticalSolidFaceCandidate) -> np.ndarray:
     """Return STL triangles that belong to a clustered planar face candidate."""
     _file_format, triangles = _read_stl_triangle_vertices(Path(path).expanduser())

@@ -75,9 +75,14 @@ class MainOpticalSolidFaceRolesDialog:
         # role-assign a whole curved face at once. The candidates themselves
         # (and their planar fits/snapping) are unchanged.
         if brep_backed:
-            # Each B-Rep face is already one whole optical surface -- nothing to
-            # consolidate, so the Group column stays hidden.
-            _face_group_ids = [-1] * len(records)
+            # Most native B-Rep faces are already one whole optical surface, but
+            # the importer splits a lens *rim* into several co-axial cylinder
+            # faces -- group those so the rim reads as one edge and "Select all
+            # in group" can role-assign it at once (bugs/0013).
+            try:
+                _face_group_ids = le.group_brep_optical_solid_faces(records)
+            except Exception:
+                _face_group_ids = [-1] * len(records)
         else:
             try:
                 _face_group_ids = le.group_optical_solid_face_candidates(path, records, angle_deg=35.0)
@@ -755,6 +760,7 @@ class MainOpticalSolidFaceRolesDialog:
                 pass
             selected_index = selected_record_index() if selected_index is None else selected_index
             visible_faces = 0
+            offset_meshes: dict[int, object] = {}
             for index, record in enumerate(records):
                 mesh = offset_face_mesh(candidate_mesh(index), index, selected=index == selected_index)
                 if mesh is None:
@@ -766,11 +772,37 @@ class MainOpticalSolidFaceRolesDialog:
                 assigned = role != le.OPTICAL_SOLID_FACE_ROLE_DEFAULT or side != le.OPTICAL_SOLID_FACE_SIDE_DEFAULT
                 opacity = 0.3 if index == selected_index else 0.08 if assigned else 0.035
                 add_preview_actor(mesh, color=color, opacity=opacity, pick_index=index)
+                offset_meshes[index] = mesh
+            # Feature edges drawn per logical GROUP, not per face: a curved
+            # surface the importer split into several faces (a lens rim = several
+            # co-axial cylinder faces, or the planar clusterer's ~160 micro
+            # candidates) merges into one clean edge instead of a fragmented
+            # wireframe, and non-selected groups are drawn faint so the selected
+            # face stays the unambiguous highlight (bugs/0013). feature_angle=18
+            # drops a curved surface's interior facets, keeping its real edges.
+            edge_groups: dict[object, list[int]] = {}
+            for index in offset_meshes:
+                gid = group_index_by_record_index.get(index, -1)
+                edge_groups.setdefault(gid if gid >= 0 else ('solo', index), []).append(index)
+            for members in edge_groups.values():
+                is_selected_group = selected_index is not None and selected_index in members
+                merged = None
+                for index in members:
+                    piece = offset_meshes.get(index)
+                    if piece is None:
+                        continue
+                    merged = piece.copy(deep=True) if merged is None else merged.merge(piece)
+                if merged is None:
+                    continue
                 try:
-                    edges = mesh.extract_feature_edges(feature_angle=5, boundary_edges=True, feature_edges=True, manifold_edges=False)
-                    add_preview_actor(edges, color=(1.0, 0.28, 0.0) if index == selected_index else color, opacity=1.0 if index == selected_index else 0.82, line_width=4.0 if index == selected_index else 1.4)
+                    welded = merged.clean(tolerance=1.0e-4) if hasattr(merged, 'clean') else merged
+                    edges = welded.extract_feature_edges(feature_angle=18, boundary_edges=True, feature_edges=True, manifold_edges=False)
                 except Exception:
-                    pass
+                    continue
+                rep = members[0]
+                rep_role = le._legacy_role_from_optical_solid_face_function(records[rep].get('function', records[rep].get('role')))
+                edge_color = (1.0, 0.28, 0.0) if is_selected_group else le.optical_solid_face_role_color(rep_role)
+                add_preview_actor(edges, color=edge_color, opacity=1.0 if is_selected_group else 0.22, line_width=4.0 if is_selected_group else 1.1)
             if selected_index is not None:
                 add_selected_normal_arrow(selected_index)
                 add_selected_input_anchor_marker(selected_index)
