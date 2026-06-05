@@ -19,7 +19,9 @@ defects:
    and *miss* the sensor (``missed_detector``) — were silently dropped, so the
    user saw nothing at all. (Fixed: ``ray_path_visible_without_clipping_from_events``
    keeps every traced ray except those that escaped the system without reaching a
-   surface.)
+   surface — and, per bugs/0018, a deliberately *folded* escaped ray such as a
+   beam splitter's reflect branch stays visible too, since it is a real 2nd path
+   rather than vignetting clutter.)
 
 Invariants asserted here (all headless / display-free):
 
@@ -29,10 +31,12 @@ Invariants asserted here (all headless / display-free):
    ray (no next intersection) is hidden by default.
 2. Missed-sensor rays stay visible: a fold that sends every ray off the sensor
    still draws all of them by default (pre-fix the default view showed zero).
-3. Escaped branch governed by the toggle: a beam splitter's reflect branch that
-   leaves the system shows only with *Show Clipped Rays* ON, while the transmit
-   branch shows by default — and nothing is silently dropped (clipped ON ==
-   traced paths).
+3. A beam splitter's reflect branch is a deliberate fold, not vignetting: even
+   though it leaves the system ("escaped"), it stays VISIBLE by default (bugs/0018
+   — the user asked "where is the beam splitter 2nd path ray?"). Only an
+   *un-folded* escaped ray (pure vignetting, no reflect/mirror/TIR/split step) is
+   gated behind *Show Clipped Rays*; that case is the predicate check above.
+   Nothing is ever silently dropped (clipped ON == traced paths).
 4. Optional real-scene guard: the user's saved machine-vision prescription (a
    promoted beam-splitter cube) shows its rays by default once more. Skipped if
    the prescription / its CAD cache is unavailable on this machine.
@@ -51,6 +55,7 @@ os.environ.setdefault("PYVISTA_OFF_SCREEN", "true")
 
 from KrakenOS.UI.render_layout_snapshot import _snapshot_editor
 from KrakenOS.UI.scene_geometry import (
+    ray_path_has_non_refractive_steering,
     ray_path_terminal_status_from_events,
     ray_path_visible_without_clipping_from_events,
 )
@@ -82,11 +87,23 @@ def _trace(rows, settings=None) -> dict[str, object]:
     _system, rays, bundle = editor._build_preview_system_rays_bundle(update_state=True)
     paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
     statuses = Counter(ray_path_terminal_status_from_events(p) or "(empty)" for p in paths)
+    escaped_steered = sum(
+        1
+        for p in paths
+        if ray_path_terminal_status_from_events(p) == "escaped"
+        and ray_path_has_non_refractive_steering(p)
+    )
     editor.show_clipped_rays_var.set(False)
     off = len(editor._iter_3d_scene_ray_records(rays=rays, scene_bundle=bundle))
     editor.show_clipped_rays_var.set(True)
     on = len(editor._iter_3d_scene_ray_records(rays=rays, scene_bundle=bundle))
-    return {"paths": len(paths), "statuses": dict(statuses), "off": off, "on": on}
+    return {
+        "paths": len(paths),
+        "statuses": dict(statuses),
+        "off": off,
+        "on": on,
+        "escaped_steered": escaped_steered,
+    }
 
 
 def _real_prescription_counts() -> dict[str, object] | None:
@@ -161,16 +178,25 @@ def run_checks(*, trials: int = 12, seed: int = 20260605) -> tuple[bool, list[st
         f"missed-sensor rays stay visible by default (off={folded['off']} paths={folded['paths']})",
     )
 
-    # 3. Beam splitter: transmit branch visible by default, reflect branch escapes
-    #    and is gated behind Show Clipped Rays — but never silently dropped.
+    # 3. Beam splitter: BOTH branches are real light paths. The transmit branch
+    #    reaches the sensor; the reflect branch is a deliberate fold that leaves
+    #    the system ("escaped"). A fold is not vignetting clutter, so per bugs/0018
+    #    ("where is the beam splitter 2nd path ray?") it stays VISIBLE by default —
+    #    only an *un-folded* escaped ray (pure vignetting) is gated behind Show
+    #    Clipped Rays, and that case is the predicate check in section 1.
     bs = _trace(_lens_rows("Beam Splitter", 4))
     _check(
         bs["statuses"].get("escaped", 0) > 0 and bs["statuses"].get("hit_detector", 0) > 0,
         f"beam splitter yields transmit + escaped branches (statuses={bs['statuses']})",
     )
     _check(
-        0 < bs["off"] < bs["on"] == bs["paths"],
-        f"escaped branch hidden by default, shown with clipped on, never dropped "
+        bs["escaped_steered"] == bs["statuses"].get("escaped", 0) > 0,
+        f"reflect branch is detected as a deliberate fold (escaped_steered={bs['escaped_steered']} "
+        f"escaped={bs['statuses'].get('escaped', 0)})",
+    )
+    _check(
+        0 < bs["off"] == bs["on"] == bs["paths"],
+        f"folded reflect branch stays visible by default, never dropped "
         f"(off={bs['off']} on={bs['on']} paths={bs['paths']})",
     )
 

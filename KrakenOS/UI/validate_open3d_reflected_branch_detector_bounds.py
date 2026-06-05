@@ -24,17 +24,29 @@ within cos(80 deg) of the normal -- before projecting. A grazing/parallel ray st
 escaped at its sane traced length (the reflected fold ends ~232 mm up +X, near the
 cube), while genuine transmit rays (dir ~ +Z) still image normally onto z~665.
 
+Reopen (bug 0018, flag_20260605_143523_953 "where is the beam splitter 2nd path
+ray?"): the projection guard above stopped the runaway, but it also reclassified the
+reflected branch from ``missed_image`` (drawn) to ``no_next_intersection`` ->
+``escaped``, which the 3D display filter hides when "Show Clipped Rays" is OFF (the
+user's setting). The fold is a real second path, so the display filter now keeps an
+*escaped* ray visible when it underwent non-refractive steering (reflect / split /
+mirror / TIR); only an un-folded escaped ray (vignetted) stays hidden.
+
 Invariants asserted here (all headless / display-free):
 
 1. Mechanism: with a fixed z-normal detector plane, a grazing (+X / tiny dir_z) ray
    is NOT projected (returns None), a pure-axial (+Z) ray still projects to a sane
    finite distance, and the cos(80 deg) threshold is the exact crossover. Disabling
    the guard (cos -> 0) reproduces the ~10^4 mm runaway distance the bug emitted.
+1b. Display filter: a fabricated escaped+folded path (reflect event) stays VISIBLE
+   with Show Clipped Rays OFF; a purely refractive escaped path stays HIDDEN (bug
+   0016 invariant kept); a detector hit is always drawn.
 2. Optional real-scene guard: tracing the user's saved cube prescription keeps every
    ray-path coordinate within a sane scene bound (was ~6e5 mm), keeps the reflected
-   fold rays (final dir ~ +X) at a finite length instead of vanishing/exploding, and
-   preserves the transmit rays that reach the Image plane at z~665. Skipped when the
-   prescription / its CAD cache is unavailable on this machine.
+   fold rays (final dir ~ +X) at a finite length instead of vanishing/exploding,
+   confirms every reflected fold ray is DISPLAYED with Show Clipped Rays OFF (the 2nd
+   path is not hidden), and preserves the transmit rays that reach the Image plane at
+   z~665. Skipped when the prescription / its CAD cache is unavailable on this machine.
 """
 from __future__ import annotations
 
@@ -52,6 +64,10 @@ import numpy as np
 
 import KrakenOS.UI.scene_builder as scene_builder
 from KrakenOS.UI.scene_builder import _detector_plane_miss_intersection
+from KrakenOS.UI.scene_geometry import (
+    ray_path_has_non_refractive_steering,
+    ray_path_visible_without_clipping_from_events,
+)
 
 PRESCRIPTION = Path("attachment/machine_vision_150mm_measured_test.py")
 
@@ -130,6 +146,68 @@ def _mechanism_checks(check) -> None:
 
 
 # --------------------------------------------------------------------------
+# 1b. Display-filter mechanism — the folded branch must survive "Show Clipped
+#     Rays OFF" (bug 0018 reopen). CAD-free: fabricated ray paths.
+
+def _surface_event(event_type: str):
+    return SimpleNamespace(
+        event_kind="surface",
+        event_type=event_type,
+        interaction_model="",
+        surface_name="",
+        metadata={},
+    )
+
+
+def _terminal_event(reason: str):
+    return SimpleNamespace(
+        event_kind="terminal",
+        termination_reason=reason,
+        event_type=reason,
+        surface_id=None,
+        metadata={},
+    )
+
+
+def _fake_path(surface_event_types, terminal_reason):
+    events = [_surface_event(t) for t in surface_event_types]
+    events.append(_terminal_event(terminal_reason))
+    return SimpleNamespace(events=events, reaches_image=False)
+
+
+def _display_filter_checks(check) -> None:
+    # The reflected beam-splitter branch: refracts into the cube, reflects off the
+    # 45 deg splitter face, exits, and escapes (no downstream detector on +X).
+    reflected = _fake_path(["refract", "reflect", "refract"], "no_next_intersection")
+    check(
+        ray_path_has_non_refractive_steering(reflected),
+        "a reflected branch path is recognized as non-refractive steering (fold)",
+    )
+    check(
+        ray_path_visible_without_clipping_from_events(reflected),
+        "an escaped+folded branch (beam-splitter 2nd path) stays VISIBLE with Show Clipped Rays OFF",
+    )
+
+    # A genuinely clipped ray: only refractions, then escapes past the last lens.
+    vignetted = _fake_path(["refract", "refract"], "no_next_intersection")
+    check(
+        not ray_path_has_non_refractive_steering(vignetted),
+        "a purely refractive escaped ray is NOT flagged as steering",
+    )
+    check(
+        not ray_path_visible_without_clipping_from_events(vignetted),
+        "an escaped, un-folded (vignetted) ray stays HIDDEN with Show Clipped Rays OFF (bug 0016 invariant kept)",
+    )
+
+    # A detector hit is always visible regardless of clipping or steering.
+    imaged = _fake_path(["refract"], "image")
+    check(
+        ray_path_visible_without_clipping_from_events(imaged),
+        "a ray that reaches the detector is always displayed",
+    )
+
+
+# --------------------------------------------------------------------------
 # 2. Optional real-scene guard — the user's saved beam-splitter-cube prescription.
 
 def _real_scene_summary() -> dict[str, object] | None:
@@ -157,6 +235,7 @@ def _real_scene_summary() -> dict[str, object] | None:
 
         max_coord = 0.0
         reflected_lengths: list[float] = []   # final dir ~ +X (the fold)
+        reflected_displayed = 0                # ...and survives Show Clipped Rays OFF
         transmit_at_image = 0                  # final dir ~ +Z reaching z~665
         for path in paths:
             pts = np.asarray(getattr(path, "points_world", []), dtype=float)
@@ -167,6 +246,11 @@ def _real_scene_summary() -> dict[str, object] | None:
             end = pts[-1]
             if abs(direction[0]) > 0.95:                       # folded reflected branch
                 reflected_lengths.append(float(np.linalg.norm(pts[-1] - pts[-2])))
+                # Bug 0018 reopen: with the user's Show Clipped Rays OFF the
+                # folded branch must still be drawn (it vanished after the first
+                # 0018 fix reclassified it escaped).
+                if ray_path_visible_without_clipping_from_events(path):
+                    reflected_displayed += 1
             elif direction[2] > 0.95 and abs(end[2] - _DETECTOR_Z) < 1.0:
                 transmit_at_image += 1
         return {
@@ -174,6 +258,7 @@ def _real_scene_summary() -> dict[str, object] | None:
             "max_coord": max_coord,
             "reflected": len(reflected_lengths),
             "reflected_len_max": max(reflected_lengths) if reflected_lengths else None,
+            "reflected_displayed": reflected_displayed,
             "transmit_at_image": transmit_at_image,
         }
     except Exception as exc:  # missing CAD cache / vendor STEP, etc.
@@ -191,6 +276,7 @@ def run_checks() -> tuple[bool, list[str]]:
             passed = False
 
     _mechanism_checks(_check)
+    _display_filter_checks(_check)
 
     real = _real_scene_summary()
     if real is None:
@@ -209,6 +295,11 @@ def run_checks() -> tuple[bool, list[str]]:
             and real["reflected_len_max"] <= _SANE_SCENE_BOUND_MM,
             f"reflected fold rays exist and stay finite, not vanished/exploded "
             f"(count={real['reflected']}, max_len={real['reflected_len_max']})",
+        )
+        _check(
+            real["reflected"] > 0 and real["reflected_displayed"] == real["reflected"],
+            f"every reflected fold ray is DISPLAYED with Show Clipped Rays OFF "
+            f"(displayed={real['reflected_displayed']}/{real['reflected']}) — the 2nd path is not hidden",
         )
         _check(
             real["transmit_at_image"] > 50,

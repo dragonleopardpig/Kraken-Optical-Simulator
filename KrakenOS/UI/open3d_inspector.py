@@ -23,7 +23,12 @@ from KrakenOS.UI.panels.open3d_live_controls import Open3DLiveControlsPanel
 from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
 from KrakenOS.UI.scene_builder import build_scene_placements
-from KrakenOS.UI.scene_geometry import SceneBundle, ScenePlacement3D, SurfaceMesh3D
+from KrakenOS.UI.scene_geometry import (
+    SceneBundle,
+    ScenePlacement3D,
+    SurfaceMesh3D,
+    ray_path_has_non_refractive_steering,
+)
 from KrakenOS.UI.scene_placement import SCENE_PLACEMENT_ADVANCED_ATTR
 from KrakenOS.UI.scene_projector import normalize_projection_plane
 from KrakenOS.UI.services.cad_scene_cache import CadSceneCache
@@ -7584,30 +7589,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     ray_index = 0.0
                 return (launch_radius, launch_tilt, -power, abs(source_ray), abs(ray_index))
 
-            def _path_has_non_refractive_steering(path) -> bool:
-                steering_tokens = (
-                    "reflect",
-                    "mirror",
-                    "tir",
-                    "split",
-                    "scatter",
-                    "diffract",
-                    "grating",
-                    "fold",
-                )
-                for event in list(getattr(path, "events", []) or []):
-                    if str(getattr(event, "event_kind", "") or "") != "surface":
-                        continue
-                    text = " ".join(
-                        (
-                            str(getattr(event, "event_type", "") or ""),
-                            str(getattr(event, "interaction_model", "") or ""),
-                            str(getattr(event, "surface_name", "") or ""),
-                        )
-                    ).strip().lower()
-                    if any(token in text for token in steering_tokens):
-                        return True
-                return False
+            _path_has_non_refractive_steering = ray_path_has_non_refractive_steering
 
             physical_paths = [
                 path

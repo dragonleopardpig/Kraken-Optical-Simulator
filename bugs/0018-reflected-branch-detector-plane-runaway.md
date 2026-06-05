@@ -1,6 +1,8 @@
 # 0018 — Reflected beam-splitter branch renders as a bent diagonal (runaway detector-plane projection)
 
-**Status:** Fixed (2026-06-05).
+**Status:** Fixed (2026-06-05). **Reopened and re-fixed the same day** — the
+projection guard below stopped the runaway but made the reflected branch *vanish*
+when "Show Clipped Rays" is OFF; see [Reopen](#reopen-2026-06-05--reflected-branch-vanished-when-show-clipped-rays-off) below.
 **Component:** Open 3D / 2D scene builder — the escaped-ray detector-plane
 projector `_detector_plane_miss_intersection`
 (`KrakenOS/UI/scene_builder.py`).
@@ -97,6 +99,70 @@ This is surgical: it only changes where an *escaped/grazing* ray terminates. It
 does not touch the transmit imaging cone (all 279 transmit rays trace identically
 pre/post), the optical-axis builder, or the trace physics.
 
+## Reopen (2026-06-05) — reflected branch vanished when Show Clipped Rays OFF
+
+**Reported via:** in-app recorder `flag_20260605_143523_953`
+(`screenshot_kind: scene_3d`):
+
+> where is the beam splitter 2nd path ray?
+
+The recording (taken *after* the projection fix above) shows the transmit branch
+imaging cleanly into the camera and the dashed **Optical Axis 2** drawn up +X — but
+**no rays travel along it**. `ray_actor_count` was **279** while the trace produced
+**558** ray paths; `scene_visible_bounds` X stayed at ±35 mm even though the
+reflected rays reach x≈245 mm. The whole reflected branch was traced but not drawn.
+
+### Root cause (the projection fix had a display side effect)
+
+Before the projection guard, every reflected ray was force-projected onto the z=665
+image plane and re-terminated `missed_image` — a status the 3D display draws. The
+guard correctly stopped that projection, so the reflected rays now keep their native
+terminal: `no_next_intersection`. But the 3D ray filter
+(`scene_geometry.ray_path_visible_without_clipping_from_events`, consumed in
+`services/three_d_scene_tools.py:_iter_3d_scene_ray_records`) maps
+`no_next_intersection → "escaped"` and **hides "escaped" rays when "Show Clipped
+Rays" is OFF** — which is the user's saved setting
+(`SETTINGS['show_clipped_rays'] = False`). So the fold moved from a drawn status to a
+hidden one. Headless on the real scene: 558 paths = 155 `hit_detector` + 124
+`missed_detector` + **279 `escaped`**; with clipping OFF exactly those 279 (every
++X reflected ray) were dropped.
+
+This is the bug-0016 invariant ("a physically-traced ray never silently disappears")
+re-surfacing: the "escaped" gate was meant to hide rays that *left without
+interacting* (vignetted past the last lens), but the reflected branch **did**
+interact — it reflected off the 45° splitter face. It only lacks a downstream
+detector because the user placed the camera on the transmit branch.
+
+### Re-fix
+
+`scene_geometry.py` — keep an *escaped* ray visible when it underwent deliberate
+**non-refractive steering** (reflection / split / mirror / TIR / grating / fold); only
+an un-folded escaped ray (true vignette) stays hidden. New shared predicate
+`ray_path_has_non_refractive_steering(path)` scans the path's surface events for
+steering tokens (the same list the traced-axis builder already used — that nested
+copy in `open3d_inspector.py` now delegates to the shared one, so display and axis
+agree on "what is a fold"):
+
+```python
+def ray_path_visible_without_clipping_from_events(path):
+    status = ray_path_terminal_status_from_events(path)
+    if status:
+        if status != "escaped":
+            return True
+        return ray_path_has_non_refractive_steering(path)   # folded 2nd path stays visible
+    return bool(getattr(path, "reaches_image", False))
+```
+
+The reflected rays stay `escaped` (correct — there is no detector on +X), so the
+escaped-ray display tail logic in `scene_projector.bounded_ray_points_for_scene_display`
+draws them up +X at a sane envelope length (75–600 mm, clamped to the scene), **not**
+the 600 m diagonal. Headless after the re-fix: 558/558 rays visible with clipping OFF;
+all 279 reflected rays drawn; reflected fold max length 232.7 mm; transmit cone
+unchanged. Visually re-verified off-screen at the recording camera
+(`flag_20260605_143523_953`: parallel, +X up, focal (−6.75, 0, 352.53), scale 278.45):
+the reflected bundle now climbs straight up +X from the cube along Optical Axis 2, the
+transmit branch still runs +Z into the lens, and nothing shoots off-frame.
+
 ## Physics corroboration (defocus is real, not auto-refocused)
 
 The user also asked to confirm the cube produces *physical* defocus at the sensor
@@ -132,6 +198,22 @@ simulation is physically faithful — it does not secretly refocus.
   finite (count 279, max length 232.7 mm — not vanished, not exploded), and
   transmit rays still image onto z≈665. Verified fail-before / pass-after by
   stashing the fix (pre-fix max ‖coord‖ = 602,400.7 mm ≫ 2000 cap).
+  **Reopen guards (added):** a CAD-free display-filter block asserts a fabricated
+  escaped+folded path stays *visible* with Show Clipped Rays OFF while a purely
+  refractive escaped path stays *hidden* (bug-0016 invariant preserved) and a
+  detector hit is always drawn; and the real-scene block asserts **every** reflected
+  fold ray is displayed with clipping OFF (`displayed = 279/279`). Verified
+  fail-before by temporarily reverting the visibility branch to
+  `return status != "escaped"` → `displayed = 0/279` (FAIL), then restoring (PASS).
+* **Cross-impact on the bugs/0016 guard** —
+  `validate_open3d_traced_rays_always_visible.py` (Phase 25) previously asserted a
+  beam splitter's escaped reflect branch was *hidden* by default (`0 < off < on`).
+  That is the exact behavior this reopen overturns, so the guard's section-3
+  expectation was refined to match: the reflect branch is now detected as a
+  deliberate fold (`escaped_steered == escaped`) and stays **visible** by default
+  (`0 < off == on == paths`). The core bug-0016 invariant — no traced ray
+  silently vanishes, clipped-on displayed == traced paths — is unchanged. Without
+  this update Phase 25 flipped PASS→FAIL (`off=10 on=10`, the gate's intended trip).
 * **Regression / end-to-end** — `Phase 27`
   (`phase_27_reflected_branch_detector_bounds`) in
   `validate_open3d_penta_telescope_comprehensive.py` wraps `run_checks()`. Full
@@ -145,3 +227,9 @@ simulation is physically faithful — it does not secretly refocus.
   folds straight up +X at a finite length, and the camera-fit bounds are sane
   (no ±512 m). Compared directly against the recorded `screenshot.png` (which
   shows the bent diagonal climbing off-frame).
+  **Reopen render:** re-rendered off-screen at the reopen recording camera
+  (flag_20260605_143523_953: parallel, +X up, focal (−6.75, 0, 352.53), scale 278.45)
+  with the user's `show_clipped_rays = False`. The rendered ray-actor count is **558**
+  (was 279 in the recording); the reflected bundle now climbs straight up +X from the
+  cube along Optical Axis 2 — present where the recorded `screenshot.png` showed only
+  the dashed axis and no rays.

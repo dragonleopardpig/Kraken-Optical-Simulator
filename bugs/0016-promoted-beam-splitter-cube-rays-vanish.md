@@ -102,9 +102,17 @@ ray whose terminal status is `hit_detector`, `absorbed`, `stopped`, or
 `missed_detector` (it traversed the optics but missed the sensor); hide **only**
 an `escaped` ray (no next intersection — it left the system without reaching a
 surface). `_iter_3d_scene_ray_records` now filters on this predicate instead of
-`hit_detector`-only. A beam splitter's reflect branch that leaves the system
-still shows only with *Show Clipped Rays* on; nothing is ever silently dropped
-(clipped-on displayed == traced paths).
+`hit_detector`-only. Nothing is ever silently dropped (clipped-on displayed ==
+traced paths).
+
+> **Refined by bugs/0018 (2026-06-05).** This fix originally hid *every* escaped
+> ray by default — including a beam splitter's reflect branch, which the user
+> then asked for ("where is the beam splitter 2nd path ray?"). A deliberate fold
+> is a real 2nd light path, not vignetting clutter, so the predicate now keeps an
+> escaped ray that underwent non-refractive steering (reflect / mirror / TIR /
+> split — `ray_path_has_non_refractive_steering`) visible by default; only an
+> *un-folded* escaped ray (pure vignetting) stays gated behind *Show Clipped
+> Rays*. The Fix #2 guard below was updated to match.
 
 ### Follow-up regression — analytic promotion over-counted surfaces
 
@@ -127,11 +135,13 @@ the mesh trace still treats the side walls as uncoated.
   `KrakenOS/UI/validate_open3d_traced_rays_always_visible.py`
   (`python -m KrakenOS.UI.validate_open3d_traced_rays_always_visible`). Asserts:
   predicate semantics (`hit_detector` / `absorbed` / `stopped` /
-  `missed_detector` visible by default, only `escaped` hidden); a clean lens
-  drops nothing; a mid-path fold (Mirror) makes every ray `missed_detector` yet
-  all stay visible by default (pre-fix the default view showed 0); a beam
-  splitter's escaped branch is hidden by default, shown with clipped on, and
-  never dropped (`0 < off < on == paths`); a seeded random-element sweep
+  `missed_detector` visible by default, only an *un-folded* `escaped` ray
+  hidden); a clean lens drops nothing; a mid-path fold (Mirror) makes every ray
+  `missed_detector` yet all stay visible by default (pre-fix the default view
+  showed 0); a beam splitter's escaped reflect branch is detected as a deliberate
+  fold and stays **visible** by default (the bugs/0018 refinement — was
+  `0 < off < on`, now `0 < off == on == paths`) and is never dropped; a seeded
+  random-element sweep
   confirms no silent drop; and (when the CAD cache is present) the user's real
   beam-splitter-cube scene shows 279 rays by default again.
 * **Display-free unit (Fix #1)** —

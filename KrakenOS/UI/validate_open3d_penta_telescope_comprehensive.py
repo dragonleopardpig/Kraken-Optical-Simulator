@@ -3320,6 +3320,13 @@ def phase_27_reflected_branch_detector_bounds(
     toward the plane within cos(80 deg) before projecting; the grazing fold stays at
     its sane traced length while transmit rays still image onto z~665. This phase
     wires the display-free guard into the comprehensive harness.
+
+    Reopen (flag_20260605_143523_953 "where is the beam splitter 2nd path ray?"): the
+    projection guard reclassified the fold from ``missed_image`` to ``escaped``, which
+    the 3D filter hides with Show Clipped Rays OFF, so the 2nd path vanished. The
+    display filter now keeps an escaped ray visible when it was folded by
+    non-refractive steering (reflect/split/mirror/TIR); the guard additionally asserts
+    every reflected fold ray is displayed with clipping OFF.
     """
     result = PhaseResult(
         name="Phase 27: reflected beam-splitter branch stays within scene bounds"

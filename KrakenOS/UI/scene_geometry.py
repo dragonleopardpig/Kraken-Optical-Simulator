@@ -500,21 +500,68 @@ def ray_path_reaches_image_from_events(path: Any) -> bool:
     return bool(getattr(path, "reaches_image", False))
 
 
+_NON_REFRACTIVE_STEERING_TOKENS = (
+    "reflect",
+    "mirror",
+    "tir",
+    "split",
+    "scatter",
+    "diffract",
+    "grating",
+    "fold",
+)
+
+
+def ray_path_has_non_refractive_steering(path: Any) -> bool:
+    """Return whether a ray path was deliberately folded by a surface.
+
+    True when any traced surface event reflects / splits / folds the ray (a beam
+    splitter, fold mirror, TIR, grating, ...). This distinguishes a genuine
+    folded branch -- e.g. a beam-splitter cube's reflected "second path" -- from
+    a ray that merely refracted straight through the optics. The same token list
+    drives the traced optical-axis builder, so the display filter and the axis
+    builder agree on what counts as a fold.
+    """
+    for event in list(getattr(path, "events", []) or []):
+        if str(getattr(event, "event_kind", "") or "") != "surface":
+            continue
+        text = " ".join(
+            (
+                str(getattr(event, "event_type", "") or ""),
+                str(getattr(event, "interaction_model", "") or ""),
+                str(getattr(event, "surface_name", "") or ""),
+            )
+        ).strip().lower()
+        if any(token in text for token in _NON_REFRACTIVE_STEERING_TOKENS):
+            return True
+    return False
+
+
 def ray_path_visible_without_clipping_from_events(path: Any) -> bool:
     """Return whether a ray should display with "Show Clipped Rays" OFF.
 
     A ray that physically traced through the system is always drawn up to its
     terminal surface: detector hits, rays absorbed/stopped on a surface, and
     rays that traversed the optics but missed the detector's clear aperture all
-    qualify. Only a ray that escaped the system without reaching a next surface
-    (``no_hit`` / ``no_next_intersection`` -> ``"escaped"``) is treated as a
-    clipped ray and hidden unless the user opts in. This honors the invariant
-    that a ray cannot go missing before hitting a surface -- it never silently
-    drops a physically-traced ray (bug 0016).
+    qualify. A ray that escaped the system without reaching a next surface
+    (``no_hit`` / ``no_next_intersection`` -> ``"escaped"``) is normally treated
+    as a clipped ray and hidden unless the user opts in. This honors the
+    invariant that a ray cannot go missing before hitting a surface -- it never
+    silently drops a physically-traced ray (bug 0016).
+
+    Exception (bug 0018): an escaped ray that underwent a deliberate fold
+    (reflection off a beam splitter / mirror, TIR, grating) is a real folded
+    branch -- the beam-splitter's reflected "second path" -- not a stray clipped
+    ray. The reflected branch travels nearly parallel to the image plane and so
+    has no downstream detector to land on, but the user expects to see it. Keep
+    it visible even with Show Clipped Rays OFF. Only a ray that escaped *without*
+    any such steering (e.g. vignetted past the last lens) stays hidden.
     """
     status = ray_path_terminal_status_from_events(path)
     if status:
-        return status != "escaped"
+        if status != "escaped":
+            return True
+        return ray_path_has_non_refractive_steering(path)
     return bool(getattr(path, "reaches_image", False))
 
 
