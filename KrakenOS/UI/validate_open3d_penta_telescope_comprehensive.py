@@ -3438,6 +3438,43 @@ def phase_29_missing_solid_cache_regenerates(
     return result
 
 
+def phase_30_slide_handle_hover_and_click(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0019: the promoted-row Move (slide) handle highlights on hover, and a
+    bare click on it does not slide / retrace.
+
+    The passive hover pick set omitted ``_actor_placement_move_map`` and neither
+    hover-decision branch handled a placement-move pick, so hovering the slide
+    handle never highlighted it. Separately, a bare click on it ran
+    ``PlacementTranslateWidget.process`` -> ``_apply_scene_placement_translate_handle``,
+    a discrete delta_mm nudge that forced a full promoted-solid retrace (~0.5 s) --
+    the click "computed hard" and the element jerked one step, even though sliding
+    is a hold-drag gesture. The fix adds the move handle to the hover pick set and
+    a highlight branch to both hover paths, and makes the click a cheap hold-drag
+    hint. The guard (``validate_open3d_slide_handle_hover_and_click``) is
+    display-free: source contracts plus a mock-inspector widget test.
+    """
+    result = PhaseResult(
+        name="Phase 30: promoted-row slide handle hover-highlights; bare click does not retrace"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_slide_handle_hover_and_click import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"slide-handle hover/click guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("slide-handle hover/click guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3504,6 +3541,7 @@ def main() -> int:
             phase_27_reflected_branch_detector_bounds,
             phase_28_step_edges_glass_palette,
             phase_29_missing_solid_cache_regenerates,
+            phase_30_slide_handle_hover_and_click,
         ]
         for phase in phases:
             try:

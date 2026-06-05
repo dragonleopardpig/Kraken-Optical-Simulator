@@ -657,6 +657,10 @@ class Open3DInteractionService:
         handle_keys = set(getattr(self, "_actor_step_rotate_map", {}) or {})
         handle_keys.update(set(getattr(self, "_actor_step_translate_map", {}) or {}))
         handle_keys.update(set(getattr(self, "_actor_placement_rotate_map", {}) or {}))
+        # bugs/0019: the placement MOVE (slide) handle was absent from the hover
+        # pick set, so hovering it never highlighted. Include it so it gets the
+        # same gold hover affordance as the rotate/translate handles.
+        handle_keys.update(set(getattr(self, "_actor_placement_move_map", {}) or {}))
         if not handle_keys:
             return None, None, -1
         pick_from_list = False
@@ -970,6 +974,7 @@ class Open3DInteractionService:
                     step_rotate = self._actor_step_rotate_map.get(actor_key) if actor_key is not None else None
                     step_translate = self._actor_step_translate_map.get(actor_key) if actor_key is not None else None
                     placement_rotate = self._actor_placement_rotate_map.get(actor_key) if actor_key is not None else None
+                    placement_move = self._actor_placement_move_map.get(actor_key) if actor_key is not None else None
                     if step_rotate is not None:
                         self._set_step_hover_outline(None, None)
                         self._set_rotation_handle_hover(actor_key)
@@ -997,6 +1002,15 @@ class Open3DInteractionService:
                         row_index, axis, delta = placement_rotate
                         self.status_var.set(
                             f"S{int(row_index)} rotation handle: click {str(axis).upper()}{float(delta):+.6g} deg."
+                        )
+                        return
+                    if placement_move is not None:
+                        self._set_step_hover_outline(None, None)
+                        self._set_rotation_handle_hover(actor_key)
+                        self._update_hover_status("", render=False)
+                        row_index, axis, _delta = placement_move
+                        self.status_var.set(
+                            f"S{int(row_index)} move handle: hold-drag {str(axis).upper()} to slide."
                         )
                         return
                     self._set_rotation_handle_hover(None)
@@ -1056,6 +1070,7 @@ class Open3DInteractionService:
         step_rotate = self._actor_step_rotate_map.get(actor_key) if actor_key is not None else None
         step_translate = self._actor_step_translate_map.get(actor_key) if actor_key is not None else None
         placement_rotate = self._actor_placement_rotate_map.get(actor_key) if actor_key is not None else None
+        placement_move = self._actor_placement_move_map.get(actor_key) if actor_key is not None else None
         if step_rotate is not None:
             self._set_step_hover_outline(None, None)
             self._set_rotation_handle_hover(actor_key)
@@ -1081,6 +1096,14 @@ class Open3DInteractionService:
             row_index, axis, delta = placement_rotate
             self._set_axis_pick_cursor(False)
             self.status_var.set(f"S{int(row_index)} rotation handle: click {str(axis).upper()}{float(delta):+.6g} deg.")
+            return
+        if placement_move is not None:
+            self._set_step_hover_outline(None, None)
+            self._set_rotation_handle_hover(actor_key)
+            self._update_hover_status("", render=False)
+            row_index, axis, _delta = placement_move
+            self._set_axis_pick_cursor(False)
+            self.status_var.set(f"S{int(row_index)} move handle: hold-drag {str(axis).upper()} to slide.")
             return
         self._set_rotation_handle_hover(None)
         step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None

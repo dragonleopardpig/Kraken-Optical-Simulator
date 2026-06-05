@@ -89,9 +89,20 @@ class PlacementTranslateWidget(AbstractWidget):
         payload = event.target_payload
         if payload is None:
             return False
+        # bugs/0019: the placement MOVE (slide) handle slides on a hold-drag, not
+        # on a bare click. A click used to apply a discrete delta_mm via
+        # _apply_scene_placement_translate_handle, which forces a full
+        # promoted-solid retrace (~0.5 s) -- the click "computed hard" and the
+        # element visibly jerked one step. Consume the click cheaply with a drag
+        # hint instead; the drag path (_apply_placement_drag_motion /
+        # _finish_placement_drag, bugs/0012) owns the actual slide + its single
+        # deferred commit.
         try:
             self.set_state(WidgetState.PROCESSING)
-            inspector._apply_scene_placement_translate_handle(*payload)
+            row_index, axis, _delta = payload
+            inspector.status_var.set(
+                f"S{int(row_index)} move handle: hold-drag {str(axis).upper()} to slide."
+            )
             inspector.render()
         except Exception:
             self.set_state(WidgetState.IDLE)
