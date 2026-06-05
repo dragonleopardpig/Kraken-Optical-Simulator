@@ -191,9 +191,13 @@ def _auto_assign_lens_face_functions(faces: list[dict[str, Any]]) -> int:
     inferred from the largest-area face's normal -- it's the most
     reliable indicator of the body's optical axis direction. Faces
     whose normals are within ``cos > 0.95`` of ``+axis`` or
-    ``cos < -0.95`` of ``-axis`` are flagged ``Transmit/Port``;
-    everything else (cylinder side walls, oblique facets) becomes
-    ``Absorber/Mechanical``.
+    ``cos < -0.95`` of ``-axis`` are flagged ``Transmit/Port`` and
+    labeled Input/Output; everything else (cylinder side walls,
+    oblique facets) also defaults to ``Transmit/Port`` (Uncoated) so
+    Snell/Fresnel decides at each boundary. The user authors only the
+    special faces (Mirror, Beam Splitter, Absorber, detector); the
+    auto pass never condemns a face to a hard ``Absorber/Mechanical``
+    block (bug 0016).
 
     Compared to the previous "two largest faces only" rule, this
     correctly handles:
@@ -367,15 +371,35 @@ def _auto_assign_lens_face_functions(faces: list[dict[str, Any]]) -> int:
         # the role text -- it's purely cosmetic.
         face["role"] = "Input" if order == 0 else "Output"
         face["assignment_origin"] = "auto_lens_promotion"
+        # The genuine front/back optical-axis surfaces. The analytic-fit
+        # promotion ("Convert to Analytic Surfaces") fits one refractive
+        # Standard surface per flagged face; everything else (now uncoated
+        # by default, bug 0016) is a non-port edge it must not fit.
+        face["optical_axis_surface"] = True
         assigned += 1
     for index, face in enumerate(faces):
         if index in transmit_set:
             continue
         if not isinstance(face, dict):
             continue
-        face["function"] = "Absorber/Mechanical"
-        face["role"] = "Absorber/Mechanical"
+        # Default every remaining face to Uncoated (Transmit/Port) rather than a
+        # hard mechanical block. Snell/Fresnel then decides at each boundary and
+        # the user authors only the special faces (Mirror, Beam Splitter,
+        # Absorber, detector). Auto-condemning non-axis faces to Absorber used to
+        # silently kill the trace on cubes / prisms / beam-splitters whose real
+        # entry & exit faces weren't the largest anti-parallel pair -- e.g. a
+        # beam-splitter cube where all six faces share one area, so the optical
+        # ±Z faces got blocked while ±X were picked as the "lens" pair (bug 0016).
+        # Marking Transmit (not leaving Unassigned) still avoids the older
+        # per-triangle-refraction fallback that produced erratic bending rays.
+        face["function"] = "Transmit/Port"
+        face["role"] = "Output"
         face["assignment_origin"] = "auto_lens_promotion"
+        # NOT an optical-axis refractive surface: it's uncoated so the trace
+        # won't absorb a stray ray, but the analytic-fit promotion must not
+        # turn a cylinder side wall into a Standard surface needing its own
+        # glass (that over-count broke "Convert to Analytic", bug 0016 follow-up).
+        face["optical_axis_surface"] = False
         assigned += 1
     return assigned
 
@@ -1399,11 +1423,25 @@ class StepOverlayPromotionService:
         _refine_face_normals_from_mesh(faces, mesh)
         face_copies = [dict(f) for f in faces]
         _auto_assign_lens_face_functions(face_copies)
+        # Refractive surfaces for the analytic fit are the genuine optical-axis
+        # pair (front/back) that auto-assign flags, NOT every uncoated face.
+        # Bug 0016 defaults *all* non-special faces to Transmit/Port so the mesh
+        # trace never absorbs a ray; selecting by function alone would also pick
+        # cylinder side walls and demand a glass per spurious fitted surface
+        # (this regressed "Convert to Analytic"). Prefer the explicit flag; fall
+        # back to function for manually authored faces, where the user marks
+        # only the real ports Transmit and no spurious side wall is selected.
         transmit_faces = [
             faces[i]
             for i, f in enumerate(face_copies)
-            if f.get("function") == "Transmit/Port"
+            if f.get("optical_axis_surface")
         ]
+        if not transmit_faces:
+            transmit_faces = [
+                faces[i]
+                for i, f in enumerate(face_copies)
+                if f.get("function") == "Transmit/Port"
+            ]
         if not transmit_faces:
             return None
         # Derive the body's actual optical axis from the auto-assigned

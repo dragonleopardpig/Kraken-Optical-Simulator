@@ -500,6 +500,24 @@ def ray_path_reaches_image_from_events(path: Any) -> bool:
     return bool(getattr(path, "reaches_image", False))
 
 
+def ray_path_visible_without_clipping_from_events(path: Any) -> bool:
+    """Return whether a ray should display with "Show Clipped Rays" OFF.
+
+    A ray that physically traced through the system is always drawn up to its
+    terminal surface: detector hits, rays absorbed/stopped on a surface, and
+    rays that traversed the optics but missed the detector's clear aperture all
+    qualify. Only a ray that escaped the system without reaching a next surface
+    (``no_hit`` / ``no_next_intersection`` -> ``"escaped"``) is treated as a
+    clipped ray and hidden unless the user opts in. This honors the invariant
+    that a ray cannot go missing before hitting a surface -- it never silently
+    drops a physically-traced ray (bug 0016).
+    """
+    status = ray_path_terminal_status_from_events(path)
+    if status:
+        return status != "escaped"
+    return bool(getattr(path, "reaches_image", False))
+
+
 def ray_path_terminal_status_from_events(path: Any) -> str:
     """Return a compact display terminal status from the path's terminal event."""
     for event in reversed(list(getattr(path, "events", []) or [])):

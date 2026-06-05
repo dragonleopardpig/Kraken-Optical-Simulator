@@ -33,6 +33,7 @@ from KrakenOS.UI.scene_geometry import (
     ray_path_terminal_event,
     ray_path_terminal_metadata,
     ray_path_terminal_status_from_events,
+    ray_path_visible_without_clipping_from_events,
     scene_target_active_footprint_polylines,
     scene_target_detector_miss_crosshair_polylines,
 )
@@ -1811,7 +1812,7 @@ class ThreeDSceneToolsMixin:
             )
             show_clipped_rays = bool(self.show_clipped_rays_var.get())
             if not show_clipped_rays and not live_step_preview:
-                scene_paths = [path for path in scene_paths if ray_path_reaches_image_from_events(path)]
+                scene_paths = [path for path in scene_paths if ray_path_visible_without_clipping_from_events(path)]
             total = len(scene_paths)
             step = max(total // 300, 1) if total > 300 else 1
             rendered: list[tuple[int, tuple[float, float, float], np.ndarray, str]] = []

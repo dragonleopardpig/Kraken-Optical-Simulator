@@ -272,7 +272,17 @@ class LayoutOpticalSolidWorkflowMixin:
             if source == OPTICAL_SOLID_FACE_ASSIGNMENT_MANUAL:
                 faces.append(record)
                 continue
-            if function == OPTICAL_SOLID_FACE_FUNCTION_DEFAULT or source == OPTICAL_SOLID_FACE_ASSIGNMENT_DEFAULT_UNCOATED:
+            # Every non-manually-authored face defaults to Uncoated
+            # (Transmit/Port). This also heals a stale auto "Absorber/Mechanical"
+            # role baked into an older sidecar by the previous promotion
+            # classifier, which used to condemn non-axis faces of a cube / prism
+            # / beam-splitter to a hard mechanical block and silently kill the
+            # trace (bug 0016). User-authored faces carry assignment_source ==
+            # MANUAL and are never touched here.
+            if (
+                function in {OPTICAL_SOLID_FACE_FUNCTION_DEFAULT, "Absorber/Mechanical"}
+                or source == OPTICAL_SOLID_FACE_ASSIGNMENT_DEFAULT_UNCOATED
+            ):
                 record["function"] = OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT
                 record["role"] = _legacy_role_from_optical_solid_face_function(OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT)
                 record["port_role"] = OPTICAL_SOLID_FACE_PORT_INTERACTION

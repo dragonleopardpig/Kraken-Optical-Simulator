@@ -111,11 +111,22 @@ def _run() -> int:
                     faces.extend(split)
             face_copies = [dict(f) for f in faces]
             _auto_assign_lens_face_functions(face_copies)
+            # Mirror the production selector (step_overlay_promotion.py): the
+            # refractive surfaces are the optical-axis pair the auto-assign flags,
+            # not every uncoated face (bug 0016 defaults side walls to Transmit so
+            # the trace won't absorb a ray). Fall back to function for the manual
+            # path.
             transmit_faces = [
                 faces[i]
                 for i, f in enumerate(face_copies)
-                if f.get("function") == "Transmit/Port"
+                if f.get("optical_axis_surface")
             ]
+            if not transmit_faces:
+                transmit_faces = [
+                    faces[i]
+                    for i, f in enumerate(face_copies)
+                    if f.get("function") == "Transmit/Port"
+                ]
             if not transmit_faces:
                 failures.append(f"{name}: no Transmit/Port faces after auto-assign")
                 continue

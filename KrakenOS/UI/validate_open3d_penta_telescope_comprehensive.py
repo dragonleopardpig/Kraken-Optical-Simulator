@@ -3226,6 +3226,44 @@ def phase_24_random_terminal_element_ray_display(
     return result
 
 
+def phase_25_traced_rays_always_visible(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0016: a physically-traced ray must stay visible up to its terminal
+    surface — it can never silently vanish before hitting one.
+
+    A promoted beam-splitter cube made *every* ray disappear in the inspector:
+    the auto-classifier hard-blocked the real entry/exit faces with
+    Absorber/Mechanical, and the default "hide clipped rays" filter only kept
+    paths ending in ``hit_detector`` — so absorbed and missed-sensor rays were
+    dropped. The guard
+    (``validate_open3d_traced_rays_always_visible``) asserts the new predicate
+    keeps every traced ray except those that truly escaped the system, runs a
+    random-element no-silent-drop sweep, and (when the CAD cache is present)
+    re-traces the user's saved cube scene. This phase wires it into the
+    comprehensive harness.
+    """
+    result = PhaseResult(
+        name="Phase 25: traced rays always visible up to terminal surface"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_traced_rays_always_visible import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"traced-rays-visible guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    # Surface failures, and keep any SKIP lines so a missing CAD cache is visible.
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("display-free guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3287,6 +3325,7 @@ def main() -> int:
             phase_22_promoted_slide_gap_overlay,
             phase_23_lone_lens_slide_gap_overlay,
             phase_24_random_terminal_element_ray_display,
+            phase_25_traced_rays_always_visible,
         ]
         for phase in phases:
             try:
