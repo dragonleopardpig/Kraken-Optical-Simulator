@@ -250,6 +250,39 @@ def face_boundary_edges_from_face_index(mesh, *, include_open_boundaries: bool =
     return _line_polydata(selected_edges)
 
 
+# Geometric feature-edge extraction on a heavy vendor body (the 114k-cell
+# camera) costs ~0.45 s and yields ~50k edge segments. The display mesh is
+# memoised to one stable object per layout pose, so memoise the derived
+# edge polydata the same way the surface triangles are (id + content
+# token). A genuine pose change rebuilds the mesh, bumps its VTK MTime, and
+# invalidates the entry -- so the cost is paid once per layout, never per
+# frame, and the heavy-mesh edge skip in the refresh loop is unnecessary.
+_DISPLAY_EDGE_CACHE: dict[int, tuple] = {}
+_DISPLAY_EDGE_CACHE_ORDER: list[int] = []
+_DISPLAY_EDGE_CACHE_MAX = 8
+
+
+def cached_display_feature_edges(mesh, *, feature_angle: float = 24.0, boundary_edges: bool = True):
+    """Memoised :func:`display_feature_edges` keyed on mesh identity + content."""
+    if pv is None or mesh is None:
+        return None
+    key = id(mesh)
+    token = (_mesh_cache_token(mesh), round(float(feature_angle), 4), bool(boundary_edges))
+    cached = _DISPLAY_EDGE_CACHE.get(key)
+    if cached is not None and cached[0] == token:
+        return cached[1]
+    result = display_feature_edges(mesh, feature_angle=feature_angle, boundary_edges=boundary_edges)
+    _DISPLAY_EDGE_CACHE[key] = (token, result)
+    if key in _DISPLAY_EDGE_CACHE_ORDER:
+        _DISPLAY_EDGE_CACHE_ORDER.remove(key)
+    _DISPLAY_EDGE_CACHE_ORDER.append(key)
+    while len(_DISPLAY_EDGE_CACHE_ORDER) > _DISPLAY_EDGE_CACHE_MAX:
+        evicted = _DISPLAY_EDGE_CACHE_ORDER.pop(0)
+        if evicted != key:
+            _DISPLAY_EDGE_CACHE.pop(evicted, None)
+    return result
+
+
 def display_feature_edges(mesh, *, feature_angle: float = 24.0, boundary_edges: bool = True):
     """Return face-index boundaries when available, else geometric feature edges."""
     if pv is None or mesh is None:

@@ -3349,6 +3349,52 @@ def phase_27_reflected_branch_detector_bounds(
     return result
 
 
+def phase_28_step_edges_glass_palette(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0020: every imported CAD optical solid wears ONE glass edge palette,
+    and the heavy vendor camera body is outlined like the lens.
+
+    The teal "glass" edge palette (``_OPTICAL_STEP_EDGE_COLOR`` /
+    ``_OPTICAL_STEP_SILHOUETTE_COLOR`` at ``_GLASS_EDGE_LINE_WIDTH`` /
+    ``_GLASS_EDGE_SILHOUETTE_WIDTH``) only reached analytic lenses and overlays
+    tagged ``"optical"``. A file-backed STEP/STL body promoted under any other
+    label (a beam-splitter *cube* tagged ``"led"``) fell through to a legacy
+    HEAVY BLACK wireframe (``(0.005,0.007,0.014)`` @ 5.0 + a darkened body edge
+    @ 3.2); and any overlay past ``> 50000`` cells skipped edge extraction, so
+    the ~114k-cell vendor camera drew with no outline at all. The fix makes the
+    file-backed edge colour/weight unconditionally the glass palette, drops the
+    heavy-mesh skip, and memoises feature-edge extraction
+    (``cached_display_feature_edges``) so the camera's outline costs nothing per
+    frame. The guard (``validate_open3d_step_edges_glass_palette``) renders the
+    saved machine-vision cube+lens+camera scene and asserts the cube carries the
+    glass edge actors with no legacy black, the camera/lens overlays each gain
+    >=2 glass edge actors, and the render shows teal edges with no black cage.
+    Skipped when the vendor STEP / CAD cache is unavailable on this machine.
+    """
+    result = PhaseResult(
+        name="Phase 28: imported CAD solids wear one glass edge palette + camera outlined"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_step_edges_glass_palette import run_checks
+        # Reuse the harness's live editor + inspector: this is a render guard, and
+        # a second embedded VTK inspector cannot initialise while the first is alive.
+        passed, notes = run_checks(app=app, inspector=inspector)
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"step-edge glass-palette guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    # Surface failures, and keep any SKIP lines so a missing CAD cache is visible.
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("step-edge glass-palette guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3413,6 +3459,7 @@ def main() -> int:
             phase_25_traced_rays_always_visible,
             phase_26_beam_splitter_transmit_and_second_axis,
             phase_27_reflected_branch_detector_bounds,
+            phase_28_step_edges_glass_palette,
         ]
         for phase in phases:
             try:

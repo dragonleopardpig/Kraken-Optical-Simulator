@@ -7,6 +7,8 @@ from typing import Any
 import numpy as np
 
 from KrakenOS.UI.services.open3d_scene_refresh import (
+    _GLASS_EDGE_LINE_WIDTH,
+    _GLASS_EDGE_SILHOUETTE_WIDTH,
     _OPTICAL_STEP_BODY_COLOR,
     _OPTICAL_STEP_EDGE_COLOR,
     _OPTICAL_STEP_SILHOUETTE_COLOR,
@@ -164,7 +166,6 @@ class Open3DStepOverlayRefreshService:
                 round_lens_like = bool(inspector._mesh_round_lens_axis(cad_mesh) is not None)
             except Exception:
                 round_lens_like = False
-            heavy_cad_mesh = int(getattr(cad_mesh, "n_cells", 0)) > 50000
             inspector._add_mesh_actor(
                 cad_mesh,
                 color=tuple(color),
@@ -176,29 +177,29 @@ class Open3DStepOverlayRefreshService:
                 backface_culling=False,
             )
             try:
-                cad_edges = None
-                if not heavy_cad_mesh:
-                    cad_edges = inspector._display_feature_edges(
-                        cad_mesh,
-                        feature_angle=75 if round_lens_like else 55,
-                        boundary_edges=not round_lens_like,
-                    )
+                # bugs/0020: shares open3d_scene_refresh's policy -- edges
+                # are memoised so the heavy camera body outlines once per
+                # pose, and every imported CAD overlay uses the analytic
+                # lens glass edge palette + weight (no legacy black skip).
+                cad_edges = inspector._display_feature_edges(
+                    cad_mesh,
+                    feature_angle=75 if round_lens_like else 55,
+                    boundary_edges=not round_lens_like,
+                )
                 if int(getattr(cad_edges, "n_points", 0)) > 0:
-                    edge_color = _OPTICAL_STEP_EDGE_COLOR if label == "optical" else inspector._solid_edge_color_from_body(color)
-                    silhouette_color = _OPTICAL_STEP_SILHOUETTE_COLOR if label == "optical" else inspector._solid_silhouette_edge_color()
                     inspector._add_mesh_actor(
                         cad_edges,
-                        color=silhouette_color,
+                        color=_OPTICAL_STEP_SILHOUETTE_COLOR,
                         opacity=0.98,
-                        line_width=4.2 if bool(inspector.show_rays_var.get()) else 2.2,
+                        line_width=_GLASS_EDGE_SILHOUETTE_WIDTH,
                         follow_step_label=label,
                         backface_culling=False,
                     )
                     inspector._add_mesh_actor(
                         cad_edges,
-                        color=edge_color,
+                        color=_OPTICAL_STEP_EDGE_COLOR,
                         opacity=0.96,
-                        line_width=2.6 if bool(inspector.show_rays_var.get()) else 1.4,
+                        line_width=_GLASS_EDGE_LINE_WIDTH,
                         follow_step_label=label,
                         backface_culling=False,
                     )

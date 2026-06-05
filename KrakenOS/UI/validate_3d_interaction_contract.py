@@ -1793,23 +1793,24 @@ def main() -> int:
             and "last_translate_mode" in editor_row_translate_vector,
         ),
         (
-            "promoted optical solid display uses blue translucent body and blue edges",
+            "promoted optical solid display uses blue translucent body and one glass edge palette",
             "row_index in file_backed_rows" in refresh
             and "mesh_opacity = min(max(mesh_opacity, 0.14), 0.28)" in refresh
             and "_OPTICAL_STEP_BODY_COLOR" in refresh
             and "_OPTICAL_STEP_EDGE_COLOR" in refresh
             and 'row_step_label == "optical"' in refresh
-            and "_solid_edge_color_from_body" in refresh
-            and "_solid_silhouette_edge_color" in refresh
             and "if row_index in file_backed_rows:" in refresh
             and "continue" in refresh
-            # Glass elements (prisms + analytic lenses) share one edge
-            # palette and weight; legacy non-optical STEP solids keep the
-            # heavier 5.0/3.2 outline. Widths flow through named variables.
+            # bugs/0020: every file-backed STEP/STL solid (prisms, beam-
+            # splitter cubes, mounts) shares the analytic-lens glass edge
+            # palette AND weight. The legacy heavy 5.0/3.2 black outline
+            # for non-"optical" labels (and its _solid_*_edge_color
+            # helpers) is gone. Widths flow through named variables.
             and "file_backed_silhouette_width = _GLASS_EDGE_SILHOUETTE_WIDTH" in refresh
             and "file_backed_edge_width = _GLASS_EDGE_LINE_WIDTH" in refresh
-            and "file_backed_silhouette_width = 5.0" in refresh
-            and "file_backed_edge_width = 3.2" in refresh
+            and "file_backed_silhouette_width = 5.0" not in refresh
+            and "file_backed_edge_width = 3.2" not in refresh
+            and "_solid_edge_color_from_body" not in refresh
             and "line_width=file_backed_silhouette_width" in refresh
             and "line_width=file_backed_edge_width" in refresh
             and "line_width=3.4" in legacy_open_3d,

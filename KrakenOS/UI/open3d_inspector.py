@@ -36,7 +36,7 @@ from KrakenOS.UI.services.open3d_carry_grip import Open3DCarryGripService
 from KrakenOS.UI.services.open3d_debug_tools import Open3DDebugToolsMixin
 from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
 from KrakenOS.UI.services.open3d_face_index_edges import (
-    display_feature_edges as _display_feature_edges_mesh,
+    cached_display_feature_edges as _display_feature_edges_mesh,
     face_pick_from_display_mesh,
     face_indices_for_record,
     face_outline_from_face_indices,
@@ -3935,22 +3935,6 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # here doubles the axial positions and moves optical markers away from
         # imported STEP hardware.
         return mesh
-
-    @staticmethod
-    def _solid_edge_color_from_body(color) -> tuple[float, float, float]:
-        try:
-            values = np.asarray(color, dtype=float).reshape(-1)[:3]
-        except Exception:
-            values = np.asarray((0.04, 0.06, 0.10), dtype=float)
-        if values.size < 3 or not np.all(np.isfinite(values[:3])):
-            values = np.asarray((0.04, 0.06, 0.10), dtype=float)
-        darkened = np.clip(values[:3] * 0.16, 0.0, 1.0)
-        floor = np.asarray((0.004, 0.006, 0.012), dtype=float)
-        return tuple(float(value) for value in np.maximum(darkened, floor))
-
-    @staticmethod
-    def _solid_silhouette_edge_color() -> tuple[float, float, float]:
-        return (0.005, 0.007, 0.014)
 
     def _set_row_highlight(self, row_index: int | None) -> None:
         self._set_row_highlights([] if row_index is None else [int(row_index)])

@@ -321,18 +321,16 @@ class Open3DSceneRefreshService:
                 mesh_opacity = min(max(mesh_opacity, 0.14), 0.28)
                 if row_step_label == "optical":
                     mesh_opacity = min(max(mesh_opacity, 0.30), 0.36)
-            if row_step_label == "optical":
-                file_backed_edge_color = _OPTICAL_STEP_EDGE_COLOR
-                file_backed_silhouette_color = _OPTICAL_STEP_SILHOUETTE_COLOR
-                # Imported optical STEP solids (the prisms) share the glass
-                # edge colour AND weight with the analytic lenses.
-                file_backed_silhouette_width = _GLASS_EDGE_SILHOUETTE_WIDTH
-                file_backed_edge_width = _GLASS_EDGE_LINE_WIDTH
-            else:
-                file_backed_edge_color = self._solid_edge_color_from_body(getattr(mesh_item, "color", (0.04, 0.06, 0.10)))
-                file_backed_silhouette_color = self._solid_silhouette_edge_color()
-                file_backed_silhouette_width = 5.0
-                file_backed_edge_width = 3.2
+            # bugs/0020: every file-backed STEP/STL solid -- prisms,
+            # beam-splitter cubes, mounts -- shares the glass edge colour
+            # AND weight with the analytic lenses. A promotion display
+            # label other than "optical" (e.g. a cube tagged "led") no
+            # longer downgrades its outline to the legacy heavy black
+            # wireframe; the user wants one nice optical edge palette.
+            file_backed_edge_color = _OPTICAL_STEP_EDGE_COLOR
+            file_backed_silhouette_color = _OPTICAL_STEP_SILHOUETTE_COLOR
+            file_backed_silhouette_width = _GLASS_EDGE_SILHOUETTE_WIDTH
+            file_backed_edge_width = _GLASS_EDGE_LINE_WIDTH
             if show_launch_reference_surface and not show_reference_surfaces and row_surface == "Object":
                 mesh_opacity = min(mesh_opacity, 0.18)
             row_round_lens_like = False
@@ -737,7 +735,6 @@ class Open3DSceneRefreshService:
                 display_opacity = float(opacity)
                 if ray_visibility_requested and label == "optical":
                     display_opacity = max(display_opacity, 0.46)
-                heavy_cad_mesh = int(getattr(cad_mesh, "n_cells", 0)) > 50000
                 self._add_mesh_actor(
                     cad_mesh,
                     color=color,
@@ -753,29 +750,32 @@ class Open3DSceneRefreshService:
                         round_lens_like = bool(self._mesh_round_lens_axis(cad_mesh) is not None)
                     except Exception:
                         round_lens_like = False
-                    cad_edges = None
-                    if not heavy_cad_mesh:
-                        cad_edges = self._display_feature_edges(
-                            cad_mesh,
-                            feature_angle=75 if round_lens_like else 55,
-                            boundary_edges=not round_lens_like,
-                        )
+                    # bugs/0020: feature-edge extraction is memoised
+                    # (cached_display_feature_edges), so even the heavy
+                    # 114k-cell vendor camera body computes its outline once
+                    # per layout pose -- no per-frame cost -- instead of
+                    # rendering edge-less behind the old >50k-cell skip.
+                    # Every imported CAD overlay now shares the analytic
+                    # lens glass edge palette and weight.
+                    cad_edges = self._display_feature_edges(
+                        cad_mesh,
+                        feature_angle=75 if round_lens_like else 55,
+                        boundary_edges=not round_lens_like,
+                    )
                     if int(getattr(cad_edges, "n_points", 0)) > 0:
-                        edge_color = _OPTICAL_STEP_EDGE_COLOR if label == "optical" else self._solid_edge_color_from_body(color)
-                        silhouette_color = _OPTICAL_STEP_SILHOUETTE_COLOR if label == "optical" else self._solid_silhouette_edge_color()
                         self._add_mesh_actor(
                             cad_edges,
-                            color=silhouette_color,
+                            color=_OPTICAL_STEP_SILHOUETTE_COLOR,
                             opacity=0.98,
-                            line_width=4.2 if ray_visibility_requested else 2.2,
+                            line_width=_GLASS_EDGE_SILHOUETTE_WIDTH,
                             follow_step_label=label,
                             backface_culling=False,
                         )
                         self._add_mesh_actor(
                             cad_edges,
-                            color=edge_color,
+                            color=_OPTICAL_STEP_EDGE_COLOR,
                             opacity=0.96,
-                            line_width=2.6 if ray_visibility_requested else 1.4,
+                            line_width=_GLASS_EDGE_LINE_WIDTH,
                             follow_step_label=label,
                             backface_culling=False,
                         )
