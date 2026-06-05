@@ -3303,6 +3303,45 @@ def phase_26_beam_splitter_transmit_and_second_axis(
     return result
 
 
+def phase_27_reflected_branch_detector_bounds(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0018: a beam-splitter cube's reflected branch must never be force-
+    projected onto the far detector/image plane.
+
+    The reflected fold leaves the cube nearly parallel to the Image plane (almost
+    pure +X), yet ``scene_builder._detector_plane_miss_intersection`` projected
+    every escaped ray onto that plane with no guard on ``dot(dir, normal)``. For a
+    grazing ray that denominator is ~0.01, so the projected distance ran away to
+    ~6e5 mm — re-terminating the reflected segment hundreds of metres off-axis. VTK
+    then drew it as a bent diagonal band that changed angle on zoom, and the 2D
+    layout auto-scaled to +/-6e5 mm (collapsing the scene to a dot). The guard
+    (``validate_open3d_reflected_branch_detector_bounds``) requires the ray to head
+    toward the plane within cos(80 deg) before projecting; the grazing fold stays at
+    its sane traced length while transmit rays still image onto z~665. This phase
+    wires the display-free guard into the comprehensive harness.
+    """
+    result = PhaseResult(
+        name="Phase 27: reflected beam-splitter branch stays within scene bounds"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_reflected_branch_detector_bounds import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"reflected-branch detector-bounds guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    # Surface failures, and keep any SKIP lines so a missing CAD cache is visible.
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("display-free guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3366,6 +3405,7 @@ def main() -> int:
             phase_24_random_terminal_element_ray_display,
             phase_25_traced_rays_always_visible,
             phase_26_beam_splitter_transmit_and_second_axis,
+            phase_27_reflected_branch_detector_bounds,
         ]
         for phase in phases:
             try:

@@ -2761,6 +2761,18 @@ def _terminal_direction_for_detector_miss(path: RayPath3D, terminal_event: RayEv
     return None
 
 
+# An escaped ray is only meaningfully "imaged" onto a detector plane when it
+# actually propagates toward that plane. A ray traveling nearly parallel to the
+# plane -- e.g. the reflected branch of a beam-splitter cube, which folds ~90 deg
+# away toward its own (second) port -- would only "reach" the image plane
+# hundreds of metres off-axis. Projecting it there is non-physical and the
+# resulting ~10^5 mm coordinates wreck both the VTK scene extent (rays render
+# bent / vanish on zoom) and the 2D layout auto-scale. Require the ray to lie
+# within this cone of the detector normal (|cos| >= cos(80 deg)) before
+# projecting; otherwise it stays escaped with its sane traced length.
+_DETECTOR_MISS_MIN_AXIAL_COS = 0.17364817766693041  # cos(80 deg)
+
+
 def _detector_plane_miss_intersection(
     rows: list,
     system: Any | None,
@@ -2790,7 +2802,8 @@ def _detector_plane_miss_intersection(
             continue
         bitangent = bitangent / bitangent_norm
         denom = float(np.dot(direction, normal))
-        if not np.isfinite(denom) or abs(denom) <= 1e-12:
+        if not np.isfinite(denom) or abs(denom) < _DETECTOR_MISS_MIN_AXIAL_COS:
+            # parallel to / grazing the detector plane: not heading toward it.
             continue
         distance = float(np.dot(center - origin, normal) / denom)
         if not np.isfinite(distance) or distance <= 1e-9:
