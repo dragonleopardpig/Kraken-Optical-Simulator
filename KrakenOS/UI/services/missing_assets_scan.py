@@ -168,6 +168,53 @@ def _iter_row_path_candidates(row: Any) -> Iterable[tuple[str, Path]]:
             yield f"{key}.source_step_path", source_path
 
 
+# bugs/0021: derived mesh caches that are rebuilt from a source STEP on open.
+# Maps the derived-cache advanced key -> the source key it is regenerated from
+# (a flat key, or "Promotion.source_step_path" nested form). When the source is
+# configured on the row we do NOT flag the derived cache as a missing asset --
+# the source STEP is the real dependency (flagged separately if IT is gone), and
+# the cache is regenerated automatically on load or by relocating the source.
+_DERIVED_CACHE_SOURCES: dict[str, str] = {
+    "Solid_3d_stl": "OpticalSolidSourcePath",
+    "StepAnalyticBodyStlPath": "StepAnalyticPromotion.source_step_path",
+}
+
+
+def _row_has_source_for_derived_key(advanced: dict[str, Any], derived_key: str) -> bool:
+    source_key = _DERIVED_CACHE_SOURCES.get(derived_key)
+    if not source_key:
+        return False
+    if "." in source_key:
+        outer, _, inner = source_key.partition(".")
+        nested = advanced.get(outer)
+        return isinstance(nested, dict) and _coerce_path(nested.get(inner)) is not None
+    return _coerce_path(advanced.get(source_key)) is not None
+
+
+def any_solid_body_unresolved(rows: Iterable[Any]) -> bool:
+    """True if any row references a ``Solid_3d_stl`` that cannot be resolved.
+
+    bugs/0021: after the load/regeneration pass, the beam-splitter guards use
+    this to SKIP -- rather than assert beam-splitter physics on the analytic
+    single-face fallback the system-build safety-net substitutes -- when a
+    promoted cube's body cache is still missing (no cache and no source STEP to
+    rebuild it from on this machine). Resolves project-relative paths the same
+    way the renderer does.
+    """
+    from KrakenOS.UI.layout_editor import _resolve_project_file_path
+
+    for row in rows or []:
+        advanced = _row_advanced(row)
+        value = advanced.get("Solid_3d_stl")
+        if isinstance(value, str) and value.strip() not in ("", "None"):
+            try:
+                if not _resolve_project_file_path(value).exists():
+                    return True
+            except Exception:
+                return True
+    return False
+
+
 def scan_missing_assets(
     rows: Iterable[Any],
     *,
@@ -226,9 +273,16 @@ def scan_missing_assets(
 
     for index, row in enumerate(rows):
         skipped = _skipped_keys_for_row(row)
+        advanced = _row_advanced(row)
         label = _row_label(row, index)
         for key, path in _iter_row_path_candidates(row):
             if key in skipped:
+                continue
+            # bugs/0021: a derived mesh cache is regenerated from its source
+            # STEP on open -- don't complain about the missing cache file when a
+            # source is configured. The source (flagged below if IT is gone) is
+            # the dependency the user should relocate, not the .cache artefact.
+            if key in _DERIVED_CACHE_SOURCES and _row_has_source_for_derived_key(advanced, key):
                 continue
             if path.exists():
                 continue

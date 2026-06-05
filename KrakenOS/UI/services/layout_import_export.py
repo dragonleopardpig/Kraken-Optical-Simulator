@@ -108,6 +108,32 @@ def _short_error_message(exc: Exception, limit: int = 220) -> str:
     return _layout_module()._short_error_message(exc, limit=limit)
 
 
+def _promoted_body_label_and_axis(advanced: dict) -> tuple[str, tuple[float, float, float] | None]:
+    """Pull the promotion step-label and optical axis from a row's advanced dict.
+
+    Used by the bugs/0021 body-STL regeneration so a rebuilt cache reproduces
+    the same label-tagged filename and (for analytic bodies) the same +Z
+    re-orientation the original promote applied. Falls back to ``"optical"``
+    and no axis when the metadata is absent.
+    """
+    label = "optical"
+    optical_axis: tuple[float, float, float] | None = None
+    for promo_key in ("StepOverlayPromotion", "StepAnalyticPromotion"):
+        promotion = advanced.get(promo_key)
+        if not isinstance(promotion, dict):
+            continue
+        label_value = promotion.get("step_label")
+        if isinstance(label_value, str) and label_value.strip():
+            label = label_value.strip().lower()
+        axis_value = promotion.get("optical_axis")
+        if isinstance(axis_value, (list, tuple)) and len(axis_value) == 3:
+            try:
+                optical_axis = (float(axis_value[0]), float(axis_value[1]), float(axis_value[2]))
+            except Exception:
+                optical_axis = None
+    return label, optical_axis
+
+
 def _shared_setup(metal_catalogs=None):
     return _layout_module()._shared_setup(metal_catalogs=metal_catalogs)
 
@@ -502,6 +528,15 @@ class LayoutImportExportMixin:
         # any failure (missing Tk display in headless tests, scanner
         # exception on a malformed row) is swallowed so a broken prompt
         # never blocks the load.
+        # bugs/0021: a promoted body STL is a *derived* artefact. Before we
+        # complain about it being missing, silently rebuild it from its source
+        # STEP when that source is present (the usual case -- the source lives
+        # in the synced attachment/ folder). The dialog then only fires for a
+        # genuinely missing *source*, not a regenerable cache file.
+        try:
+            self._regenerate_missing_optical_solid_caches()
+        except Exception:
+            pass
         try:
             self._prompt_for_missing_cad_assets()
         except Exception:
@@ -510,6 +545,95 @@ class LayoutImportExportMixin:
         self.refresh_plot(suppress_analysis=True)
         self._mark_saved_state()
         self.status_var.set(f"Opened {Path(path).name}. Click Update to run analysis.")
+
+    def _portable_cache_path(self, path_text: str) -> str:
+        """Return ``path_text`` relative to the project root when it lives
+        under it (the synced ``attachment/`` cache), else unchanged.
+
+        Keeps regenerated-cache references portable across machines / users:
+        a project-relative ``attachment/cad_cache/...`` path resolves the same
+        on every checkout, where an absolute /home/<user>/... path would not.
+        """
+        try:
+            resolved = Path(path_text).expanduser().resolve()
+            return str(resolved.relative_to(PROJECT_ROOT))
+        except Exception:
+            return str(path_text)
+
+    def _regenerate_missing_optical_solid_caches(self) -> None:
+        """bugs/0021: rebuild any promoted body STL whose cache file is missing
+        but whose source STEP is still present, BEFORE the missing-assets scan.
+
+        Covers both the file-backed optical solid (``Solid_3d_stl`` <-
+        ``OpticalSolidSourcePath``) and the analytic-promoted body
+        (``StepAnalyticBodyStlPath`` <- ``StepAnalyticPromotion.source_step_path``).
+        The regenerated STL is written under the synced ``attachment/`` cache
+        and the row's path is rewritten project-relative. Best-effort: any
+        failure leaves the row for the safety-net analytic fallback (the system
+        build neutralises a still-missing Solid_3d_stl) and the dialog.
+        """
+        try:
+            from KrakenOS.UI.layout_editor import _resolve_project_file_path
+        except Exception:
+            return
+        # (derived cache key, source key, source is nested under a promotion dict)
+        pairs = (
+            ("Solid_3d_stl", "OpticalSolidSourcePath", False),
+            ("StepAnalyticBodyStlPath", "StepAnalyticPromotion.source_step_path", True),
+        )
+        service = None
+        for row in getattr(self, "rows", []) or []:
+            advanced = getattr(row, "advanced", None)
+            if not isinstance(advanced, dict):
+                continue
+            for cache_key, source_key, nested in pairs:
+                cache_value = advanced.get(cache_key)
+                if not isinstance(cache_value, str) or cache_value.strip() in {"", "None"}:
+                    continue
+                try:
+                    if _resolve_project_file_path(cache_value).exists():
+                        continue  # cache present -- nothing to regenerate
+                except Exception:
+                    continue
+                if nested:
+                    outer, _, inner = source_key.partition(".")
+                    nested_dict = advanced.get(outer)
+                    source_value = nested_dict.get(inner) if isinstance(nested_dict, dict) else None
+                else:
+                    source_value = advanced.get(source_key)
+                if not isinstance(source_value, str) or not source_value.strip():
+                    continue
+                try:
+                    source_path = _resolve_project_file_path(source_value)
+                except Exception:
+                    continue
+                if not source_path.exists():
+                    continue  # source also gone -- leave it for the dialog
+                label, optical_axis = _promoted_body_label_and_axis(advanced)
+                if service is None:
+                    try:
+                        service = self._step_overlay_promotion_service()
+                    except Exception:
+                        return
+                try:
+                    new_stl = service.regenerate_promoted_body_stl_from_source(
+                        source_path,
+                        label=label,
+                        # the file-backed Solid_3d_stl body is stored without the
+                        # optical-axis re-orientation, so only pass it for the
+                        # analytic body to match how each was originally written.
+                        optical_axis=optical_axis if cache_key == "StepAnalyticBodyStlPath" else None,
+                    )
+                except Exception:
+                    new_stl = None
+                if not new_stl:
+                    continue
+                advanced[cache_key] = self._portable_cache_path(new_stl)
+                try:
+                    self._clear_missing_path(new_stl)
+                    self._clear_missing_path(cache_value)
+                except Exception:
+                    pass
 
     def _prompt_for_missing_cad_assets(self) -> None:
         """Show the Missing CAD assets dialog if the layout has any.

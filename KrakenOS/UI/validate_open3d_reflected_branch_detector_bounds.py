@@ -223,6 +223,19 @@ def _real_scene_summary() -> dict[str, object] | None:
         rows = [KrakenLayoutEditor._row_from_layout_item(item) for item in module.SURFACES]
         editor = _snapshot_editor(rows, dict(module.SETTINGS))
         editor.current_layout_file = PRESCRIPTION.resolve()
+        # bugs/0021: rebuild a missing promoted-cube body STL from its source
+        # STEP so this guard exercises the REAL beam-splitter fold, not the
+        # analytic single-face fallback the system-build safety-net substitutes
+        # for a missing cache. If the body still can't be resolved (no cache, no
+        # source on this machine), skip rather than assert fold physics on the
+        # placeholder.
+        try:
+            editor._regenerate_missing_optical_solid_caches()
+        except Exception:
+            pass
+        from KrakenOS.UI.services.missing_assets_scan import any_solid_body_unresolved
+        if any_solid_body_unresolved(editor.rows):
+            return None
         editor._saved_step_native_trace_plan_cache = {}
         try:
             editor._normalize_special_rows()

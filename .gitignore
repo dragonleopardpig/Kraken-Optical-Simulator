@@ -103,6 +103,10 @@ docs/_build/
 /attachment/*.step
 /attachment/*.STEP
 /attachment/__pycache__/
+# bugs/0021: generated CAD/STEP mesh cache. Lives under attachment/ so the user
+# syncs it (Filen) and a layout opened on another machine finds its body mesh,
+# but it is a derived artefact -- keep it out of git.
+/attachment/cad_cache/
 /attachment/Cameras/
 /attachment/LED/
 /attachment/Lens/

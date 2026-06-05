@@ -466,15 +466,20 @@ class MissingAssetsDialog(tk.Toplevel):
             setattr(row, "advanced", advanced)
         if relocate_advanced_path(advanced, asset.key, new_path):
             clear_row_skip(advanced, asset.key)
-        # If the user just located a source STEP for an analytic-
-        # promoted row and the cached body STL is still missing on
-        # disk, regenerate it now. Without this the user has to either
-        # re-run the Promote workflow or live with the placeholder; in
-        # most cases the body STL was just evicted from
-        # ~/.cache/krakenos (fresh machine, cache wipe) and the source
-        # STEP is the only thing they need to re-supply.
+        # bugs/0021: relocating a source STEP regenerates its derived body-STL
+        # cache so the user doesn't have to re-run Promote -- both the analytic
+        # body (StepAnalyticBodyStlPath) and the file-backed optical solid
+        # (Solid_3d_stl). In most cases the cache was simply never synced (a
+        # fresh machine, or it lived in ~/.cache) and the source STEP is the
+        # only thing the user needs to re-supply.
         if asset.key.endswith(".source_step_path"):
-            self._maybe_regenerate_body_stl(asset.row_index, advanced, new_path)
+            self._maybe_regenerate_body_stl(
+                asset.row_index, advanced, new_path, body_key="StepAnalyticBodyStlPath"
+            )
+        elif asset.key == "OpticalSolidSourcePath":
+            self._maybe_regenerate_body_stl(
+                asset.row_index, advanced, new_path, body_key="Solid_3d_stl"
+            )
         self._set_status(index, "located")
         self._refresh_status_line()
         return True
@@ -484,42 +489,56 @@ class MissingAssetsDialog(tk.Toplevel):
         row_index: int,
         advanced: dict,
         source_step_path: Path,
+        *,
+        body_key: str = "StepAnalyticBodyStlPath",
     ) -> None:
         """Best-effort body-STL regeneration after a source STEP relocate.
 
-        Silently no-ops on any failure: the user already has a working
-        layout (the relocate succeeded), and the missing body STL just
-        means the row keeps rendering its placeholder. The
-        regeneration is offered as a convenience, not a guarantee.
+        Rebuilds the derived ``body_key`` cache -- the analytic
+        ``StepAnalyticBodyStlPath`` or the file-backed optical-solid
+        ``Solid_3d_stl`` -- from the relocated source STEP. Silently no-ops on
+        any failure: the relocate already succeeded, and a still-missing cache
+        just keeps the row's placeholder. The rebuilt path is stored
+        project-relative (bugs/0021) so it stays portable across machines.
         """
-        body_stl_value = advanced.get("StepAnalyticBodyStlPath")
+        body_stl_value = advanced.get(body_key)
         if not isinstance(body_stl_value, str) or not body_stl_value:
             return
-        # Skip when the current body STL is already on disk -- nothing
-        # to regenerate. Happens when the user located the source STEP
-        # but the body cache was actually fine.
+        # Skip when the current cache is already on disk -- nothing to rebuild.
         try:
-            if Path(body_stl_value).expanduser().exists():
+            from KrakenOS.UI.layout_editor import _resolve_project_file_path
+
+            if _resolve_project_file_path(body_stl_value).exists():
                 return
         except Exception:
-            return
-        promotion = advanced.get("StepAnalyticPromotion")
+            try:
+                if Path(body_stl_value).expanduser().exists():
+                    return
+            except Exception:
+                return
         label = "optical"
         optical_axis: Optional[tuple[float, float, float]] = None
-        if isinstance(promotion, dict):
+        # The file-backed Solid_3d_stl body is cached WITHOUT the optical-axis
+        # +Z re-orientation; only the analytic body carries one. Read the label
+        # from whichever promotion dict the row has.
+        for promo_key in ("StepOverlayPromotion", "StepAnalyticPromotion"):
+            promotion = advanced.get(promo_key)
+            if not isinstance(promotion, dict):
+                continue
             label_value = promotion.get("step_label")
-            if isinstance(label_value, str) and label_value:
-                label = label_value.strip().lower() or "optical"
-            axis_value = promotion.get("optical_axis")
-            if isinstance(axis_value, (list, tuple)) and len(axis_value) == 3:
-                try:
-                    optical_axis = (
-                        float(axis_value[0]),
-                        float(axis_value[1]),
-                        float(axis_value[2]),
-                    )
-                except Exception:
-                    optical_axis = None
+            if isinstance(label_value, str) and label_value.strip():
+                label = label_value.strip().lower()
+            if body_key == "StepAnalyticBodyStlPath":
+                axis_value = promotion.get("optical_axis")
+                if isinstance(axis_value, (list, tuple)) and len(axis_value) == 3:
+                    try:
+                        optical_axis = (
+                            float(axis_value[0]),
+                            float(axis_value[1]),
+                            float(axis_value[2]),
+                        )
+                    except Exception:
+                        optical_axis = None
         try:
             service = self.editor._step_overlay_promotion_service()
         except Exception:
@@ -534,7 +553,11 @@ class MissingAssetsDialog(tk.Toplevel):
             new_stl_path = None
         if not new_stl_path:
             return
-        advanced["StepAnalyticBodyStlPath"] = new_stl_path
+        try:
+            new_stl_path = self.editor._portable_cache_path(new_stl_path)
+        except Exception:
+            pass
+        advanced[body_key] = new_stl_path
         # Forget any cached "this path is missing" entry on the
         # renderer so the next refresh picks the regenerated STL up
         # immediately, without waiting for the 5-second TTL.

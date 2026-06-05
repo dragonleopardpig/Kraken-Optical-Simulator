@@ -3395,6 +3395,49 @@ def phase_28_step_edges_glass_palette(
     return result
 
 
+def phase_29_missing_solid_cache_regenerates(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0021: a missing promoted-solid cache regenerates from its source STEP
+    and renders -- the whole Open 3D view never blanks.
+
+    A promoted optical solid keeps a derived body mesh in ``Solid_3d_stl`` and
+    the source CAD in ``OpticalSolidSourcePath``. When the cache (formerly in
+    machine-local ``~/.cache``) is absent on a fresh machine, the old code let
+    ``Prerequisites3D.pv.read`` raise and abort the entire system build, so every
+    surface vanished. The fix moves the cache under the synced ``attachment/``
+    folder, regenerates a missing cache from its source STEP on open (stored
+    project-relative), stops the missing-assets scan from flagging a regenerable
+    cache (it targets the source STEP instead), and neutralises a truly
+    unrecoverable ``Solid_3d_stl`` to ``"None"`` at build so a placeholder draws
+    rather than a blank scene. The guard
+    (``validate_open3d_missing_solid_cache_regenerates``) asserts the scan
+    behaviour, the build neutralisation, and that opening the cube prescription
+    with the cache missing regenerates + renders it. SKIPs the render checks when
+    the cube's source STEP is unavailable on this machine.
+    """
+    result = PhaseResult(
+        name="Phase 29: missing promoted-solid cache regenerates from source (no blank scene)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_missing_solid_cache_regenerates import run_checks
+        # Reuse the harness editor + inspector: a second embedded VTK inspector
+        # cannot initialise while the first is alive.
+        passed, notes = run_checks(app=app, inspector=inspector)
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"missing-solid-cache guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("missing-solid-cache guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3460,6 +3503,7 @@ def main() -> int:
             phase_26_beam_splitter_transmit_and_second_axis,
             phase_27_reflected_branch_detector_bounds,
             phase_28_step_edges_glass_palette,
+            phase_29_missing_solid_cache_regenerates,
         ]
         for phase in phases:
             try:

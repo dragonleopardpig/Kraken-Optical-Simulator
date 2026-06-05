@@ -1959,6 +1959,20 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
             surface.UDA = decode_custom_surface_value(spec.get("uda", spec.get("UDA", surface.UDA)))
         for attr, value in _advanced_surface_attrs_from_spec(spec).items():
             setattr(surface, attr, _normalize_advanced_surface_value(attr, value))
+        # bugs/0021: a file-backed Solid_3d_stl whose cached mesh is missing on
+        # this machine (a layout opened on another box without the CAD cache,
+        # or one the user Skipped in the missing-assets dialog) must NOT reach
+        # Prerequisites3D's pv.read -- that raises FileNotFoundError and aborts
+        # the ENTIRE system build, collapsing every surface so the whole Open
+        # 3D view goes blank. Neutralise it to "None" on the built Surf so the
+        # analytic single-face fallback runs and the rest of the system builds.
+        # The row's stored path is left untouched (the relocate dialog can
+        # still find it), and the 3D view still draws its red missing-asset
+        # placeholder, which keys on the row's MissingResourceState, not here.
+        solid_stl = getattr(surface, "Solid_3d_stl", "None")
+        if isinstance(solid_stl, str) and solid_stl.strip() and solid_stl != "None":
+            if not _resolve_project_file_path(solid_stl).exists():
+                surface.Solid_3d_stl = "None"
         native_vars = _native_variable_names_from_spec(spec)
         if native_vars:
             surface.Var = native_vars
