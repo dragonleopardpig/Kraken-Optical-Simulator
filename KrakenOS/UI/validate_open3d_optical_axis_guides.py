@@ -29,6 +29,11 @@ def _records_for(bundle: SceneBundle) -> list[dict[str, object]]:
     # have to provide a stand-in or the function early-returns the global
     # guide only.
     inspector.show_rays_var = _FakeBoolVar(True)
+    # The rays-off cache reads these on every call; the fake inspector skips
+    # __init__, so seed them or _optical_axis_records_for_3d raises AttributeError
+    # before it ever reaches the axis-selection logic under test.
+    inspector._cached_traced_axis_signature = None
+    inspector._cached_traced_axis_records = []
     return Kraken3DInspector._optical_axis_records_for_3d(inspector, bundle)
 
 

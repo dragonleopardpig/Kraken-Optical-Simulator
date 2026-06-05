@@ -3264,6 +3264,45 @@ def phase_25_traced_rays_always_visible(
     return result
 
 
+def phase_26_beam_splitter_transmit_and_second_axis(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0017: a promoted beam-splitter cube must transmit straight through to
+    the imaging lens, and its reflected beam path must get its own optical axis.
+
+    The cube's straight-through exit face is *inferred* (auto-suggested) as an
+    Output Port; the output-port follower used to snap the downstream Image plane
+    onto that exit face — in front of the imaging lens — so every transmitted ray
+    "stopped right at the imaging lens entrance". Separately, the 3D inspector
+    built a traced optical axis from a single chief ray, so when the on-axis
+    transmit branch won, the reflected branch got no axis at all. The guard
+    (``validate_open3d_beam_splitter_transmit_and_second_axis``) asserts the
+    straight-through inferred exit no longer repositions downstream rows (while a
+    folded exit still does), the reflected branch earns exactly one folded axis,
+    and — when the CAD cache is present — re-traces the user's saved cube scene.
+    This phase wires it into the comprehensive harness.
+    """
+    result = PhaseResult(
+        name="Phase 26: beam-splitter cube transmits to lens + reflected 2nd optical axis"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_beam_splitter_transmit_and_second_axis import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"beam-splitter transmit/second-axis guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    # Surface failures, and keep any SKIP lines so a missing CAD cache is visible.
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("display-free guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3326,6 +3365,7 @@ def main() -> int:
             phase_23_lone_lens_slide_gap_overlay,
             phase_24_random_terminal_element_ray_display,
             phase_25_traced_rays_always_visible,
+            phase_26_beam_splitter_transmit_and_second_axis,
         ]
         for phase in phases:
             try:

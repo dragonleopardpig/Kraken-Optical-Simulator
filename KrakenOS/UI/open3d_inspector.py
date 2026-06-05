@@ -7620,9 +7620,64 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 )
             ]
             physical_paths = [path for path in physical_paths if _path_has_non_refractive_steering(path)]
+            # The global guide already represents the incoming +Z optical axis,
+            # so a traced segment only earns a SEPARATE axis when it is genuinely
+            # folded away from that axis (a beam splitter's reflected branch, a
+            # fold mirror, TIR, a penta deviation). Field-angle spread on the
+            # straight-through branch stays collinear-ish with +Z; without this
+            # gate a beam splitter's many transmitted field rays each spawn a
+            # near-duplicate guide hugging the global axis. Genuine folds deviate
+            # far more than field spread (a 45 deg splitter folds 90 deg), so a
+            # generous collinearity tolerance separates them cleanly.
+            global_axis_direction = np.asarray((0.0, 0.0, 1.0), dtype=float)
+            fold_collinearity_tol = 0.1  # sin(~5.7 deg)
+
+            def _axis_unit(direction) -> np.ndarray | None:
+                try:
+                    vector = np.asarray(direction, dtype=float).reshape(3)
+                except Exception:
+                    return None
+                norm = float(np.linalg.norm(vector))
+                if not np.isfinite(norm) or norm <= 1e-9:
+                    return None
+                return vector / norm
+
+            def _segment_is_genuine_fold(direction) -> bool:
+                unit = _axis_unit(direction)
+                if unit is None:
+                    return False
+                transverse = unit - float(np.dot(unit, global_axis_direction)) * global_axis_direction
+                return float(np.linalg.norm(transverse)) >= fold_collinearity_tol
+
             if physical_paths:
-                chief = min(physical_paths, key=_path_score)
-                traced_segments = _dotted_axis_records_from_ray_path(chief, bounds)
+                # Each distinct folded beam branch deserves its own traced optical
+                # axis. A single chief is not enough for a beam splitter: the
+                # central ray fans into an on-axis transmit branch (already covered
+                # by axis:global) AND a folded reflect branch. If the transmit
+                # branch wins the chief score the reflected beam path would get no
+                # axis at all. Walk the steered paths in centrality order and keep
+                # one representative folded segment per distinct fold DIRECTION,
+                # clustering by angular proximity: a branch's field rays fan a few
+                # degrees apart and must collapse to one axis, while genuinely
+                # different folds (a 90 deg splitter reflection) stay separate.
+                max_traced_axes = 6
+                fold_merge_cos = 0.966  # cos(~15 deg)
+                traced_segments: list[dict[str, object]] = []
+                kept_fold_units: list[np.ndarray] = []
+                for path in sorted(physical_paths, key=_path_score):
+                    for segment in _dotted_axis_records_from_ray_path(path, bounds):
+                        unit = _axis_unit(segment.get("segment_direction"))
+                        if unit is None or not _segment_is_genuine_fold(segment.get("segment_direction")):
+                            continue
+                        if any(float(np.dot(unit, kept)) >= fold_merge_cos for kept in kept_fold_units):
+                            continue
+                        kept_fold_units.append(unit)
+                        traced_segments.append(segment)
+                    if len(traced_segments) >= max_traced_axes:
+                        break
+                del traced_segments[max_traced_axes:]
+                for axis_number, segment in enumerate(traced_segments, start=2):
+                    segment["axis_label"] = f"Optical Axis {axis_number}"
                 records.extend(traced_segments)
                 # Stash a deep-enough copy so a later rays-off refresh
                 # can serve the same segments. Convert numpy point
