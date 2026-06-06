@@ -3519,6 +3519,42 @@ def phase_31_moved_element_rays_stay_visible(
     return result
 
 
+def phase_32_moved_splitter_keeps_focus(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0023: moving a beam-splitter off the beam must not drag the focus.
+
+    The cube's output-port override repositions downstream rows onto its exit
+    frame. Bug 0017's straight-through skip required the exit to be codirectional
+    AND laterally centred, so shifting the cube sideways (still codirectional, no
+    fold) failed the lateral test and snapped the Image/detector onto the
+    displaced face -- dragging the focus ~400 mm off station so the beam missed
+    the sensor. The fix makes the skip direction-only (`_exit_frame_is_non_folding`):
+    only a real fold relocates the beam, so a laterally-moved solid never moves
+    downstream geometry. The guard (`validate_open3d_moved_splitter_keeps_focus`)
+    is display-free: it pins the non-folding predicate and asserts a -55mm-X cube
+    shift does not reposition the Image row.
+    """
+    result = PhaseResult(
+        name="Phase 32: moving a beam-splitter off the beam keeps the focus on station"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_moved_splitter_keeps_focus import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"moved-splitter focus guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("moved-splitter focus guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3596,6 +3632,7 @@ def main() -> int:
             phase_29_missing_solid_cache_regenerates,
             phase_30_slide_handle_hover_and_click,
             phase_31_moved_element_rays_stay_visible,
+            phase_32_moved_splitter_keeps_focus,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

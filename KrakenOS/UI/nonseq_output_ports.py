@@ -1050,31 +1050,34 @@ def _reflected_frame_from_interaction_face(
     return center, _frame_rotation_from_normal(reflected)
 
 
-def _exit_frame_is_on_axis_passthrough(
-    frame_origin: np.ndarray,
+def _exit_frame_is_non_folding(
     frame_rotation: np.ndarray,
     incoming_axis: np.ndarray,
     *,
     direction_tol: float = 1e-6,
-    lateral_tol: float = 1e-3,
 ) -> bool:
-    """True when an exit frame neither bends nor offsets the incoming beam.
+    """True when an exit frame does NOT fold the incoming beam (codirectional).
 
-    An *inferred* exit that runs straight along the incoming optical axis
-    (collinear, codirectional, and centered on it) does not fold the beam, so
-    the existing downstream rows already sit on that axis at their authored
-    spacing. Snapping them onto the solid's exit face would collapse the
-    spacing -- e.g. drag an Image plane from its real station onto a promoted
-    beam-splitter cube's straight-through face, intercepting every transmitted
-    ray before it reaches the imaging lens.
+    Only a *fold* -- a change of propagation direction (reflection/bend) --
+    relocates the beam and the downstream image/detector it lands on. A
+    non-folding *inferred* exit leaves the beam travelling the same direction it
+    arrived, so the existing downstream rows already sit on that path at their
+    authored spacing and must not be repositioned onto the solid's exit face.
+
+    bugs/0022: this used to also require the exit to be laterally *centred* on
+    the incoming axis. That wrongly fired when the user shifted a beam-splitter
+    cube sideways "out of the beam": the cube's exit FACE moved off-axis (still
+    codirectional), the lateral test failed, the skip stopped applying, and the
+    override snapped the Image plane onto the displaced face -- dragging the
+    focus ~400 mm off its real station. Moving the cube laterally does not bend
+    the beam, so nothing downstream may move; the focus is the lens's, fixed in
+    space, and the beam simply propagates to it whether or not the cube is in
+    the path. (A genuine codirectional beam *displacer* must be authored with an
+    explicit output port, which is not gated by this skip.)
     """
     incoming = _unit_vector(incoming_axis)
     forward = _unit_vector(np.asarray(frame_rotation, dtype=float).reshape(3, 3)[:, 2])
-    if float(np.dot(forward, incoming)) < 1.0 - float(direction_tol):
-        return False
-    origin = np.asarray(frame_origin, dtype=float).reshape(3)
-    lateral = origin - float(np.dot(origin, incoming)) * incoming
-    return float(np.linalg.norm(lateral)) <= float(lateral_tol)
+    return float(np.dot(forward, incoming)) >= 1.0 - float(direction_tol)
 
 
 def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict[int, dict[str, object]]:
@@ -1140,15 +1143,16 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
                     if explicit_output_face is not None
                     else f"inferred_output:{str(output_face.get('face_id', '') or '').strip()}"
                 )
-        # A purely inferred (auto-suggested, not user-authored) exit that runs
-        # straight through along the incoming optical axis must not reposition
-        # the existing downstream rows: they already lie on that axis. Honoring
-        # the promoted-solid contract here keeps an Image/Object plane at its
-        # authored station instead of snapping it onto the solid's exit face.
+        # A purely inferred (auto-suggested, not user-authored) exit that does
+        # not FOLD the beam must not reposition the existing downstream rows:
+        # the beam keeps travelling the incoming direction, so they already lie
+        # on its path. This keeps an Image/Object plane at its authored station
+        # instead of snapping it onto the solid's exit face -- including when
+        # the solid is shifted laterally off the beam (bugs/0022: a beam-splitter
+        # cube moved sideways must not drag the focus onto its displaced face).
         # Folded inferred exits, explicit output ports, and physics-traced exits
         # still drive the follower-row workflow normally.
-        if str(frame_source or "").startswith("inferred_output") and _exit_frame_is_on_axis_passthrough(
-            frame_origin,
+        if str(frame_source or "").startswith("inferred_output") and _exit_frame_is_non_folding(
             frame_rotation,
             np.asarray((0.0, 0.0, 1.0), dtype=float),
         ):
