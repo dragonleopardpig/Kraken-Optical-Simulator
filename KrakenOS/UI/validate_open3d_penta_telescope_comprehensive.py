@@ -819,7 +819,12 @@ def phase_7_best_focus_sweep(
             return float("inf")
         return float(np.sqrt(np.mean(np.asarray(radii) ** 2)))
 
-    sweep_values = np.linspace(max(1.0, original - 8.0), original + 8.0, 9)
+    # 5 samples (was 9): each sweep point is a full retrace of the heavy
+    # cascade+telescope chain (~4.5 s), and this phase only asserts that the
+    # RMS RESPONDS to the thickness sweep (rms_range > 0) -- 5 points across the
+    # same +/-8 mm bracket still detect both the response and an interior
+    # minimum, at roughly half the wall time. (Harness-speed tuning, 2026-06-06.)
+    sweep_values = np.linspace(max(1.0, original - 8.0), original + 8.0, 5)
     best_thickness = None
     best_rms = float("inf")
     sweep_log: list[dict[str, float]] = []
@@ -1010,8 +1015,10 @@ def phase_9_real_focal_minimum(
     # Wide bracket so the focal minimum sits interior regardless of
     # which catalog achromat is checked out (f ~ 50 mm for 32323,
     # ~125 mm for AC254-125-A) and of trace-setup drift. 5-200 mm
-    # covers both with margin.
-    sweep_values = np.linspace(5.0, 200.0, 40)
+    # covers both with margin. 21 samples (was 40): ~9.75 mm steps still
+    # bracket the minimum interior and assert a responsive sweep, at about
+    # half the trace count. (Harness-speed tuning, 2026-06-06.)
+    sweep_values = np.linspace(5.0, 200.0, 21)
     best_thickness = None
     best_rms = float("inf")
     sweep_log: list[dict[str, float]] = []
@@ -3498,6 +3505,15 @@ def _print_report(results: list[PhaseResult]) -> int:
         if not result.passed:
             failed += 1
     print("-" * 78)
+    # Timing summary: total wall time + the slowest phases, so the harness is
+    # easy to keep "quick and efficient" -- regressions in cost are visible.
+    timed = [(float(r.detail.get("seconds", 0.0)), r.name) for r in results if "seconds" in r.detail]
+    if timed:
+        total = sum(s for s, _ in timed)
+        print(f"TIMING: {total:.1f}s total across {len(timed)} phases")
+        for seconds, name in sorted(timed, reverse=True)[:8]:
+            print(f"        {seconds:6.2f}s  {name}")
+        print("-" * 78)
     if failed:
         print(f"FAIL: {failed} phase(s) regressed.")
         return 1
@@ -3544,16 +3560,17 @@ def main() -> int:
             phase_30_slide_handle_hover_and_click,
         ]
         for phase in phases:
+            phase_start = time.perf_counter()
             try:
-                results.append(phase(app, inspector))
+                result = phase(app, inspector)
             except Exception as exc:
-                results.append(
-                    PhaseResult(
-                        name=phase.__name__,
-                        passed=False,
-                        notes=[f"raised {exc!r}"],
-                    )
+                result = PhaseResult(
+                    name=phase.__name__,
+                    passed=False,
+                    notes=[f"raised {exc!r}"],
                 )
+            result.detail["seconds"] = round(time.perf_counter() - phase_start, 2)
+            results.append(result)
         return _print_report(results)
     finally:
         try:
