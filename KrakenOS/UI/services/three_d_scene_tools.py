@@ -1812,7 +1812,16 @@ class ThreeDSceneToolsMixin:
             )
             show_clipped_rays = bool(self.show_clipped_rays_var.get())
             if not show_clipped_rays and not live_step_preview:
-                scene_paths = [path for path in scene_paths if ray_path_visible_without_clipping_from_events(path)]
+                visible_paths = [path for path in scene_paths if ray_path_visible_without_clipping_from_events(path)]
+                # bugs/0022: when the filter would hide EVERY ray, don't blank
+                # the trace. Moving an element off the beam (e.g. shifting the
+                # beam-splitter cube sideways) can make every path escape without
+                # reaching a surface AND without a reflective fold to keep it
+                # visible -- the on-axis beam now misses the (port-followed)
+                # detector. The user still expects to see where the beam goes, so
+                # only suppress clipped rays when at least one survives (the
+                # bug-0016 mixed case: hide strays among rays that DO land).
+                scene_paths = visible_paths if visible_paths else scene_paths
             total = len(scene_paths)
             step = max(total // 300, 1) if total > 300 else 1
             rendered: list[tuple[int, tuple[float, float, float], np.ndarray, str]] = []

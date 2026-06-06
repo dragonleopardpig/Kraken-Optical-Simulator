@@ -3482,6 +3482,43 @@ def phase_30_slide_handle_hover_and_click(
     return result
 
 
+def phase_31_moved_element_rays_stay_visible(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0022: moving an element off the beam must not blank the trace.
+
+    With Show Clipped Rays OFF, shifting the beam-splitter cube off the optical
+    axis means nothing hits it (no reflective fold) and the on-axis beam misses
+    the port-followed detector, so every path escapes -- the clipped-ray filter
+    then hid EVERY ray (558 -> 0 rendered), a blank trace. The fix makes
+    ``_iter_3d_scene_ray_records`` show the unclipped paths when the filter would
+    otherwise hide them all, so the beam stays visible (bug 0016's mixed case --
+    hide strays among rays that DO land -- is preserved). The guard
+    (``validate_open3d_moved_element_rays_stay_visible``) asserts the fallback in
+    source and renders the cube-shifted scene to confirm rays remain; the render
+    check SKIPs without the cube's source STEP.
+    """
+    result = PhaseResult(
+        name="Phase 31: moving an element off the beam keeps traced rays visible"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_moved_element_rays_stay_visible import run_checks
+        # Reuse the harness editor + inspector for the render check.
+        passed, notes = run_checks(app=app, inspector=inspector)
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"moved-element ray-visibility guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("moved-element ray-visibility guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3558,6 +3595,7 @@ def main() -> int:
             phase_28_step_edges_glass_palette,
             phase_29_missing_solid_cache_regenerates,
             phase_30_slide_handle_hover_and_click,
+            phase_31_moved_element_rays_stay_visible,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
