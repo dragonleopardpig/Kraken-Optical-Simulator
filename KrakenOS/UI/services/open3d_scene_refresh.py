@@ -42,6 +42,78 @@ class Open3DSceneRefreshService:
             return
         setattr(self._inspector, name, value)
 
+    def _refresh_rays_only(self, rays, scene_bundle: Any = None) -> None:
+        """bugs/0024: refresh ONLY the traced-ray actors, leaving every body,
+        handle and overlay actor in place.
+
+        Used during an interactive placement drag with Live Mode on: the dragged
+        body already tracks the cursor via its cheap actor transform, so the full
+        scene rebuild (~2 s on a heavy CAD scene) is wasted -- only the rays need
+        to follow. Mirrors refresh_scene's ray-drawing loop but skips the body /
+        handle / overlay rebuild, so a sparse-fan live trace lands in ~0.3 s.
+        """
+        if self._renderer is None:
+            return
+        le = _layout_module()
+        KrakenLayoutEditor = le.KrakenLayoutEditor
+        scene_display_center_radius = le.scene_display_center_radius
+        self._current_scene_bundle = scene_bundle
+        # Remove the current ray + endpoint actors (both register in the ray maps).
+        for actor_key in list(self._actor_ray_map.keys()):
+            actor = self._actor_by_key.pop(actor_key, None)
+            if actor is not None:
+                self._remove_renderer_view_prop(actor)
+        self._actor_ray_map.clear()
+        self._ray_actor_map.clear()
+        if not self.show_rays_var.get():
+            self.render()
+            return
+        if scene_bundle is not None:
+            center, radius = scene_display_center_radius(scene_bundle)
+        else:
+            center, radius = self._row_scene_bounds()
+        paths_by_ray_index = KrakenLayoutEditor._scene_ray_path_by_index(scene_bundle)
+        ray_radius = max(radius * 0.0015, 0.08)
+        for ray_index, color, ray_pts, terminal_status in self.editor._iter_3d_scene_ray_records(rays, scene_bundle):
+            ray_path = paths_by_ray_index.get(int(ray_index))
+            terminal_target = KrakenLayoutEditor._missed_detector_target_for_path(scene_bundle, ray_path)
+            terminal_direction = KrakenLayoutEditor._terminal_display_direction_for_path(ray_path)
+            display_ray_pts, _was_bounded = KrakenLayoutEditor._bounded_3d_ray_points_for_display(
+                ray_pts,
+                center,
+                radius,
+                terminal_status=terminal_status,
+                terminal_target=terminal_target,
+                terminal_direction=terminal_direction,
+            )
+            ray_mesh = KrakenLayoutEditor._ray_segment_mesh_for_3d_display(
+                display_ray_pts,
+                vertex_inset=KrakenLayoutEditor._ray_vertex_display_inset(radius),
+            )
+            if ray_mesh is None or int(getattr(ray_mesh, "n_points", 0)) < 2:
+                continue
+            style = KrakenLayoutEditor._ray_terminal_3d_style(color, terminal_status)
+            self._add_ray_actor(
+                ray_mesh,
+                radius=ray_radius,
+                color=style["line_color"],
+                ray_index=ray_index,
+                opacity=float(style["line_opacity"]),
+                line_width=float(style["line_width"]),
+            )
+            if KrakenLayoutEditor._should_draw_3d_terminal_endpoint(
+                terminal_status,
+                show_terminal_diagnostics=bool(self.show_terminal_diagnostics_var.get()),
+            ):
+                self._add_ray_endpoint_actor(
+                    display_ray_pts[-1],
+                    radius=ray_radius * float(style["endpoint_scale"]),
+                    color=style["endpoint_color"],
+                    ray_index=ray_index,
+                    terminal_status=terminal_status,
+                )
+        self.render()
+
     def refresh_scene(
         self,
         system,

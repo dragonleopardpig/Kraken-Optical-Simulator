@@ -3555,6 +3555,42 @@ def phase_32_moved_splitter_keeps_focus(
     return result
 
 
+def phase_33_live_drag_ray_preview(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0024: Live Mode shows a live ray preview while an element is dragged.
+
+    The placement drag (bugs/0012) defers the ray trace to release because a full
+    retrace on the heavy machine-vision scene is ~8 s. With Live Mode on, the drag
+    now traces a sparse fan (a `_drag_preview_ray_count_override`) and does a
+    rays-only refresh (`_refresh_rays_only` -- update only the ray actors, leave
+    the bodies/handles in place since they don't change), flushing the drag offset
+    into the model first. That brings the live drag preview to ~1.2 s/update
+    (~6.5x faster); the full bundle restores on release. The guard
+    (`validate_open3d_live_drag_ray_preview`) asserts the source contracts and,
+    when the cube STEP is available, that a drag preview moves the model, traces a
+    sparse fan, and leaves the body actors untouched.
+    """
+    result = PhaseResult(
+        name="Phase 33: Live Mode drag shows a sparse-fan rays-only live preview"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_live_drag_ray_preview import run_checks
+        passed, notes = run_checks(app=app, inspector=inspector)
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"live-drag ray-preview guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("live-drag ray-preview guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3633,6 +3669,7 @@ def main() -> int:
             phase_30_slide_handle_hover_and_click,
             phase_31_moved_element_rays_stay_visible,
             phase_32_moved_splitter_keeps_focus,
+            phase_33_live_drag_ray_preview,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

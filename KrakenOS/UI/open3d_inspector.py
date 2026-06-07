@@ -918,15 +918,52 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _run_live_refresh(self) -> None:
         self._open3d_live_refresh_service().run()
 
+    def _flush_pending_placement_drag_for_live(self) -> None:
+        """bugs/0024: commit an in-progress placement-translate drag's accumulated
+        offset into the model so the Live Mode trace that follows reflects the
+        dragged pose.
+
+        Model-only (``translate_scene_row_pose``); the live preview that calls
+        this is the retrace, so we do not retrace here. The pending offset is
+        reset so the next drag steps accumulate from the just-committed pose, and
+        ``_finish_placement_drag`` on release commits only the remaining tail.
+        Rotation drags already retrace per step, so they are left alone.
+        Best-effort: any failure leaves the deferred-on-release behaviour intact.
+        """
+        state = self._placement_drag_state
+        if state is None or str(state.get("kind")) == "rotate":
+            return
+        try:
+            pending = float(state.get("pending_translate_mm", 0.0))
+        except Exception:
+            return
+        if abs(pending) <= 1.0e-9:
+            return
+        try:
+            self.editor.translate_scene_row_pose(
+                int(state.get("row_index", -1)), str(state.get("axis", "")), pending
+            )
+            state["pending_translate_mm"] = 0.0
+        except Exception:
+            pass
+
     def _refresh_live_preview_scene(self, reason: str) -> None:
+        self._flush_pending_placement_drag_for_live()
         result = self.editor._open3d_trace_refresh_service().build_live_preview(self)
-        self.refresh_scene(
-            result.system,
-            result.rays,
-            result.row_names,
-            scene_bundle=result.scene_bundle,
-            reset_camera=False,
-        )
+        # bugs/0024: mid-placement-drag, the bodies/handles don't change (the
+        # dragged one tracks the cursor via its cheap actor transform), so update
+        # only the ray actors -- skipping the ~2 s full rebuild keeps the drag
+        # preview interactive. The full scene rebuilds on release.
+        if self._placement_drag_state is not None:
+            self._refresh_rays_only(result.rays, result.scene_bundle)
+        else:
+            self.refresh_scene(
+                result.system,
+                result.rays,
+                result.row_names,
+                scene_bundle=result.scene_bundle,
+                reset_camera=False,
+            )
         live_records = list(getattr(self.editor, "_last_live_step_overlay_trace_records", []) or [])
         suffix = " with transient optical STEP" if live_records else ""
         self.editor.status_var.set(f"Live Mode trace updated{suffix} ({reason}).")
@@ -2794,8 +2831,27 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # Live leading-gap readout for the gizmo slide, matching the
             # imported-STEP drag and axis-slide mode (flag_20260604_111615_630).
             self._update_placement_drag_gap_overlay(state)
+            # bugs/0024: with Live Mode ON, also drive a debounced live retrace so
+            # the rays react to the element as it is dragged. The body still
+            # tracks the cursor smoothly via the cheap actor transform above; the
+            # ~180 ms debounce coalesces the heavier trace, and
+            # _refresh_live_preview_scene flushes this pending offset into the
+            # model first so the trace reflects the dragged pose. Live Mode OFF
+            # keeps the bug-0012 deferred behaviour (trace only on release).
+            if self._live_mode_enabled():
+                # Sparse fan during the drag so the live trace is snappy; the
+                # full-fidelity bundle is restored by _finish_placement_drag on
+                # release (which clears this override).
+                self.editor._drag_preview_ray_count_override = 3
+                self.schedule_live_refresh("placement drag")
 
     def _finish_placement_drag(self, state: dict[str, object]) -> None:
+        # bugs/0024: the drag preview traced a sparse fan; clear the override so
+        # the on-release commit retraces the full-fidelity bundle.
+        try:
+            self.editor._drag_preview_ray_count_override = None
+        except Exception:
+            pass
         try:
             applied_steps = int(state.get("applied_steps", 0))
             row_index = int(state.get("row_index", -1))
@@ -9870,6 +9926,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             scene_bundle=scene_bundle,
             reset_camera=reset_camera,
         )
+
+    def _refresh_rays_only(self, rays, scene_bundle: SceneBundle | None = None) -> None:
+        # bugs/0024: rays-only partial refresh (skips the body/handle rebuild),
+        # used by the Live Mode drag preview.
+        return self._scene_refresh_service()._refresh_rays_only(rays, scene_bundle)
 
     def _live_trace_step_overlay_labels(self) -> set[str]:
         labels: set[str] = set()

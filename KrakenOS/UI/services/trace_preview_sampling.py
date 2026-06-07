@@ -1070,6 +1070,16 @@ class TracePreviewSamplingMixin:
 
 
     def _current_ray_count(self) -> int:
+        # bugs/0024: during an interactive placement drag with Live Mode on, the
+        # inspector sets a reduced ray count so the live preview traces a sparse
+        # fan (snappy feedback) instead of the full bundle. Cleared on release,
+        # when the full-fidelity retrace runs.
+        override = getattr(self, "_drag_preview_ray_count_override", None)
+        if override is not None:
+            try:
+                return max(1, int(override))
+            except (TypeError, ValueError):
+                pass
         try:
             return max(1, int(self.ray_count_var.get()))
         except ValueError:
