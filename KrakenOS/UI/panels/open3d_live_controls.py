@@ -7,7 +7,7 @@ from collections.abc import Callable, Sequence
 from tkinter import ttk
 from typing import Any
 
-from KrakenOS.UI.widgets import bind_combobox_commit, grid_labeled_commit_entry
+from KrakenOS.UI.widgets import bind_combobox_commit, bind_mousewheel_scroll, grid_labeled_commit_entry
 
 
 class Open3DLiveControlsPanel:
@@ -66,6 +66,7 @@ class Open3DLiveControlsPanel:
         window_id = canvas.create_window((0, 0), window=stack, anchor="nw")
         stack.bind("<Configure>", lambda _event: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda event: canvas.itemconfigure(window_id, width=max(int(event.width), 1)))
+        bind_mousewheel_scroll(canvas, stack)  # wheel works over the panel body, not just the scrollbar
 
         source = ttk.LabelFrame(stack, text="Source", padding=8)
         source.grid(row=0, column=0, sticky="ew")

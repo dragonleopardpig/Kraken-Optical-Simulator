@@ -21,11 +21,13 @@ from KrakenOS.UI.widgets.menu_controls import (
     create_popup_menu,
     pack_menubutton,
 )
+from KrakenOS.UI.widgets.scroll_helpers import bind_mousewheel_scroll
 from KrakenOS.UI.widgets.table_cell_editor import place_commit_cell_entry
 from KrakenOS.UI.widgets.tooltips import WidgetTooltip
 
 __all__ = [
     "CommitCombobox",
+    "bind_mousewheel_scroll",
     "CommitEntry",
     "WidgetTooltip",
     "MenuCheckbutton",
