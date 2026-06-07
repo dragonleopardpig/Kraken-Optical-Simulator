@@ -10952,6 +10952,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         menu.add_command(label="Set Variable — Independent (drive)", command=lambda: self._set_quick_estimation_role(quantity, ROLE_INDEPENDENT))
         menu.add_command(label="Set Variable — Dependent (solve for focus)", command=lambda: self._set_quick_estimation_role(quantity, ROLE_DEPENDENT))
         menu.add_command(label="Set Constant (pin value)", command=lambda: self._set_quick_estimation_role(quantity, ROLE_CONSTANT))
+        if plane:
+            # Wire the plane to the existing panel Field Type / Field Value
+            # (object height). Editing here writes the same editor vars the left
+            # panel does, then retraces.
+            menu.add_separator()
+            menu.add_command(label="Set Field value (object height)…", command=self._quick_estimation_edit_field_value)
+            menu.add_command(label="Set Field type…", command=self._quick_estimation_edit_field_type)
         try:
             menu.tk_popup(int(event.x_root), int(event.y_root))
         finally:
@@ -10959,6 +10966,93 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 menu.grab_release()
             except Exception:
                 pass
+
+    def _centered_input_dialog(self, title: str, prompt: str, initial: str) -> str | None:
+        """Small screen-centred modal text input reusing the reliable
+        _show_centered_dialog placement (works under Wayland/layer-shell)."""
+        holder: dict[str, str] = {}
+        dialog = tk.Toplevel(self)
+        try:
+            dialog.withdraw()
+            dialog.title(title)
+            dialog.transient(self.winfo_toplevel())
+            dialog.resizable(False, False)
+        except Exception:
+            pass
+        var = tk.StringVar(value=str(initial))
+        ttk.Label(dialog, text=prompt, wraplength=360, justify="left").grid(
+            row=0, column=0, columnspan=2, padx=12, pady=(12, 6), sticky="w"
+        )
+        entry = ttk.Entry(dialog, textvariable=var, width=20)
+        entry.grid(row=1, column=0, columnspan=2, padx=12, pady=(0, 12), sticky="ew")
+
+        def accept(_event=None):
+            holder["value"] = var.get()
+            dialog.destroy()
+
+        ttk.Button(dialog, text="OK", command=accept).grid(row=2, column=0, padx=(12, 4), pady=(0, 12), sticky="e")
+        ttk.Button(dialog, text="Cancel", command=dialog.destroy).grid(row=2, column=1, padx=(4, 12), pady=(0, 12), sticky="w")
+        dialog.bind("<Return>", accept)
+        dialog.bind("<Escape>", lambda _e: dialog.destroy())
+        try:
+            dialog.grab_set()
+        except Exception:
+            pass
+        try:
+            self.editor._show_centered_dialog(dialog)
+        except Exception:
+            pass
+        try:
+            entry.focus_set()
+            entry.selection_range(0, "end")
+        except Exception:
+            pass
+        self.wait_window(dialog)
+        return holder.get("value")
+
+    def _quick_estimation_edit_field_value(self) -> None:
+        try:
+            current = str(self.editor.field_value_var.get())
+            ftype = str(self.editor.field_type_var.get())
+        except Exception:
+            current, ftype = "0", "Field"
+        value = self._centered_input_dialog(
+            "Object Field Value",
+            f"Object height / Field value [mm]\n(Field type: {ftype})",
+            current,
+        )
+        if value is None:
+            return
+        try:
+            float(value)
+        except (TypeError, ValueError):
+            self.status_var.set("Field value must be a number.")
+            return
+        try:
+            self.editor.field_value_var.set(str(value))
+            self._commit_live_control_update(sync_fields=True)
+            self.status_var.set(f"Field value (object height) set to {value} mm.")
+        except Exception as exc:
+            self.status_var.set(f"Could not set field value: {exc}")
+
+    def _quick_estimation_edit_field_type(self) -> None:
+        try:
+            current = str(self.editor.field_type_var.get())
+        except Exception:
+            current = ""
+        value = self._centered_input_dialog(
+            "Field Type",
+            "Field type (e.g. Object Height, Object Angle, Real Image Height):",
+            current,
+        )
+        if value is None or not str(value).strip():
+            return
+        try:
+            self.editor.field_type_var.set(str(value).strip())
+            self._commit_live_control_update(sync_fields=True)
+            self.status_var.set(f"Field type set to {value}.")
+        except Exception as exc:
+            self.status_var.set(f"Could not set field type: {exc}")
 
     def _set_quick_estimation_role(self, quantity: str, role: str) -> None:
         qe = self._quick_estimation_service()

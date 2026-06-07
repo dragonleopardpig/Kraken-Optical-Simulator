@@ -615,38 +615,26 @@ class Open3DThicknessDimensionService:
             pass
 
     def _position_inline_editor(self, window: tk.Toplevel) -> None:
+        # Reuse the proven LED-import centering helper: withdraw -> set geometry
+        # -> deiconify -> re-apply geometry after_idle + after(80ms). The re-apply
+        # after the window is mapped is what makes it land on screen centre
+        # reliably under Wayland / layer-shell (a one-shot geometry() is ignored).
+        try:
+            self.editor._show_centered_dialog(window)
+            return
+        except Exception:
+            pass
         try:
             window.update_idletasks()
             width = max(int(window.winfo_reqwidth()), 260)
             height = max(int(window.winfo_reqheight()), 80)
-            # Center over the 3D inspector window, not the pointer: on
-            # Wayland / layer-shell desktops the pointer-relative placement
-            # clamped to the top-left and hid the editor behind the top bar.
-            try:
-                host = self.inspector.winfo_toplevel()
-                host.update_idletasks()
-                host_x = int(host.winfo_rootx())
-                host_y = int(host.winfo_rooty())
-                host_w = max(int(host.winfo_width()), width)
-                host_h = max(int(host.winfo_height()), height)
-            except Exception:
-                host_x = host_y = 0
-                host_w = max(int(window.winfo_screenwidth()), width)
-                host_h = max(int(window.winfo_screenheight()), height)
             screen_w = max(int(window.winfo_screenwidth()), width)
             screen_h = max(int(window.winfo_screenheight()), height)
-            top_margin = 48  # keep clear of a top bar / panel
-            x = host_x + (host_w - width) // 2
-            y = host_y + (host_h - height) // 3
-            x = min(max(x, 8), max(screen_w - width - 12, 8))
-            y = min(max(y, top_margin), max(screen_h - height - 36, top_margin))
+            x = max((screen_w - width) // 2, 0)
+            y = max((screen_h - height) // 2, 0)
             window.geometry(f"{width}x{height}+{x}+{y}")
+            window.deiconify()
             window.lift()
-            try:
-                window.attributes("-topmost", True)
-                window.after(500, lambda w=window: w.winfo_exists() and w.attributes("-topmost", False))
-            except Exception:
-                pass
         except Exception:
             pass
 
@@ -715,6 +703,7 @@ class Open3DThicknessDimensionService:
         self._inline_editor_window = window
         self._inline_editor_row_index = row_index
         try:
+            window.withdraw()  # appear directly centred (no top-left flicker)
             window.title("Edit Thickness")
             window.transient(self.inspector)
             window.resizable(False, False)
