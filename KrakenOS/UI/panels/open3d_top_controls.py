@@ -91,20 +91,8 @@ class Open3DTopControlsPanel:
         )
         pack_menubutton(view_toolbar, "Overlays", overlay_menu, padx=(8, 0))
         self.inspector._open3d_overlay_menu = overlay_menu
-        pack_commit_checkbutton(
-            view_toolbar,
-            "Live panel",
-            variable=self.inspector.show_live_controls_panel_var,
-            command=self.inspector._on_open3d_panel_visibility_changed,
-            padx=(8, 0),
-        )
-        pack_commit_checkbutton(
-            view_toolbar,
-            "Components",
-            variable=self.inspector.show_scene_components_panel_var,
-            command=self.inspector._on_open3d_panel_visibility_changed,
-            padx=(8, 0),
-        )
+        # The Live-panel / Components checkboxes are replaced by the 2D-style
+        # ◀ / ▶ collapse arrows on the panels themselves.
         pack_command_button(view_toolbar, "Done 2D", command=self.inspector.finish_stl_placement, side="right", padx=(8, 0))
         pack_command_button(view_toolbar, "Close", command=self.inspector._on_close, side="right", padx=(8, 0))
         # Bug recorder: start/stop button next to Close so it's always visible.

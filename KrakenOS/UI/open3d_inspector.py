@@ -558,8 +558,22 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._build_open3d_top_controls(self)
 
             main_pane = ttk.Panedwindow(self, orient=tk.HORIZONTAL)
-            main_pane.grid(row=1, column=0, columnspan=3, sticky="nsew", padx=8, pady=8)
+            main_pane.grid(row=1, column=1, sticky="nsew", padx=0, pady=8)
             self._open3d_main_pane = main_pane
+
+            # 2D-style collapse: thin restore-arrow frames at the left/right edges
+            # (shown only while the corresponding panel is collapsed).
+            left_restore = ttk.Frame(self, padding=(2, 8, 2, 8))
+            ttk.Button(left_restore, text="▶", width=2, command=self.toggle_live_controls_panel).grid(row=0, column=0, sticky="n")
+            left_restore.grid(row=1, column=0, sticky="ns", padx=(8, 0))
+            left_restore.grid_remove()
+            self._open3d_left_restore_frame = left_restore
+
+            right_restore = ttk.Frame(self, padding=(2, 8, 2, 8))
+            ttk.Button(right_restore, text="◀", width=2, command=self.toggle_scene_components_panel).grid(row=0, column=0, sticky="n")
+            right_restore.grid(row=1, column=2, sticky="ns", padx=(0, 8))
+            right_restore.grid_remove()
+            self._open3d_right_restore_frame = right_restore
 
             live_panel = ttk.LabelFrame(self, text="Live Controls", padding=8)
             live_panel.columnconfigure(0, weight=1)
@@ -691,6 +705,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.status_var.set(f"{label} panel hidden.")
         else:
             variable.set(present)
+        # Show the edge restore arrow only while the panel is collapsed.
+        restore = getattr(
+            self, "_open3d_left_restore_frame" if panel == "live" else "_open3d_right_restore_frame", None
+        )
+        if restore is not None:
+            if self._open3d_pane_present(paned, widget):
+                restore.grid_remove()
+            else:
+                restore.grid()
         try:
             self.update_idletasks()
         except Exception:

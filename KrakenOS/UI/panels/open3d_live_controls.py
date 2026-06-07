@@ -55,6 +55,12 @@ class Open3DLiveControlsPanel:
             sticky="e",
             padx=(6, 0),
         )
+        ttk.Button(header, text="◀", width=2, command=self.inspector.toggle_live_controls_panel).grid(
+            row=0,
+            column=4,
+            sticky="e",
+            padx=(6, 0),
+        )
 
         canvas = tk.Canvas(parent, highlightthickness=0, borderwidth=0, width=280)
         canvas.grid(row=1, column=0, sticky="nsew")
