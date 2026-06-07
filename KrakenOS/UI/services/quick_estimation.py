@@ -283,6 +283,19 @@ class QuickEstimationService:
             return True, f"Working distance below focal length ({wd:.4g} < {f:.4g} mm) -- no real image."
         return False, ""
 
+    def forbidden_for_object_distance(self, object_distance: float) -> bool:
+        """Would this object distance put the object inside the front focal point
+        (no real image)? Used for live drag feedback before committing."""
+        sol = self._paraxial_solution()
+        f = self.focal_length()
+        if sol is None or f is None or f <= 0:
+            return False
+        try:
+            ppa = float(sol[5])
+            return (float(object_distance) + ppa) <= f * (1.0 + 1e-6)
+        except (TypeError, ValueError, IndexError):
+            return False
+
     def set_target_fov(self, object_semi: float | None) -> None:
         if object_semi is None:
             self._target_object_semi = None

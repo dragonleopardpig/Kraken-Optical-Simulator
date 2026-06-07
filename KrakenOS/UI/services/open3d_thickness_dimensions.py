@@ -517,6 +517,23 @@ class Open3DThicknessDimensionService:
         self.inspector.status_var.set(
             f"Drag S{row_index} Thickness along the dimension arrow; release to apply, click to edit numerically."
         )
+        # Quick Estimation: remember the conjugate partner gap so a live drag can
+        # restore both on release (so undo brackets the whole drag, not the last
+        # increment).
+        partner_row = None
+        partner_initial = None
+        try:
+            qe = self.inspector._quick_estimation_service()
+            if qe.is_enabled():
+                if row_index == qe.object_thickness_row():
+                    partner_row = qe.image_thickness_row()
+                elif row_index == qe.image_thickness_row():
+                    partner_row = qe.object_thickness_row()
+                if partner_row is not None:
+                    partner_initial = float(self.editor.rows[partner_row].thickness)
+        except Exception:
+            partner_row = None
+            partner_initial = None
         return {
             "row_index": row_index,
             "initial_thickness": float(initial),
@@ -525,6 +542,9 @@ class Open3DThicknessDimensionService:
             "mm_per_pixel": float(mm_per_pixel),
             "signed_pixels": 0.0,
             "moved": False,
+            "partner_row": partner_row,
+            "partner_initial": partner_initial,
+            "live_committed": False,
         }
 
     def apply_drag_motion(self, state: dict[str, object] | None, dx: int | float, dy: int | float) -> None:
@@ -553,20 +573,49 @@ class Open3DThicknessDimensionService:
             row_index = -1
         status = f"S{row_index} Thickness drag: {initial:.6g} -> {pending:.6g} mm. Release to apply."
         # Quick Estimation: live conjugate + FOV feedback while dragging a
-        # conjugate gap, before the release commits the move.
+        # conjugate gap. With Live Mode on, commit the move into the model and
+        # schedule a debounced live retrace so the geometry follows; otherwise
+        # just preview the readout. A forbidden value (WD<FL) flashes the arrow.
         try:
             qe = self.inspector._quick_estimation_service()
-            if qe.is_enabled():
-                preview = qe.preview_state(int(row_index), float(pending))
-                if preview is not None:
-                    qe.update_readout(preview)
-                    img = preview.get("image_distance")
-                    fov = preview.get("fov_full")
-                    if img is not None and fov is not None:
-                        status = (
-                            f"Quick Estimation: object {pending:.6g} mm -> image {img:.6g} mm, "
-                            f"FOV {fov:.6g} mm. Release to apply."
-                        )
+        except Exception:
+            qe = None
+        try:
+            live = bool(self.inspector._live_mode_enabled())
+        except Exception:
+            live = False
+        try:
+            if qe is not None and qe.is_enabled():
+                is_object_gap = int(row_index) == qe.object_thickness_row()
+                forbidden = bool(is_object_gap and qe.forbidden_for_object_distance(float(pending)))
+                if forbidden:
+                    self.inspector._start_thickness_forbidden_flash(
+                        int(row_index),
+                        f"Working distance {pending:.6g} mm below focal length -- no real image.",
+                    )
+                else:
+                    self.inspector._stop_thickness_forbidden_flash()
+                if live and not forbidden:
+                    # commit pending + solve partner so the live retrace shows it.
+                    self.editor.rows[int(row_index)].thickness = float(pending)
+                    qe.solve_dependent(int(row_index))
+                    qe.update_readout()
+                    state["live_committed"] = True
+                    self.inspector.schedule_live_refresh("thickness drag")
+                    status = f"S{row_index} Thickness drag (live): {initial:.6g} -> {pending:.6g} mm."
+                else:
+                    preview = qe.preview_state(int(row_index), float(pending))
+                    if preview is not None:
+                        qe.update_readout(preview)
+                        img = preview.get("image_distance")
+                        fov = preview.get("fov_full")
+                        if img is not None and fov is not None:
+                            status = (
+                                f"Quick Estimation: object {pending:.6g} mm -> image {img:.6g} mm, "
+                                f"FOV {fov:.6g} mm. Release to apply."
+                            )
+                    if forbidden:
+                        status = f"⛔ Working distance {pending:.6g} mm < focal length -- no real image."
         except Exception:
             pass
         self.inspector.status_var.set(status)
@@ -575,12 +624,30 @@ class Open3DThicknessDimensionService:
         if state is None:
             return
         try:
+            self.inspector._stop_thickness_forbidden_flash()
+        except Exception:
+            pass
+        try:
             row_index = int(state.get("row_index", -1))
             pending = float(state.get("pending_thickness", state.get("initial_thickness", 0.0)))
             initial = float(state.get("initial_thickness", 0.0))
         except Exception:
             return
+        # If Live Mode committed the move into the model during the drag, restore
+        # both conjugate gaps to their pre-drag values first, so the single
+        # history capture inside apply_dimension_value brackets the whole drag.
+        if state.get("live_committed"):
+            try:
+                self.editor.rows[row_index].thickness = initial
+                partner_row = state.get("partner_row")
+                partner_initial = state.get("partner_initial")
+                if partner_row is not None and partner_initial is not None:
+                    self.editor.rows[int(partner_row)].thickness = float(partner_initial)
+            except Exception:
+                pass
         if not bool(state.get("moved", False)) or abs(pending - initial) <= 1e-9:
+            if state.get("live_committed"):
+                self.inspector.refresh_from_editor(force_retrace=True)
             self.inspector.status_var.set(f"S{row_index} Thickness drag: no change.")
             return
         self.apply_dimension_value(row_index, pending)

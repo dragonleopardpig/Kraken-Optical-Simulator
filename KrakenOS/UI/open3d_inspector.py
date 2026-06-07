@@ -11273,6 +11273,75 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
 
+    def _thickness_arrow_actors(self, row_index: int):
+        keys = (getattr(self, "_thickness_dimension_actor_map", {}) or {}).get(int(row_index), [])
+        actors = []
+        for key in keys:
+            actor = (getattr(self, "_actor_by_key", {}) or {}).get(key)
+            if actor is not None:
+                actors.append(actor)
+        return actors
+
+    def _start_thickness_forbidden_flash(self, row_index: int, message: str) -> None:
+        """Flash a thickness arrow red to warn of a forbidden value (e.g. WD<FL)."""
+        if self.__dict__.get("_forbidden_flash_row") == int(row_index):
+            return
+        self._stop_thickness_forbidden_flash()
+        actors = self._thickness_arrow_actors(int(row_index))
+        if not actors:
+            return
+        originals = []
+        for actor in actors:
+            try:
+                originals.append((actor, tuple(actor.GetProperty().GetColor())))
+            except Exception:
+                pass
+        self._forbidden_flash_row = int(row_index)
+        self._forbidden_flash_originals = originals
+        self._forbidden_flash_on = False
+        if message:
+            self.status_var.set(f"⛔ {message}")
+
+        def _tick():
+            if self.__dict__.get("_forbidden_flash_row") != int(row_index):
+                return
+            self._forbidden_flash_on = not self.__dict__.get("_forbidden_flash_on", False)
+            color = (1.0, 0.1, 0.1) if self._forbidden_flash_on else (1.0, 0.55, 0.0)
+            for actor, _orig in self.__dict__.get("_forbidden_flash_originals", []):
+                try:
+                    actor.GetProperty().SetColor(*color)
+                except Exception:
+                    pass
+            try:
+                self.render()
+            except Exception:
+                pass
+            self._forbidden_flash_after = self.after(280, _tick)
+
+        _tick()
+
+    def _stop_thickness_forbidden_flash(self) -> None:
+        after_id = self.__dict__.get("_forbidden_flash_after")
+        if after_id is not None:
+            try:
+                self.after_cancel(after_id)
+            except Exception:
+                pass
+        self._forbidden_flash_after = None
+        for actor, color in self.__dict__.get("_forbidden_flash_originals", []) or []:
+            try:
+                actor.GetProperty().SetColor(*color)
+            except Exception:
+                pass
+        if self.__dict__.get("_forbidden_flash_row") is not None:
+            try:
+                self.render()
+            except Exception:
+                pass
+        self._forbidden_flash_row = None
+        self._forbidden_flash_originals = []
+        self._forbidden_flash_on = False
+
     def _thickness_drag_state_from_current_pick(self) -> dict[str, object] | None:
         return self._open3d_thickness_dimension_service().drag_state_from_current_pick()
 
