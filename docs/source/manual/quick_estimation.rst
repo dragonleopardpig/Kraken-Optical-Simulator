@@ -60,6 +60,24 @@ Right-click actions
 * **Image plane / image-distance arrow** — set the sensor semi-height
   (the same left-panel ``Field value``) or set the role.
 
+Sensor coverage and recommended sensor
+--------------------------------------
+
+When Quick Estimation is on, the 3D scene draws coverage overlays:
+
+* **Object plane** — a solid circle at the current object FOV and a dashed
+  *ghost* circle at the previous FOV, so a change reads as bigger or smaller.
+* **Image plane** — a solid circle at the image footprint, the recommended
+  rectangular sensor inscribed in it (so you see the image circle covering the
+  sensor), and a dashed ghost of the previous image circle.
+
+The panel reports a **recommended sensor**: the rectangle whose diagonal matches
+the image footprint of the object being imaged, with width × height (4:3), the
+image-circle diameter, and the nearest standard format (``1/4"`` …
+``Full-frame``) — so you can size or source a camera the image circle perfectly
+covers. Overfilling the current sensor recommends a larger format; underfilling
+recommends a smaller one.
+
 Forbidden values
 ----------------
 

@@ -98,6 +98,15 @@ The physics is honest: changing the FOV alone does **not** defocus (focus is
 axial, object height transverse) — it changes sensor over/underfill. Defocus
 appears only when you move one distance without its conjugate partner.
 
+* **Coverage overlays + recommended sensor.** With Quick Estimation on the scene
+  draws (`KrakenOS/UI/services/quick_estimation_overlay.py`, hooked into the
+  refresh after the thickness overlays): an object-plane FOV circle + dashed
+  previous-FOV ghost, and an image-plane image circle + inscribed recommended
+  sensor rectangle + dashed previous image circle. The panel reports a
+  recommended rectangular sensor (width × height for 4:3, image-circle diameter,
+  nearest standard format `1/4"`..`Full-frame`) sized so the image circle
+  perfectly covers it — to source a matching camera.
+
 ## Tests
 
 `KrakenOS/UI/validate_open3d_quick_estimation_conjugate.py` — source contracts

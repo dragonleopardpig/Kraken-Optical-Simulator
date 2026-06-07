@@ -9490,6 +9490,22 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _add_thickness_dimension_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
         return self._open3d_thickness_dimension_service().add_overlays(system, scene_bundle)
 
+    def _quick_estimation_overlay_service(self):
+        service = getattr(self, "_quick_estimation_overlay_service_instance", None)
+        if service is None:
+            from KrakenOS.UI.services.quick_estimation_overlay import QuickEstimationOverlayService
+
+            service = QuickEstimationOverlayService(self, pv_module=pv)
+            self._quick_estimation_overlay_service_instance = service
+        return service
+
+    def _add_quick_estimation_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
+        try:
+            return self._quick_estimation_overlay_service().add_overlays(system, scene_bundle)
+        except Exception as exc:  # pragma: no cover - defensive
+            self.editor.append_debug(f"Quick Estimation overlays skipped: {exc}")
+            return 0
+
     @staticmethod
     def _scene_placement_translate_step(placement: ScenePlacement3D, spacing: float) -> float:
         if bool(getattr(placement, "snap_enabled", False)):

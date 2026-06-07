@@ -51,10 +51,24 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         "solve_dependent", "current_state", "update_readout", "set_role", "is_enabled",
         "focal_length", "working_distance", "is_forbidden", "forbidden_for_object_distance",
         "set_target_fov", "target_object_semi", "snap_to_fov",
+        "recommended_sensor", "previous_object_semi",
     ):
         if not hasattr(QuickEstimationService, attr):
             notes.append(f"FAIL: QuickEstimationService missing {attr}")
             passed = False
+    # 3D overlay service + refresh hook.
+    from KrakenOS.UI.services.quick_estimation_overlay import QuickEstimationOverlayService
+    if not hasattr(QuickEstimationOverlayService, "add_overlays"):
+        notes.append("FAIL: QuickEstimationOverlayService missing add_overlays")
+        passed = False
+    from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
+    try:
+        refresh_src = inspect.getsource(Open3DSceneRefreshService.refresh_scene)
+    except Exception:
+        refresh_src = ""
+    if "_add_quick_estimation_overlays" not in refresh_src:
+        notes.append("FAIL: scene refresh does not draw the Quick Estimation overlays")
+        passed = False
     # inspector actions for target FOV / snap / config table / forbidden flash.
     from KrakenOS.UI.open3d_inspector import Kraken3DInspector as _Insp
     for attr in (
@@ -224,6 +238,13 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
                 if qe.forbidden_for_object_distance(f_len * 4.0):
                     notes.append(f"FAIL[{fname}]: object far beyond focal point wrongly forbidden")
                     passed = False
+
+            # recommended sensor: a positive rectangle + a standard format label.
+            rec = qe.recommended_sensor()
+            if rec is None or not (rec.get("diagonal", 0) > 0 and rec.get("width", 0) > 0
+                                   and rec.get("height", 0) > 0 and rec.get("format")):
+                notes.append(f"FAIL[{fname}]: recommended_sensor invalid: {rec}")
+                passed = False
 
             # live drag preview must NOT mutate the committed thicknesses.
             app.rows[0].thickness = nom_obj

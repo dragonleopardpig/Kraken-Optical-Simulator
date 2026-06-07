@@ -877,6 +877,9 @@ class Open3DSceneRefreshService:
         # ``_step_actor_map``, draw the thickness dimensions so each row->row
         # span splits around any lens between its two surfaces.
         thickness_dimensions = self._add_thickness_dimension_overlays(system, scene_bundle)
+        # Quick Estimation FOV-circle / sensor-rectangle overlays (no-op unless
+        # Quick Estimation is enabled).
+        self._add_quick_estimation_overlays(system, scene_bundle)
 
         from KrakenOS.UI.services.open3d_camera_state import apply_camera_state
 

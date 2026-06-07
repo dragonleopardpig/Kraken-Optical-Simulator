@@ -87,6 +87,9 @@ class QuickEstimationService:
         # the fill factor = target / FOV tells how much of the sensor the object
         # covers (>1 overfills/crops, <1 underfills).
         self._target_object_semi: float | None = None
+        # The object FOV semi-height before the last change, for the before/after
+        # ghost circle in the 3D overlay.
+        self._previous_object_semi: float | None = None
 
     # ------------------------------------------------------------------ state
     def is_enabled(self) -> bool:
@@ -309,6 +312,17 @@ class QuickEstimationService:
             return False
 
     def set_target_fov(self, object_semi: float | None) -> None:
+        # Snapshot the current object extent (target, else the FOV that fills the
+        # sensor) as "previous" so the overlay can ghost the before/after change.
+        try:
+            current_extent = self._target_object_semi
+            if not current_extent:
+                st = self.current_state()
+                current_extent = st.get("fov_semi")
+            if current_extent and current_extent > 0:
+                self._previous_object_semi = float(current_extent)
+        except Exception:
+            pass
         if object_semi is None:
             self._target_object_semi = None
             return
@@ -320,6 +334,9 @@ class QuickEstimationService:
 
     def target_object_semi(self) -> float | None:
         return self._target_object_semi
+
+    def previous_object_semi(self) -> float | None:
+        return self._previous_object_semi
 
     def snap_to_fov(self, object_semi: float | None = None) -> tuple[bool, str]:
         """Set both gaps to the unique conjugate pair that images an object of
