@@ -264,6 +264,16 @@ class Open3DMouseBindingsService:
             self._middle_drag_last_xy = None
             return "break"
 
+        def hover_motion(event):
+            # Passive hover (no button held): highlight a thickness-dimension
+            # handle under the cursor so it reads as draggable/clickable.
+            if self._left_drag_active or self._middle_drag_active:
+                return
+            try:
+                self._update_thickness_hover_highlight(int(event.x), int(event.y))
+            except Exception:
+                pass
+
         try:
             self._vtk_widget.bind("<ButtonPress-1>", left_press)
             self._vtk_widget.bind("<B1-Motion>", left_motion)
@@ -275,5 +285,6 @@ class Open3DMouseBindingsService:
             self._vtk_widget.bind("<B2-Motion>", middle_motion)
             self._vtk_widget.bind("<ButtonRelease-2>", middle_release)
             self._vtk_widget.bind("<ButtonPress-3>", self._show_surface_function_context_menu)
+            self._vtk_widget.bind("<Motion>", hover_motion, add="+")
         except Exception as exc:
             self.editor.append_debug(f"3D mouse binding override failed: {exc}")

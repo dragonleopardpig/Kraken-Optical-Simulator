@@ -11069,6 +11069,70 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if summary:
             self.status_var.set(summary)
 
+    def _update_thickness_hover_highlight(self, x: int, y: int) -> None:
+        """Highlight the thickness-dimension handle under the cursor (passive hover)."""
+        amap = getattr(self, "_actor_thickness_dimension_map", None)
+        if not amap:
+            # nothing hoverable -- only clear a stale highlight, no VTK pick.
+            if self.__dict__.get("_thickness_hover_actor_key"):
+                self._apply_thickness_hover_highlight(None, None, None)
+            return
+        last = self.__dict__.get("_thickness_hover_xy")
+        if last is not None and abs(last[0] - x) < 3 and abs(last[1] - y) < 3:
+            return
+        self._thickness_hover_xy = (x, y)
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return
+        actor = None
+        actor_key = None
+        try:
+            self._vtk_interactor.SetEventInformationFlipY(int(x), int(y), 0, 0, chr(0), 0, None)
+            px, py = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(px, py, 0.0, self._renderer)
+            actor = self._picker.GetActor()
+            if actor is None:
+                get_view_prop = getattr(self._picker, "GetViewProp", None)
+                if callable(get_view_prop):
+                    actor = get_view_prop()
+            actor_key = self._actor_key(actor)
+        except Exception:
+            actor = None
+            actor_key = None
+        row = amap.get(actor_key) if actor_key else None
+        if row is None:
+            self._apply_thickness_hover_highlight(None, None, None)
+        else:
+            self._apply_thickness_hover_highlight(actor, actor_key, int(row))
+
+    def _apply_thickness_hover_highlight(self, actor, actor_key, row) -> None:
+        if self.__dict__.get("_thickness_hover_actor_key") == actor_key:
+            return
+        # restore the previously highlighted handle.
+        prev = self.__dict__.get("_thickness_hover_restore")
+        if prev is not None:
+            prev_actor, prev_color = prev
+            try:
+                prev_actor.GetProperty().SetColor(*prev_color)
+            except Exception:
+                pass
+        self._thickness_hover_restore = None
+        self._thickness_hover_actor_key = None
+        if actor is not None and row is not None:
+            try:
+                prop = actor.GetProperty()
+                self._thickness_hover_restore = (actor, tuple(prop.GetColor()))
+                prop.SetColor(1.0, 0.85, 0.2)  # amber highlight
+                self._thickness_hover_actor_key = actor_key
+                self.status_var.set(
+                    f"S{int(row)} Thickness handle — drag to adjust, click to type, right-click for role."
+                )
+            except Exception:
+                pass
+        try:
+            self.render()
+        except Exception:
+            pass
+
     def _thickness_drag_state_from_current_pick(self) -> dict[str, object] | None:
         return self._open3d_thickness_dimension_service().drag_state_from_current_pick()
 
