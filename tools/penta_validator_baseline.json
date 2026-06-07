@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-06-06T14:32:12+00:00",
+  "generated_at": "2026-06-07T01:16:21+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -33,7 +33,8 @@
     "28": "pass",
     "29": "pass",
     "30": "pass",
-    "31": "pass"
+    "31": "pass",
+    "32": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -67,6 +68,7 @@
     "28": "imported CAD solids wear one glass edge palette + camera outlined",
     "29": "missing promoted-solid cache regenerates from source (no blank scene)",
     "30": "promoted-row slide handle hover-highlights; bare click does not retrace",
-    "31": "moving an element off the beam keeps traced rays visible"
+    "31": "moving an element off the beam keeps traced rays visible",
+    "32": "moving a beam-splitter off the beam keeps the focus on station"
   }
 }
