@@ -9522,19 +9522,53 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 pass
 
+    def _all_actor_keys_for_step_label(self, label) -> set:
+        """Every actor tied to an imported STEP label: body (pick), feature
+        edges + follow actors, and the selection rotation handles. The edges and
+        gizmo register only in the follow / rotate maps, not _step_actor_map, so
+        a body-only hide left them behind as residual."""
+        label = str(label).strip().lower()
+        keys: set = set()
+        keys.update(self.__dict__.get("_step_actor_map", {}).get(label, []) or [])
+        keys.update(self.__dict__.get("_step_follow_actor_map", {}).get(label, []) or [])
+        for key, lbl in (self.__dict__.get("_actor_step_map", {}) or {}).items():
+            if str(lbl).strip().lower() == label:
+                keys.add(key)
+        for key, lbl in (self.__dict__.get("_actor_step_follow_map", {}) or {}).items():
+            if str(lbl).strip().lower() == label:
+                keys.add(key)
+        for key, info in (self.__dict__.get("_actor_step_rotate_map", {}) or {}).items():
+            try:
+                if str(info[0]).strip().lower() == label:
+                    keys.add(key)
+            except Exception:
+                pass
+        return keys
+
+    def _all_actor_keys_for_row(self, row_index: int) -> set:
+        row_index = int(row_index)
+        keys: set = set(self.__dict__.get("_row_actor_map", {}).get(row_index, []) or [])
+        for key, idx in (self.__dict__.get("_actor_row_map", {}) or {}).items():
+            try:
+                if int(idx) == row_index:
+                    keys.add(key)
+            except (TypeError, ValueError):
+                pass
+        return keys
+
     def _apply_scene_element_visibility(self) -> None:
         """Re-hide the elements the browser marked hidden (actors are rebuilt
         each full refresh, so visibility must be re-applied)."""
         for row_index in list(self._hidden_scene_rows):
-            self._set_actor_keys_visible(self._row_actor_map.get(int(row_index), []), False)
+            self._set_actor_keys_visible(self._all_actor_keys_for_row(int(row_index)), False)
         for label in list(self._hidden_step_labels):
-            self._set_actor_keys_visible(self._step_actor_map.get(str(label), []), False)
+            self._set_actor_keys_visible(self._all_actor_keys_for_step_label(str(label)), False)
 
     def is_scene_row_hidden(self, row_index: int) -> bool:
         return int(row_index) in self._hidden_scene_rows
 
     def is_step_label_hidden(self, label: str) -> bool:
-        return str(label) in self._hidden_step_labels
+        return str(label).strip().lower() in self._hidden_step_labels
 
     def set_scene_rows_hidden(self, rows, hidden: bool) -> None:
         for row_index in rows or []:
@@ -9546,19 +9580,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self._hidden_scene_rows.add(idx)
             else:
                 self._hidden_scene_rows.discard(idx)
-            self._set_actor_keys_visible(self._row_actor_map.get(idx, []), not hidden)
+            self._set_actor_keys_visible(self._all_actor_keys_for_row(idx), not hidden)
         try:
             self.render()
         except Exception:
             pass
 
     def set_step_label_hidden(self, label: str, hidden: bool) -> None:
-        label = str(label)
+        label = str(label).strip().lower()
         if hidden:
             self._hidden_step_labels.add(label)
         else:
             self._hidden_step_labels.discard(label)
-        self._set_actor_keys_visible(self._step_actor_map.get(label, []), not hidden)
+        self._set_actor_keys_visible(self._all_actor_keys_for_step_label(label), not hidden)
         try:
             self.render()
         except Exception:

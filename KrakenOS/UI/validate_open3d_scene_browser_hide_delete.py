@@ -52,7 +52,8 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             passed = False
     # B
     for attr in ("set_scene_rows_hidden", "is_scene_row_hidden", "set_step_label_hidden",
-                 "is_step_label_hidden", "_apply_scene_element_visibility"):
+                 "is_step_label_hidden", "_apply_scene_element_visibility",
+                 "_all_actor_keys_for_step_label", "_all_actor_keys_for_row"):
         if not hasattr(Kraken3DInspector, attr):
             notes.append(f"FAIL: inspector missing {attr}")
             passed = False
@@ -63,6 +64,19 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         refresh_src = ""
     if "_apply_scene_element_visibility" not in refresh_src:
         notes.append("FAIL: refresh does not re-apply browser hide/unhide")
+        passed = False
+    # bugs/0026: hide must gather edges + gizmo (follow / rotate maps), not just
+    # the body in _step_actor_map, or a hidden STEP leaves residual.
+    try:
+        apply_src = inspect.getsource(Kraken3DInspector._apply_scene_element_visibility)
+        gather_src = inspect.getsource(Kraken3DInspector._all_actor_keys_for_step_label)
+    except Exception:
+        apply_src = gather_src = ""
+    if "_all_actor_keys_for_step_label" not in apply_src or "_all_actor_keys_for_row" not in apply_src:
+        notes.append("FAIL: visibility re-apply still body-only (residual risk)")
+        passed = False
+    if "_actor_step_follow_map" not in gather_src or "_actor_step_rotate_map" not in gather_src:
+        notes.append("FAIL: step-label gather misses edges (follow) or gizmo (rotate) actors")
         passed = False
 
     # C -- behaviour.
