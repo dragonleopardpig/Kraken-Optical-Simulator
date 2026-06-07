@@ -6269,6 +6269,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         """
         candidates: list[tuple[float, int, str, dict[str, object]]] = []
         for order, label in enumerate(self._step_pick_label_order(labels)):
+            if self.is_step_label_hidden(label):
+                continue
             try:
                 if self.editor._step_path_for_label(label) is None:
                     continue
@@ -12508,6 +12510,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         actor_key: str | None = None,
         cell_id: int = -1,
     ) -> dict[str, object] | None:
+        # A hidden element is inert to face hover/pick: VTK already skips its
+        # invisible actors, but this display-mesh / camera-ray pick works from
+        # cached face geometry regardless of visibility, so gate it here (the
+        # single wrapper every hover/pick/axis-snap path routes through) to stop
+        # a hidden STEP popping its gold hover outline + face tooltip (bug 0029).
+        if self.is_step_label_hidden(label):
+            return None
         return step_feature_pick_for_display_xy(
             self,
             label,

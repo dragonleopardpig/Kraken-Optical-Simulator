@@ -122,6 +122,19 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         if "_step_export_hidden_state" not in src and "hidden_rows" not in src and "hidden_labels" not in src:
             notes.append(f"FAIL: {meth} does not skip hidden geometry on export")
             passed = False
+    # bugs/0029: a hidden STEP is inert to face hover/pick. VTK skips its
+    # invisible actors, but the display-mesh feature pick works from cached face
+    # geometry regardless of visibility, so both the per-label pick and the "any
+    # STEP under cursor" fallback must consult is_step_label_hidden -- otherwise
+    # hovering a hidden element still pops its gold hover outline + face tooltip.
+    for meth in ("_step_feature_pick_for_display_xy", "_step_feature_pick_any_for_display_xy"):
+        try:
+            src = inspect.getsource(getattr(Kraken3DInspector, meth))
+        except Exception:
+            src = ""
+        if "is_step_label_hidden" not in src:
+            notes.append(f"FAIL: {meth} does not skip hidden elements (hover-edge leak)")
+            passed = False
 
     # C -- behaviour.
     from KrakenOS.UI.validate_open3d_analytic_lens_selection_snapshot import _ensure_display
@@ -176,6 +189,17 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         if inspector._actor_by_key[inspector._row_actor_map[row][0]].GetVisibility() != 1:
             notes.append("FAIL: Unhide did not restore visibility")
             passed = False
+
+        # bugs/0029: a hidden STEP label yields no face feature pick (the gate
+        # short-circuits before any geometry), so hover can't pop its edges.
+        inspector.set_step_label_hidden("camera", True)
+        if inspector._step_feature_pick_for_display_xy("camera", (10, 10)) is not None:
+            notes.append("FAIL: hidden STEP still returns a face feature pick (hover-edge leak)")
+            passed = False
+        if inspector._step_feature_pick_any_for_display_xy((10, 10), labels=("camera",)) is not None:
+            notes.append("FAIL: hidden STEP still feature-picked by the any-label fallback")
+            passed = False
+        inspector.set_step_label_hidden("camera", False)
 
         panel = Open3DStepAdminPanel(inspector)
         if panel._selection_rows_and_label("scene-row:5") != ([5], None):
