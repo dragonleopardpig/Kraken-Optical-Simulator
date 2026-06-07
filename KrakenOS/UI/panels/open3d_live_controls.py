@@ -80,12 +80,8 @@ class Open3DLiveControlsPanel:
         trace.grid(row=2, column=0, sticky="ew", pady=(8, 0))
         self.build_trace_controls(trace)
 
-        step = ttk.LabelFrame(stack, text="STEP Placement", padding=8)
-        step.grid(row=3, column=0, sticky="ew", pady=(8, 0))
-        self.build_step_controls(step)
-
         quick = ttk.LabelFrame(stack, text="Quick Estimation (Object / Image / FOV)", padding=8)
-        quick.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        quick.grid(row=3, column=0, sticky="ew", pady=(8, 0))
         self.build_quick_estimation_controls(quick)
 
     def build_quick_estimation_controls(self, parent: tk.Widget) -> None:
@@ -385,22 +381,3 @@ class Open3DLiveControlsPanel:
             variable=self.editor_var("nonseq_energy_probability_var"),
             command=self.inspector._commit_live_control_update,
         ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(4, 0))
-
-    def build_step_controls(self, parent: tk.Widget) -> None:
-        for column in range(2):
-            parent.columnconfigure(column, weight=1, uniform="live_step")
-        ttk.Button(
-            parent,
-            text="Accept STEP Placement",
-            command=self.inspector.accept_selected_step_placement,
-        ).grid(row=0, column=0, columnspan=2, sticky="ew")
-        ttk.Button(
-            parent,
-            text="Promote STEP Row",
-            command=self.inspector.promote_selected_step_to_optical_solid_row,
-        ).grid(row=1, column=0, sticky="ew", pady=(6, 0), padx=(0, 3))
-        ttk.Button(
-            parent,
-            text="Clear STEP",
-            command=self.inspector.clear_step_imports,
-        ).grid(row=1, column=1, sticky="ew", pady=(6, 0), padx=(3, 0))

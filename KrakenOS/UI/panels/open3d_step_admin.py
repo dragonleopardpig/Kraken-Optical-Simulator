@@ -119,6 +119,16 @@ class Open3DStepAdminPanel:
         face_direction_combo.bind("<<ComboboxSelected>>", self._on_face_direction_selected)
         self._face_direction_combo = face_direction_combo
 
+        step_frame = ttk.LabelFrame(stack, text="STEP Placement", padding=8)
+        step_frame.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        step_frame.columnconfigure(0, weight=1)
+        step_frame.columnconfigure(1, weight=1)
+        self._grid_button(step_frame, 0, 0, "Accept STEP Placement",
+                          self.inspector.accept_selected_step_placement, columnspan=2)
+        self._grid_button(step_frame, 1, 0, "Promote STEP Row",
+                          self.inspector.promote_selected_step_to_optical_solid_row)
+        self._grid_button(step_frame, 1, 1, "Clear STEP", self.inspector.clear_step_imports)
+
         self.refresh()
         return stack
 
