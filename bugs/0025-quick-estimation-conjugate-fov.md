@@ -70,6 +70,34 @@ moves away. The 1× layouts sit on m = −1 / FOV = sensor; the 0.5× layout on
 m = −0.5 / FOV = 2× sensor. Both solve directions work (drive image → solve
 object).
 
+## Refinements (2026-06-07, from UI testing)
+
+* **Reliable centered value popup.** The click-to-type editor reused a
+  pointer-relative `geometry()` that Wayland/layer-shell ignored (it landed
+  behind the top bar). It now reuses `_show_centered_dialog` (the LED-import
+  pattern: withdraw → geometry → deiconify → re-apply after_idle + after(80 ms)),
+  which lands on screen centre.
+* **Plane/sensor wired to the panel.** Right-clicking the Object plane sets a
+  target Object Height (FOV); the Image plane edits the sensor semi-height (the
+  left-panel `Real Image Semi-Height` Field value) — graphical actions driving
+  the existing editable panel values.
+* **Hover highlight** on the thickness handles (passive `<Motion>`, gated to
+  only pick when arrows are shown).
+* **Target FOV + fill factor + Snap + Configuration table.** The fill factor is
+  `target / FOV` (>100 % overfills/crops the sensor). `snap_to_fov` jumps both
+  gaps to the unique conjugate pair via the closed form
+  `object = f(1+1/|m|) − ppa`, `image = f(1+|m|) + ppp`. The table sweeps the
+  object distance and lists the focused conjugate combinations.
+* **Live geometry during drag + forbidden flash.** With Live Mode on, the drag
+  commits the pending gap + auto-solves the partner and schedules a debounced
+  retrace; on release both gaps are restored before the history-captured commit
+  so undo brackets the whole drag. A forbidden value (working distance below the
+  focal length → no real image) flashes the arrow red and suppresses the commit.
+
+The physics is honest: changing the FOV alone does **not** defocus (focus is
+axial, object height transverse) — it changes sensor over/underfill. Defocus
+appears only when you move one distance without its conjugate partner.
+
 ## Tests
 
 `KrakenOS/UI/validate_open3d_quick_estimation_conjugate.py` — source contracts

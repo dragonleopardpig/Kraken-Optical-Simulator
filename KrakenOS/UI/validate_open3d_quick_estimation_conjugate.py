@@ -47,10 +47,35 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
 
     # A
-    for attr in ("solve_dependent", "current_state", "update_readout", "set_role", "is_enabled"):
+    for attr in (
+        "solve_dependent", "current_state", "update_readout", "set_role", "is_enabled",
+        "focal_length", "working_distance", "is_forbidden", "forbidden_for_object_distance",
+        "set_target_fov", "target_object_semi", "snap_to_fov",
+    ):
         if not hasattr(QuickEstimationService, attr):
             notes.append(f"FAIL: QuickEstimationService missing {attr}")
             passed = False
+    # inspector actions for target FOV / snap / config table / forbidden flash.
+    from KrakenOS.UI.open3d_inspector import Kraken3DInspector as _Insp
+    for attr in (
+        "_quick_estimation_set_target_fov", "_quick_estimation_snap_to_fov",
+        "_show_quick_estimation_config_table", "_start_thickness_forbidden_flash",
+        "_stop_thickness_forbidden_flash",
+    ):
+        if not hasattr(_Insp, attr):
+            notes.append(f"FAIL: inspector missing {attr}")
+            passed = False
+    try:
+        motion_src = inspect.getsource(Open3DThicknessDimensionService.apply_drag_motion)
+        finish_src = inspect.getsource(Open3DThicknessDimensionService.finish_drag)
+    except Exception:
+        motion_src = finish_src = ""
+    if "schedule_live_refresh" not in motion_src or "_start_thickness_forbidden_flash" not in motion_src:
+        notes.append("FAIL: apply_drag_motion lacks live geometry / forbidden flash")
+        passed = False
+    if "live_committed" not in finish_src:
+        notes.append("FAIL: finish_drag does not restore the pre-drag gaps for undo")
+        passed = False
     # B
     try:
         adv_src = inspect.getsource(Open3DThicknessDimensionService.apply_dimension_value)
@@ -168,6 +193,37 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             if len(clean) >= 2 and any(b <= a for a, b in zip(clean, clean[1:])):
                 notes.append(f"FAIL[{fname}]: FOV not monotonic with object distance: {clean}")
                 passed = False
+
+            # snap_to_fov: a target Object Height lands the unique focused pair
+            # whose magnification matches sensor/target.
+            app.rows[0].thickness = nom_obj
+            qe.solve_dependent(0)
+            sensor_semi = qe._sensor_semi()
+            if sensor_semi:
+                target_semi = sensor_semi * 1.5  # ask for a wider FOV
+                ok_snap, _m = qe.snap_to_fov(target_semi)
+                if not ok_snap:
+                    notes.append(f"FAIL[{fname}]: snap_to_fov failed")
+                    passed = False
+                else:
+                    st = qe.current_state()
+                    if st["in_focus"] is not True:
+                        notes.append(f"FAIL[{fname}]: snap_to_fov not in focus")
+                        passed = False
+                    want_mag = sensor_semi / target_semi
+                    if st["magnification"] and abs(abs(st["magnification"]) - want_mag) > 1e-3 * max(1.0, want_mag):
+                        notes.append(f"FAIL[{fname}]: snap |m| {abs(st['magnification']):.4g} != {want_mag:.4g}")
+                        passed = False
+
+            # forbidden detection: object inside the front focal point.
+            f_len = qe.focal_length()
+            if f_len:
+                if not qe.forbidden_for_object_distance(f_len * 0.4):
+                    notes.append(f"FAIL[{fname}]: object well inside focal point not flagged forbidden")
+                    passed = False
+                if qe.forbidden_for_object_distance(f_len * 4.0):
+                    notes.append(f"FAIL[{fname}]: object far beyond focal point wrongly forbidden")
+                    passed = False
 
             # live drag preview must NOT mutate the committed thicknesses.
             app.rows[0].thickness = nom_obj

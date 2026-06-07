@@ -1,6 +1,6 @@
 # KrakenOS Non-Sequential UI Branch
 
-Last updated: 2026-06-02
+Last updated: 2026-06-07
 
 This document summarizes the `nonseq-display-refactor` branch. The upstream
 `README.md` is intentionally left unchanged; this branch README is the public
@@ -301,6 +301,17 @@ simulation library and that this branch builds on:
 - Transparent optical STEP bodies with stronger feature edges, face tint
   overlays for assigned functions, optional rotation/placement handles, and
   editable Open 3D thickness dimension arrows linked back to the table.
+- Quick Estimation: a live object/image conjugate + FOV solver in Open 3D for
+  finite-conjugate (machine-vision) imaging. The sensor is pinned via the
+  left-panel ``Real Image Semi-Height`` field; dragging or typing a conjugate
+  thickness handle re-solves its partner for focus, and FOV = sensor / |m|
+  follows the magnification. Right-clicking the Object/Image plane or its arrow
+  sets a target Object Height (showing sensor over/underfill), snaps both gaps
+  to the unique conjugate pair for that FOV, or opens a configuration table.
+  Dragging into a forbidden region (working distance below the focal length, no
+  real image) flashes the arrow red; with Live Mode on the geometry retraces
+  during the drag. See ``docs/source/manual/quick_estimation.rst`` and the
+  ``validate_open3d_quick_estimation_conjugate`` validator (harness Phase 34).
 - Sphinx tutorials and case studies for vendor prism placement, right-angle
   prism TIR, Mach-Zehnder and Michelson workflows, Gaussian beam expansion,
   lens drawing export, tolerance Monte Carlo, Double Gauss analysis, Machine
