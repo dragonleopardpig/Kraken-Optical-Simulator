@@ -129,15 +129,30 @@ class Open3DLiveControlsPanel:
         ttk.Separator(parent, orient="horizontal").grid(
             row=6, column=0, columnspan=2, sticky="ew", pady=4
         )
-        _row(7, "magnification", "Magnification")
-        _row(8, "sensor", "Sensor (Image H)")
-        _row(9, "fov", "FOV (Object H)")
-        _row(10, "focus", "Focus")
+        _row(7, "focal_length", "Focal length")
+        _row(8, "working_distance", "Working distance")
+        _row(9, "magnification", "Magnification")
+        _row(10, "sensor", "Sensor (Image H)")
+        _row(11, "fov", "FOV (Object H)")
+        _row(12, "target_fov", "Target FOV / fill")
+        _row(13, "focus", "Focus")
+
+        action_box = ttk.Frame(parent)
+        action_box.grid(row=14, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        ttk.Button(action_box, text="Set Target FOV…", command=inspector._quick_estimation_set_target_fov).grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Button(action_box, text="Snap to FOV", command=inspector._quick_estimation_snap_to_fov).grid(
+            row=0, column=1, sticky="w", padx=(6, 0)
+        )
+        ttk.Button(action_box, text="Config Table…", command=inspector._show_quick_estimation_config_table).grid(
+            row=0, column=2, sticky="w", padx=(6, 0)
+        )
 
         # Explicit role selectors for the two conjugate gaps (the in-3D
         # right-click path drives the same set_role).
         role_box = ttk.Frame(parent)
-        role_box.grid(row=11, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        role_box.grid(row=15, column=0, columnspan=2, sticky="ew", pady=(6, 0))
         ttk.Label(role_box, text="Roles:").grid(row=0, column=0, sticky="w")
         for col, (quantity, short) in enumerate(
             ((OBJECT_THICKNESS, "Obj Thk"), (IMAGE_THICKNESS, "Img Thk")), start=1

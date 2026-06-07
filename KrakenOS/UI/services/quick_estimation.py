@@ -70,6 +70,11 @@ class QuickEstimationService:
             IMAGE_THICKNESS: ROLE_DEPENDENT,
             IMAGE_PLANE: ROLE_CONSTANT,
         }
+        # The real object semi-height the user wants to image (None = "fill the
+        # sensor", i.e. the FOV that exactly maps to the sensor edge). When set,
+        # the fill factor = target / FOV tells how much of the sensor the object
+        # covers (>1 overfills/crops, <1 underfills).
+        self._target_object_semi: float | None = None
 
     # ------------------------------------------------------------------ state
     def is_enabled(self) -> bool:
@@ -236,6 +241,98 @@ class QuickEstimationService:
             return None
         return diameter / 2.0 if diameter > 0 else None
 
+    def _paraxial_solution(self):
+        try:
+            return self.editor._exact_paraxial_solution_for_rows(self.editor.rows)
+        except Exception:
+            return None
+
+    def focal_length(self) -> float | None:
+        sol = self._paraxial_solution()
+        if sol is None:
+            return None
+        try:
+            f = float(sol[4])
+        except (TypeError, ValueError, IndexError):
+            return None
+        return f if np.isfinite(f) and abs(f) > 1e-9 else None
+
+    def working_distance(self) -> float | None:
+        rows = getattr(self.editor, "rows", None) or []
+        if not rows:
+            return None
+        try:
+            return float(rows[0].thickness)
+        except Exception:
+            return None
+
+    def is_forbidden(self) -> tuple[bool, str]:
+        """A finite object inside the front focal point gives no real image."""
+        sol = self._paraxial_solution()
+        wd = self.working_distance()
+        f = self.focal_length()
+        if sol is None or wd is None or f is None or f <= 0:
+            return False, ""
+        try:
+            ppa = float(sol[5])
+        except (TypeError, ValueError, IndexError):
+            ppa = 0.0
+        # object distance from the front principal plane must exceed f.
+        object_principal = wd + ppa
+        if object_principal <= f * (1.0 + 1e-6):
+            return True, f"Working distance below focal length ({wd:.4g} < {f:.4g} mm) -- no real image."
+        return False, ""
+
+    def set_target_fov(self, object_semi: float | None) -> None:
+        if object_semi is None:
+            self._target_object_semi = None
+            return
+        try:
+            value = float(object_semi)
+            self._target_object_semi = value if value > 0 else None
+        except (TypeError, ValueError):
+            self._target_object_semi = None
+
+    def target_object_semi(self) -> float | None:
+        return self._target_object_semi
+
+    def snap_to_fov(self, object_semi: float | None = None) -> tuple[bool, str]:
+        """Set both gaps to the unique conjugate pair that images an object of
+        semi-height ``object_semi`` to fill the sensor, in focus. No retrace."""
+        target = object_semi if object_semi is not None else self._target_object_semi
+        sensor = self._sensor_semi()
+        if not sensor:
+            return False, "No sensor (Image semi-height) available."
+        if not target or target <= 0:
+            return False, "Set a positive target Object Height first."
+        sol = self._paraxial_solution()
+        if sol is None:
+            return False, "No paraxial solution."
+        try:
+            f = float(sol[4]); ppa = float(sol[5]); ppp = float(sol[6])
+        except (TypeError, ValueError, IndexError):
+            return False, "No valid lens solution."
+        if not np.isfinite(f) or abs(f) < 1e-9:
+            return False, "No valid focal length."
+        mag = sensor / float(target)  # required |m|
+        if mag <= 1e-9:
+            return False, "Target Object Height too large for this sensor."
+        object_distance = f * (1.0 + 1.0 / mag) - ppa
+        image_distance = f * (1.0 + mag) + ppp
+        if not (np.isfinite(object_distance) and np.isfinite(image_distance)
+                and object_distance > 1e-6 and image_distance > 1e-6):
+            return False, "No real-image conjugate for that Object Height."
+        obj_row = self.object_thickness_row()
+        img_row = self.image_thickness_row()
+        if obj_row is None or img_row is None:
+            return False, "Layout has no object/image gap."
+        self.editor.rows[obj_row].thickness = float(object_distance)
+        self.editor.rows[img_row].thickness = float(image_distance)
+        return True, (
+            f"Snapped to FOV {2 * float(target):.6g} mm: object {object_distance:.6g} mm, "
+            f"image {image_distance:.6g} mm (|m|={mag:.4g})."
+        )
+
     def current_state(self) -> dict[str, Any]:
         rows = getattr(self.editor, "rows", None) or []
         state: dict[str, Any] = {
@@ -247,7 +344,16 @@ class QuickEstimationService:
             "fov_full": None,
             "in_focus": None,
             "object_mode": None,
+            "focal_length": self.focal_length(),
+            "working_distance": self.working_distance(),
+            "forbidden": False,
+            "forbidden_reason": "",
+            "target_object_semi": self._target_object_semi,
+            "fill_factor": None,
         }
+        forbidden, reason = self.is_forbidden()
+        state["forbidden"] = forbidden
+        state["forbidden_reason"] = reason
         if len(rows) < 3:
             return state
         try:
@@ -265,6 +371,9 @@ class QuickEstimationService:
         if state["magnification"] and abs(state["magnification"]) > 1e-9 and sensor:
             state["fov_semi"] = sensor / abs(state["magnification"])
             state["fov_full"] = 2.0 * state["fov_semi"]
+            # fill factor of the target object on the sensor: target / FOV.
+            if self._target_object_semi and state["fov_semi"]:
+                state["fill_factor"] = float(self._target_object_semi) / float(state["fov_semi"])
         # in-focus: does the conjugate solve reproduce the current image gap?
         try:
             result = self.editor._compute_paraxial_solve_result("image")
@@ -298,14 +407,30 @@ class QuickEstimationService:
         mag = state.get("magnification")
         out["magnification"] = f"{mag:+.4g}x" if mag is not None else "--"
         out["sensor"] = _mm(state.get("sensor_semi")) + " (semi)" if state.get("sensor_semi") else "--"
+        out["focal_length"] = _mm(state.get("focal_length"))
+        out["working_distance"] = _mm(state.get("working_distance"))
         fov_semi = state.get("fov_semi")
         fov_full = state.get("fov_full")
         if fov_semi is not None:
             out["fov"] = f"{fov_semi:.6g} mm semi / {fov_full:.6g} mm full"
         else:
             out["fov"] = "--"
-        focus = state.get("in_focus")
-        out["focus"] = "in focus" if focus else ("out of focus" if focus is False else "--")
+        target = state.get("target_object_semi")
+        fill = state.get("fill_factor")
+        if target:
+            tline = f"{2 * float(target):.6g} mm full"
+            if fill is not None:
+                pct = 100.0 * float(fill)
+                tag = "fills" if abs(pct - 100.0) < 1.0 else ("OVERFILLS" if pct > 100.0 else "underfills")
+                tline += f" -> {pct:.1f}% ({tag})"
+            out["target_fov"] = tline
+        else:
+            out["target_fov"] = "(fills sensor)"
+        if state.get("forbidden"):
+            out["focus"] = "FORBIDDEN: " + (state.get("forbidden_reason") or "no real image")
+        else:
+            focus = state.get("in_focus")
+            out["focus"] = "in focus" if focus else ("out of focus" if focus is False else "--")
         return out
 
     def update_readout(self, state: dict[str, Any] | None = None) -> None:

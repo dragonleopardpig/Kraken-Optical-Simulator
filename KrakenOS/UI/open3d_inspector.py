@@ -10952,12 +10952,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         menu.add_command(label="Set Variable — Independent (drive)", command=lambda: self._set_quick_estimation_role(quantity, ROLE_INDEPENDENT))
         menu.add_command(label="Set Variable — Dependent (solve for focus)", command=lambda: self._set_quick_estimation_role(quantity, ROLE_DEPENDENT))
         menu.add_command(label="Set Constant (pin value)", command=lambda: self._set_quick_estimation_role(quantity, ROLE_CONSTANT))
-        if plane:
-            # Wire the plane to the existing panel Field Type / Field Value
-            # (object height). Editing here writes the same editor vars the left
-            # panel does, then retraces.
+        if plane == "Object Plane":
             menu.add_separator()
-            menu.add_command(label="Set Field value (object height)…", command=self._quick_estimation_edit_field_value)
+            menu.add_command(label="Set Target Object Height (FOV)…", command=self._quick_estimation_set_target_fov)
+            menu.add_command(label="Snap object+image distance to this FOV", command=self._quick_estimation_snap_to_fov)
+            menu.add_command(label="Configuration table…", command=self._show_quick_estimation_config_table)
+        elif plane == "Image Plane":
+            # The sensor (Real Image Semi-Height) is the canonical left-panel
+            # Field value; editing here writes the same editor var, then retraces.
+            menu.add_separator()
+            menu.add_command(label="Set sensor semi-height (Field value)…", command=self._quick_estimation_edit_field_value)
             menu.add_command(label="Set Field type…", command=self._quick_estimation_edit_field_type)
         try:
             menu.tk_popup(int(event.x_root), int(event.y_root))
@@ -11053,6 +11057,142 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.status_var.set(f"Field type set to {value}.")
         except Exception as exc:
             self.status_var.set(f"Could not set field type: {exc}")
+
+    def _quick_estimation_set_target_fov(self) -> None:
+        qe = self._quick_estimation_service()
+        if not qe.is_enabled():
+            self.quick_estimation_var.set(True)
+        cur = qe.target_object_semi()
+        cur_full = f"{2 * cur:.6g}" if cur else ""
+        value = self._centered_input_dialog(
+            "Target FOV / Object Height",
+            "Object size to image (full Object Height) [mm]; blank = fill the sensor:",
+            cur_full,
+        )
+        if value is None:
+            return
+        if not str(value).strip():
+            qe.set_target_fov(None)
+            qe.update_readout()
+            self.status_var.set("Target FOV cleared (FOV = fill the sensor).")
+            return
+        try:
+            full = float(value)
+        except (TypeError, ValueError):
+            self.status_var.set("Object Height must be a number.")
+            return
+        qe.set_target_fov(full / 2.0)
+        qe.update_readout()
+        state = qe.current_state()
+        fill = state.get("fill_factor")
+        if fill is not None:
+            self.status_var.set(
+                f"Target FOV {full:.6g} mm -> {100 * fill:.1f}% of sensor. "
+                "Drag a distance (other auto-solves for focus) or Snap to reach 100%."
+            )
+        else:
+            self.status_var.set(f"Target Object Height set to {full:.6g} mm.")
+
+    def _quick_estimation_snap_to_fov(self) -> None:
+        qe = self._quick_estimation_service()
+        if not qe.is_enabled():
+            self.quick_estimation_var.set(True)
+        if not qe.target_object_semi():
+            self._quick_estimation_set_target_fov()
+            if not qe.target_object_semi():
+                return
+        self.editor._begin_history_capture()
+        ok, msg = qe.snap_to_fov()
+        if ok:
+            self.editor._sync_table()
+            self.editor._commit_history_capture()
+            self.editor._invalidate_preview_scene_trace()
+            self.editor._sync_trace_state_badge()
+            self.refresh_from_editor(force_retrace=True)
+            qe.update_readout()
+        else:
+            self.editor._commit_history_capture()
+        self.status_var.set(msg)
+
+    def _show_quick_estimation_config_table(self) -> None:
+        """Centred table of conjugate configurations (object distance swept;
+        image distance solved for focus) so the user can read the combinations."""
+        import numpy as _np
+
+        qe = self._quick_estimation_service()
+        f = qe.focal_length()
+        sensor = qe._sensor_semi()
+        if not f or not sensor:
+            self.status_var.set("Configuration table needs a valid lens + sensor.")
+            return
+        rows = self.editor.rows
+        obj_row = qe.object_thickness_row()
+        img_row = qe.image_thickness_row()
+        if obj_row is None or img_row is None:
+            return
+        saved = (float(rows[obj_row].thickness), float(rows[img_row].thickness))
+        records = []
+        try:
+            for s in _np.linspace(f * 1.25, f * 5.0, 16):
+                rows[obj_row].thickness = float(s)
+                ok, _note = qe.solve_dependent(obj_row)
+                st = qe.current_state()
+                records.append(
+                    (
+                        float(s),
+                        st.get("image_distance"),
+                        st.get("magnification"),
+                        st.get("fov_full"),
+                        st.get("working_distance"),
+                        not st.get("forbidden"),
+                    )
+                )
+        finally:
+            rows[obj_row].thickness, rows[img_row].thickness = saved
+            try:
+                qe.update_readout()
+            except Exception:
+                pass
+
+        dialog = tk.Toplevel(self)
+        try:
+            dialog.withdraw()
+            dialog.title("Quick Estimation — configuration table")
+            dialog.transient(self.winfo_toplevel())
+        except Exception:
+            pass
+        ttk.Label(
+            dialog,
+            text=f"Fixed lens f={f:.4g} mm, sensor semi-height {sensor:.4g} mm. "
+            "Each row is a focused conjugate; drag toward the one you want.",
+            padding=(8, 8, 8, 4),
+        ).grid(row=0, column=0, sticky="w")
+        cols = ("obj", "img", "mag", "fov", "wd", "valid")
+        headers = ("Object dist [mm]", "Image dist [mm]", "Mag |m|", "FOV full [mm]", "Working dist [mm]", "Real image?")
+        tree = ttk.Treeview(dialog, columns=cols, show="headings", height=min(len(records), 16))
+        for c, h in zip(cols, headers):
+            tree.heading(c, text=h)
+            tree.column(c, width=120, anchor="center")
+        for obj, img, mag, fov, wd, valid in records:
+            tree.insert(
+                "",
+                "end",
+                values=(
+                    f"{obj:.5g}" if obj is not None else "--",
+                    f"{img:.5g}" if img is not None else "--",
+                    f"{abs(mag):.4g}" if mag is not None else "--",
+                    f"{fov:.5g}" if fov is not None else "--",
+                    f"{wd:.5g}" if wd is not None else "--",
+                    "yes" if valid else "NO (WD<FL)",
+                ),
+            )
+        tree.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 6))
+        ttk.Button(dialog, text="Close", command=dialog.destroy).grid(row=2, column=0, sticky="e", padx=8, pady=(0, 8))
+        dialog.bind("<Escape>", lambda _e: dialog.destroy())
+        try:
+            self.editor._show_centered_dialog(dialog)
+        except Exception:
+            pass
 
     def _set_quick_estimation_role(self, quantity: str, role: str) -> None:
         qe = self._quick_estimation_service()
