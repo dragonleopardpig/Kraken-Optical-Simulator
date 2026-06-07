@@ -3625,6 +3625,38 @@ def phase_34_quick_estimation_conjugate(
     return result
 
 
+def phase_35_scene_browser_hide_delete(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Scene-component browser: right-click Hide / Unhide / Delete.
+
+    The right-docked browser now opens a context menu on right-click with
+    Hide/Unhide (toggling the element's body-actor visibility, re-applied after
+    every refresh) and Delete (the existing action). The guard
+    (`validate_open3d_scene_browser_hide_delete`) checks the binding + menu
+    helpers + the inspector hide/unhide API, and that hiding a row's actors
+    survives a full refresh and unhide restores them.
+    """
+    result = PhaseResult(
+        name="Phase 35: scene-component browser right-click Hide/Unhide/Delete"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_scene_browser_hide_delete import run_checks
+        passed, notes = run_checks(app=app, inspector=inspector)
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"scene-browser hide/delete guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("scene-browser hide/delete guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3705,6 +3737,7 @@ def main() -> int:
             phase_32_moved_splitter_keeps_focus,
             phase_33_live_drag_ray_preview,
             phase_34_quick_estimation_conjugate,
+            phase_35_scene_browser_hide_delete,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

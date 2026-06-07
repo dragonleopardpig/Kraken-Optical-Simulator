@@ -880,6 +880,8 @@ class Open3DSceneRefreshService:
         # Quick Estimation FOV-circle / sensor-rectangle overlays (no-op unless
         # Quick Estimation is enabled).
         self._add_quick_estimation_overlays(system, scene_bundle)
+        # Re-apply browser hide/unhide (actors were rebuilt this refresh).
+        self._apply_scene_element_visibility()
 
         from KrakenOS.UI.services.open3d_camera_state import apply_camera_state
 

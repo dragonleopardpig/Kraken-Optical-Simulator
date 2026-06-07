@@ -48,6 +48,7 @@ class Open3DStepAdminPanel:
         scrollbar.grid(row=0, column=1, sticky="ns")
         tree.configure(yscrollcommand=scrollbar.set)
         tree.bind("<<TreeviewSelect>>", self._on_tree_select)
+        tree.bind("<Button-3>", self._on_tree_right_click)
         self._tree = tree
 
         import_frame = ttk.LabelFrame(stack, text="Import", padding=8)
@@ -579,6 +580,83 @@ class Open3DStepAdminPanel:
                 start, end = span
                 self.inspector.select_scene_element_from_admin(start, end)
         self._update_properties(iid)
+
+    def _on_tree_right_click(self, event) -> str:
+        tree = self._tree
+        if tree is None:
+            return "break"
+        iid = tree.identify_row(event.y)
+        if not iid or iid.startswith("category:") or iid.startswith("empty:"):
+            return "break"
+        try:
+            tree.selection_set(iid)
+            tree.focus(iid)
+        except Exception:
+            pass
+        self._on_tree_select()  # route the selection to the editor + properties
+        self._show_element_context_menu(event, iid)
+        return "break"
+
+    def _selection_rows_and_label(self, iid: str) -> tuple[list[int], str | None]:
+        rows: list[int] = []
+        label: str | None = None
+        if iid.startswith("overlay:"):
+            label = iid.split(":", 1)[1]
+        elif iid.startswith("scene-row:") or iid.startswith("row:"):
+            try:
+                rows = [int(iid.split(":", 1)[1])]
+            except Exception:
+                rows = []
+        elif iid.startswith("element:"):
+            span = self._parse_element_iid(iid)
+            if span is not None:
+                rows = self._element_visible_indices(span[0], span[1])
+        return rows, label
+
+    def _element_is_hidden(self, rows: list[int], label: str | None) -> bool:
+        inspector = self.inspector
+        if label is not None:
+            return inspector.is_step_label_hidden(label)
+        return bool(rows) and all(inspector.is_scene_row_hidden(r) for r in rows)
+
+    def _set_element_hidden(self, rows: list[int], label: str | None, hidden: bool) -> None:
+        inspector = self.inspector
+        if label is not None:
+            inspector.set_step_label_hidden(label, hidden)
+        elif rows:
+            inspector.set_scene_rows_hidden(rows, hidden)
+        else:
+            return
+        inspector.status_var.set(("Hid " if hidden else "Unhid ") + "the selected scene element.")
+
+    def _show_element_context_menu(self, event, iid: str) -> None:
+        rows, label = self._selection_rows_and_label(iid)
+        if not rows and label is None:
+            return
+        hidden = self._element_is_hidden(rows, label)
+        tree = self._tree
+        name = ""
+        try:
+            name = str(tree.item(iid, "text")) if tree is not None else ""
+        except Exception:
+            name = ""
+        menu = tk.Menu(self.inspector, tearoff=False)
+        if name:
+            menu.add_command(label=name.strip() or "Scene element", state="disabled")
+            menu.add_separator()
+        if hidden:
+            menu.add_command(label="Unhide", command=lambda: self._set_element_hidden(rows, label, False))
+        else:
+            menu.add_command(label="Hide", command=lambda: self._set_element_hidden(rows, label, True))
+        menu.add_separator()
+        menu.add_command(label="Delete", command=self._delete_selected)
+        try:
+            menu.tk_popup(int(event.x_root), int(event.y_root))
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
 
     def _current_kind_value(self) -> tuple[str, str]:
         iid = str(self._selected_item_id or "")

@@ -399,6 +399,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._actor_by_key: dict[str, object] = {}
         self._actor_step_map: dict[str, str] = {}
         self._step_actor_map: dict[str, list[str]] = {}
+        # Scene-component browser hide/unhide: rows + STEP labels whose body
+        # actors are kept invisible (re-applied after every refresh).
+        self._hidden_scene_rows: set[int] = set()
+        self._hidden_step_labels: set[str] = set()
         self._actor_step_follow_map: dict[str, str] = {}
         self._step_follow_actor_map: dict[str, list[str]] = {}
         self._actor_step_rotate_map: dict[str, tuple[str, str, float]] = {}
@@ -9505,6 +9509,60 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception as exc:  # pragma: no cover - defensive
             self.editor.append_debug(f"Quick Estimation overlays skipped: {exc}")
             return 0
+
+    # -- scene-component browser hide/unhide -------------------------------
+    def _set_actor_keys_visible(self, actor_keys, visible: bool) -> None:
+        by_key = self.__dict__.get("_actor_by_key", {}) or {}
+        for key in actor_keys or []:
+            actor = by_key.get(key)
+            if actor is None:
+                continue
+            try:
+                actor.SetVisibility(1 if visible else 0)
+            except Exception:
+                pass
+
+    def _apply_scene_element_visibility(self) -> None:
+        """Re-hide the elements the browser marked hidden (actors are rebuilt
+        each full refresh, so visibility must be re-applied)."""
+        for row_index in list(self._hidden_scene_rows):
+            self._set_actor_keys_visible(self._row_actor_map.get(int(row_index), []), False)
+        for label in list(self._hidden_step_labels):
+            self._set_actor_keys_visible(self._step_actor_map.get(str(label), []), False)
+
+    def is_scene_row_hidden(self, row_index: int) -> bool:
+        return int(row_index) in self._hidden_scene_rows
+
+    def is_step_label_hidden(self, label: str) -> bool:
+        return str(label) in self._hidden_step_labels
+
+    def set_scene_rows_hidden(self, rows, hidden: bool) -> None:
+        for row_index in rows or []:
+            try:
+                idx = int(row_index)
+            except (TypeError, ValueError):
+                continue
+            if hidden:
+                self._hidden_scene_rows.add(idx)
+            else:
+                self._hidden_scene_rows.discard(idx)
+            self._set_actor_keys_visible(self._row_actor_map.get(idx, []), not hidden)
+        try:
+            self.render()
+        except Exception:
+            pass
+
+    def set_step_label_hidden(self, label: str, hidden: bool) -> None:
+        label = str(label)
+        if hidden:
+            self._hidden_step_labels.add(label)
+        else:
+            self._hidden_step_labels.discard(label)
+        self._set_actor_keys_visible(self._step_actor_map.get(label, []), not hidden)
+        try:
+            self.render()
+        except Exception:
+            pass
 
     @staticmethod
     def _scene_placement_translate_step(placement: ScenePlacement3D, spacing: float) -> float:

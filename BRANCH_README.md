@@ -293,6 +293,9 @@ simulation library and that this branch builds on:
   scene component browser categories for editable-table rows, transient STEP
   imports, promoted optical solids, grouped table elements with expandable
   surface children, Optical Element, Imaging Lens, and Camera/Detector entries.
+- The right-docked scene-component browser supports left-click select/highlight
+  and a right-click context menu per element with Hide / Unhide (toggling the
+  element's body-actor visibility, re-applied after every refresh) and Delete.
 - Direct STEP import from Open 3D, transient placement, hold-drag movement,
   Esc cancellation, blank-click deselection, middle-drag CAD-style pan,
   surface-normal-to-optical-axis snapping, centered surface-to-axis snapping,
