@@ -12,11 +12,29 @@ class Open3DStepAdminPanel:
     """Build a CAD-style browser for Open 3D scene components."""
 
     CATEGORY_SPECS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+        ("display", "Display / Overlays", ()),
         ("layout", "Layout / Table Components", ()),
         ("optical", "Optical Element", ("optical",)),
         ("lens", "Imaging Lens", ("lens",)),
         ("camera_detector", "Camera / Detector", ("camera", "led")),
     )
+
+    def _display_toggle_specs(self):
+        """(key, label, owner, var_name) for the rays + overlay display toggles
+        surfaced in the browser so they hide/unhide like other elements."""
+        return (
+            ("rays", "Rays", self.inspector, "show_rays_var"),
+            ("thickness", "Thickness dimensions", self.editor, "show_physical_distances_var"),
+            ("refs", "Reference surfaces", self.inspector, "show_reference_surfaces_var"),
+            ("detectors", "Detector overlays", self.inspector, "show_detector_overlays_var"),
+            ("misses", "Missed-ray diagnostics", self.inspector, "show_terminal_diagnostics_var"),
+        )
+
+    def _display_var_for_key(self, key: str):
+        for spec_key, _label, owner, var_name in self._display_toggle_specs():
+            if spec_key == key:
+                return getattr(owner, var_name, None)
+        return None
 
     def __init__(self, inspector: Any) -> None:
         self.inspector = inspector
@@ -455,6 +473,13 @@ class Open3DStepAdminPanel:
                 )
                 category_iids[key] = iid
                 category_counts[key] = 0
+            # Display / Overlays: rays + overlay toggles as hide/unhide elements.
+            for spec_key, spec_label, _owner, _var_name in self._display_toggle_specs():
+                if self._display_var_for_key(spec_key) is None:
+                    continue
+                tree.insert(category_iids["display"], "end", iid=f"display:{spec_key}", text=spec_label,
+                            tags=self._item_hidden_tag(display_key=spec_key))
+                category_counts["display"] += 1
             for _key, _title, labels in self.CATEGORY_SPECS:
                 for label in labels:
                     if self.editor._step_path_for_label(label) is None:
@@ -573,6 +598,11 @@ class Open3DStepAdminPanel:
             self._selected_item_id = ""
             self._update_properties("")
             return
+        if iid.startswith("display:"):
+            # Rays / overlays: no 3D selection, just a hide/unhide target.
+            self._selected_item_id = iid
+            self._update_properties("")
+            return
         if iid == self._selected_item_id and iid == self._current_browser_selection_iid():
             self._update_properties(iid)
             return
@@ -618,9 +648,16 @@ class Open3DStepAdminPanel:
         return "break"
 
     def _selection_rows_and_label(self, iid: str) -> tuple[list[int], str | None]:
+        rows, label, _display = self._resolve_iid_target(iid)
+        return rows, label
+
+    def _resolve_iid_target(self, iid: str) -> tuple[list[int], str | None, str | None]:
         rows: list[int] = []
         label: str | None = None
-        if iid.startswith("overlay:"):
+        display_key: str | None = None
+        if iid.startswith("display:"):
+            display_key = iid.split(":", 1)[1]
+        elif iid.startswith("overlay:"):
             label = iid.split(":", 1)[1]
         elif iid.startswith("scene-row:") or iid.startswith("row:"):
             try:
@@ -631,36 +668,52 @@ class Open3DStepAdminPanel:
             span = self._parse_element_iid(iid)
             if span is not None:
                 rows = self._element_visible_indices(span[0], span[1])
-        return rows, label
+        return rows, label, display_key
 
-    def _element_is_hidden(self, rows: list[int], label: str | None) -> bool:
+    def _element_is_hidden(self, rows: list[int], label: str | None, display_key: str | None = None) -> bool:
         inspector = self.inspector
+        if display_key is not None:
+            var = self._display_var_for_key(display_key)
+            return var is not None and not bool(var.get())
         if label is not None:
             return inspector.is_step_label_hidden(label)
         return bool(rows) and all(inspector.is_scene_row_hidden(r) for r in rows)
 
-    def _item_hidden_tag(self, rows: list[int] | None = None, label: str | None = None) -> tuple[str, ...]:
+    def _item_hidden_tag(self, rows: list[int] | None = None, label: str | None = None,
+                         display_key: str | None = None) -> tuple[str, ...]:
         try:
-            return ("hidden",) if self._element_is_hidden(rows or [], label) else ()
+            return ("hidden",) if self._element_is_hidden(rows or [], label, display_key) else ()
         except Exception:
             return ()
 
-    def _set_element_hidden(self, rows: list[int], label: str | None, hidden: bool) -> None:
+    def _set_element_hidden(self, rows: list[int], label: str | None, hidden: bool,
+                            display_key: str | None = None) -> None:
         inspector = self.inspector
-        if label is not None:
+        if display_key is not None:
+            var = self._display_var_for_key(display_key)
+            if var is None:
+                return
+            var.set(not hidden)
+            try:
+                inspector._on_scene_visibility_changed()  # refresh scene to honour the toggle
+            except Exception:
+                pass
+            inspector.status_var.set(("Hid " if hidden else "Showing ") + f"{display_key} in 3D.")
+        elif label is not None:
             inspector.set_step_label_hidden(label, hidden)
+            inspector.status_var.set(("Hid " if hidden else "Unhid ") + "the selected scene element.")
         elif rows:
             inspector.set_scene_rows_hidden(rows, hidden)
+            inspector.status_var.set(("Hid " if hidden else "Unhid ") + "the selected scene element.")
         else:
             return
-        inspector.status_var.set(("Hid " if hidden else "Unhid ") + "the selected scene element.")
-        self.refresh()  # re-tag the tree so hidden rows grey out
+        self.refresh()  # re-tag the tree so hidden items grey out
 
     def _show_element_context_menu(self, event, iid: str) -> None:
-        rows, label = self._selection_rows_and_label(iid)
-        if not rows and label is None:
+        rows, label, display_key = self._resolve_iid_target(iid)
+        if not rows and label is None and display_key is None:
             return
-        hidden = self._element_is_hidden(rows, label)
+        hidden = self._element_is_hidden(rows, label, display_key)
         tree = self._tree
         name = ""
         try:
@@ -671,12 +724,14 @@ class Open3DStepAdminPanel:
         if name:
             menu.add_command(label=name.strip() or "Scene element", state="disabled")
             menu.add_separator()
+        show_word = "Show" if display_key is not None else "Unhide"
         if hidden:
-            menu.add_command(label="Unhide", command=lambda: self._set_element_hidden(rows, label, False))
+            menu.add_command(label=show_word, command=lambda: self._set_element_hidden(rows, label, False, display_key))
         else:
-            menu.add_command(label="Hide", command=lambda: self._set_element_hidden(rows, label, True))
-        menu.add_separator()
-        menu.add_command(label="Delete", command=self._delete_selected)
+            menu.add_command(label="Hide", command=lambda: self._set_element_hidden(rows, label, True, display_key))
+        if display_key is None:  # rays / overlays can't be deleted
+            menu.add_separator()
+            menu.add_command(label="Delete", command=self._delete_selected)
         try:
             menu.tk_popup(int(event.x_root), int(event.y_root))
         finally:

@@ -99,6 +99,18 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     if not hasattr(Open3DStepAdminPanel, "_item_hidden_tag"):
         notes.append("FAIL: browser missing _item_hidden_tag")
         passed = False
+    # Rays + overlays surfaced as hide/unhide display elements.
+    for attr in ("_display_toggle_specs", "_display_var_for_key", "_resolve_iid_target"):
+        if not hasattr(Open3DStepAdminPanel, attr):
+            notes.append(f"FAIL: browser missing {attr}")
+            passed = False
+    try:
+        set_hidden_src = inspect.getsource(Open3DStepAdminPanel._set_element_hidden)
+    except Exception:
+        set_hidden_src = ""
+    if "display_key" not in set_hidden_src or "_on_scene_visibility_changed" not in set_hidden_src:
+        notes.append("FAIL: _set_element_hidden does not toggle display (rays/overlays) vars")
+        passed = False
 
     # C -- behaviour.
     from KrakenOS.UI.validate_open3d_analytic_lens_selection_snapshot import _ensure_display
