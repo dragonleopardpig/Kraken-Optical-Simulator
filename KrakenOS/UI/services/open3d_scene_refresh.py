@@ -776,7 +776,11 @@ class Open3DSceneRefreshService:
             selected_step = None
             selected_step_label = ""
         transient_selected_mesh = live_trace_step_mesh_by_label.get(selected_step_label)
-        if transient_selected_mesh is not None and int(getattr(transient_selected_mesh, "n_points", 0)) > 0:
+        if (
+            transient_selected_mesh is not None
+            and int(getattr(transient_selected_mesh, "n_points", 0)) > 0
+            and not self.is_step_label_hidden(selected_step_label)  # bugs/0027: no gizmo on hidden
+        ):
             if carry_label == selected_step_label:
                 step_carry_active, step_carry_grid_summary = self._add_step_carry_grid_overlay(selected_step_label, transient_selected_mesh)
             step_rotation_handles += self._add_step_rotation_handles(selected_step_label, transient_selected_mesh)
@@ -799,7 +803,7 @@ class Open3DSceneRefreshService:
                 self.editor.append_debug(f"3D {label} STEP error: {exc}")
             if cad_mesh is not None and int(getattr(cad_mesh, "n_points", 0)) > 0:
                 if label_is_live_trace_row:
-                    if str(selected_step) == label and transient_selected_mesh is None:
+                    if str(selected_step) == label and transient_selected_mesh is None and not self.is_step_label_hidden(label):
                         if carry_label == label:
                             step_carry_active, step_carry_grid_summary = self._add_step_carry_grid_overlay(label, cad_mesh)
                         step_rotation_handles += self._add_step_rotation_handles(label, cad_mesh)
@@ -853,7 +857,7 @@ class Open3DSceneRefreshService:
                         )
                 except Exception:
                     pass
-                if str(selected_step) == label:
+                if str(selected_step) == label and not self.is_step_label_hidden(label):
                     if carry_label == label:
                         step_carry_active, step_carry_grid_summary = self._add_step_carry_grid_overlay(label, cad_mesh)
                     step_rotation_handles += self._add_step_rotation_handles(label, cad_mesh)

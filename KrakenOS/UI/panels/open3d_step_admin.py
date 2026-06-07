@@ -49,6 +49,7 @@ class Open3DStepAdminPanel:
         tree.configure(yscrollcommand=scrollbar.set)
         tree.bind("<<TreeviewSelect>>", self._on_tree_select)
         tree.bind("<Button-3>", self._on_tree_right_click)
+        tree.tag_configure("hidden", foreground="#9aa0a6")  # grey out hidden elements
         self._tree = tree
 
         import_frame = ttk.LabelFrame(stack, text="Import", padding=8)
@@ -448,11 +449,13 @@ class Open3DStepAdminPanel:
                     display = self.editor._step_overlay_display_label(label)
                     name = self._step_path_name(label)
                     text = f"{display}: {name}" if name else f"{display} STEP"
-                    tree.insert(category_iids[category], "end", iid=f"overlay:{label}", text=text)
+                    tree.insert(category_iids[category], "end", iid=f"overlay:{label}", text=text,
+                                tags=self._item_hidden_tag(label=label))
                     category_counts[category] += 1
             for row_index, label, name in self._promoted_step_rows():
                 category = self._category_for_label(label)
-                tree.insert(category_iids[category], "end", iid=f"row:{row_index}", text=f"S{row_index}: {name}")
+                tree.insert(category_iids[category], "end", iid=f"row:{row_index}", text=f"S{row_index}: {name}",
+                            tags=self._item_hidden_tag(rows=[row_index]))
                 category_counts[category] += 1
             rows = list(getattr(self.editor, "rows", []) or [])
             for record in self._scene_component_records():
@@ -474,18 +477,21 @@ class Open3DStepAdminPanel:
                         iid=element_iid,
                         text=f"{name} ({len(children)} surfaces)",
                         open=previous_open_state.get(element_iid, False),
+                        tags=self._item_hidden_tag(rows=children),
                     )
                     category_counts[count_key] += 1
                     for row_index in children:
                         if row_index < 0 or row_index >= len(rows):
                             continue
                         row_name = self._scene_row_display_name(row_index, rows[row_index])
-                        tree.insert(element_iid, "end", iid=f"scene-row:{row_index}", text=f"S{row_index}: {row_name}")
+                        tree.insert(element_iid, "end", iid=f"scene-row:{row_index}", text=f"S{row_index}: {row_name}",
+                                    tags=self._item_hidden_tag(rows=[row_index]))
                     continue
                 if kind == "scene-row":
                     row_index = int(record.get("row_index", -1))
                     name = str(record.get("name", "") or f"Surface {row_index}")
-                    tree.insert(parent, "end", iid=f"scene-row:{row_index}", text=f"S{row_index}: {name}")
+                    tree.insert(parent, "end", iid=f"scene-row:{row_index}", text=f"S{row_index}: {name}",
+                                tags=self._item_hidden_tag(rows=[row_index]))
                     category_counts[count_key] += 1
             for key, parent_iid in category_iids.items():
                 if category_counts.get(key, 0) <= 0:
@@ -619,6 +625,12 @@ class Open3DStepAdminPanel:
             return inspector.is_step_label_hidden(label)
         return bool(rows) and all(inspector.is_scene_row_hidden(r) for r in rows)
 
+    def _item_hidden_tag(self, rows: list[int] | None = None, label: str | None = None) -> tuple[str, ...]:
+        try:
+            return ("hidden",) if self._element_is_hidden(rows or [], label) else ()
+        except Exception:
+            return ()
+
     def _set_element_hidden(self, rows: list[int], label: str | None, hidden: bool) -> None:
         inspector = self.inspector
         if label is not None:
@@ -628,6 +640,7 @@ class Open3DStepAdminPanel:
         else:
             return
         inspector.status_var.set(("Hid " if hidden else "Unhid ") + "the selected scene element.")
+        self.refresh()  # re-tag the tree so hidden rows grey out
 
     def _show_element_context_menu(self, event, iid: str) -> None:
         rows, label = self._selection_rows_and_label(iid)

@@ -4572,6 +4572,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         label = str(label or "").strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET:
             return False
+        # bugs/0027: a hidden element's body actor still exists (SetVisibility 0),
+        # so existence alone wrongly let the rotation gizmo pop up on select.
+        if self.is_step_label_hidden(label):
+            return False
         for actor_key in list(self._step_actor_map.get(label, []) or []):
             if actor_key in self._actor_step_rotate_map or actor_key in self._actor_step_rotate_visual_keys:
                 continue
@@ -4580,6 +4584,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         return False
 
     def _ensure_step_rotation_handles_for_label(self, label: str) -> int:
+        if self.is_step_label_hidden(label):  # bugs/0027: no gizmo on a hidden element
+            return 0
         return self._open3d_step_rotation_handle_service().ensure_for_label(label)
 
     def _remove_placement_rotation_handle_actors(self) -> bool:
@@ -4789,13 +4795,30 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.refresh_step_admin_panel()
             return False
         self.editor.select_step_component(label)
+        display = self.editor._step_overlay_display_label(label).upper()
+        # bugs/0027: a hidden element must not pop up the rotation gizmo when
+        # selected from the browser -- you can't manipulate what you can't see.
+        # Select for properties only (no highlight, no handles).
+        if self.is_step_label_hidden(label):
+            self._step_rotation_active_label = None
+            self._set_step_highlight(None, render=False)
+            try:
+                self._close_step_rotation_handler()
+            except Exception:
+                pass
+            self.refresh_step_admin_panel()
+            self.status_var.set(f"{display} STEP is hidden — right-click ▸ Unhide to edit it.")
+            try:
+                self.render()
+            except Exception:
+                pass
+            return True
         self._step_rotation_active_label = label
         self._set_step_highlight(label, render=False)
         self.show_step_rotation_handler(label)
         self.refresh_step_admin_panel()
         path = self.editor._step_path_for_label(label)
         name = Path(path).name if path is not None else label.upper()
-        display = self.editor._step_overlay_display_label(label).upper()
         self.status_var.set(f"Selected {display} STEP: {name}.")
         return True
 
@@ -9891,6 +9914,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         return Open3DStepRotationHandleService.center_and_extent(mesh)
 
     def _add_step_rotation_handles(self, label: str, mesh) -> int:
+        if self.is_step_label_hidden(label):  # bugs/0027: no gizmo on a hidden element
+            return 0
         return self._open3d_step_rotation_handle_service().add_handles(label, mesh)
 
     def _apply_step_rotation_handle(self, label: str, axis: str, delta_deg: float) -> None:

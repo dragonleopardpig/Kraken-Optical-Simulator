@@ -78,6 +78,27 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     if "_actor_step_follow_map" not in gather_src or "_actor_step_rotate_map" not in gather_src:
         notes.append("FAIL: step-label gather misses edges (follow) or gizmo (rotate) actors")
         passed = False
+    # bugs/0027: no rotation gizmo on a hidden element; hidden elements grey out.
+    for meth in ("_add_step_rotation_handles", "_ensure_step_rotation_handles_for_label",
+                 "select_step_overlay_from_admin", "_step_label_has_visible_body_actor"):
+        try:
+            src = inspect.getsource(getattr(Kraken3DInspector, meth))
+        except Exception:
+            src = ""
+        if "is_step_label_hidden" not in src:
+            notes.append(f"FAIL: {meth} does not suppress the gizmo for hidden elements")
+            passed = False
+    from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
+    try:
+        panel_build = inspect.getsource(Open3DStepAdminPanel.build)
+    except Exception:
+        panel_build = ""
+    if 'tag_configure("hidden"' not in panel_build:
+        notes.append("FAIL: browser tree does not configure the hidden grey-out tag")
+        passed = False
+    if not hasattr(Open3DStepAdminPanel, "_item_hidden_tag"):
+        notes.append("FAIL: browser missing _item_hidden_tag")
+        passed = False
 
     # C -- behaviour.
     from KrakenOS.UI.validate_open3d_analytic_lens_selection_snapshot import _ensure_display
