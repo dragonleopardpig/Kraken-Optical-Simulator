@@ -10885,19 +10885,53 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         row_index = self._actor_thickness_dimension_map.get(actor_key)
         return int(row_index) if row_index is not None else None
 
-    def _maybe_show_quick_estimation_role_menu(self, event) -> bool:
-        """If the right-click hit a conjugate thickness handle, show its role menu."""
-        row_index = self._thickness_dimension_row_under_cursor(event)
-        if row_index is None:
-            return False
-        qe = self._quick_estimation_service()
-        quantity = qe.quantity_for_thickness_row(int(row_index))
-        if quantity is None:
-            return False
-        self._show_quick_estimation_role_menu(event, quantity)
-        return True
+    def _surface_row_under_cursor(self, event) -> int | None:
+        """Table-row index of the optical surface actor under the right-click."""
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return None
+        try:
+            self._vtk_interactor.SetEventInformationFlipY(int(event.x), int(event.y), 0, 0, chr(0), 0, None)
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor = self._picker.GetActor()
+            if actor is None:
+                get_view_prop = getattr(self._picker, "GetViewProp", None)
+                if callable(get_view_prop):
+                    actor = get_view_prop()
+            actor_key = self._actor_key(actor)
+        except Exception:
+            return None
+        if actor_key is None:
+            return None
+        row = self._actor_row_map.get(actor_key)
+        return int(row) if row is not None else None
 
-    def _show_quick_estimation_role_menu(self, event, quantity: str) -> None:
+    def _maybe_show_quick_estimation_role_menu(self, event) -> bool:
+        """Right-click on a conjugate thickness handle OR an Object/Image plane
+        shows the Quick Estimation role menu."""
+        from KrakenOS.UI.services.quick_estimation import IMAGE_THICKNESS, OBJECT_THICKNESS
+
+        # 1) the thickness dimension arrow (the conjugate gap itself).
+        row_index = self._thickness_dimension_row_under_cursor(event)
+        if row_index is not None:
+            qe = self._quick_estimation_service()
+            quantity = qe.quantity_for_thickness_row(int(row_index))
+            if quantity is not None:
+                self._show_quick_estimation_role_menu(event, quantity)
+                return True
+        # 2) the Object / Image reference plane (the surface body / sensor).
+        srow = self._surface_row_under_cursor(event)
+        if srow is not None and 0 <= srow < len(self.editor.rows):
+            surface = str(getattr(self.editor.rows[srow], "surface", "") or "")
+            if surface == "Object":
+                self._show_quick_estimation_role_menu(event, OBJECT_THICKNESS, plane="Object Plane")
+                return True
+            if surface == "Image":
+                self._show_quick_estimation_role_menu(event, IMAGE_THICKNESS, plane="Image Plane")
+                return True
+        return False
+
+    def _show_quick_estimation_role_menu(self, event, quantity: str, plane: str | None = None) -> None:
         from KrakenOS.UI.services.quick_estimation import (
             LABELS,
             ROLE_CONSTANT,
@@ -10907,7 +10941,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
         qe = self._quick_estimation_service()
         menu = tk.Menu(self, tearoff=False)
-        menu.add_command(label=f"{LABELS.get(quantity, quantity)}  (role: {qe.role(quantity)})", state="disabled")
+        title = plane or LABELS.get(quantity, quantity)
+        menu.add_command(label=f"{title}  (role: {qe.role(quantity)})", state="disabled")
+        if plane:
+            menu.add_command(label=f"drives {LABELS.get(quantity, quantity)}", state="disabled")
         menu.add_separator()
         if not qe.is_enabled():
             menu.add_command(label="Enable Quick Estimation", command=lambda: self._set_quick_estimation_role(quantity, qe.role(quantity)))
