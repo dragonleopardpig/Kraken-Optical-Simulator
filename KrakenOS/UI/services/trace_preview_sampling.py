@@ -1074,7 +1074,10 @@ class TracePreviewSamplingMixin:
         # inspector sets a reduced ray count so the live preview traces a sparse
         # fan (snappy feedback) instead of the full bundle. Cleared on release,
         # when the full-fidelity retrace runs.
-        override = getattr(self, "_drag_preview_ray_count_override", None)
+        # __dict__.get, not getattr(): the editor is a Tk app whose __getattr__
+        # recurses on a missing attribute (RecursionError), so getattr() with a
+        # default is unsafe here.
+        override = self.__dict__.get("_drag_preview_ray_count_override")
         if override is not None:
             try:
                 return max(1, int(override))
