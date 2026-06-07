@@ -111,6 +111,17 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     if "display_key" not in set_hidden_src or "_on_scene_visibility_changed" not in set_hidden_src:
         notes.append("FAIL: _set_element_hidden does not toggle display (rays/overlays) vars")
         passed = False
+    # STEP export skips hidden rows / labels / rays.
+    from KrakenOS.UI.services.optical_solid_workflow import LayoutOpticalSolidWorkflowMixin
+    for meth in ("_collect_3d_step_export_meshes", "_step_export_ray_polylines",
+                 "_collect_row_native_step_export_shapes", "_collect_native_step_export_shapes"):
+        try:
+            src = inspect.getsource(getattr(LayoutOpticalSolidWorkflowMixin, meth))
+        except Exception:
+            src = ""
+        if "_step_export_hidden_state" not in src and "hidden_rows" not in src and "hidden_labels" not in src:
+            notes.append(f"FAIL: {meth} does not skip hidden geometry on export")
+            passed = False
 
     # C -- behaviour.
     from KrakenOS.UI.validate_open3d_analytic_lens_selection_snapshot import _ensure_display

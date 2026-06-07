@@ -1471,8 +1471,11 @@ class LayoutOpticalSolidWorkflowMixin:
             surface_count = len(surfaces)
         except Exception:
             surface_count = int(getattr(surfaces, "n_blocks", 0) or 0)
+        hidden_rows, _hidden_labels, _rays_hidden = self._step_export_hidden_state()
         block_count = min(len(self.rows), int(surface_count), len(transforms))
         for row_index in range(block_count):
+            if row_index in hidden_rows:  # skip hidden rows from the export
+                continue
             row = self.rows[row_index]
             if getattr(row, "surface", "") in {"Object", "Image"}:
                 continue
@@ -1505,10 +1508,39 @@ class LayoutOpticalSolidWorkflowMixin:
                 )
         return shape_items
 
+    def _step_export_hidden_state(self):
+        """Hidden rows / STEP labels + whether rays are hidden, from the 3D
+        inspector, so the STEP export only writes non-hidden geometry."""
+        inspector = getattr(self, "_three_d_inspector", None)
+        if inspector is None:
+            return frozenset(), frozenset(), False
+        hidden_rows = frozenset(int(r) for r in (getattr(inspector, "_hidden_scene_rows", None) or ()))
+        hidden_labels = frozenset(
+            str(label).strip().lower() for label in (getattr(inspector, "_hidden_step_labels", None) or ())
+        )
+        rays_var = getattr(inspector, "show_rays_var", None)
+        rays_hidden = bool(rays_var is not None and not rays_var.get())
+        return hidden_rows, hidden_labels, rays_hidden
+
+    def _export_mesh_label_hidden(self, label, hidden_rows, hidden_labels) -> bool:
+        label = str(label)
+        for prefix in ("surface_", "edge_"):
+            if label.startswith(prefix):
+                head = label[len(prefix):].split("_", 1)[0]
+                if head.isdigit() and int(head) in hidden_rows:
+                    return True
+        for step_label in ("lens", "camera", "optical", "led"):
+            if label == f"{step_label}_step" and step_label in hidden_labels:
+                return True
+        return False
+
     def _collect_native_step_export_shapes(self, system=None, progress_callback=None) -> list[tuple[str, object]]:
         shape_items: list[tuple[str, object]] = []
+        hidden_rows, hidden_labels, _rays_hidden = self._step_export_hidden_state()
         labels = STEP_OVERLAY_LABELS
         for index, label in enumerate(labels, start=1):
+            if str(label).strip().lower() in hidden_labels:  # skip hidden STEP overlays
+                continue
             params = self._step_export_alignment_params(label)
             if params is None:
                 continue
@@ -1536,6 +1568,8 @@ class LayoutOpticalSolidWorkflowMixin:
         return shape_items
 
     def _step_export_ray_polylines(self, system) -> list[np.ndarray]:
+        if self._step_export_hidden_state()[2]:  # rays hidden in the browser
+            return []
         previous_ray_count = getattr(self, "_preview_field_ray_count", None)
         previous_bundle_count = getattr(self, "_preview_field_bundle_count", None)
         rays_per_group = previous_ray_count
@@ -1584,10 +1618,13 @@ class LayoutOpticalSolidWorkflowMixin:
             raise RuntimeError("PyVista is required to collect 3D export geometry")
 
         mesh_items: list[tuple[str, object]] = []
+        hidden_rows, hidden_labels, _rays_hidden = self._step_export_hidden_state()
 
         def add_mesh(label: str, mesh) -> None:
             if mesh is None:
                 return
+            if self._export_mesh_label_hidden(label, hidden_rows, hidden_labels):
+                return  # skip hidden rows / STEP overlays
             try:
                 surface = mesh.extract_surface(algorithm="dataset_surface").copy(deep=True)
             except Exception:
@@ -1654,10 +1691,13 @@ class LayoutOpticalSolidWorkflowMixin:
             return []
 
         mesh_items: list[tuple[str, object]] = []
+        hidden_rows, hidden_labels, _rays_hidden = self._step_export_hidden_state()
 
         def add_mesh(label: str, mesh) -> None:
             if mesh is None:
                 return
+            if self._export_mesh_label_hidden(label, hidden_rows, hidden_labels):
+                return  # skip hidden rows / STEP overlays
             try:
                 surface = mesh.extract_surface(algorithm="dataset_surface").copy(deep=True)
             except Exception:
