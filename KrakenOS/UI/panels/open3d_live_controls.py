@@ -83,6 +83,99 @@ class Open3DLiveControlsPanel:
         step.grid(row=3, column=0, sticky="ew", pady=(8, 0))
         self.build_step_controls(step)
 
+        quick = ttk.LabelFrame(stack, text="Quick Estimation (Object / Image / FOV)", padding=8)
+        quick.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        self.build_quick_estimation_controls(quick)
+
+    def build_quick_estimation_controls(self, parent: tk.Widget) -> None:
+        from KrakenOS.UI.services.quick_estimation import (
+            IMAGE_PLANE,
+            IMAGE_THICKNESS,
+            OBJECT_PLANE,
+            OBJECT_THICKNESS,
+            ROLES,
+        )
+
+        parent.columnconfigure(1, weight=1)
+        inspector = self.inspector
+        ttk.Checkbutton(
+            parent,
+            text="Quick Estimation",
+            variable=inspector.quick_estimation_var,
+            command=inspector._toggle_quick_estimation,
+        ).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(
+            parent,
+            text="Pin the sensor; drag/type a thickness handle in 3D and the\n"
+            "conjugate partner re-solves for focus. FOV follows the magnification.",
+            foreground="#555555",
+            justify="left",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 6))
+
+        readout_vars: dict[str, tk.StringVar] = {}
+
+        def _row(grid_row: int, key: str, label: str, *, role_combo: bool = False) -> None:
+            ttk.Label(parent, text=label).grid(row=grid_row, column=0, sticky="w", pady=1)
+            var = tk.StringVar(value="--")
+            readout_vars[key] = var
+            ttk.Label(parent, textvariable=var, foreground="#1a3b6d").grid(
+                row=grid_row, column=1, sticky="w", padx=(6, 0), pady=1
+            )
+
+        _row(2, OBJECT_PLANE, "Object Plane")
+        _row(3, OBJECT_THICKNESS, "Object Thickness")
+        _row(4, IMAGE_THICKNESS, "Image Thickness")
+        _row(5, IMAGE_PLANE, "Image Plane")
+        ttk.Separator(parent, orient="horizontal").grid(
+            row=6, column=0, columnspan=2, sticky="ew", pady=4
+        )
+        _row(7, "magnification", "Magnification")
+        _row(8, "sensor", "Sensor (Image H)")
+        _row(9, "fov", "FOV (Object H)")
+        _row(10, "focus", "Focus")
+
+        # Explicit role selectors for the two conjugate gaps (the in-3D
+        # right-click path drives the same set_role).
+        role_box = ttk.Frame(parent)
+        role_box.grid(row=11, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        ttk.Label(role_box, text="Roles:").grid(row=0, column=0, sticky="w")
+        for col, (quantity, short) in enumerate(
+            ((OBJECT_THICKNESS, "Obj Thk"), (IMAGE_THICKNESS, "Img Thk")), start=1
+        ):
+            ttk.Label(role_box, text=short).grid(row=0, column=2 * col - 1, sticky="e", padx=(8, 2))
+            combo = ttk.Combobox(role_box, state="readonly", values=list(ROLES), width=11)
+            combo.set(inspector._quick_estimation_service().role(quantity))
+            combo.grid(row=0, column=2 * col, sticky="w")
+
+            def _on_role(_event, q=quantity, c=combo):
+                svc = inspector._quick_estimation_service()
+                summary = svc.set_role(q, c.get())
+                svc.update_readout()
+                self._refresh_quick_estimation_role_combos()
+                if summary:
+                    inspector.status_var.set(summary)
+
+            combo.bind("<<ComboboxSelected>>", _on_role)
+            self._quick_estimation_role_combos = getattr(self, "_quick_estimation_role_combos", {})
+            self._quick_estimation_role_combos[quantity] = combo
+
+        inspector._quick_estimation_readout_vars = readout_vars
+        try:
+            inspector._quick_estimation_service().update_readout()
+        except Exception:
+            pass
+
+    def _refresh_quick_estimation_role_combos(self) -> None:
+        combos = getattr(self, "_quick_estimation_role_combos", None)
+        if not combos:
+            return
+        svc = self.inspector._quick_estimation_service()
+        for quantity, combo in combos.items():
+            try:
+                combo.set(svc.role(quantity))
+            except Exception:
+                pass
+
     def editor_var(self, name: str, default: str = ""):
         var = getattr(self.editor, name, None)
         if var is None:

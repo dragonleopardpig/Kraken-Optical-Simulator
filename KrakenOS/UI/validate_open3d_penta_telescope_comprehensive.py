@@ -3591,6 +3591,40 @@ def phase_33_live_drag_ray_preview(
     return result
 
 
+def phase_34_quick_estimation_conjugate(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Quick Estimation: live object/image conjugate + FOV solve in 3D.
+
+    A constraint solver over the four axial quantities (Object Plane, Object
+    Thickness, Image Thickness, Image Plane), each Constant / Independent /
+    Dependent. Pinning the sensor and driving one conjugate gap (drag or type a
+    thickness handle) re-solves the partner through the paraxial engine so the
+    image stays focused, and FOV = sensor / |m| updates. The guard
+    (`validate_open3d_quick_estimation_conjugate`) checks the engine across all
+    five machine-vision layouts (focus held, FOV monotonic, both solve
+    directions) plus the role-menu / live-preview source contracts.
+    """
+    result = PhaseResult(
+        name="Phase 34: Quick Estimation conjugate + FOV solve (machine-vision layouts)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_quick_estimation_conjugate import run_checks
+        passed, notes = run_checks(app=app, inspector=inspector)
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"quick-estimation guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("quick-estimation guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3670,6 +3704,7 @@ def main() -> int:
             phase_31_moved_element_rays_stay_visible,
             phase_32_moved_splitter_keeps_focus,
             phase_33_live_drag_ray_preview,
+            phase_34_quick_estimation_conjugate,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

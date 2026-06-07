@@ -35,6 +35,13 @@ class Open3DFaceAssignmentService:
         STEP_OVERLAY_LABEL_SET = le.STEP_OVERLAY_LABEL_SET
         _short_error_message = le._short_error_message
         _optical_solid_face_function_display = le._optical_solid_face_function_display
+        # Quick Estimation: right-clicking a conjugate thickness handle assigns
+        # its role (Independent / Dependent / Constant) instead of a CAD face.
+        try:
+            if self._maybe_show_quick_estimation_role_menu(event):
+                return "break"
+        except Exception:
+            pass
         context = self._right_click_pick_context(event)
         if context is None:
             self._debug_trace(

@@ -551,9 +551,25 @@ class Open3DThicknessDimensionService:
             row_index = int(state.get("row_index", -1))
         except Exception:
             row_index = -1
-        self.inspector.status_var.set(
-            f"S{row_index} Thickness drag: {initial:.6g} -> {pending:.6g} mm. Release to apply."
-        )
+        status = f"S{row_index} Thickness drag: {initial:.6g} -> {pending:.6g} mm. Release to apply."
+        # Quick Estimation: live conjugate + FOV feedback while dragging a
+        # conjugate gap, before the release commits the move.
+        try:
+            qe = self.inspector._quick_estimation_service()
+            if qe.is_enabled():
+                preview = qe.preview_state(int(row_index), float(pending))
+                if preview is not None:
+                    qe.update_readout(preview)
+                    img = preview.get("image_distance")
+                    fov = preview.get("fov_full")
+                    if img is not None and fov is not None:
+                        status = (
+                            f"Quick Estimation: object {pending:.6g} mm -> image {img:.6g} mm, "
+                            f"FOV {fov:.6g} mm. Release to apply."
+                        )
+        except Exception:
+            pass
+        self.inspector.status_var.set(status)
 
     def finish_drag(self, state: dict[str, object] | None) -> None:
         if state is None:
@@ -634,14 +650,32 @@ class Open3DThicknessDimensionService:
             return False
         self.editor._begin_history_capture()
         self.editor.rows[row_index].thickness = next_value
+        # Quick Estimation: setting one conjugate gap re-solves the other so the
+        # image stays focused on the pinned sensor; FOV updates from the new
+        # magnification. The dragged/typed gap becomes the independent variable.
+        qe_note = ""
+        try:
+            qe = self.inspector._quick_estimation_service()
+            if qe.is_enabled():
+                _ok, qe_note = qe.solve_dependent(int(row_index))
+        except Exception as exc:  # pragma: no cover - defensive
+            self.editor.append_debug(f"Quick Estimation solve skipped: {exc}")
+            qe_note = ""
         self.editor._sync_table()
         self.editor._select_table_row(row_index)
         self.editor._commit_history_capture()
         self.editor._invalidate_preview_scene_trace()
         self.editor._sync_trace_state_badge()
-        self.editor.status_var.set(f"S{row_index} Thickness set to {next_value:.6g} mm. Other table thickness values are unchanged.")
-        self.inspector.status_var.set(f"S{row_index} Thickness set to {next_value:.6g} mm.")
+        base_msg = f"S{row_index} Thickness set to {next_value:.6g} mm."
+        if qe_note:
+            base_msg = f"{base_msg} {qe_note}"
+        self.editor.status_var.set(f"{base_msg} Other table thickness values are unchanged.")
+        self.inspector.status_var.set(base_msg)
         self.inspector.refresh_from_editor(force_retrace=True)
+        try:
+            self.inspector._quick_estimation_service().update_readout()
+        except Exception:
+            pass
         return True
 
     def edit_dimension(self, row_index: int) -> None:

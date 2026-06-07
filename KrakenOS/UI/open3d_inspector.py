@@ -534,6 +534,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.show_live_controls_panel_var = tk.BooleanVar(value=True)
         self.show_scene_components_panel_var = tk.BooleanVar(value=True)
         self.live_mode_var = tk.BooleanVar(value=False)
+        self.quick_estimation_var = tk.BooleanVar(value=False)
+        self._quick_estimation_service_instance = None
+        self._quick_estimation_readout_vars: dict[str, tk.StringVar] = {}
         self.status_var = tk.StringVar(value="3D inspector ready")
 
         self.columnconfigure(0, weight=0)
@@ -725,6 +728,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             )
             self._open3d_thickness_dimension_service_instance = service
         return service
+
+    def _quick_estimation_service(self):
+        service = getattr(self, "_quick_estimation_service_instance", None)
+        if service is None:
+            from KrakenOS.UI.services.quick_estimation import QuickEstimationService
+
+            service = QuickEstimationService(self)
+            self._quick_estimation_service_instance = service
+        return service
+
+    def _toggle_quick_estimation(self) -> None:
+        service = self._quick_estimation_service()
+        if self.quick_estimation_var.get():
+            service.update_readout()
+            self.status_var.set(service._role_summary())
+        else:
+            self.status_var.set("Quick Estimation off -- thickness edits no longer re-solve the conjugate.")
 
     def _open3d_step_rotation_handle_service(self) -> Open3DStepRotationHandleService:
         if pv is None:
@@ -10843,6 +10863,80 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
     def _edit_open3d_thickness_dimension(self, row_index: int) -> None:
         self._open3d_thickness_dimension_service().edit_dimension(int(row_index))
+
+    def _thickness_dimension_row_under_cursor(self, event) -> int | None:
+        """Row index of the thickness-dimension actor under the right-click, if any."""
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return None
+        try:
+            self._vtk_interactor.SetEventInformationFlipY(int(event.x), int(event.y), 0, 0, chr(0), 0, None)
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor = self._picker.GetActor()
+            if actor is None:
+                get_view_prop = getattr(self._picker, "GetViewProp", None)
+                if callable(get_view_prop):
+                    actor = get_view_prop()
+            actor_key = self._actor_key(actor)
+        except Exception:
+            return None
+        if actor_key is None:
+            return None
+        row_index = self._actor_thickness_dimension_map.get(actor_key)
+        return int(row_index) if row_index is not None else None
+
+    def _maybe_show_quick_estimation_role_menu(self, event) -> bool:
+        """If the right-click hit a conjugate thickness handle, show its role menu."""
+        row_index = self._thickness_dimension_row_under_cursor(event)
+        if row_index is None:
+            return False
+        qe = self._quick_estimation_service()
+        quantity = qe.quantity_for_thickness_row(int(row_index))
+        if quantity is None:
+            return False
+        self._show_quick_estimation_role_menu(event, quantity)
+        return True
+
+    def _show_quick_estimation_role_menu(self, event, quantity: str) -> None:
+        from KrakenOS.UI.services.quick_estimation import (
+            LABELS,
+            ROLE_CONSTANT,
+            ROLE_DEPENDENT,
+            ROLE_INDEPENDENT,
+        )
+
+        qe = self._quick_estimation_service()
+        menu = tk.Menu(self, tearoff=False)
+        menu.add_command(label=f"{LABELS.get(quantity, quantity)}  (role: {qe.role(quantity)})", state="disabled")
+        menu.add_separator()
+        if not qe.is_enabled():
+            menu.add_command(label="Enable Quick Estimation", command=lambda: self._set_quick_estimation_role(quantity, qe.role(quantity)))
+            menu.add_separator()
+        menu.add_command(label="Set Variable — Independent (drive)", command=lambda: self._set_quick_estimation_role(quantity, ROLE_INDEPENDENT))
+        menu.add_command(label="Set Variable — Dependent (solve for focus)", command=lambda: self._set_quick_estimation_role(quantity, ROLE_DEPENDENT))
+        menu.add_command(label="Set Constant (pin value)", command=lambda: self._set_quick_estimation_role(quantity, ROLE_CONSTANT))
+        try:
+            menu.tk_popup(int(event.x_root), int(event.y_root))
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
+
+    def _set_quick_estimation_role(self, quantity: str, role: str) -> None:
+        qe = self._quick_estimation_service()
+        if not qe.is_enabled():
+            self.quick_estimation_var.set(True)
+        summary = qe.set_role(quantity, role)
+        qe.update_readout()
+        panel = self.__dict__.get("_open3d_live_controls_panel_instance")
+        if panel is not None and hasattr(panel, "_refresh_quick_estimation_role_combos"):
+            try:
+                panel._refresh_quick_estimation_role_combos()
+            except Exception:
+                pass
+        if summary:
+            self.status_var.set(summary)
 
     def _thickness_drag_state_from_current_pick(self) -> dict[str, object] | None:
         return self._open3d_thickness_dimension_service().drag_state_from_current_pick()
