@@ -135,10 +135,11 @@ class Open3DLiveControlsPanel:
         _row(10, "sensor", "Sensor (Image H)")
         _row(11, "fov", "FOV (Object H)")
         _row(12, "target_fov", "Target FOV / fill")
-        _row(13, "focus", "Focus")
+        _row(13, "recommended_sensor", "Rec. sensor")
+        _row(14, "focus", "Focus")
 
         action_box = ttk.Frame(parent)
-        action_box.grid(row=14, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        action_box.grid(row=15, column=0, columnspan=2, sticky="ew", pady=(6, 0))
         ttk.Button(action_box, text="Set Target FOV…", command=inspector._quick_estimation_set_target_fov).grid(
             row=0, column=0, sticky="w"
         )
@@ -152,7 +153,7 @@ class Open3DLiveControlsPanel:
         # Explicit role selectors for the two conjugate gaps (the in-3D
         # right-click path drives the same set_role).
         role_box = ttk.Frame(parent)
-        role_box.grid(row=15, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        role_box.grid(row=16, column=0, columnspan=2, sticky="ew", pady=(6, 0))
         ttk.Label(role_box, text="Roles:").grid(row=0, column=0, sticky="w")
         for col, (quantity, short) in enumerate(
             ((OBJECT_THICKNESS, "Obj Thk"), (IMAGE_THICKNESS, "Img Thk")), start=1

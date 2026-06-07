@@ -55,6 +55,18 @@ ROLE_INDEPENDENT = "independent"
 ROLE_DEPENDENT = "dependent"
 ROLES = (ROLE_CONSTANT, ROLE_INDEPENDENT, ROLE_DEPENDENT)
 
+# Standard machine-vision sensor formats: (label, nominal sensor diagonal mm).
+SENSOR_FORMATS = (
+    ('1/4"', 4.5), ('1/3"', 6.0), ('1/2.5"', 7.2), ('1/2"', 8.0),
+    ('1/1.8"', 9.0), ('2/3"', 11.0), ('1"', 16.0), ('4/3"', 22.5),
+    ("APS-C", 28.3), ("Full-frame", 43.3),
+)
+SENSOR_ASPECT = (4.0, 3.0)  # default 4:3 machine-vision sensor
+
+
+def _nearest_sensor_format(diagonal: float) -> tuple[str, float]:
+    return min(SENSOR_FORMATS, key=lambda fmt: abs(fmt[1] - float(diagonal)))
+
 
 class QuickEstimationService:
     """Object/image conjugate + FOV solver wired to the 3D thickness handles."""
@@ -346,6 +358,46 @@ class QuickEstimationService:
             f"image {image_distance:.6g} mm (|m|={mag:.4g})."
         )
 
+    def recommended_sensor(self, aspect: tuple[float, float] = SENSOR_ASPECT) -> dict[str, Any] | None:
+        """The rectangular sensor whose diagonal matches the image footprint of
+        the object being imaged (the target Object Height, else the current FOV).
+
+        Returns image-circle diameter, recommended sensor width/height/diagonal
+        for ``aspect``, and the nearest standard format -- so the user can size /
+        source a camera that the image circle perfectly covers.
+        """
+        try:
+            mag = self.editor._current_finite_paraxial_magnification()
+        except Exception:
+            mag = None
+        if mag is None or not np.isfinite(mag) or abs(mag) < 1e-9:
+            return None
+        sensor = self._sensor_semi()
+        if not sensor:
+            return None
+        fov_semi = sensor / abs(mag)
+        object_semi = self._target_object_semi if self._target_object_semi else fov_semi
+        image_radius = abs(mag) * float(object_semi)  # image footprint of that object
+        if not np.isfinite(image_radius) or image_radius <= 0:
+            return None
+        diagonal = 2.0 * image_radius
+        aw, ah = float(aspect[0]), float(aspect[1])
+        norm = (aw * aw + ah * ah) ** 0.5 or 1.0
+        width = diagonal * aw / norm
+        height = diagonal * ah / norm
+        fmt, fmt_diag = _nearest_sensor_format(diagonal)
+        return {
+            "image_circle_diameter": diagonal,
+            "diagonal": diagonal,
+            "width": width,
+            "height": height,
+            "aspect": (aw, ah),
+            "format": fmt,
+            "format_diagonal": fmt_diag,
+            "image_radius": image_radius,
+            "current_sensor_semi": sensor,
+        }
+
     def current_state(self) -> dict[str, Any]:
         rows = getattr(self.editor, "rows", None) or []
         state: dict[str, Any] = {
@@ -387,6 +439,7 @@ class QuickEstimationService:
             # fill factor of the target object on the sensor: target / FOV.
             if self._target_object_semi and state["fov_semi"]:
                 state["fill_factor"] = float(self._target_object_semi) / float(state["fov_semi"])
+        state["recommended_sensor"] = self.recommended_sensor()
         # in-focus: does the conjugate solve reproduce the current image gap?
         try:
             result = self.editor._compute_paraxial_solve_result("image")
@@ -439,6 +492,14 @@ class QuickEstimationService:
             out["target_fov"] = tline
         else:
             out["target_fov"] = "(fills sensor)"
+        rec = state.get("recommended_sensor")
+        if rec:
+            out["recommended_sensor"] = (
+                f"{rec['width']:.3g}×{rec['height']:.3g} mm (Ø{rec['diagonal']:.3g}, "
+                f"~{rec['format']}) — image circle Ø{rec['image_circle_diameter']:.3g} mm"
+            )
+        else:
+            out["recommended_sensor"] = "--"
         if state.get("forbidden"):
             out["focus"] = "FORBIDDEN: " + (state.get("forbidden_reason") or "no real image")
         else:
