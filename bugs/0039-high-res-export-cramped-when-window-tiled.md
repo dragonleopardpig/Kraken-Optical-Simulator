@@ -24,16 +24,25 @@ fullscreen exports looked different.
 
 ## Fix
 
-Normalise the **exported content** to a window-independent size. After computing
-the tight bbox (in inches) of the kept axes, scale the whole figure uniformly so
-the clicked content reaches a fixed target width (`8.0"`), redraw, recompute the
-bbox, then `savefig`. Scaling the figure uniformly preserves every axis's aspect
-ratio and the field-curvature two-panel's manually positioned panels — only the
-absolute size (hence the font-to-axis ratio) changes — so a tiled (small) window
-and a fullscreen (large) window now export the same comfortable image. The
-on-screen figure size is restored in `finally`.
+Two window-independent normalisations, applied to the figure before `savefig`
+and restored in `finally`:
 
-The scale factor is computed by the pure helper
+1. **Aspect.** The embedded figure takes the window's aspect, so a *tall* tiled
+   window makes the 2-D layout axis a narrow column and squishes the optics
+   vertically (Z compressed, Y stretched) — looking nothing like the wide
+   fullscreen export. Reshape the figure to a fixed landscape aspect
+   (`_HIGH_RES_EXPORT_ASPECT = 1.6`, width = 1.6 × height) so the layout column
+   is wide in both cases. (A uniform scale alone can't fix this — it preserves
+   the bad aspect.)
+2. **Size.** With fixed point-size fonts, a small figure exports cramped
+   (overlapping labels, the field-curvature two-panel jumbling its x ticks).
+   After reshaping, scale the whole figure uniformly so the clicked content
+   reaches a fixed target width (`8.0"`), redraw, recompute the tight bbox, then
+   `savefig`. The uniform scale preserves the (now-landscape) aspect and the
+   two-panel's manual positions.
+
+Together, a tiled and a fullscreen window export the same shape and size. The
+scale factor is the pure helper
 `_high_res_export_figure_scale(content_width_in, target_width_in=8.0)`, clamped to
 `[0.5, 4.0]` so a degenerate/empty bbox can't blow up the figure.
 

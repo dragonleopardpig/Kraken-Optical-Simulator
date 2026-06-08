@@ -396,6 +396,11 @@ class LayoutPlotInteractionMixin:
                 pass
         return {axis for axis in kept if axis in self.figure.axes}
 
+    # Fixed landscape aspect (width / height) the high-res export reshapes the
+    # figure to, so a tiled (tall) window and a fullscreen (wide) window export
+    # the same shape instead of a squished column vs a wide layout.
+    _HIGH_RES_EXPORT_ASPECT = 1.6
+
     @staticmethod
     def _high_res_export_figure_scale(
         content_width_in: float,
@@ -443,6 +448,22 @@ class LayoutPlotInteractionMixin:
                 axis_label = "analysis"
             image_path = out_dir / ("2D.png" if axis_label == "layout" else f"kraken_plot_{axis_label}.png")
 
+            # Force a consistent landscape aspect for the export. The embedded
+            # figure takes the window's aspect, so a tall (tiled) window makes
+            # the layout axis a narrow column and squishes the optics vertically
+            # -- looking different from a wide fullscreen export. Reshaping the
+            # figure to a fixed aspect (then normalising the content width below)
+            # makes tiled and fullscreen exports match. The on-screen size is
+            # restored in `finally`.
+            try:
+                cur_w, cur_h = (float(v) for v in self.figure.get_size_inches())
+                aspect_w = self._HIGH_RES_EXPORT_ASPECT * cur_h
+                if abs(aspect_w - cur_w) > 0.05:
+                    original_fig_size = (cur_w, cur_h)
+                    self.figure.set_size_inches(aspect_w, cur_h, forward=False)
+            except Exception:
+                pass
+
             self.canvas.draw()
             if target_ax is not None and target_ax in self.figure.axes:
                 # Keep twin axes (those sharing an axis with the clicked one) visible
@@ -475,7 +496,8 @@ class LayoutPlotInteractionMixin:
                     scale = self._high_res_export_figure_scale(float(tight_bbox.width))
                     if abs(scale - 1.0) > 0.02:
                         cur_w, cur_h = self.figure.get_size_inches()
-                        original_fig_size = (float(cur_w), float(cur_h))
+                        if original_fig_size is None:
+                            original_fig_size = (float(cur_w), float(cur_h))
                         self.figure.set_size_inches(cur_w * scale, cur_h * scale, forward=False)
                         self.canvas.draw()
                         tight_bbox = _kept_tight_bbox_inches() or tight_bbox
