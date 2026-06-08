@@ -63,6 +63,7 @@ from KrakenOS.Optimization.adapters.pygmo2_adapter import Pygmo2MeritProblem
 from KrakenOS.Optimization.pygmo_backend import import_pygmo, probe_pygmo_backend
 from KrakenOS.UI.camera_database import (
     CAMERA_NONE_LABEL,
+    camera_image_coverage_mm,
     camera_image_diameter_mm,
     camera_names,
     camera_record,

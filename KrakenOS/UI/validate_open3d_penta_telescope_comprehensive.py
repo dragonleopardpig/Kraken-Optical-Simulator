@@ -3723,6 +3723,41 @@ def phase_37_detector_overlay_vendor_sensor(
     return result
 
 
+def phase_38_detector_coverage(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Detector coverage overlay shows the sensor inside the real image circle.
+
+    Reported via the in-app recorder (bug 0032): the imaged disk sat inside the
+    square sensor, so the corners vignetted. The overlay now draws the **real
+    ray-traced image circle** (max real image height), cyan when it covers the
+    sensor corners and amber when short, with a dashed "required" ring at the
+    sensor half-diagonal and a suggested Real Image Height when short; the object
+    plane gets an FOV rectangle (sensor / |m|). Selecting a camera auto-fills the
+    image diameter (sensor diagonal) and Real Image Height (half-diagonal) so the
+    circle covers. The guard (`validate_detector_coverage`) is display-free and
+    builds its own machine-vision editor, so it needs no Xvfb / inspector.
+    """
+    result = PhaseResult(
+        name="Phase 38: detector coverage -- sensor inside the real image circle"
+    )
+    try:
+        from KrakenOS.UI.validate_detector_coverage import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"detector coverage guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("detector coverage guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3806,6 +3841,7 @@ def main() -> int:
             phase_35_scene_browser_hide_delete,
             phase_36_ray_launch_center_uniform_fan,
             phase_37_detector_overlay_vendor_sensor,
+            phase_38_detector_coverage,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

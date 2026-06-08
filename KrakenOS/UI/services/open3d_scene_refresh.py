@@ -884,6 +884,10 @@ class Open3DSceneRefreshService:
         # Quick Estimation FOV-circle / sensor-rectangle overlays (no-op unless
         # Quick Estimation is enabled).
         self._add_quick_estimation_overlays(system, scene_bundle)
+        # Detector coverage: real ray-traced image circle vs sensor + object-plane
+        # FOV rectangle (gated on the "Det" detector overlay toggle).
+        if self.show_detector_overlays_var.get():
+            self._add_detector_coverage_overlays(system, scene_bundle)
         # Re-apply browser hide/unhide (actors were rebuilt this refresh).
         self._apply_scene_element_visibility()
 

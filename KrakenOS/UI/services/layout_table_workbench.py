@@ -2804,14 +2804,30 @@ class LayoutTableWorkbenchMixin:
             self._commit_history_capture()
             self._mark_plot_update_pending()
             return
-        diameter = camera_image_diameter_mm(camera_name)
-        if diameter is None or not self.rows or self.rows[-1].surface != "Image":
+        # The image circle must *cover* the rectangular sensor (corners
+        # included), so the image-surface clear aperture follows the sensor
+        # diagonal rather than the inscribed sensor width (the old
+        # ``image_diameter_mm``, which clipped the corners). The vendor sensor
+        # active area itself is drawn at its real size by the detector override.
+        coverage = camera_image_coverage_mm(camera_name)
+        image_diameter = coverage[0] if coverage is not None else camera_image_diameter_mm(camera_name)
+        if image_diameter is None or not self.rows or self.rows[-1].surface != "Image":
             self._commit_history_capture()
             self._mark_plot_update_pending()
             self.status_var.set(f"Camera selected: {camera_name}; no sensor size available.")
             return
         self._set_image_diameter_mode("Manual")
-        self.rows[-1].diameter = float(diameter)
+        self.rows[-1].diameter = float(image_diameter)
+        # Auto-fill the field so the outermost field lands on the sensor corner
+        # (Real Image Height = sensor half-diagonal); the image circle then
+        # covers the whole sensor instead of inscribing it.
+        real_image_height = coverage[1] if coverage is not None else None
+        if real_image_height is not None and hasattr(self, "field_type_var"):
+            self.field_type_var.set(self._field_type_display_label("Real Image Height"))
+            self._last_field_type = "Real Image Height"
+            self._field_type_defaults["Real Image Height"] = f"{float(real_image_height):.6g}"
+            self.field_value_var.set(f"{float(real_image_height):.6g}")
+            self._sync_field_mode_ui()
         camera_info = self._current_camera_record() or {}
         step_path = camera_info.get("step_path")
         if self.imported_camera_step_path is None and step_path:
@@ -2825,8 +2841,14 @@ class LayoutTableWorkbenchMixin:
         self._mark_plot_update_pending()
         summary = camera_short_summary(camera_name)
         detail = f" ({summary})" if summary else ""
+        field_note = (
+            f"; Real Image Height set to {float(real_image_height):.6g} mm"
+            if real_image_height is not None
+            else ""
+        )
         self.status_var.set(
-            f"Camera selected: {camera_name}{detail}; image diameter set to {float(diameter):.6g} mm. Click Update."
+            f"Camera selected: {camera_name}{detail}; image diameter set to "
+            f"{float(image_diameter):.6g} mm{field_note}. Click Update."
         )
 
     def _apply_initial_field_defaults(self) -> None:

@@ -132,6 +132,28 @@ def camera_sensor_active_mm(name: str) -> tuple[float, float] | None:
     return w, h
 
 
+def camera_image_coverage_mm(name: str) -> tuple[float, float] | None:
+    """Image-circle coverage for a camera's vendor sensor.
+
+    Returns ``(image_diameter_mm, real_image_height_mm)`` where
+    ``image_diameter_mm`` is the sensor **diagonal** -- the smallest image
+    circle that fully covers the rectangular sensor, corners included -- and
+    ``real_image_height_mm`` is its half, i.e. the max real image semi-height
+    that lands the outermost field on the sensor corner. Selecting a camera
+    auto-fills these so the image circle covers the sensor instead of merely
+    inscribing it (sensor width = the inscribed circle, which clips the
+    corners). ``None`` when the camera has no vendor sensor size.
+    """
+    sensor = camera_sensor_active_mm(name)
+    if sensor is None:
+        return None
+    width, height = sensor
+    diagonal = float((width * width + height * height) ** 0.5)
+    if not (diagonal > 0.0):
+        return None
+    return diagonal, 0.5 * diagonal
+
+
 def camera_short_summary(name: str) -> str:
     record = camera_record(name)
     if record is None:

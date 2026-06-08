@@ -9558,6 +9558,22 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor.append_debug(f"Quick Estimation overlays skipped: {exc}")
             return 0
 
+    def _detector_coverage_overlay_service(self):
+        service = getattr(self, "_detector_coverage_overlay_service_instance", None)
+        if service is None:
+            from KrakenOS.UI.services.detector_coverage_overlay import DetectorCoverageOverlayService
+
+            service = DetectorCoverageOverlayService(self, pv_module=pv)
+            self._detector_coverage_overlay_service_instance = service
+        return service
+
+    def _add_detector_coverage_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
+        try:
+            return self._detector_coverage_overlay_service().add_overlays(system, scene_bundle)
+        except Exception as exc:  # pragma: no cover - defensive
+            self.editor.append_debug(f"Detector coverage overlays skipped: {exc}")
+            return 0
+
     # -- scene-component browser hide/unhide -------------------------------
     def _set_actor_keys_visible(self, actor_keys, visible: bool) -> None:
         by_key = self.__dict__.get("_actor_by_key", {}) or {}
