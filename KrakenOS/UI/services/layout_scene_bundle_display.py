@@ -522,6 +522,7 @@ class LayoutSceneBundleDisplayMixin:
                 else None
             ),
             detector_surface_indices=self._scene_detector_surface_indices(trace_state),
+            detector_active_dims_overrides=self._camera_detector_active_dims_overrides(),
             allow_target_plane_contact=True,
             source_row_order=normalize_source_row_order(getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT)),
         )

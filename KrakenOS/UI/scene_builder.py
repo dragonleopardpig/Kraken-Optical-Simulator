@@ -373,6 +373,7 @@ def build_scene_targets(
     *,
     target_surface: int | None = None,
     detector_surface_indices: set[int] | None = None,
+    detector_active_dims_overrides: dict[int, tuple[float, float]] | None = None,
 ) -> list[SceneTarget3D]:
     """Return explicit scene target records derived from table rows.
 
@@ -407,6 +408,14 @@ def build_scene_targets(
             z_pos += float(getattr(row, "thickness", 0.0) or 0.0)
             continue
         detector_settings = _row_detector_settings(row)
+        active_width_mm = max(_safe_float(detector_settings.get("active_width_mm")), 0.0)
+        active_height_mm = max(_safe_float(detector_settings.get("active_height_mm")), 0.0)
+        if is_detector:
+            override_w, override_h = _detector_override_dims(detector_active_dims_overrides, row_index)
+            if active_width_mm <= 1e-12 and override_w > 1e-12:
+                active_width_mm = override_w
+            if active_height_mm <= 1e-12 and override_h > 1e-12:
+                active_height_mm = override_h
         center, normal, tangent = _scene_target_frame(row_index, row, z_pos)
         targets.append(
             SceneTarget3D(
@@ -421,8 +430,8 @@ def build_scene_targets(
                 normal_world=normal,
                 tangent_world=tangent,
                 diameter=max(_safe_float(getattr(row, "diameter", 0.0)), 0.0),
-                active_width_mm=max(_safe_float(detector_settings.get("active_width_mm")), 0.0),
-                active_height_mm=max(_safe_float(detector_settings.get("active_height_mm")), 0.0),
+                active_width_mm=active_width_mm,
+                active_height_mm=active_height_mm,
                 detector_bins=str(detector_settings.get("bins", "") or ""),
                 pixel_pitch_um=max(_safe_float(detector_settings.get("pixel_pitch_um")), 0.0),
                 is_detector=bool(is_detector),
@@ -648,6 +657,30 @@ def _row_detector_settings(row: Any) -> dict[str, object]:
     return settings
 
 
+def _detector_override_dims(
+    detector_active_dims_overrides: dict[int, tuple[float, float]] | None,
+    row_index: int,
+) -> tuple[float, float]:
+    """Vendor ``(width, height)`` active dims for a detector row, else ``(0, 0)``.
+
+    These come from the selected camera's datasheet sensor size and take
+    precedence over the bare-diameter fallback so the detector footprint is
+    drawn (and ray hits classified) at the real sensor, not the image-surface
+    clear aperture.
+    """
+    if not detector_active_dims_overrides:
+        return 0.0, 0.0
+    override = detector_active_dims_overrides.get(int(row_index))
+    if not override:
+        return 0.0, 0.0
+    try:
+        width = max(float(override[0]), 0.0)
+        height = max(float(override[1]), 0.0)
+    except (TypeError, ValueError, IndexError):
+        return 0.0, 0.0
+    return width, height
+
+
 def _row_scene_target_settings(row: Any) -> dict[str, object]:
     settings = {"role": "", "label": ""}
     advanced = _row_advanced(row)
@@ -793,6 +826,7 @@ def build_scene_bundle(
     trace_mode_note: str = "",
     target_surface: int | None = None,
     detector_surface_indices: set[int] | None = None,
+    detector_active_dims_overrides: dict[int, tuple[float, float]] | None = None,
     allow_target_plane_contact: bool = False,
     sources: list[SceneSource3D] | None = None,
     source_row_order: str = "after_object",
@@ -854,6 +888,7 @@ def build_scene_bundle(
         rows,
         target_surface=target_surface,
         detector_surface_indices=detector_surface_indices,
+        detector_active_dims_overrides=detector_active_dims_overrides,
     )
     scene_placements = build_scene_placements(rows, targets=scene_targets)
 
@@ -900,6 +935,7 @@ def build_scene_bundle(
         target_surface=target_surface,
         detector_surface_indices=detector_surface_indices,
         allow_target_plane_contact=allow_target_plane_contact,
+        detector_active_dims_overrides=detector_active_dims_overrides,
     )
     if folded_ray_display_paths is not None and elements:
         _sync_folded_terminal_events(
@@ -1322,6 +1358,7 @@ def _build_ray_paths(
     target_surface: int | None = None,
     detector_surface_indices: set[int] | None = None,
     allow_target_plane_contact: bool = False,
+    detector_active_dims_overrides: dict[int, tuple[float, float]] | None = None,
 ) -> list[RayPath3D]:
     if rays is None:
         return []
@@ -1473,6 +1510,7 @@ def _build_ray_paths(
             path.events,
             detector_surface_indices,
             allow_target_plane_contact=allow_target_plane_contact,
+            detector_active_dims_overrides=detector_active_dims_overrides,
         )
         _sync_path_terminal_state_from_events(path)
         _sync_path_display_geometry_from_events(path)
@@ -2779,6 +2817,7 @@ def _detector_plane_miss_intersection(
     detector_surface_indices: set[int],
     origin: np.ndarray,
     direction: np.ndarray,
+    detector_active_dims_overrides: dict[int, tuple[float, float]] | None = None,
 ) -> dict[str, object] | None:
     best: dict[str, object] | None = None
     for detector_index in sorted(int(index) for index in detector_surface_indices):
@@ -2821,10 +2860,11 @@ def _detector_plane_miss_intersection(
             diameter = 0.0
         active_width = float(settings.get("active_width_mm", 0.0) or 0.0)
         active_height = float(settings.get("active_height_mm", 0.0) or 0.0)
+        override_w, override_h = _detector_override_dims(detector_active_dims_overrides, detector_index)
         if active_width <= 1e-12:
-            active_width = diameter
+            active_width = override_w if override_w > 1e-12 else diameter
         if active_height <= 1e-12:
-            active_height = diameter
+            active_height = override_h if override_h > 1e-12 else diameter
         half = 0.5 * max(active_width, active_height)
         local_x = float(np.dot(offset, tangent))
         local_y = float(np.dot(offset, bitangent))
@@ -2850,6 +2890,7 @@ def _detector_plane_contact(
     system: Any | None,
     detector_surface_indices: set[int],
     point: np.ndarray,
+    detector_active_dims_overrides: dict[int, tuple[float, float]] | None = None,
 ) -> dict[str, object] | None:
     try:
         point = np.asarray(point, dtype=float).reshape(3)
@@ -2889,10 +2930,11 @@ def _detector_plane_contact(
             diameter = 0.0
         active_width = float(settings.get("active_width_mm", 0.0) or 0.0)
         active_height = float(settings.get("active_height_mm", 0.0) or 0.0)
+        override_w, override_h = _detector_override_dims(detector_active_dims_overrides, detector_index)
         if active_width <= 1e-12:
-            active_width = diameter
+            active_width = override_w if override_w > 1e-12 else diameter
         if active_height <= 1e-12:
-            active_height = diameter
+            active_height = override_h if override_h > 1e-12 else diameter
         half = 0.5 * max(active_width, active_height)
         local_x = float(np.dot(offset, tangent))
         local_y = float(np.dot(offset, bitangent))
@@ -2919,6 +2961,7 @@ def _sync_detector_miss_terminal_event(
     detector_surface_indices: set[int],
     *,
     allow_target_plane_contact: bool = False,
+    detector_active_dims_overrides: dict[int, tuple[float, float]] | None = None,
 ) -> list[RayEvent3D]:
     if not events:
         return events
@@ -2965,6 +3008,7 @@ def _sync_detector_miss_terminal_event(
         system,
         contact_surface_indices,
         terminal_point if terminal_point is not None else origin,
+        detector_active_dims_overrides=detector_active_dims_overrides,
     )
     if contact is not None:
         detector_surface = int(contact["surface"])
@@ -3001,7 +3045,10 @@ def _sync_detector_miss_terminal_event(
             metadata=metadata,
         )
         return [*events[:terminal_index], updated, *events[terminal_index + 1:]]
-    intersection = _detector_plane_miss_intersection(rows, system, detector_surface_indices, origin, direction)
+    intersection = _detector_plane_miss_intersection(
+        rows, system, detector_surface_indices, origin, direction,
+        detector_active_dims_overrides=detector_active_dims_overrides,
+    )
     if intersection is None:
         return events
     detector_surface = int(intersection["surface"])

@@ -192,6 +192,7 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     editor.emit_full_ray_var = _Var(bool(settings.get("full_pupil", False)))
     editor.trace_mode_var = _Var(str(settings.get("trace_mode", "Auto")))
     editor.folded_detector_policy_var = _Var(str(settings.get("folded_detector_policy", "Trace events")))
+    editor.camera_model_var = _Var(str(settings.get("camera_model", "None")))
     editor.field_type_var = _Var(str(settings.get("field_type", "Angle")))
     editor.field_value_var = _Var(str(settings.get("field_value", "0.0")))
     editor.field_count_var = _Var(str(settings.get("field_count", "1")))

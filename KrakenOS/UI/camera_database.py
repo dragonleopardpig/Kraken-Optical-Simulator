@@ -108,6 +108,30 @@ def camera_image_diameter_mm(name: str) -> float | None:
     return None
 
 
+def camera_sensor_active_mm(name: str) -> tuple[float, float] | None:
+    """Return the vendor active-sensor ``(width_mm, height_mm)`` or ``None``.
+
+    This is the physical detector active area from the datasheet (e.g. the
+    hr25MCX is 23.04 x 23.04 mm), used to draw the detector footprint at its
+    real size instead of falling back to the image-surface clear aperture.
+    """
+    record = camera_record(name)
+    if record is None:
+        return None
+    width = record.get("sensor_width_mm")
+    height = record.get("sensor_height_mm")
+    if width is None or height is None:
+        return None
+    try:
+        w = float(width)
+        h = float(height)
+    except (TypeError, ValueError):
+        return None
+    if not (w > 0.0 and h > 0.0):
+        return None
+    return w, h
+
+
 def camera_short_summary(name: str) -> str:
     record = camera_record(name)
     if record is None:

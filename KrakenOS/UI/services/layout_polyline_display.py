@@ -14,7 +14,11 @@ from pathlib import Path
 
 import numpy as np
 
-from KrakenOS.UI.camera_database import CAMERA_NONE_LABEL, camera_record
+from KrakenOS.UI.camera_database import (
+    CAMERA_NONE_LABEL,
+    camera_record,
+    camera_sensor_active_mm,
+)
 from KrakenOS.UI.layout_plot_controller import distance_to_polyline, thin_lens_glyph_polyline
 from KrakenOS.UI.nonseq_output_ports import optical_solid_output_port_runtime_transform_override
 from KrakenOS.UI.services.cad_step_export import (
@@ -191,6 +195,27 @@ class LayoutPolylineDisplayMixin:
 
     def _current_camera_record(self) -> dict[str, object] | None:
         return camera_record(self._current_camera_model())
+
+    def _current_camera_sensor_active_mm(self) -> tuple[float, float] | None:
+        return camera_sensor_active_mm(self._current_camera_model())
+
+    def _camera_detector_active_dims_overrides(self) -> dict[int, tuple[float, float]] | None:
+        """Detector active dims sourced from the selected camera's vendor sensor.
+
+        The camera applies to the final ``Image`` row (the same row whose
+        diameter ``_on_camera_model_changed`` sets), so the override is keyed to
+        that row index only — secondary detectors keep their own dimensions.
+        """
+        dims = self._current_camera_sensor_active_mm()
+        if dims is None:
+            return None
+        rows = getattr(self, "rows", None) or []
+        if not rows:
+            return None
+        last_index = len(rows) - 1
+        if str(getattr(rows[last_index], "surface", "") or "").strip() != "Image":
+            return None
+        return {last_index: (float(dims[0]), float(dims[1]))}
 
     def _current_camera_front_to_sensor_mm(self) -> float:
         record = self._current_camera_record()

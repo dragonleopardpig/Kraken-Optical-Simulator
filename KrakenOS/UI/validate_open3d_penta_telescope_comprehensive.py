@@ -3690,6 +3690,39 @@ def phase_36_ray_launch_center_uniform_fan(
     return result
 
 
+def phase_37_detector_overlay_vendor_sensor(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Detector active-area overlay uses the camera's vendor sensor size.
+
+    Reported via the in-app recorder (bug 0031): with the detector overlay on,
+    the image-plane disk sat inside the detector square because the active area
+    fell back to the image-surface clear-aperture diameter (a placeholder). When
+    a camera is selected the footprint must instead use the datasheet sensor
+    (hr25MCX = 23.04 x 23.04 mm), so the image circle extends past the sensor
+    edges. The guard (`validate_detector_overlay_vendor_sensor`) is display-free
+    and builds its own machine-vision editor, so it needs no Xvfb / inspector.
+    """
+    result = PhaseResult(
+        name="Phase 37: detector overlay uses vendor sensor dimensions"
+    )
+    try:
+        from KrakenOS.UI.validate_detector_overlay_vendor_sensor import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"detector vendor-sensor guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("detector vendor-sensor guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3772,6 +3805,7 @@ def main() -> int:
             phase_34_quick_estimation_conjugate,
             phase_35_scene_browser_hide_delete,
             phase_36_ray_launch_center_uniform_fan,
+            phase_37_detector_overlay_vendor_sensor,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
