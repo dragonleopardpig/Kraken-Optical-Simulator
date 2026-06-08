@@ -68,6 +68,11 @@ class SceneSnapshot:
     hover_step_cell_key: str | None = None
     stray_props_above_body: list[dict[str, Any]] = field(default_factory=list)
     show_rays: bool = False
+    # Diagnostics for the "3D shows a fan, not a cone" report (bug 0038/0040):
+    # which sampling mode the live 3D actually chose and why (committed tag,
+    # transient, cached-bundle mode, the 3D/2D mode the editor wants, and the
+    # nonseq/folded/full-pupil flags that gate cone vs envelope).
+    sampling_diagnostics: dict[str, Any] = field(default_factory=dict)
     camera_position: list[float] = field(default_factory=list)
     camera_focal: list[float] = field(default_factory=list)
     camera_view_up: list[float] = field(default_factory=list)
@@ -493,6 +498,42 @@ class Open3DEventRecorder:
 
         try:
             snapshot.show_rays = bool(inspector.show_rays_var.get())
+        except Exception:
+            pass
+
+        # Sampling-mode diagnostics for the "fan, not cone" report.
+        try:
+            editor = getattr(inspector, "editor", None)
+            diag: dict[str, Any] = {}
+
+            def _safe(label, fn):
+                try:
+                    diag[label] = fn()
+                except Exception as exc:
+                    diag[label] = f"<err: {exc!r}>"
+
+            diag["inspector_last_refresh_mode"] = getattr(inspector, "_last_refresh_sampling_mode", None)
+            if editor is not None:
+                diag["committed_tag"] = getattr(editor, "_last_scene_trace_sampling_mode", None)
+                diag["active_preview_mode"] = getattr(editor, "_active_preview_sampling_mode", None)
+                _safe("preview_3d_mode", editor._preview_3d_sampling_mode)
+                _safe("preview_2d_mode", editor._preview_2d_sampling_mode)
+                _safe("prefers_meridional_fan", editor._launch_pupil_prefers_meridional_fan)
+                _safe("is_full_pupil_mode", editor._is_full_pupil_mode)
+                _safe("ray_count", editor._current_ray_count)
+
+                def _trace_flags():
+                    tm = editor._resolved_trace_mode(system=getattr(editor, "last_system", None))
+                    if isinstance(tm, dict):
+                        return {k: tm.get(k) for k in ("use_nonseq", "use_folded", "mode", "trace_mode")}
+                    return tm
+                _safe("resolved_trace_mode", _trace_flags)
+
+                def _bundle_mode():
+                    from KrakenOS.UI.layout_plot_controller import scene_bundle_launch_sampling_mode
+                    return scene_bundle_launch_sampling_mode(getattr(editor, "_last_scene_bundle", None))
+                _safe("cached_bundle_mode", _bundle_mode)
+            snapshot.sampling_diagnostics = diag
         except Exception:
             pass
 
