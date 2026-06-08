@@ -396,12 +396,38 @@ class LayoutPlotInteractionMixin:
                 pass
         return {axis for axis in kept if axis in self.figure.axes}
 
+    @staticmethod
+    def _high_res_export_figure_scale(
+        content_width_in: float,
+        *,
+        target_width_in: float = 8.0,
+        min_scale: float = 0.5,
+        max_scale: float = 4.0,
+    ) -> float:
+        """Uniform figure scale that normalises the exported clicked content width.
+
+        The embedded canvas shrinks with the window (e.g. a Wayland compositor
+        auto-tiling the app), so the same plot exports at different physical
+        sizes -- and with fixed point-size fonts a small clicked plot exports
+        cramped (overlapping labels, the field-curvature two-panel jumbling its x
+        ticks), looking different from a fullscreen export. Scaling the whole
+        figure uniformly by this factor sets the clicked content to a fixed
+        width regardless of the on-screen window, so tiled and fullscreen exports
+        match. Clamped to keep degenerate bboxes sane.
+        """
+        if not (content_width_in > 1e-6):
+            return 1.0
+        scale = float(target_width_in) / float(content_width_in)
+        return min(max(scale, float(min_scale)), float(max_scale))
+
     def _open_high_res_plot_in_system_viewer(self, target_ax=None) -> None:
         previous_hover_axis = self._hover_axis if self._hover_axis in self._hover_hint_artists else None
         hidden_axes: list[tuple[object, bool]] = []
+        original_fig_size = None
         try:
             # Hide hover hint overlays so exported images only contain plot content.
             self._set_hover_axis(None)
+
             out_dir = SCREENSHOT_DIR
             try:
                 out_dir.mkdir(parents=True, exist_ok=True)
@@ -419,19 +445,41 @@ class LayoutPlotInteractionMixin:
 
             self.canvas.draw()
             if target_ax is not None and target_ax in self.figure.axes:
-                renderer = self.figure.canvas.get_renderer()
                 # Keep twin axes (those sharing an axis with the clicked one) visible
                 # so a secondary-axis series -- e.g. the distortion twin on a
                 # field-curvature plot -- is not hidden out of the export.
                 kept_axes = self._high_res_export_kept_axes(target_ax)
-                tight_boxes = [
-                    box for box in (axis.get_tightbbox(renderer) for axis in kept_axes)
-                    if box is not None
-                ]
-                tight_bbox = Bbox.union(tight_boxes) if tight_boxes else None
+
+                def _kept_tight_bbox_inches():
+                    r = self.figure.canvas.get_renderer()
+                    boxes = [
+                        box for box in (axis.get_tightbbox(r) for axis in kept_axes)
+                        if box is not None
+                    ]
+                    if not boxes:
+                        return None
+                    # Convert display pixels -> inches.
+                    return Bbox.union(boxes).transformed(self.figure.dpi_scale_trans.inverted())
+
+                tight_bbox = _kept_tight_bbox_inches()
                 if tight_bbox is not None:
-                    # savefig expects bbox_inches in inches, convert from display pixels
-                    bbox = tight_bbox.transformed(self.figure.dpi_scale_trans.inverted()).padded(0.08)
+                    # Normalise the *exported content* to a window-independent
+                    # width. The embedded canvas shrinks when the window is small
+                    # (e.g. a Wayland compositor auto-tiles the app), and with
+                    # fixed point-size fonts a small clicked plot exports cramped
+                    # -- labels overlap and the field-curvature two-panel jumbles
+                    # its x ticks -- so the image looked different from fullscreen.
+                    # Scaling the whole figure uniformly preserves every axis's
+                    # aspect and the manual two-panel positions; only the absolute
+                    # size (hence the font-to-axis ratio) changes.
+                    scale = self._high_res_export_figure_scale(float(tight_bbox.width))
+                    if abs(scale - 1.0) > 0.02:
+                        cur_w, cur_h = self.figure.get_size_inches()
+                        original_fig_size = (float(cur_w), float(cur_h))
+                        self.figure.set_size_inches(cur_w * scale, cur_h * scale, forward=False)
+                        self.canvas.draw()
+                        tight_bbox = _kept_tight_bbox_inches() or tight_bbox
+                    bbox = tight_bbox.padded(0.08)
                 else:
                     fig_w, fig_h = self.figure.get_size_inches()
                     pos = target_ax.get_position()
@@ -456,7 +504,12 @@ class LayoutPlotInteractionMixin:
         except Exception as exc:
             self.append_debug(f"High-resolution viewer launch failed: {exc}")
         finally:
-            if hidden_axes:
+            if original_fig_size is not None:
+                try:
+                    self.figure.set_size_inches(*original_fig_size, forward=False)
+                except Exception:
+                    pass
+            if hidden_axes or original_fig_size is not None:
                 for axis, visible in hidden_axes:
                     try:
                         axis.set_visible(visible)

@@ -4074,6 +4074,38 @@ def phase_44_open3d_cone_not_reused_as_fan(
     return result
 
 
+def phase_45_high_res_export_size_normalized(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """High-res plot export is normalised to a window-independent size (bug 0039).
+
+    The click-to-export cropped the embedded figure as-is, so a tiled (small)
+    window exported cramped (overlapping labels, the field-curvature two-panel
+    jumbling its ticks) and looked different from a fullscreen export. The fix
+    scales the figure uniformly so the clicked content reaches a fixed target
+    width. The guard (`validate_high_res_export_size_normalized`) is a pure
+    function, so it needs no Xvfb / inspector / canvas.
+    """
+    result = PhaseResult(
+        name="Phase 45: High-res plot export normalises to a window-independent size"
+    )
+    try:
+        from KrakenOS.UI.validate_high_res_export_size_normalized import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"export-size guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("export-size guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -4164,6 +4196,7 @@ def main() -> int:
             phase_42_wavefront_function_solid_waterfall,
             phase_43_field_curvature_distortion_panels,
             phase_44_open3d_cone_not_reused_as_fan,
+            phase_45_high_res_export_size_normalized,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
