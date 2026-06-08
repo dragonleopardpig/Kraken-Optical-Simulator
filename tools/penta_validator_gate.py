@@ -202,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--install", action="store_true",
                         help="set git core.hooksPath to .githooks and exit")
     parser.add_argument("--display", type=int, default=None, help="force a specific Xvfb display number")
-    parser.add_argument("--timeout", type=int, default=900)
+    parser.add_argument("--timeout", type=int, default=1800)
     parser.add_argument("--python", default=None, help="interpreter to run the validator with")
     parser.add_argument("--require-env", action="store_true",
                         help="treat a missing Xvfb/interpreter as a failure (exit 1) instead of skipping")

@@ -3945,6 +3945,103 @@ def phase_40_open3d_launch_cone_geometry(
     return result
 
 
+def phase_41_field_curvature_export_twin_axis(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Field-curvature high-res export keeps the distortion panel (bug 0035).
+
+    Clicking the analysis plot exports it to a high-resolution image, which used
+    to hide every axis except the clicked one -- dropping the distortion (the
+    "different after click" report). The field-curvature plot now draws the Zemax
+    two-panel layout where the distortion panel shares the field (y) axis; the
+    fix keeps any axis that shares an axis with the clicked one, so both panels
+    survive the export. The guard (`validate_field_curvature_export_twin_axis`)
+    is display-free, so it needs no Xvfb / inspector.
+    """
+    result = PhaseResult(
+        name="Phase 41: field-curvature export keeps the distortion panel"
+    )
+    try:
+        from KrakenOS.UI.validate_field_curvature_export_twin_axis import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"export-twin-axis guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("export-twin-axis guard reported failure without detail")
+    return result
+
+
+def phase_42_wavefront_function_solid_waterfall(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Wavefront Function renders an opaque hidden-line surface (bug 0036).
+
+    Zemax draws the Wavefront Function as a solid waterfall on a base plane;
+    KrakenOS used to draw a see-through wireframe (translucent slice lines, no
+    fills, no floor) so the back bled through the front. The fix draws opaque
+    white curtains back-to-front (hidden-line removal) plus a base-plane apron.
+    The guard (`validate_wavefront_function_solid_waterfall`) is display-free
+    and uses a synthetic pupil, so it needs no Xvfb / inspector / ray trace.
+    """
+    result = PhaseResult(
+        name="Phase 42: Wavefront Function renders an opaque hidden-line waterfall"
+    )
+    try:
+        from KrakenOS.UI.validate_wavefront_function_solid_waterfall import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"wavefront-waterfall guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("wavefront-waterfall guard reported failure without detail")
+    return result
+
+
+def phase_43_field_curvature_distortion_panels(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Field Curvature / Distortion renders the Zemax two-panel layout (bug 0037).
+
+    The old plot put field on the horizontal axis with the distortion overlaid on
+    a `twinx`. Zemax draws two side-by-side panels -- FIELD CURVATURE (tangential
+    T + sagittal S, mm) beside DISTORTION (percent) -- with the field on the
+    vertical axis, the panels sharing the field axis. The guard
+    (`validate_field_curvature_distortion_panels`) is display-free, so it needs
+    no Xvfb / inspector.
+    """
+    result = PhaseResult(
+        name="Phase 43: Field Curvature / Distortion renders the Zemax two-panel layout"
+    )
+    try:
+        from KrakenOS.UI.validate_field_curvature_distortion_panels import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"two-panel guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("two-panel guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -4031,6 +4128,9 @@ def main() -> int:
             phase_38_detector_coverage,
             phase_39_detector_coverage_live,
             phase_40_open3d_launch_cone_geometry,
+            phase_41_field_curvature_export_twin_axis,
+            phase_42_wavefront_function_solid_waterfall,
+            phase_43_field_curvature_distortion_panels,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

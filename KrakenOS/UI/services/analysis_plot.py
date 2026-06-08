@@ -34,6 +34,139 @@ class AnalysisPlotService:
             return
         setattr(self.editor, name, value)
 
+    @staticmethod
+    def _field_curve_xy(field_vals: np.ndarray, series_vals: np.ndarray) -> "tuple[np.ndarray, np.ndarray]":
+        """Smooth (value, field) curve for a Zemax-style vertical-field panel.
+
+        The field samples come in as |field| (so the +/- pair collapses), and a
+        low-order polynomial through them gives the clean monotone curve Zemax
+        draws rising from the axis (field 0) to the edge.
+        """
+        fields = np.asarray(field_vals, dtype=float)
+        values = np.asarray(series_vals, dtype=float)
+        order = np.argsort(fields)
+        fields = fields[order]
+        values = values[order]
+        if fields.size >= 4 and float(fields.max() - fields.min()) > 1e-9:
+            degree = min(3, fields.size - 1)
+            try:
+                poly = np.poly1d(np.polyfit(fields, values, degree))
+                smooth_field = np.linspace(float(fields.min()), float(fields.max()), 120)
+                return poly(smooth_field), smooth_field
+            except Exception:
+                pass
+        return values, fields
+
+    @staticmethod
+    def _symmetric_axis_limit(*value_arrays: np.ndarray) -> float:
+        """A tidy symmetric +/- limit that comfortably contains the data."""
+        peak = 0.0
+        for values in value_arrays:
+            finite = np.asarray(values, dtype=float)
+            finite = finite[np.isfinite(finite)]
+            if finite.size:
+                peak = max(peak, float(np.max(np.abs(finite))))
+        if peak <= 1e-9:
+            return 1.0
+        # Round up to 1/2/5 x 10^k so ticks land on readable values.
+        exponent = np.floor(np.log10(peak))
+        base = peak / (10.0 ** exponent)
+        nice = 1.0 if base <= 1.0 else (2.0 if base <= 2.0 else (5.0 if base <= 5.0 else 10.0))
+        return float(nice * (10.0 ** exponent))
+
+    def _plot_field_curvature_distortion_panels(
+        self,
+        analysis_ax,
+        axis_results: "dict[str, dict[str, np.ndarray]]",
+        field_type: str,
+        field_limit: float,
+        wavelength: float,
+    ) -> "tuple[Any, Any]":
+        """Zemax-style two-panel Field Curvature / Distortion plot.
+
+        Left panel: tangential (T) and sagittal (S) best-focus shift in mm.
+        Right panel: distortion in percent. Both put the field on the vertical
+        axis (Zemax's +Y convention). The right panel shares the field axis with
+        the host (left) panel, so clicking the plot keeps both panels in the
+        high-res export (see bug 0035) -- the distortion can no longer be dropped.
+        """
+        figure = analysis_ax.figure
+        line_color = "#2031c0"
+        frame_color = "#1f2937"
+
+        # plot_analysis pins a box aspect on the host axis; clear it so the two
+        # explicitly positioned panels keep equal height and stay aligned.
+        analysis_ax.set_box_aspect(None)
+
+        # Tangential = meridional (Y) focus, sagittal = X focus.
+        tangential = axis_results.get("Y")
+        sagittal = axis_results.get("X")
+        distortion_source = tangential or sagittal
+        field_reference = distortion_source["fields"]
+        field_max = float(np.max(field_reference)) if field_reference.size else max(field_limit, 1.0)
+        if field_max <= 1e-9:
+            field_max = max(field_limit, 1.0)
+
+        # Split the host cell into two side-by-side panels sharing the field axis.
+        host_pos = analysis_ax.get_position()
+        gap = 0.16 * host_pos.width
+        panel_width = 0.5 * (host_pos.width - gap)
+        analysis_ax.set_position([host_pos.x0, host_pos.y0, panel_width, host_pos.height])
+        dist_ax = figure.add_axes(
+            [host_pos.x0 + panel_width + gap, host_pos.y0, panel_width, host_pos.height],
+            sharey=analysis_ax,
+        )
+        dist_ax.set_box_aspect(None)
+
+        focus_values: list[np.ndarray] = []
+        if tangential is not None:
+            curve_x, curve_y = self._field_curve_xy(tangential["fields"], tangential["focus"])
+            analysis_ax.plot(curve_x, curve_y, color=line_color, linewidth=1.4)
+            focus_values.append(tangential["focus"])
+            analysis_ax.text(curve_x[-1], curve_y[-1], " T", color=line_color, fontsize=8,
+                             ha="left", va="bottom")
+        if sagittal is not None:
+            curve_x, curve_y = self._field_curve_xy(sagittal["fields"], sagittal["focus"])
+            analysis_ax.plot(curve_x, curve_y, color=line_color, linewidth=1.4, linestyle=(0, (5, 2)))
+            focus_values.append(sagittal["focus"])
+            analysis_ax.text(curve_x[-1], curve_y[-1], " S", color=line_color, fontsize=8,
+                             ha="left", va="top")
+
+        focus_limit = self._symmetric_axis_limit(*focus_values) if focus_values else 1.0
+        dist_curve_x, dist_curve_y = self._field_curve_xy(
+            distortion_source["fields"], distortion_source["distortion"]
+        )
+        dist_ax.plot(dist_curve_x, dist_curve_y, color=line_color, linewidth=1.4)
+        dist_limit = self._symmetric_axis_limit(distortion_source["distortion"])
+
+        field_units = "deg" if field_type == "angle" else "mm"
+        for panel, limit, title, xlabel in (
+            (analysis_ax, focus_limit, "FIELD CURVATURE", "Millimeters"),
+            (dist_ax, dist_limit, "DISTORTION", "Percent"),
+        ):
+            panel.set_xlim(-limit, limit)
+            panel.set_ylim(0.0, field_max)
+            panel.axvline(0.0, color=frame_color, linewidth=0.8)
+            panel.set_title(title, fontsize=9.0, color=frame_color, pad=8)
+            panel.set_xlabel(xlabel, fontsize=7.5)
+            panel.tick_params(axis="both", labelsize=6.5, direction="in")
+            panel.xaxis.set_major_locator(MaxNLocator(nbins=4, symmetric=True))
+            for spine_name in ("top", "right"):
+                panel.spines[spine_name].set_visible(False)
+            panel.text(0.5, 1.005, "+Y", transform=panel.transAxes, ha="center", va="bottom",
+                       fontsize=7.0, color=frame_color)
+
+        analysis_ax.set_ylabel(f"Field ({field_units})", fontsize=7.5)
+        dist_ax.tick_params(axis="y", labelleft=False)
+
+        max_field_txt = f"max field {field_max:.4g} {field_units}"
+        figure.text(
+            host_pos.x0, host_pos.y0 - 0.26 * host_pos.height,
+            f"FIELD CURVATURE / DISTORTION   {max_field_txt}   {wavelength:.3f} um",
+            fontsize=6.2, color=frame_color, ha="left", va="top",
+        )
+        return analysis_ax, dist_ax
+
     def plot_analysis(self, analysis_ax, system, rays, wavelength: float) -> None:
         le = _layout_module()
         SOURCE_MODEL_DEFAULT = le.SOURCE_MODEL_DEFAULT
@@ -1193,10 +1326,6 @@ class AnalysisPlotService:
                 )
                 sample_count = max(18, self._current_ray_count() * 3)
                 axis_results: dict[str, dict[str, np.ndarray]] = {}
-                axis_defs = {
-                    "X": {"color_fc": "#1f77b4", "color_dist": "#6baed6", "marker_fc": "o", "marker_dist": "s"},
-                    "Y": {"color_fc": "#d62728", "color_dist": "#ff9896", "marker_fc": "^", "marker_dist": "D"},
-                }
                 total_steps = len(field_samples) * 2
                 completed_steps = 0
 
@@ -1274,93 +1403,13 @@ class AnalysisPlotService:
                 if not axis_results:
                     raise RuntimeError("Not enough field samples for field-curvature/distortion")
 
-                ax2 = analysis_ax.twinx()
-                legend_lines = []
-                legend_labels = []
-                for axis_name, data in axis_results.items():
-                    style = axis_defs[axis_name]
-                    line_fc, = analysis_ax.plot(
-                        data["fields"],
-                        data["focus"],
-                        color=style["color_fc"],
-                        marker=style["marker_fc"],
-                        linewidth=0.0,
-                        markersize=4.5,
-                        label=f"{axis_name} focus",
-                    )
-                    line_dist, = ax2.plot(
-                        data["fields"],
-                        data["distortion"],
-                        color=style["color_dist"],
-                        marker=style["marker_dist"],
-                        linewidth=0.0,
-                        markersize=4.0,
-                        label=f"{axis_name} distortion",
-                    )
-                    if len(data["fields"]) >= 4:
-                        smooth_fields = np.linspace(float(np.min(data["fields"])), float(np.max(data["fields"])), 200)
-                        focus_degree = min(3, len(data["fields"]) - 1)
-                        dist_degree = min(3, len(data["distortion"]) - 1)
-                        try:
-                            focus_poly = np.poly1d(np.polyfit(data["fields"], data["focus"], deg=focus_degree))
-                            dist_poly = np.poly1d(np.polyfit(data["fields"], data["distortion"], deg=dist_degree))
-                            analysis_ax.plot(
-                                smooth_fields,
-                                focus_poly(smooth_fields),
-                                color=style["color_fc"],
-                                linewidth=2.0,
-                                alpha=0.9,
-                            )
-                            ax2.plot(
-                                smooth_fields,
-                                dist_poly(smooth_fields),
-                                color=style["color_dist"],
-                                linewidth=1.8,
-                                linestyle="--",
-                                alpha=0.9,
-                            )
-                        except Exception:
-                            analysis_ax.plot(
-                                data["fields"],
-                                data["focus"],
-                                color=style["color_fc"],
-                                linewidth=2.0,
-                                alpha=0.9,
-                            )
-                            ax2.plot(
-                                data["fields"],
-                                data["distortion"],
-                                color=style["color_dist"],
-                                linewidth=1.8,
-                                linestyle="--",
-                                alpha=0.9,
-                            )
-                    else:
-                        analysis_ax.plot(
-                            data["fields"],
-                            data["focus"],
-                            color=style["color_fc"],
-                            linewidth=2.0,
-                            alpha=0.9,
-                        )
-                        ax2.plot(
-                            data["fields"],
-                            data["distortion"],
-                            color=style["color_dist"],
-                            linewidth=1.8,
-                            linestyle="--",
-                            alpha=0.9,
-                        )
-                    legend_lines.extend([line_fc, line_dist])
-                    legend_labels.extend([f"{axis_name} focus", f"{axis_name} distortion"])
-
-                analysis_ax.set_title(f"Field Curvature / Distortion  |  {field_type}")
-                analysis_ax.set_xlabel("Field")
-                analysis_ax.set_ylabel("Best-focus shift [mm]", color="#2c3e50")
-                ax2.set_ylabel("Distortion [%]", color="#2c3e50")
-                analysis_ax.set_box_aspect(0.48)
-                analysis_ax.grid(True, alpha=0.2)
-                analysis_ax.legend(legend_lines, legend_labels, loc="best", fontsize=8)
+                self._plot_field_curvature_distortion_panels(
+                    analysis_ax,
+                    axis_results,
+                    field_type,
+                    field_limit,
+                    wavelength,
+                )
                 self.append_debug(
                     "Field curvature/distortion ok: "
                     + ", ".join(

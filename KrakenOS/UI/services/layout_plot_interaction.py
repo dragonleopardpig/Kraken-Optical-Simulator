@@ -380,6 +380,22 @@ class LayoutPlotInteractionMixin:
             raise RuntimeError("No system image viewer command found.")
         subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
+    def _high_res_export_kept_axes(self, target_ax) -> set:
+        """Axes to keep visible when exporting ``target_ax`` to a high-res image.
+
+        Besides the clicked axis this includes any twin axes that share an axis
+        with it (a ``twinx``/``twiny`` overlay), so a secondary-axis series such
+        as the distortion twin on a field-curvature plot is exported alongside
+        the primary axis instead of being hidden away.
+        """
+        kept = {target_ax}
+        for shared in (target_ax.get_shared_x_axes(), target_ax.get_shared_y_axes()):
+            try:
+                kept.update(shared.get_siblings(target_ax))
+            except Exception:
+                pass
+        return {axis for axis in kept if axis in self.figure.axes}
+
     def _open_high_res_plot_in_system_viewer(self, target_ax=None) -> None:
         previous_hover_axis = self._hover_axis if self._hover_axis in self._hover_hint_artists else None
         hidden_axes: list[tuple[object, bool]] = []
@@ -404,7 +420,15 @@ class LayoutPlotInteractionMixin:
             self.canvas.draw()
             if target_ax is not None and target_ax in self.figure.axes:
                 renderer = self.figure.canvas.get_renderer()
-                tight_bbox = target_ax.get_tightbbox(renderer)
+                # Keep twin axes (those sharing an axis with the clicked one) visible
+                # so a secondary-axis series -- e.g. the distortion twin on a
+                # field-curvature plot -- is not hidden out of the export.
+                kept_axes = self._high_res_export_kept_axes(target_ax)
+                tight_boxes = [
+                    box for box in (axis.get_tightbbox(renderer) for axis in kept_axes)
+                    if box is not None
+                ]
+                tight_bbox = Bbox.union(tight_boxes) if tight_boxes else None
                 if tight_bbox is not None:
                     # savefig expects bbox_inches in inches, convert from display pixels
                     bbox = tight_bbox.transformed(self.figure.dpi_scale_trans.inverted()).padded(0.08)
@@ -418,7 +442,7 @@ class LayoutPlotInteractionMixin:
                         float(pos.y1) * fig_h,
                     ).expanded(1.08, 1.12)
                 for axis in self.figure.axes:
-                    if axis is target_ax:
+                    if axis in kept_axes:
                         continue
                     hidden_axes.append((axis, bool(axis.get_visible())))
                     axis.set_visible(False)

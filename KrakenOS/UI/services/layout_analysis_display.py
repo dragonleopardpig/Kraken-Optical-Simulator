@@ -1595,12 +1595,78 @@ class LayoutAnalysisDisplayMixin:
                     axis.plot(x_values[start:end], y_values[start:end], **kwargs)
                 start = None
 
+    @staticmethod
+    def _fill_axes_nan_segments(axis, x_values: np.ndarray, y_values: np.ndarray, bottom, **kwargs) -> None:
+        x_values = np.asarray(x_values, dtype=float).ravel()
+        y_values = np.asarray(y_values, dtype=float).ravel()
+        bottom_array = np.broadcast_to(np.asarray(bottom, dtype=float), x_values.shape)
+        finite = np.isfinite(x_values) & np.isfinite(y_values)
+        start: int | None = None
+        for index, is_finite in enumerate(finite):
+            if is_finite and start is None:
+                start = index
+            if (not is_finite or index == finite.size - 1) and start is not None:
+                end = index + 1 if is_finite and index == finite.size - 1 else index
+                if end - start >= 2:
+                    axis.fill_between(
+                        x_values[start:end], y_values[start:end], bottom_array[start:end], **kwargs
+                    )
+                start = None
+
+    def _draw_wavefront_solid_waterfall(
+        self,
+        axis,
+        axis_x: np.ndarray,
+        axis_y: np.ndarray,
+        base_axis_y: np.ndarray,
+        base_corners: list[tuple[float, float]],
+    ) -> None:
+        """Hidden-line waterfall: opaque slices drawn back-to-front so nearer
+        rows occlude farther ones (the Zemax Wavefront Function look). Each
+        slice's curtain stops at its own z=0 floor line, leaving the base-plane
+        parallelogram visible as an apron around the relief."""
+        line_color = "#1f2937"
+
+        # Flat base plane the relief rests on (lowest zorder, drawn first).
+        if len(base_corners) >= 3:
+            corner_x = [corner[0] for corner in base_corners]
+            corner_y = [corner[1] for corner in base_corners]
+            axis.fill(corner_x, corner_y, facecolor="#eef2f7", edgecolor="#9aa5b1",
+                      linewidth=0.5, zorder=1.0, closed=True)
+
+        n_rows = axis_x.shape[0]
+        row_step = 1 if n_rows <= 58 else 2
+        rows = list(range(0, n_rows, row_step))
+
+        def row_depth(row_index: int) -> float:
+            row_floor = base_axis_y[row_index, :]
+            finite_row = row_floor[np.isfinite(row_floor)]
+            return float(np.nanmean(finite_row)) if finite_row.size else -np.inf
+
+        # Highest floor rows are farthest back; draw them first so the nearer
+        # (lower) rows painted on top hide what sits behind them.
+        rows.sort(key=row_depth, reverse=True)
+        for draw_index, row_index in enumerate(rows):
+            row_x = axis_x[row_index, :]
+            row_y = axis_y[row_index, :]
+            if np.count_nonzero(np.isfinite(row_x) & np.isfinite(row_y)) < 2:
+                continue
+            zorder = 2.0 + draw_index * 0.01
+            self._fill_axes_nan_segments(
+                axis, row_x, row_y, base_axis_y[row_index, :],
+                facecolor="white", edgecolor="none", zorder=zorder,
+            )
+            self._plot_axes_nan_segments(
+                axis, row_x, row_y,
+                color=line_color, linewidth=0.5, zorder=zorder + 0.004,
+            )
+
     def _wavefront_projected_axes_coordinates(
         self,
         xx: np.ndarray,
         yy: np.ndarray,
         zz: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[tuple[float, float]]]:
         finite_z = zz[np.isfinite(zz)]
         z_scale = float(np.nanpercentile(np.abs(finite_z), 95.0)) if finite_z.size else 1.0
         if not np.isfinite(z_scale) or z_scale <= 1e-12:
@@ -1608,6 +1674,11 @@ class LayoutAnalysisDisplayMixin:
         if not np.isfinite(z_scale) or z_scale <= 1e-12:
             z_scale = 1.0
         z_norm = np.clip(zz / z_scale, -1.6, 1.6)
+        # Rest the surface on the z=0 base plane (Zemax shows the relief rising
+        # from a flat floor, not floating around a centred zero).
+        finite_norm = z_norm[np.isfinite(z_norm)]
+        z_floor = float(np.nanmin(finite_norm)) if finite_norm.size else 0.0
+        z_norm = z_norm - z_floor
 
         # Orthographic projection tuned to resemble Zemax's Wavefront Function
         # printout: waterfall slices with strong OPD relief, no 3D axes.
@@ -1632,9 +1703,27 @@ class LayoutAnalysisDisplayMixin:
         plot_y_mid = 0.5 * (plot_bottom + plot_top)
         axis_x = plot_x_mid + (projected_x - x_mid) * scale
         axis_y = plot_y_mid + (projected_y - y_mid) * scale
+        # Per-point z=0 floor line (drops the OPD term). Within a waterfall row
+        # yy is constant, so this is the horizontal baseline each slice rests on;
+        # kept finite everywhere so the curtain fill always has a bottom edge.
+        base_axis_y = plot_y_mid + (0.20 * yy - y_mid) * scale
+
+        # Base-plane parallelogram: the z=0 footprint of the pupil grid box,
+        # projected with the same transform so the surface sits on the floor.
+        x_lo, x_hi = float(np.nanmin(xx)), float(np.nanmax(xx))
+        y_lo, y_hi = float(np.nanmin(yy)), float(np.nanmax(yy))
+        base_corners: list[tuple[float, float]] = []
+        for corner_x, corner_y in ((x_lo, y_lo), (x_hi, y_lo), (x_hi, y_hi), (x_lo, y_hi)):
+            base_px = 1.04 * corner_x + 0.08 * corner_y
+            base_py = 0.20 * corner_y
+            base_corners.append((
+                plot_x_mid + (base_px - x_mid) * scale,
+                plot_y_mid + (base_py - y_mid) * scale,
+            ))
+
         axis_x[~finite] = np.nan
         axis_y[~finite] = np.nan
-        return axis_x, axis_y
+        return axis_x, axis_y, base_axis_y, base_corners
 
     @staticmethod
     def _wavefront_slice_curvature(values: np.ndarray) -> float:
@@ -1768,7 +1857,7 @@ class LayoutAnalysisDisplayMixin:
         if z_span > 1e-12 and max_slice_curvature / z_span < 1e-5:
             shape_note = "near-flat/cylindrical samples"
         xx, yy, zz = self._orient_wavefront_waterfall_grid(xx, yy, zz)
-        axis_x, axis_y = self._wavefront_projected_axes_coordinates(xx, yy, zz)
+        axis_x, axis_y, base_axis_y, base_corners = self._wavefront_projected_axes_coordinates(xx, yy, zz)
         analysis_ax.clear()
         analysis_ax.set_xlim(0.0, 1.0)
         analysis_ax.set_ylim(0.0, 1.0)
@@ -1782,16 +1871,7 @@ class LayoutAnalysisDisplayMixin:
         analysis_ax.plot([0.68, 0.68], [0.03, 0.195], color=border_color, linewidth=0.7)
         analysis_ax.text(0.5, 0.214, "WAVEFRONT FUNCTION", ha="center", va="center", fontsize=9.2)
 
-        row_step = 1 if axis_x.shape[0] <= 58 else 2
-        for row_index in range(0, axis_x.shape[0], row_step):
-            self._plot_axes_nan_segments(
-                analysis_ax,
-                axis_x[row_index, :],
-                axis_y[row_index, :],
-                color="#111827",
-                linewidth=0.42,
-                alpha=0.96,
-            )
+        self._draw_wavefront_solid_waterfall(analysis_ax, axis_x, axis_y, base_axis_y, base_corners)
 
         analysis_ax.text(
             0.045,
