@@ -3758,6 +3758,159 @@ def phase_38_detector_coverage(
     return result
 
 
+def _reference_aperture_disk_max_opacity(inspector: Kraken3DInspector, row_index: int) -> float:
+    """Largest opacity among the *reference clear-aperture disk* actors tracked
+    to ``row_index`` -- the round Object/Image plane disks tagged by the scene
+    refresh (bugs/0033). The detector overlay's own filled sensor square is also
+    mapped to the Image row, so a plain max over every Surface actor can't tell
+    the suppressed disk from the legitimate sensor; this targets only the disk.
+    -1.0 if no disk actor is present."""
+    best = -1.0
+    keys = list(dict.fromkeys((inspector._row_actor_map or {}).get(int(row_index), []) or []))
+    for key in keys:
+        actor = (inspector._actor_by_key or {}).get(key)
+        if actor is None:
+            continue
+        if not getattr(actor, "_kraken_reference_aperture_disk", False):
+            continue
+        try:
+            best = max(best, float(actor.GetProperty().GetOpacity()))
+        except Exception:
+            continue
+    return best
+
+
+def _billboard_label_count(inspector: Kraken3DInspector) -> int:
+    n = 0
+    try:
+        props = inspector._renderer.GetViewProps()
+        props.InitTraversal()
+        for _ in range(props.GetNumberOfItems()):
+            p = props.GetNextProp()
+            if p is not None and "TextActor" in p.GetClassName():
+                n += 1
+    except Exception:
+        return -1
+    return n
+
+
+def phase_39_detector_coverage_live(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Live render guards for the bug-0033 follow-ups (recordings 251/078).
+
+    The display-free guard (Phase 38) covers the metric / label / overlay-spec
+    geometry. This phase exercises the three behaviours that only show up once
+    the real scene is built:
+
+      (a) Loading the measured machine-vision layout -- which *restores* the
+          hr25MCX camera from its saved settings, with no interactive dropdown
+          commit -- must land the *covered* state (image circle == sensor
+          diagonal). Previously the auto-fill ran only on a dropdown commit, so
+          the layout opened inscribed (recording 251: "image circle still within
+          the sensor").
+      (c) With the detector overlay on, the Object/Image clear-aperture disk
+          (translucent fill + rim) must be suppressed so it stops masquerading
+          as the image circle (recording 078: "object cyan circle less than the
+          FOV box"). Reference surfaces ON => the disk would otherwise be drawn.
+      (b) The overlay must add its direct 3D labels (>= 3 billboard text actors
+          in the covered state: Sensor, Image circle, FOV).
+    """
+    result = PhaseResult(name="Phase 39: detector coverage live -- load auto-fill, disk suppressed, labels")
+    try:
+        names = list(getattr(app, "machine_vision_names", []) or [])
+        target = next((n for n in names if "Measured" in n and "150" in n), None) or (names[0] if names else None)
+        if not target:
+            result.passed = False
+            result.notes.append("SKIP: no machine-vision layout available")
+            return result
+
+        app.load_layout_by_name(target)
+        app.update_idletasks()
+
+        # (a) Layout load alone (camera restored from settings) must cover.
+        half_diag = 16.291740238538054
+        diagonal = 2.0 * half_diag
+        max_rih = None
+        try:
+            max_rih = float(app._field_metrics_summary().get("max_real_image_height"))
+        except Exception:
+            max_rih = None
+        img_diam = float(getattr(app.rows[-1], "diameter", 0.0) or 0.0)
+        result.detail["max_real_image_height"] = round(max_rih, 4) if max_rih is not None else None
+        result.detail["image_diameter"] = round(img_diam, 4)
+        if max_rih is None or abs(max_rih - half_diag) > 1e-2:
+            result.passed = False
+            result.notes.append(
+                f"FAIL (a): layout load did not auto-fill to covering; max_real_image_height="
+                f"{max_rih}, expected ~{half_diag:.4g}"
+            )
+        if abs(img_diam - diagonal) > 1e-2:
+            result.passed = False
+            result.notes.append(
+                f"FAIL (a): image-surface diameter {img_diam:.4g} after load, expected sensor diagonal ~{diagonal:.4g}"
+            )
+
+        obj_idx = next((i for i, r in enumerate(app.rows) if str(getattr(r, "surface", "")) == "Object"), 0)
+        img_idx = next((i for i in range(len(app.rows) - 1, -1, -1)
+                        if str(getattr(app.rows[i], "surface", "")) == "Image"), len(app.rows) - 1)
+
+        if hasattr(inspector, "show_reference_surfaces_var"):
+            inspector.show_reference_surfaces_var.set(True)  # force the clear-aperture disks to draw
+
+        # The machine-vision layout renders fine on a real GPU (and from scratch
+        # under Xvfb), but live *painting* a freshly-swapped scene into the
+        # embedded Tk render window is fragile on headless software GL
+        # (llvmpipe) and can segfault. Everything bug-0033 changes -- the disk
+        # opacity and the billboard labels -- is set while the scene is *built*,
+        # before the final paint, so suppress the paint here and inspect the
+        # built actors. (The visuals were verified live on a real display.)
+        _orig_render = inspector.render
+        inspector.render = lambda *a, **k: None
+        try:
+            # Det OFF baseline: the Object/Image clear-aperture disks are visible.
+            inspector.show_detector_overlays_var.set(False)
+            inspector.refresh_from_editor(force_retrace=True)
+            inspector.update_idletasks()
+            off_obj = _reference_aperture_disk_max_opacity(inspector, obj_idx)
+            off_img = _reference_aperture_disk_max_opacity(inspector, img_idx)
+
+            # Det ON: the disks must be suppressed (fill -> 0, rim skipped) while
+            # the detector overlay's own sensor square / image circle stay, and
+            # the direct 3D labels must appear.
+            inspector.show_detector_overlays_var.set(True)
+            inspector.refresh_from_editor(force_retrace=True)
+            inspector.update_idletasks()
+            on_obj = _reference_aperture_disk_max_opacity(inspector, obj_idx)
+            on_img = _reference_aperture_disk_max_opacity(inspector, img_idx)
+            labels = _billboard_label_count(inspector)
+        finally:
+            inspector.render = _orig_render
+
+        result.detail["disk_opacity_det_off"] = (round(off_obj, 3), round(off_img, 3))
+        result.detail["disk_opacity_det_on"] = (round(on_obj, 3), round(on_img, 3))
+        result.detail["billboard_labels"] = labels
+        if off_obj <= 0.05 or off_img <= 0.05:
+            result.passed = False
+            result.notes.append(
+                f"FAIL (c precondition): with reference surfaces ON + Det OFF the Object/Image disks "
+                f"should be visible, got opacities obj={off_obj:.3g}, img={off_img:.3g}"
+            )
+        if on_obj > 0.05 or on_img > 0.05:
+            result.passed = False
+            result.notes.append(
+                f"FAIL (c): with Det ON the Object/Image clear-aperture disks must be suppressed, "
+                f"got opacities obj={on_obj:.3g}, img={on_img:.3g}"
+            )
+        if labels < 3:
+            result.passed = False
+            result.notes.append(f"FAIL (b): expected >= 3 billboard coverage labels with Det ON, got {labels}")
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"phase 39 raised: {exc!r}")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3842,6 +3995,7 @@ def main() -> int:
             phase_36_ray_launch_center_uniform_fan,
             phase_37_detector_overlay_vendor_sensor,
             phase_38_detector_coverage,
+            phase_39_detector_coverage_live,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

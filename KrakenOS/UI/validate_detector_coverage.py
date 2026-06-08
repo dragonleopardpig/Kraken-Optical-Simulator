@@ -81,6 +81,7 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
     from KrakenOS.UI.camera_database import camera_image_coverage_mm
     from KrakenOS.UI.services.detector_coverage_overlay import (
         DetectorCoverageOverlayService,
+        detector_coverage_label_specs,
         detector_coverage_metrics,
         detector_coverage_overlay_specs,
     )
@@ -194,6 +195,55 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
         notes.append("FAIL: infinite-object overlay must not draw an object FOV rectangle")
         passed = False
 
+    # 5. Direct 3D label specs (bug 0033 fix b): every coverage element is named,
+    #    the texts carry the live dimensions, and the same-plane labels never
+    #    overlap (distinct clock angles outside each element).
+    def _same_plane_min_sep(specs, plane_pt) -> float:
+        on_plane = [np.asarray(s["anchor"], dtype=float) for s in specs
+                    if abs(float(np.asarray(s["anchor"], dtype=float)[2]) - float(plane_pt[2])) < 1e-6]
+        best = float("inf")
+        for i in range(len(on_plane)):
+            for j in range(i + 1, len(on_plane)):
+                best = min(best, float(np.linalg.norm(on_plane[i] - on_plane[j])))
+        return best
+
+    short_labels = detector_coverage_label_specs(obj_pt, img_pt, short, object_mode_finite=True)
+    short_texts = [s["text"] for s in short_labels]
+    expected_short = [
+        f"Sensor {SENSOR_MM[0]:.1f}×{SENSOR_MM[1]:.1f}",
+        f"Image circle Ø{2 * DEFAULT_RIH:.1f} (short)",
+        f"Needs Ø{diagonal:.1f}",
+        f"FOV {2 * obj_half_expected:.1f}×{2 * obj_half_expected:.1f}",
+    ]
+    if short_texts != expected_short:
+        notes.append(f"FAIL: short label texts {short_texts}, expected {expected_short}")
+        passed = False
+    short_sep = _same_plane_min_sep(short_labels, img_pt)
+    if short_sep < 10.0:
+        notes.append(f"FAIL: short image-plane labels too close (min sep {short_sep:.3g} mm < 10)")
+        passed = False
+
+    cover_labels = detector_coverage_label_specs(obj_pt, img_pt, covering, object_mode_finite=True)
+    cover_texts = [s["text"] for s in cover_labels]
+    expected_cover = [
+        f"Sensor {SENSOR_MM[0]:.1f}×{SENSOR_MM[1]:.1f}",
+        f"Image circle Ø{diagonal:.1f}",
+        f"FOV {2 * obj_half_expected:.1f}×{2 * obj_half_expected:.1f}",
+    ]
+    if cover_texts != expected_cover:
+        notes.append(f"FAIL: covering label texts {cover_texts}, expected {expected_cover} (no 'Needs' when covering)")
+        passed = False
+    cover_sep = _same_plane_min_sep(cover_labels, img_pt)
+    if cover_sep < 10.0:
+        notes.append(f"FAIL: covering image-plane labels too close (min sep {cover_sep:.3g} mm < 10)")
+        passed = False
+
+    # Infinite object: no FOV label (the object plane has no rectangle to name).
+    inf_labels = detector_coverage_label_specs(obj_pt, img_pt, short, object_mode_finite=False)
+    if any(s["text"].startswith("FOV") for s in inf_labels):
+        notes.append("FAIL: infinite-object labels must not include an FOV label")
+        passed = False
+
     if not LAYOUT.exists():
         notes.append("SKIP: machine-vision measured layout unavailable")
         return passed, notes
@@ -249,10 +299,22 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
                 )
                 passed = False
 
+    # 6. bug 0033 fix a: a layout LOAD that restores a camera now calls
+    #    ``_apply_camera_coverage_autofill`` so it lands covered without an
+    #    interactive dropdown commit. The method body mutates Tk widgets
+    #    (``_sync_field_mode_ui``), so the *end-to-end* load path is exercised
+    #    live in the penta harness (Phase 39); here we just guard that the
+    #    extracted helper still exists and is callable (a rename / removal would
+    #    silently take the load-time auto-fill with it).
+    if not callable(getattr(editor, "_apply_camera_coverage_autofill", None)):
+        notes.append("FAIL: editor lost the _apply_camera_coverage_autofill helper (load auto-fill would break)")
+        passed = False
+
     if verbose:
         notes.append(
             f"coverage helper={coverage}; default RIH {DEFAULT_RIH} short of half-diag {half_diag:.4g}; "
-            f"object FOV {obj_half_expected:.4g} (= sensor/2 / |m|); auto-fill covers"
+            f"object FOV {obj_half_expected:.4g} (= sensor/2 / |m|); auto-fill covers; "
+            f"labels short={short_texts} cover={cover_texts}"
         )
     return passed, notes
 

@@ -484,6 +484,16 @@ class LayoutTableWorkbenchMixin:
         except Exception:
             pass
         self._sync_table()
+        # bug 0033: a full layout load that restores a camera selection sets
+        # ``camera_model_var`` directly (no widget commit), so the coverage
+        # auto-fill never ran and the layout opened in the un-covered state.
+        # Re-apply it here so loading lands in the covered state, matching an
+        # interactive camera pick. Skipped when appending into an existing scene
+        # (that path keeps the current camera/field untouched).
+        if not append_to_existing and hasattr(self, "_current_camera_model"):
+            loaded_camera = self._current_camera_model()
+            if loaded_camera != CAMERA_NONE_LABEL:
+                self._apply_camera_coverage_autofill(loaded_camera)
         if append_to_existing:
             self._select_inserted_layout_rows(loaded_rows, insert_after=insert_after)
         if had_existing_rows:
@@ -2797,13 +2807,20 @@ class LayoutTableWorkbenchMixin:
         self._sync_object_controls()
         self._mark_plot_update_pending()
 
-    def _on_camera_model_changed(self, _event=None) -> None:
-        self._begin_history_capture()
-        camera_name = self._current_camera_model()
+    def _apply_camera_coverage_autofill(self, camera_name: str) -> dict | None:
+        """Set the image-surface aperture + Real Image Height so the image
+        circle covers the selected camera's sensor (corners included).
+
+        Shared by the interactive camera dropdown (``_on_camera_model_changed``)
+        and layout load, so a layout that *loads* with a camera already selected
+        lands in the covered state too (bug 0033 -- previously the auto-fill ran
+        only on an interactive dropdown commit). Pure model mutation: it does not
+        touch history capture, status text, or the plot-update flag. Returns the
+        applied ``{"image_diameter", "real_image_height"}`` or ``None`` when no
+        sensor size is available.
+        """
         if camera_name == CAMERA_NONE_LABEL:
-            self._commit_history_capture()
-            self._mark_plot_update_pending()
-            return
+            return None
         # The image circle must *cover* the rectangular sensor (corners
         # included), so the image-surface clear aperture follows the sensor
         # diagonal rather than the inscribed sensor width (the old
@@ -2812,10 +2829,7 @@ class LayoutTableWorkbenchMixin:
         coverage = camera_image_coverage_mm(camera_name)
         image_diameter = coverage[0] if coverage is not None else camera_image_diameter_mm(camera_name)
         if image_diameter is None or not self.rows or self.rows[-1].surface != "Image":
-            self._commit_history_capture()
-            self._mark_plot_update_pending()
-            self.status_var.set(f"Camera selected: {camera_name}; no sensor size available.")
-            return
+            return None
         self._set_image_diameter_mode("Manual")
         self.rows[-1].diameter = float(image_diameter)
         # Auto-fill the field so the outermost field lands on the sensor corner
@@ -2837,8 +2851,23 @@ class LayoutTableWorkbenchMixin:
         self._sync_object_diameter_from_manual_image()
         self._sync_table()
         self._sync_object_controls()
+        return {"image_diameter": float(image_diameter), "real_image_height": real_image_height}
+
+    def _on_camera_model_changed(self, _event=None) -> None:
+        self._begin_history_capture()
+        camera_name = self._current_camera_model()
+        if camera_name == CAMERA_NONE_LABEL:
+            self._commit_history_capture()
+            self._mark_plot_update_pending()
+            return
+        applied = self._apply_camera_coverage_autofill(camera_name)
         self._commit_history_capture()
         self._mark_plot_update_pending()
+        if applied is None:
+            self.status_var.set(f"Camera selected: {camera_name}; no sensor size available.")
+            return
+        image_diameter = applied["image_diameter"]
+        real_image_height = applied["real_image_height"]
         summary = camera_short_summary(camera_name)
         detail = f" ({summary})" if summary else ""
         field_note = (

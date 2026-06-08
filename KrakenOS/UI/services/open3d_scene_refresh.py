@@ -141,6 +141,11 @@ class Open3DSceneRefreshService:
         show_launch_reference_surface = bool(
             self.editor._should_show_open3d_launch_reference_surface(system=system)
         )
+        # When the detector coverage overlay is on it draws the meaningful
+        # object/image-plane geometry itself (FOV box, sensor square, real
+        # image circle). The translucent Object/Image clear-aperture disks then
+        # only masquerade as "the image circle" (bug 0033), so suppress them.
+        detector_overlays_on = bool(self.show_detector_overlays_var.get())
         mesh_collect_start = time.perf_counter()
         mesh_items = list(
             self.editor._scene_surface_meshes(
@@ -441,6 +446,17 @@ class Open3DSceneRefreshService:
             # bodies (e.g. the achromat). Skip object/image reference
             # planes, mirrors, apertures/grating UI surfaces, the
             # hidden auto-revolved STEP drum, and anything invisible.
+            # bugs/0033: while the detector coverage overlay is on it draws the
+            # authoritative object/image-plane geometry itself (FOV box, sensor
+            # square, real image circle, required ring), each with its own 3-D
+            # label. The Object/Image clear-aperture disk -- a translucent fill
+            # plus a rim circle -- then only masquerades as "the image circle"
+            # (recordings 251/078), so suppress the whole disk. The body actor
+            # is still added at opacity 0 for picking (analytic_hidden_drum
+            # pattern); the rim is skipped via the ``continue`` below.
+            suppress_reference_aperture = detector_overlays_on and row_surface in {"Object", "Image"}
+            if suppress_reference_aperture:
+                mesh_opacity = 0.0
             glassy_lens = analytic_optic_surface and mesh_opacity > 0.0
             body_actor = self._add_mesh_actor(
                 mesh,
@@ -455,6 +471,15 @@ class Open3DSceneRefreshService:
             if body_actor is not None and row_index in file_backed_rows:
                 try:
                     body_actor._kraken_file_backed_row_body = bool(mesh_item.is_body)
+                except Exception:
+                    pass
+            # bugs/0033: mark the Object/Image clear-aperture disk body so the
+            # regression guard can target it directly -- the detector overlay's
+            # own sensor square is also mapped to the Image row, so a plain
+            # max-opacity check can't tell the suppressed disk from the sensor.
+            if body_actor is not None and row_surface in {"Object", "Image"}:
+                try:
+                    body_actor._kraken_reference_aperture_disk = True
                 except Exception:
                     pass
             # Glassy analytic lens bodies (revolved drums, Standard caps,
@@ -492,6 +517,13 @@ class Open3DSceneRefreshService:
                                 self._row_actor_map.setdefault(trailing_row, []).append(actor_key)
                 except Exception:
                     pass
+            # bugs/0033: with the detector coverage overlay on, the (now
+            # invisible) Object/Image disk actor stays for picking but its rim
+            # circle / feature edges are skipped so nothing competes with the
+            # labelled coverage overlay.
+            if suppress_reference_aperture:
+                drew_surfaces += 1
+                continue
             # Analytic optic surfaces / bodies (Standard caps, STEP-
             # promoted body plates, revolved lens drums) get a deep
             # body-tone outline instead of a black wireframe: sharp

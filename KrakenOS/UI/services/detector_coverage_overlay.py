@@ -31,6 +31,15 @@ _IMAGE_CIRCLE_COVERS = (0.2, 0.7, 1.0)      # cyan -- image circle covers sensor
 _IMAGE_CIRCLE_SHORT = (1.0, 0.55, 0.1)      # amber -- image circle too small
 _REQUIRED_RING = (1.0, 0.55, 0.1)           # amber dashed -- required image circle
 _OBJECT_FOV = (0.2, 0.9, 0.35)              # green -- object-plane FOV rectangle
+_SENSOR_FOOTPRINT = (0.98, 0.45, 0.05)      # amber -- vendor sensor square (bug 0031)
+
+# Direct 3D label placement. Each label is anchored just outside its element on
+# the plane, at a distinct clock angle so the (billboarded) labels never overlap
+# each other or the geometry (bug 0033 -- the user could not tell the overlay
+# elements apart). ``_LABEL_GAP`` is a small absolute world margin so even a
+# tiny element still gets a readable standoff.
+_LABEL_GAP = 0.6      # mm standoff beyond the radial placement
+_LABEL_MARGIN = 0.10  # fraction of the element radius added before the gap
 
 # Coverage tolerance in mm. 1 micron is physically negligible (under a quarter
 # of the 4.5 um sensor pixel) yet wide enough to absorb the 6-significant-figure
@@ -176,6 +185,80 @@ def detector_coverage_overlay_specs(
     return specs
 
 
+def detector_coverage_label_specs(
+    object_point,
+    image_point,
+    metrics: DetectorCoverageMetrics,
+    *,
+    object_mode_finite: bool = True,
+) -> list[dict[str, Any]]:
+    """Direct 3D labels for the coverage overlay (pure geometry, no VTK).
+
+    Each spec is ``{"text", "anchor", "color"}``. Anchors are placed just
+    outside each element on its plane, at distinct clock angles, so the labels
+    never overlap each other or the drawn geometry. The image-plane labels share
+    a plane and so are spread around the circle; the object FOV label sits on the
+    far object plane and never competes with them.
+    """
+    obj_pt = np.asarray(object_point, dtype=float).reshape(3)
+    img_pt = np.asarray(image_point, dtype=float).reshape(3)
+    u, v = _basis(img_pt - obj_pt)
+
+    def place(center, radius, angle_deg, text, color):
+        a = np.radians(float(angle_deg))
+        anchor = center + radius * (np.cos(a) * u + np.sin(a) * v)
+        return {"text": str(text), "anchor": anchor, "color": tuple(color)}
+
+    labels: list[dict[str, Any]] = []
+
+    # Image plane (concentric): spread labels to widely separated clock angles.
+    if metrics.sensor_half_diagonal > 1e-9:
+        labels.append(
+            place(
+                img_pt,
+                metrics.sensor_half_diagonal * (1.0 + _LABEL_MARGIN) + _LABEL_GAP,
+                35.0,
+                f"Sensor {2 * metrics.sensor_half_width:.1f}×{2 * metrics.sensor_half_height:.1f}",
+                _SENSOR_FOOTPRINT,
+            )
+        )
+    if metrics.image_circle_radius > 1e-9:
+        labels.append(
+            place(
+                img_pt,
+                metrics.image_circle_radius * (1.0 + _LABEL_MARGIN) + _LABEL_GAP,
+                150.0,
+                f"Image circle Ø{2 * metrics.image_circle_radius:.1f}"
+                + ("" if metrics.covers else " (short)"),
+                _IMAGE_CIRCLE_COVERS if metrics.covers else _IMAGE_CIRCLE_SHORT,
+            )
+        )
+    if not metrics.covers and metrics.sensor_half_diagonal > 1e-9:
+        labels.append(
+            place(
+                img_pt,
+                metrics.sensor_half_diagonal * (1.0 + _LABEL_MARGIN) + _LABEL_GAP,
+                275.0,
+                f"Needs Ø{2 * metrics.sensor_half_diagonal:.1f}",
+                _REQUIRED_RING,
+            )
+        )
+
+    # Object plane: the FOV rectangle label (finite object only).
+    if object_mode_finite and metrics.object_fov_half_width > 1e-9 and metrics.object_fov_half_height > 1e-9:
+        fov_diag = float((metrics.object_fov_half_width ** 2 + metrics.object_fov_half_height ** 2) ** 0.5)
+        labels.append(
+            place(
+                obj_pt,
+                fov_diag * (1.0 + _LABEL_MARGIN) + _LABEL_GAP,
+                90.0,
+                f"FOV {2 * metrics.object_fov_half_width:.1f}×{2 * metrics.object_fov_half_height:.1f}",
+                _OBJECT_FOV,
+            )
+        )
+    return labels
+
+
 class DetectorCoverageOverlayService:
     """Render the image-circle / object-FOV coverage overlays for Open 3D."""
 
@@ -251,6 +334,31 @@ class DetectorCoverageOverlayService:
             self.editor.append_debug(f"Detector coverage overlay skipped: {exc}")
             return False
 
+    def _label_actor(self, anchor, text, color) -> bool:
+        try:
+            import vtk
+        except Exception:
+            return False
+        try:
+            actor = vtk.vtkBillboardTextActor3D()
+            actor.SetInput(str(text))
+            pos = np.asarray(anchor, dtype=float).reshape(3)
+            actor.SetPosition(float(pos[0]), float(pos[1]), float(pos[2]))
+            tp = actor.GetTextProperty()
+            tp.SetFontSize(13)
+            tp.SetColor(0.12, 0.12, 0.14)
+            tp.SetBackgroundColor(1.0, 1.0, 1.0)
+            tp.SetBackgroundOpacity(0.82)
+            tp.SetFrame(True)
+            tp.SetFrameColor(float(color[0]), float(color[1]), float(color[2]))
+            tp.SetJustificationToCentered()
+            tp.SetVerticalJustificationToCentered()
+            self.inspector._add_renderer_view_prop(actor)
+            return True
+        except Exception as exc:  # pragma: no cover - defensive
+            self.editor.append_debug(f"Detector coverage label skipped: {exc}")
+            return False
+
     def add_overlays(self, system: Any, scene_bundle: Any = None) -> int:
         if scene_bundle is None:
             return 0
@@ -279,6 +387,11 @@ class DetectorCoverageOverlayService:
         count = 0
         for spec in specs:
             if self._line_actor(spec["points"], spec["color"], spec["line_width"], bool(spec["dashed"])):
+                count += 1
+
+        # Direct 3D labels so each element is self-explanatory (bug 0033).
+        for label in detector_coverage_label_specs(obj_pt, img_pt, metrics, object_mode_finite=finite):
+            if self._label_actor(label["anchor"], label["text"], label["color"]):
                 count += 1
 
         if not metrics.covers and metrics.image_circle_radius > 0.0:
