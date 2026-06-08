@@ -701,6 +701,40 @@ class TracePreviewSamplingMixin:
             points.append([float(r * np.cos(angle)), float(r * np.sin(angle))])
         return np.asarray(points[:count], dtype=float)
 
+    def _cone_azimuth_count(self) -> int:
+        """Azimuthal spokes used when the meridional fan is revolved into a 3D cone."""
+        count = max(1, int(self._current_ray_count()))
+        return int(max(3, min(12, count)))
+
+    def _sample_ray_count_cone_points(self, max_radius: float) -> np.ndarray:
+        """3D launch-cone pupil samples: the uniform meridional fan revolved about the axis.
+
+        Each azimuthal spoke shares the radial gap of the 2D meridional fan
+        (``_sample_ray_count_pupil_points``), so every meridian reads as the
+        familiar uniform fan while the whole set forms a 3D cone. The 2D layout
+        keeps its own flat ``world_envelope`` fan, so its uniform gaps stay intact.
+        """
+        radius = float(max_radius) if np.isfinite(float(max_radius)) else 0.0
+        if radius <= 1e-9 and self.rows:
+            try:
+                radius = max(float(self.rows[0].diameter) * 0.5, 0.0)
+            except Exception:
+                radius = 0.0
+        if radius <= 1e-9:
+            radius = 1.0
+        count = max(1, int(self._current_ray_count()))
+        if count == 1:
+            return np.asarray([[0.0, 0.0]], dtype=float)
+        n_rings = max(1, count // 2)
+        n_az = self._cone_azimuth_count()
+        radii = radius * (np.arange(1, n_rings + 1, dtype=float) / float(n_rings))
+        azimuths = np.linspace(0.0, 2.0 * np.pi, n_az, endpoint=False)
+        points: list[list[float]] = [[0.0, 0.0]]
+        for ring_radius in radii:
+            for theta in azimuths:
+                points.append([float(ring_radius * np.cos(theta)), float(ring_radius * np.sin(theta))])
+        return np.asarray(points, dtype=float)
+
     def _sample_sparse_pupil_disk(self, max_radius: float) -> np.ndarray:
         """Sparse filled pupil used only to discover the through-going 3D envelope."""
         radius = float(max_radius) if np.isfinite(float(max_radius)) else 0.0
@@ -730,6 +764,19 @@ class TracePreviewSamplingMixin:
         if radius <= 1e-9:
             radius = 1.0
         pupil_pts = self._sample_ray_count_pupil_points(radius)
+        return self._build_world_bundles_from_pupil_points(pupil_pts, system=system)
+
+    def _build_world_cone_bundles(self, pupil_radius: float, *, system=None):
+        """Build the 3D launch-cone pupil bundles (the revolved meridional fan)."""
+        radius = float(pupil_radius) if np.isfinite(float(pupil_radius)) else 0.0
+        if radius <= 1e-9 and self.rows:
+            try:
+                radius = max(float(self.rows[0].diameter) * 0.5, 0.0)
+            except Exception:
+                radius = 0.0
+        if radius <= 1e-9:
+            radius = 1.0
+        pupil_pts = self._sample_ray_count_cone_points(radius)
         return self._build_world_bundles_from_pupil_points(pupil_pts, system=system)
 
     def _build_world_sparse_pupil_bundles(self, pupil_radius: float, *, system=None):
@@ -883,6 +930,25 @@ class TracePreviewSamplingMixin:
         self._preview_field_ray_count = max(1, int(_boundary_count))
         self._preview_field_bundle_count = int(len(boundary_bundles))
         self.append_debug("3D source envelope: no through-going boundary rays found; showing clipped launch boundary.")
+        return True
+
+    def _trace_world_cone_rays(self, system, rays, wavelength: float, pupil_radius: float) -> bool:
+        """Trace the 3D launch cone (revolved meridional fan) for Open 3D."""
+        boundary_bundles, boundary_count = self._build_world_cone_bundles(pupil_radius, system=system)
+        if not boundary_bundles:
+            return False
+        if self._trace_selected_through_envelope(system, rays, wavelength, boundary_bundles):
+            return True
+
+        sparse_bundles, _sparse_count = self._build_world_sparse_pupil_bundles(pupil_radius, system=system)
+        if sparse_bundles and self._trace_selected_through_envelope(system, rays, wavelength, sparse_bundles):
+            return True
+
+        rays.clean()
+        self._trace_preview_bundles(system, rays, wavelength, boundary_bundles)
+        self._preview_field_ray_count = max(1, int(boundary_count))
+        self._preview_field_bundle_count = int(len(boundary_bundles))
+        self.append_debug("3D source cone: no through-going boundary rays found; showing clipped launch cone.")
         return True
 
     def _trace_selected_through_envelope(self, system, rays, wavelength: float, bundles: list[tuple[np.ndarray, ...]]) -> bool:

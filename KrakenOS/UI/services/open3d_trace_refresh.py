@@ -37,14 +37,35 @@ class Open3DTraceRefreshService:
         return normalized in {
             "full_pupil",
             "world_envelope",
+            "world_cone",
             "source_cone_world",
             "world_source_cone",
             "point_cone_world",
         }
 
+    def _committed_scene_sampling_mode(self) -> str | None:
+        """Sampling mode that produced the currently cached 2D scene trace.
+
+        Prefer the mode tagged when ``last_*`` was committed; fall back to the
+        transient ``_active_preview_sampling_mode`` for editors (and test fakes)
+        that never tag a committed scene. The tag is the reliable signal because
+        an Open 3D cone rebuild leaves the transient pointing at ``world_cone``
+        even though the cached 2D trace is still the ``world_envelope`` fan.
+        """
+        committed = self.normalize_sampling_mode_label(
+            getattr(self.editor, "_last_scene_trace_sampling_mode", None)
+        )
+        if committed is not None:
+            return committed
+        return self.normalize_sampling_mode_label(
+            getattr(self.editor, "_active_preview_sampling_mode", None)
+        )
+
     def _active_trace_can_feed_open3d(self) -> bool:
-        mode = self.normalize_sampling_mode_label(getattr(self.editor, "_active_preview_sampling_mode", None))
-        return self.sampling_mode_is_open3d_scene(mode)
+        mode = self._committed_scene_sampling_mode()
+        if not self.sampling_mode_is_open3d_scene(mode):
+            return False
+        return mode == self._open3d_sampling_mode()
 
     def _open3d_sampling_mode(self) -> str | None:
         return self.normalize_sampling_mode_label(self.editor._preview_3d_sampling_mode())
@@ -210,14 +231,11 @@ class Open3DTraceRefreshService:
             resolved_sampling_mode = self._open3d_sampling_mode()
         if not requires_open3d_retrace and not force_retrace and resolved_sampling_mode is None:
             open3d_sampling_mode = self._open3d_sampling_mode()
-            current_mode = self.normalize_sampling_mode_label(getattr(self.editor, "_active_preview_sampling_mode", None))
-            if self.sampling_mode_is_open3d_scene(current_mode):
+            if self._active_trace_can_feed_open3d():
                 current = self.editor._current_preview_scene_trace()
         if current is not None:
             system, rays, scene_bundle = current
-            resolved_sampling_mode = self.normalize_sampling_mode_label(
-                getattr(self.editor, "_active_preview_sampling_mode", None)
-            )
+            resolved_sampling_mode = self._committed_scene_sampling_mode() or open3d_sampling_mode
         else:
             if resolved_sampling_mode is None and force_retrace:
                 resolved_sampling_mode = self.inspector_active_sampling_mode(inspector)
@@ -301,9 +319,7 @@ class Open3DTraceRefreshService:
                 current = self.editor._current_preview_scene_trace()
             if current is not None:
                 system, rays, scene_bundle = current
-                sampling_mode = self.normalize_sampling_mode_label(
-                    getattr(self.editor, "_active_preview_sampling_mode", None)
-                )
+                sampling_mode = self._committed_scene_sampling_mode() or self._open3d_sampling_mode()
             else:
                 sampling_mode = self._open3d_sampling_mode()
                 system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
@@ -312,9 +328,7 @@ class Open3DTraceRefreshService:
                     include_live_step_overlays=include_live_step_overlays,
                 )
         else:
-            sampling_mode = self.normalize_sampling_mode_label(
-                getattr(self.editor, "_active_preview_sampling_mode", None)
-            )
+            sampling_mode = self._committed_scene_sampling_mode() or self._open3d_sampling_mode()
         row_names = self.editor._preview_render_row_names(scene_bundle)
         return Open3DRefreshResult(
             sampling_mode=self.normalize_sampling_mode_label(sampling_mode),

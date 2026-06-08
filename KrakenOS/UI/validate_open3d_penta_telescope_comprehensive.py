@@ -3911,6 +3911,40 @@ def phase_39_detector_coverage_live(
     return result
 
 
+def phase_40_open3d_launch_cone_geometry(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Open 3D revolves the flat 2D fan into a launch cone (bug 0034).
+
+    Reported via the in-app recorder: the 2D ray fan gap is uniform, but Open 3D
+    still launched the rays as a flat fan instead of a 3D cone. The fix keeps the
+    2D layout on its uniform meridional fan (`world_envelope`) while Open 3D uses
+    a new `world_cone` mode -- the fan revolved into azimuthal spokes -- so every
+    meridian still reads as the familiar uniform fan (the radial gaps are
+    preserved) but the whole launch forms a solid cone. The guard
+    (`validate_open3d_launch_cone_geometry`) is display-free and builds its own
+    machine-vision editor, so it needs no Xvfb / inspector.
+    """
+    result = PhaseResult(
+        name="Phase 40: Open 3D launch cone -- 2D fan stays flat, 3D revolves into a cone"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_launch_cone_geometry import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"launch-cone-geometry guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("launch-cone-geometry guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3996,6 +4030,7 @@ def main() -> int:
             phase_37_detector_overlay_vendor_sensor,
             phase_38_detector_coverage,
             phase_39_detector_coverage_live,
+            phase_40_open3d_launch_cone_geometry,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -851,8 +851,8 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
     doublet_3d_y_span = float(np.ptp(doublet_3d_all_points[:, 1])) if doublet_3d_all_points.size else 0.0
     checks.append(
         SceneSourceCheck(
-            "Open 3D sequential pupil/field preview uses azimuthal world envelope",
-            doublet_3d_mode == "world_envelope"
+            "Open 3D sequential pupil/field preview revolves the meridional fan into an azimuthal cone",
+            doublet_3d_mode == "world_cone"
             and len(getattr(doublet_3d_rays, "CC", [])) > 2
             and doublet_3d_x_span > 1e-6
             and doublet_3d_y_span > 1e-6,

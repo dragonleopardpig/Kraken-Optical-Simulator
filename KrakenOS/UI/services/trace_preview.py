@@ -92,6 +92,10 @@ class TracePreviewService:
             if self._trace_world_envelope_rays(system, rays, wavelength, pupil_radius):
                 system.Vignetting(0)
                 return
+        if mode == "world_cone":
+            if self._trace_world_cone_rays(system, rays, wavelength, pupil_radius):
+                system.Vignetting(0)
+                return
         if use_legacy_default_cone and mode != "world_envelope":
             default_cone_bundles, default_cone_ray_count = self._build_default_finite_cone_preview_bundles()
             if default_cone_bundles:

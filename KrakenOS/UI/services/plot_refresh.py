@@ -155,6 +155,7 @@ class PlotRefreshService:
             self.last_system = system
             self.last_rays = rays
             self._last_preview_trace_signature = self._preview_trace_signature()
+            self._last_scene_trace_sampling_mode = preview_sampling_mode
             self._preview_scene_trace_dirty = False
             if self._apply_image_diameter_mode():
                 self._sync_image_row_table_value()

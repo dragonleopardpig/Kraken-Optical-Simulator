@@ -132,8 +132,8 @@ def validate_infinity_field_launch() -> list[InfinityFieldLaunchCheck]:
 
     checks = [
         InfinityFieldLaunchCheck(
-            "Double Gauss 2D and Open 3D previews use the same canonical sampling mode",
-            preview_2d_mode == preview_3d_mode == "world_envelope",
+            "Double Gauss 2D keeps the flat meridional fan while Open 3D revolves it into a launch cone",
+            preview_2d_mode == "world_envelope" and preview_3d_mode == "world_cone",
             f"2d={preview_2d_mode}, 3d={preview_3d_mode}",
         ),
         InfinityFieldLaunchCheck(

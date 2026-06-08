@@ -535,6 +535,7 @@ class ThreeDSceneToolsMixin:
             self.last_rays = rays
             self._last_preview_trace_signature = self._preview_trace_signature()
             self._last_scene_bundle = scene_bundle
+            self._last_scene_trace_sampling_mode = mode
             self._preview_scene_trace_dirty = False
         return system, rays, scene_bundle
 
@@ -952,22 +953,27 @@ class ThreeDSceneToolsMixin:
     def _preview_2d_sampling_mode(self) -> str:
         """Sampling mode for editable 2D projections.
 
-        2D panes are projections of the same physical 3D launch family used by
-        Open 3D.  The denser ``world_sections`` sampler remains available for
-        explicit diagnostics, but it is no longer the default 2D scene trace.
+        The 2D layout keeps the flat, uniformly spaced meridional fan
+        (``world_envelope``) so its ray gaps stay even. Open 3D revolves that
+        fan into a cone separately; see ``_preview_3d_sampling_mode``.
         """
-        return self._preview_3d_sampling_mode()
+        if self._is_full_pupil_mode():
+            return "full_pupil"
+        return "world_envelope"
 
     def _preview_3d_sampling_mode(self) -> str:
         """Sampling mode for Open 3D.
 
-        Open 3D should show the physical 3D launch whenever the user has not
-        explicitly requested a filled full-pupil trace. The default Pupil/field
-        sampler remains a prescription reference; use a physical source model
-        for point-cone illumination.
+        Sequential, non-folded scenes launch a 3D cone (the meridional fan
+        revolved about the optical axis) so the 3D view reads as a cone while the
+        2D layout keeps its flat uniform fan. Nonsequential / folded scenes keep
+        the area-filling ``world_envelope`` so branched paths retain sagittal
+        width. A filled full-pupil trace still wins when explicitly requested.
         """
         if self._is_full_pupil_mode():
             return "full_pupil"
+        if self._launch_pupil_prefers_meridional_fan():
+            return "world_cone"
         return "world_envelope"
 
     def _current_preview_scene_trace(self):
