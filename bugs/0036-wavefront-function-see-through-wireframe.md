@@ -73,6 +73,17 @@ block gone) and confirmed not to regress the harder coma/saddle cases versus the
 prior per-row fill (their line scatter is a pre-existing projection limitation,
 unchanged by this fill change).
 
+### The "white block" was a white-on-white curtain
+
+The user re-flagged it: the relief still looked like it floated above the base
+plane with a big empty block beneath. The curtains *were* filling the gap, but
+with **pure white on a white background they were invisible**, so a tall relief
+read as disconnected from the plane. The curtain fill is now a subtle visible
+shade (`#e4e9f0`) instead of white, so the relief's side faces read as a solid
+body resting on the plane (Zemax shows the same subtle shading). Verified on a
+dome, a coma+astigmatism wavefront, and a strong astigmatism saddle — all now
+render as one solid relief sitting on the base plane with no floating gap.
+
 ## Tests
 
 `KrakenOS/UI/validate_wavefront_function_solid_waterfall.py` (display-free, Agg):

@@ -4042,6 +4042,38 @@ def phase_43_field_curvature_distortion_panels(
     return result
 
 
+def phase_44_open3d_cone_not_reused_as_fan(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Open 3D rebuilds the launch cone instead of reusing the 2D fan (bug 0038).
+
+    A sequential scene commits a flat `world_envelope` fan in 2D but wants a
+    revolved `world_cone` in Open 3D. The feed decision used to trust the
+    transient `_active_preview_sampling_mode` (left at `world_cone` by a prior
+    cone build), so when the committed tag was unset Open 3D reused the cached
+    flat fan. The fix reads the cached bundle's own launch mode. The guard
+    (`validate_open3d_cone_not_reused_as_fan`) is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 44: Open 3D rebuilds the launch cone instead of reusing the 2D fan"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_cone_not_reused_as_fan import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"cone-not-reused guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("cone-not-reused guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -4131,6 +4163,7 @@ def main() -> int:
             phase_41_field_curvature_export_twin_axis,
             phase_42_wavefront_function_solid_waterfall,
             phase_43_field_curvature_distortion_panels,
+            phase_44_open3d_cone_not_reused_as_fan,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -1663,9 +1663,13 @@ class LayoutAnalysisDisplayMixin:
             if np.count_nonzero(np.isfinite(row_x) & np.isfinite(row_y)) < 2:
                 continue
             zorder = 2.0 + draw_index * 0.01
+            # Subtle visible shade (not pure white) so the relief's side faces
+            # read as a solid body resting on the base plane. White-on-white
+            # made the curtains invisible, so a tall relief looked like it
+            # floated above the plane with an empty "white block" beneath it.
             self._fill_axes_nan_segments(
                 axis, row_x, row_y, floor_y,
-                facecolor="white", edgecolor="none", zorder=zorder,
+                facecolor="#e4e9f0", edgecolor="none", zorder=zorder,
             )
             self._plot_axes_nan_segments(
                 axis, row_x, row_y,

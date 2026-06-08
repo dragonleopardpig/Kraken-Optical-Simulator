@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from KrakenOS.UI.layout_plot_controller import scene_bundle_launch_sampling_mode
+
 
 @dataclass(slots=True)
 class Open3DRefreshResult:
@@ -46,12 +48,24 @@ class Open3DTraceRefreshService:
     def _committed_scene_sampling_mode(self) -> str | None:
         """Sampling mode that produced the currently cached 2D scene trace.
 
-        Prefer the mode tagged when ``last_*`` was committed; fall back to the
-        transient ``_active_preview_sampling_mode`` for editors (and test fakes)
-        that never tag a committed scene. The tag is the reliable signal because
-        an Open 3D cone rebuild leaves the transient pointing at ``world_cone``
-        even though the cached 2D trace is still the ``world_envelope`` fan.
+        Ground truth is the launch mode actually baked into the cached scene
+        bundle: an Open 3D cone rebuild runs with ``update_state=False`` so it
+        never replaces ``_last_scene_bundle`` (still the ``world_envelope`` 2D
+        fan). The transient ``_active_preview_sampling_mode``, by contrast, holds
+        the *last* traced mode -- which a cone rebuild leaves at ``world_cone``.
+        Trusting that transient made ``_active_trace_can_feed_open3d`` wrongly
+        report the cached fan as cone-ready, so Open 3D reused the flat 2D fan
+        instead of rebuilding the cone. Read the bundle's own mode first; only
+        fall back to the tag, then the transient, for editors / test fakes that
+        never tag a committed bundle.
         """
+        bundle = getattr(self.editor, "_last_scene_bundle", None)
+        if bundle is not None:
+            bundle_mode = self.normalize_sampling_mode_label(
+                scene_bundle_launch_sampling_mode(bundle)
+            )
+            if bundle_mode is not None:
+                return bundle_mode
         committed = self.normalize_sampling_mode_label(
             getattr(self.editor, "_last_scene_trace_sampling_mode", None)
         )
