@@ -94,9 +94,10 @@ class TracePreviewSamplingMixin:
         axis_max = radial_max / float(np.sqrt(2.0)) if count > 1 else radial_max
         field_values = [float(value) for value in self._sample_field_values(axis_max)]
         if count <= 1:
-            value = field_values[0] if field_values else axis_max
-            axis = self._current_display_slice_axis()
-            return [(value, 0.0)] if axis == "x" else [(0.0, value)]
+            # Field Samples = 1 launches a single bundle from the object centre
+            # (the on-axis field point), not the field edge -- the lone sample
+            # is the chief field, matching the 2D layout's single-point fan.
+            return [(0.0, 0.0)]
         pairs: list[tuple[float, float]] = []
         seen: set[tuple[float, float]] = set()
         for field_y in field_values:
@@ -652,6 +653,23 @@ class TracePreviewSamplingMixin:
         rim = np.column_stack((radius * np.cos(angles), radius * np.sin(angles))).astype(float)
         return np.vstack((np.asarray([[0.0, 0.0]], dtype=float), rim))
 
+    def _launch_pupil_prefers_meridional_fan(self) -> bool:
+        """Return whether the ``Ray Count`` pupil should be a uniform fan.
+
+        Sequential, non-folded scenes draw a uniformly spaced meridional ray
+        fan (Zemax-style tangential fan) so the 2D layout shows even gaps
+        between the rays launched from a single object point. Nonsequential /
+        folded scenes keep the area-filling disk so the 3D envelope retains
+        sagittal width for branched (beam-splitter / mirror) paths.
+        """
+        try:
+            trace_state = self._resolved_trace_mode(system=self.__dict__.get("last_system"))
+        except Exception:
+            trace_state = {}
+        if bool(trace_state.get("use_nonseq")) or bool(trace_state.get("use_folded")):
+            return False
+        return True
+
     def _sample_ray_count_pupil_points(self, max_radius: float) -> np.ndarray:
         """Generate exactly ``Ray Count`` deterministic 3D pupil samples."""
         radius = float(max_radius) if np.isfinite(float(max_radius)) else 0.0
@@ -665,6 +683,14 @@ class TracePreviewSamplingMixin:
         count = max(1, int(self._current_ray_count()))
         if count == 1:
             return np.asarray([[0.0, 0.0]], dtype=float)
+        if self._launch_pupil_prefers_meridional_fan():
+            # Uniformly spaced fan along the display-slice meridian: even ray
+            # gaps in the 2D layout and a clean planar fan in 3D.
+            heights = np.linspace(-radius, radius, count)
+            zeros = np.zeros(count, dtype=float)
+            if self._current_display_slice_axis() == "x":
+                return np.column_stack((heights, zeros)).astype(float)
+            return np.column_stack((zeros, heights)).astype(float)
         points: list[list[float]] = [[0.0, 0.0]]
         golden_angle = np.pi * (3.0 - np.sqrt(5.0))
         denominator = max(1, count - 1)
@@ -740,6 +766,9 @@ class TracePreviewSamplingMixin:
         return np.asarray(unique, dtype=float)
 
     def _field_cross_pairs_for_world_sections(self, maximum: float) -> list[tuple[float, float]]:
+        if self._current_field_count() <= 1:
+            # Field Samples = 1 -> a single on-axis (object-centre) field point.
+            return [(0.0, 0.0)]
         values = [float(value) for value in self._sample_field_values(maximum)]
         if not values:
             values = [0.0]

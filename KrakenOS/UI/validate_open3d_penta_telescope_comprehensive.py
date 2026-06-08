@@ -3657,6 +3657,39 @@ def phase_35_scene_browser_hide_delete(
     return result
 
 
+def phase_36_ray_launch_center_uniform_fan(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Single-field launch centring, uniform meridional fan, visible clipped rays.
+
+    Three display-preview contracts derived from the 2D layout (`attachment/2D.png`):
+    Field Samples = 1 launches one bundle from the object centre (on-axis), not
+    the field edge; the Ray Count pupil for a sequential scene is a uniformly
+    spaced meridional fan (Zemax-like, not a golden-spiral disk); and clipped
+    ("stopped") rays render plainly in Open 3D, with full 2D/3D record parity.
+    The guard (`validate_ray_launch_center_uniform_fan`) is display-free and
+    builds its own machine-vision editor, so it needs no Xvfb / inspector.
+    """
+    result = PhaseResult(
+        name="Phase 36: single-field launch centring + uniform meridional fan + visible clipped rays"
+    )
+    try:
+        from KrakenOS.UI.validate_ray_launch_center_uniform_fan import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"ray-launch/uniform-fan guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("ray-launch/uniform-fan guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -3738,6 +3771,7 @@ def main() -> int:
             phase_33_live_drag_ray_preview,
             phase_34_quick_estimation_conjugate,
             phase_35_scene_browser_hide_delete,
+            phase_36_ray_launch_center_uniform_fan,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

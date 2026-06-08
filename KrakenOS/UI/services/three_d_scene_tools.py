@@ -2258,18 +2258,20 @@ class ThreeDSceneToolsMixin:
         # a different class of ray; reserve full-line diagnostic recoloring for
         # absorption and true stop conditions. "Stopped" rays are *genuine*
         # aperture vignetting (field corners the first element clips); draw them
-        # as a faint, thin grey stub so they read as expected vignetting rather
-        # than a prominent dark-red error.
+        # as a thin grey stub so they read as expected vignetting rather than a
+        # prominent dark-red error. Their opacity has to stay high enough to
+        # actually read against the 3D scene -- the 2D layout shows these clipped
+        # stubs plainly, so the Open 3D view must match.
         diagnostic_line_color = status_colors.get(status, color) if status in {"absorbed", "stopped"} else color
         return {
             "line_color": diagnostic_line_color,
             "line_opacity": (
                 0.80 if status == "escaped"
                 else 0.74 if status == "missed_detector"
-                else 0.24 if status == "stopped"
+                else 0.55 if status == "stopped"
                 else 0.88
             ),
-            "line_width": 1.5 if status == "missed_detector" else 0.6 if status == "stopped" else 1.0,
+            "line_width": 1.5 if status == "missed_detector" else 0.9 if status == "stopped" else 1.0,
             "endpoint_color": status_colors.get(status, color),
             "endpoint_scale": 4.2 if status == "missed_detector" else 1.4 if status == "stopped" else 2.8,
         }
