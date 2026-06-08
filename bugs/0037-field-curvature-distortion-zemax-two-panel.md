@@ -54,6 +54,35 @@ a "+Y" field-axis marker, "Millimeters" / "Percent" x-labels, and a small
 `set_box_aspect` (pinned by `plot_analysis`) is cleared so the two explicitly
 positioned panels keep equal height.
 
+## Follow-up: the best-focus magnitude was wrong (≈ tens of mm)
+
+On review the field-curvature curve sat at ±50–100 mm — implausible for a
+~100 mm Double Gauss whose field curvature is sub-mm — and the millimetre axis
+looked off-centre. The user asked *"axis not centered at zero, are you sure -100
+is correct?"* Three data/plot fixes (`services/analysis_plot.py`):
+
+1. **Best-focus shift was computed from absolute image coordinates.** The
+   longitudinal best focus is `-Σ(y·s)/Σ(s²)`, but `y` and the slope `s = m/n`
+   must be measured *relative to the chief/centroid ray*, not absolutely. Using
+   absolute heights, `Σ(y·s)` is dominated by the field offset × chief slope, so
+   the result collapsed to the ray's axis-crossing distance (tens of mm), not
+   the field curvature. Now both `y` and `s` are de-meaned per field before the
+   least-squares focus, giving sub-mm shifts.
+2. **The constant defocus of the image plane was not removed.** The built
+   analysis system sat ~24.5 mm from on-axis best focus, so every field shared
+   that offset. The focus shifts are now referenced to the on-axis (field 0)
+   sample — the Zemax convention where the T/S curves rise from ~0 at the axis —
+   so the panel shows the field-*dependent* curvature, not where the image plane
+   happens to sit.
+3. **The curve fit wandered off the origin and warned "poorly conditioned".**
+   `_field_curve_xy` now fits against the *normalised* field-squared (field
+   curvature and distortion are even in field): the +/- pair collapses onto one
+   branch, the curve is anchored near the axis at field 0, and the regressor in
+   [0, 1] keeps the polynomial well conditioned.
+
+With these the FIELD CURVATURE panel shows T/S curves rising from the centred
+zero axis to a few tenths of a mm at the field edge, matching Zemax's scale.
+
 ## Tests
 
 `KrakenOS/UI/validate_field_curvature_distortion_panels.py` (display-free, Agg):

@@ -49,12 +49,29 @@ New `_draw_wavefront_solid_waterfall`:
   opaque white curtain (`fill_between` from the slice down to *its own* floor
   line) plus the dark slice line on top, with monotonically increasing zorder.
 
-Because each curtain stops at that row's floor (not a global bottom), the
-base-plane apron stays visible around the relief, matching Zemax. Nearer rows,
-painted last, hide the rows behind them — the opaque hidden-line surface.
+Nearer rows, painted last, hide the rows behind them — the opaque hidden-line
+surface.
 
 Helper `_fill_axes_nan_segments` mirrors `_plot_axes_nan_segments` but fills
 each finite run down to a (scalar or per-sample) bottom, skipping NaN gaps.
+
+## Follow-up: a "huge white block" under the relief
+
+The user reported *"some huge white block under the curves."* The first cut had
+each curtain stop at *its own* row's z=0 floor line. When the OPD is tall (the
+relief sits well above the floor), those stacked per-row curtains pile up into a
+floating white slab with the thin base parallelogram stranded at the very bottom
+— the white block.
+
+Fix: every curtain now drops to **one common floor** — the front edge (lowest
+point) of the base parallelogram — instead of each row's own floor. The relief
+then reads as a single solid body sitting on the parallelogram, and the nearer
+(front) rows fully occlude the farther ones. The base parallelogram is still
+drawn first underneath, so its apron shows at the sides/front of the footprint.
+Verified on a synthetic dome (clean ribbed surface resting on the plane, white
+block gone) and confirmed not to regress the harder coma/saddle cases versus the
+prior per-row fill (their line scatter is a pre-existing projection limitation,
+unchanged by this fill change).
 
 ## Tests
 

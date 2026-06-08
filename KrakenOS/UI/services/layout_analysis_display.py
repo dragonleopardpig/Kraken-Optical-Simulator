@@ -1623,9 +1623,20 @@ class LayoutAnalysisDisplayMixin:
     ) -> None:
         """Hidden-line waterfall: opaque slices drawn back-to-front so nearer
         rows occlude farther ones (the Zemax Wavefront Function look). Each
-        slice's curtain stops at its own z=0 floor line, leaving the base-plane
-        parallelogram visible as an apron around the relief."""
+        slice's curtain drops to one common floor -- the front edge of the base
+        plane -- so the relief reads as a single solid body sitting on the
+        parallelogram, instead of stacked per-row curtains that pile into a
+        floating white block when the OPD is tall."""
         line_color = "#1f2937"
+
+        # One common floor for every curtain: the lowest point of the base
+        # parallelogram (its front edge). Filling all rows down to it makes the
+        # relief one solid mass; nearer rows then fully occlude farther ones.
+        if base_corners:
+            floor_y = min(corner[1] for corner in base_corners)
+        else:
+            finite_axis_y = axis_y[np.isfinite(axis_y)]
+            floor_y = float(np.nanmin(finite_axis_y)) if finite_axis_y.size else 0.0
 
         # Flat base plane the relief rests on (lowest zorder, drawn first).
         if len(base_corners) >= 3:
@@ -1653,7 +1664,7 @@ class LayoutAnalysisDisplayMixin:
                 continue
             zorder = 2.0 + draw_index * 0.01
             self._fill_axes_nan_segments(
-                axis, row_x, row_y, base_axis_y[row_index, :],
+                axis, row_x, row_y, floor_y,
                 facecolor="white", edgecolor="none", zorder=zorder,
             )
             self._plot_axes_nan_segments(

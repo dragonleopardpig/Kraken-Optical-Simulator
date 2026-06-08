@@ -38,24 +38,32 @@ class AnalysisPlotService:
     def _field_curve_xy(field_vals: np.ndarray, series_vals: np.ndarray) -> "tuple[np.ndarray, np.ndarray]":
         """Smooth (value, field) curve for a Zemax-style vertical-field panel.
 
-        The field samples come in as |field| (so the +/- pair collapses), and a
-        low-order polynomial through them gives the clean monotone curve Zemax
-        draws rising from the axis (field 0) to the edge.
+        Field curvature and distortion are even functions of the field, so we
+        fit the values against the *normalised* field-squared. That collapses
+        the +/- field pair onto one branch, anchors the curve near the axis at
+        field 0, and -- because the regressor is normalised to [0, 1] -- keeps
+        the polynomial fit well conditioned (raw |field| in degrees made polyfit
+        poorly conditioned and let the curve wander off the origin).
         """
-        fields = np.asarray(field_vals, dtype=float)
+        fields = np.abs(np.asarray(field_vals, dtype=float))
         values = np.asarray(series_vals, dtype=float)
         order = np.argsort(fields)
         fields = fields[order]
         values = values[order]
-        if fields.size >= 4 and float(fields.max() - fields.min()) > 1e-9:
-            degree = min(3, fields.size - 1)
-            try:
-                poly = np.poly1d(np.polyfit(fields, values, degree))
-                smooth_field = np.linspace(float(fields.min()), float(fields.max()), 120)
-                return poly(smooth_field), smooth_field
-            except Exception:
-                pass
-        return values, fields
+        field_max = float(fields.max()) if fields.size else 0.0
+        if fields.size < 3 or field_max <= 1e-9:
+            return values, fields
+        norm_sq = (fields / field_max) ** 2
+        degree = min(2, int(np.unique(np.round(norm_sq, 9)).size) - 1)
+        if degree < 1:
+            return values, fields
+        try:
+            coeffs = np.polyfit(norm_sq, values, degree)
+            smooth_field = np.linspace(0.0, field_max, 120)
+            smooth_norm_sq = (smooth_field / field_max) ** 2
+            return np.polyval(coeffs, smooth_norm_sq), smooth_field
+        except Exception:
+            return values, fields
 
     @staticmethod
     def _symmetric_axis_limit(*value_arrays: np.ndarray) -> float:
@@ -147,13 +155,13 @@ class AnalysisPlotService:
             panel.set_xlim(-limit, limit)
             panel.set_ylim(0.0, field_max)
             panel.axvline(0.0, color=frame_color, linewidth=0.8)
-            panel.set_title(title, fontsize=9.0, color=frame_color, pad=8)
+            panel.set_title(title, fontsize=9.0, color=frame_color, pad=16)
             panel.set_xlabel(xlabel, fontsize=7.5)
             panel.tick_params(axis="both", labelsize=6.5, direction="in")
             panel.xaxis.set_major_locator(MaxNLocator(nbins=4, symmetric=True))
             for spine_name in ("top", "right"):
                 panel.spines[spine_name].set_visible(False)
-            panel.text(0.5, 1.005, "+Y", transform=panel.transAxes, ha="center", va="bottom",
+            panel.text(0.5, 1.0, "+Y", transform=panel.transAxes, ha="center", va="bottom",
                        fontsize=7.0, color=frame_color)
 
         analysis_ax.set_ylabel(f"Field ({field_units})", fontsize=7.5)
@@ -1362,14 +1370,20 @@ class AnalysisPlotService:
                         slopes_x = l_local / np.where(np.abs(n_local) < 1e-9, np.sign(n_local) * 1e-9 + 1e-9, n_local)
                         slopes_y = m_local / np.where(np.abs(n_local) < 1e-9, np.sign(n_local) * 1e-9 + 1e-9, n_local)
 
-                        if axis_name == "X":
-                            image_height = float(np.mean(x_local))
-                            denom = float(np.sum(slopes_x**2))
-                            focus_shift = 0.0 if denom <= 1e-12 else -float(np.sum(x_local * slopes_x) / denom)
-                        else:
-                            image_height = float(np.mean(y_local))
-                            denom = float(np.sum(slopes_y**2))
-                            focus_shift = 0.0 if denom <= 1e-12 else -float(np.sum(y_local * slopes_y) / denom)
+                        coords = x_local if axis_name == "X" else y_local
+                        slopes = slopes_x if axis_name == "X" else slopes_y
+                        image_height = float(np.mean(coords))
+                        # Best-focus shift = the longitudinal distance that minimises
+                        # the transverse spread *about the centroid*. The deviations
+                        # must be measured relative to the chief/centroid ray, not in
+                        # absolute image coordinates -- otherwise the field offset and
+                        # chief-ray slope dominate and the result collapses to the
+                        # ray's axis-crossing distance (tens of mm), not the field
+                        # curvature (sub-mm).
+                        coords_rel = coords - image_height
+                        slopes_rel = slopes - float(np.mean(slopes))
+                        denom = float(np.sum(slopes_rel**2))
+                        focus_shift = 0.0 if denom <= 1e-12 else -float(np.sum(coords_rel * slopes_rel) / denom)
 
                         measured_fields.append(field_value)
                         image_heights.append(image_height)
@@ -1381,6 +1395,13 @@ class AnalysisPlotService:
                     fields = np.asarray(measured_fields, dtype=float)
                     heights = np.asarray(image_heights, dtype=float)
                     focus = np.asarray(focus_shifts, dtype=float)
+                    # Reference the best-focus shift to the on-axis (field 0)
+                    # focus so the panel shows the field-dependent curvature
+                    # (Zemax convention: the curves rise from ~0 at the axis),
+                    # not the constant defocus of wherever the image plane sits.
+                    if focus.size:
+                        on_axis = int(np.argmin(np.abs(fields)))
+                        focus = focus - focus[on_axis]
                     abs_fields = np.abs(fields)
                     abs_heights = np.abs(heights)
                     mask = abs_fields > 1e-9
