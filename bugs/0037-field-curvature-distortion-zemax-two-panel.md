@@ -1,5 +1,11 @@
 # 0037 — Field Curvature / Distortion should match the Zemax two-panel layout
 
+> **Superseded (2026-06-09, bug 0042):** the single two-panel cell was later split
+> into two independent single-panel analysis modes — `field_curvature` and
+> `distortion` — because at the UI aspect ratio the left panel slid under the right.
+> The `_plot_field_curvature_distortion_panels` method described below no longer
+> exists. See `bugs/0042-field-curvature-distortion-physics.md` (*Follow-up*).
+
 **Status:** Fixed (2026-06-08).
 **Component:** Field Curvature / Distortion analysis plot
 (`KrakenOS/UI/services/analysis_plot.py`).

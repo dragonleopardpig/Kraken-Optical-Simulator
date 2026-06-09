@@ -3948,18 +3948,20 @@ def phase_40_open3d_launch_cone_geometry(
 def phase_41_field_curvature_export_twin_axis(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """Field-curvature high-res export keeps the distortion panel (bug 0035).
+    """High-res export keeps twin-axis overlays (bug 0035).
 
     Clicking the analysis plot exports it to a high-resolution image, which used
-    to hide every axis except the clicked one -- dropping the distortion (the
-    "different after click" report). The field-curvature plot now draws the Zemax
-    two-panel layout where the distortion panel shares the field (y) axis; the
-    fix keeps any axis that shares an axis with the clicked one, so both panels
-    survive the export. The guard (`validate_field_curvature_export_twin_axis`)
-    is display-free, so it needs no Xvfb / inspector.
+    to hide every axis except the clicked one -- dropping any secondary-axis
+    series (the "different after click" report). The fix keeps any axis that
+    shares an axis with the clicked one. Field curvature and distortion are now
+    two separate single-panel modes (neither carries a twin), so the guard
+    (`validate_field_curvature_export_twin_axis`) exercises the same export logic
+    through the atmosphere plot, whose dispersion series is a real twinx overlay
+    sharing the primary x-axis. It is display-free, so it needs no Xvfb /
+    inspector.
     """
     result = PhaseResult(
-        name="Phase 41: field-curvature export keeps the distortion panel"
+        name="Phase 41: high-res export keeps twin-axis overlays"
     )
     try:
         from KrakenOS.UI.validate_field_curvature_export_twin_axis import run_checks
@@ -4013,24 +4015,27 @@ def phase_42_wavefront_function_solid_waterfall(
 def phase_43_field_curvature_distortion_panels(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """Field Curvature / Distortion renders the Zemax two-panel layout (bug 0037).
+    """Field Curvature and Distortion are two separate single-panel modes (bug 0037).
 
-    The old plot put field on the horizontal axis with the distortion overlaid on
-    a `twinx`. Zemax draws two side-by-side panels -- FIELD CURVATURE (tangential
-    T + sagittal S, mm) beside DISTORTION (percent) -- with the field on the
-    vertical axis, the panels sharing the field axis. The guard
-    (`validate_field_curvature_distortion_panels`) is display-free, so it needs
-    no Xvfb / inspector.
+    Field curvature and distortion are distinct optical concepts. KrakenOS used to
+    draw them together as one Zemax-style two-panel cell (FIELD CURVATURE beside
+    DISTORTION, sharing the field axis); at the UI aspect ratio the left panel slid
+    under the right, so they were split into two independent analysis items --
+    `field_curvature` (tangential T + sagittal S best focus, mm) and `distortion`
+    (percent vs field). Each draws a single full-cell panel with the field on the
+    vertical axis. The guard (`validate_field_curvature_distortion_panels`) asserts
+    one panel per mode (so the two can no longer overlap); it is display-free, so it
+    needs no Xvfb / inspector.
     """
     result = PhaseResult(
-        name="Phase 43: Field Curvature / Distortion renders the Zemax two-panel layout"
+        name="Phase 43: Field Curvature and Distortion are two separate single-panel modes"
     )
     try:
         from KrakenOS.UI.validate_field_curvature_distortion_panels import run_checks
         passed, notes = run_checks()
     except Exception as exc:  # pragma: no cover - defensive
         result.passed = False
-        result.notes.append(f"two-panel guard raised: {exc!r}")
+        result.notes.append(f"split-panel guard raised: {exc!r}")
         return result
     result.passed = bool(passed)
     result.detail["checks"] = len(notes)
@@ -4038,7 +4043,7 @@ def phase_43_field_curvature_distortion_panels(
         if note.startswith("FAIL") or note.startswith("SKIP"):
             result.notes.append(note)
     if not result.passed and not result.notes:
-        result.notes.append("two-panel guard reported failure without detail")
+        result.notes.append("split-panel guard reported failure without detail")
     return result
 
 
@@ -4174,6 +4179,78 @@ def phase_47_open3d_2d_is_cone_slice(
     return result
 
 
+def phase_48_field_curvature_distortion_physics(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Field Curvature / Distortion curves are physically correct (bug 0042).
+
+    Bug 0037 fixed the two-panel layout, but the curve values were still wrong:
+    distortion was referenced to a global least-squares slope (so it missed the
+    origin and could grow the wrong way), and the tangential/sagittal curves came
+    from two independent field scans that measured the same in-plane spread (so
+    T == S and the astigmatism vanished). The fix references distortion to the
+    paraxial magnification and runs a single meridional scan that reads tangential
+    focus from the in-plane spread and sagittal focus from the perpendicular
+    spread. The guard (`validate_field_curvature_astigmatism_distortion`) asserts
+    distortion passes through the origin, grows with field, and that T != S.
+    Display-free, so it needs no Xvfb / inspector.
+    """
+    result = PhaseResult(
+        name="Phase 48: Field Curvature / Distortion curves are physically correct"
+    )
+    try:
+        from KrakenOS.UI.validate_field_curvature_astigmatism_distortion import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"distortion-physics guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("distortion-physics guard reported failure without detail")
+    return result
+
+
+def phase_49_field_curvature_curve_smoothness(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Field Curvature T/S curves draw as smooth arcs (bug 0043).
+
+    The tangential focus bends hard near the edge field; at the ~0.7 deg raw
+    field-sample spacing that region rendered as straight chords with visible
+    corners ("T-curve not smooth"). The fix resamples the aggregated samples
+    onto a dense field grid with a shape-preserving monotone cubic (PCHIP) in
+    `_field_curve_xy`, so the drawn line is a smooth arc that still passes through
+    every real sample (edge turnover kept, not flattened). The guard
+    (`validate_field_curvature_curve_smoothness`) reads the *actually drawn* solid
+    T line and asserts it is densified, its max segment turning angle is small
+    (chords spike to ~33 deg), and its value range still matches the raw focus
+    samples. Display-free, so it needs no Xvfb / inspector.
+    """
+    result = PhaseResult(
+        name="Phase 49: Field Curvature T/S curves draw as smooth arcs"
+    )
+    try:
+        from KrakenOS.UI.validate_field_curvature_curve_smoothness import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"curve-smoothness guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("curve-smoothness guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -4267,6 +4344,8 @@ def main() -> int:
             phase_45_high_res_export_size_normalized,
             phase_46_open3d_cone_density_reads_as_cone,
             phase_47_open3d_2d_is_cone_slice,
+            phase_48_field_curvature_distortion_physics,
+            phase_49_field_curvature_curve_smoothness,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

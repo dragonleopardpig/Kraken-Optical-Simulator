@@ -1,5 +1,12 @@
 # 0035 — Distortion series disappears after clicking the field-curvature plot
 
+> **Note (2026-06-09, bug 0042):** the `_high_res_export_kept_axes` fix below still
+> stands (the export keeps any axis sharing an axis with the clicked one). Field
+> curvature and distortion were since split into two single-panel modes, so the
+> field-curvature plot no longer carries a distortion twin; the guard (Phase 41)
+> now exercises the same export logic through the atmosphere plot's `twinx`
+> dispersion overlay.
+
 **Status:** Fixed (2026-06-08).
 **Component:** high-res click-to-export of an analysis axis
 (`KrakenOS/UI/services/layout_plot_interaction.py`).

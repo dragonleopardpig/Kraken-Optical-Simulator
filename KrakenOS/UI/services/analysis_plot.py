@@ -11,6 +11,7 @@ import KrakenOS as Kos
 import numpy as np
 from matplotlib import colormaps
 from matplotlib.ticker import MaxNLocator
+from scipy.interpolate import PchipInterpolator
 
 
 def _layout_module():
@@ -38,32 +39,36 @@ class AnalysisPlotService:
     def _field_curve_xy(field_vals: np.ndarray, series_vals: np.ndarray) -> "tuple[np.ndarray, np.ndarray]":
         """Smooth (value, field) curve for a Zemax-style vertical-field panel.
 
-        Field curvature and distortion are even functions of the field, so we
-        fit the values against the *normalised* field-squared. That collapses
-        the +/- field pair onto one branch, anchors the curve near the axis at
-        field 0, and -- because the regressor is normalised to [0, 1] -- keeps
-        the polynomial fit well conditioned (raw |field| in degrees made polyfit
-        poorly conditioned and let the curve wander off the origin).
+        Field curvature and distortion are even in field, so samples are grouped
+        by |field| (averaging any +/- pair or repeat) and ordered from the axis
+        (field 0) outward. The aggregated samples are then resampled onto a dense
+        field grid with a shape-preserving monotone cubic (PCHIP) so the drawn
+        line is a smooth arc rather than polygonal chords.
+
+        Those chords were the actual "T curve not smooth" defect: the tangential
+        focus bends hard near the edge field, and at the ~0.7 deg sample spacing
+        that fast-curving region rendered as visible corners. PCHIP passes exactly
+        through every real sample (so the genuine edge turnover is kept, not
+        flattened) and does not overshoot -- unlike the degree-2 fit tried earlier,
+        which broke the inflection into pieces.
         """
         fields = np.abs(np.asarray(field_vals, dtype=float))
         values = np.asarray(series_vals, dtype=float)
-        order = np.argsort(fields)
-        fields = fields[order]
-        values = values[order]
-        field_max = float(fields.max()) if fields.size else 0.0
-        if fields.size < 3 or field_max <= 1e-9:
+        if fields.size == 0:
             return values, fields
-        norm_sq = (fields / field_max) ** 2
-        degree = min(2, int(np.unique(np.round(norm_sq, 9)).size) - 1)
-        if degree < 1:
-            return values, fields
-        try:
-            coeffs = np.polyfit(norm_sq, values, degree)
-            smooth_field = np.linspace(0.0, field_max, 120)
-            smooth_norm_sq = (smooth_field / field_max) ** 2
-            return np.polyval(coeffs, smooth_norm_sq), smooth_field
-        except Exception:
-            return values, fields
+        keys = np.round(fields, 9)
+        unique = np.unique(keys)
+        avg_fields = np.empty(unique.size, dtype=float)
+        avg_values = np.empty(unique.size, dtype=float)
+        for i, key in enumerate(unique):
+            sel = keys == key
+            avg_fields[i] = float(np.mean(fields[sel]))
+            avg_values[i] = float(np.mean(values[sel]))
+        if avg_fields.size < 3:
+            return avg_values, avg_fields
+        dense_fields = np.linspace(float(avg_fields[0]), float(avg_fields[-1]), 480)
+        dense_values = PchipInterpolator(avg_fields, avg_values)(dense_fields)
+        return dense_values, dense_fields
 
     @staticmethod
     def _symmetric_axis_limit(*value_arrays: np.ndarray) -> float:
@@ -82,49 +87,61 @@ class AnalysisPlotService:
         nice = 1.0 if base <= 1.0 else (2.0 if base <= 2.0 else (5.0 if base <= 5.0 else 10.0))
         return float(nice * (10.0 ** exponent))
 
-    def _plot_field_curvature_distortion_panels(
+    # Portrait box aspect (taller than wide) for the single-panel Field Curvature
+    # and Distortion plots -- the field runs up the vertical axis, so a portrait
+    # panel reads naturally and centres in the analysis cell.
+    _FIELD_PANEL_BOX_ASPECT = 1.3
+
+    @staticmethod
+    def _field_curvature_field_max(axis_results, field_limit: float) -> float:
+        source = axis_results.get("Y") or axis_results.get("X")
+        field_reference = source["fields"]
+        field_max = float(np.max(field_reference)) if field_reference.size else max(field_limit, 1.0)
+        if field_max <= 1e-9:
+            field_max = max(field_limit, 1.0)
+        return field_max
+
+    def _style_field_panel(
+        self, panel, limit: float, title: str, xlabel: str,
+        field_max: float, field_units: str, wavelength: float, frame_color: str,
+    ) -> None:
+        panel.set_box_aspect(self._FIELD_PANEL_BOX_ASPECT)
+        panel.set_xlim(-limit, limit)
+        panel.set_ylim(0.0, field_max)
+        panel.axvline(0.0, color=frame_color, linewidth=0.8)
+        panel.set_title(title, fontsize=9.0, color=frame_color, pad=16)
+        panel.set_xlabel(xlabel, fontsize=7.5)
+        panel.set_ylabel(f"Field ({field_units})", fontsize=7.5)
+        panel.tick_params(axis="both", labelsize=6.5, direction="in")
+        panel.xaxis.set_major_locator(MaxNLocator(nbins=4, symmetric=True))
+        for spine_name in ("top", "right"):
+            panel.spines[spine_name].set_visible(False)
+        panel.text(0.5, 1.0, "+Y", transform=panel.transAxes, ha="center", va="bottom",
+                   fontsize=7.0, color=frame_color)
+        panel.text(
+            0.0, -0.16,
+            f"{title}   max field {field_max:.4g} {field_units}   {wavelength:.3f} um",
+            transform=panel.transAxes, fontsize=6.2, color=frame_color, ha="left", va="top",
+        )
+
+    def _plot_field_curvature_panel(
         self,
         analysis_ax,
         axis_results: "dict[str, dict[str, np.ndarray]]",
         field_type: str,
         field_limit: float,
         wavelength: float,
-    ) -> "tuple[Any, Any]":
-        """Zemax-style two-panel Field Curvature / Distortion plot.
-
-        Left panel: tangential (T) and sagittal (S) best-focus shift in mm.
-        Right panel: distortion in percent. Both put the field on the vertical
-        axis (Zemax's +Y convention). The right panel shares the field axis with
-        the host (left) panel, so clicking the plot keeps both panels in the
-        high-res export (see bug 0035) -- the distortion can no longer be dropped.
-        """
-        figure = analysis_ax.figure
+    ):
+        """Single-panel Field Curvature plot: tangential (T, solid) and sagittal
+        (S, dashed) best-focus shift in mm, field on the vertical axis (Zemax +Y).
+        Field curvature and distortion are distinct concepts and now render as
+        separate analysis items (was the combined two-panel layout)."""
         line_color = "#2031c0"
         frame_color = "#1f2937"
-
-        # plot_analysis pins a box aspect on the host axis; clear it so the two
-        # explicitly positioned panels keep equal height and stay aligned.
-        analysis_ax.set_box_aspect(None)
-
-        # Tangential = meridional (Y) focus, sagittal = X focus.
         tangential = axis_results.get("Y")
         sagittal = axis_results.get("X")
-        distortion_source = tangential or sagittal
-        field_reference = distortion_source["fields"]
-        field_max = float(np.max(field_reference)) if field_reference.size else max(field_limit, 1.0)
-        if field_max <= 1e-9:
-            field_max = max(field_limit, 1.0)
-
-        # Split the host cell into two side-by-side panels sharing the field axis.
-        host_pos = analysis_ax.get_position()
-        gap = 0.16 * host_pos.width
-        panel_width = 0.5 * (host_pos.width - gap)
-        analysis_ax.set_position([host_pos.x0, host_pos.y0, panel_width, host_pos.height])
-        dist_ax = figure.add_axes(
-            [host_pos.x0 + panel_width + gap, host_pos.y0, panel_width, host_pos.height],
-            sharey=analysis_ax,
-        )
-        dist_ax.set_box_aspect(None)
+        field_max = self._field_curvature_field_max(axis_results, field_limit)
+        field_units = "deg" if field_type == "angle" else "mm"
 
         focus_values: list[np.ndarray] = []
         if tangential is not None:
@@ -141,39 +158,163 @@ class AnalysisPlotService:
                              ha="left", va="top")
 
         focus_limit = self._symmetric_axis_limit(*focus_values) if focus_values else 1.0
-        dist_curve_x, dist_curve_y = self._field_curve_xy(
-            distortion_source["fields"], distortion_source["distortion"]
-        )
-        dist_ax.plot(dist_curve_x, dist_curve_y, color=line_color, linewidth=1.4)
-        dist_limit = self._symmetric_axis_limit(distortion_source["distortion"])
+        self._style_field_panel(analysis_ax, focus_limit, "FIELD CURVATURE", "Millimeters",
+                                field_max, field_units, wavelength, frame_color)
+        return analysis_ax
 
+    def _plot_distortion_panel(
+        self,
+        analysis_ax,
+        axis_results: "dict[str, dict[str, np.ndarray]]",
+        field_type: str,
+        field_limit: float,
+        wavelength: float,
+    ):
+        """Single-panel Distortion plot: chief-ray distortion in percent, field on
+        the vertical axis (Zemax +Y). Separate analysis item from Field Curvature."""
+        line_color = "#2031c0"
+        frame_color = "#1f2937"
+        source = axis_results.get("Y") or axis_results.get("X")
+        field_max = self._field_curvature_field_max(axis_results, field_limit)
         field_units = "deg" if field_type == "angle" else "mm"
-        for panel, limit, title, xlabel in (
-            (analysis_ax, focus_limit, "FIELD CURVATURE", "Millimeters"),
-            (dist_ax, dist_limit, "DISTORTION", "Percent"),
-        ):
-            panel.set_xlim(-limit, limit)
-            panel.set_ylim(0.0, field_max)
-            panel.axvline(0.0, color=frame_color, linewidth=0.8)
-            panel.set_title(title, fontsize=9.0, color=frame_color, pad=16)
-            panel.set_xlabel(xlabel, fontsize=7.5)
-            panel.tick_params(axis="both", labelsize=6.5, direction="in")
-            panel.xaxis.set_major_locator(MaxNLocator(nbins=4, symmetric=True))
-            for spine_name in ("top", "right"):
-                panel.spines[spine_name].set_visible(False)
-            panel.text(0.5, 1.0, "+Y", transform=panel.transAxes, ha="center", va="bottom",
-                       fontsize=7.0, color=frame_color)
 
-        analysis_ax.set_ylabel(f"Field ({field_units})", fontsize=7.5)
-        dist_ax.tick_params(axis="y", labelleft=False)
+        dist_curve_x, dist_curve_y = self._field_curve_xy(source["fields"], source["distortion"])
+        analysis_ax.plot(dist_curve_x, dist_curve_y, color=line_color, linewidth=1.4)
+        dist_limit = self._symmetric_axis_limit(source["distortion"])
+        self._style_field_panel(analysis_ax, dist_limit, "DISTORTION", "Percent",
+                                field_max, field_units, wavelength, frame_color)
+        return analysis_ax
 
-        max_field_txt = f"max field {field_max:.4g} {field_units}"
-        figure.text(
-            host_pos.x0, host_pos.y0 - 0.26 * host_pos.height,
-            f"FIELD CURVATURE / DISTORTION   {max_field_txt}   {wavelength:.3f} um",
-            fontsize=6.2, color=frame_color, ha="left", va="top",
+    def _sample_field_curvature_distortion(self, system, wavelength: float):
+        """Trace the dense meridional field scan shared by the Field Curvature and
+        Distortion analyses. Returns ``(axis_results, field_type, field_limit)`` or
+        ``None`` if too few field samples survive.
+
+        At each field the tangential and sagittal foci come from *isolated* pupil
+        fans (a pupil-Y fan for tangential, a pupil-X fan for sagittal) so off-axis
+        coma/vignetting in the meridional plane cannot corrupt the tangential
+        estimate; the distortion image height comes from the chief ray.
+        """
+        field_type = "angle" if self._current_object_mode() == "Infinity" else "height"
+        field_limit = self._current_field_angle_deg() if field_type == "angle" else self._current_field_height()
+        if field_limit <= 1e-9:
+            field_limit = 5.0 if field_type == "angle" else max(self._current_field_height(), 0.5)
+        field_sample_count = max(21, self._current_field_count() * 2 + 1)
+        field_samples = list(np.linspace(0.0, field_limit, field_sample_count))
+        self.append_debug(
+            f"Field curvature/distortion sampling: type={field_type}, limit={field_limit:.4g}, count={field_sample_count}"
         )
-        return analysis_ax, dist_ax
+        fan_sample_count = max(15, self._current_ray_count())
+        axis_results: dict[str, dict[str, np.ndarray]] = {}
+        total_steps = len(field_samples) * 2
+        completed_steps = 0
+
+        def _best_focus(coords: np.ndarray, slopes: np.ndarray) -> float:
+            # Longitudinal shift that minimises the transverse spread about the
+            # centroid. Deviations are measured relative to the chief/centroid ray,
+            # not in absolute image coordinates -- otherwise the field offset and
+            # chief-ray slope dominate and the result collapses to the axis-crossing
+            # distance (tens of mm) rather than the field curvature (sub-mm).
+            centroid = float(np.mean(coords))
+            slope_mean = float(np.mean(slopes))
+            coords_rel = coords - centroid
+            slopes_rel = slopes - slope_mean
+            denom = float(np.sum(slopes_rel**2))
+            if denom <= 1e-12:
+                return 0.0
+            return -float(np.sum(coords_rel * slopes_rel) / denom)
+
+        measured_fields: list[float] = []
+        image_heights: list[float] = []
+        tangential_focus: list[float] = []
+        sagittal_focus: list[float] = []
+        worker_counts: list[int] = []
+
+        def _sample(pattern: str, field_value: float):
+            return self._build_geometric_image_samples_full(
+                system,
+                wavelength,
+                sample_count=fan_sample_count,
+                pattern=pattern,
+                surface_index=self._analysis_surface_index(),
+                aperture_type=self._current_aperture_type(),
+                aperture_value=self._current_aperture_value(),
+                field_type=field_type,
+                field_x=0.0,
+                field_y=field_value,
+            )
+
+        for field_value in field_samples:
+            completed_steps += 2
+            self._update_analysis_progress("Sampling field curvature", completed_steps, total_steps)
+            mer_x, mer_y, _mz, mer_l, mer_m, mer_n, mer_workers = _sample("fany", field_value)
+            sag_x, sag_y, _sz, sag_l, sag_m, sag_n, sag_workers = _sample("fanx", field_value)
+            if mer_y.size < 3 or sag_x.size < 3:
+                continue
+            chief_x, chief_y, _cz, _cl, _cm, _cn, _cw = _sample("chief", field_value)
+
+            slopes_mer_y = mer_m / np.where(np.abs(mer_n) < 1e-9, np.sign(mer_n) * 1e-9 + 1e-9, mer_n)
+            slopes_sag_x = sag_l / np.where(np.abs(sag_n) < 1e-9, np.sign(sag_n) * 1e-9 + 1e-9, sag_n)
+
+            chief_height = float(chief_y[0]) if chief_y.size else float(np.mean(mer_y))
+
+            worker_counts.append(max(mer_workers, sag_workers))
+            measured_fields.append(field_value)
+            image_heights.append(chief_height)
+            tangential_focus.append(_best_focus(mer_y, slopes_mer_y))
+            sagittal_focus.append(_best_focus(sag_x, slopes_sag_x))
+
+        if len(measured_fields) >= 2:
+            fields = np.asarray(measured_fields, dtype=float)
+            heights = np.asarray(image_heights, dtype=float)
+            abs_fields = np.abs(fields)
+            abs_heights = np.abs(heights)
+            on_axis = int(np.argmin(abs_fields))
+
+            def _curvature(focus_list: "list[float]") -> np.ndarray:
+                # Reference each curve to the on-axis focus so the panel shows the
+                # field-dependent curvature rising from ~0 at the axis, not the
+                # constant defocus of wherever the image plane sits.
+                focus = np.asarray(focus_list, dtype=float)
+                if focus.size:
+                    focus = focus - focus[on_axis]
+                return focus
+
+            # Distortion is referenced to the *paraxial* magnification (image height
+            # per field as field -> 0), not a global least-squares slope, so it is
+            # ~0 on axis and grows monotonically toward the edge (matching Zemax).
+            distortion = np.zeros_like(abs_heights)
+            mask = abs_fields > 1e-9
+            if np.count_nonzero(mask) >= 2:
+                f_on = abs_fields[mask]
+                mag = abs_heights[mask] / f_on
+                if np.unique(np.round(f_on, 9)).size >= 2:
+                    mag_paraxial = float(np.polyfit(f_on**2, mag, 1)[-1])
+                else:
+                    mag_paraxial = float(np.min(mag))
+                if not np.isfinite(mag_paraxial) or abs(mag_paraxial) <= 1e-12:
+                    mag_paraxial = float(np.mean(mag))
+                ideal = mag_paraxial * abs_fields
+                valid = np.abs(ideal) > 1e-12
+                distortion[valid] = (abs_heights[valid] - ideal[valid]) / ideal[valid] * 100.0
+
+            workers_arr = np.asarray([max(worker_counts) if worker_counts else 1], dtype=float)
+            axis_results["Y"] = {
+                "fields": abs_fields,
+                "focus": _curvature(tangential_focus),
+                "distortion": distortion,
+                "workers": workers_arr,
+            }
+            axis_results["X"] = {
+                "fields": abs_fields,
+                "focus": _curvature(sagittal_focus),
+                "distortion": distortion,
+                "workers": workers_arr,
+            }
+
+        if not axis_results:
+            return None
+        return axis_results, field_type, field_limit
 
     def plot_analysis(self, analysis_ax, system, rays, wavelength: float) -> None:
         le = _layout_module()
@@ -1319,137 +1460,41 @@ class AnalysisPlotService:
                 self._finish_analysis_progress("Polarization analysis", success=False)
             return
 
-        if self.analysis_mode == "field_curvature":
+        if self.analysis_mode in ("field_curvature", "distortion"):
+            # Field Curvature and Distortion are distinct concepts and render as
+            # separate analysis items; both draw from one shared meridional scan.
+            is_distortion = self.analysis_mode == "distortion"
+            label = "Distortion" if is_distortion else "Field curvature"
             try:
-                self._set_analysis_parallel_status("Field curvature / distortion", 1, True)
-                self._begin_analysis_progress("Field curvature / distortion")
-                field_type = "angle" if self._current_object_mode() == "Infinity" else "height"
-                field_limit = self._current_field_angle_deg() if field_type == "angle" else self._current_field_height()
-                if field_limit <= 1e-9:
-                    field_limit = 5.0 if field_type == "angle" else max(self._current_field_height(), 0.5)
-                field_sample_count = max(11, self._current_field_count())
-                field_samples = list(np.linspace(-field_limit, field_limit, field_sample_count))
-                self.append_debug(
-                    f"Field curvature/distortion sampling: type={field_type}, limit={field_limit:.4g}, count={field_sample_count}"
-                )
-                sample_count = max(18, self._current_ray_count() * 3)
-                axis_results: dict[str, dict[str, np.ndarray]] = {}
-                total_steps = len(field_samples) * 2
-                completed_steps = 0
-
-                for axis_name in ("X", "Y"):
-                    measured_fields: list[float] = []
-                    image_heights: list[float] = []
-                    focus_shifts: list[float] = []
-                    worker_counts: list[int] = []
-                    for field_value in field_samples:
-                        completed_steps += 1
-                        self._update_analysis_progress(
-                            f"Sampling {axis_name}-field",
-                            completed_steps,
-                            total_steps,
-                        )
-                        field_x = field_value if axis_name == "X" else 0.0
-                        field_y = field_value if axis_name == "Y" else 0.0
-                        x_local, y_local, _z_local, l_local, m_local, n_local, worker_count = self._build_geometric_image_samples_full(
-                            system,
-                            wavelength,
-                            sample_count=sample_count,
-                            pattern="hexapolar",
-                            surface_index=self._analysis_surface_index(),
-                            aperture_type=self._current_aperture_type(),
-                            aperture_value=self._current_aperture_value(),
-                            field_type=field_type,
-                            field_x=field_x,
-                            field_y=field_y,
-                        )
-                        if x_local.size < 4:
-                            continue
-                        worker_counts.append(worker_count)
-
-                        slopes_x = l_local / np.where(np.abs(n_local) < 1e-9, np.sign(n_local) * 1e-9 + 1e-9, n_local)
-                        slopes_y = m_local / np.where(np.abs(n_local) < 1e-9, np.sign(n_local) * 1e-9 + 1e-9, n_local)
-
-                        coords = x_local if axis_name == "X" else y_local
-                        slopes = slopes_x if axis_name == "X" else slopes_y
-                        image_height = float(np.mean(coords))
-                        # Best-focus shift = the longitudinal distance that minimises
-                        # the transverse spread *about the centroid*. The deviations
-                        # must be measured relative to the chief/centroid ray, not in
-                        # absolute image coordinates -- otherwise the field offset and
-                        # chief-ray slope dominate and the result collapses to the
-                        # ray's axis-crossing distance (tens of mm), not the field
-                        # curvature (sub-mm).
-                        coords_rel = coords - image_height
-                        slopes_rel = slopes - float(np.mean(slopes))
-                        denom = float(np.sum(slopes_rel**2))
-                        focus_shift = 0.0 if denom <= 1e-12 else -float(np.sum(coords_rel * slopes_rel) / denom)
-
-                        measured_fields.append(field_value)
-                        image_heights.append(image_height)
-                        focus_shifts.append(focus_shift)
-
-                    if len(measured_fields) < 2:
-                        continue
-
-                    fields = np.asarray(measured_fields, dtype=float)
-                    heights = np.asarray(image_heights, dtype=float)
-                    focus = np.asarray(focus_shifts, dtype=float)
-                    # Reference the best-focus shift to the on-axis (field 0)
-                    # focus so the panel shows the field-dependent curvature
-                    # (Zemax convention: the curves rise from ~0 at the axis),
-                    # not the constant defocus of wherever the image plane sits.
-                    if focus.size:
-                        on_axis = int(np.argmin(np.abs(fields)))
-                        focus = focus - focus[on_axis]
-                    abs_fields = np.abs(fields)
-                    abs_heights = np.abs(heights)
-                    mask = abs_fields > 1e-9
-                    if np.count_nonzero(mask) >= 2:
-                        slope = float(np.dot(abs_fields[mask], abs_heights[mask]) / max(np.dot(abs_fields[mask], abs_fields[mask]), 1e-12))
-                        ideal = slope * abs_fields
-                        distortion = np.zeros_like(abs_heights)
-                        valid = ideal > 1e-12
-                        distortion[valid] = (abs_heights[valid] - ideal[valid]) / ideal[valid] * 100.0
-                    else:
-                        distortion = np.zeros_like(abs_heights)
-
-                    axis_results[axis_name] = {
-                        "fields": abs_fields,
-                        "focus": focus,
-                        "distortion": distortion,
-                        "workers": np.asarray([max(worker_counts) if worker_counts else 1], dtype=float),
-                    }
-
-                if not axis_results:
+                self._set_analysis_parallel_status(label, 1, True)
+                self._begin_analysis_progress(label)
+                sampled = self._sample_field_curvature_distortion(system, wavelength)
+                if sampled is None:
                     raise RuntimeError("Not enough field samples for field-curvature/distortion")
-
-                self._plot_field_curvature_distortion_panels(
-                    analysis_ax,
-                    axis_results,
-                    field_type,
-                    field_limit,
-                    wavelength,
-                )
+                axis_results, field_type, field_limit = sampled
+                if is_distortion:
+                    self._plot_distortion_panel(analysis_ax, axis_results, field_type, field_limit, wavelength)
+                else:
+                    self._plot_field_curvature_panel(analysis_ax, axis_results, field_type, field_limit, wavelength)
                 self.append_debug(
-                    "Field curvature/distortion ok: "
+                    f"{label} ok: "
                     + ", ".join(
                         f"{axis}={len(data['fields'])},workers={int(data['workers'][0])}"
                         for axis, data in axis_results.items()
                     )
                 )
                 self._set_analysis_parallel_status(
-                    "Field curvature / distortion",
+                    label,
                     max(int(data["workers"][0]) for data in axis_results.values()),
                     True,
                 )
-                self._finish_analysis_progress("Field curvature / distortion", success=True)
+                self._finish_analysis_progress(label, success=True)
             except Exception as exc:
-                self._set_analysis_parallel_status("Field curvature / distortion", 1, True)
-                self.append_debug(f"Field curvature/distortion error: {exc}")
-                analysis_ax.text(0.5, 0.5, "Field curvature/distortion unavailable", ha="center", va="center")
+                self._set_analysis_parallel_status(label, 1, True)
+                self.append_debug(f"{label} error: {exc}")
+                analysis_ax.text(0.5, 0.5, f"{label} unavailable", ha="center", va="center")
                 analysis_ax.set_axis_off()
-                self._finish_analysis_progress("Field curvature / distortion", success=False)
+                self._finish_analysis_progress(label, success=False)
             return
 
         if self.analysis_mode == "field_map":

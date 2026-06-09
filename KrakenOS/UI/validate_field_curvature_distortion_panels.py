@@ -1,20 +1,24 @@
-"""Guard: Field Curvature / Distortion renders as the Zemax two-panel layout.
+"""Guard: Field Curvature and Distortion render as two SEPARATE single-panel items.
 
-KrakenOS used to draw field curvature and distortion as a single axis with the
-distortion overlaid on a ``twinx`` (focus shift on the left spine, distortion on
-the right), field on the horizontal axis. Zemax instead draws two side-by-side
-panels -- FIELD CURVATURE (tangential T + sagittal S, in mm) beside DISTORTION
-(percent) -- with the field on the vertical axis (its +Y convention). This guards
-bug 0037: the field-curvature analysis must produce that two-panel layout.
+Field curvature and distortion are distinct optical concepts. KrakenOS used to draw
+them together as one Zemax-style two-panel cell (FIELD CURVATURE beside DISTORTION,
+sharing the field axis -- bug 0037). Packing both panels into a single analysis cell
+made the left panel slide under the right one at the UI's aspect ratio, so they were
+split into two independent analysis items: ``field_curvature`` (tangential T +
+sagittal S best focus, in mm) and ``distortion`` (percent vs field). Each draws a
+single full-cell panel with the field on the vertical axis (Zemax +Y). This guards
+that split (and, by asserting a single panel per mode, that the two no longer overlap).
 
 All checks are display-free (Agg backend, no Xvfb / GPU needed):
 
-A. Two panels are drawn, titled FIELD CURVATURE and DISTORTION.
-B. The distortion panel shares the field (y) axis with the field-curvature panel.
-C. The field is on the vertical axis (the shared y-range spans 0..max field),
-   and each panel has a vertical x=0 reference line.
+A. ``field_curvature`` renders exactly one analysis panel, titled FIELD CURVATURE,
+   with no DISTORTION panel beside it.
+B. ``distortion`` renders exactly one analysis panel, titled DISTORTION, with no
+   FIELD CURVATURE panel beside it.
+C. Field is on the vertical axis (ylim 0..max) with a vertical x=0 reference line,
+   in both panels.
 D. The field-curvature panel carries both the tangential (T) and sagittal (S)
-   curves.
+   curves; the distortion panel carries its distortion curve.
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_field_curvature_distortion_panels
@@ -38,7 +42,7 @@ from KrakenOS.UI.layout_editor import (
 )
 from KrakenOS.UI.render_layout_snapshot import _build_runtime_system, _snapshot_editor
 
-LAYOUT_TITLE = "Double Gauss PSF MTF Wavefront Zernike Case Study"
+LAYOUT_TITLE = "Zemax Double Gauss 28 Degree Field"
 
 
 def _layout_path_by_title(title: str) -> "Path | None":
@@ -60,6 +64,31 @@ def _panel_by_title(axes, title: str):
     return None
 
 
+def _has_axis_line(panel) -> bool:
+    return any(
+        len(line.get_xdata()) == 2
+        and abs(float(line.get_xdata()[0])) < 1e-9
+        and abs(float(line.get_xdata()[1])) < 1e-9
+        for line in panel.lines
+    )
+
+
+def _render_mode(editor, system, mode):
+    """Render one analysis mode into a fresh figure; return (figure, analysis_ax)
+    or (None, None) if the analysis is unavailable on this clone."""
+    figure = Figure(figsize=(5.0, 4.0))
+    analysis_ax = figure.add_subplot(111)
+    analysis_ax.set_box_aspect(0.62)
+    editor.figure = figure
+    editor.analysis_mode = mode
+    editor._analysis_ax = analysis_ax
+    editor._analysis_axes = [analysis_ax]
+    editor._plot_analysis(analysis_ax, system, None, 0.55)
+    if any("unavailable" in str(getattr(t, "get_text", lambda: "")()) for t in analysis_ax.texts):
+        return None, None
+    return figure, analysis_ax
+
+
 def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
     notes: list[str] = []
     passed = True
@@ -79,62 +108,64 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
     editor._normalize_special_rows()
     system = _build_runtime_system(layout_path, editor.rows)
 
-    editor.figure = Figure(figsize=(6.0, 3.2))
-    analysis_ax = editor.figure.add_subplot(111)
-    editor.analysis_mode = "field_curvature"
-    editor._analysis_ax = analysis_ax
-    editor._analysis_axes = [analysis_ax]
-    editor._plot_analysis(analysis_ax, system, None, 0.55)
-
-    if any("unavailable" in str(getattr(t, "get_text", lambda: "")()) for t in analysis_ax.texts):
-        notes.append("SKIP: field-curvature analysis unavailable on this clone")
+    fc_fig, fc_ax = _render_mode(editor, system, "field_curvature")
+    dist_fig, dist_ax = _render_mode(editor, system, "distortion")
+    if fc_fig is None or dist_fig is None:
+        notes.append("SKIP: field-curvature/distortion analysis unavailable on this clone")
         return passed, notes
 
-    axes = list(editor.figure.axes)
+    fc_axes = list(fc_fig.axes)
+    dist_axes = list(dist_fig.axes)
 
-    # A. Two titled panels.
-    fc_panel = _panel_by_title(axes, "FIELD CURVATURE")
-    dist_panel = _panel_by_title(axes, "DISTORTION")
-    if fc_panel is None:
-        notes.append("FAIL: no FIELD CURVATURE panel")
+    # A. field_curvature: exactly one panel, FIELD CURVATURE, no DISTORTION sibling.
+    if len(fc_axes) != 1:
+        notes.append(f"FAIL: field_curvature drew {len(fc_axes)} panels, expected 1 (concepts are split)")
         passed = False
-    if dist_panel is None:
-        notes.append("FAIL: no DISTORTION panel")
+    if _panel_by_title(fc_axes, "FIELD CURVATURE") is None:
+        notes.append("FAIL: no FIELD CURVATURE panel in field_curvature mode")
         passed = False
-    if fc_panel is None or dist_panel is None:
+    if _panel_by_title(fc_axes, "DISTORTION") is not None:
+        notes.append("FAIL: field_curvature mode still draws a DISTORTION panel (not split)")
+        passed = False
+
+    # B. distortion: exactly one panel, DISTORTION, no FIELD CURVATURE sibling.
+    if len(dist_axes) != 1:
+        notes.append(f"FAIL: distortion drew {len(dist_axes)} panels, expected 1 (concepts are split)")
+        passed = False
+    if _panel_by_title(dist_axes, "DISTORTION") is None:
+        notes.append("FAIL: no DISTORTION panel in distortion mode")
+        passed = False
+    if _panel_by_title(dist_axes, "FIELD CURVATURE") is not None:
+        notes.append("FAIL: distortion mode still draws a FIELD CURVATURE panel (not split)")
+        passed = False
+
+    if not passed:
         return False, notes
 
-    # B. The distortion panel shares the field (y) axis with the FC panel.
-    if dist_panel not in list(fc_panel.get_shared_y_axes().get_siblings(fc_panel)):
-        notes.append("FAIL: distortion panel does not share the field (y) axis")
-        passed = False
-
-    # C. Field on the vertical axis: shared y spans 0..max field, and each panel
-    #    has a vertical x=0 reference line.
-    y_lo, y_hi = fc_panel.get_ylim()
-    if not (abs(y_lo) < 1e-6 and y_hi > 0):
-        notes.append(f"FAIL: field axis is not vertical 0..max (ylim={y_lo:.3g}..{y_hi:.3g})")
-        passed = False
-    for name, panel in (("field-curvature", fc_panel), ("distortion", dist_panel)):
-        has_axis_line = any(
-            len(line.get_xdata()) == 2 and abs(float(line.get_xdata()[0])) < 1e-9
-            and abs(float(line.get_xdata()[1])) < 1e-9
-            for line in panel.lines
-        )
-        if not has_axis_line:
+    # C. Field on the vertical axis (0..max) with a vertical x=0 reference line.
+    for name, panel in (("field-curvature", fc_ax), ("distortion", dist_ax)):
+        y_lo, y_hi = panel.get_ylim()
+        if not (abs(y_lo) < 1e-6 and y_hi > 0):
+            notes.append(f"FAIL: {name} field axis not vertical 0..max (ylim={y_lo:.3g}..{y_hi:.3g})")
+            passed = False
+        if not _has_axis_line(panel):
             notes.append(f"FAIL: {name} panel has no vertical x=0 reference line")
             passed = False
 
-    # D. Both T and S curves are present in the FC panel.
-    fc_curves = [line for line in fc_panel.lines if len(line.get_xdata()) > 2]
+    # D. FC panel has both T and S curves; distortion panel has its curve.
+    fc_curves = [line for line in fc_ax.lines if len(line.get_xdata()) > 2]
     if len(fc_curves) < 2:
         notes.append(f"FAIL: field-curvature panel has {len(fc_curves)} curves, expected T and S")
+        passed = False
+    dist_curves = [line for line in dist_ax.lines if len(line.get_xdata()) > 2]
+    if len(dist_curves) < 1:
+        notes.append(f"FAIL: distortion panel has {len(dist_curves)} curves, expected 1")
         passed = False
 
     if verbose:
         notes.append(
-            f"panels={len(axes)}, fc_curves={len(fc_curves)}, "
-            f"ylim=({y_lo:.3g},{y_hi:.3g})"
+            f"fc_axes={len(fc_axes)}, dist_axes={len(dist_axes)}, "
+            f"fc_curves={len(fc_curves)}, dist_curves={len(dist_curves)}"
         )
     return passed, notes
 
@@ -144,9 +175,9 @@ def main() -> int:
     for note in notes:
         print(note)
     if passed:
-        print("[PASS] Field Curvature / Distortion renders the Zemax two-panel layout")
+        print("[PASS] Field Curvature and Distortion render as two separate single-panel items")
         return 0
-    print("[FAIL] Field-curvature two-panel layout guard")
+    print("[FAIL] Field-curvature/distortion split-panel guard")
     return 1
 
 

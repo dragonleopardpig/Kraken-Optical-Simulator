@@ -1059,7 +1059,8 @@ class LayoutShellControlsMixin:
             "psf": "PSF",
             "psf_map": "PSFMap",
             "rms": "RMS",
-            "field_curvature": "FC/Dist",
+            "field_curvature": "FldCurv",
+            "distortion": "Dist",
             "relative_illumination": "Illum",
             "polarization": "Polarization",
             "lateral_color": "LatClr",
@@ -1103,13 +1104,11 @@ class LayoutShellControlsMixin:
         else:
             self.show_layout_2d = not bool(self.__dict__.get("show_layout_2d", True))
         state = "shown" if self.show_layout_2d else "hidden"
+        # Defer the replot to the Update button, matching set_analysis_mode /
+        # set_layout_preview_mode -- toggling the checkbox only records the intent.
         if hasattr(self, "status_var"):
-            self.status_var.set(f"2D layout {state}.")
-        self.append_progress(f"2D layout {state}.")
-        try:
-            self.refresh_plot()
-        except Exception as exc:  # pragma: no cover - defensive UI guard
-            self.append_debug(f"2D toggle refresh skipped: {exc}")
+            self.status_var.set(f"2D layout {state}. Click Update.")
+        self.append_progress(f"2D layout {state} (pending update).")
 
     def _requested_trace_mode(self) -> str:
         trace_mode_var = self.__dict__.get("trace_mode_var")
@@ -1388,6 +1387,7 @@ class LayoutShellControlsMixin:
             "wavefront",
             "zernike",
             "field_curvature",
+            "distortion",
             "relative_illumination",
             "lateral_color",
             "field_map",

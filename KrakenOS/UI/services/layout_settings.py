@@ -667,6 +667,7 @@ class LayoutSettingsService:
             "psf_map",
             "rms",
             "field_curvature",
+            "distortion",
             "relative_illumination",
             "polarization",
             "lateral_color",

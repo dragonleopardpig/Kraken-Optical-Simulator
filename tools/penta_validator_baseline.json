@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-06-09T01:42:51+00:00",
+  "generated_at": "2026-06-09T09:19:26+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -49,7 +49,9 @@
     "44": "pass",
     "45": "pass",
     "46": "pass",
-    "47": "pass"
+    "47": "pass",
+    "48": "pass",
+    "49": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -93,12 +95,14 @@
     "38": "detector coverage -- sensor inside the real image circle",
     "39": "detector coverage live -- load auto-fill, disk suppressed, labels",
     "40": "Open 3D launch cone -- 2D fan stays flat, 3D revolves into a cone",
-    "41": "field-curvature export keeps the distortion panel",
+    "41": "high-res export keeps twin-axis overlays",
     "42": "Wavefront Function renders an opaque hidden-line waterfall",
-    "43": "Field Curvature / Distortion renders the Zemax two-panel layout",
+    "43": "Field Curvature and Distortion are two separate single-panel modes",
     "44": "Open 3D rebuilds the launch cone instead of reusing the 2D fan",
     "45": "High-res plot export normalises to a window-independent size",
     "46": "Open 3D launch cone reads as a cone (dense azimuths, drawn in full)",
-    "47": "2D layout is a meridional slice of the single 3D launch cone (North Star #2)"
+    "47": "2D layout is a meridional slice of the single 3D launch cone (North Star #2)",
+    "48": "Field Curvature / Distortion curves are physically correct",
+    "49": "Field Curvature T/S curves draw as smooth arcs"
   }
 }

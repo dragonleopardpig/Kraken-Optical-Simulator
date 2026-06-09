@@ -1621,24 +1621,18 @@ class LayoutAnalysisDisplayMixin:
         base_axis_y: np.ndarray,
         base_corners: list[tuple[float, float]],
     ) -> None:
-        """Hidden-line waterfall: opaque slices drawn back-to-front so nearer
-        rows occlude farther ones (the Zemax Wavefront Function look). Each
-        slice's curtain drops to one common floor -- the front edge of the base
-        plane -- so the relief reads as a single solid body sitting on the
-        parallelogram, instead of stacked per-row curtains that pile into a
-        floating white block when the OPD is tall."""
+        """Hidden-line waterfall: white slices drawn back-to-front so nearer rows
+        occlude farther ones (the Zemax Wavefront Function look). Each slice fills
+        down to *its own* z=0 floor line in opaque white -- the curtain hides the
+        slices behind it without painting any visible body, so the relief reads as
+        a dome of slice lines on white, resting on the base parallelogram. (A
+        single common floor + a visible shade was tried instead; it occluded fine
+        but the front row's curtain became a large flat slab filling the lower
+        panel -- the "huge grey block" -- which is not the Zemax look.)"""
         line_color = "#1f2937"
 
-        # One common floor for every curtain: the lowest point of the base
-        # parallelogram (its front edge). Filling all rows down to it makes the
-        # relief one solid mass; nearer rows then fully occlude farther ones.
-        if base_corners:
-            floor_y = min(corner[1] for corner in base_corners)
-        else:
-            finite_axis_y = axis_y[np.isfinite(axis_y)]
-            floor_y = float(np.nanmin(finite_axis_y)) if finite_axis_y.size else 0.0
-
-        # Flat base plane the relief rests on (lowest zorder, drawn first).
+        # Flat base plane the relief rests on (lowest zorder, drawn first); the
+        # white curtains sit on top, so its apron shows around the footprint.
         if len(base_corners) >= 3:
             corner_x = [corner[0] for corner in base_corners]
             corner_y = [corner[1] for corner in base_corners]
@@ -1663,18 +1657,85 @@ class LayoutAnalysisDisplayMixin:
             if np.count_nonzero(np.isfinite(row_x) & np.isfinite(row_y)) < 2:
                 continue
             zorder = 2.0 + draw_index * 0.01
-            # Subtle visible shade (not pure white) so the relief's side faces
-            # read as a solid body resting on the base plane. White-on-white
-            # made the curtains invisible, so a tall relief looked like it
-            # floated above the plane with an empty "white block" beneath it.
+            # Opaque WHITE curtain down to this row's own z=0 floor: it occludes
+            # the farther slices (hidden-line removal) but is invisible against the
+            # white panel, so no shaded slab appears -- only the dark slice lines.
             self._fill_axes_nan_segments(
-                axis, row_x, row_y, floor_y,
-                facecolor="#e4e9f0", edgecolor="none", zorder=zorder,
+                axis, row_x, row_y, base_axis_y[row_index, :],
+                facecolor="white", edgecolor="none", zorder=zorder,
             )
             self._plot_axes_nan_segments(
                 axis, row_x, row_y,
                 color=line_color, linewidth=0.5, zorder=zorder + 0.004,
             )
+
+        self._draw_wavefront_dome_edges(axis, axis_x, axis_y, base_axis_y, len(rows), line_color)
+
+    def _draw_wavefront_dome_edges(
+        self,
+        axis,
+        axis_x: np.ndarray,
+        axis_y: np.ndarray,
+        base_axis_y: np.ndarray,
+        drawn_row_count: int,
+        line_color: str,
+    ) -> None:
+        """Draw the dome's pupil-rim silhouette + the side/front walls down to the
+        base plane, so the stacked slices read as one bounded 3D body resting on
+        the floor (the Zemax look) instead of a pile of open floating ribbons.
+
+        Each grid row is a horizontal chord across the (masked) pupil disk, so the
+        first/last finite sample of every row is a point on the left/right pupil
+        rim. Joining those rim points down the grid traces the dome's left and
+        right silhouette; the projection has no z term in x, so dropping a rim
+        point to its z=0 floor is a vertical screen line -- the side wall."""
+        n_rows = axis_x.shape[0]
+        rim_row: list[int] = []
+        left_idx: list[int] = []
+        right_idx: list[int] = []
+        for row_index in range(n_rows):
+            row_x = axis_x[row_index, :]
+            row_y = axis_y[row_index, :]
+            finite = np.flatnonzero(np.isfinite(row_x) & np.isfinite(row_y))
+            if finite.size < 1:
+                continue
+            rim_row.append(row_index)
+            left_idx.append(int(finite[0]))
+            right_idx.append(int(finite[-1]))
+        if len(rim_row) < 2:
+            return
+        rows_arr = np.asarray(rim_row)
+        left_x = axis_x[rows_arr, left_idx]
+        left_y = axis_y[rows_arr, left_idx]
+        right_x = axis_x[rows_arr, right_idx]
+        right_y = axis_y[rows_arr, right_idx]
+        left_floor = base_axis_y[rows_arr, left_idx]
+        right_floor = base_axis_y[rows_arr, right_idx]
+
+        # Above every slice/curtain so the bounding edges are never whited out.
+        edge_zorder = 2.0 + drawn_row_count * 0.01 + 0.5
+        # gid lets the regression guard count the bounding edges distinctly from
+        # the horizontal slice ribbons (bug 0036 edge-lines follow-up).
+        edge_gid = "wavefront-dome-edge"
+
+        # Left and right pupil-rim silhouettes -- the dome outline.
+        axis.plot(left_x, left_y, color=line_color, linewidth=0.7,
+                  zorder=edge_zorder, gid=edge_gid)
+        axis.plot(right_x, right_y, color=line_color, linewidth=0.7,
+                  zorder=edge_zorder, gid=edge_gid)
+
+        # Side walls at the dome's true left/right extremes (the widest row, i.e.
+        # the pupil equator -- NOT the top/bottom poles, where the chord collapses
+        # to the centre): drop that rim point straight down to its floor so the
+        # relief visibly stands on the base plane.
+        widest_left = int(np.argmin(left_x))
+        widest_right = int(np.argmax(right_x))
+        axis.plot([left_x[widest_left], left_x[widest_left]],
+                  [left_y[widest_left], left_floor[widest_left]],
+                  color=line_color, linewidth=0.7, zorder=edge_zorder, gid=edge_gid)
+        axis.plot([right_x[widest_right], right_x[widest_right]],
+                  [right_y[widest_right], right_floor[widest_right]],
+                  color=line_color, linewidth=0.7, zorder=edge_zorder, gid=edge_gid)
 
     def _wavefront_projected_axes_coordinates(
         self,
@@ -1688,7 +1749,7 @@ class LayoutAnalysisDisplayMixin:
             z_scale = float(np.nanmax(np.abs(finite_z))) if finite_z.size else 1.0
         if not np.isfinite(z_scale) or z_scale <= 1e-12:
             z_scale = 1.0
-        z_norm = np.clip(zz / z_scale, -1.6, 1.6)
+        z_norm = np.clip(zz / z_scale, -1.2, 1.2)
         # Rest the surface on the z=0 base plane (Zemax shows the relief rising
         # from a flat floor, not floating around a centred zero).
         finite_norm = z_norm[np.isfinite(z_norm)]
@@ -1696,9 +1757,12 @@ class LayoutAnalysisDisplayMixin:
         z_norm = z_norm - z_floor
 
         # Orthographic projection tuned to resemble Zemax's Wavefront Function
-        # printout: waterfall slices with strong OPD relief, no 3D axes.
-        projected_x = 1.04 * xx + 0.08 * yy
-        projected_y = 0.20 * yy + 0.82 * z_norm
+        # printout: a shallow dome resting on a broad base plane. The pupil-depth
+        # (yy) weight is larger than the OPD-height (z) weight so the relief is a
+        # low mound on a wide diamond floor -- not a tall tower with an empty
+        # block stranded beneath it.
+        projected_x = 1.0 * xx + 0.40 * yy
+        projected_y = 0.50 * yy + 0.45 * z_norm
         finite = np.isfinite(projected_x) & np.isfinite(projected_y)
         if not np.any(finite):
             raise RuntimeError("Wavefront Function projection produced no finite samples")
@@ -1721,7 +1785,7 @@ class LayoutAnalysisDisplayMixin:
         # Per-point z=0 floor line (drops the OPD term). Within a waterfall row
         # yy is constant, so this is the horizontal baseline each slice rests on;
         # kept finite everywhere so the curtain fill always has a bottom edge.
-        base_axis_y = plot_y_mid + (0.20 * yy - y_mid) * scale
+        base_axis_y = plot_y_mid + (0.50 * yy - y_mid) * scale
 
         # Base-plane parallelogram: the z=0 footprint of the pupil grid box,
         # projected with the same transform so the surface sits on the floor.
@@ -1729,8 +1793,8 @@ class LayoutAnalysisDisplayMixin:
         y_lo, y_hi = float(np.nanmin(yy)), float(np.nanmax(yy))
         base_corners: list[tuple[float, float]] = []
         for corner_x, corner_y in ((x_lo, y_lo), (x_hi, y_lo), (x_hi, y_hi), (x_lo, y_hi)):
-            base_px = 1.04 * corner_x + 0.08 * corner_y
-            base_py = 0.20 * corner_y
+            base_px = 1.0 * corner_x + 0.40 * corner_y
+            base_py = 0.50 * corner_y
             base_corners.append((
                 plot_x_mid + (base_px - x_mid) * scale,
                 plot_y_mid + (base_py - y_mid) * scale,

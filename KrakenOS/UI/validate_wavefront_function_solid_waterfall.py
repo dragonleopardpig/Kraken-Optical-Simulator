@@ -15,6 +15,10 @@ A. ``_wavefront_projected_axes_coordinates`` returns the surface grid, a
 B. The relief rests on the floor: every surface sample is at or above its floor.
 C. Drawing produces opaque curtains (fill collections) -- the old wireframe had
    none -- plus the row line curves and the base-plane parallelogram patch.
+D. The dome is bounded by edge lines (the pupil-rim silhouettes + side walls down
+   to the base), so the stacked slices read as one 3D body and not a pile of open
+   floating ribbons -- the user's "the edge should have lines so the wavefront
+   looks like 3D slices" follow-up. These are tagged gid="wavefront-dome-edge".
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_wavefront_function_solid_waterfall
@@ -113,6 +117,9 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
         if float(patch.get_facecolor()[3]) > 0.0
     ]
 
+    # D. The dome's bounding edge lines (rim silhouettes + side walls).
+    edge_lines = [ln for ln in analysis_ax.lines if ln.get_gid() == "wavefront-dome-edge"]
+
     if fill_collections == 0:
         notes.append("FAIL: no opaque curtains drawn -- still a see-through wireframe (bug 0036)")
         passed = False
@@ -122,11 +129,36 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
     if not base_patches:
         notes.append("FAIL: no filled base-plane parallelogram drawn under the relief")
         passed = False
+    # Two rim silhouettes + two side walls = 4 bounding edges. Require at least
+    # the two rim outlines so the dome is never an unbounded pile of ribbons.
+    if len(edge_lines) < 2:
+        notes.append(
+            f"FAIL: {len(edge_lines)} dome edge lines drawn -- the bounding "
+            f"silhouette/walls are missing, slices float as open ribbons"
+        )
+        passed = False
+    else:
+        # The rim silhouettes must sweep a large fraction of the dome's height
+        # (they trace from the front pole up to the back), unlike the roughly
+        # horizontal slice ribbons -- guards against a degenerate flat "edge".
+        finite_y = axis_y[np.isfinite(axis_y)]
+        dome_height = float(np.nanmax(finite_y) - np.nanmin(finite_y)) if finite_y.size else 0.0
+        rim_spans = [
+            float(np.nanmax(ln.get_ydata()) - np.nanmin(ln.get_ydata()))
+            for ln in edge_lines
+        ]
+        tallest_rim = max(rim_spans) if rim_spans else 0.0
+        if dome_height > 1e-9 and tallest_rim < 0.4 * dome_height:
+            notes.append(
+                f"FAIL: tallest dome edge spans {tallest_rim:.4g} vs dome height "
+                f"{dome_height:.4g} -- silhouette does not bound the relief"
+            )
+            passed = False
 
     if verbose:
         notes.append(
             f"curtains={fill_collections}, row_lines={row_lines}, "
-            f"base_patches={len(base_patches)}, PV={pv:.3f}"
+            f"base_patches={len(base_patches)}, edge_lines={len(edge_lines)}, PV={pv:.3f}"
         )
     return passed, notes
 
