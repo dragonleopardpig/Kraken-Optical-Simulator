@@ -4251,6 +4251,37 @@ def phase_49_field_curvature_curve_smoothness(
     return result
 
 
+def phase_50_wavefront_3d_surface(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Real 3D wavefront surface (PyVista/VTK) builds and renders.
+
+    The analysis panel's 2D oblique waterfall mirrors the Zemax printout but is
+    painter's-algorithm fake-3D. `services/wavefront_3d_view` is the honest
+    counterpart: it warps the pupil OPD samples into a true z-buffered 3D surface
+    mesh. The guard (`validate_wavefront_3d_surface`) asserts the sample dicts
+    round-trip, the mesh has real points/cells with a warped (non-flat) z-extent,
+    an off-screen render is non-blank, and the subprocess payload round-trips.
+    SKIPs cleanly if PyVista/VTK is unavailable. Display-free (off-screen VTK).
+    """
+    result = PhaseResult(name="Phase 50: Wavefront 3D surface builds and renders")
+    try:
+        from KrakenOS.UI.validate_wavefront_3d_surface import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"wavefront-3d guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("wavefront-3d guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -4346,6 +4377,7 @@ def main() -> int:
             phase_47_open3d_2d_is_cone_slice,
             phase_48_field_curvature_distortion_physics,
             phase_49_field_curvature_curve_smoothness,
+            phase_50_wavefront_3d_surface,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

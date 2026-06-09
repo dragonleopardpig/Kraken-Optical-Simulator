@@ -1,24 +1,23 @@
-"""Guard: the Wavefront Function plot renders as an opaque hidden-line surface.
+"""Guard: the Wavefront Function plot renders as an opaque hidden-surface MESH.
 
-Zemax draws the Wavefront Function as a solid waterfall sitting on a flat base
-plane -- nearer slices occlude farther ones (see attachment/wavefront_zemax.png).
-KrakenOS used to draw a see-through wireframe (every row line drawn translucent,
-no fills, no floor), so the back of the surface bled through the front
-(attachment/wavefront.png). This guards bug 0036: the waterfall must be drawn
-with opaque white curtains (hidden-line removal) and a visible base-plane apron.
+Zemax draws the Wavefront Function as a solid relief on a base plane with the
+surface mesh visible (cross-sections in both directions), nearer cells occluding
+farther ones. KrakenOS first drew a see-through wireframe (bug 0036), then a
+stylized waterfall whose hand-built "wall" kept breaking on folded wavefronts.
+It now draws the real thing: the structured pupil grid's rows (constant-y) and
+columns (constant-x) are both genuine slices, rendered as depth-sorted opaque
+white quads with dark edges (``_draw_wavefront_mesh``) -- a true cross-section
+mesh with hidden-surface removal, every visible line a real cut.
 
 All checks are display-free (Agg backend, no Xvfb / GPU needed) and use a
 synthetic circular-pupil wavefront, so they do not depend on a ray trace:
 
-A. ``_wavefront_projected_axes_coordinates`` returns the surface grid, a
-   finite-everywhere per-point z=0 floor line, and a 4-corner base parallelogram.
-B. The relief rests on the floor: every surface sample is at or above its floor.
-C. Drawing produces opaque curtains (fill collections) -- the old wireframe had
-   none -- plus the row line curves and the base-plane parallelogram patch.
-D. The dome is bounded by edge lines (the pupil-rim silhouettes + side walls down
-   to the base), so the stacked slices read as one 3D body and not a pile of open
-   floating ribbons -- the user's "the edge should have lines so the wavefront
-   looks like 3D slices" follow-up. These are tagged gid="wavefront-dome-edge".
+A. A wavefront-mesh ``PolyCollection`` (gid "wavefront-mesh") is drawn with many
+   cells -- a real mesh from both grid directions, not a few stray polygons.
+B. Its faces are OPAQUE WHITE -- hidden-surface removal (the back is occluded),
+   not the see-through wireframe of the original bug 0036.
+C. Its edges are dark -- the visible mesh lines (the real cross-sections).
+D. A base-plane diamond patch is drawn under the mesh for grounding.
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_wavefront_function_solid_waterfall
@@ -31,11 +30,15 @@ import matplotlib
 
 matplotlib.use("Agg")
 import numpy as np
+from matplotlib.collections import PolyCollection
 from matplotlib.figure import Figure
 
 # Importing layout_editor syncs Rectangle/textwrap into the mixin's globals.
 import KrakenOS.UI.layout_editor  # noqa: F401
 from KrakenOS.UI.services.layout_analysis_display import LayoutAnalysisDisplayMixin
+
+# A real disk mesh has hundreds of cells; require clearly more than a handful.
+MIN_MESH_QUADS = 100
 
 
 class _WavefrontProbe(LayoutAnalysisDisplayMixin):
@@ -69,32 +72,15 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
     probe = _WavefrontProbe()
     x_pupil, y_pupil, phase_centered, pv, rms = _synthetic_pupil()
 
+    # The wavefront is drawn as a real cross-section MESH: the structured grid's
+    # rows (constant-y) and columns (constant-x) are both genuine slices, drawn as
+    # depth-sorted opaque white quads with dark edges (hidden-surface removal).
     xx, yy, zz = probe._wavefront_function_grid(x_pupil, y_pupil, phase_centered)
     xx, yy, zz = probe._orient_wavefront_waterfall_grid(xx, yy, zz)
-    projected = probe._wavefront_projected_axes_coordinates(xx, yy, zz)
-
-    # A. Projection yields surface grid + finite floor line + 4 base corners.
-    if len(projected) != 4:
-        notes.append(f"FAIL: projection returned {len(projected)} values, expected 4")
+    if xx.ndim != 2 or min(xx.shape) < 2:
+        notes.append(f"FAIL: wavefront grid is {xx.shape}, not a 2-D mesh grid")
         return False, notes
-    axis_x, axis_y, base_axis_y, base_corners = projected
-    if len(base_corners) != 4:
-        notes.append(f"FAIL: base parallelogram has {len(base_corners)} corners, expected 4")
-        passed = False
-    if not np.all(np.isfinite(base_axis_y)):
-        notes.append("FAIL: per-point floor line has non-finite samples")
-        passed = False
 
-    # B. The relief rests on the floor (every surface sample >= its floor).
-    finite = np.isfinite(axis_x) & np.isfinite(axis_y)
-    below_floor = axis_y[finite] < (base_axis_y[finite] - 1e-6)
-    if np.any(below_floor):
-        notes.append(
-            f"FAIL: {int(np.count_nonzero(below_floor))} surface samples dip below the z=0 floor"
-        )
-        passed = False
-
-    # C. Drawing produces opaque curtains + row lines + base-plane patch.
     figure = Figure(figsize=(4.2, 3.3))
     analysis_ax = figure.add_subplot(111)
     probe._plot_wavefront_function_analysis(
@@ -108,57 +94,50 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
         reference_note="",
     )
 
-    fill_collections = len(list(analysis_ax.collections))
-    row_lines = len(list(analysis_ax.lines))
-    # A genuinely filled patch (the base parallelogram) has a non-zero face
-    # alpha; the outer frame Rectangle is fill=False (alpha 0) and is ignored.
+    mesh_collections = [
+        c for c in analysis_ax.collections
+        if isinstance(c, PolyCollection) and c.get_gid() == "wavefront-mesh"
+    ]
     base_patches = [
         patch for patch in analysis_ax.patches
         if float(patch.get_facecolor()[3]) > 0.0
     ]
 
-    # D. The dome's bounding edge lines (rim silhouettes + side walls).
-    edge_lines = [ln for ln in analysis_ax.lines if ln.get_gid() == "wavefront-dome-edge"]
-
-    if fill_collections == 0:
-        notes.append("FAIL: no opaque curtains drawn -- still a see-through wireframe (bug 0036)")
-        passed = False
-    if row_lines < 5:
-        notes.append(f"FAIL: only {row_lines} row line segments drawn, expected the waterfall slices")
-        passed = False
-    if not base_patches:
-        notes.append("FAIL: no filled base-plane parallelogram drawn under the relief")
-        passed = False
-    # Two rim silhouettes + two side walls = 4 bounding edges. Require at least
-    # the two rim outlines so the dome is never an unbounded pile of ribbons.
-    if len(edge_lines) < 2:
-        notes.append(
-            f"FAIL: {len(edge_lines)} dome edge lines drawn -- the bounding "
-            f"silhouette/walls are missing, slices float as open ribbons"
-        )
+    n_quads = 0
+    if not mesh_collections:
+        notes.append("FAIL: no wavefront mesh PolyCollection drawn (gid 'wavefront-mesh')")
         passed = False
     else:
-        # The rim silhouettes must sweep a large fraction of the dome's height
-        # (they trace from the front pole up to the back), unlike the roughly
-        # horizontal slice ribbons -- guards against a degenerate flat "edge".
-        finite_y = axis_y[np.isfinite(axis_y)]
-        dome_height = float(np.nanmax(finite_y) - np.nanmin(finite_y)) if finite_y.size else 0.0
-        rim_spans = [
-            float(np.nanmax(ln.get_ydata()) - np.nanmin(ln.get_ydata()))
-            for ln in edge_lines
-        ]
-        tallest_rim = max(rim_spans) if rim_spans else 0.0
-        if dome_height > 1e-9 and tallest_rim < 0.4 * dome_height:
-            notes.append(
-                f"FAIL: tallest dome edge spans {tallest_rim:.4g} vs dome height "
-                f"{dome_height:.4g} -- silhouette does not bound the relief"
-            )
+        mesh = mesh_collections[0]
+        # A. A real cross-section mesh -- many cells from both grid directions.
+        n_quads = len(mesh.get_paths())
+        if n_quads < MIN_MESH_QUADS:
+            notes.append(f"FAIL: mesh has {n_quads} cells (< {MIN_MESH_QUADS}) -- not a real mesh")
             passed = False
+        # B. Opaque white faces => hidden-surface removal (the back of the surface
+        # is occluded), NOT the see-through wireframe of the original bug 0036.
+        face = np.atleast_2d(np.asarray(mesh.get_facecolor(), dtype=float))
+        if face.size == 0 or float(np.min(face[:, 3])) < 0.999:
+            notes.append("FAIL: mesh faces not opaque -- back of surface bleeds through (bug 0036)")
+            passed = False
+        elif not np.all(face[:, :3] > 0.95):
+            notes.append("FAIL: mesh faces are not white (occluding fill expected)")
+            passed = False
+        # C. Dark edges => the visible mesh lines (the real cross-sections).
+        edge = np.atleast_2d(np.asarray(mesh.get_edgecolor(), dtype=float))
+        if edge.size == 0 or float(np.max(edge[:, :3])) > 0.5:
+            notes.append("FAIL: mesh edges not drawn dark -- the slice lines are missing")
+            passed = False
+
+    # D. Base-plane diamond drawn under the mesh (grounding).
+    if not base_patches:
+        notes.append("FAIL: no base-plane patch drawn under the mesh")
+        passed = False
 
     if verbose:
         notes.append(
-            f"curtains={fill_collections}, row_lines={row_lines}, "
-            f"base_patches={len(base_patches)}, edge_lines={len(edge_lines)}, PV={pv:.3f}"
+            f"mesh_collections={len(mesh_collections)}, quads={n_quads}, "
+            f"base_patches={len(base_patches)}, PV={pv:.3f}"
         )
     return passed, notes
 
@@ -168,9 +147,9 @@ def main() -> int:
     for note in notes:
         print(note)
     if passed:
-        print("[PASS] Wavefront Function renders an opaque hidden-line waterfall on a base plane")
+        print("[PASS] Wavefront Function renders an opaque hidden-surface cross-section mesh")
         return 0
-    print("[FAIL] Wavefront Function solid-waterfall guard")
+    print("[FAIL] Wavefront Function mesh guard")
     return 1
 
 

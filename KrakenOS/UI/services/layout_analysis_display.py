@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import math
+import subprocess
+import sys
+from pathlib import Path
 
 import numpy as np
 
 from KrakenOS.UI.services.row_spec_contracts import _row_specs_signature
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 _PROTECTED_GLOBALS = {
@@ -1580,169 +1585,77 @@ class LayoutAnalysisDisplayMixin:
         corrected[finite] = wavefront[finite] - (coeffs[0] + coeffs[1] * x[finite] + coeffs[2] * y[finite])
         return corrected
 
-    @staticmethod
-    def _plot_axes_nan_segments(axis, x_values: np.ndarray, y_values: np.ndarray, **kwargs) -> None:
-        x_values = np.asarray(x_values, dtype=float).ravel()
-        y_values = np.asarray(y_values, dtype=float).ravel()
-        finite = np.isfinite(x_values) & np.isfinite(y_values)
-        start: int | None = None
-        for index, is_finite in enumerate(finite):
-            if is_finite and start is None:
-                start = index
-            if (not is_finite or index == finite.size - 1) and start is not None:
-                end = index + 1 if is_finite and index == finite.size - 1 else index
-                if end - start >= 2:
-                    axis.plot(x_values[start:end], y_values[start:end], **kwargs)
-                start = None
 
-    @staticmethod
-    def _fill_axes_nan_segments(axis, x_values: np.ndarray, y_values: np.ndarray, bottom, **kwargs) -> None:
-        x_values = np.asarray(x_values, dtype=float).ravel()
-        y_values = np.asarray(y_values, dtype=float).ravel()
-        bottom_array = np.broadcast_to(np.asarray(bottom, dtype=float), x_values.shape)
-        finite = np.isfinite(x_values) & np.isfinite(y_values)
-        start: int | None = None
-        for index, is_finite in enumerate(finite):
-            if is_finite and start is None:
-                start = index
-            if (not is_finite or index == finite.size - 1) and start is not None:
-                end = index + 1 if is_finite and index == finite.size - 1 else index
-                if end - start >= 2:
-                    axis.fill_between(
-                        x_values[start:end], y_values[start:end], bottom_array[start:end], **kwargs
-                    )
-                start = None
 
-    def _draw_wavefront_solid_waterfall(
+    def open_wavefront_3d_view(self) -> bool:
+        """Pop the real (z-buffered) 3D wavefront surface in a PyVista/VTK window.
+
+        The 2D analysis panel mirrors the Zemax waterfall printout; this is the
+        honest interactive counterpart. It reuses the pupil samples the analysis
+        already stashed in ``_last_wavefront_samples`` and launches the viewer in a
+        subprocess so the Tk event loop never blocks and VTK never fights it over
+        the GIL. Returns True if a window was launched."""
+        from KrakenOS.UI.services import wavefront_3d_view as w3d
+
+        samples = list(getattr(self, "_last_wavefront_samples", []) or [])
+        payload = w3d.write_wavefront_payload_npz(samples, title="KrakenOS Wavefront 3D")
+        if payload is None:
+            try:
+                from tkinter import messagebox
+
+                messagebox.showinfo(
+                    "Wavefront 3D",
+                    "No wavefront samples yet.\n\nRun the Wavefront analysis first, "
+                    "then open the 3D surface.",
+                )
+            except Exception:
+                pass
+            self.append_debug(
+                "Wavefront 3D: no samples available -- run the Wavefront analysis first"
+            )
+            return False
+
+        command = [sys.executable, "-m", "KrakenOS.UI.services.wavefront_3d_view", str(payload)]
+        try:
+            subprocess.Popen(
+                command,
+                cwd=str(_PROJECT_ROOT),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except Exception as exc:
+            self.append_debug(f"Wavefront 3D: failed to launch viewer subprocess: {exc}")
+            return False
+        self.append_debug(f"Wavefront 3D: launched interactive surface ({payload.name})")
+        return True
+
+
+    def _draw_wavefront_mesh(
         self,
         axis,
-        axis_x: np.ndarray,
-        axis_y: np.ndarray,
-        base_axis_y: np.ndarray,
-        base_corners: list[tuple[float, float]],
-    ) -> None:
-        """Hidden-line waterfall: white slices drawn back-to-front so nearer rows
-        occlude farther ones (the Zemax Wavefront Function look). Each slice fills
-        down to *its own* z=0 floor line in opaque white -- the curtain hides the
-        slices behind it without painting any visible body, so the relief reads as
-        a dome of slice lines on white, resting on the base parallelogram. (A
-        single common floor + a visible shade was tried instead; it occluded fine
-        but the front row's curtain became a large flat slab filling the lower
-        panel -- the "huge grey block" -- which is not the Zemax look.)"""
-        line_color = "#1f2937"
-
-        # Flat base plane the relief rests on (lowest zorder, drawn first); the
-        # white curtains sit on top, so its apron shows around the footprint.
-        if len(base_corners) >= 3:
-            corner_x = [corner[0] for corner in base_corners]
-            corner_y = [corner[1] for corner in base_corners]
-            axis.fill(corner_x, corner_y, facecolor="#eef2f7", edgecolor="#9aa5b1",
-                      linewidth=0.5, zorder=1.0, closed=True)
-
-        n_rows = axis_x.shape[0]
-        row_step = 1 if n_rows <= 58 else 2
-        rows = list(range(0, n_rows, row_step))
-
-        def row_depth(row_index: int) -> float:
-            row_floor = base_axis_y[row_index, :]
-            finite_row = row_floor[np.isfinite(row_floor)]
-            return float(np.nanmean(finite_row)) if finite_row.size else -np.inf
-
-        # Highest floor rows are farthest back; draw them first so the nearer
-        # (lower) rows painted on top hide what sits behind them.
-        rows.sort(key=row_depth, reverse=True)
-        for draw_index, row_index in enumerate(rows):
-            row_x = axis_x[row_index, :]
-            row_y = axis_y[row_index, :]
-            if np.count_nonzero(np.isfinite(row_x) & np.isfinite(row_y)) < 2:
-                continue
-            zorder = 2.0 + draw_index * 0.01
-            # Opaque WHITE curtain down to this row's own z=0 floor: it occludes
-            # the farther slices (hidden-line removal) but is invisible against the
-            # white panel, so no shaded slab appears -- only the dark slice lines.
-            self._fill_axes_nan_segments(
-                axis, row_x, row_y, base_axis_y[row_index, :],
-                facecolor="white", edgecolor="none", zorder=zorder,
-            )
-            self._plot_axes_nan_segments(
-                axis, row_x, row_y,
-                color=line_color, linewidth=0.5, zorder=zorder + 0.004,
-            )
-
-        self._draw_wavefront_dome_edges(axis, axis_x, axis_y, base_axis_y, len(rows), line_color)
-
-    def _draw_wavefront_dome_edges(
-        self,
-        axis,
-        axis_x: np.ndarray,
-        axis_y: np.ndarray,
-        base_axis_y: np.ndarray,
-        drawn_row_count: int,
-        line_color: str,
-    ) -> None:
-        """Draw the dome's pupil-rim silhouette + the side/front walls down to the
-        base plane, so the stacked slices read as one bounded 3D body resting on
-        the floor (the Zemax look) instead of a pile of open floating ribbons.
-
-        Each grid row is a horizontal chord across the (masked) pupil disk, so the
-        first/last finite sample of every row is a point on the left/right pupil
-        rim. Joining those rim points down the grid traces the dome's left and
-        right silhouette; the projection has no z term in x, so dropping a rim
-        point to its z=0 floor is a vertical screen line -- the side wall."""
-        n_rows = axis_x.shape[0]
-        rim_row: list[int] = []
-        left_idx: list[int] = []
-        right_idx: list[int] = []
-        for row_index in range(n_rows):
-            row_x = axis_x[row_index, :]
-            row_y = axis_y[row_index, :]
-            finite = np.flatnonzero(np.isfinite(row_x) & np.isfinite(row_y))
-            if finite.size < 1:
-                continue
-            rim_row.append(row_index)
-            left_idx.append(int(finite[0]))
-            right_idx.append(int(finite[-1]))
-        if len(rim_row) < 2:
-            return
-        rows_arr = np.asarray(rim_row)
-        left_x = axis_x[rows_arr, left_idx]
-        left_y = axis_y[rows_arr, left_idx]
-        right_x = axis_x[rows_arr, right_idx]
-        right_y = axis_y[rows_arr, right_idx]
-        left_floor = base_axis_y[rows_arr, left_idx]
-        right_floor = base_axis_y[rows_arr, right_idx]
-
-        # Above every slice/curtain so the bounding edges are never whited out.
-        edge_zorder = 2.0 + drawn_row_count * 0.01 + 0.5
-        # gid lets the regression guard count the bounding edges distinctly from
-        # the horizontal slice ribbons (bug 0036 edge-lines follow-up).
-        edge_gid = "wavefront-dome-edge"
-
-        # Left and right pupil-rim silhouettes -- the dome outline.
-        axis.plot(left_x, left_y, color=line_color, linewidth=0.7,
-                  zorder=edge_zorder, gid=edge_gid)
-        axis.plot(right_x, right_y, color=line_color, linewidth=0.7,
-                  zorder=edge_zorder, gid=edge_gid)
-
-        # Side walls at the dome's true left/right extremes (the widest row, i.e.
-        # the pupil equator -- NOT the top/bottom poles, where the chord collapses
-        # to the centre): drop that rim point straight down to its floor so the
-        # relief visibly stands on the base plane.
-        widest_left = int(np.argmin(left_x))
-        widest_right = int(np.argmax(right_x))
-        axis.plot([left_x[widest_left], left_x[widest_left]],
-                  [left_y[widest_left], left_floor[widest_left]],
-                  color=line_color, linewidth=0.7, zorder=edge_zorder, gid=edge_gid)
-        axis.plot([right_x[widest_right], right_x[widest_right]],
-                  [right_y[widest_right], right_floor[widest_right]],
-                  color=line_color, linewidth=0.7, zorder=edge_zorder, gid=edge_gid)
-
-    def _wavefront_projected_axes_coordinates(
-        self,
         xx: np.ndarray,
         yy: np.ndarray,
         zz: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[tuple[float, float]]]:
+    ) -> bool:
+        """Draw the wavefront as a real cross-section MESH with hidden-surface
+        removal. The structured grid's rows (constant-y) and columns (constant-x)
+        are both genuine slices of the surface; each grid cell projects to a quad,
+        and the quads are painted far->near (painter's algorithm) as opaque white
+        fills with dark edges, so nearer cells occlude farther ones and the visible
+        edges form the front of the mesh -- like the 3D view, every line a real cut.
+        No stylized wall, no fake ribs, no binned lower-envelope (those caused the
+        broken line and the sawtooth front silhouette). A 2D painter can still
+        mis-occlude a sharply folded saddle; the PyVista 3D view (bug 0044) is the
+        exact reference for those."""
+        from matplotlib.collections import PolyCollection
+
+        xx = np.asarray(xx, dtype=float)
+        yy = np.asarray(yy, dtype=float)
+        zz = np.asarray(zz, dtype=float)
+        if xx.ndim != 2 or min(xx.shape) < 2:
+            return False
+
         finite_z = zz[np.isfinite(zz)]
         z_scale = float(np.nanpercentile(np.abs(finite_z), 95.0)) if finite_z.size else 1.0
         if not np.isfinite(z_scale) or z_scale <= 1e-12:
@@ -1750,59 +1663,76 @@ class LayoutAnalysisDisplayMixin:
         if not np.isfinite(z_scale) or z_scale <= 1e-12:
             z_scale = 1.0
         z_norm = np.clip(zz / z_scale, -1.2, 1.2)
-        # Rest the surface on the z=0 base plane (Zemax shows the relief rising
-        # from a flat floor, not floating around a centred zero).
         finite_norm = z_norm[np.isfinite(z_norm)]
         z_floor = float(np.nanmin(finite_norm)) if finite_norm.size else 0.0
         z_norm = z_norm - z_floor
 
-        # Orthographic projection tuned to resemble Zemax's Wavefront Function
-        # printout: a shallow dome resting on a broad base plane. The pupil-depth
-        # (yy) weight is larger than the OPD-height (z) weight so the relief is a
-        # low mound on a wide diamond floor -- not a tall tower with an empty
-        # block stranded beneath it.
-        projected_x = 1.0 * xx + 0.40 * yy
-        projected_y = 0.50 * yy + 0.45 * z_norm
-        finite = np.isfinite(projected_x) & np.isfinite(projected_y)
-        if not np.any(finite):
-            raise RuntimeError("Wavefront Function projection produced no finite samples")
+        # Same oblique projection as before + the orthographic into-screen depth
+        # axis (the cross product of the two screen-basis vectors), so quads sort
+        # by true viewing depth -- a high-y slice that dips in front still wins.
+        proj_x = 1.0 * xx + 0.40 * yy
+        proj_y = 0.50 * yy + 0.30 * z_norm
+        depth = 0.12 * xx - 0.30 * yy + 0.50 * z_norm
+        finite = np.isfinite(proj_x) & np.isfinite(proj_y) & np.isfinite(depth)
+        if np.count_nonzero(finite) < 4:
+            return False
+
+        x_lo, x_hi = float(np.nanmin(xx)), float(np.nanmax(xx))
+        y_lo, y_hi = float(np.nanmin(yy)), float(np.nanmax(yy))
+        base_corners = ((x_lo, y_lo), (x_hi, y_lo), (x_hi, y_hi), (x_lo, y_hi))
+        base_px = np.array([1.0 * cx + 0.40 * cy for cx, cy in base_corners])
+        base_py = np.array([0.50 * cy for _cx, cy in base_corners])
 
         plot_left, plot_right = 0.065, 0.945
         plot_bottom, plot_top = 0.265, 0.925
-        x_min = float(np.nanmin(projected_x[finite]))
-        x_max = float(np.nanmax(projected_x[finite]))
-        y_min = float(np.nanmin(projected_y[finite]))
-        y_max = float(np.nanmax(projected_y[finite]))
+        all_px = np.concatenate([proj_x[finite], base_px])
+        all_py = np.concatenate([proj_y[finite], base_py])
+        x_min, x_max = float(all_px.min()), float(all_px.max())
+        y_min, y_max = float(all_py.min()), float(all_py.max())
         x_span = max(x_max - x_min, 1e-12)
         y_span = max(y_max - y_min, 1e-12)
         scale = min((plot_right - plot_left) / x_span, (plot_top - plot_bottom) / y_span)
-        x_mid = 0.5 * (x_min + x_max)
-        y_mid = 0.5 * (y_min + y_max)
-        plot_x_mid = 0.5 * (plot_left + plot_right)
-        plot_y_mid = 0.5 * (plot_bottom + plot_top)
-        axis_x = plot_x_mid + (projected_x - x_mid) * scale
-        axis_y = plot_y_mid + (projected_y - y_mid) * scale
-        # Per-point z=0 floor line (drops the OPD term). Within a waterfall row
-        # yy is constant, so this is the horizontal baseline each slice rests on;
-        # kept finite everywhere so the curtain fill always has a bottom edge.
-        base_axis_y = plot_y_mid + (0.50 * yy - y_mid) * scale
+        x_mid, y_mid = 0.5 * (x_min + x_max), 0.5 * (y_min + y_max)
+        plot_x_mid, plot_y_mid = 0.5 * (plot_left + plot_right), 0.5 * (plot_bottom + plot_top)
+        ax_x = plot_x_mid + (proj_x - x_mid) * scale
+        ax_y = plot_y_mid + (proj_y - y_mid) * scale
 
-        # Base-plane parallelogram: the z=0 footprint of the pupil grid box,
-        # projected with the same transform so the surface sits on the floor.
-        x_lo, x_hi = float(np.nanmin(xx)), float(np.nanmax(xx))
-        y_lo, y_hi = float(np.nanmin(yy)), float(np.nanmax(yy))
-        base_corners: list[tuple[float, float]] = []
-        for corner_x, corner_y in ((x_lo, y_lo), (x_hi, y_lo), (x_hi, y_hi), (x_lo, y_hi)):
-            base_px = 1.0 * corner_x + 0.40 * corner_y
-            base_py = 0.50 * corner_y
-            base_corners.append((
-                plot_x_mid + (base_px - x_mid) * scale,
-                plot_y_mid + (base_py - y_mid) * scale,
-            ))
+        # Faint base-plane diamond (behind the mesh) for grounding -- no wall.
+        corner_ax_x = plot_x_mid + (base_px - x_mid) * scale
+        corner_ax_y = plot_y_mid + (base_py - y_mid) * scale
+        axis.fill(corner_ax_x, corner_ax_y, facecolor="#eef2f7", edgecolor="#9aa5b1",
+                  linewidth=0.5, zorder=0.5, closed=True)
 
-        axis_x[~finite] = np.nan
-        axis_y[~finite] = np.nan
-        return axis_x, axis_y, base_axis_y, base_corners
+        rows, cols = xx.shape
+        quad_verts: list[list[tuple[float, float]]] = []
+        quad_depth: list[float] = []
+        for i in range(rows - 1):
+            for j in range(cols - 1):
+                if finite[i, j] and finite[i, j + 1] and finite[i + 1, j + 1] and finite[i + 1, j]:
+                    quad_verts.append([
+                        (ax_x[i, j], ax_y[i, j]),
+                        (ax_x[i, j + 1], ax_y[i, j + 1]),
+                        (ax_x[i + 1, j + 1], ax_y[i + 1, j + 1]),
+                        (ax_x[i + 1, j], ax_y[i + 1, j]),
+                    ])
+                    quad_depth.append(0.25 * (depth[i, j] + depth[i, j + 1]
+                                              + depth[i + 1, j + 1] + depth[i + 1, j]))
+        if not quad_verts:
+            return False
+        # Far (smallest depth) first so nearer cells paint on top (hidden-surface).
+        order = np.argsort(np.asarray(quad_depth))
+        ordered = [quad_verts[k] for k in order]
+        mesh = PolyCollection(
+            ordered, facecolors="white", edgecolors="#1f2937",
+            linewidths=0.35, zorder=2.0,
+        )
+        mesh.set_gid("wavefront-mesh")
+        axis.add_collection(mesh)
+        return True
+
+
+
+
 
     @staticmethod
     def _wavefront_slice_curvature(values: np.ndarray) -> float:
@@ -1935,8 +1865,6 @@ class LayoutAnalysisDisplayMixin:
         shape_note = ""
         if z_span > 1e-12 and max_slice_curvature / z_span < 1e-5:
             shape_note = "near-flat/cylindrical samples"
-        xx, yy, zz = self._orient_wavefront_waterfall_grid(xx, yy, zz)
-        axis_x, axis_y, base_axis_y, base_corners = self._wavefront_projected_axes_coordinates(xx, yy, zz)
         analysis_ax.clear()
         analysis_ax.set_xlim(0.0, 1.0)
         analysis_ax.set_ylim(0.0, 1.0)
@@ -1950,7 +1878,13 @@ class LayoutAnalysisDisplayMixin:
         analysis_ax.plot([0.68, 0.68], [0.03, 0.195], color=border_color, linewidth=0.7)
         analysis_ax.text(0.5, 0.214, "WAVEFRONT FUNCTION", ha="center", va="center", fontsize=9.2)
 
-        self._draw_wavefront_solid_waterfall(analysis_ax, axis_x, axis_y, base_axis_y, base_corners)
+        # Real cross-section MESH: the grid's rows (constant-y) and columns
+        # (constant-x) are both genuine wavefront slices, drawn as depth-sorted
+        # hidden-surface quads. Every line is a real cut -- no stylized wall, no
+        # fake ribs, no binned lower-envelope (those produced the broken line and
+        # the sawtooth front silhouette).
+        xx, yy, zz = self._orient_wavefront_waterfall_grid(xx, yy, zz)
+        self._draw_wavefront_mesh(analysis_ax, xx, yy, zz)
 
         analysis_ax.text(
             0.045,
