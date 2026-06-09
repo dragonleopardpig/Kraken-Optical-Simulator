@@ -90,43 +90,89 @@ class PlotRefreshService:
         self._update_analysis_progress("Building system", 1, 5)
         self.update_idletasks()
         self.figure.clear()
-        layout_planes = auxiliary_projection_planes(self._current_display_orientation())
-        if not active_modes:
-            layout_gs = self.figure.add_gridspec(
-                2,
-                2,
-                width_ratios=[3.4, 1.15],
-                height_ratios=[1.0, 1.0],
-                wspace=0.22,
-                hspace=0.30,
-            )
-            self.ax = self.figure.add_subplot(layout_gs[:, 0])
-            self._layout_projection_axes = {
-                plane: self.figure.add_subplot(layout_gs[index, 1])
-                for index, plane in enumerate(layout_planes)
-            }
-            analysis_axes = []
-            self._analysis_ax = None
+        # Plane selection drives which layout panes show: a single plane shows
+        # only that pane; "All" shows the YZ main pane plus the two auxiliary
+        # planes. The "2D" toggle hides the layout entirely, handing the canvas
+        # to the analysis column (or a hint when nothing is selected).
+        show_layout = self._show_layout_2d()
+        selection = self._display_plane_selection()
+        if show_layout and selection == "All":
+            aux_planes = auxiliary_projection_planes("YZ")
         else:
-            right_rows = len(active_modes)
+            aux_planes = ()
+        right_rows = len(active_modes)
+
+        def _build_layout_axes(host) -> None:
+            if aux_planes:
+                if host is None:
+                    sub = self.figure.add_gridspec(
+                        len(aux_planes), 2,
+                        width_ratios=[3.1, 1.1],
+                        height_ratios=[1.0] * len(aux_planes),
+                        wspace=0.22, hspace=0.30,
+                    )
+                else:
+                    sub = host.subgridspec(
+                        len(aux_planes), 2,
+                        width_ratios=[3.1, 1.1],
+                        height_ratios=[1.0] * len(aux_planes),
+                        wspace=0.22, hspace=0.30,
+                    )
+                self.ax = self.figure.add_subplot(sub[:, 0])
+                self._layout_projection_axes = {
+                    plane: self.figure.add_subplot(sub[index, 1])
+                    for index, plane in enumerate(aux_planes)
+                }
+            else:
+                self.ax = (
+                    self.figure.add_subplot(1, 1, 1)
+                    if host is None
+                    else self.figure.add_subplot(host)
+                )
+                self._layout_projection_axes = {}
+
+        def _hidden_layout_axis():
+            # Off-canvas, invisible main axis: the layout-draw pipeline still has
+            # a valid Axes to draw into, but it neither shows nor steals space.
+            ax = self.figure.add_axes([-0.2, -0.2, 0.05, 0.05])
+            ax.set_visible(False)
+            self._layout_projection_axes = {}
+            return ax
+
+        if show_layout and right_rows == 0:
+            _build_layout_axes(None)
+            self._analysis_axes = []
+            self._analysis_ax = None
+        elif show_layout and right_rows > 0:
             gs = self.figure.add_gridspec(1, 2, width_ratios=[3.9, 1.75], wspace=0.18)
-            layout_gs = gs[0].subgridspec(
-                2,
-                2,
-                width_ratios=[3.1, 1.1],
-                height_ratios=[1.0, 1.0],
-                wspace=0.22,
-                hspace=0.30,
-            )
+            _build_layout_axes(gs[0])
             right_gs = gs[1].subgridspec(right_rows, 1, hspace=0.28)
-            self.ax = self.figure.add_subplot(layout_gs[:, 0])
-            self._layout_projection_axes = {
-                plane: self.figure.add_subplot(layout_gs[index, 1])
-                for index, plane in enumerate(layout_planes)
-            }
-            analysis_axes = [self.figure.add_subplot(right_gs[i, 0]) for i in range(right_rows)]
-            self._analysis_axes = analysis_axes
-            self._analysis_ax = analysis_axes[0] if analysis_axes else None
+            self._analysis_axes = [self.figure.add_subplot(right_gs[i, 0]) for i in range(right_rows)]
+            self._analysis_ax = self._analysis_axes[0]
+        elif right_rows > 0:
+            # 2D layout hidden: hand the whole canvas to the analysis plots. A
+            # single column wastes the freed width — each plot's fixed box-aspect
+            # shrinks and centres it — so tile them into a near-square grid.
+            columns = 1
+            while columns * columns < right_rows:
+                columns += 1
+            grid_rows = (right_rows + columns - 1) // columns
+            grid = self.figure.add_gridspec(grid_rows, columns, hspace=0.32, wspace=0.22)
+            self._analysis_axes = [
+                self.figure.add_subplot(grid[i // columns, i % columns])
+                for i in range(right_rows)
+            ]
+            self._analysis_ax = self._analysis_axes[0]
+            self.ax = _hidden_layout_axis()
+        else:
+            self.ax = _hidden_layout_axis()
+            self._analysis_axes = []
+            self._analysis_ax = None
+            self.figure.text(
+                0.5, 0.5,
+                "2D layout hidden.\nEnable “2D” or tick an Analysis plot to display.",
+                ha="center", va="center", fontsize=11, color="0.45",
+            )
 
         title_bundle = None
         try:

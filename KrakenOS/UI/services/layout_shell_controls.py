@@ -773,7 +773,9 @@ class LayoutShellControlsMixin:
     def _on_display_plane_changed(self, _event=None) -> None:
         self._commit_history_capture()
         if hasattr(self, "display_orientation_var"):
-            self.display_orientation_var.set(normalize_projection_plane(self.display_orientation_var.get()))
+            raw = str(self.display_orientation_var.get()).strip()
+            normalized = "All" if raw == "All" else normalize_projection_plane(raw)
+            self.display_orientation_var.set(normalized)
         self._sync_trace_state_badge()
         if hasattr(self, "status_var"):
             self.status_var.set("2D plane changed. Refreshing layout.")
@@ -1091,6 +1093,24 @@ class LayoutShellControlsMixin:
             self.status_var.set(f"Layout mode set to {mode_label}. Click Update.")
         self.append_progress(f"Layout mode selected: {mode_label} (pending update).")
 
+    def toggle_layout_2d(self) -> None:
+        var = self.__dict__.get("show_layout_2d_var")
+        if var is not None and hasattr(var, "get"):
+            try:
+                self.show_layout_2d = bool(var.get())
+            except Exception:
+                self.show_layout_2d = not bool(self.__dict__.get("show_layout_2d", True))
+        else:
+            self.show_layout_2d = not bool(self.__dict__.get("show_layout_2d", True))
+        state = "shown" if self.show_layout_2d else "hidden"
+        if hasattr(self, "status_var"):
+            self.status_var.set(f"2D layout {state}.")
+        self.append_progress(f"2D layout {state}.")
+        try:
+            self.refresh_plot()
+        except Exception as exc:  # pragma: no cover - defensive UI guard
+            self.append_debug(f"2D toggle refresh skipped: {exc}")
+
     def _requested_trace_mode(self) -> str:
         trace_mode_var = self.__dict__.get("trace_mode_var")
         if trace_mode_var is None:
@@ -1320,8 +1340,6 @@ class LayoutShellControlsMixin:
             current.remove(mode)
         else:
             current.append(mode)
-            if len(current) > 2:
-                current = current[-2:]
         self.selected_analysis_modes = current
         self.analysis_mode = current[0] if current else "none"
         self.secondary_analysis_mode = current[1] if len(current) > 1 else None
@@ -1337,6 +1355,14 @@ class LayoutShellControlsMixin:
             self.layout_preview_mode_var.set(self.layout_preview_mode)
         for mode, var in getattr(self, "analysis_mode_vars", {}).items():
             var.set(mode in self.selected_analysis_modes)
+        menubutton = self.__dict__.get("analysis_mode_menubutton")
+        if menubutton is not None:
+            count = len(self.selected_analysis_modes)
+            label = "Select plots ▾" if count == 0 else f"Plots: {count} ▾"
+            try:
+                menubutton.configure(text=label)
+            except Exception:
+                pass
 
     def _analysis_mode_label(self, mode: str) -> str:
         return analysis_mode_label(mode)

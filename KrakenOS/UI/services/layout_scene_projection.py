@@ -29,6 +29,27 @@ class LayoutSceneProjectionMixin:
         mode = value.get().strip() if hasattr(value, "get") else str(value).strip()
         return normalize_projection_plane(mode)
 
+    def _display_plane_selection(self) -> str:
+        """Raw Plane selection including "All" (the main ax still uses YZ)."""
+        value = getattr(self, "display_orientation_var", None)
+        if value is None:
+            return "YZ"
+        mode = value.get().strip() if hasattr(value, "get") else str(value).strip()
+        if mode == "All":
+            return "All"
+        return normalize_projection_plane(mode)
+
+    def _show_layout_2d(self) -> bool:
+        # Read __dict__ directly: on a stripped snapshot editor an unset attr
+        # would otherwise recurse through Tk's __getattr__ (see bug 0041).
+        var = self.__dict__.get("show_layout_2d_var")
+        if var is not None and hasattr(var, "get"):
+            try:
+                return bool(var.get())
+            except Exception:
+                pass
+        return bool(self.__dict__.get("show_layout_2d", True))
+
     def _current_display_slice_axis(self) -> str:
         return "x" if self._current_display_orientation() == "XZ" else "y"
 

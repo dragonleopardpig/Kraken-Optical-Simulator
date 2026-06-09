@@ -2506,6 +2506,7 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self._example_category_menus: list[tk.Menu] = []
         self._zemax_example_category_menus: list[tk.Menu] = []
         self.layout_preview_mode = "none"
+        self.show_layout_2d = True
         self.trace_mode = "Auto"
         self.analysis_mode = "none"
         self.secondary_analysis_mode: str | None = None

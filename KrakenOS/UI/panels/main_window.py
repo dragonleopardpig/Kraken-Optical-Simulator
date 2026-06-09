@@ -14,7 +14,6 @@ from KrakenOS.UI.widgets import (
     pack_command_button,
     pack_commit_checkbutton,
     pack_commit_combobox,
-    pack_commit_radiobutton,
 )
 
 
@@ -534,25 +533,24 @@ class MainWindowBuilder:
         open_3d_button = pack_command_button(plot_toolbar_main, "Open 3D", command=self.open_3d_view)
         self._add_widget_tooltip(open_3d_button, "Open 3D optical layout view")
         self.layout_preview_mode_var = tk.StringVar(value=self.layout_preview_mode)
-        preview_buttons = (
-            ("2D", "none", "2D optical layout view"),
+        self.show_layout_2d_var = tk.BooleanVar(value=bool(getattr(self, "show_layout_2d", True)))
+        preview_button = pack_commit_checkbutton(
+            plot_toolbar_main,
+            text="2D",
+            variable=self.show_layout_2d_var,
+            command=self.toggle_layout_2d,
+            padx=(6, 0),
         )
-        for text, mode, tooltip in preview_buttons:
-            preview_button = pack_commit_radiobutton(
-                plot_toolbar_main,
-                text=text,
-                variable=self.layout_preview_mode_var,
-                value=mode,
-                command=lambda m=mode: self.set_layout_preview_mode(m),
-                padx=(6, 0),
-            )
-            self._add_widget_tooltip(preview_button, tooltip)
+        self._add_widget_tooltip(
+            preview_button,
+            "Show or hide the 2D optical layout pane (off frees space for analysis plots)",
+        )
         ttk.Label(plot_toolbar_main, text="Plane").pack(side="left", padx=(10, 2))
         self.display_orientation_menu = pack_commit_combobox(
             plot_toolbar_main,
             textvariable=self.display_orientation_var,
             width=5,
-            values=["YZ", "XZ", "XY"],
+            values=["YZ", "XZ", "XY", "All"],
             on_commit=self._on_display_plane_changed,
             on_focus_in=self._begin_history_capture,
         )

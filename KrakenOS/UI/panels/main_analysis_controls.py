@@ -89,21 +89,29 @@ class MainAnalysisToolbarPanel(_EditorBackedPanel):
         }
         self.analysis_mode_vars = {}
         ttk.Label(parent, text="Analysis").pack(side="left", padx=(0, 4))
+        menubutton = ttk.Menubutton(parent, text="Select plots ▾", style="Toolbutton")
+        menu = tk.Menu(menubutton, tearoff=False)
+        menubutton.configure(menu=menu)
         for group_index, group in enumerate(mode_button_groups):
             if group_index > 0:
-                ttk.Separator(parent, orient="vertical").pack(side="left", fill="y", padx=(8, 2), pady=2)
+                menu.add_separator()
             for text, mode in group:
                 var = tk.BooleanVar(value=False)
                 self.analysis_mode_vars[mode] = var
-                analysis_button = ttk.Checkbutton(
-                    parent,
-                    text=text,
-                    style="Toolbutton",
+                menu.add_checkbutton(
+                    label=mode_tooltips.get(mode, text),
+                    onvalue=True,
+                    offvalue=False,
                     variable=var,
                     command=lambda m=mode: self.toggle_analysis_mode(m),
                 )
-                analysis_button.pack(side="left", padx=(4, 0))
-                self._add_widget_tooltip(analysis_button, mode_tooltips.get(mode, text))
+        menubutton.pack(side="left", padx=(4, 0))
+        self.analysis_mode_menubutton = menubutton
+        self.analysis_mode_menu = menu
+        self._add_widget_tooltip(
+            menubutton,
+            "Tick one or more analysis plots to display alongside the 2D layout",
+        )
 
 
 class MainInformationPanel(_EditorBackedPanel):
