@@ -42,7 +42,10 @@ from KrakenOS.UI.scene_projector import (
     normalize_projection_plane,
     scene_display_center_radius,
 )
-from KrakenOS.UI.layout_plot_controller import preview_trace_signature_matches
+from KrakenOS.UI.layout_plot_controller import (
+    preview_trace_signature_matches,
+    scene_bundle_launch_sampling_mode,
+)
 from KrakenOS.UI.nonseq_output_ports import (
     optical_solid_output_port_pose_overrides,
     optical_solid_output_port_runtime_transform_override,
@@ -78,6 +81,18 @@ from KrakenOS.UI.surface_table_model import SurfaceRow
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SCREENSHOT_DIR = PROJECT_ROOT / "attachment"
+
+# Each drawn ray is its own pickable VTK actor, so the 3D draw thins large
+# bundles to a budget. The default keeps interaction snappy; the launch cone is
+# the single 3D-truth pupil (bug 0041, North Star invariant #2 -- the 2D layout
+# is its meridional slice) and gets a much larger budget so the full-ring cone
+# (count//2 rings x az spokes per field/wavelength, e.g. 1809 rays for the
+# Double Gauss 28 deg grid) draws IN FULL. Decimating it would thin the cone back
+# into the uneven azimuthal spokes that read as crossing flat fans (bug 0040).
+# The cone only exists while the Open 3D inspector is live (lazy trace), so the
+# extra pickable actors are bounded to that window.
+_RAY_DRAW_BUDGET_DEFAULT = 300
+_RAY_DRAW_BUDGET_CONE = 2000
 
 pv = None
 vtkTkRenderWindowInteractor = None
@@ -950,23 +965,46 @@ class ThreeDSceneToolsMixin:
             return "world_envelope"
         return "display_slice"
 
+    def _open3d_inspector_is_live(self) -> bool:
+        """True when an Open 3D inspector window is currently open.
+
+        Reads the instance ``__dict__`` directly: a plain ``getattr`` falls
+        through Tk's ``__getattr__`` and recurses on stripped snapshot editors
+        (validators) that never initialise ``_three_d_inspector``.
+        """
+        inspector = self.__dict__.get("_three_d_inspector")
+        if inspector is None:
+            return False
+        try:
+            return bool(inspector.winfo_exists())
+        except Exception:
+            return False
+
     def _preview_2d_sampling_mode(self) -> str:
         """Sampling mode for editable 2D projections.
 
-        The 2D layout keeps the flat, uniformly spaced meridional fan
-        (``world_envelope``) so its ray gaps stay even. Open 3D revolves that
-        fan into a cone separately; see ``_preview_3d_sampling_mode``.
+        North Star invariant #2: the 2D layout is a slice of the traced 3D data,
+        not a separate simulation. When Open 3D is live we trace the single
+        ``world_cone`` (the 3D truth) and the 2D pane is its X=0 meridional slice
+        (see ``_should_filter_projection_slice``); the cone is built to contain a
+        uniform meridional fan, so the sliced 2D is pixel-identical to the flat
+        fan. With no Open 3D window we trace only that fan (``world_envelope``) --
+        lazily, since nothing draws the off-meridian rays. Either way the 2D shows
+        the same meridional fan.
         """
         if self._is_full_pupil_mode():
             return "full_pupil"
+        if self._open3d_inspector_is_live() and self._preview_3d_sampling_mode() == "world_cone":
+            return "world_cone"
         return "world_envelope"
 
     def _preview_3d_sampling_mode(self) -> str:
         """Sampling mode for Open 3D.
 
         Sequential, non-folded scenes launch a 3D cone (the meridional fan
-        revolved about the optical axis) so the 3D view reads as a cone while the
-        2D layout keeps its flat uniform fan. Nonsequential / folded scenes keep
+        revolved about the optical axis) so the 3D view reads as a cone; the 2D
+        layout is the X=0 meridional slice of this same cone bundle (North Star
+        invariant #2), not a separate trace. Nonsequential / folded scenes keep
         the area-filling ``world_envelope`` so branched paths retain sagittal
         width. A filled full-pupil trace still wins when explicitly requested.
         """
@@ -1829,7 +1867,12 @@ class ThreeDSceneToolsMixin:
                 # bug-0016 mixed case: hide strays among rays that DO land).
                 scene_paths = visible_paths if visible_paths else scene_paths
             total = len(scene_paths)
-            step = max(total // 300, 1) if total > 300 else 1
+            draw_budget = (
+                _RAY_DRAW_BUDGET_CONE
+                if scene_bundle_launch_sampling_mode(bundle) == "world_cone"
+                else _RAY_DRAW_BUDGET_DEFAULT
+            )
+            step = max(total // draw_budget, 1) if total > draw_budget else 1
             rendered: list[tuple[int, tuple[float, float, float], np.ndarray, str]] = []
             for fallback_index, path in enumerate(scene_paths[0:total:step]):
                 points = np.asarray(path.points_world, dtype=float)

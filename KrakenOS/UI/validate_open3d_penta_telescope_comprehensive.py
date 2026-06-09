@@ -4106,6 +4106,74 @@ def phase_45_high_res_export_size_normalized(
     return result
 
 
+def phase_46_open3d_cone_density_reads_as_cone(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Open 3D launch cone reads as a cone, not an X-fan + Y-fan cross (bug 0040).
+
+    The revolved `world_cone` used only <= 12 azimuthal spokes and was then
+    decimated to a ~300-ray draw budget, so it read as a few crossing flat fans
+    ("X-fan + Y-fan"). Bug 0041 unified the cone as the single 3D-truth pupil:
+    dense azimuths (a multiple of 4 so the meridional spokes the 2D slice keeps
+    exist), full rings (`n_rings = count // 2`, the cone meridian equals the 2D
+    fan), and a large `world_cone` draw budget (2000) so the cone draws in full.
+    The guard (`validate_open3d_cone_density_reads_as_cone`) is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 46: Open 3D launch cone reads as a cone (dense azimuths, drawn in full)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_cone_density_reads_as_cone import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"cone-density guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("cone-density guard reported failure without detail")
+    return result
+
+
+def phase_47_open3d_2d_is_cone_slice(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The 2D layout is a slice of the ONE traced 3D cone (North Star #2, bug 0041).
+
+    Sequential scenes used to trace TWO bundles -- a flat `world_envelope` fan
+    for the 2D pane and a separate `world_cone` for Open 3D -- the dual
+    simulation North Star invariant #2 forbids, and the two drifted apart. The
+    fix makes the launch cone the single 3D-truth pupil and renders the 2D
+    layout as its X=0 meridional slice (lazily: cheap fan when 3D is closed,
+    cone slice when the inspector is live). The guard
+    (`validate_open3d_2d_is_cone_slice`) asserts the slice is a non-empty strict
+    subset of the cone bundle -- the same data, not a separate trace -- and is a
+    clean meridional fan over the kept fields. Display-free.
+    """
+    result = PhaseResult(
+        name="Phase 47: 2D layout is a meridional slice of the single 3D launch cone (North Star #2)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_2d_is_cone_slice import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"2d-is-cone-slice guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("2d-is-cone-slice guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -4197,6 +4265,8 @@ def main() -> int:
             phase_43_field_curvature_distortion_panels,
             phase_44_open3d_cone_not_reused_as_fan,
             phase_45_high_res_export_size_normalized,
+            phase_46_open3d_cone_density_reads_as_cone,
+            phase_47_open3d_2d_is_cone_slice,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

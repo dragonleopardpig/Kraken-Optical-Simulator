@@ -1,20 +1,29 @@
-"""Guard: Open 3D launches a revolved launch cone while 2D keeps the flat fan.
+"""Guard: the launch cone is the 3D-truth pupil; the 2D fan is its meridian.
 
-The 2D layout draws a uniformly spaced meridional ray fan (flat, planar). Open
-3D revolves that fan about the optical axis into a 3D cone so the user sees a
-solid cone of rays, while every meridian still reads as the familiar uniform
-fan (the radial gaps are preserved). This guards bug 0034.
+A sequential scene traces ONE revolved launch cone as the 3D-truth pupil. The
+2D layout is the X=0 meridional slice of that same cone (North Star invariant
+#2), so the cone MUST contain a uniform meridional fan whose heights match the
+2D fan. Two requirements follow and are guarded here (bug 0041):
+  * full radial rings (``n_rings = count // 2``) so for an odd ray count the
+    cone ring radii land exactly on the 2D fan's positive radii, and
+  * an azimuth count divisible by 4 so the 90 deg / 270 deg spokes (the rays in
+    the YZ meridian) exist -- otherwise the meridional slice would be empty.
+Lazily, when no Open 3D inspector is live the 2D pane traces only the cheap
+``world_envelope`` fan (its meridional heights still equal the cone spine); when
+the inspector opens, the 2D pane switches to ``world_cone`` and shows its slice.
 
 All checks are display-free (no Xvfb / GPU needed):
 
-A. Mode decoupling -- a sequential scene reports ``_preview_2d_sampling_mode()``
-   == "world_envelope" (flat fan) and ``_preview_3d_sampling_mode()`` ==
-   "world_cone" (revolved cone).
+A. Mode coupling -- with no inspector a sequential scene reports
+   ``_preview_2d_sampling_mode()`` == "world_envelope" while
+   ``_preview_3d_sampling_mode()`` == "world_cone"; with a live inspector the
+   2D mode flips to "world_cone" (it becomes the cone's slice).
 B. The 2D fan stays planar -- ``_sample_ray_count_pupil_points`` keeps a zero
    sagittal offset and even gaps along the display-slice meridian.
 C. The 3D cone is the revolved fan -- ``_sample_ray_count_cone_points`` adds
-   azimuthal spokes (both transverse axes span), and its ring radii equal the
-   2D fan's positive radii (the uniform gap is maintained).
+   azimuthal spokes (both transverse axes span) on a multiple-of-4 azimuth set,
+   and its full ring radii equal the 2D fan's positive radii (uniform gap to the
+   pupil rim) so the cone's meridian IS the 2D fan.
 D. The cone propagates through the bundle builder -- the cone bundle launch
    directions span BOTH transverse axes, while the flat fan bundle spans only
    the meridian.
@@ -79,7 +88,10 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
     ray_count = 11
     editor, rows, Kos, _build_system_from_specs = _machine_vision_editor("1", str(ray_count))
 
-    # A. Mode decoupling on a sequential scene.
+    # A. Mode coupling on a sequential scene: cheap fan when 3D is closed, and
+    # the 2D pane becomes the cone's slice when the inspector is live.
+    import types as _types
+
     mode_2d = editor._preview_2d_sampling_mode()
     mode_3d = editor._preview_3d_sampling_mode()
     if mode_2d != "world_envelope":
@@ -87,6 +99,17 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
         passed = False
     if mode_3d != "world_cone":
         notes.append(f"FAIL: 3D sampling mode {mode_3d!r}, expected 'world_cone' (revolved cone)")
+        passed = False
+    editor.__dict__["_three_d_inspector"] = _types.SimpleNamespace(winfo_exists=lambda: True)
+    try:
+        mode_2d_live = editor._preview_2d_sampling_mode()
+    finally:
+        editor.__dict__.pop("_three_d_inspector", None)
+    if mode_2d_live != "world_cone":
+        notes.append(
+            f"FAIL: with a live 3D inspector the 2D pane should slice the cone "
+            f"(mode {mode_2d_live!r}, expected 'world_cone')"
+        )
         passed = False
 
     radius = max(editor._launch_field_radial_max(), 1.0)
@@ -119,15 +142,28 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
     if not np.any(np.all(np.abs(cone) < 1e-9, axis=1)):
         notes.append("FAIL: cone is missing its on-axis centre sample")
         passed = False
-    # Ring radii (unique non-zero) == the fan's positive radii.
+    # Azimuth count divisible by 4 so the 90/270 deg meridional spokes exist
+    # (the YZ-plane rays the 2D slice keeps). Without this the slice is empty.
+    az_count = editor._cone_azimuth_count()
+    if az_count % 4 != 0:
+        notes.append(f"FAIL: cone azimuth count {az_count} is not divisible by 4 (no meridional spokes)")
+        passed = False
+    # Full rings (n_rings = count // 2): for an odd ray count the cone ring radii
+    # land exactly on the 2D fan's positive radii, so the cone's meridian IS the
+    # 2D fan (bug 0041 restored the bug-0034 invariant the bug-0040 cap broke).
     cone_radii = np.sort(np.unique(np.round(np.hypot(cone[:, 0], cone[:, 1]), 9)))
     cone_radii = cone_radii[cone_radii > 1e-9]
-    fan_pos = np.sort(np.unique(np.round(np.abs(fan[:, slice_idx]), 9)))
-    fan_pos = fan_pos[fan_pos > 1e-9]
-    if not (cone_radii.size == fan_pos.size and np.allclose(cone_radii, fan_pos, rtol=1e-6, atol=1e-9)):
+    fan_radii = np.sort(np.unique(np.round(np.abs(fan[:, slice_idx]), 9)))
+    fan_radii = fan_radii[fan_radii > 1e-9]
+    if not (cone_radii.size == fan_radii.size and np.allclose(cone_radii, fan_radii, rtol=1e-6, atol=1e-9)):
         notes.append(
-            f"FAIL: cone ring radii {np.round(cone_radii, 4).tolist()} != fan positive radii "
-            f"{np.round(fan_pos, 4).tolist()} (uniform gap not maintained)"
+            f"FAIL: cone ring radii {np.round(cone_radii, 4).tolist()} != 2D fan positive radii "
+            f"{np.round(fan_radii, 4).tolist()} (the cone meridian must equal the 2D fan)"
+        )
+        passed = False
+    if cone_radii.size and not np.isclose(cone_radii[-1], radius, rtol=1e-6, atol=1e-9):
+        notes.append(
+            f"FAIL: outer cone ring {cone_radii[-1]:g} != pupil radius {radius:g}"
         )
         passed = False
     # Ring gaps uniform.
@@ -208,8 +244,9 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
 
     if verbose:
         notes.append(
-            f"2d={mode_2d}, 3d={mode_3d}; cone rings={np.round(cone_radii, 4).tolist()} "
-            f"== fan+radii; cone bundle L/M span=({cone_l_span:g},{cone_m_span:g}); "
+            f"2d={mode_2d}->{mode_2d_live} (inspector live), 3d={mode_3d}; az={az_count}; "
+            f"cone rings={np.round(cone_radii, 4).tolist()} == fan radii; "
+            f"cone bundle L/M span=({cone_l_span:g},{cone_m_span:g}); "
             f"fan transverse axes={fan_transverse_axes}; 3D records={len(records)} == paths={len(paths)}"
         )
     return passed, notes

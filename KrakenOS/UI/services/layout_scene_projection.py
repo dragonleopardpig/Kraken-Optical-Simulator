@@ -43,7 +43,10 @@ class LayoutSceneProjectionMixin:
         return False
 
     def _should_filter_projection_slice(self, bundle: SceneBundle | None) -> bool:
-        return self._scene_bundle_launch_sampling_mode(bundle) == "world_sections"
+        # world_cone is the single 3D-truth pupil; the 2D pane is its X=0
+        # meridional slice (North Star invariant #2). world_sections is the
+        # explicit meridional+sagittal cross. Both are sliced to the plane.
+        return self._scene_bundle_launch_sampling_mode(bundle) in ("world_sections", "world_cone")
 
     def _projection_display_title(self, orientation: str, bundle: SceneBundle | None = None) -> str:
         plane = normalize_projection_plane(orientation)

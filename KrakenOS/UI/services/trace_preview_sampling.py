@@ -33,6 +33,22 @@ from KrakenOS.UI.source_trace_helpers import (
     SOURCE_MODEL_VALUES,
 )
 
+# bug 0041 (North Star invariant #2: 2D is a slice of the traced 3D data, not a
+# separate simulation): the launch cone is the single 3D-truth pupil for a
+# sequential scene. The 2D layout is the meridional slice of this same cone
+# (rays at X=0), so the cone MUST contain a uniform meridional fan that matches
+# the 2D's linspace heights. Two requirements follow:
+#   * full radial rings (n_rings = count // 2) so the meridional spokes land
+#     exactly on the 2D fan heights radius * j / n_rings, and
+#   * an azimuth count divisible by 4 so the 90 deg / 270 deg spokes (the rays
+#     in the YZ plane) actually exist -- otherwise the meridional slice is empty
+#     and the 2D pane silently falls back to the whole projected cone.
+# Density (>= 16 spokes) also keeps the down-axis view reading as a filled cone
+# rather than the old crossing-fan asterisk (bug 0040).
+_CONE_AZIMUTH_MIN = 16
+_CONE_AZIMUTH_MAX = 24
+
+
 class TracePreviewSamplingMixin:
     def _sample_ray_heights(self, max_radius: float) -> list[float]:
         if max_radius <= 1e-9:
@@ -702,17 +718,28 @@ class TracePreviewSamplingMixin:
         return np.asarray(points[:count], dtype=float)
 
     def _cone_azimuth_count(self) -> int:
-        """Azimuthal spokes used when the meridional fan is revolved into a 3D cone."""
+        """Azimuthal spokes used when the meridional fan is revolved into a 3D cone.
+
+        Returns a multiple of 4 in ``[_CONE_AZIMUTH_MIN, _CONE_AZIMUTH_MAX]``.
+        Divisibility by 4 guarantees spokes at 90 deg and 270 deg, i.e. rays in
+        the YZ meridional plane -- these are exactly the 2D slice (bug 0041). The
+        density also keeps the down-axis view a filled cone, not a crossing-fan
+        asterisk (bug 0040).
+        """
         count = max(1, int(self._current_ray_count()))
-        return int(max(3, min(12, count)))
+        clamped = max(_CONE_AZIMUTH_MIN, min(_CONE_AZIMUTH_MAX, count))
+        return int(4 * round(clamped / 4.0))
 
     def _sample_ray_count_cone_points(self, max_radius: float) -> np.ndarray:
         """3D launch-cone pupil samples: the uniform meridional fan revolved about the axis.
 
-        Each azimuthal spoke shares the radial gap of the 2D meridional fan
-        (``_sample_ray_count_pupil_points``), so every meridian reads as the
-        familiar uniform fan while the whole set forms a 3D cone. The 2D layout
-        keeps its own flat ``world_envelope`` fan, so its uniform gaps stay intact.
+        This is the single 3D-truth pupil for a sequential scene (bug 0041). The
+        radial rings are ``count // 2`` (uniform out to the pupil rim), so the
+        meridional spokes land exactly on the 2D fan heights
+        ``radius * j / n_rings`` -- the 2D layout is the X=0 slice of this very
+        cone, not a separate fan. The fan is revolved into ``_cone_azimuth_count``
+        spokes (a multiple of 4 so the 90/270 deg meridional spokes exist, and
+        dense enough that the down-axis view reads as a filled cone).
         """
         radius = float(max_radius) if np.isfinite(float(max_radius)) else 0.0
         if radius <= 1e-9 and self.rows:
