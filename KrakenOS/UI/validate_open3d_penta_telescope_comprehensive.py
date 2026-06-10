@@ -4645,6 +4645,105 @@ def phase_55_display_only_step_hover_tracks_move(
     return result
 
 
+def phase_56_selected_step_pink_not_orange(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A selected imported STEP reads as the pink translucent "selected" body,
+    not a muddy orange blob (bug 0051).
+
+    Flag (`flag_20260610_192640_648`): *"highlight edge color does not have
+    contrast. And why this STEP color is orange? different from the rest."*
+    `_set_step_actor_selected` painted orange per-triangle edges over the dense
+    tessellation; now it suppresses them and fills the body pink, matching the
+    row/optical-solid selection idiom.
+
+    Property-level guard (the pixel proof lives in the standalone
+    `validate_open3d_step_selection_pink_snapshot`): after selecting the optical
+    overlay, at least one of its actors must carry the pink selection fill
+    `(1.0, 0.45, 0.65)` and none may show the old orange edge `(1.0, 0.48, 0.0)`;
+    deselecting must restore the captured base color. SKIPs without a renderer /
+    fixture.
+    """
+    result = PhaseResult(name="Phase 56: selected STEP is pink, not orange")
+    from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
+
+    if getattr(inspector, "_renderer", None) is None:
+        result.passed = True
+        result.notes.append("SKIP: no renderer (PyVista/VTK unavailable)")
+        return result
+    if not PRISM_42779_STEP.exists():
+        result.passed = True
+        result.notes.append(f"SKIP: missing fixture {PRISM_42779_STEP}")
+        return result
+
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    _import_step(app, PRISM_42779_STEP)
+    inspector.refresh_from_editor(force_retrace=False)
+    inspector.update_idletasks()
+
+    def _optical_actor_props():
+        props = []
+        for key, lbl in dict(inspector._actor_step_map).items():
+            if str(lbl).strip().lower() != "optical":
+                continue
+            actor = inspector._actor_by_key.get(key)
+            if actor is None:
+                continue
+            try:
+                props.append(actor.GetProperty())
+            except Exception:
+                pass
+        return props
+
+    def _near(a, b, tol=0.04):
+        return all(abs(float(a[i]) - float(b[i])) <= tol for i in range(3))
+
+    pink = (1.0, 0.45, 0.65)
+    orange = (1.0, 0.48, 0.0)
+
+    inspector._selection_representation.apply_step_selection("optical")
+    inspector.update_idletasks()
+    sel_props = _optical_actor_props()
+    found_pink = any(_near(p.GetColor(), pink) for p in sel_props)
+    orange_leak = any(
+        bool(p.GetEdgeVisibility()) and _near(p.GetEdgeColor(), orange) for p in sel_props
+    )
+
+    inspector._selection_representation.apply_step_selection(None)
+    inspector.update_idletasks()
+    desel_props = _optical_actor_props()
+    still_pink = any(_near(p.GetColor(), pink) for p in desel_props)
+
+    result.detail.update(
+        {
+            "optical_actors": len(sel_props),
+            "found_pink": found_pink,
+            "orange_leak": orange_leak,
+            "pink_after_deselect": still_pink,
+        }
+    )
+    if not sel_props:
+        result.notes.append("no optical STEP actors found to verify selection styling")
+    if not found_pink:
+        result.notes.append("selected optical STEP body did not take the pink fill (bug 0051)")
+    if orange_leak:
+        result.notes.append("selected optical STEP still paints the old orange edge (bug 0051)")
+    if still_pink:
+        result.notes.append("deselected optical STEP stayed pink (base style not restored)")
+
+    try:
+        app.clear_step_imports()
+        inspector.refresh_from_editor()
+        inspector.update_idletasks()
+    except Exception:
+        pass
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -4746,6 +4845,7 @@ def main() -> int:
             phase_53_iso_orbit_no_camera_clip,
             phase_54_step_reselect_single_gizmo,
             phase_55_display_only_step_hover_tracks_move,
+            phase_56_selected_step_pink_not_orange,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

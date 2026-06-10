@@ -12819,15 +12819,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 base = {}
         if selected:
+            # bugs/0051: use the app-wide "selected" idiom (pink translucent
+            # body, the same as promoted rows / optical solids in
+            # _set_row_actor_selected, bugs/0001-0003) instead of the old orange
+            # *edge tint* (1.0, 0.48, 0.0). An imported STEP body is a dense
+            # tessellation, so per-triangle edges painted a muddy wireframe that
+            # filled the body -- it read as a flat orange blob with no edge
+            # contrast ("why is this STEP orange, different from the rest?").
+            # Suppress the triangle edges and signal selection with a
+            # high-contrast pink fill + bumped opacity; the body's own glass-edge
+            # rim actor (also tagged with the label) keeps the silhouette.
             try:
-                if bool(getattr(actor, "_kraken_round_lens_like_step_body", False)):
-                    prop.SetEdgeVisibility(0)
-                else:
-                    prop.SetEdgeVisibility(1)
-                    prop.SetEdgeColor(1.0, 0.48, 0.0)
-                prop.SetLineWidth(max(float(base.get("line_width", 1.0)), 3.0))
-                prop.SetAmbient(max(float(base.get("ambient", 0.0)), 0.35))
-                prop.SetOpacity(min(max(float(base.get("opacity", 1.0)), 0.25) + 0.10, 1.0))
+                prop.SetEdgeVisibility(0)
+                prop.SetLineWidth(float(base.get("line_width", 1.0)))
+                prop.SetColor(1.0, 0.45, 0.65)  # pink body fill
+                prop.SetOpacity(min(max(float(base.get("opacity", 0.5)), 0.55) + 0.10, 1.0))
+                prop.SetAmbient(max(float(base.get("ambient", 0.0)), 0.30))
+                prop.SetDiffuse(max(float(base.get("diffuse", 1.0)), 0.80))
             except Exception:
                 pass
             return

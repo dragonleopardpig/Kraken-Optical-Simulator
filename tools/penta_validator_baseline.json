@@ -57,7 +57,8 @@
     "52": "pass",
     "53": "pass",
     "54": "pass",
-    "55": "pass"
+    "55": "pass",
+    "56": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -115,6 +116,7 @@
     "52": "Det toggle keeps Object/Image reference disks (no detector)",
     "53": "Iso view is orthographic; orbit never clips the converging cone",
     "54": "selecting a new STEP clears the prior rotation gizmo",
-    "55": "display-only STEP hover metadata tracks a move (no stranded ghost)"
+    "55": "display-only STEP hover metadata tracks a move (no stranded ghost)",
+    "56": "selected STEP is pink, not a muddy orange blob"
   }
 }
