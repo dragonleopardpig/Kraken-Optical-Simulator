@@ -1,4 +1,4 @@
-Case Study 7: Zemax LED Source To Diffuse Object Imaging
+Case Study 9: Zemax LED Source To Diffuse Object Imaging
 ========================================================
 
 Goal

@@ -1,4 +1,4 @@
-Case Study 15: Cooke Triplet Optimization From A Bad Start
+Case Study 17: Cooke Triplet Optimization From A Bad Start
 ==========================================================
 
 Goal

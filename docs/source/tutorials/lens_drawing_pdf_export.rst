@@ -1,4 +1,4 @@
-Case Study 13: Multi-Element Lens PDF Drawing Export
+Case Study 15: Multi-Element Lens PDF Drawing Export
 ====================================================
 
 Goal

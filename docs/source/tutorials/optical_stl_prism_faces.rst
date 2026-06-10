@@ -1,4 +1,4 @@
-Case Study 10: Optical STL Prism And Face Roles
+Case Study 12: Optical STL Prism And Face Roles
 ===============================================
 
 Goal

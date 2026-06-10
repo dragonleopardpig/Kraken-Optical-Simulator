@@ -1,4 +1,4 @@
-Case Study 11: Cube Beam Splitter CAD And Virtual Plane
+Case Study 13: Cube Beam Splitter CAD And Virtual Plane
 =======================================================
 
 Goal

@@ -1,5 +1,5 @@
-Case Study: PYRITE 120 mm Machine-Vision Surrogate
-==================================================
+Case Study 4: PYRITE 120 mm Machine-Vision Surrogate
+====================================================
 
 This page documents the surrogate layout
 ``Machine Vision 120 mm Pyrite (Datasheet 1X)``. It is based on the local

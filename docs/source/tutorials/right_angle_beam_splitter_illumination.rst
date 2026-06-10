@@ -1,4 +1,4 @@
-Case Study 6: Source/Object Split Through A Beam Splitter
+Case Study 8: Source/Object Split Through A Beam Splitter
 =========================================================
 
 Goal

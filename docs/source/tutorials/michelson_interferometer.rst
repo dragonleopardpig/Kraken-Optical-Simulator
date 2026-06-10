@@ -1,4 +1,4 @@
-Case Study 4: Michelson Beam Splitter And Interferogram
+Case Study 6: Michelson Beam Splitter And Interferogram
 =======================================================
 
 Goal

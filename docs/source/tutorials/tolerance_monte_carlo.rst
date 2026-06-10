@@ -1,5 +1,5 @@
-Case Study 9: Tolerance Monte Carlo And Compensators
-====================================================
+Case Study 11: Tolerance Monte Carlo And Compensators
+=====================================================
 
 Goal
 ----

@@ -1,5 +1,5 @@
-Case Study 8: Multi-Source Illumination
-=======================================
+Case Study 10: Multi-Source Illumination
+========================================
 
 Goal
 ----

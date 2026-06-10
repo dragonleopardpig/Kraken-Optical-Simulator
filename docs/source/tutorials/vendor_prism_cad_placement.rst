@@ -1,5 +1,5 @@
-Case Study 12: Vendor Prism CAD Import And Face Placement
-==========================================================
+Case Study 14: Vendor Prism CAD Import And Face Placement
+=========================================================
 
 Goal
 ----

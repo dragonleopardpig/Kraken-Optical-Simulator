@@ -139,6 +139,251 @@ finite object — built once here and reused under each tool. Adapt
    Fno      = Focal / Diameter             # working F-number
 
 
+.. _analysis-optimization-targets:
+
+Using analyses as optimization targets
+--------------------------------------
+
+Each analysis on this page is also a candidate **merit-function operand**: the
+optimizer (``Optimization / Solves`` and the Optimization panel) drives a chosen
+variable until the analysis value reaches a target. The workflow is always the
+same — *(1)* pick the analysis that captures your requirement, *(2)* expose the
+right variables (radii, thicknesses, glasses, tilts), *(3)* set the analysis
+value as the target operand, and *(4)* iterate. The three tables below answer:
+which analysis to target, what value to aim for, and what you give up when you
+push it.
+
+Some tools are **diagnostics** rather than direct targets — Pupil, the map
+analyses (PSFMap, FldMap, IllMap, WfeMap, DetMap, BField), and Interf are read
+to *decide what to target*, then you optimize the corresponding scalar metric
+(RMS, Wavefront, MTF, Illum…).
+
+Why each analysis matters and when to target it
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: What each analysis tells you, and when to make it the target
+   :header-rows: 1
+   :widths: 12 32 30 26
+
+   * - Analysis
+     - Why it matters (what it tells you)
+     - Make it the optimization target when…
+     - Typical target / pass criterion
+   * - :ref:`Spot <analysis-spot>`
+     - Geometric blur size from ray aberrations; the fastest read of focus and
+       aberration balance.
+     - Early design or focusing, while blur is far larger than the Airy disc
+       (geometry-limited).
+     - RMS spot :math:`\le` Airy radius, or :math:`\le` one sensor pixel.
+   * - :ref:`RMS <analysis-rms>`
+     - One-number sharpness versus field — the merit-function workhorse.
+     - Balancing sharpness across the *whole* field, not just on axis.
+     - RMS held :math:`\le` Airy / pixel at every field point.
+   * - :ref:`PSF <analysis-psf>`
+     - The true diffraction image of a point; reveals energy concentration
+       (Strehl) that geometry misses.
+     - Near the diffraction limit, where spot size alone is misleading.
+     - Strehl ratio :math:`\ge 0.8` (≈ :math:`\lambda/4` wavefront).
+   * - :ref:`MTF <analysis-mtf>`
+     - Contrast versus spatial frequency — the headline imaging spec customers
+       quote.
+     - A sensor resolution / contrast requirement exists.
+     - MTF :math:`\ge` spec at the sensor Nyquist (e.g. :math:`\ge 0.3`).
+   * - :ref:`Pupil <analysis-pupil>`
+     - Transverse ray-fan / pupil-aberration plot — *diagnoses which* aberration
+       dominates.
+     - Not a direct target; read it to choose which aberration to attack.
+     - Ray-fan slopes flat and symmetric.
+   * - :ref:`Seidel <analysis-seidel>`
+     - Third-order coefficients (spherical, coma, astigmatism, Petzval,
+       distortion) — the analytic design "knobs".
+     - Balancing primary aberrations term-by-term.
+     - Drive or balance a specific :math:`S_j \to 0` (against higher order).
+   * - :ref:`WFront <analysis-wfront>`
+     - OPD map — the physical limit on diffraction performance.
+     - Diffraction-limited imaging or interferometry.
+     - :math:`\le \lambda/4` PV (Rayleigh) or :math:`\le \lambda/14` RMS
+       (Maréchal).
+   * - :ref:`Zernike <analysis-zernike>`
+     - Orthogonal-mode decomposition of the wavefront; isolates named
+       aberrations and feeds PSF/MTF.
+     - Attacking specific modes (e.g. minimise spherical, coma).
+     - RMS of fitted terms small; each target mode below tolerance.
+   * - :ref:`FC/Dist <analysis-fc-dist>`
+     - Field curvature bows the focal surface; distortion bends straight lines.
+     - Flat sensors (curvature) or metrology / machine vision (distortion).
+     - Field sag within depth of focus; :math:`|\text{distortion}| \le` spec
+       (≈ <0.1 % metrology, <2–3 % consumer).
+   * - :ref:`Illum <analysis-illum>`
+     - Relative illumination (vignetting + :math:`\cos^4\theta`) — edge
+       brightness falloff.
+     - Uniformity or radiometry matters.
+     - Relative illumination :math:`\ge` spec at the corner (e.g. :math:`\ge`
+       50 %).
+   * - :ref:`LatClr <analysis-latclr>`
+     - Lateral color = wavelength-dependent magnification → colored edges.
+     - Color sensors, especially over a wide field.
+     - Lateral color :math:`\le` 1 pixel across the field.
+   * - :ref:`Pol <analysis-pol>`
+     - Diattenuation and retardance through the system.
+     - Polarization-sensitive systems (LCoS, interferometry, polarimetry).
+     - Retardance / diattenuation below spec.
+   * - :ref:`Atmos <analysis-atmos>`
+     - Atmospheric dispersion / refraction shifts the color image.
+     - Ground telescopes and long slant paths (ADC design).
+     - Residual dispersion < resolution / seeing.
+   * - :ref:`PSFMap <analysis-psfmap>`
+     - PSF over the field grid — field-dependent image quality at a glance.
+     - Verifying uniform quality across the sensor (diagnostic).
+     - PSF / Strehl uniform within spec across the field.
+   * - :ref:`FldMap <analysis-fldmap>`
+     - A per-field map of a chosen metric.
+     - Diagnostic — pick the operand and confirm it everywhere.
+     - Mapped metric within spec across the field.
+   * - :ref:`IllMap <analysis-illmap>`
+     - Two-dimensional illumination across the detector.
+     - Radiometric uniformity over the whole sensor (not just a meridian).
+     - Corner-to-corner roll-off within spec.
+   * - :ref:`WfeMap <analysis-wfemap>`
+     - Wavefront error across the field.
+     - Field-dependent diffraction performance.
+     - WFE :math:`\le \lambda/4` over the used field.
+   * - :ref:`DetMap <analysis-detmap>`
+     - Power / irradiance landing on the detector (non-sequential).
+     - Stray-light and energy budgeting.
+     - Collected power :math:`\ge` budget; ghosts below threshold.
+   * - :ref:`CohDet <analysis-cohdet>`
+     - Coherent sum of fields → interference and fringe visibility.
+     - Interferometers and coherent beam combination.
+     - Fringe visibility / contrast :math:`\ge` spec.
+   * - :ref:`BField <analysis-bfield>`
+     - The field on a chosen non-sequential branch (split paths).
+     - Validating each arm of a splitter / multi-path system.
+     - Each branch carries the intended energy and quality.
+   * - :ref:`Diffr <analysis-diffr>`
+     - Diffraction pattern at the detector.
+     - Diffraction-dominated detectors (pinhole, grating order).
+     - Order / spot energy within spec.
+   * - :ref:`Interf <analysis-interf>`
+     - Simulated interferogram (fringes :math:`\propto` OPD) — how the part
+       looks on a test interferometer.
+     - Designing for testability or a null test.
+     - Interpretable fringe count; null where intended.
+   * - :ref:`TolCmp <analysis-tolcmp>`
+     - Nominal versus perturbed performance — manufacturability and robustness.
+     - Finalising for build (the tolerance budget).
+     - As-built performance :math:`\ge` spec at the target yield.
+
+Conflicting objectives — what you give up
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Optical design is a balance: pushing one analysis almost always costs another.
+A merit function with **several weighted operands** lets the optimizer find the
+compromise instead of over-correcting one metric. The common trades:
+
+.. list-table:: When you push the left column, the middle column tends to get worse
+   :header-rows: 1
+   :widths: 26 30 44
+
+   * - Push this…
+     - …and this tends to degrade
+     - Why (physics) / what to watch
+   * - Faster system (lower :math:`F/\#`, more light)
+     - Spherical aberration, wavefront, Strehl
+     - Spherical grows roughly as aperture\ :sup:`3`; opening the stop trades
+       sharpness for speed. Watch :ref:`analysis-spot`, :ref:`analysis-wfront`,
+       :ref:`analysis-mtf`.
+   * - Wider field of view
+     - Coma, astigmatism, field curvature, lateral color, illumination
+     - Off-axis aberrations and edge falloff all grow with field height. Watch
+       :ref:`analysis-rms` vs field, :ref:`analysis-fc-dist`,
+       :ref:`analysis-latclr`, :ref:`analysis-illum`.
+   * - Flat field (low Petzval)
+     - Element count / track length, axial color
+     - Field flatteners add negative elements and chromatic load. Watch
+       Petzval :math:`S_{IV}` in :ref:`analysis-seidel` and the track length.
+   * - Low distortion
+     - Astigmatism and field curvature at wide field
+     - The mapping correction fights the off-axis field aberrations (and can
+       cost telecentricity / illumination). Watch :ref:`analysis-fc-dist`.
+   * - High MTF at Nyquist
+     - Depth of focus, tolerance margin, low-frequency MTF
+     - A peaky high-frequency response is defocus- and fabrication-sensitive.
+       Watch through-focus MTF and :ref:`analysis-tolcmp`.
+   * - More relative illumination (less vignetting)
+     - Off-axis spot / MTF
+     - Vignetting was discarding the worst marginal rays; keeping them
+       re-introduces aberration. Balance :ref:`analysis-illum` against
+       :ref:`analysis-rms` vs field.
+   * - Diffraction-limited wavefront / high Strehl
+     - Manufacturability, spectral bandwidth
+     - A tight null is sensitive to figure and alignment errors and to
+       wavelength. Watch :ref:`analysis-tolcmp` and :ref:`analysis-wfemap`
+       across :math:`\lambda`.
+   * - Corrected lateral color
+     - Axial color, glass-choice freedom
+     - Apochromatic balancing constrains the glass map and can add elements.
+       Watch :ref:`analysis-latclr` against axial color.
+   * - Compact track length
+     - Aberration headroom (Seidel balancing)
+     - Fewer, closer elements give the optimizer less freedom to balance terms.
+       Watch :ref:`analysis-seidel` and :ref:`analysis-rms`.
+
+.. _analysis-poor-to-best:
+
+Worked case studies: from a poor start to best
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The tutorials carry two end-to-end optimizations that start from a deliberately
+poor design and drive an analysis value to a good one. The numbers below are the
+values those case studies actually report, so you can reproduce them click for
+click.
+
+.. list-table:: Poor → best, with the analysis used as the target
+   :header-rows: 1
+   :widths: 24 20 16 16 24
+
+   * - Case study
+     - Metric (target operand)
+     - Poor start
+     - Best (after)
+     - How it was achieved
+   * - :doc:`Focus a machine-vision lens <../tutorials/machine_vision_focus>`
+       (Case Study 2)
+     - On-axis :ref:`Spot <analysis-spot>` RMS
+     - 1.21 mm
+     - 0.0022 mm
+     - Best-focus solve moves the sensor (S5 rear datum) to ≈ 308.3 mm with
+       ``Spot RMS`` as the target.
+   * - :doc:`Focus a machine-vision lens <../tutorials/machine_vision_focus>`
+       (Case Study 2)
+     - :ref:`MTF <analysis-mtf>` @ 20 cyc/mm
+     - 0.008
+     - 0.90
+     - The same focus solve — one variable (image distance), one operand.
+   * - :doc:`Cooke triplet from a bad start <../tutorials/cooke_triplet_optimization>`
+       (Case Study 17)
+     - :ref:`Spot <analysis-spot>` RMS @ 0.55 µm (axis & 3°)
+     - > 1 mm
+     - < 0.01 mm
+     - Optimizer varies the radii and airspaces with ``Spot RMS`` target 0 —
+       a > 50× collapse.
+   * - :doc:`Cooke triplet from a bad start <../tutorials/cooke_triplet_optimization>`
+       (Case Study 17)
+     - :ref:`MTF <analysis-mtf>` @ 20 cyc/mm
+     - ≈ 0 (no useful contrast)
+     - usable contrast
+     - The same multi-variable optimization recovers contrast at the reference
+       frequency.
+
+To learn the analysis panels themselves on a single well-behaved design before
+optimising, see :doc:`One lens, many analyses <../tutorials/double_gauss_analysis_suite>`
+(Case Study 18, which walks Spot → PSF → MTF → Wavefront → Zernike), and for the
+robustness side of the table above,
+:doc:`Tolerance Monte Carlo and compensators <../tutorials/tolerance_monte_carlo>`
+(Case Study 11) exercises :ref:`TolCmp <analysis-tolcmp>`.
+
+
 Geometric image quality
 -----------------------
 

@@ -1,5 +1,5 @@
-Case Study 14: 3D Hardware Alignment Workflows
-================================================
+Case Study 16: 3D Hardware Alignment Workflows
+==============================================
 
 Goal
 ----

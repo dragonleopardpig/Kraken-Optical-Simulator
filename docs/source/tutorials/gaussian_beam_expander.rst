@@ -1,4 +1,4 @@
-Case Study 3: Gaussian Laser Beam Expander
+Case Study 5: Gaussian Laser Beam Expander
 ==========================================
 
 Goal

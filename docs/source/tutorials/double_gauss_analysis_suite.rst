@@ -1,4 +1,4 @@
-Case Study 16: One Lens, Many Analyses
+Case Study 18: One Lens, Many Analyses
 ======================================
 
 Goal

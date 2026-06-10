@@ -1,4 +1,4 @@
-Case Study 5: Mach-Zehnder Two-Output Interferometer
+Case Study 7: Mach-Zehnder Two-Output Interferometer
 ====================================================
 
 Goal

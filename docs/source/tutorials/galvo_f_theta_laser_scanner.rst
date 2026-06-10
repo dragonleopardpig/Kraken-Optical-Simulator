@@ -1,5 +1,5 @@
-Case Study 17: Galvo F-Theta Laser Scanner
-===========================================
+Case Study 19: Galvo F-Theta Laser Scanner
+==========================================
 
 Goal
 ----
