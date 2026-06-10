@@ -1010,25 +1010,46 @@ class LayoutShellControlsMixin:
             parent_menu.add_cascade(label="Zemax Prescriptions (attachment)", menu=zemax_menu)
             return
 
-        grouped: dict[str, list[tuple[str, Path]]] = {}
+        # Build a tree mirroring the on-disk directory structure so deep
+        # collections (e.g. Sequential/<category>, Short course/<category>)
+        # nest as browsable submenus instead of a flat list of long
+        # slash-joined group labels. Loose files at the zemax root live under
+        # a "Top Level" submenu so they don't crowd out the category folders.
+        tree: dict[str, object] = {"dirs": {}, "files": []}
         for label, path in self.zemax_example_files.items():
             try:
                 relative = path.relative_to(ZEMAX_ATTACHMENT_DIR)
             except ValueError:
                 relative = Path(label)
-            group = relative.parent.as_posix() if relative.parent != Path(".") else "Top Level"
-            grouped.setdefault(group, []).append((relative.name, path))
+            parts = relative.parts
+            if len(parts) <= 1:
+                node = tree["dirs"].setdefault("Top Level", {"dirs": {}, "files": []})
+                node["files"].append((relative.name, path))
+                continue
+            node = tree
+            for part in parts[:-1]:
+                node = node["dirs"].setdefault(part, {"dirs": {}, "files": []})
+            node["files"].append((parts[-1], path))
 
-        for group in sorted(grouped, key=lambda value: (value != "Top Level", value.lower())):
-            submenu = tk.Menu(zemax_menu, tearoff=0)
-            self._zemax_example_category_menus.append(submenu)
-            for item_label, path in sorted(grouped[group], key=lambda item: item[0].lower()):
-                submenu.add_command(
-                    label=item_label,
-                    command=lambda value=path: self.load_zemax_example_file(value),
-                )
-            zemax_menu.add_cascade(label=group, menu=submenu)
+        self._populate_zemax_tree_menu(zemax_menu, tree)
         parent_menu.add_cascade(label="Zemax Prescriptions (attachment)", menu=zemax_menu)
+
+    def _populate_zemax_tree_menu(self, menu: tk.Menu, node: dict[str, object]) -> None:
+        """Recursively fill ``menu`` from a {dirs, files} tree node.
+
+        Directories come first (as cascading submenus, "Top Level" floated to
+        the top), then files as load commands -- both alphabetised.
+        """
+        for dir_name in sorted(node["dirs"], key=lambda value: (value != "Top Level", value.lower())):
+            submenu = tk.Menu(menu, tearoff=0)
+            self._zemax_example_category_menus.append(submenu)
+            self._populate_zemax_tree_menu(submenu, node["dirs"][dir_name])
+            menu.add_cascade(label=dir_name, menu=submenu)
+        for item_label, path in sorted(node["files"], key=lambda item: item[0].lower()):
+            menu.add_command(
+                label=item_label,
+                command=lambda value=path: self.load_zemax_example_file(value),
+            )
 
     def load_layouts(self) -> None:
         discovered = _discover_layouts(LAYOUTS_DIR, default_layout_title=DEFAULT_LAYOUT_TITLE)

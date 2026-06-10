@@ -127,6 +127,24 @@ docs/_build/
 !/attachment/prisms/32336/step_32336.step
 !/attachment/prisms/42779/step_42779.step
 
+# Zemax collections (Sequential/, Short course/, ...): the Examples menu reads
+# only the .zmx text prescriptions, which we keep explicit in git. The bulky
+# OpticStudio session/data/ray binaries (.zos/.zda/.zrd, ~190 MB) and the
+# per-config sidecars (.cfg/.zpl/.xml) are not parsed by KrakenOS -- keep them
+# local so the repo stays lean.
+/attachment/zemax/**/*.zos
+/attachment/zemax/**/*.ZOS
+/attachment/zemax/**/*.zda
+/attachment/zemax/**/*.ZDA
+/attachment/zemax/**/*.zrd
+/attachment/zemax/**/*.ZRD
+/attachment/zemax/**/*.cfg
+/attachment/zemax/**/*.CFG
+/attachment/zemax/**/*.zpl
+/attachment/zemax/**/*.ZPL
+/attachment/zemax/**/*.xml
+/attachment/zemax/**/*.XML
+
 # PyBuilder
 target/
 
