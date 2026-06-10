@@ -4282,6 +4282,161 @@ def phase_50_wavefront_3d_surface(
     return result
 
 
+def phase_51_cemented_doublet_single_pair(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A cemented doublet reads as two elements in 3D, not three slabs (bug 0046).
+
+    Zemax's `Doublet_4_surf_no_TDE.zmx` models the crown/flint bond as a real
+    7.5 um `___BLANK` cement glass between the BK7 crown and the F2 flint -- three
+    distinct glasses. KrakenOS builds one BBB solid per glass-bearing surface, so
+    that microns-thick bond became a full-aperture standalone slab and the 3D view
+    read as a duplicated element, while the flat 2D meridional slice collapsed it
+    to a hairline ("3D not matching 2D"). The fix draws a sub-threshold cement
+    layer invisibly (the actor and the AAA optical surface stay, so centroid
+    queries and ray tracing are untouched). The guard
+    (`validate_cemented_doublet_body_count`) asserts the doublet keeps three BBB
+    bodies but only two VISIBLE ones, and that a real singlet/doublet/triplet keep
+    every body -- plus an off-screen render of the two visible elements. SKIPs if
+    PyVista/VTK is unavailable.
+
+    Then a second, LIVE guard (`validate_cemented_doublet_body_count_snapshot`)
+    boots the doublet in the shared inspector with rays ON and asserts no filled
+    glass body is confined to the sub-0.05 mm cement band -- because the display-
+    free check above once passed while `open3d_scene_refresh` re-inflated the
+    hidden cement back to a visible slab with rays on. SKIPs without a renderer.
+    """
+    result = PhaseResult(
+        name="Phase 51: cemented doublet reads as two elements, not a duplicated slab"
+    )
+    try:
+        from KrakenOS.UI.validate_cemented_doublet_body_count import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"cemented-doublet guard raised: {exc!r}")
+        return result
+    # The display-free guard above passed once while the LIVE inspector still
+    # drew the cement slab: open3d_scene_refresh re-inflates analytic bodies to
+    # >= 0.26 with rays on, undoing the opacity-0 set in _iter_3d_side_body_meshes.
+    # So also exercise the live rays-on render against the shared harness
+    # inspector (Phase 51 is the last phase, so mutating its rows is safe). It
+    # SKIPs cleanly if no renderer is available.
+    try:
+        from KrakenOS.UI.validate_cemented_doublet_body_count_snapshot import (
+            run_checks as run_live_checks,
+        )
+        live_passed, live_notes = run_live_checks(app=app, inspector=inspector)
+    except Exception as exc:  # pragma: no cover - defensive
+        live_passed, live_notes = False, [f"FAIL: live cemented-doublet guard raised: {exc!r}"]
+    passed = bool(passed) and bool(live_passed)
+    notes = list(notes) + [f"[live] {n}" for n in live_notes]
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if "FAIL" in note or "SKIP" in note:
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("cemented-doublet guard reported failure without detail")
+    return result
+
+
+def phase_52_det_mode_keeps_reference_disks(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Toggling "Det" with no detector configured must not blank the Object/Image
+    reference disks (bug 0047).
+
+    Flag: *"Clicking Refs show only the Object disk, click Det, Object Disk
+    vanish, not showing any Image Disk."* The cemented doublet is on-axis only, so
+    its auto image plane registers as a 1 mm "detector" while max_real_image_height
+    is 0 -- the detector coverage overlay draws NOTHING, yet the old code still
+    suppressed the reference disks on the Det toggle, leaving the image plane
+    empty. The fix gates suppression on
+    `Open3DSceneRefreshService._detector_coverage_will_draw` (a strict subset:
+    suppress only when the coverage overlay actually replaces the disks).
+
+    A display-free guard (`validate_det_coverage_gate`) pins that gate's logic
+    (no detector -> False; 1 mm auto-detector with max_rih 0 -> False; real
+    detector + positive max_rih -> True). Then a LIVE guard
+    (`validate_det_mode_keeps_reference_disks`) boots the doublet with Refs ON,
+    toggles Det OFF->ON, and asserts the reference disk bodies and their z~0 /
+    z~229 rim lines survive -- plus a Det-ON eyeball render. The live guard SKIPs
+    cleanly if no renderer is available. (Phase 52 is the last phase, so mutating
+    the shared inspector's rows / overlay toggles is safe.)
+    """
+    result = PhaseResult(
+        name="Phase 52: Det toggle keeps Object/Image reference disks (no detector)"
+    )
+    try:
+        from KrakenOS.UI.validate_det_coverage_gate import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"detector-coverage gate guard raised: {exc!r}")
+        return result
+    try:
+        from KrakenOS.UI.validate_det_mode_keeps_reference_disks import (
+            run_checks as run_live_checks,
+        )
+        live_passed, live_notes = run_live_checks(app=app, inspector=inspector)
+    except Exception as exc:  # pragma: no cover - defensive
+        live_passed, live_notes = False, [f"FAIL: live Det-toggle guard raised: {exc!r}"]
+    passed = bool(passed) and bool(live_passed)
+    notes = list(notes) + [f"[live] {n}" for n in live_notes]
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if "FAIL" in note or "SKIP" in note:
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("Det-toggle guard reported failure without detail")
+    return result
+
+
+def phase_53_iso_orbit_no_camera_clip(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Orbiting the Open-3D view right after startup must not clip the converging
+    cone / image plane (bug 0048).
+
+    Flag (`flag_20260610_130839/130854/130912`): *"first view ... it starts
+    clipping ... 3rd view, clipped."* The clip appeared right after startup on the
+    Iso view but never after clicking a cardinal preset. Root cause: the Iso view
+    used PERSPECTIVE projection (its else-branch set no parallel_scale) while every
+    cardinal preset is PARALLEL; a perspective camera sits a finite distance away,
+    so an orbit swings the far geometry behind it where the near clip plane slices
+    it off. The fix makes Iso orthographic like the cardinal presets, backed by a
+    parallel "keep the camera clear of the scene" dolly that is visually free.
+
+    A live guard (`validate_camera_iso_orbit_no_clip`) boots the doublet (rays ON,
+    refs ON) and asserts: Iso yields an orthographic camera; after an orbit all 8
+    scene-box corners stay in front of the camera; the clear-scene backstop leaves
+    parallel_scale unchanged; and a rendered fixed (parallel) frame draws the
+    image-plane geometry that the recorded perspective bug camera clips away. SKIPs
+    cleanly without a renderer. (Phase 53 is the last phase, so mutating the shared
+    inspector's rows / camera is safe.)
+    """
+    result = PhaseResult(
+        name="Phase 53: Iso view is orthographic; orbit never clips the converging cone"
+    )
+    try:
+        from KrakenOS.UI.validate_camera_iso_orbit_no_clip import run_checks
+        passed, notes = run_checks(app=app, inspector=inspector)
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"iso-orbit clip guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if "FAIL" in note or "SKIP" in note:
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("iso-orbit clip guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -4378,6 +4533,9 @@ def main() -> int:
             phase_48_field_curvature_distortion_physics,
             phase_49_field_curvature_curve_smoothness,
             phase_50_wavefront_3d_surface,
+            phase_51_cemented_doublet_single_pair,
+            phase_52_det_mode_keeps_reference_disks,
+            phase_53_iso_orbit_no_camera_clip,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

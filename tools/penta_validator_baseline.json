@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-06-09T13:24:53+00:00",
+  "generated_at": "2026-06-10T02:34:37+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -52,7 +52,10 @@
     "47": "pass",
     "48": "pass",
     "49": "pass",
-    "50": "pass"
+    "50": "pass",
+    "51": "pass",
+    "52": "pass",
+    "53": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -105,6 +108,9 @@
     "47": "2D layout is a meridional slice of the single 3D launch cone (North Star #2)",
     "48": "Field Curvature / Distortion curves are physically correct",
     "49": "Field Curvature T/S curves draw as smooth arcs",
-    "50": "Wavefront 3D surface builds and renders"
+    "50": "Wavefront 3D surface builds and renders",
+    "51": "cemented doublet reads as two elements, not a duplicated slab",
+    "52": "Det toggle keeps Object/Image reference disks (no detector)",
+    "53": "Iso view is orthographic; orbit never clips the converging cone"
   }
 }

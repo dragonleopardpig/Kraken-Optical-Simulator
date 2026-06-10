@@ -611,6 +611,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self._vtk_interactor.AddObserver("LeftButtonPressEvent", self._on_left_button_press)
                 self._vtk_interactor.AddObserver("MouseMoveEvent", self._on_mouse_move)
                 self._vtk_interactor.AddObserver("KeyPressEvent", self._on_key_press)
+                # bugs/0048: orbit/zoom can swing the far scene geometry behind a
+                # too-close camera; keep the camera clear of the scene so the
+                # converging cone is never near-clipped during interaction.
+                self._vtk_interactor.AddObserver("InteractionEvent", self._on_camera_interaction)
+                self._vtk_interactor.AddObserver("EndInteractionEvent", self._on_camera_interaction)
             # Deep-trace VTK render-window resize: maximising the Open
             # 3D window is a known trigger for hover-freeze reports, so
             # we log every Configure / Resize so the post-mortem can
@@ -8532,6 +8537,78 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 except Exception:
                     pass
 
+    def _ensure_parallel_camera_clears_scene(self) -> bool:
+        """Keep the camera far enough that the whole scene stays in front of it.
+
+        In parallel projection the camera-to-focal distance does not affect the
+        rendered image (only the parallel scale sets the zoom), so we are free to
+        dolly the camera back along its view direction. Doing so prevents the far
+        scene geometry -- e.g. the converging ray cone's focus at the image plane
+        -- from swinging *behind* the camera as the user orbits, where VTK's
+        clamped-positive near clip plane would slice it off (bugs/0048). No-op in
+        perspective projection, where moving the camera would change the view.
+        Returns True if the camera was moved.
+        """
+        if self._renderer is None:
+            return False
+        camera = self._renderer.GetActiveCamera()
+        if camera is None or not camera.GetParallelProjection():
+            return False
+        bounds = self._visible_actor_bounds(include_guides=False)
+        if (
+            bounds is None
+            or bounds.size != 6
+            or not np.all(np.isfinite(bounds))
+            or bounds[0] > bounds[1]
+        ):
+            return False
+        focal = np.asarray(camera.GetFocalPoint(), dtype=float)
+        position = np.asarray(camera.GetPosition(), dtype=float)
+        view = position - focal
+        distance = float(np.linalg.norm(view))
+        if distance < 1e-6 or not np.all(np.isfinite(view)):
+            return False
+        corners = np.array(
+            [
+                (bounds[i], bounds[j], bounds[k])
+                for i in (0, 1)
+                for j in (2, 3)
+                for k in (4, 5)
+            ],
+            dtype=float,
+        )
+        radius = float(
+            max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4], 1.0)
+        )
+        # Clear the farthest scene corner from the current focal point in any
+        # orientation, plus a radius of margin so the near plane never grazes it.
+        max_focal_to_corner = float(np.max(np.linalg.norm(corners - focal, axis=1)))
+        safe = max(max_focal_to_corner + radius, 50.0)
+        if distance >= safe:
+            return False
+        camera.SetPosition(*(focal + (view / distance) * safe).tolist())
+        return True
+
+    def _on_camera_interaction(self, *_args) -> None:
+        """Backstop for orbit/zoom: re-clear the scene and refresh the clip range.
+
+        Option A keeps the camera far after every refresh, so a drag normally
+        starts far and stays far (rotate preserves distance; parallel zoom only
+        changes the scale). This observer covers any residual close-camera case
+        and only re-renders when it actually had to move the camera.
+        """
+        moved = False
+        try:
+            moved = self._ensure_parallel_camera_clears_scene()
+        except Exception:
+            moved = False
+        try:
+            self._reset_camera_clipping_range_for_scene()
+        except Exception:
+            pass
+        if moved:
+            self.render()
+
     def _row_scene_bounds(self) -> tuple[np.ndarray, float]:
         if self._renderer is None:
             return np.zeros(3, dtype=float), 1.0
@@ -8644,8 +8721,41 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             view_up = (1.0, 0.0, 0.0)
             parallel_scale = self._parallel_scale_for_orthographic_fit(span_z, span_x, aspect)
         else:
-            position = center + np.array([-distance * 0.95, distance * 0.55, distance * 0.8], dtype=float)
+            offset = np.array([-distance * 0.95, distance * 0.55, distance * 0.8], dtype=float)
+            position = center + offset
             view_up = (0.0, 1.0, 0.0)
+            # bugs/0048: the Iso view must be orthographic like the cardinal
+            # presets. A perspective camera sits a finite distance from the
+            # scene, so an orbit can swing the far geometry (the image plane and
+            # the converging ray cone) behind the camera, where the near clip
+            # plane slices it off. Parallel projection renders behind-camera
+            # geometry and makes the camera distance visually irrelevant, so the
+            # view can never clip on orbit/zoom -- matching the cardinal buttons.
+            if bounds.size == 6 and np.all(np.isfinite(bounds)) and bounds[0] <= bounds[1]:
+                view_dir = -offset
+                view_norm = float(np.linalg.norm(view_dir))
+                up_vec = np.array(view_up, dtype=float)
+                right = np.cross(view_dir, up_vec)
+                right_norm = float(np.linalg.norm(right))
+                if view_norm > 1e-9 and right_norm > 1e-9:
+                    view_dir = view_dir / view_norm
+                    right = right / right_norm
+                    true_up = np.cross(right, view_dir)
+                    corners = np.array(
+                        [
+                            (bounds[i], bounds[j], bounds[k])
+                            for i in (0, 1)
+                            for j in (2, 3)
+                            for k in (4, 5)
+                        ],
+                        dtype=float,
+                    )
+                    rel = corners - center
+                    horizontal_span = float(np.ptp(rel @ right))
+                    vertical_span = float(np.ptp(rel @ true_up))
+                    parallel_scale = self._parallel_scale_for_orthographic_fit(
+                        horizontal_span, vertical_span, aspect
+                    )
         camera.SetPosition(*position.tolist())
         camera.SetFocalPoint(*center.tolist())
         camera.SetViewUp(*view_up)

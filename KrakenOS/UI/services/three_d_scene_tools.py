@@ -94,6 +94,18 @@ SCREENSHOT_DIR = PROJECT_ROOT / "attachment"
 _RAY_DRAW_BUDGET_DEFAULT = 300
 _RAY_DRAW_BUDGET_CONE = 2000
 
+# A cemented bond / optical-contact layer (e.g. the 7.5 um "___BLANK" cement in a
+# crown+flint doublet) is a real glass volume, but only microns thick. KrakenOS
+# builds one BBB solid per glass-bearing surface, so that bond becomes a
+# full-aperture standalone slab stacked between its neighbours -- it reads as a
+# duplicated element in 3D (bugs/0046) while the 2D meridional slice collapses it
+# to a sub-pixel hairline. A glass layer this thin is never a free-standing
+# mechanical element, so its body is drawn invisibly (the cement optical surface
+# still lives in AAA, so ray tracing is untouched). Real elements -- even thin
+# field flatteners -- have centre thickness far above this; cement bonds sit at
+# 5-25 um, so 50 um cleanly separates the two.
+_CEMENT_LAYER_MAX_AXIAL_THICKNESS_MM = 0.05
+
 pv = None
 vtkTkRenderWindowInteractor = None
 vtkCellPicker = None
@@ -1597,6 +1609,13 @@ class ThreeDSceneToolsMixin:
             # keep working) but it is visually invisible.
             body_opacity = 0.18
             if advanced.get("StepAnalyticBodyStlPath") or advanced.get("StepAnalyticBodyOmitMesh"):
+                body_opacity = 0.0
+            # Microns-thick cement/optical-contact bond: keep the actor (so
+            # _row_actor_map centroid queries still resolve) but draw it
+            # invisibly, so a cemented doublet reads as two cemented elements
+            # in 3D instead of a duplicated slab (bugs/0046). See the constant.
+            layer_thickness_mm = abs(float(getattr(row, "thickness", 0.0) or 0.0))
+            if layer_thickness_mm < _CEMENT_LAYER_MAX_AXIAL_THICKNESS_MM:
                 body_opacity = 0.0
             mesh_items.append(
                 SurfaceMesh3D(

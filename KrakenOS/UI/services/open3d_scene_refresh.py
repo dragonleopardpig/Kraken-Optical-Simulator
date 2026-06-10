@@ -42,6 +42,34 @@ class Open3DSceneRefreshService:
             return
         setattr(self._inspector, name, value)
 
+    def _detector_coverage_will_draw(self, scene_bundle: Any) -> bool:
+        """True when the detector coverage overlay will actually draw its
+        replacement geometry (image circle / object FOV).
+
+        ``DetectorCoverageOverlayService.add_overlays`` needs BOTH a detector
+        target with usable sensor dims AND a positive max real image height --
+        without the latter (e.g. an on-axis-only field, where the auto image
+        plane is a 1 mm "detector" but max real image height is 0) it returns
+        early and draws nothing. The Object/Image reference disks only
+        masquerade as that coverage geometry (bug 0033) when it is actually
+        drawn; when it draws nothing the disks must stay visible (bug 0047 --
+        "click Det, Object Disk vanish, no Image Disk").
+        """
+        from KrakenOS.UI.scene_geometry import scene_target_active_dimensions
+
+        has_sensor = any(
+            bool(getattr(target, "is_detector", False))
+            and scene_target_active_dimensions(target) is not None
+            for target in (getattr(scene_bundle, "targets", []) or [])
+        )
+        if not has_sensor:
+            return False
+        try:
+            radius = float(self.editor._field_metrics_summary().get("max_real_image_height"))
+        except (TypeError, ValueError, AttributeError):
+            return False
+        return bool(np.isfinite(radius) and radius > 0.0)
+
     def _refresh_rays_only(self, rays, scene_bundle: Any = None) -> None:
         """bugs/0024: refresh ONLY the traced-ray actors, leaving every body,
         handle and overlay actor in place.
@@ -145,7 +173,14 @@ class Open3DSceneRefreshService:
         # object/image-plane geometry itself (FOV box, sensor square, real
         # image circle). The translucent Object/Image clear-aperture disks then
         # only masquerade as "the image circle" (bug 0033), so suppress them.
+        # bugs/0047: that suppression must only fire when a detector is actually
+        # configured. With "Det" on but no detector target the coverage overlay
+        # draws nothing, so blanking the reference disks left the image plane
+        # empty ("click Det, Object Disk vanish, no Image Disk"). Gate the
+        # suppression on a real detector target with active sensor dimensions --
+        # the same precondition the coverage overlay itself needs to draw.
         detector_overlays_on = bool(self.show_detector_overlays_var.get())
+        detector_coverage_active = detector_overlays_on and self._detector_coverage_will_draw(scene_bundle)
         mesh_collect_start = time.perf_counter()
         mesh_items = list(
             self.editor._scene_surface_meshes(
@@ -392,7 +427,18 @@ class Open3DSceneRefreshService:
                 and (row_kind.startswith("standard") or row_kind.startswith("thin_lens"))
             )
             analytic_hidden_drum = analytic_promoted_step and row_is_body
-            if analytic_hidden_drum:
+            # A side-body that arrived already invisible from
+            # _iter_3d_side_body_meshes is intentionally suppressed: either the
+            # redundant analytic-STEP drum, or a microns-thick cement/bond layer
+            # whose full-aperture slab would read as a duplicated element
+            # (bugs/0046). Keep it hidden through the ray-visibility opacity
+            # clamp below (which otherwise re-inflates any analytic body to
+            # >= 0.26); and because the rim/feature-edge outline is gated on
+            # mesh_opacity > 0, this also drops its stray inner rim line, so a
+            # cemented doublet shows neither a duplicated slab nor an extra edge.
+            body_pre_hidden = row_is_body and mesh_opacity <= 1e-3
+            keep_body_hidden = analytic_hidden_drum or body_pre_hidden
+            if keep_body_hidden:
                 mesh_opacity = 0.0
             if row_index in file_backed_rows:
                 mesh_opacity = min(max(mesh_opacity, 0.14), 0.28)
@@ -425,10 +471,11 @@ class Open3DSceneRefreshService:
                     mesh_opacity = min(max(mesh_opacity, 0.14), 0.24)
                     if row_step_label == "optical":
                         mesh_opacity = min(max(mesh_opacity, 0.30), 0.36)
-                elif analytic_hidden_drum:
-                    # Redundant auto-revolved drum on a promoted STEP lens:
-                    # stay invisible even with rays on (its actor is kept
-                    # only for picking / centroid queries).
+                elif keep_body_hidden:
+                    # Redundant auto-revolved drum on a promoted STEP lens, or a
+                    # microns-thick cement/bond layer (bugs/0046): stay invisible
+                    # even with rays on (the actor is kept only for picking /
+                    # centroid queries).
                     mesh_opacity = 0.0
                 elif analytic_optic_surface:
                     # Glassy translucent lens body, matching the look of the
@@ -446,15 +493,18 @@ class Open3DSceneRefreshService:
             # bodies (e.g. the achromat). Skip object/image reference
             # planes, mirrors, apertures/grating UI surfaces, the
             # hidden auto-revolved STEP drum, and anything invisible.
-            # bugs/0033: while the detector coverage overlay is on it draws the
-            # authoritative object/image-plane geometry itself (FOV box, sensor
-            # square, real image circle, required ring), each with its own 3-D
-            # label. The Object/Image clear-aperture disk -- a translucent fill
-            # plus a rim circle -- then only masquerades as "the image circle"
-            # (recordings 251/078), so suppress the whole disk. The body actor
-            # is still added at opacity 0 for picking (analytic_hidden_drum
-            # pattern); the rim is skipped via the ``continue`` below.
-            suppress_reference_aperture = detector_overlays_on and row_surface in {"Object", "Image"}
+            # bugs/0033: when a detector IS configured the coverage overlay
+            # draws the authoritative object/image-plane geometry itself (FOV
+            # box, sensor square, real image circle, required ring), each with
+            # its own 3-D label. The Object/Image clear-aperture disk -- a
+            # translucent fill plus a rim circle -- then only masquerades as
+            # "the image circle" (recordings 251/078), so suppress the whole
+            # disk. The body actor is still added at opacity 0 for picking
+            # (analytic_hidden_drum pattern); the rim is skipped via the
+            # ``continue`` below. bugs/0047: gated on detector_coverage_active so
+            # this only fires when that replacement geometry actually exists --
+            # otherwise the disks stay visible.
+            suppress_reference_aperture = detector_coverage_active and row_surface in {"Object", "Image"}
             if suppress_reference_aperture:
                 mesh_opacity = 0.0
             glassy_lens = analytic_optic_surface and mesh_opacity > 0.0
@@ -547,7 +597,20 @@ class Open3DSceneRefreshService:
                     rim = self._lens_rim_circle_polyline(mesh)
                 except Exception:
                     rim = None
-                if rim is not None and int(getattr(rim, "n_points", 0)) > 0:
+                rim_is_round = rim is not None and int(getattr(rim, "n_points", 0)) > 0
+                # bugs/0046: a lens row contributes BOTH an optical-surface cap
+                # and a revolved glass body, and each round one drew its own rim
+                # circle -- the cap at the clear aperture, the body at the (larger)
+                # mechanical OD, at a different z. Edge-on those are two separate
+                # vertical lines, so a cemented doublet read as 5 lines (2 caps + 2
+                # body ODs + 1 merged bond) while its 2D profile draws only 3
+                # (front, bond, back). Draw the round rim circle for the optical
+                # CAPS only; a round body keeps its translucent glassy fill (the
+                # shape silhouette) but no extra OD ring. Plano-cyl / plate bodies
+                # are NOT round -- they fall through to feature edges below, which
+                # remain their genuine outline.
+                draw_round_rim = rim_is_round and not row_is_body
+                if draw_round_rim:
                     feature_angle = 75.0
                     boundary_edges = False
                     self._add_mesh_actor(rim, color=outline_tone, opacity=1.0, line_width=_GLASS_EDGE_SILHOUETTE_WIDTH, track_row_index=row_index, follow_step_label=transient_step_label)
@@ -561,18 +624,21 @@ class Open3DSceneRefreshService:
                 # Sharp internal / plate edges (the plano-cyl rectangle and
                 # its curved-face arcs). For a circular lens this adds
                 # little; for the plano-cyl plate it is the whole outline.
-                try:
-                    edges = self._display_feature_edges(
-                        mesh,
-                        feature_angle=feature_angle,
-                        boundary_edges=boundary_edges,
-                    )
-                    if edges is not None and int(getattr(edges, "n_points", 0)) > 0:
-                        self._add_mesh_actor(edges, color=edge_tone, opacity=1.0, line_width=_GLASS_EDGE_LINE_WIDTH, track_row_index=row_index, follow_step_label=transient_step_label)
-                        if ray_visibility_requested:
-                            ray_surface_edge_overlays.append((edges, edge_tone, _GLASS_EDGE_LINE_WIDTH + 0.4, row_index))
-                except Exception:
-                    pass
+                # Skip them for a round body -- its only sharp boundary is the OD
+                # ring we are intentionally dropping; the fill carries the shape.
+                if not (row_is_body and rim_is_round):
+                    try:
+                        edges = self._display_feature_edges(
+                            mesh,
+                            feature_angle=feature_angle,
+                            boundary_edges=boundary_edges,
+                        )
+                        if edges is not None and int(getattr(edges, "n_points", 0)) > 0:
+                            self._add_mesh_actor(edges, color=edge_tone, opacity=1.0, line_width=_GLASS_EDGE_LINE_WIDTH, track_row_index=row_index, follow_step_label=transient_step_label)
+                            if ray_visibility_requested:
+                                ray_surface_edge_overlays.append((edges, edge_tone, _GLASS_EDGE_LINE_WIDTH + 0.4, row_index))
+                    except Exception:
+                        pass
                 drew_surfaces += 1
                 continue
             if not mesh_item.is_body:
@@ -936,6 +1002,16 @@ class Open3DSceneRefreshService:
         if camera_state is None:
             self._renderer.ResetCamera()
             self.set_camera_preset(self._camera_preset)
+        # bugs/0048: the very first frame can be sized to an incomplete scene
+        # (e.g. only the lens bodies), parking the camera inside the scene's
+        # z-span so an orbit clips the far cone. Now that every actor for this
+        # refresh exists, keep the camera clear of the complete scene -- free in
+        # parallel projection (distance does not affect the orthographic image).
+        try:
+            if self._ensure_parallel_camera_clears_scene():
+                self._reset_camera_clipping_range_for_scene()
+        except Exception:
+            pass
         try:
             selected_table_indices = [int(index) for index in self.editor._selected_table_indices()]
         except Exception:
