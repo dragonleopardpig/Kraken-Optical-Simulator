@@ -258,9 +258,100 @@ def _test_service_reconcile_removes_prior() -> None:
     print("Open3DStepRotationHandleService reconcile mechanics passed.")
 
 
+def _test_admin_select_threads_additive() -> None:
+    """bugs/0049: a browser Shift+click must reach the gizmo multi-select.
+
+    ``select_step_overlay_from_admin`` is the right-browser entry point. A
+    plain pick single-selects (highlight + non-additive handler); a Shift+click
+    (additive) threads ``additive=True`` into ``show_step_rotation_handler`` and
+    must not clobber the highlight or tear down the live multi-select -- even on
+    a hidden row (which can show no gizmo of its own, but must leave the set).
+    """
+    from KrakenOS.UI.open3d_inspector import STEP_OVERLAY_LABEL_SET
+
+    if not {"lens", "camera"} <= set(STEP_OVERLAY_LABEL_SET):
+        raise AssertionError(f"expected lens/camera overlay labels: {STEP_OVERLAY_LABEL_SET!r}")
+
+    class _AdminEditor:
+        def __init__(self) -> None:
+            self.selected: str | None = None
+
+        def _step_path_for_label(self, label: str):
+            return f"/fake/{label}.STEP"
+
+        def select_step_component(self, label: str) -> None:
+            self.selected = str(label).strip().lower()
+
+        def _step_overlay_display_label(self, label: str) -> str:
+            return str(label).upper()
+
+    handler_calls: list[tuple[str, bool]] = []
+    highlight_calls: list[tuple] = []
+    close_calls: list[int] = []
+    hidden_labels: set[str] = set()
+
+    def _make_inspector() -> Kraken3DInspector:
+        ins = Kraken3DInspector.__new__(Kraken3DInspector)
+        ins.editor = _AdminEditor()
+        ins.status_var = _FakeStatusVar()
+        ins._step_rotation_active_label = None
+        ins._selected_step_labels = set()
+        ins.is_step_label_hidden = lambda label: str(label).strip().lower() in hidden_labels  # type: ignore[method-assign]
+        ins._set_step_highlight = lambda *a, **k: highlight_calls.append(a)  # type: ignore[method-assign]
+        ins._close_step_rotation_handler = lambda: close_calls.append(1)  # type: ignore[method-assign]
+        ins.refresh_step_admin_panel = lambda: None  # type: ignore[method-assign]
+        ins.render = lambda *a, **k: None  # type: ignore[method-assign]
+        ins.show_step_rotation_handler = (  # type: ignore[method-assign]
+            lambda label, *, additive=False: handler_calls.append(
+                (str(label).strip().lower(), bool(additive))
+            )
+        )
+        return ins
+
+    # Plain browser pick: single-select, highlight set, handler non-additive.
+    ins = _make_inspector()
+    handler_calls.clear(); highlight_calls.clear(); close_calls.clear()
+    ins.select_step_overlay_from_admin("lens")
+    if handler_calls[-1] != ("lens", False):
+        raise AssertionError(f"plain admin pick handler: {handler_calls}")
+    if not highlight_calls or ins._step_rotation_active_label != "lens":
+        raise AssertionError(
+            f"plain admin pick must single-highlight: {highlight_calls} active={ins._step_rotation_active_label}"
+        )
+
+    # Shift+click browser pick: additive, no single-highlight clobber.
+    ins = _make_inspector()
+    handler_calls.clear(); highlight_calls.clear(); close_calls.clear()
+    ins.select_step_overlay_from_admin("camera", additive=True)
+    if handler_calls[-1] != ("camera", True):
+        raise AssertionError(f"additive admin pick handler: {handler_calls}")
+    if highlight_calls:
+        raise AssertionError(f"additive admin pick must not single-highlight: {highlight_calls}")
+
+    # Hidden + additive: keep the multi-select (no handler add, no teardown).
+    ins = _make_inspector()
+    handler_calls.clear(); highlight_calls.clear(); close_calls.clear()
+    hidden_labels.add("camera")
+    ins.select_step_overlay_from_admin("camera", additive=True)
+    if handler_calls or close_calls:
+        raise AssertionError(
+            f"hidden additive must not touch handles: handler={handler_calls} close={close_calls}"
+        )
+
+    # Hidden + plain: tears the handler down (you can't manipulate the hidden one).
+    ins = _make_inspector()
+    handler_calls.clear(); highlight_calls.clear(); close_calls.clear()
+    ins.select_step_overlay_from_admin("camera")
+    if not close_calls:
+        raise AssertionError("hidden plain pick must close the rotation handler")
+
+    print("select_step_overlay_from_admin additive threading passed.")
+
+
 def main() -> int:
     _test_show_handler_selection_set()
     _test_service_reconcile_removes_prior()
+    _test_admin_select_threads_additive()
     print("STEP reselect single-gizmo validation passed.")
     return 0
 

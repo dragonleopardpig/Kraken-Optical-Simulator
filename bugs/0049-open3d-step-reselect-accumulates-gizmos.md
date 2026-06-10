@@ -74,13 +74,45 @@ gizmo — the reported fix); Shift+click = intentional multi-select (toggle a
 solid into/out of the set, multiple gizmos coexist); Ctrl = camera orbit
 (unchanged).
 
+## Follow-up: same multi-select from the right browser panel
+
+The canvas Shift+click worked, but the scene-component browser tree
+(`Open3DStepAdminPanel`) only single-selected. Mirrored the canvas there:
+
+- `KrakenOS/UI/open3d_inspector.py` — `select_step_overlay_from_admin(label,
+  *, additive=False)` threads `additive` into `show_step_rotation_handler`.
+  A plain pick still single-selects (sets the primary + single highlight); an
+  additive pick skips the single-highlight clobber and lets the handler manage
+  the set. A Shift+click on a *hidden* row no longer tears the multi-select
+  down (only a plain pick clears it).
+- `KrakenOS/UI/panels/open3d_step_admin.py` —
+  - new `<Shift-Button-1>` binding → `_on_tree_shift_click`: an overlay row
+    routes to `select_step_overlay_from_admin(label, additive=True)` and
+    returns `"break"`; other row kinds fall through to the default
+    single-select. (The tree stays `selectmode="browse"`; the browser's many
+    single-target action buttons are unaffected by a real user click.)
+  - `refresh()` re-highlights *every* overlay in
+    `inspector._selected_step_labels`, not just the primary, so a Shift+click
+    reads back as a multi-selection after the panel rebuilds. The re-highlight
+    runs while `_refreshing` is True, so the `<<TreeviewSelect>>` guard stays
+    armed.
+  - `_on_tree_select` is now inert when `len(selection) > 1`: a multi-overlay
+    highlight is owned by the canvas set and re-applied during refresh, and a
+    deferred `<<TreeviewSelect>>` from that programmatic re-highlight must not
+    collapse the set back to a single pick (browse mode never yields a
+    multi-selection from a real user click).
+
 ## Tests
 
 - `KrakenOS/UI/validate_open3d_step_reselect_single_gizmo.py` —
   display-free. Drives `show_step_rotation_handler` against a stub
   inspector with real rotate/translate/visual actor maps: plain reselect
   keeps the handle count at six and swaps the label; Shift+click grows to
-  twelve and back; plain click after a multi-select collapses to one. Run:
+  twelve and back; plain click after a multi-select collapses to one. A third
+  check drives `select_step_overlay_from_admin` (the browser entry point):
+  a plain pick threads `additive=False` + single-highlights; an additive pick
+  threads `additive=True` without clobbering the highlight; a hidden additive
+  pick leaves the set intact while a hidden plain pick tears it down. Run:
   `.devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_step_reselect_single_gizmo`.
 - Phase 54 in `validate_open3d_penta_telescope_comprehensive.py` —
   end-to-end on the penta cascade: select element A then element B; assert
@@ -97,7 +129,11 @@ solid into/out of the set, multiple gizmos coexist); Ctrl = camera orbit
   `ensure_for_label → add_handles`, so the downstream assertions are
   unchanged). `_ensure_step_rotation_handles_for_label` itself is kept:
   `validate_open3d_scene_browser_hide_delete.py` guards that it exists and
-  carries the bugs/0027 `is_step_label_hidden` suppression.
+  carries the bugs/0027 `is_step_label_hidden` suppression. The "STEP browser
+  selection drives Open 3D highlight and table selection" check was likewise
+  retargeted from `show_step_rotation_handler(label)` to
+  `show_step_rotation_handler(label, additive=additive)` for the new
+  browser-panel multi-select threading.
 - `validate_step_rotation_handles.py` — pre-existing failure unrelated to
   this bug: the `Kraken3DInspector.__new__` stub never set
   `_hidden_step_labels`, which `is_step_label_hidden` (added by bugs/0027,

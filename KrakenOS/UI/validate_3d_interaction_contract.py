@@ -1685,7 +1685,7 @@ def main() -> int:
             and "iid == self._selected_item_id" in step_admin_source
             and "iid == self._current_browser_selection_iid()" in step_admin_source
             and "_set_step_highlight(label, render=False)" in step_admin_overlay_select
-            and "show_step_rotation_handler(label)" in step_admin_overlay_select
+            and "show_step_rotation_handler(label, additive=additive)" in step_admin_overlay_select
             and "_step_carry_active_label = label" not in step_admin_overlay_select
             and "_select_table_indices([row_index]" in step_admin_promoted_select
             and "_sync_surface_selection(row_index)" in step_admin_promoted_select

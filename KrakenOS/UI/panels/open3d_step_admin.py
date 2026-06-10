@@ -70,6 +70,7 @@ class Open3DStepAdminPanel:
         scrollbar.grid(row=1, column=1, sticky="ns")
         tree.configure(yscrollcommand=scrollbar.set)
         tree.bind("<<TreeviewSelect>>", self._on_tree_select)
+        tree.bind("<Shift-Button-1>", self._on_tree_shift_click)
         tree.bind("<Button-3>", self._on_tree_right_click)
         tree.tag_configure("hidden", foreground="#9aa0a6")  # grey out hidden elements
         self._tree = tree
@@ -554,6 +555,17 @@ class Open3DStepAdminPanel:
                 self._selected_item_id = previous
             else:
                 self._selected_item_id = ""
+            # bugs/0049: keep every overlay in the canvas multi-select set
+            # highlighted, not just the primary, so a browser Shift+click reads
+            # back as a multi-selection after the panel rebuilds. (Runs while
+            # _refreshing is True, so the <<TreeviewSelect>> guard stays armed.)
+            for extra_label in set(getattr(self.inspector, "_selected_step_labels", None) or ()):
+                extra_iid = f"overlay:{extra_label}"
+                if extra_iid != previous and tree.exists(extra_iid):
+                    try:
+                        tree.selection_add(extra_iid)
+                    except Exception:
+                        pass
         finally:
             self._refreshing = False
         if self._selected_item_id:
@@ -593,6 +605,16 @@ class Open3DStepAdminPanel:
         if tree is None:
             return
         selection = tree.selection()
+        if len(selection) > 1:
+            # bugs/0049: a multi-overlay highlight is owned by the canvas
+            # rotation-gizmo multi-select set and is re-applied during refresh.
+            # A deferred <<TreeviewSelect>> from that programmatic re-highlight
+            # must not collapse the set back to a single pick -- browse mode
+            # never produces a multi-selection from a real user click.
+            focus_iid = str(tree.focus() or selection[0])
+            self._selected_item_id = focus_iid
+            self._update_properties(focus_iid)
+            return
         iid = str(selection[0]) if selection else ""
         if not iid or iid.startswith("category:") or iid.startswith("empty:"):
             self._selected_item_id = ""
@@ -630,6 +652,20 @@ class Open3DStepAdminPanel:
                 start, end = span
                 self.inspector.select_scene_element_from_admin(start, end)
         self._update_properties(iid)
+
+    def _on_tree_shift_click(self, event):
+        """bugs/0049: Shift+click an overlay row toggles it into the rotation-
+        gizmo multi-select set (mirrors the 3D canvas). Other row kinds fall
+        through to the default single-select binding."""
+        tree = self._tree
+        if tree is None or self._refreshing:
+            return None
+        iid = tree.identify_row(event.y)
+        if not iid or not iid.startswith("overlay:"):
+            return None  # let the default binding single-select non-overlay rows
+        label = iid.split(":", 1)[1]
+        self.inspector.select_step_overlay_from_admin(label, additive=True)
+        return "break"
 
     def _on_tree_right_click(self, event) -> str:
         tree = self._tree

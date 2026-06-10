@@ -4831,7 +4831,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             f"Z={self.editor._step_roll_deg(label):.0f} deg"
         )
 
-    def select_step_overlay_from_admin(self, label: str) -> bool:
+    def select_step_overlay_from_admin(self, label: str, *, additive: bool = False) -> bool:
         label = str(label).strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(label) is None:
             display = self.editor._step_overlay_display_label(label) if label else "STEP"
@@ -4844,12 +4844,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # selected from the browser -- you can't manipulate what you can't see.
         # Select for properties only (no highlight, no handles).
         if self.is_step_label_hidden(label):
-            self._step_rotation_active_label = None
-            self._set_step_highlight(None, render=False)
-            try:
-                self._close_step_rotation_handler()
-            except Exception:
-                pass
+            # bugs/0049: a Shift+click (additive) on a hidden row must leave the
+            # live multi-select intact -- only a plain pick clears it.
+            if not additive:
+                self._step_rotation_active_label = None
+                self._set_step_highlight(None, render=False)
+                try:
+                    self._close_step_rotation_handler()
+                except Exception:
+                    pass
             self.refresh_step_admin_panel()
             self.status_var.set(f"{display} STEP is hidden — right-click ▸ Unhide to edit it.")
             try:
@@ -4857,9 +4860,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 pass
             return True
-        self._step_rotation_active_label = label
-        self._set_step_highlight(label, render=False)
-        self.show_step_rotation_handler(label)
+        # bugs/0049: Shift+click toggles the overlay into the rotation-gizmo
+        # multi-select set (mirrors the 3D canvas); a plain click single-selects.
+        if not additive:
+            self._step_rotation_active_label = label
+            self._set_step_highlight(label, render=False)
+        self.show_step_rotation_handler(label, additive=additive)
         self.refresh_step_admin_panel()
         path = self.editor._step_path_for_label(label)
         name = Path(path).name if path is not None else label.upper()
