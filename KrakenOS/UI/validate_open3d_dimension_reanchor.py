@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Display-free guard for bugs/0053: re-anchorable thickness/distance dimensions.
 
-Ctrl-dragging a thickness arrow's endpoint onto a surface/edge re-anchors what
-the dimension MEASURES to (a measurement annotation) without moving any optical
-surface. The object/LED row's object-side endpoint instead feeds the existing
-object-edge reference so the LED body sits with the chosen face at the object
-distance.
+Ctrl-CLICKING a thickness arrow's endpoint enters a modal re-anchor: the endpoint
+then follows the BARE mouse (no button held), the real magenta arrow live-updates,
+the surface/edge under the cursor highlights, and a plain click commits the new
+measured location. Re-anchoring re-anchors what the dimension MEASURES (a
+measurement annotation) without moving any optical surface. The object/LED row's
+object-side endpoint instead feeds the existing object-edge reference so the LED
+body sits with the chosen face at the object distance.
 
 No X server needed. Checks:
   1. ``Open3DThicknessDimensionService.reanchored_endpoints`` moves the chosen
@@ -16,8 +18,14 @@ No X server needed. Checks:
      (sets ``led_step_object_edge_local_z``), not the general override map.
   4. Overrides round-trip through ``_collect_layout_settings`` /
      ``_apply_layout_settings``.
-  5. Source contract: Ctrl on empty space still orbits (the re-anchor only wins
-     when a dimension drag-state is active).
+  5. Modal source contract (#1-#4): Ctrl-click enters the modal pick, the bare
+     mouse + a held drag both drive ``_apply_dimension_anchor_pick_motion``, a
+     plain click commits via ``_commit_dimension_anchor_pick``, and Ctrl on empty
+     space still orbits. The live preview draws the real ``arrow_mesh`` (not a bare
+     line) and highlights the snap target.
+  6. Editing a re-anchored dimension's value moves the measured reference only
+     (``apply_reanchored_dimension_measured``) and never ``rows[i].thickness`` --
+     so the wrong element (e.g. the Imaging Lens) can no longer shift.
 """
 from __future__ import annotations
 
@@ -108,21 +116,91 @@ def _test_settings_roundtrip() -> None:
     print("settings round-trip OK")
 
 
-def _test_ctrl_empty_still_orbits() -> None:
+def _test_modal_pick_source_contract() -> None:
+    """#1-#4: the interaction is a modal pick driven by the bare mouse, the live
+    preview is the real arrow, the snap target highlights, and Ctrl-on-empty still
+    orbits. These are wiring contracts that can't be exercised without an X server,
+    so we assert them against the installer/handler source."""
     from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
+    from KrakenOS.UI.open3d_inspector import Kraken3DInspector
 
-    src = inspect.getsource(Open3DMouseBindingsService._install_pick_only_left_click_bindings)
-    # The re-anchor must be checked before the Ctrl orbit branch in left_motion,
-    # and the Ctrl orbit branch (rotate on Ctrl with no dimension state) must remain.
-    if "self._dimension_anchor_drag_state is not None" not in src:
-        raise AssertionError("left_motion does not gate on the re-anchor drag state")
-    anchor_pos = src.index("self._dimension_anchor_drag_state is not None")
-    orbit_pos = src.index("self._rotate_camera_fixed_drag(dx, dy)")
-    if not (anchor_pos < orbit_pos):
-        raise AssertionError("re-anchor must be handled before the Ctrl camera-orbit branch")
-    if "if ctrl_pressed:" not in src or "self._rotate_camera_fixed_drag(dx, dy)" not in src:
+    binds = inspect.getsource(Open3DMouseBindingsService._install_pick_only_left_click_bindings)
+    # left_press: a Ctrl-click that lands on a dimension enters the modal pick.
+    if "_begin_dimension_anchor_pick_from_current_pick()" not in binds:
+        raise AssertionError("left_press does not enter the modal re-anchor on Ctrl-click")
+    # The bare mouse (hover_motion) AND a held drag (left_motion) both drive it.
+    if binds.count("self._apply_dimension_anchor_pick_motion()") < 2:
+        raise AssertionError("bare-mouse + drag motion must both drive _apply_dimension_anchor_pick_motion")
+    # A plain click commits.
+    if "self._commit_dimension_anchor_pick()" not in binds:
+        raise AssertionError("a plain click in modal mode must commit via _commit_dimension_anchor_pick")
+    # Ctrl-on-empty orbit branch must remain intact and reachable.
+    if "if ctrl_pressed:" not in binds or "self._rotate_camera_fixed_drag(dx, dy)" not in binds:
         raise AssertionError("Ctrl camera-orbit branch missing (orbit on empty would break)")
-    print("Ctrl-on-empty still orbits (source contract) OK")
+    # The modal-mode motion branch must short-circuit before the Ctrl orbit branch
+    # so a held Ctrl-drag re-anchors instead of orbiting.
+    motion_anchor = binds.index("if self._dimension_anchor_pick_mode:")
+    orbit_pos = binds.index("self._rotate_camera_fixed_drag(dx, dy)")
+    if not (motion_anchor < orbit_pos):
+        raise AssertionError("modal re-anchor motion must precede the Ctrl camera-orbit branch")
+
+    # #2: the live preview draws the real double-headed arrow_mesh, not just a line.
+    preview = inspect.getsource(Kraken3DInspector._update_dimension_anchor_preview)
+    if "arrow_mesh(" not in preview:
+        raise AssertionError("live preview must draw the real arrow_mesh (feedback #2)")
+    # #3: the snap target highlights (STEP face outline and/or surface row).
+    highlight = inspect.getsource(Kraken3DInspector._set_dimension_anchor_snap_highlight)
+    if "_set_step_hover_outline" not in highlight and "_set_row_highlight" not in highlight:
+        raise AssertionError("snap highlight must outline the surface/edge under the cursor (feedback #3)")
+    print("modal pick source contract (#1-#4) OK")
+
+
+def _test_reanchor_value_edit_is_measurement_only() -> None:
+    """#6: editing a re-anchored dimension's value moves the measured reference
+    only -- never rows[i].thickness -- so the wrong element can't shift."""
+    app = _build_editor()
+    # Re-anchor row 2's "end" to z=42, recording the un-moved end (fixed_z) so the
+    # value edit can re-solve the measured distance.
+    app.apply_dimension_anchor_override(2, "end", np.array([0.0, 0.0, 42.0]), fixed_z=10.0)
+    ov = app._dimension_anchor_override_for_row(2)
+    if not (isinstance(ov, dict) and abs(float(ov.get("fixed_z")) - 10.0) < 1e-9):
+        raise AssertionError(f"override must record fixed_z for value re-solve: {ov}")
+    thickness_before = float(app.rows[2].thickness)
+    applied = app.apply_reanchored_dimension_measured(2, 5.0)
+    if not applied:
+        raise AssertionError("apply_reanchored_dimension_measured should apply with a known fixed_z")
+    ov2 = app._dimension_anchor_override_for_row(2)
+    # ref was 42 (>= fixed 10) so sign +1: new ref_z = 10 + 5 = 15.
+    if abs(float(ov2.get("ref_z")) - 15.0) > 1e-9:
+        raise AssertionError(f"measured edit must move ref_z to 15.0, got {ov2.get('ref_z')}")
+    if abs(float(app.rows[2].thickness) - thickness_before) > 1e-9:
+        raise AssertionError(
+            f"value edit must NOT change rows[2].thickness: {thickness_before} -> {app.rows[2].thickness}"
+        )
+    # Without a recorded fixed_z the editor refuses (caller leaves the model alone).
+    app.apply_dimension_anchor_override(1, "end", np.array([0.0, 0.0, 60.0]))
+    legacy = app._dimension_anchor_override_for_row(1)
+    if legacy is not None and legacy.get("fixed_z") is None:
+        if app.apply_reanchored_dimension_measured(1, 3.0) is not False:
+            raise AssertionError("value edit must refuse when fixed_z is unknown (no wrong-element move)")
+    print("re-anchored value edit is measurement-only (#6) OK")
+
+
+def _test_apply_dimension_value_routes_override() -> None:
+    """#6 source contract: apply_dimension_value must detect a re-anchor override
+    and route to apply_reanchored_dimension_measured BEFORE writing the model
+    thickness, otherwise editing the value would move the wrong row."""
+    from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
+
+    src = inspect.getsource(Open3DThicknessDimensionService.apply_dimension_value)
+    if "_dimension_anchor_override_for_row" not in src or "apply_reanchored_dimension_measured" not in src:
+        raise AssertionError("apply_dimension_value must route re-anchored rows to the measurement edit")
+    override_pos = src.index("_dimension_anchor_override_for_row")
+    # The actual model write (not the explanatory comment) is the assignment form.
+    thickness_pos = src.index("rows[row_index].thickness = ")
+    if not (override_pos < thickness_pos):
+        raise AssertionError("override routing must run before rows[row_index].thickness is written")
+    print("apply_dimension_value routes re-anchored rows (#6 source contract) OK")
 
 
 def main() -> int:
@@ -130,7 +208,9 @@ def main() -> int:
     _test_general_override_is_measurement_only()
     _test_object_led_routes_to_edge_reference()
     _test_settings_roundtrip()
-    _test_ctrl_empty_still_orbits()
+    _test_modal_pick_source_contract()
+    _test_reanchor_value_edit_is_measurement_only()
+    _test_apply_dimension_value_routes_override()
     print("dimension re-anchor validation passed.")
     return 0
 

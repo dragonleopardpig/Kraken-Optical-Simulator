@@ -722,6 +722,11 @@ class Open3DInteractionService:
                 step_normal_axis=bool(self._step_normal_axis_pick_mode),
                 step_surface_center=bool(self._step_surface_center_axis_pick_mode),
             )
+        # bugs/0053: while re-anchoring a dimension, the Tk <Motion> binding
+        # (hover_motion) drives the live arrow + snap highlight; suppress the
+        # generic VTK-side hover here so the two don't fight over highlights.
+        if self._dimension_anchor_pick_mode:
+            return
         hover_critical = bool(self._center_row_to_ray_mode or self._step_normal_axis_pick_mode or self._step_surface_center_axis_pick_mode)
         if (
             self._step_carry_drag_state is None

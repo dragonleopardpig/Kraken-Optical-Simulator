@@ -1817,7 +1817,7 @@ class ScenePlacementMixin:
         )
 
     def apply_dimension_anchor_override(
-        self, row_index: int, endpoint: str, feature_center_xyz
+        self, row_index: int, endpoint: str, feature_center_xyz, fixed_z=None
     ) -> None:
         feature = np.asarray(feature_center_xyz, dtype=float).reshape(-1)
         if feature.size < 3 or not np.all(np.isfinite(feature[:3])):
@@ -1835,11 +1835,20 @@ class ScenePlacementMixin:
             return
         # General row: store the measured-to reference (axial z of the picked
         # feature). The drawn distance recomputes to it; the model is untouched.
+        # ``fixed_z`` (the un-moved endpoint's axial z) is stored so a later value
+        # edit can re-solve the measured distance without touching any optical
+        # thickness (bugs/0053 #6 -- editing used to move the wrong element).
         ref_z = float(feature[2])
         ref_label = str(self._dimension_anchor_feature_label(feature[:3]))
+        spec = {"endpoint": endpoint, "ref_z": ref_z, "ref_label": ref_label}
+        try:
+            if fixed_z is not None and np.isfinite(float(fixed_z)):
+                spec["fixed_z"] = float(fixed_z)
+        except Exception:
+            pass
         self._begin_history_capture()
         overrides = dict(getattr(self, "_dimension_anchor_overrides", {}) or {})
-        overrides[row_index] = {"endpoint": endpoint, "ref_z": ref_z, "ref_label": ref_label}
+        overrides[row_index] = spec
         self._dimension_anchor_overrides = overrides
         self._commit_history_capture()
         self.status_var.set(
@@ -1848,6 +1857,46 @@ class ScenePlacementMixin:
             + " -- measurement only; optical thickness unchanged."
         )
         self._refresh_open_3d_views()
+
+    def apply_reanchored_dimension_measured(self, row_index: int, value: float) -> bool:
+        """Set a re-anchored dimension's MEASURED distance to ``value`` by moving
+        its re-anchored reference, never an optical thickness (bugs/0053 #6).
+
+        Returns True if applied. False if the row has no re-anchor override or the
+        override predates ``fixed_z`` (so the un-moved end is unknown) -- the
+        caller then leaves the model untouched rather than editing the wrong row.
+        """
+        overrides = dict(getattr(self, "_dimension_anchor_overrides", {}) or {})
+        spec = overrides.get(int(row_index))
+        if not isinstance(spec, dict):
+            return False
+        fixed_z = spec.get("fixed_z")
+        cur_ref = spec.get("ref_z")
+        if fixed_z is None or cur_ref is None:
+            return False
+        try:
+            fixed_z = float(fixed_z)
+            cur_ref = float(cur_ref)
+            measured = abs(float(value))
+        except Exception:
+            return False
+        if not (np.isfinite(fixed_z) and np.isfinite(cur_ref) and np.isfinite(measured)):
+            return False
+        # Preserve the side the reference sits on relative to the fixed endpoint.
+        sign = 1.0 if cur_ref >= fixed_z else -1.0
+        new_ref = fixed_z + sign * measured
+        new_spec = dict(spec)
+        new_spec["ref_z"] = float(new_ref)
+        overrides[int(row_index)] = new_spec
+        self._begin_history_capture()
+        self._dimension_anchor_overrides = overrides
+        self._commit_history_capture()
+        self.status_var.set(
+            f"S{int(row_index)} measured distance set to {measured:.6g} mm "
+            "(measurement only; optical thickness unchanged)."
+        )
+        self._refresh_open_3d_views()
+        return True
 
     def clear_dimension_anchor_override(self, row_index: int) -> None:
         overrides = dict(getattr(self, "_dimension_anchor_overrides", {}) or {})

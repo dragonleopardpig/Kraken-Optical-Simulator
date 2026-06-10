@@ -4827,13 +4827,15 @@ def phase_58_dimension_reanchor_measures_to_surface(
     """A re-anchored thickness dimension draws a measurement to the picked z and
     leaves the optical model untouched (bugs/0053).
 
-    Feature (attachment/3D.png): Ctrl-drag a dimension arrow's endpoint onto a
-    surface/edge to re-anchor what it measures to. End-to-end on the booted
-    inspector: set a measured-endpoint override on a row, run a full refresh with
-    physical-distance dimensions shown, and assert (a) a re-anchored measurement
-    arrow is drawn in the distinct REANCHOR color, and (b) rows[i].thickness is
-    unchanged (measurement annotation, never a model edit). SKIPs without a
-    renderer.
+    Feature (attachment/3D.png): Ctrl-CLICK a dimension arrow's endpoint to enter
+    a modal re-anchor; the endpoint follows the bare mouse and a plain click
+    commits what it measures to. End-to-end on the booted inspector: set a
+    measured-endpoint override on a row, run a full refresh with physical-distance
+    dimensions shown, and assert (a) a re-anchored measurement arrow is drawn in
+    the distinct REANCHOR color, (b) rows[i].thickness is unchanged (measurement
+    annotation, never a model edit), and (c) editing the re-anchored dimension's
+    VALUE moves the measured reference only -- never rows[i].thickness (feedback
+    #6: editing used to shift the wrong element). SKIPs without a renderer.
     """
     result = PhaseResult(name="Phase 58: dimension re-anchor measures to a surface")
     from KrakenOS.UI.layout_editor import SurfaceRow
@@ -4906,6 +4908,37 @@ def phase_58_dimension_reanchor_measures_to_surface(
         result.notes.append(
             f"re-anchor changed the model thickness {before_thickness} -> {app.rows[2].thickness} "
             "(must be measurement-only)"
+        )
+
+    # Feedback #6: editing the re-anchored dimension's VALUE through the real edit
+    # path (the inline editor's apply_dimension_value) must move the measured
+    # reference only -- never rows[i].thickness, which previously shifted the wrong
+    # element (the Imaging Lens instead of the LED<->Object gap).
+    np = __import__("numpy")
+    app.apply_dimension_anchor_override(2, "end", np.array([0.0, 0.0, 40.0]), fixed_z=10.0)
+    thickness_pre_edit = float(app.rows[2].thickness)
+    routed = False
+    try:
+        svc = inspector._open3d_thickness_dimension_service()
+        routed = bool(svc.apply_dimension_value(2, 7.0))
+    except Exception as exc:  # pragma: no cover - defensive
+        result.notes.append(f"value-edit routing raised: {exc}")
+    ov_after = app._dimension_anchor_override_for_row(2)
+    result.detail.update(
+        {
+            "value_edit_routed": routed,
+            "ref_z_after_value_edit": float(ov_after.get("ref_z")) if isinstance(ov_after, dict) else None,
+            "thickness_after_value_edit": float(app.rows[2].thickness),
+        }
+    )
+    if not routed:
+        result.notes.append("value edit on a re-anchored row did not route to the measurement (feedback #6)")
+    if not (isinstance(ov_after, dict) and abs(float(ov_after.get("ref_z", 0.0)) - 17.0) < 1e-6):
+        result.notes.append("value edit must move the measured ref_z to 10+7=17, not the model (feedback #6)")
+    if abs(float(app.rows[2].thickness) - thickness_pre_edit) > 1e-9:
+        result.notes.append(
+            f"value edit changed rows[2].thickness {thickness_pre_edit} -> {app.rows[2].thickness} "
+            "(feedback #6: wrong element moved)"
         )
 
     try:

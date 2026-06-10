@@ -801,6 +801,31 @@ class Open3DThicknessDimensionService:
         if not np.isfinite(next_value):
             self.inspector.status_var.set("Thickness must be a finite number.")
             return False
+        # A re-anchored dimension is a measurement annotation, not an optical gap:
+        # editing its value adjusts the measured reference only, so we must NOT
+        # write rows[row_index].thickness (which would move the wrong element).
+        override = None
+        try:
+            override = self.editor._dimension_anchor_override_for_row(row_index)
+        except Exception:
+            override = None
+        if isinstance(override, dict):
+            applied = False
+            try:
+                applied = bool(
+                    self.editor.apply_reanchored_dimension_measured(row_index, next_value)
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                self.editor.append_debug(f"re-anchored dimension edit failed: {exc}")
+                applied = False
+            if applied:
+                self.inspector.refresh_from_editor(force_retrace=True)
+            else:
+                self.inspector.status_var.set(
+                    f"S{row_index} re-anchored dimension is a measurement; "
+                    "re-pick the endpoint to change it."
+                )
+            return applied
         self.editor._begin_history_capture()
         self.editor.rows[row_index].thickness = next_value
         # Quick Estimation: setting one conjugate gap re-solves the other so the
@@ -893,25 +918,41 @@ class Open3DThicknessDimensionService:
             self.cancel_inline_editor()
             return "break"
 
-        def commit_when_leaving_window(_event=None):
+        def keep_focus_in_window(_event=None):
+            # bugs/0053 #5: moving the mouse over the embedded VTK canvas used to
+            # steal keyboard focus (focus-follows-mouse), which fired <FocusOut>
+            # and committed/closed the editor mid-type -- "the window disappears if
+            # the mouse moves a little." Don't commit on focus loss; pull focus
+            # back to the entry so the user can keep typing. Committing is now
+            # Enter / OK only (Esc / window-close cancels). If focus moved to a
+            # child of this window (e.g. the OK button) leave it alone.
             try:
+                if not window.winfo_exists():
+                    return None
                 focus = window.focus_get()
                 if focus is not None and focus.winfo_toplevel() is window:
                     return None
+                entry.focus_set()
             except Exception:
                 pass
-            return commit()
+            return None
 
         ttk.Button(frame, text="OK", command=commit, width=6).grid(row=1, column=2, sticky="e", pady=(6, 0))
         window.bind("<Return>", commit, add="+")
         window.bind("<KP_Enter>", commit, add="+")
         window.bind("<Escape>", cancel, add="+")
-        entry.bind("<FocusOut>", commit_when_leaving_window, add="+")
+        entry.bind("<FocusOut>", keep_focus_in_window, add="+")
         try:
             window.protocol("WM_DELETE_WINDOW", cancel)
         except Exception:
             pass
         self._position_inline_editor(window)
+        # Grab input so the embedded VTK canvas can't take focus-follows-mouse
+        # focus while the user is typing (the root cause of the vanishing editor).
+        try:
+            window.grab_set()
+        except Exception:
+            pass
         try:
             entry.focus_set()
             entry.selection_range(0, "end")

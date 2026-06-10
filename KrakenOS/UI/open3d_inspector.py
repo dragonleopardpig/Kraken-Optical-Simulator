@@ -495,9 +495,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._axis_slide_drag_state: dict[str, object] | None = None
         self._step_translate_drag_state: dict[str, object] | None = None
         self._step_translate_gap_actors: list[Any] = []
-        # bugs/0053: Ctrl-drag re-anchor of a thickness/distance dimension endpoint.
+        # bugs/0053: re-anchor a thickness/distance dimension endpoint. Ctrl-click
+        # a dimension arrow to enter a modal pick (the nearer endpoint then follows
+        # the bare mouse, no button held); a plain click on a surface/edge commits.
+        # `_dimension_anchor_drag_state` is only the transient entry-gesture flag
+        # that suppresses camera orbit while the Ctrl button is still down.
         self._dimension_anchor_drag_state: dict[str, object] | None = None
+        self._dimension_anchor_pick_mode = False
+        self._dimension_anchor_pick_state: dict[str, object] | None = None
         self._dimension_anchor_preview_actors: list[Any] = []
+        self._dimension_anchor_snap_highlight_row: int | None = None
         self._open3d_carry_grip_service = Open3DCarryGripService(self)
         self._selected_step_feature: StepFeatureSelection | None = None
         self._selected_step_feature_label: str | None = None
@@ -1436,6 +1443,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             or self._step_carry_snap_target_mode
             or self._step_normal_axis_pick_mode
             or self._step_surface_center_axis_pick_mode
+            or self._dimension_anchor_pick_mode
             or bool(getattr(self.editor, "_cad_axis_pick_any", False))
         ):
             return None
@@ -1779,6 +1787,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             or self._step_carry_snap_target_mode
             or self._step_normal_axis_pick_mode
             or self._step_surface_center_axis_pick_mode
+            or self._dimension_anchor_pick_mode
             or bool(getattr(self.editor, "_cad_axis_pick_any", False))
         ):
             return None
@@ -1855,6 +1864,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             or self._step_carry_snap_target_mode
             or self._step_normal_axis_pick_mode
             or self._step_surface_center_axis_pick_mode
+            or self._dimension_anchor_pick_mode
             or bool(getattr(self.editor, "_cad_axis_pick_any", False))
         ):
             return None
@@ -2961,6 +2971,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             or self._step_carry_snap_target_mode
             or self._step_normal_axis_pick_mode
             or self._step_surface_center_axis_pick_mode
+            or self._dimension_anchor_pick_mode
             or bool(getattr(self.editor, "_cad_axis_pick_any", False))
         ):
             return None
@@ -3108,10 +3119,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.status_var.set(f"{display} STEP moved {axis.upper()} {total_mm:+.4g} mm.")
 
     # ------------------------------------------------------------------
-    # bugs/0053: Ctrl-drag a thickness/distance dimension endpoint onto a
+    # bugs/0053: re-anchor a thickness/distance dimension endpoint onto a
     # surface/edge to re-anchor what it measures to. MEASUREMENT only -- the
-    # optical model (rows[i].thickness) is never changed. The object/LED row's
-    # object-side endpoint feeds the existing object-edge reference instead.
+    # optical model (rows[i].thickness) is never changed. The interaction is a
+    # modal click-toggle: Ctrl-click a dimension arrow to start (the nearer
+    # endpoint then follows the BARE mouse, no button held); a plain click on a
+    # surface/edge commits. The object/LED row's object-side endpoint feeds the
+    # existing object-edge reference instead.
     def _dimension_anchor_state_from_current_pick(self) -> dict[str, object] | None:
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
             return None
@@ -3148,10 +3162,6 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             endpoint = "start" if d_start <= d_end else "end"
         moving = start if endpoint == "start" else end
         fixed = end if endpoint == "start" else start
-        display = self.editor._step_overlay_display_label("led").upper() if (row_index == 0 and getattr(self.editor, "imported_led_step_path", None) is not None) else f"S{row_index}"
-        self.status_var.set(
-            f"Re-anchor {display} dimension ({endpoint}): drag onto a surface/edge, release to set the measured location."
-        )
         return {
             "row_index": row_index,
             "endpoint": endpoint,
@@ -3160,8 +3170,47 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             "snapped_world": None,
         }
 
-    def _apply_dimension_anchor_drag_motion(self, dx, dy) -> None:
-        state = self._dimension_anchor_drag_state
+    def _dimension_anchor_display_label(self, row_index: int) -> str:
+        if row_index == 0 and getattr(self.editor, "imported_led_step_path", None) is not None:
+            try:
+                return self.editor._step_overlay_display_label("led").upper()
+            except Exception:
+                return "LED"
+        return f"S{int(row_index)}"
+
+    def _begin_dimension_anchor_pick_from_current_pick(self) -> bool:
+        """Enter the modal re-anchor on a Ctrl-click that landed on a dimension
+        arrow. Returns True if a dimension endpoint was picked (so the caller
+        suppresses camera orbit), False otherwise (Ctrl-click on empty -> orbit)."""
+        state = self._dimension_anchor_state_from_current_pick()
+        if state is None:
+            return False
+        self._dimension_anchor_pick_mode = True
+        self._dimension_anchor_pick_state = state
+        label = self._dimension_anchor_display_label(int(state.get("row_index", -1)))
+        endpoint = str(state.get("endpoint", "end"))
+        self.status_var.set(
+            f"Re-anchor {label} dimension ({endpoint}): move the mouse onto a surface/edge "
+            f"(no button held), then click to set the measured location. Esc cancels."
+        )
+        try:
+            self._set_axis_pick_cursor(True)
+        except Exception:
+            pass
+        # Draw the live arrow immediately at the current pose so the user sees the
+        # real measured dimension move (not a separate bare line).
+        self._apply_dimension_anchor_pick_motion()
+        try:
+            self._update_mode_badge()
+        except Exception:
+            pass
+        return True
+
+    def _apply_dimension_anchor_pick_motion(self) -> None:
+        """Bare-mouse live update while re-anchoring: snap the moving endpoint to
+        the surface/edge under the cursor, redraw the real dimension arrow, and
+        highlight the snap target."""
+        state = self._dimension_anchor_pick_state
         if state is None or self._picker is None or self._renderer is None or self._vtk_interactor is None:
             return
         try:
@@ -3172,8 +3221,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         moving = np.asarray(state.get("moving_world"), dtype=float).reshape(-1)[:3]
         snapped = None
         snapped_label = ""
+        hit_key = None
         # Snap to whatever pickable surface/body sits under the cursor; ignore the
-        # dimension arrows/gizmo handles themselves.
+        # dimension arrows/gizmo handles + the live preview themselves.
         try:
             self._picker.Pick(x, y, 0.0, self._renderer)
             hit = self._picker.GetActor()
@@ -3192,11 +3242,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     snapped = pos
                     step_label = self._actor_step_map.get(hit_key) if hit_key is not None else None
                     snapped_label = str(step_label).upper() if step_label else ""
+            else:
+                hit_key = None
         except Exception:
             snapped = None
+            hit_key = None
         if snapped is None:
-            # Free drag: project the cursor ray onto the dimension's axial line
-            # through the fixed endpoint (the dimension runs along Z here).
+            # No surface under the cursor: project the cursor ray onto the
+            # dimension's axial line through the moving endpoint (axis runs along Z).
             ray = self._display_pick_ray((x, y))
             if ray is not None:
                 origin, direction = ray
@@ -3207,35 +3260,157 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     snapped = np.array([float(moving[0]), float(moving[1]), float(pt[2])], dtype=float)
         if snapped is None:
             return
+        # Keep the arrow on the optical axis (matching the committed overlay): only
+        # the snapped Z moves the moving endpoint; X/Y stay on the axis.
+        moving_q = np.array([float(moving[0]), float(moving[1]), float(snapped[2])], dtype=float)
         state["snapped_world"] = tuple(float(v) for v in snapped[:3])
+        state["moving_axial_world"] = tuple(float(v) for v in moving_q[:3])
         measured = abs(float(snapped[2] - fixed[2]))
-        self._update_dimension_anchor_preview(fixed, snapped)
+        state["measured_mm"] = float(measured)
+        self._update_dimension_anchor_preview(int(state.get("row_index", -1)), fixed, moving_q)
+        self._set_dimension_anchor_snap_highlight(hit_key, x, y)
+        label = self._dimension_anchor_display_label(int(state.get("row_index", -1)))
         suffix = f" -> {snapped_label}" if snapped_label else ""
-        self.status_var.set(f"S{int(state.get('row_index'))} measured = {measured:.6g} mm{suffix} (release to set).")
+        self.status_var.set(f"{label} measured = {measured:.6g} mm{suffix} (click a surface/edge to set).")
 
-    def _update_dimension_anchor_preview(self, fixed_world, snapped_world) -> None:
+    def _update_dimension_anchor_preview(self, row_index, fixed_world, moving_world) -> None:
+        """Live preview that looks like the COMMITTED magenta dimension: a real
+        double-headed arrow (with arrowheads), leader lines, and a measured
+        label, offset off the optical axis exactly like the persistent overlay."""
         self._clear_dimension_anchor_preview(render=False)
-        if pv is None or self._renderer is None:
+        svc = self._open3d_thickness_dimension_service()
+        if svc is None or pv is None or self._renderer is None:
             return
         try:
-            a = tuple(float(v) for v in np.asarray(fixed_world, dtype=float).reshape(-1)[:3])
-            b = tuple(float(v) for v in np.asarray(snapped_world, dtype=float).reshape(-1)[:3])
-            actor = self._add_mesh_actor(
-                pv.Line(a, b),
-                color=(0.62, 0.18, 0.58),
-                opacity=0.95,
-                line_width=3.0,
-                backface_culling=False,
-            )
-            if actor is not None:
-                actor.PickableOff()
-                self._dimension_anchor_preview_actors.append(actor)
+            q0 = np.asarray(fixed_world, dtype=float).reshape(-1)[:3]
+            q1 = np.asarray(moving_world, dtype=float).reshape(-1)[:3]
+            segment = q1 - q0
+            seg_len = float(np.linalg.norm(segment))
+            if not np.isfinite(seg_len) or seg_len <= 1e-9:
+                return
+            _center, scene_span = self._row_scene_bounds()
+            base_offset = max(float(scene_span) * 0.08, 2.0)
+            try:
+                view_normal = self._camera_view_normal()
+            except Exception:
+                view_normal = None
+            try:
+                screen_axes = self._camera_screen_world_axes()
+            except Exception:
+                screen_axes = None
+            screen_up = screen_axes[1] if screen_axes else None
+            side = svc.offset_direction(segment, view_normal=view_normal, screen_up=screen_up)
+            row_band = 1.0 + 0.38 * float(int(row_index) % 3)
+            offset = side * base_offset * row_band
+            start = q0 + offset
+            end = q1 + offset
+            color = svc.REANCHOR_DIMENSION_COLOR
+            mesh = svc.arrow_mesh(start, end, scene_span=scene_span)
+            if mesh is not None:
+                actor = self._add_mesh_actor(
+                    mesh,
+                    color=color,
+                    opacity=0.95,
+                    flat_shading=True,
+                    backface_culling=False,
+                )
+                if actor is not None:
+                    actor.PickableOff()
+                    self._dimension_anchor_preview_actors.append(actor)
+            for tip, anchor in ((q0, start), (q1, end)):
+                leader = self._add_mesh_actor(
+                    pv.Line(
+                        tuple(float(v) for v in tip),
+                        tuple(float(v) for v in anchor),
+                    ),
+                    color=(0.72, 0.50, 0.70),
+                    opacity=0.6,
+                    line_width=svc.DIMENSION_LEADER_LINE_WIDTH,
+                    backface_culling=False,
+                )
+                if leader is not None:
+                    leader.PickableOff()
+                    self._dimension_anchor_preview_actors.append(leader)
+            measured = abs(float(q1[2] - q0[2]))
+            label = f"{self._dimension_anchor_display_label(int(row_index))} measured = {measured:.6g} mm"
+            actor_cls = svc.billboard_text_actor_cls
+            if actor_cls is not None:
+                label_position = 0.5 * (start + end) + side * max(base_offset * 0.22, 0.8)
+                text_actor = actor_cls()
+                text_actor.SetInput(str(label))
+                text_actor.SetPosition(
+                    float(label_position[0]), float(label_position[1]), float(label_position[2])
+                )
+                try:
+                    text_prop = text_actor.GetTextProperty()
+                    text_prop.SetFontSize(13)
+                    text_prop.SetColor(0.32, 0.04, 0.30)
+                    text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
+                    text_prop.SetBackgroundOpacity(0.82)
+                    text_prop.SetFrame(1)
+                    text_prop.SetFrameColor(0.62, 0.18, 0.58)
+                except Exception:
+                    pass
+                text_actor.SetPickable(False)
+                self._add_renderer_view_prop(text_actor)
+                self._dimension_anchor_preview_actors.append(text_actor)
         except Exception:
             pass
         try:
             self.render()
         except Exception:
             pass
+
+    def _set_dimension_anchor_snap_highlight(self, hit_key, x: int, y: int) -> None:
+        """Highlight the surface/edge under the cursor that the endpoint will snap
+        to (feedback #3). A STEP body shows its picked-face outline; a KrakenOS
+        surface row highlights the row."""
+        if hit_key is None:
+            self._clear_dimension_anchor_snap_highlight()
+            return
+        step_label = self._actor_step_map.get(hit_key)
+        if step_label is not None:
+            try:
+                cell_id = int(self._picker.GetCellId())
+            except Exception:
+                cell_id = -1
+            try:
+                feature_pick = self._step_feature_pick_for_display_xy(
+                    str(step_label), (x, y), actor_key=hit_key, cell_id=cell_id
+                )
+                feature = feature_pick.get("feature") if feature_pick is not None else None
+                outline = (
+                    self._hover_overlay_for_feature(feature[0], feature[1])
+                    if feature is not None
+                    else None
+                )
+                self._set_step_hover_outline(outline, (hit_key, "reanchor", cell_id), render=False)
+            except Exception:
+                pass
+            if self._dimension_anchor_snap_highlight_row is not None:
+                self._set_row_highlight(None)
+                self._dimension_anchor_snap_highlight_row = None
+            return
+        row_index = self._actor_row_map.get(hit_key)
+        if row_index is not None:
+            self._set_step_hover_outline(None, None, render=False)
+            if self._dimension_anchor_snap_highlight_row != int(row_index):
+                self._set_row_highlight(int(row_index))
+                self._dimension_anchor_snap_highlight_row = int(row_index)
+            return
+        self._clear_dimension_anchor_snap_highlight()
+
+    def _clear_dimension_anchor_snap_highlight(self) -> None:
+        try:
+            self._set_step_hover_outline(None, None, render=False)
+        except Exception:
+            pass
+        if self._dimension_anchor_snap_highlight_row is not None:
+            try:
+                self._set_row_highlight(None)
+            except Exception:
+                pass
+            self._dimension_anchor_snap_highlight_row = None
 
     def _clear_dimension_anchor_preview(self, *, render: bool = True) -> None:
         for actor in list(self._dimension_anchor_preview_actors):
@@ -3250,24 +3425,63 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 pass
 
-    def _finish_dimension_anchor_drag(self, state: dict[str, object]) -> None:
+    def _exit_dimension_anchor_pick_mode(self, *, render: bool = True) -> None:
+        self._dimension_anchor_pick_mode = False
+        self._dimension_anchor_pick_state = None
+        self._dimension_anchor_drag_state = None
         self._clear_dimension_anchor_preview(render=False)
-        snapped = state.get("snapped_world") if isinstance(state, dict) else None
-        if snapped is None:
-            self.status_var.set("Dimension re-anchor cancelled (release on a surface/edge to set it).")
+        self._clear_dimension_anchor_snap_highlight()
+        try:
+            self._set_axis_pick_cursor(False)
+        except Exception:
+            pass
+        try:
+            self._update_mode_badge()
+        except Exception:
+            pass
+        if render:
             try:
                 self.render()
             except Exception:
                 pass
+
+    def _commit_dimension_anchor_pick(self) -> None:
+        """A plain click commits the re-anchor: write the measured override and
+        leave the modal pick (feedback #4)."""
+        state = self._dimension_anchor_pick_state
+        if state is None:
+            self._exit_dimension_anchor_pick_mode()
             return
+        # Refresh the snap at the exact click position so the committed location
+        # matches where the user clicked, not the last hover sample.
+        self._apply_dimension_anchor_pick_motion()
+        state = self._dimension_anchor_pick_state or state
+        snapped = state.get("snapped_world") if isinstance(state, dict) else None
+        if snapped is None:
+            self.status_var.set("Dimension re-anchor cancelled (click a surface/edge to set it).")
+            self._exit_dimension_anchor_pick_mode()
+            return
+        row_index = int(state.get("row_index", -1))
+        endpoint = str(state.get("endpoint", "end"))
+        fixed_world = state.get("fixed_world") if isinstance(state, dict) else None
+        try:
+            fixed_z = float(np.asarray(fixed_world, dtype=float).reshape(-1)[2])
+        except Exception:
+            fixed_z = None
+        self._exit_dimension_anchor_pick_mode(render=False)
         try:
             self.editor.apply_dimension_anchor_override(
-                int(state.get("row_index")),
-                str(state.get("endpoint", "end")),
+                row_index,
+                endpoint,
                 np.asarray(snapped, dtype=float).reshape(-1)[:3],
+                fixed_z=fixed_z,
             )
         except Exception as exc:
             self.editor.append_debug(f"dimension re-anchor commit failed: {exc}")
+        try:
+            self.render()
+        except Exception:
+            pass
 
     def _axial_extent_from_actor_keys(self, actor_keys, axis_unit) -> dict[str, object] | None:
         axis = np.asarray(axis_unit, dtype=float).reshape(-1)[:3]
@@ -3769,6 +3983,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             or self._step_carry_snap_target_mode
             or self._step_normal_axis_pick_mode
             or self._step_surface_center_axis_pick_mode
+            or self._dimension_anchor_pick_mode
             or bool(getattr(self.editor, "_cad_axis_pick_any", False))
         ):
             return None
@@ -6605,6 +6820,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             labels.append("STEP snap ray")
         if self._step_carry_snap_target_mode:
             labels.append("STEP snap target")
+        if self._dimension_anchor_pick_mode:
+            labels.append("dimension re-anchor")
         if self._step_normal_axis_pick_mode:
             labels.append("STEP normal axis pick")
         if self._step_surface_center_axis_pick_mode:
@@ -7256,6 +7473,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_carry_snap_target_mode = False
         self._step_normal_axis_pick_mode = False
         self._step_surface_center_axis_pick_mode = False
+        if self._dimension_anchor_pick_mode:
+            self._exit_dimension_anchor_pick_mode(render=False)
         self._step_carry_grid_label = None
         self._step_carry_grid_spacing_mm = None
         self._left_drag_active = False
@@ -9276,6 +9495,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             snap_label = self._step_carry_label() or str(self.editor._selected_step_label or "").strip().lower()
             snap_text = str(snap_label).upper() if snap_label in STEP_OVERLAY_LABEL_SET else "STEP"
             return f"SNAP {snap_text} STEP -> TARGET\nClick detector/object/target row or face."
+        if self._dimension_anchor_pick_mode:
+            state = self._dimension_anchor_pick_state if isinstance(self._dimension_anchor_pick_state, dict) else {}
+            label = self._dimension_anchor_display_label(int(state.get("row_index", -1)))
+            return f"RE-ANCHOR {label} DIMENSION\nMove onto a surface/edge, click to set. Esc cancels."
         if self._step_normal_axis_pick_mode:
             label = str(self._selected_step_feature_label or self.editor._selected_step_label or "STEP").upper()
             mode_text = str(getattr(self, "_step_normal_axis_anchor_mode", "body_center")).strip().lower()

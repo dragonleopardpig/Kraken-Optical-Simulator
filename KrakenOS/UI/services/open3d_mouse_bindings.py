@@ -79,11 +79,31 @@ class Open3DMouseBindingsService:
                 self._step_carry_drag_state = None
                 self._axis_slide_drag_state = None
                 self._step_translate_drag_state = None
-                # bugs/0053: Ctrl+press on a dimension arrow re-anchors its measured
-                # endpoint instead of orbiting; Ctrl on empty space still orbits.
-                self._dimension_anchor_drag_state = self._dimension_anchor_state_from_current_pick()
-                if self._dimension_anchor_drag_state is not None:
+                # bugs/0053: Ctrl-click on a dimension arrow toggles a modal
+                # re-anchor of its nearer endpoint -- the endpoint then follows the
+                # BARE mouse (no button held) and a plain click commits. Ctrl on
+                # empty space still orbits the camera.
+                if self._dimension_anchor_pick_mode:
+                    # Already re-anchoring: keep the mode, don't orbit. The bare
+                    # mouse drives it; a plain (non-Ctrl) click commits.
                     self._ctrl_left_camera_active = False
+                    self._dimension_anchor_drag_state = self._dimension_anchor_pick_state
+                elif self._begin_dimension_anchor_pick_from_current_pick():
+                    self._ctrl_left_camera_active = False
+                    self._dimension_anchor_drag_state = self._dimension_anchor_pick_state
+                else:
+                    self._dimension_anchor_drag_state = None
+            elif self._dimension_anchor_pick_mode:
+                # bugs/0053: a plain click while re-anchoring commits the pick
+                # (handled in left_release). Don't arm any drag/carry detector --
+                # the click must not also select or carry the surface under it.
+                self._dimension_anchor_drag_state = None
+                self._step_translate_drag_state = None
+                self._axis_slide_drag_state = None
+                self._placement_drag_state = None
+                self._thickness_drag_state = None
+                self._step_carry_drag_state = None
+                self._row_carry_drag_state = None
             else:
                 self._dimension_anchor_drag_state = None
                 self._step_translate_drag_state = self._step_translate_state_from_current_pick()
@@ -133,11 +153,12 @@ class Open3DMouseBindingsService:
                 dx = current[0] - last[0]
                 dy = current[1] - last[1]
                 ctrl_pressed = control_pressed(event)
-                if self._dimension_anchor_drag_state is not None:
-                    # bugs/0053: re-anchor drag owns the gesture (Ctrl stays held,
-                    # but this must not fall through to the camera-orbit branch).
+                if self._dimension_anchor_pick_mode:
+                    # bugs/0053: while re-anchoring, a held Ctrl-drag also live-moves
+                    # the endpoint (so it works whether or not the user keeps the
+                    # button down); this must not fall through to the orbit branch.
                     self._cancel_step_carry_hold_timer()
-                    self._apply_dimension_anchor_drag_motion(dx, dy)
+                    self._apply_dimension_anchor_pick_motion()
                     self._left_drag_last_xy = current
                     return "break"
                 if ctrl_pressed:
@@ -225,10 +246,16 @@ class Open3DMouseBindingsService:
             self._step_translate_drag_state = None
             self._dimension_anchor_drag_state = None
             self._ctrl_left_camera_active = False
-            # bugs/0053: a re-anchor is a Ctrl gesture, so commit it before the
-            # ctrl_active-gated branches below would otherwise swallow it.
-            if dimension_anchor_drag_state is not None:
-                self._finish_dimension_anchor_drag(dimension_anchor_drag_state)
+            # bugs/0053: the Ctrl gesture that entered (or kept) the modal
+            # re-anchor must NOT commit on release -- the endpoint keeps following
+            # the bare mouse until a plain (non-Ctrl) click commits it below.
+            if self._dimension_anchor_pick_mode:
+                if dimension_anchor_drag_state is not None or ctrl_active:
+                    return "break"
+                # A plain click while the mode is active commits the re-anchor.
+                if should_pick:
+                    self._commit_dimension_anchor_pick()
+                    return "break"
                 return "break"
             if step_carry_follow_state is not None:
                 if should_pick and not ctrl_active:
@@ -288,6 +315,17 @@ class Open3DMouseBindingsService:
             # Passive hover (no button held): highlight a thickness-dimension
             # handle under the cursor so it reads as draggable/clickable.
             if self._left_drag_active or self._middle_drag_active:
+                return
+            # bugs/0053: while re-anchoring, the bare mouse moves the endpoint;
+            # drive the live arrow + snap highlight instead of the resting hover.
+            # Push the cursor into the VTK interactor first so the picker reads
+            # the live position (bare <Motion> doesn't set it otherwise).
+            if self._dimension_anchor_pick_mode:
+                set_event_info(event)
+                try:
+                    self._apply_dimension_anchor_pick_motion()
+                except Exception:
+                    pass
                 return
             try:
                 self._update_thickness_hover_highlight(int(event.x), int(event.y))
