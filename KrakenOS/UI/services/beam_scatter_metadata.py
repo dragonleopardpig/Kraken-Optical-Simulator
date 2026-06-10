@@ -352,6 +352,10 @@ def _beam_splitter_uses_fresnel_polarization(settings) -> bool:
 
 
 def _coating_table_has_data(value) -> bool:
+    # Imported lazily: advanced_surface_validation imports this module at its top
+    # level, so a module-level back-import would be circular.
+    from KrakenOS.UI.services.advanced_surface_validation import _validate_coating_table
+
     if _validate_coating_table(value):
         return False
     try:

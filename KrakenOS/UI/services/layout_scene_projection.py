@@ -172,7 +172,7 @@ class LayoutSceneProjectionMixin:
             tangent = np.asarray(mirror_tangent, dtype=float)
             if tangent.shape == (2,) and np.linalg.norm(tangent) > 1e-12:
                 return float(np.rad2deg(np.arctan2(tangent[1], tangent[0])))
-        return KrakenLayoutEditor._display_mirror_angle_deg(row)
+        return LayoutSceneProjectionMixin._display_mirror_angle_deg(row)
 
     @staticmethod
     def _snap_display_direction(direction: np.ndarray, tolerance: float = 0.03) -> np.ndarray:
@@ -329,7 +329,7 @@ class LayoutSceneProjectionMixin:
         axis /= max(np.linalg.norm(axis), 1e-12)
         tangent = np.array([-axis[1], axis[0]], dtype=float)
         angle = np.rad2deg(np.arctan2(tangent[1], tangent[0]))
-        return KrakenLayoutEditor._intersect_ray_with_line(origin, direction, center, angle)
+        return LayoutSceneProjectionMixin._intersect_ray_with_line(origin, direction, center, angle)
 
     @staticmethod
     def _refract_ray_2d(direction: np.ndarray, normal: np.ndarray, n_before: float, n_after: float) -> np.ndarray:

@@ -9,6 +9,16 @@ from typing import Any, Callable
 import numpy as np
 
 
+def _short_error_message(exc: Exception, limit: int = 220) -> str:
+    text = str(exc).strip()
+    if not text:
+        return exc.__class__.__name__
+    first = text.splitlines()[0].strip()
+    if len(first) > limit:
+        return first[:limit] + "..."
+    return first
+
+
 class MainSceneSourceManagerDialog:
     """Own the Scene Source Manager while delegating source state to the editor."""
 
