@@ -2345,6 +2345,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception as exc:
                 self.editor.append_debug(f"3D STEP carry actor move failed for {label}: {exc}")
         if moved:
+            # bugs/0050: the cached face hover outline is baked at the body's
+            # pre-move pose; once the body slides out from under it, that gold
+            # edge highlight is stranded at the old location. Drop it on the
+            # move (the next hover re-derives it from the now-current metadata).
+            if self._hover_step_outline_actor is not None or self._hover_step_cell_key is not None:
+                self._set_step_hover_outline(None, None, render=False)
             try:
                 self._reset_camera_clipping_range_for_scene()
             except Exception:

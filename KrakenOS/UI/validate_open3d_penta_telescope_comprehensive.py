@@ -4553,6 +4553,98 @@ def phase_54_step_reselect_single_gizmo(
     return result
 
 
+def phase_55_display_only_step_hover_tracks_move(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A display-only STEP's face metadata follows the body when moved, so the
+    hover outline does not strand at the old pose (bug 0050).
+
+    Flag (`flag_20260610_192731_451`, machine_vision_150mm): *"the residul
+    highlight at old location bug surface again."* The hover/pick read
+    `_step_overlay_face_metadata`, whose cache key is pose-blind for display-only
+    labels (camera/led/lens) -- so after a gizmo translate it kept handing back
+    the body's former world coords and the gold face outline was redrawn at the
+    old location (bug 0010 resurfacing for the labels its fix left pose-blind).
+
+    Import the prism under the display-only `lens` label, read the metadata,
+    translate +20 mm in z through the public `translate_step_overlay`, read again
+    with NO manual cache clear, and assert every face centroid tracked the move
+    (matched as an ID-independent cloud -- the planar clusterer may swap two
+    symmetric faces' IDs). SKIPs without a renderer / fixture.
+    """
+    import numpy as np
+
+    result = PhaseResult(
+        name="Phase 55: display-only STEP hover metadata tracks a move"
+    )
+    from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
+    from KrakenOS.UI.services.scene_placement_commands import ScenePlacementMixin
+    from KrakenOS.UI.validate_open3d_step_overlay_metadata_tracks_pose import (
+        _consumer_centroids,
+    )
+
+    if getattr(inspector, "_renderer", None) is None:
+        result.passed = True
+        result.notes.append("SKIP: no renderer (PyVista/VTK unavailable)")
+        return result
+    if not PRISM_42779_STEP.exists():
+        result.passed = True
+        result.notes.append(f"SKIP: missing fixture {PRISM_42779_STEP}")
+        return result
+    label = "lens"
+    if label not in ScenePlacementMixin._DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC:
+        result.passed = True
+        result.notes.append(f"SKIP: {label!r} is no longer display-only")
+        return result
+
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    app.imported_lens_step_path = PRISM_42779_STEP
+    app._set_step_placement_offset_xyz(label, (0.0, 0.0, 0.0))
+    inspector.refresh_from_editor()
+    inspector.update_idletasks()
+
+    before = _consumer_centroids(app._step_overlay_face_metadata(label))
+    move_mm, tol = 20.0, 0.5
+    app.translate_step_overlay(label, (0.0, 0.0, move_mm), refresh=False, record_history=False)
+    after = _consumer_centroids(app._step_overlay_face_metadata(label))
+
+    expected = [np.asarray(c, dtype=float) + np.array([0.0, 0.0, move_mm]) for c in before.values()]
+    actual = [np.asarray(c, dtype=float) for c in after.values()]
+    used = [False] * len(actual)
+    matched = 0
+    for exp in expected:
+        best_i, best_err = -1, float("inf")
+        for i, act in enumerate(actual):
+            if used[i]:
+                continue
+            err = float(np.max(np.abs(act - exp)))
+            if err < best_err:
+                best_i, best_err = i, err
+        if best_i >= 0 and best_err <= tol:
+            used[best_i] = True
+            matched += 1
+    result.detail.update({"faces": len(expected), "matched": matched})
+    if not expected:
+        result.notes.append("no display-only face metadata produced")
+    elif matched != len(expected):
+        result.notes.append(
+            f"{len(expected) - matched}/{len(expected)} face centroid(s) did not track the "
+            f"+{move_mm:g} mm move -- pose-blind metadata not invalidated (bug 0050)"
+        )
+
+    try:
+        app.clear_step_imports()
+        inspector.refresh_from_editor()
+        inspector.update_idletasks()
+    except Exception:
+        pass
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -4653,6 +4745,7 @@ def main() -> int:
             phase_52_det_mode_keeps_reference_disks,
             phase_53_iso_orbit_no_camera_clip,
             phase_54_step_reselect_single_gizmo,
+            phase_55_display_only_step_hover_tracks_move,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

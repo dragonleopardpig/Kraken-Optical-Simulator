@@ -2045,6 +2045,7 @@ class ScenePlacementMixin:
         if label not in _step_overlay_label_set():
             return
         setattr(self, f"{label}_step_axis_offset_xy", (float(offset_xy[0]), float(offset_xy[1])))
+        self._invalidate_step_overlay_face_metadata_cache(label)  # bugs/0050
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
 
@@ -2063,6 +2064,7 @@ class ScenePlacementMixin:
             return
         setattr(self, f"{label}_step_placement_offset_xyz", (float(values[0]), float(values[1]), float(values[2])))
         self._clear_step_overlay_axis_anchor(label)
+        self._invalidate_step_overlay_face_metadata_cache(label)  # bugs/0050
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
 
@@ -2634,6 +2636,7 @@ class ScenePlacementMixin:
         setattr(self, f"{label}_step_rotation_y_deg", y_deg)
         setattr(self, f"{label}_step_rotation_z_deg", z_deg)
         self._clear_step_overlay_axis_anchor(label)
+        self._invalidate_step_overlay_face_metadata_cache(label)  # bugs/0050
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
 
@@ -2954,6 +2957,29 @@ class ScenePlacementMixin:
         if cache_key is not None and isinstance(metadata, dict):
             cache[cache_key] = metadata
         return metadata
+
+    def _invalidate_step_overlay_face_metadata_cache(self, label: str) -> None:
+        """Drop cached face metadata for ``label`` after its pose changes.
+
+        The metadata bakes world-space face geometry (centroids, normals, the
+        hover-outline meshes). For display-only labels (camera/led/lens) the
+        cache key is *pose-blind* -- the per-pose recompute is skipped to dodge
+        the cold-load freeze -- so a translate/rotate would otherwise keep
+        handing back the body's *former* world coords and the face hover outline
+        gets redrawn at the old, now-empty location (bug 0050; bug 0010
+        resurfacing for the display-only solids the 0010 fix left pose-blind).
+
+        Dropping the entry is safe and freeze-free: the metadata recompute is
+        lazy (only the next hover/pick pays it, never the scene refresh), and the
+        move's own refresh already rebuilt the transformed mesh, so the recompute
+        is just the planar-clustering pass, not a CAD reload.
+        """
+        label = str(label).strip().lower()
+        cache = self.__dict__.get("_step_overlay_face_metadata_cache")
+        if not isinstance(cache, dict) or not cache:
+            return
+        for key in [k for k in cache if isinstance(k, tuple) and k and k[0] == label]:
+            cache.pop(key, None)
 
     def _step_overlay_face_metadata_compute(self, label: str) -> dict[str, object]:
         if label not in self._DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC:
