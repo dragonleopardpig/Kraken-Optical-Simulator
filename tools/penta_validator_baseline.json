@@ -55,7 +55,8 @@
     "50": "pass",
     "51": "pass",
     "52": "pass",
-    "53": "pass"
+    "53": "pass",
+    "54": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -111,6 +112,7 @@
     "50": "Wavefront 3D surface builds and renders",
     "51": "cemented doublet reads as two elements, not a duplicated slab",
     "52": "Det toggle keeps Object/Image reference disks (no detector)",
-    "53": "Iso view is orthographic; orbit never clips the converging cone"
+    "53": "Iso view is orthographic; orbit never clips the converging cone",
+    "54": "selecting a new STEP clears the prior rotation gizmo"
   }
 }

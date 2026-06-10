@@ -118,6 +118,13 @@ class Open3DInteractionService:
                 return
         except Exception:
             pass
+        # Shift+click is intentional multi-select for STEP rotation gizmos;
+        # Ctrl stays the camera modifier (handled above), so it is not
+        # overloaded. A plain click collapses back to a single selection.
+        try:
+            shift_additive = bool(int(self._vtk_interactor.GetShiftKey()))
+        except Exception:
+            shift_additive = False
         x, y = self._vtk_interactor.GetEventPosition()
         pick_start = self._timing_start("left_click_vtk_pick", x=int(x), y=int(y))
         actor = None
@@ -407,8 +414,7 @@ class Open3DInteractionService:
                 picked_face_id = str(feature_pick.get("face_id", "") if feature_pick is not None else "").strip()
                 remembered = self._remember_selected_step_feature(step_label, feature, surface_center_world=surface_center, face_id=picked_face_id)
                 self.editor.select_step_component(step_label)
-                self._set_step_highlight(step_label)
-                self.show_step_rotation_handler(step_label)
+                self.show_step_rotation_handler(step_label, additive=shift_additive)
                 if remembered:
                     self.status_var.set(
                         f"Selected {step_label.upper()} STEP face. Rotation handles remain active; "

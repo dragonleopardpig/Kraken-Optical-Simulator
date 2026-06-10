@@ -636,7 +636,7 @@ def main() -> int:
         ("STEP click activates rotation handles", "show_step_rotation_handler(step_label)" in pick),
         (
             "STEP reselect rebuilds rotation handles after blank deselect",
-            "_ensure_step_rotation_handles_for_label(label)" in handler
+            "_reconcile_step_rotation_handles(" in handler
             and "_step_label_has_visible_body_actor(label)" in handler
             and "refresh_imported_step_overlay(label, render=False)" in handler
             and "_step_actor_map.get(label" in handler_visible_body

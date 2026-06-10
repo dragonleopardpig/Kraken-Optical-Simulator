@@ -47,6 +47,73 @@ class Open3DStepRotationHandleService:
                 pass
         return removed
 
+    def _handle_keys_for_label(self, label: str) -> set[str]:
+        inspector = self.inspector
+        label = str(label or "").strip().lower()
+        keys: set[str] = set()
+        if not label:
+            return keys
+        for key, (lbl, _axis, _delta) in list(inspector._actor_step_rotate_map.items()):
+            if str(lbl).strip().lower() == label:
+                keys.add(key)
+        for key, (lbl, _axis, _step) in list(inspector._actor_step_translate_map.items()):
+            if str(lbl).strip().lower() == label:
+                keys.add(key)
+        for key in list(inspector._actor_step_rotate_visual_keys):
+            if str(inspector._actor_step_follow_map.get(key, "")).strip().lower() == label:
+                keys.add(key)
+        return keys
+
+    def _labels_with_handles(self) -> set[str]:
+        inspector = self.inspector
+        labels: set[str] = set()
+        for lbl, _axis, _delta in list(inspector._actor_step_rotate_map.values()):
+            labels.add(str(lbl).strip().lower())
+        for lbl, _axis, _step in list(inspector._actor_step_translate_map.values()):
+            labels.add(str(lbl).strip().lower())
+        for key in list(inspector._actor_step_rotate_visual_keys):
+            labels.add(str(inspector._actor_step_follow_map.get(key, "")).strip().lower())
+        labels.discard("")
+        return labels
+
+    def remove_for_label(self, label: str) -> bool:
+        inspector = self.inspector
+        if inspector._renderer is None:
+            return False
+        removed = False
+        for actor_key in self._handle_keys_for_label(label):
+            actor = inspector._actor_by_key.pop(actor_key, None)
+            inspector._actor_step_rotate_map.pop(actor_key, None)
+            inspector._actor_step_rotate_visual_keys.discard(actor_key)
+            inspector._actor_step_translate_map.pop(actor_key, None)
+            inspector._actor_step_follow_map.pop(actor_key, None)
+            for keys in list(inspector._step_follow_actor_map.values()):
+                try:
+                    while actor_key in keys:
+                        keys.remove(actor_key)
+                except Exception:
+                    pass
+            if actor_key == getattr(inspector, "_hover_rotation_handle_key", None):
+                inspector._hover_rotation_handle_key = None
+            if actor is None:
+                continue
+            try:
+                inspector._renderer.RemoveActor(actor)
+                removed = True
+            except Exception:
+                pass
+        return removed
+
+    def reconcile_to_labels(self, labels) -> bool:
+        target = {str(label).strip().lower() for label in (labels or []) if str(label).strip()}
+        changed = False
+        for label in (self._labels_with_handles() - target):
+            if self.remove_for_label(label):
+                changed = True
+        for label in target:
+            self.ensure_for_label(label)
+        return changed
+
     def handle_count_for_label(self, label: str) -> int:
         label = str(label or "").strip().lower()
         if not label:

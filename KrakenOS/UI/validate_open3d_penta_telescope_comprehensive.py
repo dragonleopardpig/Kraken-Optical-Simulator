@@ -4437,6 +4437,122 @@ def phase_53_iso_orbit_no_camera_clip(
     return result
 
 
+def phase_54_step_reselect_single_gizmo(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Selecting a different imported STEP solid tears down the prior solid's
+    rotation gizmo; Shift+click keeps multiple (bug 0049).
+
+    Flag (`flag_20260610_152343/152400/152431`, machine_vision_150mm_test):
+    *"Camera selcted, but the Imaging Lens still get selected"*, *"LED STEP
+    selected, previous two selection are not cleared."* The recorded scene_state
+    showed rotation_handle_count climbing 6 -> 12 -> 18 across three picks --
+    `show_step_rotation_handler` only ADDED the clicked label's six handles and
+    never removed the prior label's. The fix reconciles the live gizmos to a
+    selection *set*: a plain click collapses to one label, Shift+click toggles a
+    label in/out.
+
+    End-to-end: import the prism fixture under two labels (lens + optical) so two
+    solids are pickable, then drive `show_step_rotation_handler` the way the click
+    handler does. A plain reselect must keep the rotate-pick actor count at one
+    element's six (not 12), with the prior label's handles gone; Shift+click must
+    grow it to 12; a plain click must collapse back to 6. SKIPs without a
+    renderer. (Last phase, so mutating the shared inspector is safe.)
+    """
+    result = PhaseResult(
+        name="Phase 54: selecting a new STEP clears the prior rotation gizmo"
+    )
+    from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
+
+    if getattr(inspector, "_renderer", None) is None:
+        result.passed = True
+        result.notes.append("SKIP: no renderer (PyVista/VTK unavailable)")
+        return result
+    if not PRISM_42779_STEP.exists():
+        result.passed = True
+        result.notes.append(f"SKIP: missing fixture {PRISM_42779_STEP}")
+        return result
+
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    for prefix, path_attr in (
+        ("lens", "imported_lens_step_path"),
+        ("optical", "imported_optical_step_path"),
+    ):
+        setattr(app, path_attr, PRISM_42779_STEP)
+        setattr(app, f"{prefix}_step_rotation_x_deg", 0.0)
+        setattr(app, f"{prefix}_step_rotation_y_deg", 0.0)
+        setattr(app, f"{prefix}_step_rotation_z_deg", 0.0)
+        setattr(app, f"{prefix}_step_placement_offset_xyz", (0.0, 0.0, 0.0))
+    inspector.refresh_from_editor()
+    inspector.update_idletasks()
+
+    def per_label(label: str) -> int:
+        return inspector._step_rotation_handle_count_for_label(label)
+
+    inspector.show_step_rotation_handler("optical")
+    inspector.update_idletasks()
+    after_optical = _count_rotation_handles(inspector)
+
+    # Plain reselect of the lens: the optical gizmo must be torn down, not stacked.
+    inspector.show_step_rotation_handler("lens")
+    inspector.update_idletasks()
+    after_reselect = _count_rotation_handles(inspector)
+    lens_only = per_label("lens")
+    optical_after = per_label("optical")
+
+    # Shift+click optical: intentional multi-select keeps both gizmos.
+    inspector.show_step_rotation_handler("optical", additive=True)
+    inspector.update_idletasks()
+    after_multi = _count_rotation_handles(inspector)
+
+    # A plain click collapses the multi-selection back to a single gizmo.
+    inspector.show_step_rotation_handler("lens")
+    inspector.update_idletasks()
+    after_collapse = _count_rotation_handles(inspector)
+
+    result.detail.update(
+        {
+            "after_optical": after_optical,
+            "after_reselect": after_reselect,
+            "lens_only": lens_only,
+            "optical_after_reselect": optical_after,
+            "after_multi": after_multi,
+            "after_collapse": after_collapse,
+        }
+    )
+    if after_optical <= 0:
+        result.notes.append("optical select produced no rotation handles")
+    if after_reselect != after_optical:
+        result.notes.append(
+            f"reselect accumulated handles: optical={after_optical} -> reselect={after_reselect}"
+        )
+    if optical_after != 0:
+        result.notes.append(
+            f"prior optical handles lingered after the lens reselect ({optical_after})"
+        )
+    if lens_only <= 0:
+        result.notes.append("lens reselect produced no rotation handles")
+    if after_optical > 0 and after_multi != after_optical + lens_only:
+        result.notes.append(
+            f"shift multi-select did not add the second gizmo: {after_reselect} -> {after_multi}"
+        )
+    if after_collapse != after_reselect:
+        result.notes.append(
+            f"plain click did not collapse multi-select: multi={after_multi} -> collapse={after_collapse}"
+        )
+
+    try:
+        inspector._clear_open3d_selection(render=False)
+        inspector.update_idletasks()
+    except Exception:
+        pass
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -4536,6 +4652,7 @@ def main() -> int:
             phase_51_cemented_doublet_single_pair,
             phase_52_det_mode_keeps_reference_disks,
             phase_53_iso_orbit_no_camera_clip,
+            phase_54_step_reselect_single_gizmo,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

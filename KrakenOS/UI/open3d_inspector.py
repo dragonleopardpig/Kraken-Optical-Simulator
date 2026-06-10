@@ -437,6 +437,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._placement_grid_status_actor = None
         self._hover_status_actor = None
         self._step_rotation_active_label: str | None = None
+        # Multi-select set of STEP labels whose rotation gizmos are live.
+        # `_step_rotation_active_label` is the primary (last-clicked) member;
+        # Shift+click adds/toggles extra members. A plain click collapses this
+        # back to a single label so prior gizmos are torn down (bugs/0049).
+        self._selected_step_labels: set[str] = set()
         # Compatibility name: this is now an embedded side-panel widget, not a
         # separate popup, so it cannot disappear behind a fullscreen main UI.
         self._stl_placement_popup: tk.Widget | None = None
@@ -4590,8 +4595,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _set_step_highlight(self, step_label: str | None, *, render: bool = True) -> None:
         self._selection_representation.apply_step_selection(step_label, render=render)
 
+    def _set_step_highlight_set(self, labels, *, render: bool = True) -> None:
+        self._selection_representation.apply_step_selection_set(labels, render=render)
+
     def _remove_step_rotation_handle_actors(self) -> bool:
         return self._open3d_step_rotation_handle_service().remove_actors()
+
+    def _reconcile_step_rotation_handles(self, labels) -> None:
+        visible = {
+            str(label).strip().lower()
+            for label in (labels or [])
+            if str(label).strip() and not self.is_step_label_hidden(str(label).strip().lower())
+        }
+        self._open3d_step_rotation_handle_service().reconcile_to_labels(visible)
 
     def _step_rotation_handle_count_for_label(self, label: str) -> int:
         return self._open3d_step_rotation_handle_service().handle_count_for_label(label)
@@ -7160,9 +7176,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # report.
             self.flag_bug()
 
-    def show_step_rotation_handler(self, label: str) -> None:
+    def show_step_rotation_handler(self, label: str, *, additive: bool = False) -> None:
         label = str(label).strip().lower()
-        token = self._timing_start("show_step_rotation_handler", label=label)
+        token = self._timing_start("show_step_rotation_handler", label=label, additive=bool(additive))
         if label not in STEP_OVERLAY_LABEL_SET:
             self._timing_finish(token, status="invalid_label")
             return
@@ -7170,7 +7186,33 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._timing_finish(token, status="missing_step_path")
             return
         try:
+            # Plain click collapses the selection to the clicked label so the
+            # previous element's rotation gizmo is torn down (bugs/0049).
+            # Shift+click toggles the clicked label into a multi-selection.
+            if additive:
+                selected = {l for l in self._selected_step_labels if l in STEP_OVERLAY_LABEL_SET}
+                if label in selected:
+                    selected.discard(label)
+                else:
+                    selected.add(label)
+            else:
+                selected = {label}
+            if label not in selected:
+                # Shift toggled the clicked label off; primary becomes another
+                # remaining member, or nothing if the selection is now empty.
+                self._step_rotation_active_label = sorted(selected)[0] if selected else None
+                self._selected_step_labels = selected
+                self._set_step_highlight_set(selected, render=False)
+                self._reconcile_step_rotation_handles(selected)
+                if self._step_rotation_active_label is None:
+                    self.status_var.set("Deselected all STEP rotation handles.")
+                else:
+                    self.status_var.set(f"{self._step_rotation_status_text(self._step_rotation_active_label)}.")
+                self.render()
+                self._timing_finish(token, status="toggled_off", handle_count=0)
+                return
             self._step_rotation_active_label = label
+            self._selected_step_labels = selected
             if self._step_carry_active_label is not None:
                 self._step_carry_active_label = label
                 self._step_carry_follow_state = None
@@ -7179,17 +7221,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self._step_carry_grid_label = None
                 self._step_carry_grid_spacing_mm = None
             self.editor.select_step_component(label)
-            self._set_step_highlight(label, render=False)
+            self._set_step_highlight_set(selected, render=False)
             if not self._step_label_has_visible_body_actor(label):
                 self.refresh_imported_step_overlay(label, render=False)
             if not self._step_label_has_visible_body_actor(label):
-                self._close_step_rotation_handler()
-                self._set_step_highlight(None, render=False)
+                selected.discard(label)
+                self._selected_step_labels = selected
+                self._step_rotation_active_label = sorted(selected)[0] if selected else None
+                self._set_step_highlight_set(selected, render=False)
+                self._reconcile_step_rotation_handles(selected)
                 self.status_var.set(f"{label.upper()} STEP rotation handles hidden because the STEP body is not visible.")
                 self.render()
                 self._timing_finish(token, status="missing_visible_step_body")
                 return
-            handle_count = self._ensure_step_rotation_handles_for_label(label)
+            self._reconcile_step_rotation_handles(selected)
+            handle_count = self._step_rotation_handle_count_for_label(label)
             handle_text = "Use the colored STEP rotation handles, or Center STEP Axis."
             if not self._show_rotation_handles():
                 handle_text = "Rotation handles are hidden; enable the toolbar checkbox or use Center STEP Axis."
@@ -7204,14 +7250,25 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._timing_finish(token, status="ok", handle_count=int(handle_count))
 
     def _update_step_rotation_handler_state(self) -> None:
-        label = self._step_rotation_active_label
-        if label not in STEP_OVERLAY_LABEL_SET or self.editor._step_path_for_label(str(label)) is None:
+        labels = {
+            l
+            for l in self._selected_step_labels
+            if l in STEP_OVERLAY_LABEL_SET and self.editor._step_path_for_label(str(l)) is not None
+        }
+        active = self._step_rotation_active_label
+        if active in STEP_OVERLAY_LABEL_SET and self.editor._step_path_for_label(str(active)) is not None:
+            labels.add(str(active))
+        else:
+            active = sorted(labels)[0] if labels else None
+        self._selected_step_labels = labels
+        self._step_rotation_active_label = active
+        if not labels:
             self._close_step_rotation_handler()
             return
         if not self._show_rotation_handles():
             self._remove_step_rotation_handle_actors()
         else:
-            self._ensure_step_rotation_handles_for_label(str(label))
+            self._reconcile_step_rotation_handles(labels)
 
     def _rotate_step_from_handler(self, axis: str, delta_deg: float) -> None:
         label = self._step_rotation_active_label or self.editor._selected_step_label
@@ -7233,6 +7290,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
     def _close_step_rotation_handler(self) -> None:
         self._step_rotation_active_label = None
+        self._selected_step_labels = set()
 
     def _clear_step_overlay_interaction_state(self, label: str | None = None) -> None:
         label_text = str(label or "").strip().lower()

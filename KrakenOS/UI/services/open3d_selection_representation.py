@@ -135,6 +135,31 @@ class SelectionRepresentation:
         if render:
             self._inspector.render()
 
+    def apply_step_selection_set(self, labels, *, render: bool = True) -> None:
+        label_set = {
+            str(label).strip().lower()
+            for label in (labels or [])
+            if str(label).strip()
+        }
+        primary = self._picked_step_label if self._picked_step_label in label_set else None
+        if primary is None and label_set:
+            primary = sorted(label_set)[0]
+        if self._renderer is None:
+            self._picked_step_label = primary
+            return
+        collection = self._renderer.GetActors()
+        collection.InitTraversal()
+        for _ in range(collection.GetNumberOfItems()):
+            actor = collection.GetNextActor()
+            actor_key = self._actor_key(actor)
+            actor_step = self._actor_step_map.get(actor_key) if actor_key is not None else None
+            if actor_step is None:
+                continue
+            self._inspector._set_step_actor_selected(actor, bool(actor_step in label_set))
+        self._picked_step_label = primary
+        if render:
+            self._inspector.render()
+
     # ------------------------------------------------------------------
     # optical-axis highlight
 

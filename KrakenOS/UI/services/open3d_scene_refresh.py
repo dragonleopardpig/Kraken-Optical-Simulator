@@ -1022,7 +1022,8 @@ class Open3DSceneRefreshService:
             self.highlight_row(self.editor._current_selected_row_index())
         if selected_step in STEP_OVERLAY_LABEL_SET and self.editor._step_path_for_label(str(selected_step)) is not None:
             self._step_rotation_active_label = str(selected_step)
-            self._set_step_highlight(str(selected_step))
+            self._selected_step_labels = set(self._selected_step_labels) | {str(selected_step)}
+            self._set_step_highlight_set(self._selected_step_labels)
         else:
             self._close_step_rotation_handler()
         # SelectionModel survives RemoveAllViewProps; re-apply ray and

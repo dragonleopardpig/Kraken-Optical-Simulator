@@ -23,6 +23,7 @@ def main() -> int:
         inspector.editor = app
         inspector.status_var = app.status_var
         inspector._step_rotation_active_label = None
+        inspector._hidden_step_labels = set()  # bugs/0027: is_step_label_hidden reads this
 
         records: list[tuple[object, dict[str, object]]] = []
 
