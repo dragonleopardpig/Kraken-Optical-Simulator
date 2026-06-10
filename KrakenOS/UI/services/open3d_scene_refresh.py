@@ -885,7 +885,11 @@ class Open3DSceneRefreshService:
         for label, builder, color, opacity in (
             ("lens", self.editor._transformed_imported_lens_step_mesh, (0.30, 0.36, 0.46), 0.26),
             ("optical", self.editor._transformed_imported_optical_step_mesh, (0.10, 0.62, 0.72), 0.34),
-            ("led", self.editor._transformed_imported_led_step_mesh, (0.95, 0.62, 0.16), 0.35),
+            # bugs/0052: de-amber the LED to the shared grey-blue glass palette
+            # (was a saturated 0.95,0.62,0.16 that read as "why is only the LED
+            # orange?" and killed the gold hover-edge contrast). Mirror of the
+            # per-label spec in open3d_step_overlay_refresh._step_overlay_display_spec.
+            ("led", self.editor._transformed_imported_led_step_mesh, (0.30, 0.36, 0.46), 0.35),
             ("camera", self.editor._transformed_imported_camera_step_mesh, (0.28, 0.33, 0.42), 0.38),
         ):
             label_is_live_trace_row = label in current_live_trace_step_overlay_labels

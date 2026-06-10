@@ -58,7 +58,8 @@
     "53": "pass",
     "54": "pass",
     "55": "pass",
-    "56": "pass"
+    "56": "pass",
+    "57": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -117,6 +118,7 @@
     "53": "Iso view is orthographic; orbit never clips the converging cone",
     "54": "selecting a new STEP clears the prior rotation gizmo",
     "55": "display-only STEP hover metadata tracks a move (no stranded ghost)",
-    "56": "selected STEP is pink, not a muddy orange blob"
+    "56": "selected STEP is pink, not a muddy orange blob",
+    "57": "imported LED body is grey-blue glass, not amber"
   }
 }

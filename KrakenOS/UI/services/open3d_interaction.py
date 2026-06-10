@@ -1167,11 +1167,11 @@ class Open3DInteractionService:
             coordinate_text = "\n" + "\n".join(coordinate_lines) if coordinate_lines else ""
             self._update_hover_status(f"{str(step_label).upper()} STEP{face_note or ' feature'}{coordinate_text}", display_xy=(x, y), render=True)
             if led_edge_pick:
-                self.status_var.set("Click orange LED edge used for Object-to-LED distance.")
+                self.status_var.set("Click the LED edge used for Object-to-LED distance.")
             elif axis_pick_any:
-                self.status_var.set(f"Click orange {step_label} feature to center it on the optical axis.")
+                self.status_var.set(f"Click the {step_label} feature to center it on the optical axis.")
             else:
-                self.status_var.set(f"Click orange {step_label} feature to center it on the optical axis.")
+                self.status_var.set(f"Click the {step_label} feature to center it on the optical axis.")
             return
         self._set_step_hover_outline(None, None)
         self._update_hover_status("", render=False)

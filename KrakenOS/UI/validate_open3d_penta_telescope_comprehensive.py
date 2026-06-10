@@ -4744,6 +4744,83 @@ def phase_56_selected_step_pink_not_orange(
     return result
 
 
+def phase_57_led_overlay_not_amber(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The imported LED body wears the shared grey-blue glass palette, not amber
+    (bug 0052).
+
+    Flag (`flag_20260610_203054_550`): *"Why only the LED body still orange? ...
+    the highlighted edge is yellow, hard to see."* The LED body was a saturated
+    amber `(0.95, 0.62, 0.16)` while camera/lens are grey-blue, and the gold
+    hover edge was invisible on it. Import the prism under the `led` label, run a
+    full refresh (the live render path), and assert the LED body actor took the
+    grey-blue fill `(0.30, 0.36, 0.46)` and no LED actor is amber. SKIPs without
+    a renderer / fixture.
+    """
+    result = PhaseResult(name="Phase 57: LED overlay body is grey-blue, not amber")
+    from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
+
+    if getattr(inspector, "_renderer", None) is None:
+        result.passed = True
+        result.notes.append("SKIP: no renderer (PyVista/VTK unavailable)")
+        return result
+    if not PRISM_42779_STEP.exists():
+        result.passed = True
+        result.notes.append(f"SKIP: missing fixture {PRISM_42779_STEP}")
+        return result
+
+    def _near(a, b, tol=0.04):
+        return all(abs(float(a[i]) - float(b[i])) <= tol for i in range(3))
+
+    grey_blue = (0.30, 0.36, 0.46)
+    amber = (0.95, 0.62, 0.16)
+
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    app.imported_led_step_path = PRISM_42779_STEP
+    inspector.refresh_from_editor()
+    inspector.update_idletasks()
+
+    body_colors = []
+    amber_leak = False
+    for key, lbl in dict(inspector._actor_step_map).items():
+        if str(lbl).strip().lower() != "led":
+            continue
+        actor = inspector._actor_by_key.get(key)
+        if actor is None:
+            continue
+        try:
+            color = tuple(actor.GetProperty().GetColor())
+        except Exception:
+            continue
+        body_colors.append(tuple(round(c, 3) for c in color))
+        if _near(color, amber):
+            amber_leak = True
+    found_grey_blue = any(_near(c, grey_blue) for c in body_colors)
+
+    result.detail.update({"led_actor_colors": body_colors, "amber_leak": amber_leak})
+    if not body_colors:
+        result.notes.append("no LED overlay actors found")
+    if amber_leak:
+        result.notes.append("an LED actor is still amber (0.95,0.62,0.16) -- bug 0052")
+    if not found_grey_blue:
+        result.notes.append(
+            f"LED body did not take the grey-blue glass fill {grey_blue} (colors={body_colors})"
+        )
+
+    try:
+        app.clear_step_imports()
+        inspector.refresh_from_editor()
+        inspector.update_idletasks()
+    except Exception:
+        pass
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -4846,6 +4923,7 @@ def main() -> int:
             phase_54_step_reselect_single_gizmo,
             phase_55_display_only_step_hover_tracks_move,
             phase_56_selected_step_pink_not_orange,
+            phase_57_led_overlay_not_amber,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

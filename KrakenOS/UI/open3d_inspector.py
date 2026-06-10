@@ -9093,7 +9093,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 return f"ORIENT ROW -> RAY\n{row_text}{face_text} armed. Click target ray."
             return "ORIENT ROW -> RAY\nClick movable row/face, then target ray."
         if bool(getattr(self.editor, "_cad_led_object_edge_pick", False)):
-            return "OBJ -> LED\nClick the orange LED object-edge feature."
+            return "OBJ -> LED\nClick the LED object-edge feature."
         requested_label = getattr(self.editor, "_cad_axis_pick_label", None)
         axis_pick_any = bool(getattr(self.editor, "_cad_axis_pick_any", False))
         if requested_label in STEP_OVERLAY_LABEL_SET:

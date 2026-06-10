@@ -120,7 +120,11 @@ class Open3DStepOverlayRefreshService:
         specs = {
             "lens": (self.editor._transformed_imported_lens_step_mesh, (0.30, 0.36, 0.46), 0.26),
             "optical": (self.editor._transformed_imported_optical_step_mesh, _OPTICAL_STEP_BODY_COLOR, 0.34),
-            "led": (self.editor._transformed_imported_led_step_mesh, (0.95, 0.62, 0.16), 0.35),
+            # bugs/0052: the LED was a saturated amber (0.95, 0.62, 0.16) -- it read
+            # as "why is only the LED orange, different from the rest?" and the gold
+            # hover edge was invisible on it. Share the grey-blue glass palette with
+            # the other imported solids; the gold hover now contrasts cleanly.
+            "led": (self.editor._transformed_imported_led_step_mesh, (0.30, 0.36, 0.46), 0.35),
             "camera": (self.editor._transformed_imported_camera_step_mesh, (0.28, 0.33, 0.42), 0.38),
         }
         return specs.get(label)
