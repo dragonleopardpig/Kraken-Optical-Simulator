@@ -301,6 +301,7 @@ from KrakenOS.UI.services.layout_scene_projection import LayoutSceneProjectionMi
 from KrakenOS.UI.services.layout_shell_controls import LayoutShellControlsMixin
 from KrakenOS.UI.services.layout_settings import LayoutSettingsService
 from KrakenOS.UI.services.layout_table_workbench import LayoutTableWorkbenchMixin
+from KrakenOS.UI.services.layout_bug_recorder import LayoutBugRecorderMixin
 from KrakenOS.UI.services.nonseq_scene_graph_records import NonSequentialSceneGraphRecordService
 from KrakenOS.UI.services.paraxial_tools import ParaxialToolsMixin
 from KrakenOS.UI.services.open3d_carry_grip import Open3DCarryGripService
@@ -2453,7 +2454,36 @@ _layout_plot_interaction_module._sync_layout_globals(globals())
 _layout_scene_bundle_display_module._sync_layout_globals(globals())
 
 
-class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlacementMixin, LayoutOpticalSolidWorkflowMixin, LayoutShellControlsMixin, LayoutPlotInteractionMixin, GeometricAnalysisMixin, LayoutAnalysisDisplayMixin, LayoutSceneBundleDisplayMixin, LayoutPolylineDisplayMixin, LayoutSceneProjectionMixin, ParaxialToolsMixin, AnalysisReportsMixin, ThreeDSceneToolsMixin, LayoutImportExportMixin, TracePreviewSamplingMixin, AnalysisComputeWorkflowMixin, LayoutTableWorkbenchMixin, tk.Tk):
+class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlacementMixin, LayoutOpticalSolidWorkflowMixin, LayoutShellControlsMixin, LayoutPlotInteractionMixin, GeometricAnalysisMixin, LayoutAnalysisDisplayMixin, LayoutSceneBundleDisplayMixin, LayoutPolylineDisplayMixin, LayoutSceneProjectionMixin, ParaxialToolsMixin, AnalysisReportsMixin, ThreeDSceneToolsMixin, LayoutImportExportMixin, TracePreviewSamplingMixin, AnalysisComputeWorkflowMixin, LayoutTableWorkbenchMixin, LayoutBugRecorderMixin, tk.Tk):
+    def report_callback_exception(self, exc, val, tb) -> None:
+        """Surface uncaught callback errors instead of failing silently.
+
+        Tkinter's default handler prints the traceback to the console only,
+        so a button whose callback raises looks like it did nothing at all
+        (e.g. the surface-shape-builder ``NameError``). Keep the full
+        traceback in the console / Debug log, but also show a short,
+        dismissible dialog so no UI action fails silently. Suppressed in
+        headless mode so automated runs never block on a modal dialog.
+        """
+        import traceback
+
+        traceback.print_exception(exc, val, tb)
+        try:
+            self.append_debug("".join(traceback.format_exception(exc, val, tb)))
+        except Exception:
+            pass
+        if getattr(self, "headless", False):
+            return
+        try:
+            messagebox.showerror(
+                "KrakenOS — action could not complete",
+                f"{val.__class__.__name__}: {val}\n\n"
+                "This action stopped before finishing. The full details are "
+                "in the console / Debug log.",
+            )
+        except Exception:
+            pass
+
     def __init__(self, *, headless: bool = False) -> None:
         super().__init__()
         self._kraken_ttk_style = apply_modern_ttk_theme(self)
@@ -2709,6 +2739,7 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self.bind_all("<Control-z>", self._undo_event, add="+")
         self.bind_all("<Control-y>", self._redo_event, add="+")
         self.bind_all("<Control-Shift-Z>", self._redo_event, add="+")
+        self.bind_all("<Control-Shift-B>", self._flag_bug_2d_event, add="+")
         self._reset_debug_log()
         self.load_layouts()
         self.load_examples()

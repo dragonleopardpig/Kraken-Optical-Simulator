@@ -603,6 +603,14 @@ class MainWindowBuilder:
         self._add_widget_tooltip(trace_button, "Inspect ray / surface physics")
         update_button = pack_command_button(plot_toolbar_main, "Update", command=self._manual_update_plot, side="right")
         self._add_widget_tooltip(update_button, "Trace rays and refresh the plot")
+        flag_bug_button = pack_command_button(
+            plot_toolbar_main, "● Flag bug", command=self.flag_bug_2d, side="right", padx=(0, 6)
+        )
+        self._add_widget_tooltip(
+            flag_bug_button,
+            "Capture a full-screen shot + layout + prescription state and describe a bug "
+            "(records oversized/off-screen dialogs too). Shortcut: Ctrl+Shift+B",
+        )
 
         self.figure = Figure(figsize=(7, 5), dpi=100)
         self.ax = self.figure.add_subplot(111)

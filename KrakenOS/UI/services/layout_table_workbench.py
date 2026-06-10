@@ -9,6 +9,7 @@ modules.
 
 from __future__ import annotations
 
+from KrakenOS.UI.custom_surfaces import encode_custom_surface_value
 from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timing_span
 from KrakenOS.UI.widgets import place_commit_cell_entry
 
