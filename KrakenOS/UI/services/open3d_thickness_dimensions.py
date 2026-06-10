@@ -271,6 +271,21 @@ class Open3DThicknessDimensionService:
                 continue
             if not (np.all(np.isfinite(p0)) and np.all(np.isfinite(p1))):
                 continue
+            # bugs/0053: a re-anchored row is a direct MEASUREMENT to a picked
+            # surface/edge z -- draw a single arrow to it (no gap-splitting) and
+            # label the measured distance, visually distinct from a model thickness.
+            override = None
+            try:
+                override = self.editor._dimension_anchor_override_for_row(row_index)
+            except Exception:
+                override = None
+            if isinstance(override, dict):
+                count += self._emit_reanchored_dimension(
+                    row_index, p0, p1, override,
+                    base_offset=base_offset, scene_span=scene_span,
+                    view_normal=view_normal, screen_up=screen_up,
+                )
+                continue
             segment = p1 - p0
             segment_length = float(np.linalg.norm(segment))
             if not np.isfinite(segment_length) or segment_length <= 1e-9:
@@ -444,6 +459,68 @@ class Open3DThicknessDimensionService:
         if self.add_label_actor(row_index, label_position, label, drag_start=drag_start, drag_end=drag_end):
             count += 1
         return count
+
+    # bugs/0053: warm magenta tone marks a re-anchored MEASUREMENT, distinct from
+    # the blue model-thickness arrows and the green live-gap labels.
+    REANCHOR_DIMENSION_COLOR = (0.62, 0.18, 0.58)
+
+    def reanchored_endpoints(
+        self, p0: np.ndarray, p1: np.ndarray, override: dict
+    ) -> tuple[np.ndarray, np.ndarray, float] | None:
+        """Apply an endpoint override to (p0, p1): move the chosen end's axial z
+        to the picked reference. Returns (q0, q1, measured_mm) or None."""
+        try:
+            ref_z = float(override.get("ref_z"))
+        except Exception:
+            return None
+        if not np.isfinite(ref_z):
+            return None
+        endpoint = "start" if str(override.get("endpoint", "end")) == "start" else "end"
+        q0 = np.asarray(p0, dtype=float).reshape(3).copy()
+        q1 = np.asarray(p1, dtype=float).reshape(3).copy()
+        if endpoint == "start":
+            q0[2] = ref_z
+        else:
+            q1[2] = ref_z
+        measured = abs(float(q1[2] - q0[2]))
+        return q0, q1, measured
+
+    def _emit_reanchored_dimension(
+        self,
+        row_index: int,
+        p0: np.ndarray,
+        p1: np.ndarray,
+        override: dict,
+        *,
+        base_offset: float,
+        scene_span: float,
+        view_normal,
+        screen_up,
+    ) -> int:
+        result = self.reanchored_endpoints(p0, p1, override)
+        if result is None:
+            return 0
+        q0, q1, measured = result
+        segment = q1 - q0
+        if not np.isfinite(float(np.linalg.norm(segment))) or float(np.linalg.norm(segment)) <= 1e-9:
+            return 0
+        side = self.offset_direction(segment, view_normal=view_normal, screen_up=screen_up)
+        row_band = 1.0 + 0.38 * float(row_index % 3)
+        offset = side * base_offset * row_band
+        label = f"S{row_index} measured = {measured:.6g} mm"
+        return self._emit_span_dimension(
+            row_index=row_index,
+            base_lo=q0,
+            base_hi=q1,
+            side=side,
+            offset=offset,
+            base_offset=base_offset,
+            scene_span=scene_span,
+            color=self.REANCHOR_DIMENSION_COLOR,
+            label=label,
+            drag_start=q0,
+            drag_end=q1,
+        )
 
     def _display_direction_for_drag(self, start: np.ndarray, end: np.ndarray) -> tuple[np.ndarray, float]:
         try:

@@ -2706,6 +2706,12 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self.led_step_rotation_z_deg = 0.0
         self.led_object_edge_distance_mm = 0.0
         self.led_step_object_edge_local_z: float | None = None
+        # bugs/0053: per-row thickness-dimension measurement re-anchor overrides.
+        # row index -> {"endpoint": "start"|"end", "ref_z": float, "ref_label": str}.
+        # A re-anchored dimension reports the distance to the picked surface/edge z
+        # instead of the adjacent surface; it never moves an optical surface. The
+        # LED/object row uses led_step_object_edge_local_z instead of this map.
+        self._dimension_anchor_overrides: dict[int, dict] = {}
         self.lens_step_axis_offset_xy = (0.0, 0.0)
         self.optical_step_axis_offset_xy = (0.0, 0.0)
         self.camera_step_axis_offset_xy = (0.0, 0.0)

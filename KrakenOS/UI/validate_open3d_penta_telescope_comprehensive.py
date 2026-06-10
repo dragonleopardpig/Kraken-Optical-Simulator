@@ -4821,6 +4821,104 @@ def phase_57_led_overlay_not_amber(
     return result
 
 
+def phase_58_dimension_reanchor_measures_to_surface(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A re-anchored thickness dimension draws a measurement to the picked z and
+    leaves the optical model untouched (bugs/0053).
+
+    Feature (attachment/3D.png): Ctrl-drag a dimension arrow's endpoint onto a
+    surface/edge to re-anchor what it measures to. End-to-end on the booted
+    inspector: set a measured-endpoint override on a row, run a full refresh with
+    physical-distance dimensions shown, and assert (a) a re-anchored measurement
+    arrow is drawn in the distinct REANCHOR color, and (b) rows[i].thickness is
+    unchanged (measurement annotation, never a model edit). SKIPs without a
+    renderer.
+    """
+    result = PhaseResult(name="Phase 58: dimension re-anchor measures to a surface")
+    from KrakenOS.UI.layout_editor import SurfaceRow
+    from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
+
+    if getattr(inspector, "_renderer", None) is None:
+        result.passed = True
+        result.notes.append("SKIP: no renderer (PyVista/VTK unavailable)")
+        return result
+
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    app.rows = [
+        SurfaceRow(label="0", surface="Object", element="", name="Object",
+                   thickness=120.0, diameter=25.0, glass="AIR"),
+        SurfaceRow(label="1", surface="Standard", element="L1", name="L1 front",
+                   thickness=8.0, diameter=25.0, glass="N-BK7"),
+        SurfaceRow(label="2", surface="Standard", element="", name="L1 back",
+                   thickness=30.0, diameter=25.0, glass="AIR"),
+        SurfaceRow(label="3", surface="Image", element="", name="Image",
+                   thickness=0.0, diameter=25.0, glass="AIR"),
+    ]
+    app._sync_table()
+    try:
+        app.show_physical_distances_var.set(True)
+    except Exception:
+        result.passed = True
+        result.notes.append("SKIP: no physical-distance toggle")
+        return result
+
+    before_thickness = float(app.rows[2].thickness)
+    # Re-anchor row 2's far endpoint to z = 40 mm (a measurement target).
+    app.apply_dimension_anchor_override(2, "end", __import__("numpy").array([0.0, 0.0, 40.0]))
+    inspector.refresh_from_editor()
+    inspector.update_idletasks()
+
+    reanchor_color = Open3DThicknessDimensionService.REANCHOR_DIMENSION_COLOR
+
+    def _near(a, b, tol=0.04):
+        return all(abs(float(a[i]) - float(b[i])) <= tol for i in range(3))
+
+    found_measured = False
+    for key, row in dict(inspector._actor_thickness_dimension_map).items():
+        actor = inspector._actor_by_key.get(key)
+        if actor is None:
+            continue
+        try:
+            if _near(actor.GetProperty().GetColor(), reanchor_color):
+                found_measured = True
+                break
+        except Exception:
+            continue
+
+    override = app._dimension_anchor_override_for_row(2)
+    result.detail.update(
+        {
+            "found_measured_arrow": found_measured,
+            "override_stored": bool(override),
+            "thickness_before": before_thickness,
+            "thickness_after": float(app.rows[2].thickness),
+        }
+    )
+    if not (isinstance(override, dict) and abs(float(override.get("ref_z", 0.0)) - 40.0) < 1e-6):
+        result.notes.append("re-anchor override not stored")
+    if not found_measured:
+        result.notes.append("no re-anchored measurement arrow drawn in the distinct color (bug 0053)")
+    if abs(float(app.rows[2].thickness) - before_thickness) > 1e-9:
+        result.notes.append(
+            f"re-anchor changed the model thickness {before_thickness} -> {app.rows[2].thickness} "
+            "(must be measurement-only)"
+        )
+
+    try:
+        app._dimension_anchor_overrides = {}
+        app.clear_step_imports()
+        inspector.refresh_from_editor()
+        inspector.update_idletasks()
+    except Exception:
+        pass
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -4924,6 +5022,7 @@ def main() -> int:
             phase_55_display_only_step_hover_tracks_move,
             phase_56_selected_step_pink_not_orange,
             phase_57_led_overlay_not_amber,
+            phase_58_dimension_reanchor_measures_to_surface,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

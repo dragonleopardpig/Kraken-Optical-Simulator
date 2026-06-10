@@ -79,7 +79,13 @@ class Open3DMouseBindingsService:
                 self._step_carry_drag_state = None
                 self._axis_slide_drag_state = None
                 self._step_translate_drag_state = None
+                # bugs/0053: Ctrl+press on a dimension arrow re-anchors its measured
+                # endpoint instead of orbiting; Ctrl on empty space still orbits.
+                self._dimension_anchor_drag_state = self._dimension_anchor_state_from_current_pick()
+                if self._dimension_anchor_drag_state is not None:
+                    self._ctrl_left_camera_active = False
             else:
+                self._dimension_anchor_drag_state = None
                 self._step_translate_drag_state = self._step_translate_state_from_current_pick()
                 if self._step_translate_drag_state is not None:
                     self._axis_slide_drag_state = None
@@ -127,6 +133,13 @@ class Open3DMouseBindingsService:
                 dx = current[0] - last[0]
                 dy = current[1] - last[1]
                 ctrl_pressed = control_pressed(event)
+                if self._dimension_anchor_drag_state is not None:
+                    # bugs/0053: re-anchor drag owns the gesture (Ctrl stays held,
+                    # but this must not fall through to the camera-orbit branch).
+                    self._cancel_step_carry_hold_timer()
+                    self._apply_dimension_anchor_drag_motion(dx, dy)
+                    self._left_drag_last_xy = current
+                    return "break"
                 if ctrl_pressed:
                     self._cancel_step_carry_hold_timer()
                     self._ctrl_left_camera_active = True
@@ -197,6 +210,7 @@ class Open3DMouseBindingsService:
             row_carry_drag_state = self._row_carry_drag_state
             axis_slide_drag_state = self._axis_slide_drag_state
             step_translate_drag_state = self._step_translate_drag_state
+            dimension_anchor_drag_state = self._dimension_anchor_drag_state
             self._cancel_step_carry_hold_timer()
             self._cancel_row_carry_hold_timer()
             self._left_drag_active = False
@@ -209,7 +223,13 @@ class Open3DMouseBindingsService:
             self._row_carry_drag_state = None
             self._axis_slide_drag_state = None
             self._step_translate_drag_state = None
+            self._dimension_anchor_drag_state = None
             self._ctrl_left_camera_active = False
+            # bugs/0053: a re-anchor is a Ctrl gesture, so commit it before the
+            # ctrl_active-gated branches below would otherwise swallow it.
+            if dimension_anchor_drag_state is not None:
+                self._finish_dimension_anchor_drag(dimension_anchor_drag_state)
+                return "break"
             if step_carry_follow_state is not None:
                 if should_pick and not ctrl_active:
                     self.stop_step_carry()

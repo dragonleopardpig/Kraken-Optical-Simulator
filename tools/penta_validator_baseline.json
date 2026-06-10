@@ -59,7 +59,8 @@
     "54": "pass",
     "55": "pass",
     "56": "pass",
-    "57": "pass"
+    "57": "pass",
+    "58": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -119,6 +120,7 @@
     "54": "selecting a new STEP clears the prior rotation gizmo",
     "55": "display-only STEP hover metadata tracks a move (no stranded ghost)",
     "56": "selected STEP is pink, not a muddy orange blob",
-    "57": "imported LED body is grey-blue glass, not amber"
+    "57": "imported LED body is grey-blue glass, not amber",
+    "58": "re-anchored dimension measures to a picked surface (model thickness unchanged)"
   }
 }

@@ -200,6 +200,18 @@ class LayoutSettingsService:
             "led_step_object_edge_local_z": (
                 "" if getattr(self, "led_step_object_edge_local_z", None) is None else float(self.led_step_object_edge_local_z)
             ),
+            # bugs/0053: thickness-dimension measurement re-anchor overrides
+            # (row index -> {"endpoint","ref_z","ref_label"}). JSON keys must be
+            # strings; restored back to int row keys on load.
+            "dimension_anchor_overrides": {
+                str(int(row)): {
+                    "endpoint": str(spec.get("endpoint", "end")),
+                    "ref_z": float(spec.get("ref_z", 0.0)),
+                    "ref_label": str(spec.get("ref_label", "")),
+                }
+                for row, spec in (getattr(self.editor, "_dimension_anchor_overrides", {}) or {}).items()
+                if isinstance(spec, dict)
+            },
             "led_step_axis_offset_xy": list(self._step_axis_offset_xy("led")),
             "led_step_placement_offset_xyz": list(self._step_placement_offset_xyz("led")),
             "analysis_mode": str(self.analysis_mode or "none").strip(),
@@ -703,3 +715,24 @@ class LayoutSettingsService:
         self._sync_object_controls()
         self._update_field_status_hint()
         self._sync_left_mode_controls()
+
+        # bugs/0053: restore thickness-dimension measurement re-anchor overrides
+        # LAST. Earlier table/STEP-state application in this method clears
+        # _dimension_anchor_overrides (via the complete-layout reset), so the
+        # restore must run after all of it or the loaded overrides are wiped.
+        restored_overrides: dict[int, dict] = {}
+        for row_key, spec in (settings.get("dimension_anchor_overrides", {}) or {}).items():
+            if not isinstance(spec, dict):
+                continue
+            try:
+                restored_overrides[int(row_key)] = {
+                    "endpoint": str(spec.get("endpoint", "end")),
+                    "ref_z": float(spec.get("ref_z", 0.0)),
+                    "ref_label": str(spec.get("ref_label", "")),
+                }
+            except Exception:
+                continue
+        # NOTE: this service proxies only non-underscore attrs to the editor
+        # (__setattr__), so an underscore attr must be written to self.editor
+        # explicitly or it would land on the service instance instead.
+        self.editor._dimension_anchor_overrides = restored_overrides

@@ -495,6 +495,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._axis_slide_drag_state: dict[str, object] | None = None
         self._step_translate_drag_state: dict[str, object] | None = None
         self._step_translate_gap_actors: list[Any] = []
+        # bugs/0053: Ctrl-drag re-anchor of a thickness/distance dimension endpoint.
+        self._dimension_anchor_drag_state: dict[str, object] | None = None
+        self._dimension_anchor_preview_actors: list[Any] = []
         self._open3d_carry_grip_service = Open3DCarryGripService(self)
         self._selected_step_feature: StepFeatureSelection | None = None
         self._selected_step_feature_label: str | None = None
@@ -3103,6 +3106,168 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 except Exception as exc:
                     self.editor.append_debug(f"STEP translate fallback refresh failed for {label}: {exc}")
         self.status_var.set(f"{display} STEP moved {axis.upper()} {total_mm:+.4g} mm.")
+
+    # ------------------------------------------------------------------
+    # bugs/0053: Ctrl-drag a thickness/distance dimension endpoint onto a
+    # surface/edge to re-anchor what it measures to. MEASUREMENT only -- the
+    # optical model (rows[i].thickness) is never changed. The object/LED row's
+    # object-side endpoint feeds the existing object-edge reference instead.
+    def _dimension_anchor_state_from_current_pick(self) -> dict[str, object] | None:
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return None
+        try:
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor = self._picker.GetActor()
+            actor_key = self._actor_key(actor)
+        except Exception:
+            return None
+        if actor_key is None:
+            return None
+        record = self._thickness_dimension_drag_map.get(actor_key)
+        if not isinstance(record, dict):
+            return None
+        try:
+            row_index = int(record.get("row_index", -1))
+            start = np.asarray(record.get("start"), dtype=float).reshape(-1)[:3]
+            end = np.asarray(record.get("end"), dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None
+        if row_index < 0 or start.size < 3 or end.size < 3:
+            return None
+        if not (np.all(np.isfinite(start)) and np.all(np.isfinite(end))):
+            return None
+        # Choose the endpoint nearer the cursor in display space.
+        start_2d = self._world_to_display_2d(start)
+        end_2d = self._world_to_display_2d(end)
+        cursor = np.asarray((float(x), float(y)), dtype=float)
+        endpoint = "start"
+        if start_2d is not None and end_2d is not None:
+            d_start = float(np.linalg.norm(np.asarray(start_2d, dtype=float)[:2] - cursor))
+            d_end = float(np.linalg.norm(np.asarray(end_2d, dtype=float)[:2] - cursor))
+            endpoint = "start" if d_start <= d_end else "end"
+        moving = start if endpoint == "start" else end
+        fixed = end if endpoint == "start" else start
+        display = self.editor._step_overlay_display_label("led").upper() if (row_index == 0 and getattr(self.editor, "imported_led_step_path", None) is not None) else f"S{row_index}"
+        self.status_var.set(
+            f"Re-anchor {display} dimension ({endpoint}): drag onto a surface/edge, release to set the measured location."
+        )
+        return {
+            "row_index": row_index,
+            "endpoint": endpoint,
+            "fixed_world": tuple(float(v) for v in fixed[:3]),
+            "moving_world": tuple(float(v) for v in moving[:3]),
+            "snapped_world": None,
+        }
+
+    def _apply_dimension_anchor_drag_motion(self, dx, dy) -> None:
+        state = self._dimension_anchor_drag_state
+        if state is None or self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return
+        try:
+            x, y = self._vtk_interactor.GetEventPosition()
+        except Exception:
+            return
+        fixed = np.asarray(state.get("fixed_world"), dtype=float).reshape(-1)[:3]
+        moving = np.asarray(state.get("moving_world"), dtype=float).reshape(-1)[:3]
+        snapped = None
+        snapped_label = ""
+        # Snap to whatever pickable surface/body sits under the cursor; ignore the
+        # dimension arrows/gizmo handles themselves.
+        try:
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            hit = self._picker.GetActor()
+            hit_key = self._actor_key(hit)
+            ignore = (
+                hit_key is not None
+                and (
+                    hit_key in self._actor_thickness_dimension_map
+                    or hit_key in self._actor_step_rotate_map
+                    or hit_key in self._actor_step_translate_map
+                )
+            )
+            if hit is not None and not ignore:
+                pos = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+                if pos.size >= 3 and np.all(np.isfinite(pos)):
+                    snapped = pos
+                    step_label = self._actor_step_map.get(hit_key) if hit_key is not None else None
+                    snapped_label = str(step_label).upper() if step_label else ""
+        except Exception:
+            snapped = None
+        if snapped is None:
+            # Free drag: project the cursor ray onto the dimension's axial line
+            # through the fixed endpoint (the dimension runs along Z here).
+            ray = self._display_pick_ray((x, y))
+            if ray is not None:
+                origin, direction = ray
+                direction = np.asarray(direction, dtype=float).reshape(-1)[:3]
+                if abs(float(direction[2])) > 1e-9:
+                    t = (float(moving[2]) - float(origin[2])) / float(direction[2])
+                    pt = np.asarray(origin, dtype=float).reshape(-1)[:3] + t * direction
+                    snapped = np.array([float(moving[0]), float(moving[1]), float(pt[2])], dtype=float)
+        if snapped is None:
+            return
+        state["snapped_world"] = tuple(float(v) for v in snapped[:3])
+        measured = abs(float(snapped[2] - fixed[2]))
+        self._update_dimension_anchor_preview(fixed, snapped)
+        suffix = f" -> {snapped_label}" if snapped_label else ""
+        self.status_var.set(f"S{int(state.get('row_index'))} measured = {measured:.6g} mm{suffix} (release to set).")
+
+    def _update_dimension_anchor_preview(self, fixed_world, snapped_world) -> None:
+        self._clear_dimension_anchor_preview(render=False)
+        if pv is None or self._renderer is None:
+            return
+        try:
+            a = tuple(float(v) for v in np.asarray(fixed_world, dtype=float).reshape(-1)[:3])
+            b = tuple(float(v) for v in np.asarray(snapped_world, dtype=float).reshape(-1)[:3])
+            actor = self._add_mesh_actor(
+                pv.Line(a, b),
+                color=(0.62, 0.18, 0.58),
+                opacity=0.95,
+                line_width=3.0,
+                backface_culling=False,
+            )
+            if actor is not None:
+                actor.PickableOff()
+                self._dimension_anchor_preview_actors.append(actor)
+        except Exception:
+            pass
+        try:
+            self.render()
+        except Exception:
+            pass
+
+    def _clear_dimension_anchor_preview(self, *, render: bool = True) -> None:
+        for actor in list(self._dimension_anchor_preview_actors):
+            try:
+                self._remove_renderer_view_prop(actor)
+            except Exception:
+                pass
+        self._dimension_anchor_preview_actors = []
+        if render:
+            try:
+                self.render()
+            except Exception:
+                pass
+
+    def _finish_dimension_anchor_drag(self, state: dict[str, object]) -> None:
+        self._clear_dimension_anchor_preview(render=False)
+        snapped = state.get("snapped_world") if isinstance(state, dict) else None
+        if snapped is None:
+            self.status_var.set("Dimension re-anchor cancelled (release on a surface/edge to set it).")
+            try:
+                self.render()
+            except Exception:
+                pass
+            return
+        try:
+            self.editor.apply_dimension_anchor_override(
+                int(state.get("row_index")),
+                str(state.get("endpoint", "end")),
+                np.asarray(snapped, dtype=float).reshape(-1)[:3],
+            )
+        except Exception as exc:
+            self.editor.append_debug(f"dimension re-anchor commit failed: {exc}")
 
     def _axial_extent_from_actor_keys(self, actor_keys, axis_unit) -> dict[str, object] | None:
         axis = np.asarray(axis_unit, dtype=float).reshape(-1)[:3]

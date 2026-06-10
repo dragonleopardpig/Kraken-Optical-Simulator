@@ -337,6 +337,11 @@ class LayoutTableWorkbenchMixin:
 
     def _reset_complete_layout_runtime_state(self, *, close_viewers: bool = True) -> None:
         """Clear scene state that must not leak between complete preset loads."""
+        # bugs/0053: row-keyed dimension re-anchor overrides are reset up-front on
+        # a complete preset load; _apply_layout_settings then restores the loaded
+        # layout's own overrides afterward (so this must NOT live in the late
+        # _clear_imported_step_runtime_state, which would wipe that restore).
+        self._dimension_anchor_overrides = {}
         self.metal_catalogs = []
         self.layout_scene_source_specs = []
         self.layout_scene_row_order = SOURCE_ROW_ORDER_DEFAULT

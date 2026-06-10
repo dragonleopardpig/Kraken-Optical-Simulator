@@ -1792,6 +1792,83 @@ class ScenePlacementMixin:
         )
         self._refresh_open_3d_views(step_label="led")
 
+    # ------------------------------------------------------------------
+    # bugs/0053: thickness/distance dimension measurement re-anchoring.
+    # A re-anchored dimension endpoint reports the distance to a picked
+    # surface/edge instead of the adjacent surface. It is a MEASUREMENT
+    # annotation -- it never moves an optical surface (rows[i].thickness is
+    # untouched; that stays the plain-drag / inline-edit path). The object/LED
+    # row's object-side endpoint instead feeds the existing object-edge
+    # reference (led_step_object_edge_local_z) so the LED body sits with the
+    # chosen face at the object distance.
+    def _dimension_anchor_override_for_row(self, row_index: int) -> dict | None:
+        overrides = getattr(self, "_dimension_anchor_overrides", None)
+        if not isinstance(overrides, dict):
+            return None
+        spec = overrides.get(int(row_index))
+        return spec if isinstance(spec, dict) else None
+
+    def _dimension_row_is_object_led(self, row_index: int, endpoint: str) -> bool:
+        """The S0 object-side endpoint is the LED object edge (reuses the LED ref)."""
+        return (
+            int(row_index) == 0
+            and str(endpoint) == "start"
+            and getattr(self, "imported_led_step_path", None) is not None
+        )
+
+    def apply_dimension_anchor_override(
+        self, row_index: int, endpoint: str, feature_center_xyz
+    ) -> None:
+        feature = np.asarray(feature_center_xyz, dtype=float).reshape(-1)
+        if feature.size < 3 or not np.all(np.isfinite(feature[:3])):
+            self.status_var.set("Invalid dimension re-anchor pick.")
+            return
+        endpoint = "start" if str(endpoint).strip().lower() == "start" else "end"
+        try:
+            row_index = int(row_index)
+        except Exception:
+            return
+        # Object/LED row: route to the existing object-edge reference, which both
+        # records the picked edge and re-seats the LED body at the object distance.
+        if self._dimension_row_is_object_led(row_index, endpoint):
+            self.apply_led_object_edge_pick(feature[:3])
+            return
+        # General row: store the measured-to reference (axial z of the picked
+        # feature). The drawn distance recomputes to it; the model is untouched.
+        ref_z = float(feature[2])
+        ref_label = str(self._dimension_anchor_feature_label(feature[:3]))
+        self._begin_history_capture()
+        overrides = dict(getattr(self, "_dimension_anchor_overrides", {}) or {})
+        overrides[row_index] = {"endpoint": endpoint, "ref_z": ref_z, "ref_label": ref_label}
+        self._dimension_anchor_overrides = overrides
+        self._commit_history_capture()
+        self.status_var.set(
+            f"S{row_index} dimension re-anchored ({endpoint}) to z={ref_z:.4g} mm"
+            + (f" [{ref_label}]" if ref_label else "")
+            + " -- measurement only; optical thickness unchanged."
+        )
+        self._refresh_open_3d_views()
+
+    def clear_dimension_anchor_override(self, row_index: int) -> None:
+        overrides = dict(getattr(self, "_dimension_anchor_overrides", {}) or {})
+        if int(row_index) in overrides:
+            self._begin_history_capture()
+            overrides.pop(int(row_index), None)
+            self._dimension_anchor_overrides = overrides
+            self._commit_history_capture()
+            self.status_var.set(f"S{int(row_index)} dimension re-anchor cleared.")
+            self._refresh_open_3d_views()
+
+    def _dimension_anchor_feature_label(self, feature_center_xyz) -> str:
+        """Best-effort human label for a re-anchored measurement target."""
+        try:
+            feature = np.asarray(feature_center_xyz, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return ""
+        if feature.size < 3 or not np.all(np.isfinite(feature)):
+            return ""
+        return f"z={float(feature[2]):.4g}"
+
     def _step_overlay_display_label(self, label: str) -> str:
         return self._step_overlay_import_service().step_overlay_display_label(label)
 
