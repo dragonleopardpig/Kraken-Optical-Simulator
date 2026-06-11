@@ -125,6 +125,17 @@ oblique, and single-solid prisms have no interior duplicate, so both are untouch
 `validate_open3d_beam_splitter_coating_recovered` (11 checks, display-free, real
 parts skip-if-absent).
 
+**Stale-cache gotcha:** the analytic display mesh is cached on disk
+(`…analytic.vtp`, keyed by source path + mtime, *not* code version), and
+`_load_step_mesh` reads it before the document loader runs — so the first test
+still showed no coating (the cube's cache predated the fix). Fixed by versioning
+the cache: `_ANALYTIC_MESH_CACHE_VERSION` ("v2") is folded into
+`_cached_analytic_cad_mesh_path`, so a geometry-pipeline change regenerates stale
+caches instead of silently reusing them. **An already-promoted row keeps its baked
+`OpticalSolidFaces` metadata, so the existing row must be re-promoted** (delete +
+re-import + promote) to pick up the recovered coating; future imports/promotes get
+it automatically.
+
 ## Follow-up — off-beam non-sequential trace (reverted, deferred)
 
 User parked the promoted cube off the beam path and the on-axis rays went wrong

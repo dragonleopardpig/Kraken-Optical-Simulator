@@ -92,9 +92,17 @@ def _cached_cad_mesh_path(path: Path) -> Path:
     return _layout_module()._cached_cad_mesh_path(path)
 
 
+# Bump when the analytic STEP display-mesh / face tessellation changes so stale
+# on-disk caches (keyed only by source path + mtime, not code version) are
+# regenerated instead of silently reused. v2: recover the beam-splitter cube's
+# interior 45-deg coating as a tessellated, selectable face (bugs/0064).
+_ANALYTIC_MESH_CACHE_VERSION = "v2"
+
+
 def _cached_analytic_cad_mesh_path(path: Path, *, largest_component: bool = False) -> Path:
     base_path = _cached_cad_mesh_path(path)
-    suffix = ".analytic_largest.vtp" if largest_component else ".analytic.vtp"
+    kind = "analytic_largest" if largest_component else "analytic"
+    suffix = f".{kind}.{_ANALYTIC_MESH_CACHE_VERSION}.vtp"
     return base_path.with_name(f"{base_path.stem}{suffix}")
 
 
