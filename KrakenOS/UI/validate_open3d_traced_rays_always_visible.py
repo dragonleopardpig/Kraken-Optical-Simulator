@@ -1,5 +1,6 @@
-"""Display-free guard for bugs/0016 — a physically-traced ray must stay visible
-up to its terminal surface; it can never silently vanish before hitting one.
+"""Display-free guard for bugs/0016 + bugs/0062 — a deliberately *folded* ray
+must stay visible, and the 3D clipped-ray filter must match 2D (detector hits +
+folds visible; non-folded vignetting hidden when clipping is OFF).
 
 Regression context
 ------------------
@@ -15,28 +16,32 @@ defects:
    authors only the special faces.)
 2. The 3D ray-display filter, with *Show Clipped Rays* off, kept only paths whose
    terminal status was ``hit_detector`` (``ray_path_reaches_image_from_events``).
-   Absorbed rays — and, once the cube transmits, rays that fold off the 45° face
-   and *miss* the sensor (``missed_detector``) — were silently dropped, so the
-   user saw nothing at all. (Fixed: ``ray_path_visible_without_clipping_from_events``
-   keeps every traced ray except those that escaped the system without reaching a
-   surface — and, per bugs/0018, a deliberately *folded* escaped ray such as a
-   beam splitter's reflect branch stays visible too, since it is a real 2nd path
-   rather than vignetting clutter.)
+   The 0016 fix swung the filter the other way — it kept *every* traced ray and
+   hid only un-folded escapes — but that left vignetted strays (rays ``stopped``
+   at an aperture/lens rim or that ``missed_detector``) rendering in 3D even with
+   clipping OFF, which disagreed with 2D (2D keeps only detector hits). Bug 0062
+   tightened ``ray_path_visible_without_clipping_from_events`` to the 2D rule:
+   visible-when-clipped-OFF iff the ray hit the detector **or** underwent a
+   deliberate fold (reflect / mirror / TIR / split / grating). A fold is a real
+   branch the user authored (bugs/0018 beam-splitter 2nd path), so it survives
+   regardless of where it terminates; everything else non-folded is gated behind
+   *Show Clipped Rays*. The bug-0022 don't-blank fallback (in the 3D ray filter)
+   still shows all rays if the filter would otherwise hide every one.
 
 Invariants asserted here (all headless / display-free):
 
-1. Predicate semantics: a ray that hit a surface — ``hit_detector``,
-   ``absorbed``, ``stopped``, or ``missed_detector`` (traversed the optics but
-   missed the sensor) — is visible with clipped rays OFF; only an ``escaped``
-   ray (no next intersection) is hidden by default.
-2. Missed-sensor rays stay visible: a fold that sends every ray off the sensor
-   still draws all of them by default (pre-fix the default view showed zero).
+1. Predicate semantics: with clipped rays OFF, ``hit_detector`` is visible and
+   every *non-folded* terminal class (``absorbed``, ``stopped``,
+   ``missed_detector``, ``escaped``) is hidden; a ray that underwent a deliberate
+   fold stays visible regardless of its terminal status.
+2. Missed-sensor rays via a fold stay visible: a mirror that sends every ray off
+   the sensor (``missed_detector``) keeps all of them visible by default because
+   the mirror is a fold (pre-0016 the default view showed zero).
 3. A beam splitter's reflect branch is a deliberate fold, not vignetting: even
    though it leaves the system ("escaped"), it stays VISIBLE by default (bugs/0018
-   — the user asked "where is the beam splitter 2nd path ray?"). Only an
-   *un-folded* escaped ray (pure vignetting, no reflect/mirror/TIR/split step) is
-   gated behind *Show Clipped Rays*; that case is the predicate check above.
-   Nothing is ever silently dropped (clipped ON == traced paths).
+   — the user asked "where is the beam splitter 2nd path ray?"). Only a non-folded
+   ray is gated behind *Show Clipped Rays*; that case is the predicate check
+   above. Nothing is ever silently dropped (clipped ON == traced paths).
 4. Optional real-scene guard: the user's saved machine-vision prescription (a
    promoted beam-splitter cube) shows its rays by default once more. Skipped if
    the prescription / its CAD cache is unavailable on this machine.
@@ -80,6 +85,21 @@ class _FakePath:
     def __init__(self, reason: str = "", metadata: dict | None = None, reaches_image: bool = False) -> None:
         self.events = [_FakeEvent(reason, metadata)]
         self.reaches_image = reaches_image
+
+
+class _FakeSurfaceEvent:
+    def __init__(self, *, event_type: str = "", interaction_model: str = "", surface_name: str = "") -> None:
+        self.event_kind = "surface"
+        self.event_type = event_type
+        self.interaction_model = interaction_model
+        self.surface_name = surface_name
+
+
+def _folded_path(reason: str = "", metadata: dict | None = None) -> _FakePath:
+    """A path that terminates with the given reason after a deliberate fold."""
+    path = _FakePath(reason, metadata)
+    path.events = [_FakeSurfaceEvent(event_type="reflect"), _FakeEvent(reason, metadata)]
+    return path
 
 
 def _trace(rows, settings=None) -> dict[str, object]:
@@ -147,12 +167,14 @@ def run_checks(*, trials: int = 12, seed: int = 20260605) -> tuple[bool, list[st
         if not ok:
             passed = False
 
-    # 1. Predicate semantics — surfaces keep the ray; only escape hides it.
+    # 1. Predicate semantics (bug 0062) — with clipped rays OFF the 3D filter
+    #    matches 2D: only detector hits are visible; every *non-folded* terminal
+    #    class (absorbed / stopped / missed_detector / escaped) is hidden.
     semantics = {
         "hit_detector": (_FakePath(metadata={"reaches_image": True}), True),
-        "absorbed": (_FakePath("absorb"), True),
-        "stopped": (_FakePath("stop_clip"), True),
-        "missed_detector": (_FakePath("missed_image"), True),
+        "absorbed": (_FakePath("absorb"), False),
+        "stopped": (_FakePath("stop_clip"), False),
+        "missed_detector": (_FakePath("missed_image"), False),
         "escaped": (_FakePath("no_next_intersection"), False),
     }
     for label, (path, expected) in semantics.items():
@@ -161,13 +183,32 @@ def run_checks(*, trials: int = 12, seed: int = 20260605) -> tuple[bool, list[st
         _check(status == label, f"status maps {label!r} (got {status!r})")
         _check(visible is expected, f"{label} visible-by-default == {expected} (got {visible})")
 
+    # 1b. A deliberate fold keeps the ray visible regardless of where it ends
+    #     (bugs 0016 / 0018): a folded ray that ends up stopped/missed/escaped is
+    #     a real authored branch, not vignetting, so it survives clipped-OFF.
+    folded_cases = {
+        "stopped": _folded_path("stop_clip"),
+        "missed_detector": _folded_path("missed_image"),
+        "escaped": _folded_path("no_next_intersection"),
+    }
+    for label, path in folded_cases.items():
+        status = ray_path_terminal_status_from_events(path)
+        _check(status == label, f"folded {label!r} keeps its terminal status (got {status!r})")
+        _check(ray_path_has_non_refractive_steering(path), f"folded {label} detected as a fold")
+        _check(
+            ray_path_visible_without_clipping_from_events(path) is True,
+            f"folded {label} stays visible by default despite non-detector terminus",
+        )
+
     # Sanity: a clean lens shows its rays by default and drops nothing.
     base = _trace(_lens_rows())
     _check(base["off"] > 0, f"clean lens displays rays by default (off={base['off']})")
     _check(base["on"] == base["paths"] > 0, f"clean lens: no silent drop (on={base['on']} paths={base['paths']})")
 
     # 2. A fold (mirror mid-path) sends every ray off the sensor -> missed_detector,
-    #    yet all of them stay visible by default. Pre-fix the default view showed 0.
+    #    yet all of them stay visible by default *because the mirror is a fold*
+    #    (bug 0062: non-folded missed_detector rays would be hidden, but these are
+    #    folded). Pre-0016 the default view showed 0.
     folded = _trace(_lens_rows("Mirror", 2))
     _check(
         "missed_detector" in folded["statuses"] and "hit_detector" not in folded["statuses"],
@@ -175,7 +216,7 @@ def run_checks(*, trials: int = 12, seed: int = 20260605) -> tuple[bool, list[st
     )
     _check(
         folded["off"] == folded["paths"] > 0,
-        f"missed-sensor rays stay visible by default (off={folded['off']} paths={folded['paths']})",
+        f"folded missed-sensor rays stay visible by default (off={folded['off']} paths={folded['paths']})",
     )
 
     # 3. Beam splitter: BOTH branches are real light paths. The transmit branch

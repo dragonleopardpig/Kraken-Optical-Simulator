@@ -540,28 +540,33 @@ def ray_path_has_non_refractive_steering(path: Any) -> bool:
 def ray_path_visible_without_clipping_from_events(path: Any) -> bool:
     """Return whether a ray should display with "Show Clipped Rays" OFF.
 
-    A ray that physically traced through the system is always drawn up to its
-    terminal surface: detector hits, rays absorbed/stopped on a surface, and
-    rays that traversed the optics but missed the detector's clear aperture all
-    qualify. A ray that escaped the system without reaching a next surface
-    (``no_hit`` / ``no_next_intersection`` -> ``"escaped"``) is normally treated
-    as a clipped ray and hidden unless the user opts in. This honors the
-    invariant that a ray cannot go missing before hitting a surface -- it never
-    silently drops a physically-traced ray (bug 0016).
+    With clipping OFF the 3D scene shows the same rays the 2D plot keeps: the
+    rays that actually land on the detector, plus any deliberately *folded*
+    branch. Everything else -- rays vignetted at an aperture stop or lens rim
+    (``stopped``), rays that traversed the optics but missed the detector's
+    clear aperture (``missed_detector``), rays absorbed on a surface, and rays
+    that escaped the system entirely -- is treated as a clipped ray and hidden
+    until the user opts in. This makes the 3D filter agree with 2D, which keeps
+    only detector hits when clipping is OFF (bug 0062). Previously the 3D filter
+    hid only non-folded *escapes*, so vignetted strays that stopped on a surface
+    still rendered in 3D after the user turned clipping off.
 
-    Exception (bug 0018): an escaped ray that underwent a deliberate fold
-    (reflection off a beam splitter / mirror, TIR, grating) is a real folded
-    branch -- the beam-splitter's reflected "second path" -- not a stray clipped
-    ray. The reflected branch travels nearly parallel to the image plane and so
-    has no downstream detector to land on, but the user expects to see it. Keep
-    it visible even with Show Clipped Rays OFF. Only a ray that escaped *without*
-    any such steering (e.g. vignetted past the last lens) stays hidden.
+    Folds always survive (bugs 0016 / 0018): a ray that underwent a deliberate
+    fold -- reflection off a beam splitter / mirror, TIR, grating -- is a real
+    branch the user authored, e.g. the beam-splitter's reflected "second path".
+    Such a branch often travels nearly parallel to the image plane with no
+    downstream detector to land on, yet the user expects to see it, so it stays
+    visible even with Show Clipped Rays OFF regardless of its terminal status.
+    The bug-0022 don't-blank fallback (in the 3D ray filter) still applies on
+    top of this, so a scene whose rays would *all* be hidden shows them anyway.
     """
     status = ray_path_terminal_status_from_events(path)
+    if status == "hit_detector":
+        return True
+    if ray_path_has_non_refractive_steering(path):
+        return True
     if status:
-        if status != "escaped":
-            return True
-        return ray_path_has_non_refractive_steering(path)
+        return False
     return bool(getattr(path, "reaches_image", False))
 
 

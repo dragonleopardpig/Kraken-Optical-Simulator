@@ -5488,6 +5488,46 @@ def phase_63_open3d_clipped_rays_sync(
     return result
 
 
+def phase_64_open3d_clipped_vignetting_parity(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Open 3D clipped-ray filter matches 2D (hides non-folded vignetting).
+
+    bugs/0061 synced the toggle *state* between 2D and 3D; the filters still
+    disagreed on *which* rays it hid. With clipping OFF, 2D kept only detector
+    hits while 3D hid only escaped-non-folded rays -- so vignetted rays that
+    ``stopped`` at an aperture / lens rim still rendered in 3D ("disable clipped
+    rays still show up"). Bug 0062 tightened the 3D predicate to the 2D rule:
+    visible-when-OFF iff the ray hit the detector OR underwent a deliberate fold
+    (beam-splitter 2nd path etc., bugs/0018).
+
+    The guard (`validate_open3d_clipped_vignetting_parity`) is display-free: it
+    checks the predicate on synthetic paths (detector hit + folded branches kept;
+    non-folded stop/miss/escape hidden) and, on the fold-free machine-vision
+    datasheet layout, that the 3D clipped-OFF count drops the vignetted strays
+    down to exactly the detector-hit count the 2D filter keeps. No renderer
+    needed, so it runs everywhere.
+    """
+    result = PhaseResult(
+        name="Phase 64: Open 3D clipped-ray vignetting parity with 2D"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_clipped_vignetting_parity import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"clipped-vignetting parity guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("clipped-vignetting parity guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -5597,6 +5637,7 @@ def main() -> int:
             phase_61_detector_fov_plane_pickable,
             phase_62_variable_thickness_solve,
             phase_63_open3d_clipped_rays_sync,
+            phase_64_open3d_clipped_vignetting_parity,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

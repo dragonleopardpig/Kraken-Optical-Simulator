@@ -306,13 +306,16 @@ simulation library and that this branch builds on:
   editable Open 3D thickness dimension arrows linked back to the table.
 - Open 3D ray-display controls mirror the 2D editor through shared variables. The
   *Overlays* menu's **Clipped** checkbutton shares the 2D ``Show clipped rays``
-  setting, so hiding vignetted/escaped strays (e.g. an illumination fan that
-  misses the lens) in either view updates the other; deliberately folded
-  beam-splitter branches and detector-miss rays stay visible regardless. The
-  separate **Miss** entry only toggles the terminal-diagnostic markers
-  (detector-miss crosshairs + endpoint disks), not the ray lines. See
+  setting, so hiding clipped rays in either view updates the other. With it OFF,
+  both viewers now keep the same rays: those that reach the detector plus any
+  deliberately folded branch (a beam-splitter 2nd path), while every non-folded
+  stray — vignetted/``stopped`` rays, detector misses, and escapes (e.g. an
+  illumination fan that misses the lens) — is hidden. The separate **Miss** entry
+  only toggles the terminal-diagnostic markers (detector-miss crosshairs +
+  endpoint disks), not the ray lines. See
   ``docs/source/manual/tracing_and_ray_data.rst`` and the
-  ``validate_open3d_clipped_rays_sync`` validator (harness Phase 63).
+  ``validate_open3d_clipped_rays_sync`` (Phase 63) +
+  ``validate_open3d_clipped_vignetting_parity`` (Phase 64) validators.
 - Quick Estimation: a live object/image conjugate + FOV solver in Open 3D for
   finite-conjugate (machine-vision) imaging. The sensor is pinned via the
   left-panel ``Real Image Semi-Height`` field; dragging or typing a conjugate

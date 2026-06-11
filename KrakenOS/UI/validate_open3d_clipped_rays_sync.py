@@ -26,9 +26,9 @@ D. ``_on_clipped_rays_changed`` calls ``editor._mark_plot_update_pending`` and t
    scene refresh exactly once each.
 E. ``Open3DLiveControlsPanel.editor_var("show_clipped_rays_var")`` returns the very
    object the editor holds (shared var -> bidirectional sync).
-F. the 3D ray-line filter honours the var: with escaped-non-folded strays present,
-   OFF hides them while keeping detector hits / misses / stops / folded branches,
-   and ON keeps everything.
+F. the 3D ray-line filter honours the var: OFF keeps only detector hits + folded
+   branches and hides every non-folded miss / stop / escape (bug 0062 — the 3D
+   filter now matches 2D); ON keeps everything.
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_clipped_rays_sync
@@ -68,9 +68,10 @@ def _snapshot_editor_for(fname: str):
 def _synthetic_paths():
     """Build five RayPath3D records, one per terminal class.
 
-    The escaped-non-folded path is the only one the clipped filter hides; the
-    folded escape (beam-splitter style second branch), the detector miss, the
-    detector hit, and the aperture stop must all survive (bugs 0016/0018/0022).
+    With clipping OFF the filter keeps only the detector hit and the folded
+    escape (beam-splitter style second branch, bugs 0018); the non-folded
+    escape, the detector miss, and the aperture stop are all hidden as
+    vignetting (bug 0062 — the 3D filter matches 2D's detector-hit rule).
     """
     from KrakenOS.UI.scene_geometry import RayEvent3D, RayPath3D
 
@@ -191,12 +192,14 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             on_idx = {int(r[0]) for r in on}
             off_idx = {int(r[0]) for r in off}
             expected_on = {0, 1, 2, 3, 4}
-            expected_off = {1, 2, 3, 4}  # escaped-non-folded (index 0) dropped
+            # bug 0062: OFF keeps only the detector hit (3) + folded escape (1);
+            # the non-folded escape (0), detector miss (2) and stop (4) are hidden.
+            expected_off = {1, 3}
             if on_idx != expected_on:
                 _fail(f"clipped ON should render all 5 rays, got indices {sorted(on_idx)}")
             if off_idx != expected_off:
                 _fail(
-                    "clipped OFF should hide only the escaped-non-folded stray, "
+                    "clipped OFF should keep only the detector hit + folded escape, "
                     f"got indices {sorted(off_idx)} (expected {sorted(expected_off)})"
                 )
 
