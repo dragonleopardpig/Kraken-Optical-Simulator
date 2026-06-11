@@ -11874,17 +11874,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         return False
 
     def _open_quick_estimation_fov_popup(self, plane: str) -> None:
-        """A small modal box: type the plane's horizontal field width, then click
+        """A small modal box: type the plane's field width x height, then click
         either 'Solve for Thickness' (move the conjugate pair so the field fills /
         maps to the sensor) or 'Solve for Image/Sensor Size' (resize the sensor at
-        the current magnification). bugs/0055."""
+        the current magnification). Height is optional (blank -> 4:3 aspect).
+        bugs/0055, bugs/0057."""
         qe = self._quick_estimation_service()
         if not qe.is_enabled():
             self.quick_estimation_var.set(True)
         if plane == "object":
-            title = "Object Plane — Field Width (FOV)"
-            prompt = "Object field width to image (horizontal, mm):"
-            initial = qe.object_fov_horizontal()
+            title = "Object Plane — Field of View (FOV)"
+            prompt = "Object field to image (width x height, mm):"
+            wh = qe.object_fov_dimensions()
         else:
             title = "Image Plane — Sensor Size"
             prompt = "Image / sensor size (width x height, mm):"
@@ -11900,28 +11901,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         ttk.Label(dialog, text=prompt, wraplength=320, justify="left").grid(
             row=0, column=0, columnspan=2, padx=12, pady=(12, 6), sticky="w"
         )
-        if plane == "object":
-            initial_str = f"{initial:.6g}" if initial else ""
-            width_var = tk.StringVar(value=initial_str)
-            height_var = None
-            entry = ttk.Entry(dialog, textvariable=width_var, width=18)
-            entry.grid(row=1, column=0, columnspan=2, padx=12, pady=(0, 10), sticky="ew")
-        else:
-            w0, h0 = (wh if wh else (0.0, 0.0))
-            width_var = tk.StringVar(value=(f"{w0:.6g}" if w0 else ""))
-            height_var = tk.StringVar(value=(f"{h0:.6g}" if h0 else ""))
-            ttk.Label(dialog, text="Width (mm):").grid(
-                row=1, column=0, padx=(12, 4), pady=(0, 4), sticky="e"
-            )
-            entry = ttk.Entry(dialog, textvariable=width_var, width=12)
-            entry.grid(row=1, column=1, padx=(0, 12), pady=(0, 4), sticky="ew")
-            ttk.Label(dialog, text="Height (mm):").grid(
-                row=2, column=0, padx=(12, 4), pady=(0, 10), sticky="e"
-            )
-            ttk.Entry(dialog, textvariable=height_var, width=12).grid(
-                row=2, column=1, padx=(0, 12), pady=(0, 10), sticky="ew"
-            )
-        button_row = 2 if plane == "object" else 3
+        w0, h0 = (wh if wh else (0.0, 0.0))
+        width_var = tk.StringVar(value=(f"{w0:.6g}" if w0 else ""))
+        height_var = tk.StringVar(value=(f"{h0:.6g}" if h0 else ""))
+        ttk.Label(dialog, text="Width (mm):").grid(
+            row=1, column=0, padx=(12, 4), pady=(0, 4), sticky="e"
+        )
+        entry = ttk.Entry(dialog, textvariable=width_var, width=12)
+        entry.grid(row=1, column=1, padx=(0, 12), pady=(0, 4), sticky="ew")
+        ttk.Label(dialog, text="Height (mm):").grid(
+            row=2, column=0, padx=(12, 4), pady=(0, 10), sticky="e"
+        )
+        ttk.Entry(dialog, textvariable=height_var, width=12).grid(
+            row=2, column=1, padx=(0, 12), pady=(0, 10), sticky="ew"
+        )
+        button_row = 3
 
         def run(mode):
             try:

@@ -528,6 +528,25 @@ class QuickEstimationService:
         norm = (aw * aw + ah * ah) ** 0.5 or 1.0
         return diagonal * aw / norm, diagonal * ah / norm
 
+    def object_fov_dimensions(self) -> tuple[float, float] | None:
+        """Current object field ``(width, height)`` in mm for the object popup
+        prefill. The object field that maps onto the sensor is the sensor
+        rectangle divided by the magnification; falls back to a 4:3 rectangle
+        derived from the circular object FOV diagonal."""
+        mag = self._finite_mag()
+        sensor_wh = self.sensor_active_dimensions()
+        if mag is not None and sensor_wh is not None:
+            sw, sh = sensor_wh
+            m = abs(mag)
+            if m > 1e-9 and sw > 0 and sh > 0:
+                return sw / m, sh / m
+        fov_full = self.current_state().get("fov_full")
+        if fov_full and fov_full > 0:
+            aw, ah = SENSOR_ASPECT
+            norm = (aw * aw + ah * ah) ** 0.5 or 1.0
+            return float(fov_full) * aw / norm, float(fov_full) * ah / norm
+        return None
+
     def _sensor_wh(self, width: Any, height: Any):
         """Normalise a sensor request to ``(width, height, diagonal)``. When
         ``height`` is None the height is derived from the 4:3 aspect so a lone
@@ -579,19 +598,17 @@ class QuickEstimationService:
         ``plane`` is "object" or "image"; ``mode`` is "thickness" (move the
         object/image conjugate pair) or "sensor" (resize the sensor). ``width`` is
         the typed field width -- object-side for the object plane, image-side
-        (sensor) for the image plane. ``height`` is only used for the image plane:
-        the sensor accepts an explicit width x height; when omitted a 4:3 aspect is
-        assumed. The optical model is left in focus and the caller owns the retrace.
+        (sensor) for the image plane. ``height`` is optional for both planes: the
+        field/sensor accepts an explicit width x height; when omitted a 4:3 aspect
+        is assumed. The optical model is left in focus and the caller owns the
+        retrace.
         """
         if plane == "object":
-            try:
-                horizontal = float(width)
-            except (TypeError, ValueError):
-                return False, "FOV width must be a number."
-            if not np.isfinite(horizontal) or horizontal <= 0:
-                return False, "FOV width must be positive."
-            diag = self.horizontal_to_diagonal(horizontal)
-            semi = diag / 2.0
+            wh = self._sensor_wh(width, height)
+            if wh is None:
+                return False, "FOV width and height must be positive numbers."
+            obj_w, obj_h, obj_diag = wh
+            semi = obj_diag / 2.0
             if mode == "thickness":
                 sensor = self._sensor_semi()
                 if not sensor:
@@ -599,16 +616,16 @@ class QuickEstimationService:
                 ok, msg = self._apply_conjugate_pair(semi, float(sensor))
                 if ok:
                     self.set_target_fov(semi)
-                    msg = f"Object width {horizontal:.6g} mm fills the sensor. " + msg
+                    msg = f"Object {obj_w:.6g} x {obj_h:.6g} mm fills the sensor. " + msg
                 return ok, msg
             if mode == "sensor":
                 mag = self._finite_mag()
                 if mag is None:
                     return False, "No magnification to size the sensor."
                 self.set_target_fov(semi)
-                ok, msg = self.apply_sensor_rect(abs(mag) * horizontal, None)
+                ok, msg = self.apply_sensor_rect(abs(mag) * obj_w, abs(mag) * obj_h)
                 if ok:
-                    msg = f"Object width {horizontal:.6g} mm at |m|={abs(mag):.4g}: " + msg
+                    msg = f"Object {obj_w:.6g} x {obj_h:.6g} mm at |m|={abs(mag):.4g}: " + msg
                 return ok, msg
         elif plane == "image":
             wh = self._sensor_wh(width, height)

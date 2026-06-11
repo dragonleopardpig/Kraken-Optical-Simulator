@@ -5152,6 +5152,21 @@ def phase_60_fov_plane_solve(
         and [float(r.thickness) for r in app.rows] == gaps_before
     )
 
+    # 2b) Object plane 'Solve for Image/Sensor Size' with an explicit Width x Height
+    #     (bugs/0057): object 40 x 30 at |m|=0.5 -> sensor 20 x 15, Ø25, rectangular
+    #     detector dims stored. No thickness changes.
+    _reset_rows()
+    gaps_before = [float(r.thickness) for r in app.rows]
+    ok_oswh, _m = qe.fov_solve("object", "sensor", 40.0, 30.0)
+    obj_det_wh = (getattr(app.rows[-1], "advanced", {}) or {}).get("Detector", {})
+    obj_sensor_wh_ok = (
+        ok_oswh
+        and abs(float(app.rows[-1].diameter) - 25.0) <= 1e-4  # |m| * sqrt(40^2+30^2)
+        and abs(float(obj_det_wh.get("active_width_mm", 0.0)) - 20.0) <= 1e-4
+        and abs(float(obj_det_wh.get("active_height_mm", 0.0)) - 15.0) <= 1e-4
+        and [float(r.thickness) for r in app.rows] == gaps_before
+    )
+
     # 3) Image plane 'Solve for Image/Sensor Size': resize sensor directly to 16 mm wide.
     _reset_rows()
     gaps_before = [float(r.thickness) for r in app.rows]
@@ -5205,6 +5220,8 @@ def phase_60_fov_plane_solve(
     popup = inspect.getsource(type(inspector)._open_quick_estimation_fov_popup)
     buttons_ok = "Solve for Thickness" in popup and "Solve for Image/Sensor Size" in popup
     height_field_ok = "height_var" in popup and "Height" in popup
+    # bugs/0057: the object popup now prefills Width x Height from object_fov_dimensions.
+    object_prefill_ok = "object_fov_dimensions" in popup
 
     # 7) Both the Object AND Image planes must be PICKABLE (bugs/0055 follow-up):
     #    the QE overlay adds a faint filled disk at each plane so the row hover-
@@ -5235,6 +5252,7 @@ def phase_60_fov_plane_solve(
         {
             "object_thickness_ok": obj_thickness_ok,
             "object_sensor_ok": obj_sensor_ok,
+            "object_sensor_wh_ok": obj_sensor_wh_ok,
             "image_sensor_ok": img_sensor_ok,
             "image_sensor_wh_ok": img_sensor_wh_ok,
             "image_thickness_ok": img_thickness_ok,
@@ -5242,6 +5260,7 @@ def phase_60_fov_plane_solve(
             "gesture_wired": gesture_ok,
             "buttons_present": buttons_ok,
             "height_field_present": height_field_ok,
+            "object_prefill_wh": object_prefill_ok,
             "object_pickable": object_pickable,
             "image_pickable": image_pickable,
         }
@@ -5250,6 +5269,8 @@ def phase_60_fov_plane_solve(
         result.notes.append("object plane 'Solve for Thickness' did not fill the sensor with the typed width")
     if not obj_sensor_ok:
         result.notes.append("object plane 'Solve for Image/Sensor Size' did not resize the sensor at |m|")
+    if not obj_sensor_wh_ok:
+        result.notes.append("object plane 'Solve for Image/Sensor Size' did not honour an explicit Width x Height")
     if not img_sensor_ok:
         result.notes.append("image plane 'Solve for Image/Sensor Size' did not resize the sensor to the typed width")
     if not img_sensor_wh_ok:
@@ -5263,7 +5284,9 @@ def phase_60_fov_plane_solve(
     if not buttons_ok:
         result.notes.append("the FOV popup is missing one of the two solve buttons")
     if not height_field_ok:
-        result.notes.append("the image popup is missing the Height field (W x H input)")
+        result.notes.append("the FOV popup is missing the Height field (W x H input)")
+    if not object_prefill_ok:
+        result.notes.append("the object popup does not prefill Width x Height from object_fov_dimensions")
     if overlay_error:
         result.notes.append(f"the QE plane-disk overlay raised: {overlay_error}")
     if not planes_pickable_ok:

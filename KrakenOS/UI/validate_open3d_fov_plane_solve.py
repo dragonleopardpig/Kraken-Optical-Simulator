@@ -126,6 +126,63 @@ def _test_object_solve_for_sensor() -> None:
     print("object plane Solve for Image/Sensor Size OK")
 
 
+def _test_object_solve_for_sensor_width_height() -> None:
+    """Object plane, 'Solve for Image/Sensor Size' with an explicit Width x Height
+    (bugs/0057): object W=40, H=30 imaged at |m|=0.5 -> sensor 20 x 15 mm, image
+    circle Ø=sqrt(20^2+15^2)=25, with the rectangular detector dims stored. The
+    diagonal must match the width-only path (which derives a 4:3 H=30), and no
+    thickness may change."""
+    app = _build_editor()
+    qe = _service(app)
+    gaps_before = [float(r.thickness) for r in app.rows]
+    ok, msg = qe.fov_solve("object", "sensor", 40.0, 30.0)
+    if not ok:
+        raise AssertionError(f"object WxH sensor solve should succeed: {msg}")
+    if abs(float(app.rows[-1].diameter) - 25.0) > 1e-6:
+        raise AssertionError(f"sensor Ø should become 25, got {app.rows[-1].diameter}")
+    det = (getattr(app.rows[-1], "advanced", {}) or {}).get("Detector", {})
+    if abs(float(det.get("active_width_mm", 0.0)) - 20.0) > 1e-6 or \
+            abs(float(det.get("active_height_mm", 0.0)) - 15.0) > 1e-6:
+        raise AssertionError(f"explicit object W x H must map to sensor 20 x 15, got {det}")
+    if [float(r.thickness) for r in app.rows] != gaps_before:
+        raise AssertionError("object Solve for Sensor must NOT change any thickness")
+    print("object plane Solve for Image/Sensor Size (W x H) OK")
+
+
+def _test_object_solve_for_thickness_width_height() -> None:
+    """Object plane, 'Solve for Thickness' with an explicit Width x Height
+    (bugs/0057): object W=40, H=30 -> diagonal 50, semi 25 -> the conjugate pair
+    moves so that field fills the current Ø24 sensor (identical to the width-only
+    path that derives a 4:3 H). The sensor is left untouched."""
+    app = _build_editor()
+    qe = _service(app)
+    sensor_before = float(app.rows[-1].diameter)
+    ok, msg = qe.fov_solve("object", "thickness", 40.0, 30.0)
+    if not ok:
+        raise AssertionError(f"object WxH thickness solve should succeed: {msg}")
+    mag = 12.0 / 25.0
+    exp_obj = 50.0 * (1.0 + 1.0 / mag)
+    exp_img = 50.0 * (1.0 + mag)
+    if abs(float(app.rows[0].thickness) - exp_obj) > 1e-6:
+        raise AssertionError(f"object gap should be {exp_obj:.6g}, got {app.rows[0].thickness}")
+    if abs(float(app.rows[2].thickness) - exp_img) > 1e-6:
+        raise AssertionError(f"image gap should be {exp_img:.6g}, got {app.rows[2].thickness}")
+    if abs(float(app.rows[-1].diameter) - sensor_before) > 1e-9:
+        raise AssertionError("object Solve for Thickness must NOT resize the sensor")
+    print("object plane Solve for Thickness (W x H) OK")
+
+
+def _test_object_fov_dimensions_prefill() -> None:
+    """bugs/0057: the object popup prefills Width x Height from the sensor rectangle
+    divided by the magnification. Sensor Ø24 (4:3 -> 19.2 x 14.4) at |m|=0.5 -> the
+    object field that fills it is 38.4 x 28.8 mm."""
+    qe = _service(_build_editor())
+    wh = qe.object_fov_dimensions()
+    if wh is None or abs(wh[0] - 38.4) > 1e-6 or abs(wh[1] - 28.8) > 1e-6:
+        raise AssertionError(f"object_fov_dimensions should be (38.4, 28.8), got {wh}")
+    print("object plane W x H prefill OK")
+
+
 def _test_image_solve_for_sensor() -> None:
     """Image plane, 'Solve for Image/Sensor Size': resize the sensor to the typed
     16 mm width directly (Ø = 16 / 0.8 = 20)."""
@@ -261,7 +318,9 @@ def _test_double_click_gesture_wiring() -> None:
     if "Solve for Thickness" not in popup or "Solve for Image/Sensor Size" not in popup:
         raise AssertionError("the popup must offer both solve buttons")
     if "height_var" not in popup or "Height" not in popup:
-        raise AssertionError("the image popup must offer a Height field (W x H)")
+        raise AssertionError("both popups must offer a Height field (W x H)")
+    if "object_fov_dimensions" not in popup:
+        raise AssertionError("the object popup must prefill W x H from object_fov_dimensions")
     if 'fov_solve' not in inspect.getsource(Kraken3DInspector._apply_quick_estimation_fov_solve):
         raise AssertionError("the popup commit must call qe.fov_solve")
     print("double-click gesture + popup wiring OK")
@@ -271,6 +330,9 @@ def main() -> int:
     _test_horizontal_mapping()
     _test_object_solve_for_thickness()
     _test_object_solve_for_sensor()
+    _test_object_solve_for_sensor_width_height()
+    _test_object_solve_for_thickness_width_height()
+    _test_object_fov_dimensions_prefill()
     _test_image_solve_for_sensor()
     _test_image_solve_for_sensor_width_height()
     _test_pick_disk_registers_row()
