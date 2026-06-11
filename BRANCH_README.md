@@ -327,6 +327,34 @@ simulation library and that this branch builds on:
   real image) flashes the arrow red; with Live Mode on the geometry retraces
   during the drag. See ``docs/source/manual/quick_estimation.rst`` and the
   ``validate_open3d_quick_estimation_conjugate`` validator (harness Phase 34).
+- A graphical FOV solve: double-clicking the Object or Image plane (both now
+  hover- and double-click-pickable, including the green detector-coverage FOV
+  square) opens a small popup pre-filled with that plane's **Width × Height**.
+  Two buttons either **Solve for Thickness** (move the conjugate pair so the
+  typed field maps onto the sensor, in focus) or **Solve for Image/Sensor Size**
+  (keep the magnification and resize the terminal sensor). Height is optional —
+  blank falls back to the 4:3 working aspect. See
+  ``docs/source/manual/quick_estimation.rst`` and the
+  ``validate_open3d_fov_plane_solve`` validator (harness Phase 60, plane
+  pickability in Phase 61).
+- A Variable-thickness solver mirroring the 2D editor: tick one or more gaps
+  Variable in the Live Controls **Solve (Variable thickness)** section (the same
+  ``optimize_thickness`` flag the 2D optimizer reads, so a gap flagged in either
+  view is flagged in both) and run **Solve Best Focus** (minimise spot RMS) or
+  **Solve Best Collimation** (drive the paraxial output vergence ``|1/s'|`` to
+  zero, sending the exit beam to infinity). See
+  ``docs/source/manual/quick_estimation.rst`` and the
+  ``validate_open3d_thickness_solve`` validator (harness Phase 62).
+- A **Ray count** entry in the always-visible Open 3D View toolbar, bound to the
+  same variable as the 2D ``Ray fan count`` and the Live-panel Source count, so
+  editing any one moves the others and retraces
+  (``validate_open3d_ray_count_toolbar_sync``).
+- The Open 3D camera-selection dropdown enumerates the vendor camera catalogue
+  (``KrakenOS/UI/camera_database.py``); alongside the Allied Vision hr25MCX it
+  now lists the Allied Vision shr661MCX12 (Sony IMX661, 127 MP, 46.2 × 32.87 mm)
+  and the Japan Bopixel BC-GM65M12X4-F (Gpixel GMAX3265, 65 MP, 29.9 × 22.4 mm),
+  each resolving its STEP body + datasheet under ``attachment/Cameras`` and
+  feeding the detector-coverage overlay its real sensor dimensions.
 - Sphinx tutorials and case studies for vendor prism placement, right-angle
   prism TIR, Mach-Zehnder and Michelson workflows, Gaussian beam expansion,
   lens drawing export, tolerance Monte Carlo, Double Gauss analysis, Machine

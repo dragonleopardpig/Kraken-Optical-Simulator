@@ -60,6 +60,47 @@ Right-click actions
 * **Image plane / image-distance arrow** — set the sensor semi-height
   (the same left-panel ``Field value``) or set the role.
 
+Graphical FOV solve (double-click a plane)
+------------------------------------------
+
+For a direct, graphical alternative to the menu, **double-click** the Object or
+Image plane in the 3D canvas. A small popup opens, pre-filled with that plane's
+field **Width × Height** — the Object field that exactly fills the current
+sensor, or the sensor's own active dimensions. Both planes hover-highlight and
+accept the double-click, including the green detector-coverage FOV square when
+the *Det* overlay is on.
+
+Two buttons decide what the solver changes:
+
+* **Solve for Thickness** — move the object↔image conjugate pair so the typed
+  field maps onto the sensor, in focus. The sensor is left untouched.
+* **Solve for Image/Sensor Size** — keep the current magnification and resize the
+  terminal sensor so the typed field maps onto it. No thickness changes.
+
+Height is optional: leave it blank and the vertical extent follows the 4:3
+working aspect, giving exactly the original single-width solve.
+
+Variable-thickness solve (Best Focus / Best Collimation)
+--------------------------------------------------------
+
+The Live Controls panel has a **Solve (Variable thickness)** section that mirrors
+the 2D editor's 1-D solve. Tick one or more thickness gaps **Variable** — this is
+the same ``optimize_thickness`` flag the 2D optimizer reads, so a gap flagged in
+either view is flagged in both — then press:
+
+* **Solve Best Focus** — minimise the image spot RMS. The terminal Image gap is
+  the axial reference and is never a variable; the object gap is excluded, since
+  moving the object is not a focus knob.
+* **Solve Best Collimation** — drive the paraxial output vergence
+  :math:`|1/s'|` to zero, i.e. send the exit beam to infinity. This objective
+  *includes* the object gap, because moving the source toward the front focal
+  point is the canonical way to parallelise the output. On the 150 mm 1× layout
+  the collimated object distance lands at the front focal distance
+  (:math:`\mathrm{EFL} - \mathrm{ppa} \approx 125` mm).
+
+With several gaps Variable the solver runs a few coordinate-descent passes until
+every gap settles. Each solve is one undoable step and retraces the scene.
+
 Sensor coverage and recommended sensor
 --------------------------------------
 
@@ -95,3 +136,9 @@ harness Phase 34): focus is held, ``FOV = sensor / |m|``, FOV is monotonic with
 object distance, both solve directions work, ``snap_to_fov`` reproduces the
 unique conjugate pair, the forbidden region is detected, and the live drag
 preview does not mutate committed thicknesses.
+
+The graphical FOV solve is guarded by
+``KrakenOS/UI/validate_open3d_fov_plane_solve.py`` (harness Phase 60, with the
+Object/Image plane pickability checked live in Phase 61), and the
+Variable-thickness Best Focus / Best Collimation solve by
+``KrakenOS/UI/validate_open3d_thickness_solve.py`` (harness Phase 62).
