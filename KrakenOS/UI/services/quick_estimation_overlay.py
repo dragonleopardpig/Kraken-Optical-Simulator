@@ -80,6 +80,44 @@ class QuickEstimationOverlayService:
         except Exception as exc:
             self.editor.append_debug(f"QE overlay dashed line skipped: {exc}")
 
+    def _pick_disk_actor(self, center, normal, radius, color, row_index):
+        """A faint, filled, *pickable* disk at a plane so the row can be picked /
+        hover-highlighted / double-clicked (bugs/0055 follow-up). Without it the
+        Object plane has no 3D geometry to click -- only the terminal sensor's
+        detector footprint was ever pickable, so the object plane never lit up on
+        hover and the FOV double-click could not reach it."""
+        pv = self._pv
+        if pv is None:
+            return
+        try:
+            c = np.asarray(center, dtype=float).reshape(3)
+            n = np.asarray(normal, dtype=float).reshape(3)
+            nn = float(np.linalg.norm(n))
+            if not np.isfinite(nn) or nn <= 1e-9:
+                return
+            n = n / nn
+            r = float(radius)
+            if not np.isfinite(r) or r <= 1e-9:
+                return
+            disk = pv.Disc(
+                center=tuple(float(v) for v in c),
+                inner=0.0,
+                outer=r,
+                normal=tuple(float(v) for v in n),
+                r_res=1,
+                c_res=64,
+            )
+            self.inspector._add_mesh_actor(
+                disk,
+                color=color,
+                opacity=0.10,
+                flat_shading=True,
+                backface_culling=False,
+                pick_row_index=int(row_index),
+            )
+        except Exception as exc:
+            self.editor.append_debug(f"QE overlay pick disk skipped: {exc}")
+
     def add_overlays(self, system: Any, scene_bundle: Any = None) -> int:
         qe = self.inspector._quick_estimation_service()
         if not qe.is_enabled():
@@ -109,6 +147,11 @@ class QuickEstimationOverlayService:
         prev_object_semi = qe.previous_object_semi()
         rec = state.get("recommended_sensor") or {}
         count = 0
+
+        # --- pickable plane disks so the Object/Image planes can be clicked,
+        #     hover-highlighted, and double-clicked for the FOV popup (bugs/0055).
+        self._pick_disk_actor(obj_pt, axis, max(object_semi, 0.5), (0.2, 0.9, 0.35), 0)
+        self._pick_disk_actor(img_pt, axis, max(image_radius, 0.5), (0.2, 0.7, 1.0), len(rows) - 1)
 
         # --- object plane: current FOV circle (green) + previous ghost (gray) ---
         self._solid_line_actor(_circle_points(obj_pt, u, v, object_semi), (0.2, 0.9, 0.35), 2.5)

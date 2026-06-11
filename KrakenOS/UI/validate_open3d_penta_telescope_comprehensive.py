@@ -5162,6 +5162,21 @@ def phase_60_fov_plane_solve(
         and [float(r.thickness) for r in app.rows] == gaps_before
     )
 
+    # 3b) Image plane 'Solve for Image/Sensor Size' with an explicit Width x Height
+    #     (bugs/0055 follow-up): W=16, H=12 -> Ø = sqrt(16^2+12^2) = 20, and the
+    #     rectangular detector dims are stored. No thickness changes.
+    _reset_rows()
+    gaps_before = [float(r.thickness) for r in app.rows]
+    ok_iwh, _m = qe.fov_solve("image", "sensor", 16.0, 12.0)
+    det_wh = (getattr(app.rows[-1], "advanced", {}) or {}).get("Detector", {})
+    img_sensor_wh_ok = (
+        ok_iwh
+        and abs(float(app.rows[-1].diameter) - 20.0) <= 1e-4
+        and abs(float(det_wh.get("active_width_mm", 0.0)) - 16.0) <= 1e-4
+        and abs(float(det_wh.get("active_height_mm", 0.0)) - 12.0) <= 1e-4
+        and [float(r.thickness) for r in app.rows] == gaps_before
+    )
+
     # 4) Image plane 'Solve for Thickness': image the current object field to 16 mm.
     _reset_rows()
     qe.set_target_fov(25.0)
@@ -5189,16 +5204,46 @@ def phase_60_fov_plane_solve(
     gesture_ok = "<Double-Button-1>" in binds and "_maybe_open_fov_popup_from_double_click" in binds
     popup = inspect.getsource(type(inspector)._open_quick_estimation_fov_popup)
     buttons_ok = "Solve for Thickness" in popup and "Solve for Image/Sensor Size" in popup
+    height_field_ok = "height_var" in popup and "Height" in popup
+
+    # 7) Both the Object AND Image planes must be PICKABLE (bugs/0055 follow-up):
+    #    the QE overlay adds a faint filled disk at each plane so the row hover-
+    #    highlights and accepts the double-click. Without it the Object plane had no
+    #    3D geometry to click. The overlay only draws for a Finite object, so use the
+    #    capitalised mode the real engine returns.
+    _reset_rows()
+    app._current_object_mode = lambda: "Finite"
+    qe.set_target_fov(24.0)
+    try:
+        inspector.quick_estimation_var.set(True)
+    except Exception:
+        pass
+    overlay_error = ""
+    n_overlays = 0
+    try:
+        n_overlays = inspector._add_quick_estimation_overlays(None, None)
+    except Exception as exc:  # pragma: no cover - defensive
+        overlay_error = str(exc)
+    arm = dict(getattr(inspector, "_actor_row_map", {}) or {})
+    pickable_rows = set(int(v) for v in arm.values())
+    last_row = len(app.rows) - 1
+    object_pickable = 0 in pickable_rows
+    image_pickable = last_row in pickable_rows
+    planes_pickable_ok = bool(n_overlays) and object_pickable and image_pickable
 
     result.detail.update(
         {
             "object_thickness_ok": obj_thickness_ok,
             "object_sensor_ok": obj_sensor_ok,
             "image_sensor_ok": img_sensor_ok,
+            "image_sensor_wh_ok": img_sensor_wh_ok,
             "image_thickness_ok": img_thickness_ok,
             "apply_path_ran": apply_error == "",
             "gesture_wired": gesture_ok,
             "buttons_present": buttons_ok,
+            "height_field_present": height_field_ok,
+            "object_pickable": object_pickable,
+            "image_pickable": image_pickable,
         }
     )
     if not obj_thickness_ok:
@@ -5207,6 +5252,8 @@ def phase_60_fov_plane_solve(
         result.notes.append("object plane 'Solve for Image/Sensor Size' did not resize the sensor at |m|")
     if not img_sensor_ok:
         result.notes.append("image plane 'Solve for Image/Sensor Size' did not resize the sensor to the typed width")
+    if not img_sensor_wh_ok:
+        result.notes.append("image plane 'Solve for Image/Sensor Size' did not honour an explicit Width x Height")
     if not img_thickness_ok:
         result.notes.append("image plane 'Solve for Thickness' did not image the object field to the typed width")
     if apply_error:
@@ -5215,6 +5262,15 @@ def phase_60_fov_plane_solve(
         result.notes.append("double-left-click is not bound to the FOV popup")
     if not buttons_ok:
         result.notes.append("the FOV popup is missing one of the two solve buttons")
+    if not height_field_ok:
+        result.notes.append("the image popup is missing the Height field (W x H input)")
+    if overlay_error:
+        result.notes.append(f"the QE plane-disk overlay raised: {overlay_error}")
+    if not planes_pickable_ok:
+        result.notes.append(
+            "the Object/Image planes are not both pickable "
+            f"(overlays={n_overlays}, object={object_pickable}, image={image_pickable})"
+        )
 
     try:
         for name in (

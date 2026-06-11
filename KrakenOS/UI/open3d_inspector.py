@@ -11886,10 +11886,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             prompt = "Object field width to image (horizontal, mm):"
             initial = qe.object_fov_horizontal()
         else:
-            title = "Image Plane — Sensor Width"
-            prompt = "Image / sensor width (horizontal, mm):"
-            initial = qe.sensor_horizontal()
-        initial_str = f"{initial:.6g}" if initial else ""
+            title = "Image Plane — Sensor Size"
+            prompt = "Image / sensor size (width x height, mm):"
+            wh = qe.sensor_active_dimensions()
         dialog = tk.Toplevel(self)
         try:
             dialog.withdraw()
@@ -11898,37 +11897,66 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             dialog.resizable(False, False)
         except Exception:
             pass
-        var = tk.StringVar(value=initial_str)
         ttk.Label(dialog, text=prompt, wraplength=320, justify="left").grid(
             row=0, column=0, columnspan=2, padx=12, pady=(12, 6), sticky="w"
         )
-        entry = ttk.Entry(dialog, textvariable=var, width=18)
-        entry.grid(row=1, column=0, columnspan=2, padx=12, pady=(0, 10), sticky="ew")
+        if plane == "object":
+            initial_str = f"{initial:.6g}" if initial else ""
+            width_var = tk.StringVar(value=initial_str)
+            height_var = None
+            entry = ttk.Entry(dialog, textvariable=width_var, width=18)
+            entry.grid(row=1, column=0, columnspan=2, padx=12, pady=(0, 10), sticky="ew")
+        else:
+            w0, h0 = (wh if wh else (0.0, 0.0))
+            width_var = tk.StringVar(value=(f"{w0:.6g}" if w0 else ""))
+            height_var = tk.StringVar(value=(f"{h0:.6g}" if h0 else ""))
+            ttk.Label(dialog, text="Width (mm):").grid(
+                row=1, column=0, padx=(12, 4), pady=(0, 4), sticky="e"
+            )
+            entry = ttk.Entry(dialog, textvariable=width_var, width=12)
+            entry.grid(row=1, column=1, padx=(0, 12), pady=(0, 4), sticky="ew")
+            ttk.Label(dialog, text="Height (mm):").grid(
+                row=2, column=0, padx=(12, 4), pady=(0, 10), sticky="e"
+            )
+            ttk.Entry(dialog, textvariable=height_var, width=12).grid(
+                row=2, column=1, padx=(0, 12), pady=(0, 10), sticky="ew"
+            )
+        button_row = 2 if plane == "object" else 3
 
         def run(mode):
             try:
-                value = float(var.get())
+                value = float(width_var.get())
             except (TypeError, ValueError):
-                self.status_var.set("FOV width must be a number.")
+                self.status_var.set("Width must be a number.")
                 return
             if not (value > 0):
-                self.status_var.set("FOV width must be positive.")
+                self.status_var.set("Width must be positive.")
                 return
+            height = None
+            if height_var is not None and height_var.get().strip():
+                try:
+                    height = float(height_var.get())
+                except (TypeError, ValueError):
+                    self.status_var.set("Height must be a number.")
+                    return
+                if not (height > 0):
+                    self.status_var.set("Height must be positive.")
+                    return
             try:
                 dialog.grab_release()
             except Exception:
                 pass
             dialog.destroy()
-            self._apply_quick_estimation_fov_solve(plane, mode, value)
+            self._apply_quick_estimation_fov_solve(plane, mode, value, height)
 
         ttk.Button(dialog, text="Solve for Thickness", command=lambda: run("thickness")).grid(
-            row=2, column=0, padx=(12, 4), pady=(0, 6), sticky="ew"
+            row=button_row, column=0, padx=(12, 4), pady=(0, 6), sticky="ew"
         )
         ttk.Button(dialog, text="Solve for Image/Sensor Size", command=lambda: run("sensor")).grid(
-            row=2, column=1, padx=(4, 12), pady=(0, 6), sticky="ew"
+            row=button_row, column=1, padx=(4, 12), pady=(0, 6), sticky="ew"
         )
         ttk.Button(dialog, text="Cancel", command=dialog.destroy).grid(
-            row=3, column=0, columnspan=2, padx=12, pady=(0, 12)
+            row=button_row + 1, column=0, columnspan=2, padx=12, pady=(0, 12)
         )
         dialog.bind("<Escape>", lambda _e: dialog.destroy())
         try:
@@ -11946,10 +11974,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         self.wait_window(dialog)
 
-    def _apply_quick_estimation_fov_solve(self, plane: str, mode: str, value: float) -> None:
+    def _apply_quick_estimation_fov_solve(self, plane: str, mode: str, value: float, height: float | None = None) -> None:
         qe = self._quick_estimation_service()
         self.editor._begin_history_capture()
-        ok, msg = qe.fov_solve(plane, mode, value)
+        ok, msg = qe.fov_solve(plane, mode, value, height)
         if ok:
             try:
                 self.editor._sync_table()

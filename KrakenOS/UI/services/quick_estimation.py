@@ -479,24 +479,119 @@ class QuickEstimationService:
             f"(image circle Ø{diagonal:.6g} mm)."
         )
 
-    def fov_solve(self, plane: str, mode: str, horizontal: Any) -> tuple[bool, str]:
+    def _terminal_detector_advanced(self, create: bool = False):
+        """The terminal (sensor) row's ``advanced['Detector']`` dict, optionally
+        creating it. That dict holds the rectangular ``active_width_mm`` /
+        ``active_height_mm`` the detector overlay draws."""
+        rows = getattr(self.editor, "rows", None) or []
+        if not rows:
+            return None
+        row = rows[-1]
+        advanced = getattr(row, "advanced", None)
+        if not isinstance(advanced, dict):
+            if not create:
+                return None
+            advanced = {}
+            try:
+                row.advanced = advanced
+            except Exception:
+                return None
+        det = advanced.get("Detector")
+        if not isinstance(det, dict):
+            if not create:
+                return None
+            det = {}
+            advanced["Detector"] = det
+        return det
+
+    def sensor_active_dimensions(self) -> tuple[float, float] | None:
+        """Current sensor ``(width, height)`` in mm for the image popup prefill.
+
+        Uses the terminal row's explicit rectangular detector dims when set, else
+        derives a 4:3 rectangle from the circular image-circle diameter."""
+        det = self._terminal_detector_advanced(create=False) or {}
+        try:
+            width = float(det.get("active_width_mm", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            width = 0.0
+        try:
+            height = float(det.get("active_height_mm", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            height = 0.0
+        if width > 0 and height > 0:
+            return width, height
+        semi = self._sensor_semi()
+        if not semi or semi <= 0:
+            return None
+        diagonal = 2.0 * float(semi)
+        aw, ah = SENSOR_ASPECT
+        norm = (aw * aw + ah * ah) ** 0.5 or 1.0
+        return diagonal * aw / norm, diagonal * ah / norm
+
+    def _sensor_wh(self, width: Any, height: Any):
+        """Normalise a sensor request to ``(width, height, diagonal)``. When
+        ``height`` is None the height is derived from the 4:3 aspect so a lone
+        horizontal width maps to the same image-circle diagonal as before."""
+        try:
+            w = float(width)
+        except (TypeError, ValueError):
+            return None
+        if not np.isfinite(w) or w <= 0:
+            return None
+        if height is None:
+            diagonal = self.horizontal_to_diagonal(w)
+            h2 = diagonal * diagonal - w * w
+            h = h2 ** 0.5 if h2 > 0 else 0.0
+            return w, h, diagonal
+        try:
+            h = float(height)
+        except (TypeError, ValueError):
+            return None
+        if not np.isfinite(h) or h <= 0:
+            return None
+        diagonal = (w * w + h * h) ** 0.5
+        return w, h, diagonal
+
+    def apply_sensor_rect(self, width: Any, height: Any) -> tuple[bool, str]:
+        """Resize the terminal sensor to an explicit width x height (mm). Sets the
+        circular optical aperture (image-circle Ø = the rectangle's diagonal) and
+        the rectangular detector dims so the overlay reads as the real sensor. No
+        retrace."""
+        wh = self._sensor_wh(width, height)
+        if wh is None:
+            return False, "Sensor width and height must be positive numbers."
+        w, h, diagonal = wh
+        rows = getattr(self.editor, "rows", None) or []
+        if not rows:
+            return False, "No layout to size a sensor on."
+        rows[-1].diameter = float(diagonal)
+        det = self._terminal_detector_advanced(create=True)
+        if det is not None:
+            det["active_width_mm"] = float(w)
+            det["active_height_mm"] = float(h)
+        return True, (
+            f"Sensor set to {w:.6g} x {h:.6g} mm (image circle Ø{diagonal:.6g} mm)."
+        )
+
+    def fov_solve(self, plane: str, mode: str, width: Any, height: Any = None) -> tuple[bool, str]:
         """Drive the click-on-plane FOV popup.
 
         ``plane`` is "object" or "image"; ``mode`` is "thickness" (move the
-        object/image conjugate pair) or "sensor" (resize the sensor). ``horizontal``
-        is the typed field width -- object-side for the object plane, image-side
-        (sensor) for the image plane. The optical model is left in focus and the
-        caller owns the retrace.
+        object/image conjugate pair) or "sensor" (resize the sensor). ``width`` is
+        the typed field width -- object-side for the object plane, image-side
+        (sensor) for the image plane. ``height`` is only used for the image plane:
+        the sensor accepts an explicit width x height; when omitted a 4:3 aspect is
+        assumed. The optical model is left in focus and the caller owns the retrace.
         """
-        try:
-            horizontal = float(horizontal)
-        except (TypeError, ValueError):
-            return False, "FOV width must be a number."
-        if not np.isfinite(horizontal) or horizontal <= 0:
-            return False, "FOV width must be positive."
-        diag = self.horizontal_to_diagonal(horizontal)
-        semi = diag / 2.0
         if plane == "object":
+            try:
+                horizontal = float(width)
+            except (TypeError, ValueError):
+                return False, "FOV width must be a number."
+            if not np.isfinite(horizontal) or horizontal <= 0:
+                return False, "FOV width must be positive."
+            diag = self.horizontal_to_diagonal(horizontal)
+            semi = diag / 2.0
             if mode == "thickness":
                 sensor = self._sensor_semi()
                 if not sensor:
@@ -511,22 +606,29 @@ class QuickEstimationService:
                 if mag is None:
                     return False, "No magnification to size the sensor."
                 self.set_target_fov(semi)
-                ok, msg = self.apply_sensor_diagonal(abs(mag) * diag, abs(mag) * horizontal)
+                ok, msg = self.apply_sensor_rect(abs(mag) * horizontal, None)
                 if ok:
                     msg = f"Object width {horizontal:.6g} mm at |m|={abs(mag):.4g}: " + msg
                 return ok, msg
         elif plane == "image":
+            wh = self._sensor_wh(width, height)
+            if wh is None:
+                return False, "Sensor width and height must be positive numbers."
+            img_w, img_h, img_diag = wh
             if mode == "sensor":
-                return self.apply_sensor_diagonal(diag, horizontal)
+                return self.apply_sensor_rect(img_w, img_h)
             if mode == "thickness":
                 target = self._target_object_semi
                 if not target:
                     target = self.current_state().get("fov_semi")
                 if not target or target <= 0:
                     return False, "No object field set to image onto this sensor width."
-                ok, msg = self._apply_conjugate_pair(float(target), semi)
+                ok, msg = self._apply_conjugate_pair(float(target), img_diag / 2.0)
                 if ok:
-                    msg = f"Image width {horizontal:.6g} mm for the current object field. " + msg
+                    msg = (
+                        f"Image {img_w:.6g} x {img_h:.6g} mm for the current object "
+                        "field. " + msg
+                    )
                 return ok, msg
         return False, "Unknown FOV solve request."
 

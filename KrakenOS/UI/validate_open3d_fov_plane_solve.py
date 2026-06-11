@@ -75,6 +75,11 @@ def _test_horizontal_mapping() -> None:
     # object FOV: |m|=0.5, sensor_semi=12 -> fov_semi=24, fov_full(diagonal)=48 -> 38.4 wide.
     if abs(qe.object_fov_horizontal() - 38.4) > 1e-6:
         raise AssertionError(f"object_fov_horizontal should be 38.4, got {qe.object_fov_horizontal()}")
+    # No explicit detector dims -> a 4:3 rectangle inscribed in the Ø24 image circle:
+    # W = 24*4/5 = 19.2, H = 24*3/5 = 14.4.
+    wh = qe.sensor_active_dimensions()
+    if wh is None or abs(wh[0] - 19.2) > 1e-6 or abs(wh[1] - 14.4) > 1e-6:
+        raise AssertionError(f"sensor_active_dimensions should be (19.2, 14.4), got {wh}")
     print("horizontal<->diagonal mapping + readouts OK")
 
 
@@ -135,6 +140,61 @@ def _test_image_solve_for_sensor() -> None:
     if [float(r.thickness) for r in app.rows] != gaps_before:
         raise AssertionError("image Solve for Sensor must NOT change any thickness")
     print("image plane Solve for Image/Sensor Size OK")
+
+
+def _test_image_solve_for_sensor_width_height() -> None:
+    """Image plane, 'Solve for Image/Sensor Size' with an explicit Width x Height
+    (bugs/0055 follow-up): W=16, H=12 -> image-circle Ø = sqrt(16^2+12^2) = 20, and
+    the rectangular detector dims are written so the overlay reads the real sensor.
+    No thickness changes."""
+    app = _build_editor()
+    qe = _service(app)
+    gaps_before = [float(r.thickness) for r in app.rows]
+    ok, msg = qe.fov_solve("image", "sensor", 16.0, 12.0)
+    if not ok:
+        raise AssertionError(f"image WxH sensor solve should succeed: {msg}")
+    if abs(float(app.rows[-1].diameter) - 20.0) > 1e-6:
+        raise AssertionError(f"sensor Ø should become 20, got {app.rows[-1].diameter}")
+    det = (getattr(app.rows[-1], "advanced", {}) or {}).get("Detector", {})
+    if abs(float(det.get("active_width_mm", 0.0)) - 16.0) > 1e-6 or \
+            abs(float(det.get("active_height_mm", 0.0)) - 12.0) > 1e-6:
+        raise AssertionError(f"explicit W x H must be stored on the detector, got {det}")
+    if [float(r.thickness) for r in app.rows] != gaps_before:
+        raise AssertionError("image Solve for Sensor must NOT change any thickness")
+    print("image plane Solve for Image/Sensor Size (W x H) OK")
+
+
+def _test_pick_disk_registers_row() -> None:
+    """bugs/0055 follow-up: the Object/Image planes need a *pickable* disk actor so
+    they hover-highlight and accept the double-click. Without it only the detector
+    footprint (image side) was pickable, so the Object plane never lit up on hover
+    and could not be double-clicked."""
+    import pyvista as pv
+
+    from KrakenOS.UI.services.quick_estimation_overlay import QuickEstimationOverlayService
+
+    captured: list[dict] = []
+
+    class _FakeInspector:
+        def __init__(self, editor):
+            self.editor = editor
+
+        def _add_mesh_actor(self, mesh, **kw):
+            captured.append(kw)
+
+    app = _build_editor()
+    svc = QuickEstimationOverlayService(_FakeInspector(app), pv_module=pv)
+    svc._pick_disk_actor((0.0, 0.0, 0.0), (0.0, 0.0, 1.0), 12.0, (0.2, 0.9, 0.35), 0)
+    if not captured:
+        raise AssertionError("the pick disk must add a mesh actor")
+    if captured[-1].get("pick_row_index") != 0:
+        raise AssertionError(f"the pick disk must register pick_row_index, got {captured[-1]}")
+    # The overlay must place a pickable disk on BOTH the Object (row 0) and the
+    # terminal (image) plane.
+    src = inspect.getsource(QuickEstimationOverlayService.add_overlays)
+    if src.count("_pick_disk_actor") < 2:
+        raise AssertionError("add_overlays must place pickable disks on both planes")
+    print("pickable plane disk registration OK")
 
 
 def _test_image_solve_for_thickness() -> None:
@@ -200,6 +260,8 @@ def _test_double_click_gesture_wiring() -> None:
     popup = inspect.getsource(Kraken3DInspector._open_quick_estimation_fov_popup)
     if "Solve for Thickness" not in popup or "Solve for Image/Sensor Size" not in popup:
         raise AssertionError("the popup must offer both solve buttons")
+    if "height_var" not in popup or "Height" not in popup:
+        raise AssertionError("the image popup must offer a Height field (W x H)")
     if 'fov_solve' not in inspect.getsource(Kraken3DInspector._apply_quick_estimation_fov_solve):
         raise AssertionError("the popup commit must call qe.fov_solve")
     print("double-click gesture + popup wiring OK")
@@ -210,6 +272,8 @@ def main() -> int:
     _test_object_solve_for_thickness()
     _test_object_solve_for_sensor()
     _test_image_solve_for_sensor()
+    _test_image_solve_for_sensor_width_height()
+    _test_pick_disk_registers_row()
     _test_image_solve_for_thickness()
     _test_solve_refuses_bad_input()
     _test_double_click_gesture_wiring()

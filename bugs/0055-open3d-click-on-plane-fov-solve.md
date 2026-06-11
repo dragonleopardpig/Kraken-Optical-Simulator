@@ -100,3 +100,50 @@ and writes the horizontal width; the solver converts width↔diagonal internally
 - "Solve for Image/Sensor Size" resizes the **circular optical aperture**
   (`rows[-1].diameter`); the detector-overlay rectangle follows via the existing
   diameter fallback in `scene_target_active_dimensions`.
+
+## Follow-up (same session)
+
+After shipping the feature the user flagged two refinements:
+
+> I can double click the image, but can't double click the Object (no highlight
+> when mouse hover).
+
+> Image sensor width: please include both Height x Width in input box.
+
+### 1. Object plane was not pickable (no hover, no double-click)
+
+Only **pickable** actors (those added with `pick_row_index`) register in
+`_actor_row_map`, which is what hover-highlight and the double-click router read.
+The Object/Image reference planes are drawn as *circles + a sensor rectangle*, not
+as surfaces, so neither had a pickable 3D body. The Image plane only *seemed*
+clickable because the detector footprint overlay happens to put a pickable actor on
+the terminal (sensor) row; the Object plane had nothing, so it never lit up on
+hover and the FOV double-click could not reach it.
+
+Fix: `QuickEstimationOverlayService._pick_disk_actor` adds a faint (`opacity=0.10`),
+filled, **pickable** `pv.Disc` at each plane — `pick_row_index=0` for the Object
+plane and `len(rows)-1` for the Image plane — wired into `add_overlays` right where
+the FOV circles are drawn. It is gated on Quick Estimation being enabled (the same
+gate as the rest of the overlay), so there is no change when QE is off. The
+`vtkCellPicker` picks geometry regardless of opacity, so the translucent disk
+hover-highlights and accepts the double-click while staying visually unobtrusive.
+
+### 2. Image popup now takes Width **and** Height
+
+The Image-plane popup grew a second entry. It pre-fills from
+`QuickEstimationService.sensor_active_dimensions()` (the terminal row's explicit
+`active_width_mm`/`active_height_mm` when set, else a 4:3 rectangle inscribed in the
+current image-circle Ø). `fov_solve(plane, mode, width, height=None)` and the new
+`_sensor_wh`/`apply_sensor_rect` set the circular aperture to the rectangle's true
+diagonal (`Ø = sqrt(W² + H²)`) and store the rectangular detector dims so the
+overlay reads the real sensor. `height=None` is backward-compatible: a lone width
+derives its height from the 4:3 aspect, giving the same diagonal as before (so the
+object-plane single-field path and the prior image tests are unchanged). The Object
+plane keeps its single horizontal-field-width entry.
+
+Tests: `validate_open3d_fov_plane_solve` gains a W×H image-sensor case, a
+`sensor_active_dimensions` prefill check, a pick-disk registration check, and a
+popup Height-field wiring assertion. Phase 60 gains the same W×H case plus a **live**
+assertion that the Object (row 0) and Image (terminal row) planes are both pickable
+after the overlay draws. No new phase number, so the validator baseline is
+unchanged.
