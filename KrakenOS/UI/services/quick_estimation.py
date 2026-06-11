@@ -375,6 +375,161 @@ class QuickEstimationService:
             f"image {image_distance:.6g} mm (|m|={mag:.4g})."
         )
 
+    # ----------------------------------------------- click-on-plane FOV solve
+    # The FOV/sensor here is modelled as a circle (semi-height = radius,
+    # ``diameter`` = the image circle), so a *horizontal* field width only
+    # differs from the diameter once an aspect is assumed. Use the working
+    # machine-vision aspect (SENSOR_ASPECT, 4:3 -> horizontal/diagonal = 0.8).
+    def _aspect_horizontal_fraction(self) -> float:
+        aw, ah = SENSOR_ASPECT
+        norm = (aw * aw + ah * ah) ** 0.5 or 1.0
+        return float(aw) / norm
+
+    def horizontal_to_diagonal(self, horizontal: float) -> float:
+        frac = self._aspect_horizontal_fraction()
+        return float(horizontal) / frac if frac > 1e-9 else float(horizontal)
+
+    def diagonal_to_horizontal(self, diagonal: float) -> float:
+        return float(diagonal) * self._aspect_horizontal_fraction()
+
+    def object_fov_horizontal(self) -> float | None:
+        """Current object-side field width (horizontal, mm), or None."""
+        fov_full = self.current_state().get("fov_full")  # object-side image-circle Ø
+        if fov_full and fov_full > 0:
+            return self.diagonal_to_horizontal(float(fov_full))
+        return None
+
+    def sensor_horizontal(self) -> float | None:
+        """Current sensor/image width (horizontal, mm), or None."""
+        semi = self._sensor_semi()
+        if semi and semi > 0:
+            return self.diagonal_to_horizontal(2.0 * float(semi))
+        return None
+
+    def _finite_mag(self) -> float | None:
+        try:
+            mag = self.editor._current_finite_paraxial_magnification()
+        except Exception:
+            return None
+        if mag is None or not np.isfinite(mag) or abs(mag) < 1e-9:
+            return None
+        return float(mag)
+
+    def _conjugate_pair(self, object_semi: Any, image_semi: Any):
+        """``(object_distance, image_distance, |m|)`` imaging ``object_semi`` to
+        ``image_semi`` in focus, or None when there is no real-image conjugate."""
+        try:
+            object_semi = float(object_semi)
+            image_semi = float(image_semi)
+        except (TypeError, ValueError):
+            return None
+        if object_semi <= 0 or image_semi <= 0:
+            return None
+        sol = self._paraxial_solution()
+        if sol is None:
+            return None
+        try:
+            f = float(sol[4]); ppa = float(sol[5]); ppp = float(sol[6])
+        except (TypeError, ValueError, IndexError):
+            return None
+        if not np.isfinite(f) or abs(f) < 1e-9:
+            return None
+        mag = image_semi / object_semi
+        if mag <= 1e-9:
+            return None
+        object_distance = f * (1.0 + 1.0 / mag) - ppa
+        image_distance = f * (1.0 + mag) + ppp
+        if not (np.isfinite(object_distance) and np.isfinite(image_distance)
+                and object_distance > 1e-6 and image_distance > 1e-6):
+            return None
+        return object_distance, image_distance, mag
+
+    def _apply_conjugate_pair(self, object_semi: Any, image_semi: Any) -> tuple[bool, str]:
+        pair = self._conjugate_pair(object_semi, image_semi)
+        if pair is None:
+            return False, "No real-image conjugate for that size (near the focal point?)."
+        object_distance, image_distance, mag = pair
+        obj_row = self.object_thickness_row()
+        img_row = self.image_thickness_row()
+        if obj_row is None or img_row is None:
+            return False, "Layout has no object/image gap."
+        self.editor.rows[obj_row].thickness = float(object_distance)
+        self.editor.rows[img_row].thickness = float(image_distance)
+        return True, (
+            f"Solved thickness: object {object_distance:.6g} mm, "
+            f"image {image_distance:.6g} mm (|m|={mag:.4g})."
+        )
+
+    def apply_sensor_diagonal(self, diagonal: Any, horizontal: float | None = None) -> tuple[bool, str]:
+        """Resize the terminal sensor to ``diagonal`` (image-circle Ø). No retrace."""
+        rows = getattr(self.editor, "rows", None) or []
+        if not rows:
+            return False, "No layout to size a sensor on."
+        try:
+            diagonal = float(diagonal)
+        except (TypeError, ValueError):
+            return False, "Sensor size must be a number."
+        if not np.isfinite(diagonal) or diagonal <= 0:
+            return False, "Sensor size must be positive."
+        rows[-1].diameter = float(diagonal)
+        if horizontal is None:
+            horizontal = self.diagonal_to_horizontal(diagonal)
+        return True, (
+            f"Sensor set to {float(horizontal):.6g} mm wide "
+            f"(image circle Ø{diagonal:.6g} mm)."
+        )
+
+    def fov_solve(self, plane: str, mode: str, horizontal: Any) -> tuple[bool, str]:
+        """Drive the click-on-plane FOV popup.
+
+        ``plane`` is "object" or "image"; ``mode`` is "thickness" (move the
+        object/image conjugate pair) or "sensor" (resize the sensor). ``horizontal``
+        is the typed field width -- object-side for the object plane, image-side
+        (sensor) for the image plane. The optical model is left in focus and the
+        caller owns the retrace.
+        """
+        try:
+            horizontal = float(horizontal)
+        except (TypeError, ValueError):
+            return False, "FOV width must be a number."
+        if not np.isfinite(horizontal) or horizontal <= 0:
+            return False, "FOV width must be positive."
+        diag = self.horizontal_to_diagonal(horizontal)
+        semi = diag / 2.0
+        if plane == "object":
+            if mode == "thickness":
+                sensor = self._sensor_semi()
+                if not sensor:
+                    return False, "No sensor available to fill."
+                ok, msg = self._apply_conjugate_pair(semi, float(sensor))
+                if ok:
+                    self.set_target_fov(semi)
+                    msg = f"Object width {horizontal:.6g} mm fills the sensor. " + msg
+                return ok, msg
+            if mode == "sensor":
+                mag = self._finite_mag()
+                if mag is None:
+                    return False, "No magnification to size the sensor."
+                self.set_target_fov(semi)
+                ok, msg = self.apply_sensor_diagonal(abs(mag) * diag, abs(mag) * horizontal)
+                if ok:
+                    msg = f"Object width {horizontal:.6g} mm at |m|={abs(mag):.4g}: " + msg
+                return ok, msg
+        elif plane == "image":
+            if mode == "sensor":
+                return self.apply_sensor_diagonal(diag, horizontal)
+            if mode == "thickness":
+                target = self._target_object_semi
+                if not target:
+                    target = self.current_state().get("fov_semi")
+                if not target or target <= 0:
+                    return False, "No object field set to image onto this sensor width."
+                ok, msg = self._apply_conjugate_pair(float(target), semi)
+                if ok:
+                    msg = f"Image width {horizontal:.6g} mm for the current object field. " + msg
+                return ok, msg
+        return False, "Unknown FOV solve request."
+
     def recommended_sensor(self, aspect: tuple[float, float] = SENSOR_ASPECT) -> dict[str, Any] | None:
         """The rectangular sensor whose diagonal matches the image footprint of
         the object being imaged (the target Object Height, else the current FOV).

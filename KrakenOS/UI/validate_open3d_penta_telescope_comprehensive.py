@@ -5075,6 +5075,164 @@ def phase_59_object_led_dimension_value_moves_led(
     return result
 
 
+def phase_60_fov_plane_solve(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Click-on-plane FOV solve: double-left-click the Object/Image plane, type a
+    horizontal field width, then solve the conjugate thickness or the sensor size
+    (bugs/0055).
+
+    The user wanted to set FOV graphically: click a plane, enter the horizontal
+    field width (not the image-circle diameter), and choose 'Solve for Thickness'
+    (move the object/image conjugate pair so the field fills the sensor) or
+    'Solve for Image/Sensor Size' (resize the sensor at the current magnification).
+    The optical engine is stubbed (f=50, |m|=0.5) so the conjugate numbers are
+    deterministic; this drives the REAL QuickEstimationService.fov_solve and the
+    real apply/retrace path, and asserts the gesture wiring against the source.
+    SKIPs without a renderer.
+    """
+    result = PhaseResult(name="Phase 60: click-on-plane FOV solve")
+    import inspect
+    from KrakenOS.UI.layout_editor import SurfaceRow
+    from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
+
+    if getattr(inspector, "_renderer", None) is None:
+        result.passed = True
+        result.notes.append("SKIP: no renderer (PyVista/VTK unavailable)")
+        return result
+
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+
+    def _reset_rows():
+        app.rows = [
+            SurfaceRow(label="0", surface="Object", element="", name="Object",
+                       thickness=275.0, diameter=25.0, glass="AIR"),
+            SurfaceRow(label="1", surface="Standard", element="L1", name="L1 front",
+                       thickness=8.0, diameter=25.0, glass="N-BK7"),
+            SurfaceRow(label="2", surface="Standard", element="", name="L1 back",
+                       thickness=24.405, diameter=25.0, glass="AIR"),
+            SurfaceRow(label="3", surface="Image", element="", name="Image",
+                       thickness=0.0, diameter=25.0, glass="AIR"),
+        ]
+        app._sync_table()
+        # Deterministic optical engine: thin lens f=50 (ppa=ppp=0), |m|=0.5.
+        app._exact_paraxial_solution_for_rows = lambda rows, wavelength=None: (0.0, 0.0, 0.0, 0.0, 50.0, 0.0, 0.0)
+        app._current_finite_paraxial_magnification = lambda: -0.5
+        app._current_object_mode = lambda: "finite"
+        app._current_image_distance = lambda: 70.0
+        app.rows[-1].diameter = 24.0  # sensor Ø24 -> semi 12, AFTER the sync couples it
+
+    qe = inspector._quick_estimation_service()
+
+    # 1) Object plane 'Solve for Thickness': 40 mm object width fills the Ø24 sensor.
+    _reset_rows()
+    qe.set_target_fov(None)
+    sensor_before = float(app.rows[-1].diameter)
+    ok_ot, _m = qe.fov_solve("object", "thickness", 40.0)
+    mag1 = 12.0 / 25.0  # sensor_semi / (40/0.8/2)
+    exp_obj = 50.0 * (1.0 + 1.0 / mag1)
+    exp_img = 50.0 * (1.0 + mag1)
+    obj_thickness_ok = (
+        ok_ot
+        and abs(float(app.rows[0].thickness) - exp_obj) <= 1e-4
+        and abs(float(app.rows[2].thickness) - exp_img) <= 1e-4
+        and abs(float(app.rows[-1].diameter) - sensor_before) <= 1e-9
+    )
+
+    # 2) Object plane 'Solve for Image/Sensor Size': resize sensor at |m|=0.5.
+    _reset_rows()
+    gaps_before = [float(r.thickness) for r in app.rows]
+    ok_os, _m = qe.fov_solve("object", "sensor", 40.0)
+    obj_sensor_ok = (
+        ok_os
+        and abs(float(app.rows[-1].diameter) - 25.0) <= 1e-4  # |m| * diag = 0.5 * 50
+        and [float(r.thickness) for r in app.rows] == gaps_before
+    )
+
+    # 3) Image plane 'Solve for Image/Sensor Size': resize sensor directly to 16 mm wide.
+    _reset_rows()
+    gaps_before = [float(r.thickness) for r in app.rows]
+    ok_is, _m = qe.fov_solve("image", "sensor", 16.0)
+    img_sensor_ok = (
+        ok_is
+        and abs(float(app.rows[-1].diameter) - 20.0) <= 1e-4  # 16 / 0.8
+        and [float(r.thickness) for r in app.rows] == gaps_before
+    )
+
+    # 4) Image plane 'Solve for Thickness': image the current object field to 16 mm.
+    _reset_rows()
+    qe.set_target_fov(25.0)
+    sensor_before = float(app.rows[-1].diameter)
+    ok_it, _m = qe.fov_solve("image", "thickness", 16.0)
+    mag2 = 10.0 / 25.0  # (16/0.8/2) / 25
+    img_thickness_ok = (
+        ok_it
+        and abs(float(app.rows[0].thickness) - 50.0 * (1.0 + 1.0 / mag2)) <= 1e-4
+        and abs(float(app.rows[2].thickness) - 50.0 * (1.0 + mag2)) <= 1e-4
+        and abs(float(app.rows[-1].diameter) - sensor_before) <= 1e-9
+    )
+
+    # 5) The real apply/retrace path must execute without raising.
+    _reset_rows()
+    qe.set_target_fov(None)
+    apply_error = ""
+    try:
+        inspector._apply_quick_estimation_fov_solve("object", "thickness", 40.0)
+    except Exception as exc:  # pragma: no cover - defensive
+        apply_error = str(exc)
+
+    # 6) Gesture + popup wiring (no X server can fire a real double-click).
+    binds = inspect.getsource(Open3DMouseBindingsService._install_pick_only_left_click_bindings)
+    gesture_ok = "<Double-Button-1>" in binds and "_maybe_open_fov_popup_from_double_click" in binds
+    popup = inspect.getsource(type(inspector)._open_quick_estimation_fov_popup)
+    buttons_ok = "Solve for Thickness" in popup and "Solve for Image/Sensor Size" in popup
+
+    result.detail.update(
+        {
+            "object_thickness_ok": obj_thickness_ok,
+            "object_sensor_ok": obj_sensor_ok,
+            "image_sensor_ok": img_sensor_ok,
+            "image_thickness_ok": img_thickness_ok,
+            "apply_path_ran": apply_error == "",
+            "gesture_wired": gesture_ok,
+            "buttons_present": buttons_ok,
+        }
+    )
+    if not obj_thickness_ok:
+        result.notes.append("object plane 'Solve for Thickness' did not fill the sensor with the typed width")
+    if not obj_sensor_ok:
+        result.notes.append("object plane 'Solve for Image/Sensor Size' did not resize the sensor at |m|")
+    if not img_sensor_ok:
+        result.notes.append("image plane 'Solve for Image/Sensor Size' did not resize the sensor to the typed width")
+    if not img_thickness_ok:
+        result.notes.append("image plane 'Solve for Thickness' did not image the object field to the typed width")
+    if apply_error:
+        result.notes.append(f"the apply/retrace path raised: {apply_error}")
+    if not gesture_ok:
+        result.notes.append("double-left-click is not bound to the FOV popup")
+    if not buttons_ok:
+        result.notes.append("the FOV popup is missing one of the two solve buttons")
+
+    try:
+        for name in (
+            "_exact_paraxial_solution_for_rows",
+            "_current_finite_paraxial_magnification",
+            "_current_object_mode",
+            "_current_image_distance",
+        ):
+            app.__dict__.pop(name, None)  # drop the stubs so later phases see the real engine
+        qe.set_target_fov(None)
+        inspector.refresh_from_editor()
+        inspector.update_idletasks()
+    except Exception:
+        pass
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -5180,6 +5338,7 @@ def main() -> int:
             phase_57_led_overlay_not_amber,
             phase_58_dimension_reanchor_measures_to_surface,
             phase_59_object_led_dimension_value_moves_led,
+            phase_60_fov_plane_solve,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

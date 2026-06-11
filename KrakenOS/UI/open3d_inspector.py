@@ -11856,6 +11856,121 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor._commit_history_capture()
         self.status_var.set(msg)
 
+    def _maybe_open_fov_popup_from_double_click(self, event) -> bool:
+        """Double-left-click on the Object/Image plane disk opens the FOV box
+        (bugs/0055). Single click still just selects the row."""
+        if getattr(self, "_dimension_anchor_pick_mode", False):
+            return False
+        srow = self._surface_row_under_cursor(event)
+        if srow is None or not (0 <= srow < len(self.editor.rows)):
+            return False
+        surface = str(getattr(self.editor.rows[srow], "surface", "") or "")
+        if surface == "Object":
+            self.after(1, lambda: self._open_quick_estimation_fov_popup("object"))
+            return True
+        if surface == "Image":
+            self.after(1, lambda: self._open_quick_estimation_fov_popup("image"))
+            return True
+        return False
+
+    def _open_quick_estimation_fov_popup(self, plane: str) -> None:
+        """A small modal box: type the plane's horizontal field width, then click
+        either 'Solve for Thickness' (move the conjugate pair so the field fills /
+        maps to the sensor) or 'Solve for Image/Sensor Size' (resize the sensor at
+        the current magnification). bugs/0055."""
+        qe = self._quick_estimation_service()
+        if not qe.is_enabled():
+            self.quick_estimation_var.set(True)
+        if plane == "object":
+            title = "Object Plane — Field Width (FOV)"
+            prompt = "Object field width to image (horizontal, mm):"
+            initial = qe.object_fov_horizontal()
+        else:
+            title = "Image Plane — Sensor Width"
+            prompt = "Image / sensor width (horizontal, mm):"
+            initial = qe.sensor_horizontal()
+        initial_str = f"{initial:.6g}" if initial else ""
+        dialog = tk.Toplevel(self)
+        try:
+            dialog.withdraw()
+            dialog.title(title)
+            dialog.transient(self.winfo_toplevel())
+            dialog.resizable(False, False)
+        except Exception:
+            pass
+        var = tk.StringVar(value=initial_str)
+        ttk.Label(dialog, text=prompt, wraplength=320, justify="left").grid(
+            row=0, column=0, columnspan=2, padx=12, pady=(12, 6), sticky="w"
+        )
+        entry = ttk.Entry(dialog, textvariable=var, width=18)
+        entry.grid(row=1, column=0, columnspan=2, padx=12, pady=(0, 10), sticky="ew")
+
+        def run(mode):
+            try:
+                value = float(var.get())
+            except (TypeError, ValueError):
+                self.status_var.set("FOV width must be a number.")
+                return
+            if not (value > 0):
+                self.status_var.set("FOV width must be positive.")
+                return
+            try:
+                dialog.grab_release()
+            except Exception:
+                pass
+            dialog.destroy()
+            self._apply_quick_estimation_fov_solve(plane, mode, value)
+
+        ttk.Button(dialog, text="Solve for Thickness", command=lambda: run("thickness")).grid(
+            row=2, column=0, padx=(12, 4), pady=(0, 6), sticky="ew"
+        )
+        ttk.Button(dialog, text="Solve for Image/Sensor Size", command=lambda: run("sensor")).grid(
+            row=2, column=1, padx=(4, 12), pady=(0, 6), sticky="ew"
+        )
+        ttk.Button(dialog, text="Cancel", command=dialog.destroy).grid(
+            row=3, column=0, columnspan=2, padx=12, pady=(0, 12)
+        )
+        dialog.bind("<Escape>", lambda _e: dialog.destroy())
+        try:
+            dialog.grab_set()
+        except Exception:
+            pass
+        try:
+            self.editor._show_centered_dialog(dialog)
+        except Exception:
+            pass
+        try:
+            entry.focus_set()
+            entry.selection_range(0, "end")
+        except Exception:
+            pass
+        self.wait_window(dialog)
+
+    def _apply_quick_estimation_fov_solve(self, plane: str, mode: str, value: float) -> None:
+        qe = self._quick_estimation_service()
+        self.editor._begin_history_capture()
+        ok, msg = qe.fov_solve(plane, mode, value)
+        if ok:
+            try:
+                self.editor._sync_table()
+            except Exception:
+                pass
+            try:
+                self.editor._sync_object_controls()
+            except Exception:
+                pass
+            self.editor._commit_history_capture()
+            try:
+                self.editor._invalidate_preview_scene_trace()
+                self.editor._sync_trace_state_badge()
+            except Exception:
+                pass
+            self.refresh_from_editor(force_retrace=True)
+            qe.update_readout()
+        else:
+            self.editor._commit_history_capture()
+        self.status_var.set(msg)
+
     def _show_quick_estimation_config_table(self) -> None:
         """Centred table of conjugate configurations (object distance swept;
         image distance solved for focus) so the user can read the combinations."""

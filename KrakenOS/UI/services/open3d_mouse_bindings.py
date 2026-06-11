@@ -311,6 +311,18 @@ class Open3DMouseBindingsService:
             self._middle_drag_last_xy = None
             return "break"
 
+        def double_left_press(event):
+            # bugs/0055: double-left-click on the Object/Image plane opens the
+            # FOV box (type a horizontal field width; solve thickness or sensor).
+            # The first click of the pair still selects the row normally.
+            record_mouse("mouse_press", event, 1)
+            set_event_info(event)
+            try:
+                self._maybe_open_fov_popup_from_double_click(event)
+            except Exception:
+                pass
+            return "break"
+
         def hover_motion(event):
             # Passive hover (no button held): highlight a thickness-dimension
             # handle under the cursor so it reads as draggable/clickable.
@@ -336,6 +348,7 @@ class Open3DMouseBindingsService:
             self._vtk_widget.bind("<ButtonPress-1>", left_press)
             self._vtk_widget.bind("<B1-Motion>", left_motion)
             self._vtk_widget.bind("<ButtonRelease-1>", left_release)
+            self._vtk_widget.bind("<Double-Button-1>", double_left_press)
             self._vtk_widget.bind("<Control-ButtonPress-1>", left_press)
             self._vtk_widget.bind("<Control-B1-Motion>", left_motion)
             self._vtk_widget.bind("<Control-ButtonRelease-1>", left_release)
