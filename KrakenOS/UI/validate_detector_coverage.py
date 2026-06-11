@@ -310,6 +310,43 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
         notes.append("FAIL: editor lost the _apply_camera_coverage_autofill helper (load auto-fill would break)")
         passed = False
 
+    # 7. bugs/0055 follow-up: the Object/Image FOV planes must be PICKABLE so they
+    #    hover-highlight and accept the double-click FOV popup. The coverage overlay
+    #    draws only line actors + (with Det on) the clear-aperture disk is
+    #    suppressed to opacity 0, so the Object plane had no geometry to click. A
+    #    faint filled square is now added at each plane via _pick_fill_actor with a
+    #    pick_row_index. Unit-test the actor (real pyvista) + assert the wiring.
+    try:
+        import inspect as _inspect
+
+        import pyvista as _pv
+
+        captured: list[dict] = []
+
+        class _CapInspector:
+            def __init__(self, editor):
+                self.editor = editor
+
+            def _add_mesh_actor(self, mesh, **kw):
+                captured.append(kw)
+
+        svc = DetectorCoverageOverlayService(_CapInspector(editor), pv_module=_pv)
+        u = np.array([1.0, 0.0, 0.0])
+        v = np.array([0.0, 1.0, 0.0])
+        ok_fill = svc._pick_fill_actor((0.0, 0.0, 0.0), u, v, 10.0, 8.0, _GREEN, 0)
+        if not ok_fill or not captured or captured[-1].get("pick_row_index") != 0:
+            notes.append(f"FAIL: _pick_fill_actor must add a pickable actor for its row, got {captured[-1:] }")
+            passed = False
+        src = _inspect.getsource(DetectorCoverageOverlayService.add_overlays)
+        if src.count("_pick_fill_actor") < 2:
+            notes.append("FAIL: add_overlays must place a pickable fill on BOTH the Object and Image planes")
+            passed = False
+        if "len(rows) - 1" not in src:
+            notes.append("FAIL: the image-plane pickable fill must map to the terminal (Image) row")
+            passed = False
+    except ImportError:
+        notes.append("SKIP: pyvista unavailable for the pickable-fill check")
+
     if verbose:
         notes.append(
             f"coverage helper={coverage}; default RIH {DEFAULT_RIH} short of half-diag {half_diag:.4g}; "

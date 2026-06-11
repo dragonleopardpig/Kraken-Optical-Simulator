@@ -334,6 +334,39 @@ class DetectorCoverageOverlayService:
             self.editor.append_debug(f"Detector coverage overlay skipped: {exc}")
             return False
 
+    def _pick_fill_actor(self, center, u, v, half_w, half_h, color, row_index) -> bool:
+        """A faint, filled, *pickable* square at a plane so the Object/Image row
+        can be hover-highlighted and double-clicked for the FOV popup (bugs/0055
+        follow-up). The coverage overlay's FOV box / image circle are line actors
+        with no fill, and with the detector overlay on the Object/Image clear-
+        aperture disk is suppressed to opacity 0 -- so when only "Det" is on the
+        Object plane had no pickable geometry to click. A filled quad matches the
+        square FOV plane the user sees and gives the whole plane a pick target."""
+        pv = self._pv
+        if pv is None:
+            return False
+        try:
+            c = np.asarray(center, dtype=float).reshape(3)
+            hw = float(half_w)
+            hh = float(half_h)
+            if not (np.isfinite(hw) and np.isfinite(hh)) or hw <= 1e-9 or hh <= 1e-9:
+                return False
+            corners = _rect_points(c, np.asarray(u, dtype=float), np.asarray(v, dtype=float), hw, hh)[:4]
+            faces = np.asarray([4, 0, 1, 2, 3], dtype=np.int64)
+            mesh = pv.PolyData(corners, faces)
+            self.inspector._add_mesh_actor(
+                mesh,
+                color=tuple(color),
+                opacity=0.08,
+                flat_shading=True,
+                backface_culling=False,
+                pick_row_index=int(row_index),
+            )
+            return True
+        except Exception as exc:  # pragma: no cover - defensive
+            self.editor.append_debug(f"Detector coverage pick fill skipped: {exc}")
+            return False
+
     def _label_actor(self, anchor, text, color) -> bool:
         try:
             import vtk
@@ -387,6 +420,24 @@ class DetectorCoverageOverlayService:
         count = 0
         for spec in specs:
             if self._line_actor(spec["points"], spec["color"], spec["line_width"], bool(spec["dashed"])):
+                count += 1
+
+        # bugs/0055 follow-up: give the Object and Image FOV planes a faint, filled,
+        # *pickable* square so they hover-highlight and accept the double-click FOV
+        # popup. Without it the coverage overlay drew only line actors and (with the
+        # detector on) the clear-aperture disk is suppressed to opacity 0, so the
+        # Object plane had no geometry to click. Mapped to the same rows the
+        # reference points use (row 0 = Object, terminal row = Image).
+        op = np.asarray(obj_pt, dtype=float).reshape(3)
+        ip = np.asarray(img_pt, dtype=float).reshape(3)
+        u, v = _basis(ip - op)
+        last_row = len(rows) - 1
+        if finite and metrics.object_fov_half_width > 1e-9 and metrics.object_fov_half_height > 1e-9:
+            if self._pick_fill_actor(op, u, v, metrics.object_fov_half_width, metrics.object_fov_half_height, _OBJECT_FOV, 0):
+                count += 1
+        img_half = max(metrics.image_circle_radius, metrics.sensor_half_diagonal)
+        if img_half > 1e-9:
+            if self._pick_fill_actor(ip, u, v, img_half, img_half, _IMAGE_CIRCLE_COVERS, last_row):
                 count += 1
 
         # Direct 3D labels so each element is self-explanatory (bug 0033).

@@ -5289,6 +5289,102 @@ def phase_60_fov_plane_solve(
     return result
 
 
+def phase_61_detector_fov_plane_pickable(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The detector-coverage FOV plane must be hover/double-click pickable
+    (bugs/0056, recording flag_20260611_111656_853: "still no hover highlight the
+    FOV plane and can't double click select", "it should be square in this case").
+
+    The visible green ``FOV W×H`` *square* is the detector-coverage overlay's
+    object-FOV rectangle -- a line actor with no fill, so it never registered for
+    picking. With the detector overlay on, the Object/Image clear-aperture
+    reference disk is suppressed (bugs/0047), and it is only built at all when
+    "Refs" is on (gated on ``show_reference_surfaces``). So in the reported state
+    -- Det ON, Refs OFF, QE OFF -- the Object plane (row 0) had NO pickable
+    geometry. The Image plane stayed pickable via the always-built detector
+    footprint. The fix adds a faint, filled, *pickable* square at BOTH planes via
+    ``DetectorCoverageOverlayService._pick_fill_actor`` (kept square per the user),
+    mapped to row 0 (Object) and the terminal row (Image).
+
+    Live on the measured machine-vision layout (paint suppressed -- the freshly
+    swapped scene segfaults llvmpipe on paint, like Phase 39; all the geometry is
+    built before the final paint): with Det ON / Refs OFF / QE OFF, both row 0 and
+    the terminal Image row must register in ``_actor_row_map``. Plus a source guard
+    that ``add_overlays`` wires a fill on both planes. SKIPs without a renderer.
+    """
+    import inspect
+
+    result = PhaseResult(name="Phase 61: detector FOV plane pickable (Object + Image)")
+    if getattr(inspector, "_renderer", None) is None:
+        result.passed = True
+        result.notes.append("SKIP: no renderer (PyVista/VTK unavailable)")
+        return result
+    try:
+        names = list(getattr(app, "machine_vision_names", []) or [])
+        target = next((n for n in names if "Measured" in n and "150" in n), None) or (names[0] if names else None)
+        if not target:
+            result.passed = True
+            result.notes.append("SKIP: no machine-vision layout available")
+            return result
+
+        app.load_layout_by_name(target)
+        app.update_idletasks()
+
+        last_row = len(app.rows) - 1
+        # The reported scene: Det ON, Refs OFF, QE OFF -- so the Object plane's only
+        # possible pickable geometry is the coverage overlay's filled square.
+        if hasattr(inspector, "show_reference_surfaces_var"):
+            inspector.show_reference_surfaces_var.set(False)
+        if hasattr(inspector, "quick_estimation_var"):
+            inspector.quick_estimation_var.set(False)
+        inspector.show_detector_overlays_var.set(True)
+
+        _orig_render = inspector.render
+        inspector.render = lambda *a, **k: None
+        try:
+            inspector.refresh_from_editor(force_retrace=True)
+            inspector.update_idletasks()
+            arm = dict(getattr(inspector, "_actor_row_map", {}) or {})
+        finally:
+            inspector.render = _orig_render
+
+        pickable_rows = set(int(v) for v in arm.values())
+        object_pickable = 0 in pickable_rows
+        image_pickable = last_row in pickable_rows
+
+        from KrakenOS.UI.services.detector_coverage_overlay import DetectorCoverageOverlayService
+
+        src = inspect.getsource(DetectorCoverageOverlayService.add_overlays)
+        wiring_ok = src.count("_pick_fill_actor") >= 2 and "len(rows) - 1" in src
+
+        result.detail.update(
+            {
+                "refs_off_det_on": True,
+                "object_pickable": object_pickable,
+                "image_pickable": image_pickable,
+                "pickable_rows": sorted(pickable_rows),
+                "both_planes_wired": wiring_ok,
+            }
+        )
+        if not object_pickable:
+            result.passed = False
+            result.notes.append(
+                "FAIL: the Object plane (row 0) is not pickable with Det ON / Refs OFF -- "
+                "the green FOV square cannot be hover-highlighted or double-clicked"
+            )
+        if not image_pickable:
+            result.passed = False
+            result.notes.append(f"FAIL: the Image plane (row {last_row}) is not pickable with Det ON")
+        if not wiring_ok:
+            result.passed = False
+            result.notes.append("FAIL: add_overlays must place a pickable fill on BOTH the Object and Image planes")
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"phase 61 raised: {exc!r}")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -5395,6 +5491,7 @@ def main() -> int:
             phase_58_dimension_reanchor_measures_to_surface,
             phase_59_object_led_dimension_value_moves_led,
             phase_60_fov_plane_solve,
+            phase_61_detector_fov_plane_pickable,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

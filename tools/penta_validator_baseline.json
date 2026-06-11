@@ -62,7 +62,8 @@
     "57": "pass",
     "58": "pass",
     "59": "pass",
-    "60": "pass"
+    "60": "pass",
+    "61": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -125,6 +126,7 @@
     "57": "imported LED body is grey-blue glass, not amber",
     "58": "re-anchored dimension value moves the Next element (other gaps unchanged)",
     "59": "object->LED dimension value moves the LED body (no optical thickness change)",
-    "60": "click-on-plane FOV solve (object/image x thickness/sensor, horizontal width)"
+    "60": "click-on-plane FOV solve (object/image x thickness/sensor, horizontal width)",
+    "61": "detector FOV plane pickable (Object + Image squares hover/double-click)"
   }
 }
