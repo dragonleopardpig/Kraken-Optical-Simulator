@@ -6,7 +6,7 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from KrakenOS.UI.camera_database import camera_record
+from KrakenOS.UI.camera_database import camera_names, camera_record
 from KrakenOS.UI.layout_editor import (
     ATTACHMENT_CAMERA_DIR,
     ATTACHMENT_DIR,
@@ -146,6 +146,25 @@ def validate_attachment_paths() -> list[AttachmentPathCheck]:
             "camera database defaults",
             _under(camera_step, ATTACHMENT_DIR) and _under(camera_datasheet, ATTACHMENT_DIR),
             f"step={camera_step}; datasheet={camera_datasheet}",
+        )
+    )
+    # Every catalogued camera must resolve its STEP + datasheet to a real file
+    # inside attachment/ so the selection dropdown loads geometry/specs for all
+    # entries, not just the first one.
+    names = camera_names()
+    missing: list[str] = []
+    for name in names:
+        record = camera_record(name) or {}
+        for key in ("step_path", "datasheet"):
+            path = Path(record.get(key, ""))
+            if not (_under(path, ATTACHMENT_DIR) and path.exists()):
+                missing.append(f"{name}:{key}={path}")
+    checks.append(
+        AttachmentPathCheck(
+            "every camera resolves attachment files",
+            len(names) >= 1 and not missing,
+            f"{len(names)} cameras: {', '.join(names)}"
+            + (f" | MISSING: {'; '.join(missing)}" if missing else ""),
         )
     )
     return checks
