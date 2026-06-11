@@ -160,6 +160,21 @@ def resolve_trace_intent(
     )
 
 
+def _solid_is_off_beam(row: Any, beam_aperture_radius: float) -> bool:
+    """True when a promoted optical solid's lateral offset clears the system
+    aperture by its own radius, so it cannot intersect the on-axis beam.
+
+    Lateral = hypot(desp_x, desp_y); axial desp_z does not move a solid off the
+    beam. The solid's own half-size (``diameter/2``) is added to the aperture so
+    a solid merely grazing the beam edge is *not* exempted (stays non-sequential).
+    """
+    dx = _row_float(row, "desp_x")
+    dy = _row_float(row, "desp_y")
+    lateral = (dx * dx + dy * dy) ** 0.5
+    solid_radius = abs(_row_float(row, "diameter")) * 0.5
+    return (lateral - solid_radius) > max(beam_aperture_radius, 0.0) + 1e-6
+
+
 def _trace_flags(
     rows_or_specs: list[Any],
     settings: dict[str, Any],
@@ -174,18 +189,44 @@ def _trace_flags(
     object_target = False
     optical_stl = False
     nonseq_geometry = False
+    # Beam envelope of the conventional (non-solid) surfaces. A promoted optical
+    # solid parked laterally beyond this aperture (by its own radius) cannot
+    # intersect the on-axis beam, so it is an inert scene object: it must not
+    # flip a conventional finite-conjugate layout into non-sequential mode just
+    # by existing off to the side -- doing so re-launches the trace and the
+    # non-sequential launch focuses short of the detector (bugs/0064). On-beam
+    # solids and real beam-splitters/mirrors are unaffected.
+    beam_aperture_radius = 0.0
+    has_conventional_surface = False
+    for row in rows:
+        if scene_graph_value_present(_row_advanced(row).get("Solid_3d_stl")):
+            continue
+        has_conventional_surface = True
+        beam_aperture_radius = max(beam_aperture_radius, abs(_row_float(row, "diameter")) * 0.5)
     for row in rows:
         surface = _row_value(row, "surface", "")
         advanced = _row_advanced(row)
-        if surface == BEAM_SPLITTER_SURFACE or BEAM_SPLITTER_ADVANCED_ATTR in advanced:
+        is_solid = scene_graph_value_present(advanced.get("Solid_3d_stl"))
+        row_is_splitter = surface == BEAM_SPLITTER_SURFACE or BEAM_SPLITTER_ADVANCED_ATTR in advanced
+        inert_off_beam_solid = (
+            is_solid
+            and has_conventional_surface
+            and not row_is_splitter
+            and surface != "Mirror"
+            and _solid_is_off_beam(row, beam_aperture_radius)
+        )
+        if row_is_splitter:
             beam_splitter = True
         if surface == DIFFUSE_OBJECT_SURFACE or DIFFUSE_SCATTER_ADVANCED_ATTR in advanced:
             diffuse = True
         if surface == OBJECT_TARGET_SURFACE:
             object_target = True
-        if scene_graph_value_present(advanced.get("Solid_3d_stl")):
+        if is_solid and not inert_off_beam_solid:
             optical_stl = True
-        if surface == "Mirror" or any(abs(_row_float(row, key)) > 1e-9 for key in ("tilt_x", "tilt_y", "tilt_z", "desp_x", "desp_y", "desp_z")):
+        if not inert_off_beam_solid and (
+            surface == "Mirror"
+            or any(abs(_row_float(row, key)) > 1e-9 for key in ("tilt_x", "tilt_y", "tilt_z", "desp_x", "desp_y", "desp_z"))
+        ):
             nonseq_geometry = True
     target_index = nonseq_target_surface_index
     if target_index is None:
