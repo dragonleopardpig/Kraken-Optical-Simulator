@@ -99,34 +99,3 @@ This is the "direct edit the thickness" box from step 3.
   + baseline; BRANCH_README + Sphinx manual entries.
 * Verify undo/redo reverts a resize (the spec is set under a history capture; the
   capture's attribute coverage of `{label}_step_resize` needs a live check).
-
-## Follow-up (testing fallout)
-
-Stress-testing the resize surfaced interrelated beam-splitter-workflow issues:
-
-* **Coating face not selectable** (in progress) — the 45° cement face between the
-  two prisms is an interior duplicate face: `load_step_analytic_document` keeps it
-  in `document.faces` (centroid 25,25,25, normal (1,1,0)/√2) but with **zero
-  triangles**, and emits only `outer_faces`, so it never becomes a row in the face
-  editor table. Both metadata paths drop it (analytic = outer_faces only;
-  clustering = `extract_surface` drops buried faces). Fix designed: recover the
-  coating as a selectable face with synthesized triangles, gated on the coupling
-  detection.
-
-* **Off-beam promoted solid flipped the non-sequential trace** (FIXED, this
-  commit) — user parked the promoted cube ~149 mm off-axis and the on-axis
-  conjugate rays focused short of the detector with extra diverging rays. Root
-  cause: in `trace_intent._trace_flags` the promoted solid fired two mode-flips
-  just by existing off to the side — `Solid_3d_stl` (STL optical solid) and its
-  `desp` decenter (off-axis geometry) — flipping the conventional finite-conjugate
-  layout to non-sequential, whose launch no longer reproduced the conjugate. An
-  off-beam solid never touches a ray, so its presence must not change the trace
-  (North Star #1/#4). Fix: `_solid_is_off_beam` + an exemption in `_trace_flags`
-  so an inert promoted solid whose lateral offset clears the system aperture by
-  its own radius no longer contributes the STL/off-axis triggers. On-beam solids,
-  real beam-splitters (`Beam Splitter` surface / `BeamSplitter` advanced), mirrors,
-  tilted elements and physical sources are unaffected. Guard:
-  `validate_open3d_offbeam_solid_trace_mode` (display-free, the mode DECISION;
-  the rendered ray geometry is verified in-app). NOTE: the live ray render can't
-  be verified headless (this machine-vision layout class SIGSEGVs the offscreen
-  renderer), so the render is user-verified.
