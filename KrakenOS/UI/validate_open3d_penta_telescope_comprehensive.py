@@ -5449,6 +5449,45 @@ def phase_62_variable_thickness_solve(
     return result
 
 
+def phase_63_open3d_clipped_rays_sync(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Open 3D synced "Show clipped rays" toggle.
+
+    The 3D inspector had no clipped-rays control even though its ray-line filter
+    already reads the editor's ``show_clipped_rays_var`` -- the same ``tk.BooleanVar``
+    the 2D editor binds. With no 3D toggle, escaped/stray rays (e.g. an LED fan that
+    misses the lens) always rendered, and the "Miss" overlay toggle only gated the
+    diagnostic markers, not the lines (bugs/0061). The fix adds a "Clipped" Overlays
+    checkbutton bound to the shared var, so 3D and 2D stay in sync both ways.
+
+    The guard (`validate_open3d_clipped_rays_sync`) is display-free: it checks the
+    Overlays-menu wiring, the inspector handler (marks the 2D plot pending + refreshes
+    the 3D scene), the 2D panel binding, and -- via a snapshot editor with synthetic
+    ray paths -- that the 3D filter hides only the escaped-non-folded stray when the
+    var is OFF while keeping detector hits / misses / stops / folded branches. No
+    renderer needed, so it runs everywhere.
+    """
+    result = PhaseResult(
+        name="Phase 63: Open 3D synced clipped-rays toggle"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_clipped_rays_sync import run_checks
+        passed, notes = run_checks(app=app, inspector=inspector)
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"clipped-rays sync guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("clipped-rays sync guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -5557,6 +5596,7 @@ def main() -> int:
             phase_60_fov_plane_solve,
             phase_61_detector_fov_plane_pickable,
             phase_62_variable_thickness_solve,
+            phase_63_open3d_clipped_rays_sync,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

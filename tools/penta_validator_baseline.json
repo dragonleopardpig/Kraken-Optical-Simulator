@@ -64,7 +64,8 @@
     "59": "pass",
     "60": "pass",
     "61": "pass",
-    "62": "pass"
+    "62": "pass",
+    "63": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -129,6 +130,7 @@
     "59": "object->LED dimension value moves the LED body (no optical thickness change)",
     "60": "click-on-plane FOV solve (object/image x thickness/sensor, horizontal width)",
     "61": "detector FOV plane pickable (Object + Image squares hover/double-click)",
-    "62": "Variable-thickness Best Focus / Best Collimation solve (machine-vision layouts)"
+    "62": "Variable-thickness Best Focus / Best Collimation solve (machine-vision layouts)",
+    "63": "Open 3D synced clipped-rays toggle (3D Overlays follows 2D Show clipped rays both ways)"
   }
 }

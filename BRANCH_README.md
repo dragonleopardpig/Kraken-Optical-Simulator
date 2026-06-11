@@ -1,6 +1,6 @@
 # KrakenOS Non-Sequential UI Branch
 
-Last updated: 2026-06-07
+Last updated: 2026-06-11
 
 This document summarizes the `nonseq-display-refactor` branch. The upstream
 `README.md` is intentionally left unchanged; this branch README is the public
@@ -304,6 +304,15 @@ simulation library and that this branch builds on:
 - Transparent optical STEP bodies with stronger feature edges, face tint
   overlays for assigned functions, optional rotation/placement handles, and
   editable Open 3D thickness dimension arrows linked back to the table.
+- Open 3D ray-display controls mirror the 2D editor through shared variables. The
+  *Overlays* menu's **Clipped** checkbutton shares the 2D ``Show clipped rays``
+  setting, so hiding vignetted/escaped strays (e.g. an illumination fan that
+  misses the lens) in either view updates the other; deliberately folded
+  beam-splitter branches and detector-miss rays stay visible regardless. The
+  separate **Miss** entry only toggles the terminal-diagnostic markers
+  (detector-miss crosshairs + endpoint disks), not the ray lines. See
+  ``docs/source/manual/tracing_and_ray_data.rst`` and the
+  ``validate_open3d_clipped_rays_sync`` validator (harness Phase 63).
 - Quick Estimation: a live object/image conjugate + FOV solver in Open 3D for
   finite-conjugate (machine-vision) imaging. The sensor is pinned via the
   left-panel ``Real Image Semi-Height`` field; dragging or typing a conjugate

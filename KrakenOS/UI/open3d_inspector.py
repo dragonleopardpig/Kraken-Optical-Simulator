@@ -1379,6 +1379,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         )
         self.refresh_from_editor()
 
+    def _on_clipped_rays_changed(self) -> None:
+        # "Show clipped rays" is the *shared* 2D var (KrakenLayoutEditor.
+        # show_clipped_rays_var), bound here via _editor_var so the 3D toggle and
+        # the 2D checkbox flip the same tk.BooleanVar -- bidirectional sync, the
+        # bug-0059 ray-count pattern. The 3D ray-line filter already reads this
+        # var (three_d_scene_tools._iter_3d_scene_ray_records); the 3D view simply
+        # had no control to flip it (bugs/0061). Mark the 2D plot pending so the
+        # main window redraws to match, then refresh the 3D scene to apply the
+        # filter immediately.
+        try:
+            self.editor._mark_plot_update_pending()
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D clipped-rays 2D sync failed: {exc}")
+        self._on_scene_visibility_changed()
+
     def _face_assignment_service(self) -> Open3DFaceAssignmentService:
         service = self.__dict__.get("_face_assignment_service_instance")
         if service is None:

@@ -100,6 +100,10 @@ class Open3DTopControlsPanel:
                 MenuCheckbutton("Refs", self.inspector.show_reference_surfaces_var, self.inspector._on_scene_visibility_changed),
                 MenuCheckbutton("Det", self.inspector.show_detector_overlays_var, self.inspector._on_scene_visibility_changed),
                 MenuCheckbutton("Miss", self.inspector.show_terminal_diagnostics_var, self.inspector._on_scene_visibility_changed),
+                # Clipped rays share the 2D show_clipped_rays_var (via _editor_var)
+                # so the 3D filter and the main-window "Show clipped rays" checkbox
+                # stay in sync both ways (bugs/0061).
+                MenuCheckbutton("Clipped", self.inspector._editor_var("show_clipped_rays_var"), self.inspector._on_clipped_rays_changed),
                 MenuCheckbutton("Thickness", self.editor.show_physical_distances_var, self.inspector._on_scene_visibility_changed),
             ),
         )

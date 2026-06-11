@@ -258,6 +258,19 @@ and Open 3D keeps missed-detector diagnostics on the detector plane while
 suppressing escaped/missed endpoint spheres, so a display-only clipped tail is
 not confused with a physical absorbing surface.
 
+The **Show clipped rays** control is shared between the two viewers. In the 2D
+editor it is the ``Show clipped rays`` checkbox; in the Open 3D viewer it is the
+**Clipped** entry in the *Overlays* menu. Both bind the same setting, so toggling
+it in either view updates the other: turning it off hides escaped strays that
+were *not* deliberately folded (for example an illumination fan that vignettes
+past the optics), while detector hits, detector misses, absorbed/stopped paths,
+and deliberately folded branches (a beam-splitter's reflected second path) stay
+visible regardless. If hiding clipped rays would blank *every* ray, the viewer
+keeps the trace drawn so the beam never silently disappears. The Open 3D
+*Overlays* menu's separate **Miss** entry is unrelated to ray-line visibility --
+it only toggles the terminal-endpoint diagnostic markers (detector-miss
+crosshairs and endpoint disks).
+
 Selected-ray display labels are event-owned as well. The 2D projector preserves
 ``mesh_face_id``, ``surface_name``, and interaction model fields when canonical
 ``RayEvent3D`` records are projected into ``ProjectedRayEvent2D`` markers. The
