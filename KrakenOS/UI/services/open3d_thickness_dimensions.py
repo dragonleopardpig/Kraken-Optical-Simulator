@@ -867,6 +867,25 @@ class Open3DThicknessDimensionService:
             current = float(getattr(row, "thickness", 0.0) or 0.0)
         except Exception:
             current = 0.0
+        # bugs/0054: a re-anchored row's editable quantity is the MEASURED distance
+        # shown on the magenta arrow (|ref_z - fixed_z|), not the model gap
+        # thickness -- prefill that so the value the user edits matches what they
+        # clicked (and what the move targets). Earlier this showed rows[i].thickness
+        # (e.g. the 275 mm object gap instead of the 212.6 mm object->LED measure).
+        try:
+            override = self.editor._dimension_anchor_override_for_row(row_index)
+        except Exception:
+            override = None
+        if isinstance(override, dict):
+            try:
+                ref_z = float(override.get("ref_z"))
+                fixed_z = override.get("fixed_z")
+                if fixed_z is not None:
+                    fixed_z = float(fixed_z)
+                    if np.isfinite(ref_z) and np.isfinite(fixed_z):
+                        current = abs(ref_z - fixed_z)
+            except Exception:
+                pass
         self._destroy_inline_editor()
         value_var = tk.StringVar(value=f"{current:.6g}")
         window = tk.Toplevel(self.inspector)

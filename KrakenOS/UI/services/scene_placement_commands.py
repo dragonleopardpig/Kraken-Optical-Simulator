@@ -1917,6 +1917,15 @@ class ScenePlacementMixin:
                 best = d
                 next_row = idx
         if next_row is None or next_row < 1:
+            # The moved endpoint sits on no optical surface. For the object->LED
+            # row (S0 with an imported LED), it sits on the LED body instead, so
+            # MOVE the LED body (its object-side placement) -- not an optical gap --
+            # until the measured face lands at the typed object distance. The
+            # optical model (rows[i].thickness) is untouched (bugs/0054).
+            if int(row_index) == 0 and getattr(self, "imported_led_step_path", None) is not None:
+                return self._move_led_for_reanchored_value(
+                    row_index, spec, overrides, fixed_z, cur_ref, target_span
+                )
             self.status_var.set(
                 f"S{int(row_index)} re-anchored end is not on a movable optical surface; "
                 "value edit can't move an element here."
@@ -1970,6 +1979,46 @@ class ScenePlacementMixin:
         self.status_var.set(
             f"S{int(row_index)} set to {target_span:.6g} mm: moved the downstream element "
             f"(gap S{gap_row}) {delta:+.4g} mm; other gaps unchanged."
+        )
+        return True
+
+    def _move_led_for_reanchored_value(
+        self, row_index: int, spec: dict, overrides: dict,
+        fixed_z: float, cur_ref: float, target_span: float,
+    ) -> bool:
+        """Edit the object->LED re-anchored value by MOVING the LED body so the
+        measured (re-anchored) face lands at ``target_span`` from the object plane
+        (bugs/0054). The LED is the imaged object, not an optical surface, so it is
+        repositioned via ``led_object_edge_distance_mm`` -- the same knob the LED
+        edge-distance dialog drives -- which rigidly translates the whole STEP. No
+        optical thickness changes. Returns False if the move would put the LED
+        behind the object plane.
+        """
+        sign = 1.0 if cur_ref >= fixed_z else -1.0
+        new_ref = fixed_z + sign * target_span
+        delta_z = new_ref - cur_ref
+        current_distance = max(float(getattr(self, "led_object_edge_distance_mm", 0.0)), 0.0)
+        new_distance = current_distance + delta_z
+        if not np.isfinite(new_distance) or new_distance < 0.0:
+            self.status_var.set(
+                f"S{int(row_index)} object->LED distance {target_span:.6g} mm would place "
+                "the LED behind the object plane; ignored."
+            )
+            return False
+        new_spec = dict(spec)
+        new_spec["ref_z"] = float(new_ref)
+        self._begin_history_capture()
+        self.led_object_edge_distance_mm = float(new_distance)
+        overrides[int(row_index)] = new_spec
+        self._dimension_anchor_overrides = overrides
+        self._commit_history_capture()
+        try:
+            self._refresh_open_3d_views(step_label="led")
+        except Exception:
+            pass
+        self.status_var.set(
+            f"S{int(row_index)} object->LED distance set to {target_span:.6g} mm: "
+            f"moved the LED body {delta_z:+.4g} mm; optical thicknesses unchanged."
         )
         return True
 

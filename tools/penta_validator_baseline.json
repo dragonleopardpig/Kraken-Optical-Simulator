@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-06-10T02:34:37+00:00",
+  "generated_at": "2026-06-11T09:00:00+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -60,7 +60,8 @@
     "55": "pass",
     "56": "pass",
     "57": "pass",
-    "58": "pass"
+    "58": "pass",
+    "59": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -121,6 +122,7 @@
     "55": "display-only STEP hover metadata tracks a move (no stranded ghost)",
     "56": "selected STEP is pink, not a muddy orange blob",
     "57": "imported LED body is grey-blue glass, not amber",
-    "58": "re-anchored dimension measures to a picked surface (model thickness unchanged)"
+    "58": "re-anchored dimension value moves the Next element (other gaps unchanged)",
+    "59": "object->LED dimension value moves the LED body (no optical thickness change)"
   }
 }

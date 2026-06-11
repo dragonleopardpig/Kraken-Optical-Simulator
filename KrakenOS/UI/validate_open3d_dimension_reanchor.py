@@ -234,7 +234,79 @@ def _test_apply_dimension_value_routes_override() -> None:
     print("apply_dimension_value routes re-anchored rows (#6 source contract) OK")
 
 
+def _test_object_led_value_edit_moves_led_body() -> None:
+    """bugs/0054: editing a re-anchored object->LED (S0) dimension value MOVES the
+    LED body (via led_object_edge_distance_mm) so the measured face lands at the
+    typed object distance -- the LED is the imaged object, not an optical surface,
+    so no rows[i].thickness changes. Refuses when it would put the LED behind the
+    object plane."""
+    from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
+
+    app = _build_editor()  # stations z = [0, 275, 283, 307.405]; object plane at z=0.
+    app.imported_led_step_path = PRISM_42779_STEP
+    app.led_step_object_edge_local_z = 0.0
+    app.led_object_edge_distance_mm = 200.0
+    # Re-anchor S0's far end onto the LED bottom face at z=212.593 (NOT on any
+    # optical surface), fixed end = object plane (z=0). Measured span = 212.593.
+    app.apply_dimension_anchor_override(0, "end", np.array([0.0, 0.0, 212.593]), fixed_z=0.0)
+    if app._dimension_anchor_override_for_row(0) is None:
+        raise AssertionError("S0 end re-anchor onto the LED must store a general override")
+    thicknesses_before = [float(r.thickness) for r in app.rows]
+    if not app.apply_reanchored_dimension_value(0, 200.0):
+        raise AssertionError("object->LED value edit should move the LED body")
+    # Picked face was at 212.593; target 200 -> LED translates -12.593 mm.
+    if abs(float(app.led_object_edge_distance_mm) - (200.0 - 12.593)) > 1e-3:
+        raise AssertionError(
+            f"LED edge distance must move by the span delta to {200.0 - 12.593:.4g}, "
+            f"got {app.led_object_edge_distance_mm}"
+        )
+    if [float(r.thickness) for r in app.rows] != thicknesses_before:
+        raise AssertionError("moving the LED must NOT change any optical thickness")
+    ov = app._dimension_anchor_override_for_row(0)
+    if not (isinstance(ov, dict) and abs(float(ov.get("ref_z")) - 200.0) < 1e-6):
+        raise AssertionError(f"the measured face must follow the LED to z=200, got {ov.get('ref_z')}")
+
+    # Refuse a move that would push the LED behind the object plane.
+    app2 = _build_editor()
+    app2.imported_led_step_path = PRISM_42779_STEP
+    app2.led_step_object_edge_local_z = 0.0
+    app2.led_object_edge_distance_mm = 5.0  # too close to absorb a -12.593 shift
+    app2.apply_dimension_anchor_override(0, "end", np.array([0.0, 0.0, 212.593]), fixed_z=0.0)
+    if app2.apply_reanchored_dimension_value(0, 200.0) is not False:
+        raise AssertionError("must refuse a move that puts the LED behind the object plane")
+    if abs(float(app2.led_object_edge_distance_mm) - 5.0) > 1e-9:
+        raise AssertionError("a refused LED move must not change led_object_edge_distance_mm")
+    print("object->LED value edit moves the LED body (bugs/0054) OK")
+
+
+def _test_edit_dimension_prefills_measured_value() -> None:
+    """bugs/0054 source contract: the inline editor must prefill the re-anchored
+    MEASURED distance (|ref_z - fixed_z|), not rows[i].thickness -- otherwise the
+    object->LED arrow showing 212.6 mm opened the editor at the 275 mm object gap."""
+    from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
+
+    src = inspect.getsource(Open3DThicknessDimensionService.edit_dimension)
+    if "_dimension_anchor_override_for_row" not in src:
+        raise AssertionError("edit_dimension must consult the re-anchor override for its prefill")
+    override_pos = src.index("_dimension_anchor_override_for_row")
+    value_var_pos = src.index("value_var = tk.StringVar")
+    if not (override_pos < value_var_pos):
+        raise AssertionError("the override prefill must run before value_var is built")
+    print("edit_dimension prefills the measured value (bugs/0054 source contract) OK")
+
+
 def main() -> int:
+    _test_reanchored_endpoints()
+    _test_general_override_is_measurement_only()
+    _test_object_led_routes_to_edge_reference()
+    _test_settings_roundtrip()
+    _test_modal_pick_source_contract()
+    _test_reanchor_value_edit_moves_downstream_element()
+    _test_apply_dimension_value_routes_override()
+    _test_object_led_value_edit_moves_led_body()
+    _test_edit_dimension_prefills_measured_value()
+    print("dimension re-anchor validation passed.")
+    return 0
     _test_reanchored_endpoints()
     _test_general_override_is_measurement_only()
     _test_object_led_routes_to_edge_reference()

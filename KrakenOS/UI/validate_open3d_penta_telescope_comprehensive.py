@@ -4966,6 +4966,115 @@ def phase_58_dimension_reanchor_measures_to_surface(
     return result
 
 
+def phase_59_object_led_dimension_value_moves_led(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Editing a re-anchored object->LED (S0) dimension value MOVES the LED body,
+    not an optical thickness (bugs/0054).
+
+    Recording flag_20260611_084621_151: the user re-anchored the object->LED
+    distance onto the LED bottom face, then edited the value to move the LED --
+    but it didn't move (and the editor pre-filled the 275 mm object gap instead of
+    the 212.6 mm measured distance). The object/LED row's re-anchored end sits on
+    the LED body (no optical surface), so the value edit must reposition the LED
+    via led_object_edge_distance_mm while leaving rows[i].thickness untouched.
+    End-to-end on the booted editor: store an S0 'end' override onto an off-surface
+    z with an LED imported, edit the value, and assert (a) the LED edge distance
+    moved by the span delta, (b) no optical thickness changed, (c) the measured
+    face followed, (d) the inline editor would prefill the measured value.
+    SKIPs without a renderer.
+    """
+    result = PhaseResult(name="Phase 59: object->LED dimension value moves the LED")
+    import inspect
+    from KrakenOS.UI.layout_editor import SurfaceRow
+    from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
+
+    if getattr(inspector, "_renderer", None) is None:
+        result.passed = True
+        result.notes.append("SKIP: no renderer (PyVista/VTK unavailable)")
+        return result
+
+    try:
+        app.clear_step_imports()
+    except Exception:
+        pass
+    app.rows = [
+        SurfaceRow(label="0", surface="Object", element="", name="Object",
+                   thickness=275.0, diameter=25.0, glass="AIR"),
+        SurfaceRow(label="1", surface="Standard", element="L1", name="L1 front",
+                   thickness=8.0, diameter=25.0, glass="N-BK7"),
+        SurfaceRow(label="2", surface="Standard", element="", name="L1 back",
+                   thickness=24.405, diameter=25.0, glass="AIR"),
+        SurfaceRow(label="3", surface="Image", element="", name="Image",
+                   thickness=0.0, diameter=25.0, glass="AIR"),
+    ]
+    app._sync_table()
+    # Pretend an LED is imported so S0's re-anchored end routes to the LED move.
+    # A bogus path is enough: the move only reads led_object_edge_distance_mm; the
+    # internal LED refresh is wrapped and degrades to a no-op when it can't load.
+    app.imported_led_step_path = "led_object_for_phase59.step"
+    app.led_step_object_edge_local_z = 0.0
+    app.led_object_edge_distance_mm = 200.0
+
+    # Re-anchor S0's far end onto the LED bottom face at z=212.593 (no optical
+    # surface lives there), fixed end = object plane (z=0); measured span 212.593.
+    np = __import__("numpy")
+    app.apply_dimension_anchor_override(0, "end", np.array([0.0, 0.0, 212.593]), fixed_z=0.0)
+    thicknesses_before = [float(r.thickness) for r in app.rows]
+    led_distance_before = float(app.led_object_edge_distance_mm)
+
+    routed = False
+    try:
+        svc = inspector._open3d_thickness_dimension_service()
+        routed = bool(svc.apply_dimension_value(0, 200.0))
+    except Exception as exc:  # pragma: no cover - defensive
+        result.notes.append(f"value-edit routing raised: {exc}")
+
+    ov_after = app._dimension_anchor_override_for_row(0)
+    # The inline editor would prefill |ref_z - fixed_z| (the measured value), not
+    # the model thickness -- verify the prefill source contract is in place.
+    edit_src = inspect.getsource(Open3DThicknessDimensionService.edit_dimension)
+    prefill_ok = (
+        "_dimension_anchor_override_for_row" in edit_src
+        and edit_src.index("_dimension_anchor_override_for_row")
+        < edit_src.index("value_var = tk.StringVar")
+    )
+    result.detail.update(
+        {
+            "value_edit_routed": routed,
+            "led_distance_before": led_distance_before,
+            "led_distance_after": float(app.led_object_edge_distance_mm),
+            "thicknesses_unchanged": [float(r.thickness) for r in app.rows] == thicknesses_before,
+            "ref_z_after": float(ov_after.get("ref_z")) if isinstance(ov_after, dict) else None,
+            "prefill_uses_measured": prefill_ok,
+        }
+    )
+    if not routed:
+        result.notes.append("editing the object->LED value did not move the LED (bugs/0054)")
+    # Picked face at 212.593 -> target 200 => LED translates -12.593 mm.
+    if abs(float(app.led_object_edge_distance_mm) - (200.0 - 12.593)) > 1e-3:
+        result.notes.append(
+            f"LED edge distance must move to {200.0 - 12.593:.4g}, got {app.led_object_edge_distance_mm}"
+        )
+    if [float(r.thickness) for r in app.rows] != thicknesses_before:
+        result.notes.append("moving the LED must NOT change any optical thickness (bugs/0054)")
+    if not (isinstance(ov_after, dict) and abs(float(ov_after.get("ref_z", 0.0)) - 200.0) < 1e-6):
+        result.notes.append("the measured face must follow the LED to z=200 (bugs/0054)")
+    if not prefill_ok:
+        result.notes.append("the inline editor must prefill the measured value, not rows[i].thickness")
+
+    try:
+        app._dimension_anchor_overrides = {}
+        app.imported_led_step_path = None
+        app.clear_step_imports()
+        inspector.refresh_from_editor()
+        inspector.update_idletasks()
+    except Exception:
+        pass
+    result.passed = not result.notes
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -5070,6 +5179,7 @@ def main() -> int:
             phase_56_selected_step_pink_not_orange,
             phase_57_led_overlay_not_amber,
             phase_58_dimension_reanchor_measures_to_surface,
+            phase_59_object_led_dimension_value_moves_led,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

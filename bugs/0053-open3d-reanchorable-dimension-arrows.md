@@ -146,7 +146,7 @@ when the move would collapse/invert the chain.
 > through `apply_led_object_edge_pick` (object-edge reference) and stores *no*
 > general override, so editing its value follows the object-edge/`led_step_object_edge_local_z`
 > path, not this sequential move. Wiring a value edit on the LED row to move the LED
-> body is a separate follow-up.
+> body is done in **bugs/0054** (`_move_led_for_reanchored_value`).
 
 ## Notes / follow-up
 
