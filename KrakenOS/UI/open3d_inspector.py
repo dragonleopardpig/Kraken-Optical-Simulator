@@ -12082,6 +12082,160 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor._commit_history_capture()
         self.status_var.set(msg)
 
+    def _open_step_overlay_resize_popup(self, step_label: str) -> None:
+        """Resize an imported STEP solid by typing its target dimensions.
+
+        A solid with a detected 45-deg coating (a beam-splitter cube) exposes a
+        single square **Cross-section** plus a free **Depth**, so the two coupled
+        axes grow together and the coating stays at 45 deg (the two prisms grow
+        as one).  Any other solid exposes independent Width x Height x Depth.
+        This is the "direct edit the thickness" box; the drag-arrow gesture will
+        route here too.  (bugs/0064 drag-to-resize.)
+        """
+        label = str(step_label).strip().lower()
+        if self.editor._step_path_for_label(label) is None:
+            self.status_var.set(f"No {label} STEP is imported.")
+            return
+        original = self.editor._step_overlay_original_extents(label)
+        if original is None or not np.all(np.isfinite(np.asarray(original, dtype=float))):
+            self.status_var.set("Could not read the imported solid's dimensions.")
+            return
+        axes = self.editor._step_overlay_resize_axes(label)
+        spec = self.editor._step_resize_for_label(label)
+        current = [float(v) for v in original[:3]]
+        if spec and spec.get("target_extents"):
+            for i, value in enumerate(spec["target_extents"]):
+                if value:
+                    current[i] = float(value)
+        display = self.editor._step_overlay_display_label(label).upper()
+        coupled = axes is not None
+
+        dialog = tk.Toplevel(self)
+        try:
+            dialog.withdraw()
+            dialog.title(f"{display} STEP — Resize Solid")
+            dialog.transient(self.winfo_toplevel())
+            dialog.resizable(False, False)
+        except Exception:
+            pass
+
+        if coupled:
+            s_axis = axes.coupled_axes[0]
+            d_axis = axes.free_axis
+            prompt = (
+                f"{display} beam-splitter cube — the 45° coating stays square, so the "
+                f"cross-section ({axes.coupled_labels[0]}×{axes.coupled_labels[1]}) grows on "
+                f"both axes together; the depth ({axes.free_label}) is free."
+            )
+            fields = [
+                ("Cross-section (mm):", current[s_axis]),
+                ("Depth (mm):", current[d_axis]),
+            ]
+        else:
+            prompt = f"{display} solid — target outer size (width × height × depth, mm)."
+            fields = [
+                ("Width (mm):", current[0]),
+                ("Height (mm):", current[1]),
+                ("Depth (mm):", current[2]),
+            ]
+        ttk.Label(dialog, text=prompt, wraplength=340, justify="left").grid(
+            row=0, column=0, columnspan=2, padx=12, pady=(12, 8), sticky="w"
+        )
+        entry_vars: list[tk.StringVar] = []
+        first_entry = None
+        for index, (text, value) in enumerate(fields):
+            ttk.Label(dialog, text=text).grid(
+                row=1 + index, column=0, padx=(12, 4), pady=(0, 4), sticky="e"
+            )
+            var = tk.StringVar(value=(f"{value:.6g}" if value else ""))
+            entry = ttk.Entry(dialog, textvariable=var, width=12)
+            entry.grid(row=1 + index, column=1, padx=(0, 12), pady=(0, 4), sticky="ew")
+            entry_vars.append(var)
+            if first_entry is None:
+                first_entry = entry
+        button_row = 1 + len(fields)
+
+        def run() -> None:
+            try:
+                values = [float(var.get()) for var in entry_vars]
+            except (TypeError, ValueError):
+                self.status_var.set("Dimensions must be numbers.")
+                return
+            if not all(v > 0 for v in values):
+                self.status_var.set("Dimensions must be positive.")
+                return
+            target: list[float | None] = [None, None, None]
+            if coupled:
+                cross, depth = values
+                for axis in axes.coupled_axes:
+                    target[axis] = cross
+                target[axes.free_axis] = depth
+                anchor_axis = axes.free_axis
+            else:
+                target = list(values)  # type: ignore[assignment]
+                anchor_axis = None
+            try:
+                dialog.grab_release()
+            except Exception:
+                pass
+            dialog.destroy()
+            self._apply_step_overlay_resize_solve(label, target, anchor_axis, coupled)
+
+        ttk.Button(dialog, text="Resize", command=run).grid(
+            row=button_row, column=0, padx=(12, 4), pady=(8, 12), sticky="ew"
+        )
+        ttk.Button(dialog, text="Cancel", command=dialog.destroy).grid(
+            row=button_row, column=1, padx=(4, 12), pady=(8, 12), sticky="ew"
+        )
+        dialog.bind("<Return>", lambda _e: run())
+        dialog.bind("<Escape>", lambda _e: dialog.destroy())
+        try:
+            dialog.grab_set()
+        except Exception:
+            pass
+        try:
+            self.editor._show_centered_dialog(dialog)
+        except Exception:
+            pass
+        try:
+            if first_entry is not None:
+                first_entry.focus_set()
+                first_entry.selection_range(0, "end")
+        except Exception:
+            pass
+        self.wait_window(dialog)
+
+    def _apply_step_overlay_resize_solve(
+        self,
+        label: str,
+        target_extents,
+        anchor_axis: int | None,
+        coupled: bool,
+    ) -> None:
+        self.editor._begin_history_capture()
+        try:
+            self.editor._set_step_resize_for_label(
+                label,
+                target_extents,
+                anchor_axis=anchor_axis,
+                anchor_at_max=False,
+                coupled=coupled,
+            )
+        finally:
+            self.editor._commit_history_capture()
+        try:
+            self.editor._invalidate_preview_scene_trace()
+        except Exception:
+            pass
+        try:
+            self.refresh_imported_step_overlay(label)
+        except Exception:
+            pass
+        self.refresh_from_editor(force_retrace=True)
+        display = self.editor._step_overlay_display_label(label).upper()
+        dims = " × ".join(f"{v:.6g}" if v else "·" for v in target_extents)
+        self.status_var.set(f"{display} STEP resized to {dims} mm.")
+
     def _show_quick_estimation_config_table(self) -> None:
         """Centred table of conjugate configurations (object distance swept;
         image distance solved for focus) so the user can read the combinations."""

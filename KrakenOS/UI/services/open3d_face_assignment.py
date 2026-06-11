@@ -242,6 +242,10 @@ class Open3DFaceAssignmentService:
                     ),
                 )
             menu.add_separator()
+            menu.add_command(
+                label="Resize Solid...",
+                command=lambda picked_label=step_label: self._open_step_overlay_resize_popup(picked_label),
+            )
             menu.add_command(label="Promote STEP to Optical Solid Row", command=lambda picked_label=step_label: self._promote_step_from_context(picked_label))
         else:
             self.status_var.set("Right-click assignment requires a file-backed optical CAD/STL row.")

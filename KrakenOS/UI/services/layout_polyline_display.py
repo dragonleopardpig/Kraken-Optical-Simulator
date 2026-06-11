@@ -1111,6 +1111,7 @@ class LayoutPolylineDisplayMixin:
             round(float(getattr(self, "lens_step_rotation_y_deg", 0.0)), 6),
             tuple(round(float(v), 6) for v in self._step_axis_offset_xy("lens")),
             tuple(round(float(v), 6) for v in self._step_placement_offset_xyz("lens")),
+            self._step_resize_signature("lens"),
         )
 
         def build():
@@ -1122,6 +1123,7 @@ class LayoutPolylineDisplayMixin:
             )
             if mesh is None:
                 return None
+            mesh = self._apply_step_overlay_resize(mesh, "lens")
             cylinder_axis = self._step_primary_cylinder_axis(self.imported_lens_step_path)
             return self._cad_mesh_aligned_to_optical_axis(
                 mesh,
@@ -1148,6 +1150,7 @@ class LayoutPolylineDisplayMixin:
             round(float(getattr(self, "optical_step_rotation_y_deg", 0.0)), 6),
             tuple(round(float(v), 6) for v in self._step_axis_offset_xy("optical")),
             tuple(round(float(v), 6) for v in self._step_placement_offset_xyz("optical")),
+            self._step_resize_signature("optical"),
         )
 
         def build():
@@ -1158,6 +1161,7 @@ class LayoutPolylineDisplayMixin:
             )
             if mesh is None:
                 return None
+            mesh = self._apply_step_overlay_resize(mesh, "optical")
             return self._cad_mesh_aligned_to_optical_axis(
                 mesh,
                 source_axis="z",
@@ -1185,6 +1189,7 @@ class LayoutPolylineDisplayMixin:
             round(float(getattr(self, "camera_step_rotation_y_deg", 0.0)), 6),
             tuple(round(float(v), 6) for v in self._step_axis_offset_xy("camera")),
             tuple(round(float(v), 6) for v in self._step_placement_offset_xyz("camera")),
+            self._step_resize_signature("camera"),
         )
 
         def build():
@@ -1195,6 +1200,7 @@ class LayoutPolylineDisplayMixin:
             )
             if mesh is None:
                 return None
+            mesh = self._apply_step_overlay_resize(mesh, "camera")
             aligned = self._cad_mesh_aligned_to_optical_axis(
                 mesh,
                 source_axis="z",
@@ -1234,6 +1240,7 @@ class LayoutPolylineDisplayMixin:
             round(float(getattr(self, "led_step_rotation_y_deg", 0.0)), 6),
             tuple(round(float(v), 6) for v in self._step_axis_offset_xy("led")),
             tuple(round(float(v), 6) for v in self._step_placement_offset_xyz("led")),
+            self._step_resize_signature("led"),
         )
 
         def build():
@@ -1244,6 +1251,7 @@ class LayoutPolylineDisplayMixin:
             )
             if mesh is None:
                 return None
+            mesh = self._apply_step_overlay_resize(mesh, "led")
             return self._cad_mesh_aligned_to_optical_axis(
                 mesh,
                 source_axis="z",

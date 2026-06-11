@@ -14,7 +14,8 @@ from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI.scene_placement import SCENE_PLACEMENT_ADVANCED_ATTR, normalize_scene_placement_settings
 from KrakenOS.UI.scene_row_mapping import SCENE_ROW_SOURCE
 from KrakenOS.UI.services import cad_cache_paths
-from KrakenOS.UI.services.cad_step_export import _affine_from_point_sets
+from KrakenOS.UI.services import open3d_solid_resize as solid_resize
+from KrakenOS.UI.services.cad_step_export import _affine_from_point_sets, _read_step_shape
 from KrakenOS.UI.services.element_scene_metadata import (
     SCENE_NORMAL_TARGET_LABELS,
     _normalize_scene_normal_target_kind,
@@ -2317,6 +2318,161 @@ class ScenePlacementMixin:
         self._invalidate_step_overlay_face_metadata_cache(label)  # bugs/0050
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
+
+    # --- imported-solid resize (drag a face to grow a dimension) ------------- #
+    # The resize is stored as per-axis target extents in the solid's *native*
+    # (base-mesh) frame and applied to the loaded mesh before optical-axis
+    # alignment, so the coupling axes from open3d_solid_resize.detect_coupling
+    # line up with the mesh.  A beam-splitter's 45-deg coating only stays at
+    # 45 deg when the two coupled axes share one factor, so the setter forces
+    # them equal when ``coupled`` is set (bugs/0064-style drag-to-resize).
+    def _step_resize_for_label(self, label: str) -> dict | None:
+        label = str(label).strip().lower()
+        if label not in _step_overlay_label_set():
+            return None
+        return getattr(self, f"{label}_step_resize", None)
+
+    def _set_step_resize_for_label(
+        self,
+        label: str,
+        target_extents,
+        *,
+        anchor_axis: int | None = None,
+        anchor_at_max: bool = False,
+        coupled: bool = False,
+    ) -> None:
+        label = str(label).strip().lower()
+        if label not in _step_overlay_label_set():
+            return
+        if target_extents is None:
+            setattr(self, f"{label}_step_resize", None)
+        else:
+            values = list(target_extents)[:3]
+            cleaned = [
+                float(v) if (v is not None and np.isfinite(float(v)) and float(v) > 0.0) else None
+                for v in values
+            ]
+            while len(cleaned) < 3:
+                cleaned.append(None)
+            setattr(
+                self,
+                f"{label}_step_resize",
+                {
+                    "target_extents": tuple(cleaned),
+                    "anchor_axis": int(anchor_axis) if anchor_axis is not None else None,
+                    "anchor_at_max": bool(anchor_at_max),
+                    "coupled": bool(coupled),
+                },
+            )
+        self._invalidate_step_overlay_face_metadata_cache(label)  # bugs/0050
+        self._live_step_overlay_trace_plan_cache = {}
+        self._invalidate_preview_scene_trace()
+
+    def _step_resize_signature(self, label: str):
+        spec = self._step_resize_for_label(label)
+        if not spec:
+            return None
+        target = spec.get("target_extents")
+        return (
+            tuple(round(v, 6) if v else None for v in target) if target else None,
+            spec.get("anchor_axis"),
+            bool(spec.get("anchor_at_max")),
+            bool(spec.get("coupled")),
+        )
+
+    def _step_overlay_resize_axes(self, label: str):
+        """Cached coupling axes (free + coupled pair) for a label, or ``None``.
+
+        Reads the original B-rep's analytic planes once per (label, path); a
+        plain element with no 45-deg coating yields ``None`` -> free resize.
+        """
+        label = str(label).strip().lower()
+        if label not in _step_overlay_label_set():
+            return None
+        path = self._step_path_for_label(label)
+        if path is None:
+            return None
+        cache = self.__dict__.setdefault("_step_overlay_resize_axes_cache", {})
+        key = (label, str(path))
+        if key in cache:
+            return cache[key]
+        axes = None
+        try:
+            axes = solid_resize.detect_coupling(_read_step_shape(Path(path)))
+        except Exception as exc:
+            self.append_debug(f"{label.upper()} STEP resize-axis detection failed: {exc}")
+        cache[key] = axes
+        return axes
+
+    def _step_overlay_original_extents(self, label: str):
+        """Original (un-resized) base-frame extents (mm), for popup prefill."""
+        label = str(label).strip().lower()
+        if label not in _step_overlay_label_set():
+            return None
+        path = self._step_path_for_label(label)
+        if path is None:
+            return None
+        cache = self.__dict__.setdefault("_step_overlay_original_extents_cache", {})
+        key = (label, str(path))
+        if key in cache:
+            return cache[key]
+        extents = None
+        try:
+            from OCC.Core.Bnd import Bnd_Box
+            from OCC.Core.BRepBndLib import brepbndlib
+
+            shape = _read_step_shape(Path(path))
+            box = Bnd_Box()
+            brepbndlib.Add(shape, box)
+            xmin, ymin, zmin, xmax, ymax, zmax = box.Get()
+            extents = np.array([xmax - xmin, ymax - ymin, zmax - zmin], dtype=float)
+        except Exception as exc:
+            self.append_debug(f"{label.upper()} STEP original-extents read failed: {exc}")
+        cache[key] = extents
+        return extents
+
+    def _apply_step_overlay_resize(self, mesh, label: str):
+        """Scale a freshly loaded base mesh per the stored resize spec.
+
+        Runs in the native frame (before optical-axis alignment).  Returns the
+        original mesh untouched when there is no resize, so the overlay path is
+        a no-op for un-resized solids.
+        """
+        spec = self._step_resize_for_label(label)
+        if not spec or mesh is None:
+            return mesh
+        target = spec.get("target_extents")
+        if not target or all(v is None for v in target):
+            return mesh
+        try:
+            points = np.asarray(getattr(mesh, "points", None), dtype=float)
+        except Exception:
+            return mesh
+        if points.ndim != 2 or points.shape[0] == 0 or points.shape[1] < 3:
+            return mesh
+        if not np.all(np.isfinite(points[:, :3])):
+            return mesh
+        current = solid_resize.extents_of(points)
+        wanted = np.array([target[i] if (i < len(target) and target[i]) else 0.0 for i in range(3)], dtype=float)
+        scales = solid_resize.axis_scales_for_extents(current, wanted)
+        if np.allclose(scales, 1.0):
+            return mesh
+        lo = np.min(points[:, :3], axis=0)
+        hi = np.max(points[:, :3], axis=0)
+        anchor_axis = spec.get("anchor_axis")
+        if anchor_axis is None:
+            anchor = 0.5 * (lo + hi)
+        else:
+            anchor = solid_resize.anchor_point_for_fixed_face(
+                lo, hi, int(anchor_axis), bool(spec.get("anchor_at_max"))
+            )
+        try:
+            resized = mesh.copy(deep=True)
+            resized.points = solid_resize.resize_points(points, scales, anchor)
+            return resized
+        except Exception as exc:
+            self.append_debug(f"{label.upper()} STEP resize apply failed: {exc}")
+            return mesh
 
     def translate_step_overlay(
         self,
