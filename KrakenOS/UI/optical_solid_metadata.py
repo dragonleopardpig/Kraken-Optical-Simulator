@@ -402,6 +402,7 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
         "analytic_parameters",
         "interior_duplicate",
         "duplicate_group",
+        "recovered_coating",
     ):
         if key in record:
             normalized[key] = record[key]

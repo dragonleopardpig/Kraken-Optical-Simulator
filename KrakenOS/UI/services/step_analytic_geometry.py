@@ -53,6 +53,7 @@ class StepAnalyticFace:
     triangle_indices: tuple[int, ...] = ()
     interior_duplicate: bool = False
     duplicate_group: str = ""
+    recovered_coating: bool = False
 
     def as_optical_solid_record(self) -> dict[str, object]:
         """Return a face record compatible with current face-role metadata."""
@@ -67,6 +68,7 @@ class StepAnalyticFace:
             "analytic_parameters": dict(self.parameters),
             "interior_duplicate": bool(self.interior_duplicate),
             "duplicate_group": self.duplicate_group,
+            "recovered_coating": bool(self.recovered_coating),
             "role": "Unassigned",
             "function": "Unassigned",
             "side_2d": "Auto",
@@ -328,6 +330,26 @@ def _triangles_for_face(face_shape: object, *, reversed_orientation: bool) -> li
     return triangles
 
 
+def _is_recoverable_interior_coating(face: StepAnalyticFace, *, max_axis_component: float = 0.9) -> bool:
+    """True for an interior-duplicate planar face whose normal is *oblique* to
+    every principal axis -- a beam-splitter cube's 45-deg cemented coating.
+
+    A doublet's cement bond is perpendicular to the optical axis (normal
+    ~(0,0,1), one component ~1.0), so it is NOT oblique and stays hidden: only
+    a tilted coating between two solids is recovered as a selectable face
+    (bugs/0064). The coating sits *inside* the body, so it never becomes a
+    clickable surface from outside; surfacing it gives the user a row in the
+    face-role editor to assign the splitter coating to.
+    """
+    if str(face.surface_type) != "plane":
+        return False
+    normal = np.abs(np.asarray(face.normal, dtype=float).reshape(-1)[:3])
+    norm = float(np.linalg.norm(normal))
+    if norm <= 1.0e-9 or not np.isfinite(norm):
+        return False
+    return float(np.max(normal / norm)) < float(max_axis_component)
+
+
 def load_step_analytic_document(
     source_path: Path | str,
     *,
@@ -408,10 +430,24 @@ def load_step_analytic_document(
     outer_faces: list[StepAnalyticFace] = []
     triangle_blocks: list[np.ndarray] = []
     next_triangle_index = 0
+    recovered_coating_groups: set[str] = set()
     for raw in raw_faces:
         is_internal, duplicate_group = duplicate_marks.get(raw.face.face_id, (False, ""))
         face = replace(raw.face, interior_duplicate=bool(is_internal), duplicate_group=duplicate_group)
-        include_face = not (bool(skip_internal_duplicates) and bool(is_internal))
+        # Recover ONE oblique interior coating per duplicate group (a beam-splitter
+        # cube's 45-deg cement face) as a real, tessellated, selectable surface;
+        # axis-perpendicular doublet cement stays hidden (bugs/0064).
+        recovered_coating = False
+        if (
+            is_internal
+            and duplicate_group
+            and duplicate_group not in recovered_coating_groups
+            and _is_recoverable_interior_coating(face)
+        ):
+            recovered_coating = True
+            recovered_coating_groups.add(duplicate_group)
+            face = replace(face, recovered_coating=True)
+        include_face = recovered_coating or not (bool(skip_internal_duplicates) and bool(is_internal))
         if include_face:
             face_triangles = _triangles_for_face(raw.shape, reversed_orientation=face.orientation_reversed)
             triangle_count = len(face_triangles)

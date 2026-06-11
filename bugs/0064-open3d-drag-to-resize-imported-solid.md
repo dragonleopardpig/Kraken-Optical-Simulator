@@ -99,3 +99,42 @@ This is the "direct edit the thickness" box from step 3.
   + baseline; BRANCH_README + Sphinx manual entries.
 * Verify undo/redo reverts a resize (the spec is set under a history capture; the
   capture's attribute coverage of `{label}_step_resize` needs a live check).
+
+## Follow-up — beam-splitter coating selectable (testing fallout, DONE)
+
+After promoting the resized cube, the face-editor table had **no row for the
+center 45° coating**, so the user could not assign the splitter coating (step 5).
+
+Root cause: a cube beam-splitter is two cemented right-angle prisms; the 45°
+coating is an **interior duplicate** face. `load_step_analytic_document` kept it in
+`document.faces` (centroid (25,25,25), normal (1,1,0)/√2) but with **zero
+triangles** and excluded it from `document.outer_faces`, so it never became a face
+record / table row (both metadata paths drop it — analytic = `outer_faces` only;
+clustering = `extract_surface` drops buried faces). It also sits inside the body,
+so it is not clickable from outside.
+
+Fix: `_is_recoverable_interior_coating` + a recovery in `load_step_analytic_document`
+force-includes **one** *oblique* (non axis-aligned) interior coating per duplicate
+group as a real, tessellated `outer_faces` entry tagged `recovered_coating=True`
+(preserved through `normalize_optical_solid_face_metadata`). It flows uniformly to
+the face-tagged display mesh and the face-role metadata, so it appears as a
+selectable `Unassigned` row with real geometry; the user assigns it `Beam Splitter`.
+Tightly gated — axis-perpendicular doublet cement (normal ~(0,0,1)) is **not**
+oblique, and single-solid prisms have no interior duplicate, so both are untouched
+(verified on the real doublet + penta parts). Guard:
+`validate_open3d_beam_splitter_coating_recovered` (11 checks, display-free, real
+parts skip-if-absent).
+
+## Follow-up — off-beam non-sequential trace (reverted, deferred)
+
+User parked the promoted cube off the beam path and the on-axis rays went wrong
+(focus short of the detector + diverging). First attempt (commit `02323d2`)
+exempted off-beam solids from the non-seq mode triggers in `trace_intent`; it
+*engaged* (layout went sequential) but regressed to "rays stop half way" — a
+promoted **solid** parked off-axis becomes a vignetting thin surface in the
+sequential path. Reverted (`01a7743`). Real cause: a promoted off-beam solid
+should be a **display-only scene body** outside the optical trace path (not a
+sequential surface, not a non-seq launch perturbation) until it is on the beam or
+coated. Deferred — it is core non-sequential trace plumbing and the live ray
+render can't be verified headless (this layout class SIGSEGVs the offscreen
+renderer); needs in-app render verification. Independent of the coating fix.
