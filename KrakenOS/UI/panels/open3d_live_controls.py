@@ -90,6 +90,10 @@ class Open3DLiveControlsPanel:
         quick.grid(row=3, column=0, sticky="ew", pady=(8, 0))
         self.build_quick_estimation_controls(quick)
 
+        solve = ttk.LabelFrame(stack, text="Solve (Variable thickness)", padding=8)
+        solve.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        self.build_solve_controls(solve)
+
     def build_quick_estimation_controls(self, parent: tk.Widget) -> None:
         from KrakenOS.UI.services.quick_estimation import (
             IMAGE_PLANE,
@@ -194,6 +198,49 @@ class Open3DLiveControlsPanel:
                 combo.set(svc.role(quantity))
             except Exception:
                 pass
+
+    def build_solve_controls(self, parent: tk.Widget) -> None:
+        """Mark thickness gaps Variable, then solve them for best focus / best
+        collimation. The Variable flag is the same ``SurfaceRow.optimize_thickness``
+        the 2D optimization path uses, so a gap flagged here is Variable in 2D too."""
+        inspector = self.inspector
+        parent.columnconfigure(0, weight=1)
+        service = inspector._open3d_solve_service()
+        ttk.Label(
+            parent,
+            text="Mark thickness gaps Variable, then solve the marked gaps for best\n"
+            "focus (spot RMS) or best collimation (parallel exit beam). Shared with\n"
+            "the 2D optimization Variable flag; the object gap is collimation-only.",
+            foreground="#555555",
+            justify="left",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 6))
+
+        vars_map: dict[int, tk.BooleanVar] = {}
+        grid_row = 1
+        for row_index, label in service.thickness_gap_rows():
+            var = tk.BooleanVar(value=service.is_variable(row_index))
+            vars_map[row_index] = var
+            ttk.Checkbutton(
+                parent,
+                text=label,
+                variable=var,
+                command=lambda ri=row_index: inspector._open3d_toggle_variable_thickness(ri),
+            ).grid(row=grid_row, column=0, columnspan=2, sticky="w")
+            grid_row += 1
+        inspector._open3d_variable_thickness_vars = vars_map
+
+        buttons = ttk.Frame(parent)
+        buttons.grid(row=grid_row, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        ttk.Button(
+            buttons,
+            text="Solve Best Focus",
+            command=lambda: inspector._open3d_run_thickness_solve("focus"),
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Button(
+            buttons,
+            text="Solve Best Collimation",
+            command=lambda: inspector._open3d_run_thickness_solve("collimation"),
+        ).grid(row=0, column=1, sticky="w", padx=(6, 0))
 
     def editor_var(self, name: str, default: str = ""):
         var = getattr(self.editor, name, None)

@@ -5408,6 +5408,47 @@ def phase_61_detector_fov_plane_pickable(
     return result
 
 
+def phase_62_variable_thickness_solve(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Open 3D Variable-thickness Best Focus / Best Collimation solve.
+
+    Brings the 2D "mark a thickness Variable, solve for best image" workflow into
+    the embedded inspector and adds a net-new Best Collimation objective. A gap is
+    flagged Variable through the shared ``SurfaceRow.optimize_thickness`` flag, so a
+    thickness flagged in 3D shows up Variable in 2D and vice versa. Best Focus
+    reuses the editor's existing spot-RMS solver; Best Collimation minimises the
+    paraxial output vergence ``|1/s'|`` (closed-form ABCD, smooth, zero exactly at
+    collimation). The object gap is collimation-only; the terminal Image gap is
+    never a target.
+
+    The guard (`validate_open3d_thickness_solve`) is display-free: it checks the
+    solve-service / editor-mixin / inspector / panel source contracts, then drives
+    snapshot editors across the five machine-vision layouts -- collimation lands the
+    object near the front focal distance with V-shaped, near-zero vergence, and the
+    service mutates the right gaps -- plus a Best Focus delegation on one fast
+    layout. No renderer needed, so it runs everywhere.
+    """
+    result = PhaseResult(
+        name="Phase 62: Variable-thickness Best Focus / Best Collimation solve"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_thickness_solve import run_checks
+        passed, notes = run_checks(app=app, inspector=inspector)
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"thickness-solve guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("thickness-solve guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -5515,6 +5556,7 @@ def main() -> int:
             phase_59_object_led_dimension_value_moves_led,
             phase_60_fov_plane_solve,
             phase_61_detector_fov_plane_pickable,
+            phase_62_variable_thickness_solve,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

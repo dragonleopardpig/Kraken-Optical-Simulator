@@ -1220,6 +1220,138 @@ class ParaxialToolsMixin:
         finally:
             self._finish_analysis_progress(status_label, completed)
 
+    def _collimation_output_vergence_for_rows(
+        self, rows: list[SurfaceRow], wavelength: float | None = None
+    ) -> float:
+        """Magnitude of the paraxial output ray vergence ``|1/s'|`` (1/mm) for the
+        current object distance. Collimated output => image at infinity => 0.
+
+        Uses the system ABCD (the optical block, independent of the object/back
+        gaps) and the current object distance applied analytically, so the merit
+        is smooth and deterministic. A real-ray angular spread was tried first
+        but vignettes to noise at large defocus -- the paraxial vergence has a
+        clean zero exactly at collimation. Centered refractive systems only
+        (raises for mirrors/tilts via the paraxial solver)."""
+        object_mode = self._current_object_mode()
+        a, b, c, d, _effl, _ppa, _ppp = self._exact_paraxial_solution_for_rows(rows, wavelength)
+        if object_mode == "Infinity":
+            numerator = abs(float(a))
+            denominator = abs(float(c))
+        else:
+            object_distance = float(rows[0].thickness)
+            numerator = abs(float(a) + float(b) * object_distance)
+            denominator = abs(float(c) + float(d) * object_distance)
+        if denominator <= 1e-12:
+            # image distance ~ 0 (extreme convergence): vergence is enormous.
+            return float("inf") if numerator > 1e-12 else 0.0
+        value = float(numerator / denominator)
+        if not np.isfinite(value):
+            raise RuntimeError("Invalid collimation vergence")
+        return value
+
+    def _collimation_search_interval(self, row_index: int) -> tuple[float, float]:
+        """A generous, focal-length-aware bracket for the collimation solve. The
+        vergence vertex (collimated point) sits near the front focal distance for
+        the object gap, which can be far from the current value, so the interval
+        spans 0 .. current + max(current, 2.5*|EFL|)."""
+        current = max(float(self.rows[row_index].thickness), 0.0)
+        span = max(current, 50.0)
+        try:
+            effl = abs(float(self._exact_paraxial_cardinals()[0]))
+            if np.isfinite(effl):
+                span = max(span, 2.5 * effl)
+        except Exception:
+            pass
+        return 0.0, float(current + span)
+
+    def _compute_best_collimation_result(self, row_index: int) -> dict[str, float | str]:
+        """Solve a thickness for best collimation: minimise the paraxial output
+        vergence ``|1/s'|``. Mirrors the best-focus search shape (coarse scan +
+        local refine) but with the vergence metric; operates on ``self.rows`` and
+        returns the solved distance without mutating the layout. The metric is a
+        cheap closed-form paraxial eval (no ray tracing), so the search is fast
+        and noise-free."""
+        if not (0 <= row_index < len(self.rows)):
+            raise RuntimeError("Best-collimation target is out of range")
+        row = self.rows[row_index]
+        # Unlike best focus, the object gap (row 0) IS the canonical collimation
+        # variable -- moving the source toward the focal point parallelises the
+        # exit beam -- so only the terminal image gap is rejected.
+        if row.surface == "Image":
+            raise RuntimeError("Best-collimation solve is not available for the image row")
+        wavelength = self._current_wavelength()
+        lower, upper = self._collimation_search_interval(row_index)
+        metric_label = "output vergence |1/s'| (1/mm)"
+        status_label = "Best collimation solve"
+        total_iterations = 21 + 11 + 11 + 11
+        iteration_done = 0
+        metric_cache: dict[float, float] = {}
+        self._set_analysis_parallel_status(status_label, 1, False)
+        self._begin_analysis_progress(status_label)
+        completed = False
+        self.append_progress(
+            f"Best collimation solve | row {row_index} {row.name or row.surface} | "
+            f"range [{lower:.6g}, {upper:.6g}] mm | metric={metric_label}"
+        )
+        try:
+            def _evaluate_candidate(candidate: float) -> float:
+                nonlocal iteration_done
+                candidate_value = max(0.0, float(candidate))
+                cache_key = round(candidate_value, 12)
+                cached = metric_cache.get(cache_key)
+                if cached is not None:
+                    return cached
+                rows_trial = [SurfaceRow(**asdict(item)) for item in self.rows]
+                rows_trial[row_index].thickness = candidate_value
+                value = self._collimation_output_vergence_for_rows(rows_trial, wavelength)
+                metric_cache[cache_key] = float(value)
+                iteration_done += 1
+                self._update_analysis_progress(status_label, iteration_done, total_iterations)
+                return float(value)
+
+            best_value: float | None = None
+            best_metric: float | None = None
+
+            def _track_best(candidate: float, metric: float) -> None:
+                nonlocal best_value, best_metric
+                if best_metric is None or metric < best_metric:
+                    best_metric = float(metric)
+                    best_value = float(candidate)
+
+            for candidate in np.linspace(float(lower), float(upper), 21):
+                _track_best(float(candidate), _evaluate_candidate(float(candidate)))
+
+            if best_value is None or best_metric is None:
+                raise RuntimeError("Best-collimation search failed")
+
+            step = float(upper - lower) / 20.0 if upper > lower else 1.0
+            center = best_value
+            for _ in range(3):
+                local_lower = max(0.0, center - step)
+                local_upper = center + step
+                for candidate in np.linspace(local_lower, local_upper, 11):
+                    _track_best(float(candidate), _evaluate_candidate(float(candidate)))
+                center = best_value
+                step *= 0.35
+
+            completed = True
+            return {
+                "selected_row": row_index,
+                "target_label": row.name or row.surface,
+                "start_value": float(self.rows[row_index].thickness),
+                "lower": float(lower),
+                "upper": float(upper),
+                "solved_distance": float(best_value),
+                "best_metric": float(best_metric),
+                "metric_label": metric_label,
+                "message": (
+                    f"Best collimation solve: row {row_index} {row.name or row.surface} thickness -> "
+                    f"{float(best_value):.6g} mm | output vergence={float(best_metric):.6g} /mm"
+                ),
+            }
+        finally:
+            self._finish_analysis_progress(status_label, completed)
+
     def solve_current_folded_mirror_distance(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:
             return

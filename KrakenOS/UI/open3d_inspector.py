@@ -785,6 +785,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._quick_estimation_service_instance = service
         return service
 
+    def _open3d_solve_service(self):
+        service = getattr(self, "_open3d_solve_service_instance", None)
+        if service is None:
+            from KrakenOS.UI.services.open3d_solve import Open3DSolveService
+
+            service = Open3DSolveService(self)
+            self._open3d_solve_service_instance = service
+        return service
+
     def _toggle_quick_estimation(self) -> None:
         service = self._quick_estimation_service()
         if self.quick_estimation_var.get():
@@ -11852,6 +11861,43 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor._sync_trace_state_badge()
             self.refresh_from_editor(force_retrace=True)
             qe.update_readout()
+        else:
+            self.editor._commit_history_capture()
+        self.status_var.set(msg)
+
+    def _open3d_toggle_variable_thickness(self, row_index: int) -> None:
+        """Sync a thickness gap's Variable flag (shared with 2D optimization) to
+        its checkbox, which Tk has already flipped before calling this."""
+        service = self._open3d_solve_service()
+        row_index = int(row_index)
+        vars_map = getattr(self, "_open3d_variable_thickness_vars", None) or {}
+        var = vars_map.get(row_index)
+        enabled = bool(var.get()) if var is not None else (not service.is_variable(row_index))
+        service.set_variable(row_index, enabled)
+        self.status_var.set(f"Thickness row {row_index} marked {'Variable' if enabled else 'fixed'}.")
+
+    def _open3d_run_thickness_solve(self, objective: str) -> None:
+        """Solve the Variable thickness gaps for best focus / collimation, then
+        retrace (same history + refresh path as Snap to FOV)."""
+        service = self._open3d_solve_service()
+        self.editor._begin_history_capture()
+        try:
+            ok, msg = service.solve(objective)
+        except Exception as exc:
+            self.editor._commit_history_capture()
+            self.status_var.set(f"Solve failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D thickness solve failed: {exc}")
+            return
+        if ok:
+            self.editor._sync_table()
+            self.editor._commit_history_capture()
+            self.editor._invalidate_preview_scene_trace()
+            self.editor._sync_trace_state_badge()
+            self.refresh_from_editor(force_retrace=True)
+            try:
+                self._quick_estimation_service().update_readout()
+            except Exception:
+                pass
         else:
             self.editor._commit_history_capture()
         self.status_var.set(msg)
