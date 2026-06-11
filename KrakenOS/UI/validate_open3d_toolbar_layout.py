@@ -175,6 +175,13 @@ def main() -> int:
             "ray clicks should not open Ray Inspector unless the user enables the Pick rays toggle",
         ),
         (
+            "Open 3D view row exposes a Ray count synced to the 2D ray_count_var",
+            '"Ray count"' in toolbar_source
+            and '_editor_var("ray_count_var")' in toolbar_source
+            and "_commit_live_control_update(sync_fields=True)" in toolbar_source,
+            "the always-visible View row should set ray count via the shared 2D ray_count_var so 2D and 3D stay in sync",
+        ),
+        (
             "Open 3D view row can hide side panels",
             '"Live panel"' in toolbar_source
             and "show_live_controls_panel_var" in toolbar_source
