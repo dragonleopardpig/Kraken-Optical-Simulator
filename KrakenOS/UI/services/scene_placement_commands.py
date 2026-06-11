@@ -1858,13 +1858,24 @@ class ScenePlacementMixin:
         )
         self._refresh_open_3d_views()
 
-    def apply_reanchored_dimension_measured(self, row_index: int, value: float) -> bool:
-        """Set a re-anchored dimension's MEASURED distance to ``value`` by moving
-        its re-anchored reference, never an optical thickness (bugs/0053 #6).
+    def apply_reanchored_dimension_value(self, row_index: int, value: float) -> bool:
+        """Edit a re-anchored dimension's value by MOVING the downstream element so
+        the Previous->Next span becomes ``value`` (bugs/0053 #6 follow-up).
 
-        Returns True if applied. False if the row has no re-anchor override or the
-        override predates ``fixed_z`` (so the un-moved end is unknown) -- the
-        caller then leaves the model untouched rather than editing the wrong row.
+        Rule (confirmed with the user): thickness is a directed gap and element
+        positions are cumulative, so editing the span moves the Next element (the
+        endpoint downstream in ray-trace order, i.e. larger z) plus everything
+        downstream of it as a rigid block, by adding the delta to the *single* gap
+        immediately upstream of that element. Every other gap value -- and the
+        Previous element and everything upstream -- stays put. The Quick Estimation
+        conjugate solve is intentionally NOT run here (that is what moved the wrong
+        element before); this is a pure sequential move.
+
+        Returns True when an element was moved. Returns False (caller leaves the
+        model untouched, shows a note) when there is no override, ``fixed_z`` is
+        unknown, the downstream endpoint does not map to a real optical surface
+        (e.g. re-anchored onto a STEP body face), there is no editable upstream
+        gap, or the move would collapse/invert the chain.
         """
         overrides = dict(getattr(self, "_dimension_anchor_overrides", {}) or {})
         spec = overrides.get(int(row_index))
@@ -1877,25 +1888,89 @@ class ScenePlacementMixin:
         try:
             fixed_z = float(fixed_z)
             cur_ref = float(cur_ref)
-            measured = abs(float(value))
+            target_span = abs(float(value))
         except Exception:
             return False
-        if not (np.isfinite(fixed_z) and np.isfinite(cur_ref) and np.isfinite(measured)):
+        if not (np.isfinite(fixed_z) and np.isfinite(cur_ref) and np.isfinite(target_span)):
             return False
-        # Preserve the side the reference sits on relative to the fixed endpoint.
-        sign = 1.0 if cur_ref >= fixed_z else -1.0
-        new_ref = fixed_z + sign * measured
+
+        prev_z = min(fixed_z, cur_ref)
+        next_z = max(fixed_z, cur_ref)
+        current_span = next_z - prev_z
+        if current_span <= 1e-9:
+            self.status_var.set("Re-anchored dimension has no length to edit.")
+            return False
+
+        z_positions = list(self._row_z_positions())
+        if not z_positions:
+            return False
+        track = float(z_positions[-1] - z_positions[0]) if len(z_positions) > 1 else 0.0
+        snap_tol = max(abs(track) * 0.02, 0.5)
+        # Map the downstream endpoint to the optical surface it sits on; that row is
+        # the Next element we move. The fixed endpoint always lands on a row exactly;
+        # a re-anchored endpoint only maps if it was picked on a real surface.
+        next_row = None
+        best = snap_tol
+        for idx, z in enumerate(z_positions):
+            d = abs(float(z) - next_z)
+            if d <= best:
+                best = d
+                next_row = idx
+        if next_row is None or next_row < 1:
+            self.status_var.set(
+                f"S{int(row_index)} re-anchored end is not on a movable optical surface; "
+                "value edit can't move an element here."
+            )
+            return False
+        gap_row = next_row - 1
+        if not (0 <= gap_row < len(self.rows) - 1):
+            self.status_var.set(
+                f"S{int(row_index)} has no editable gap upstream of the moved element."
+            )
+            return False
+
+        delta = target_span - current_span
+        try:
+            current_gap = float(self.rows[gap_row].thickness)
+        except Exception:
+            return False
+        new_gap = current_gap + delta
+        if not np.isfinite(new_gap) or new_gap < 0.0:
+            self.status_var.set(
+                f"S{int(row_index)} value {target_span:.6g} mm would collapse the chain; ignored."
+            )
+            return False
+
+        # Follow the moved surfaces in the stored override (absolute z's): the
+        # downstream endpoint -- and only it -- shifts by delta so the arrow stays
+        # attached and the displayed number equals what was typed.
         new_spec = dict(spec)
-        new_spec["ref_z"] = float(new_ref)
-        overrides[int(row_index)] = new_spec
+        if cur_ref >= fixed_z:
+            new_spec["ref_z"] = float(cur_ref + delta)
+        else:
+            new_spec["fixed_z"] = float(fixed_z + delta)
+
         self._begin_history_capture()
+        self.rows[gap_row].thickness = float(new_gap)
+        overrides[int(row_index)] = new_spec
         self._dimension_anchor_overrides = overrides
+        try:
+            self._sync_table()
+        except Exception:
+            pass
+        try:
+            self._invalidate_preview_scene_trace()
+        except Exception:
+            pass
+        try:
+            self._sync_trace_state_badge()
+        except Exception:
+            pass
         self._commit_history_capture()
         self.status_var.set(
-            f"S{int(row_index)} measured distance set to {measured:.6g} mm "
-            "(measurement only; optical thickness unchanged)."
+            f"S{int(row_index)} set to {target_span:.6g} mm: moved the downstream element "
+            f"(gap S{gap_row}) {delta:+.4g} mm; other gaps unchanged."
         )
-        self._refresh_open_3d_views()
         return True
 
     def clear_dimension_anchor_override(self, row_index: int) -> None:

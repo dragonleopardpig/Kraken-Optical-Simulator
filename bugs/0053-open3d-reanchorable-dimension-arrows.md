@@ -48,9 +48,9 @@ model) is untouched.
 - **Commit** — `scene_placement_commands.apply_dimension_anchor_override(row,
   endpoint, feature_xyz, fixed_z=None)`: object/LED start endpoint →
   `apply_led_object_edge_pick`; otherwise store the override (measurement-only),
-  recording `fixed_z` so a later value edit can re-solve the distance.
-  `apply_reanchored_dimension_measured(row, value)` moves `ref_z` only;
-  `clear_dimension_anchor_override` removes it.
+  recording `fixed_z` (the un-moved endpoint) so a later value edit knows the
+  span. `apply_reanchored_dimension_value(row, value)` **moves** the downstream
+  element (see #6 below); `clear_dimension_anchor_override` removes it.
 - **Interaction (modal, v2)** — `_dimension_anchor_pick_mode` /
   `_dimension_anchor_pick_state` on the inspector. `open3d_mouse_bindings`:
   Ctrl-click on a dimension → `_begin_dimension_anchor_pick_from_current_pick`;
@@ -71,13 +71,20 @@ model) is untouched.
 
 - `KrakenOS/UI/validate_open3d_dimension_reanchor.py` — display-free:
   `reanchored_endpoints` math; a general-row override stores and leaves
-  `rows[i].thickness` unchanged; the object/LED row routes to
-  `led_step_object_edge_local_z`; overrides round-trip through settings; a source
-  contract that Ctrl-on-empty still orbits (re-anchor is gated before the orbit
-  branch).
-- Phase 58 in the comprehensive validator — boots the inspector, sets an
-  override, refreshes, and asserts a re-anchored measurement arrow is drawn in
-  the distinct color and the model thickness is unchanged. Added to the baseline.
+  `rows[i].thickness` unchanged (setting the override is measurement-only); the
+  object/LED row routes to `led_step_object_edge_local_z`; overrides round-trip
+  through settings; the modal source contract (Ctrl-click enters the modal pick,
+  bare mouse + held drag both drive the motion, plain click commits, Ctrl-on-empty
+  still orbits); and the #6 **move**: editing a re-anchored value edits the single
+  upstream gap (`thickness[next_row-1]`) so the span becomes the typed value, leaves
+  every other gap unchanged, follows the moved endpoint's `ref_z`, and refuses when
+  the downstream end maps to no surface or `fixed_z` is unknown.
+- Phase 58 in the comprehensive validator — boots the inspector, sets an override,
+  refreshes, asserts a re-anchored measurement arrow is drawn in the distinct color
+  and setting the override is model-neutral, then edits the value through the real
+  `apply_dimension_value` path and asserts the downstream element moved (its upstream
+  gap changed to the typed value, every other gap unchanged, the endpoint followed).
+  Added to the baseline.
 
 ## Revision v2 — modal re-anchor, live arrow, snap highlight, value-edit, inline editor
 
@@ -111,24 +118,43 @@ implemented:
    the editor. `edit_dimension` now `grab_set()`s the editor and, on `<FocusOut>`,
    pulls focus back to the entry (`keep_focus_in_window`) rather than committing.
    Commit is Enter / OK only; Esc / window-close cancels.
-6. **Editing a re-anchored value targets the measurement, not the wrong row** —
-   editing used to write `rows[i].thickness`, which (with conjugate re-solve) moved
-   a different element (the Imaging Lens instead of the LED↔Object gap).
+6. **Editing a re-anchored value moves the *right* element** — editing used to
+   write `rows[i].thickness`, which (with the Quick-Estimation conjugate re-solve)
+   moved a *different* element (the Imaging Lens instead of the LED↔Object gap).
    `apply_dimension_anchor_override` now records `fixed_z` (the un-moved end), and
    `apply_dimension_value` detects a re-anchor override and routes to
-   `apply_reanchored_dimension_measured`, which moves the measured reference
-   (`ref_z = fixed_z ± value`) and never any optical thickness.
+   `apply_reanchored_dimension_value`, which performs the **sequential move**
+   below and never runs QE.
 
-**Semantic decision (flagged to the user):** editing a re-anchored dimension is a
-*measurement-only* edit — it re-points the annotation, it does **not** physically
-move the LED (or any element) to that distance. This stops the wrong-element move
-that was reported. If the user instead wants the value edit to *move* the element
-to the typed distance, that is a different semantic and would be a follow-up.
+**Semantic (revised on user feedback — now move-element):** editing a re-anchored
+dimension's value **moves** the *Next* element (the endpoint downstream in
+ray-trace order, i.e. larger z) so the Previous→Next span becomes the typed value.
+Because `thickness` is a directed gap and element positions are cumulative, the
+move adds the delta to the **single gap immediately upstream of that element**
+(`thickness[next_row-1]`) and rigidly carries it plus everything downstream;
+**every other gap value stays put**. The QE conjugate solve is intentionally
+suppressed (running it is what shifted the wrong element before). The edit is
+refused — model untouched, a status note shown — when there is no override, when
+`fixed_z` is unknown, when the downstream endpoint does not map onto a real
+optical surface (within ~2% of track, e.g. re-anchored onto a STEP body face), or
+when the move would collapse/invert the chain.
+
+> The first revision shipped this as *measurement-only* (re-point the annotation,
+> move nothing); the user then asked for the element to actually move. Confirmed
+> rule: move the Next element, keep all other thicknesses unchanged. **The LED↔Object
+> dimension is out of scope for this move path** — its object-side endpoint routes
+> through `apply_led_object_edge_pick` (object-edge reference) and stores *no*
+> general override, so editing its value follows the object-edge/`led_step_object_edge_local_z`
+> path, not this sequential move. Wiring a value edit on the LED row to move the LED
+> body is a separate follow-up.
 
 ## Notes / follow-up
 
 - Snapping is to the picked surface/body point's axial z (robust for the LED
   bottom face and lens surfaces); precise CAD-feature-edge snapping for
   display-only tessellations is the bugs/0052 planar-clustering follow-up.
-- Scope guard: re-anchoring is a measurement annotation — it never edits
-  `rows[i].thickness` (that stays the plain-drag / inline-edit path).
+- Scope guard: *re-anchoring* (the Ctrl-click gesture that re-points where the
+  arrow measures) never edits `rows[i].thickness` — it only stores the override.
+  *Editing the re-anchored value* is the one path that does move an element, and it
+  moves exactly the Next element via its single upstream gap (#6 above); it never
+  runs QE and never touches any other gap.

@@ -23,9 +23,13 @@ No X server needed. Checks:
      plain click commits via ``_commit_dimension_anchor_pick``, and Ctrl on empty
      space still orbits. The live preview draws the real ``arrow_mesh`` (not a bare
      line) and highlights the snap target.
-  6. Editing a re-anchored dimension's value moves the measured reference only
-     (``apply_reanchored_dimension_measured``) and never ``rows[i].thickness`` --
-     so the wrong element (e.g. the Imaging Lens) can no longer shift.
+  6. Editing a re-anchored dimension's value MOVES the downstream (Next, in ray
+     order) element so the Previous->Next span becomes the typed value
+     (``apply_reanchored_dimension_value``): it edits the single gap upstream of
+     that element and leaves every other gap value unchanged, with the
+     Quick-Estimation conjugate re-solve suppressed (so the wrong element -- e.g.
+     the Imaging Lens -- can no longer shift). It refuses when the downstream
+     endpoint does not map onto an optical surface.
 """
 from __future__ import annotations
 
@@ -155,46 +159,73 @@ def _test_modal_pick_source_contract() -> None:
     print("modal pick source contract (#1-#4) OK")
 
 
-def _test_reanchor_value_edit_is_measurement_only() -> None:
-    """#6: editing a re-anchored dimension's value moves the measured reference
-    only -- never rows[i].thickness -- so the wrong element can't shift."""
+def _test_reanchor_value_edit_moves_downstream_element() -> None:
+    """#6 follow-up: editing a re-anchored dimension's value MOVES the downstream
+    element by exactly one gap (the gap immediately upstream of it), leaving every
+    other gap value -- and the upstream side -- untouched, with no QE re-solve."""
+    # _build_editor stations: z = [0, 275, 283, 307.405]; gaps = [275, 8, 24.405, 0].
     app = _build_editor()
-    # Re-anchor row 2's "end" to z=42, recording the un-moved end (fixed_z) so the
-    # value edit can re-solve the measured distance.
-    app.apply_dimension_anchor_override(2, "end", np.array([0.0, 0.0, 42.0]), fixed_z=10.0)
-    ov = app._dimension_anchor_override_for_row(2)
-    if not (isinstance(ov, dict) and abs(float(ov.get("fixed_z")) - 10.0) < 1e-9):
-        raise AssertionError(f"override must record fixed_z for value re-solve: {ov}")
-    thickness_before = float(app.rows[2].thickness)
-    applied = app.apply_reanchored_dimension_measured(2, 5.0)
+    # Re-anchor row 1's "end" onto surface 2 (z=283); fixed end is surface 1 (z=275).
+    # Current span = 8 mm (= thickness[1]). Edit to 20 mm -> move surface 2 downstream.
+    app.apply_dimension_anchor_override(1, "end", np.array([0.0, 0.0, 283.0]), fixed_z=275.0)
+    g0, g2 = float(app.rows[0].thickness), float(app.rows[2].thickness)
+    applied = app.apply_reanchored_dimension_value(1, 20.0)
     if not applied:
-        raise AssertionError("apply_reanchored_dimension_measured should apply with a known fixed_z")
-    ov2 = app._dimension_anchor_override_for_row(2)
-    # ref was 42 (>= fixed 10) so sign +1: new ref_z = 10 + 5 = 15.
-    if abs(float(ov2.get("ref_z")) - 15.0) > 1e-9:
-        raise AssertionError(f"measured edit must move ref_z to 15.0, got {ov2.get('ref_z')}")
-    if abs(float(app.rows[2].thickness) - thickness_before) > 1e-9:
-        raise AssertionError(
-            f"value edit must NOT change rows[2].thickness: {thickness_before} -> {app.rows[2].thickness}"
-        )
-    # Without a recorded fixed_z the editor refuses (caller leaves the model alone).
-    app.apply_dimension_anchor_override(1, "end", np.array([0.0, 0.0, 60.0]))
-    legacy = app._dimension_anchor_override_for_row(1)
+        raise AssertionError("value edit should move the downstream element")
+    if abs(float(app.rows[1].thickness) - 20.0) > 1e-9:
+        raise AssertionError(f"gap S1 must become 20.0, got {app.rows[1].thickness}")
+    if abs(float(app.rows[0].thickness) - g0) > 1e-9 or abs(float(app.rows[2].thickness) - g2) > 1e-9:
+        raise AssertionError("every other gap must stay unchanged")
+    ov = app._dimension_anchor_override_for_row(1)
+    # Downstream endpoint (ref) followed the move: 283 + (20-8) = 295.
+    if not (isinstance(ov, dict) and abs(float(ov.get("ref_z")) - 295.0) < 1e-6):
+        raise AssertionError(f"ref_z must follow the moved surface to 295.0, got {ov.get('ref_z')}")
+    if abs((float(ov.get("ref_z")) - float(ov.get("fixed_z"))) - 20.0) > 1e-6:
+        raise AssertionError("displayed span must equal the typed value (20 mm)")
+
+    # Multi-gap span: re-anchor row 1's "end" across to the image surface (z now
+    # 319.405 after the first move); editing absorbs the change in the gap adjacent
+    # to that element only.
+    app2 = _build_editor()  # fresh stations z=[0,275,283,307.405]
+    app2.apply_dimension_anchor_override(1, "end", np.array([0.0, 0.0, 307.405]), fixed_z=275.0)
+    g0b, g1b = float(app2.rows[0].thickness), float(app2.rows[1].thickness)
+    # span = 307.405 - 275 = 32.405 -> set to 50 (delta +17.595 into gap S2).
+    if not app2.apply_reanchored_dimension_value(1, 50.0):
+        raise AssertionError("multi-gap value edit should apply")
+    if abs(float(app2.rows[2].thickness) - (24.405 + 17.595)) > 1e-6:
+        raise AssertionError(f"gap S2 must absorb the change, got {app2.rows[2].thickness}")
+    if abs(float(app2.rows[0].thickness) - g0b) > 1e-9 or abs(float(app2.rows[1].thickness) - g1b) > 1e-9:
+        raise AssertionError("interior gaps before the moved element must stay unchanged")
+
+    # Refuse when the downstream endpoint is not on a movable optical surface.
+    app3 = _build_editor()
+    app3.apply_dimension_anchor_override(1, "end", np.array([0.0, 0.0, 900.0]), fixed_z=275.0)
+    g_all = [float(r.thickness) for r in app3.rows]
+    if app3.apply_reanchored_dimension_value(1, 5.0) is not False:
+        raise AssertionError("must refuse when the moved end maps to no optical surface")
+    if [float(r.thickness) for r in app3.rows] != g_all:
+        raise AssertionError("a refused value edit must not change any thickness")
+
+    # Refuse when fixed_z is unknown (legacy override) -- no wrong-element move.
+    app4 = _build_editor()
+    app4.apply_dimension_anchor_override(2, "end", np.array([0.0, 0.0, 307.405]))
+    legacy = app4._dimension_anchor_override_for_row(2)
     if legacy is not None and legacy.get("fixed_z") is None:
-        if app.apply_reanchored_dimension_measured(1, 3.0) is not False:
-            raise AssertionError("value edit must refuse when fixed_z is unknown (no wrong-element move)")
-    print("re-anchored value edit is measurement-only (#6) OK")
+        if app4.apply_reanchored_dimension_value(2, 3.0) is not False:
+            raise AssertionError("value edit must refuse when fixed_z is unknown")
+    print("re-anchored value edit moves the downstream element (#6) OK")
 
 
 def _test_apply_dimension_value_routes_override() -> None:
     """#6 source contract: apply_dimension_value must detect a re-anchor override
-    and route to apply_reanchored_dimension_measured BEFORE writing the model
-    thickness, otherwise editing the value would move the wrong row."""
+    and route to apply_reanchored_dimension_value (the sequential element move)
+    BEFORE writing rows[row_index].thickness, otherwise the QE-solved edit would
+    move the wrong element."""
     from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
 
     src = inspect.getsource(Open3DThicknessDimensionService.apply_dimension_value)
-    if "_dimension_anchor_override_for_row" not in src or "apply_reanchored_dimension_measured" not in src:
-        raise AssertionError("apply_dimension_value must route re-anchored rows to the measurement edit")
+    if "_dimension_anchor_override_for_row" not in src or "apply_reanchored_dimension_value" not in src:
+        raise AssertionError("apply_dimension_value must route re-anchored rows to the element move")
     override_pos = src.index("_dimension_anchor_override_for_row")
     # The actual model write (not the explanatory comment) is the assignment form.
     thickness_pos = src.index("rows[row_index].thickness = ")
@@ -209,7 +240,7 @@ def main() -> int:
     _test_object_led_routes_to_edge_reference()
     _test_settings_roundtrip()
     _test_modal_pick_source_contract()
-    _test_reanchor_value_edit_is_measurement_only()
+    _test_reanchor_value_edit_moves_downstream_element()
     _test_apply_dimension_value_routes_override()
     print("dimension re-anchor validation passed.")
     return 0

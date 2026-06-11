@@ -801,9 +801,10 @@ class Open3DThicknessDimensionService:
         if not np.isfinite(next_value):
             self.inspector.status_var.set("Thickness must be a finite number.")
             return False
-        # A re-anchored dimension is a measurement annotation, not an optical gap:
-        # editing its value adjusts the measured reference only, so we must NOT
-        # write rows[row_index].thickness (which would move the wrong element).
+        # A re-anchored dimension spans Previous->Next elements: editing its value
+        # MOVES the Next (downstream) element by one gap, NOT rows[row_index] with a
+        # Quick-Estimation re-solve (which used to shift the wrong element). The
+        # editor routine performs the sequential move; we only refresh on success.
         override = None
         try:
             override = self.editor._dimension_anchor_override_for_row(row_index)
@@ -813,7 +814,7 @@ class Open3DThicknessDimensionService:
             applied = False
             try:
                 applied = bool(
-                    self.editor.apply_reanchored_dimension_measured(row_index, next_value)
+                    self.editor.apply_reanchored_dimension_value(row_index, next_value)
                 )
             except Exception as exc:  # pragma: no cover - defensive
                 self.editor.append_debug(f"re-anchored dimension edit failed: {exc}")
@@ -822,8 +823,8 @@ class Open3DThicknessDimensionService:
                 self.inspector.refresh_from_editor(force_retrace=True)
             else:
                 self.inspector.status_var.set(
-                    f"S{row_index} re-anchored dimension is a measurement; "
-                    "re-pick the endpoint to change it."
+                    f"S{row_index} re-anchored value couldn't move an element "
+                    "(end not on an optical surface). Re-pick onto a surface to move it."
                 )
             return applied
         self.editor._begin_history_capture()

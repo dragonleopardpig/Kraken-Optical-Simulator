@@ -4832,10 +4832,13 @@ def phase_58_dimension_reanchor_measures_to_surface(
     commits what it measures to. End-to-end on the booted inspector: set a
     measured-endpoint override on a row, run a full refresh with physical-distance
     dimensions shown, and assert (a) a re-anchored measurement arrow is drawn in
-    the distinct REANCHOR color, (b) rows[i].thickness is unchanged (measurement
-    annotation, never a model edit), and (c) editing the re-anchored dimension's
-    VALUE moves the measured reference only -- never rows[i].thickness (feedback
-    #6: editing used to shift the wrong element). SKIPs without a renderer.
+    the distinct REANCHOR color, (b) setting the override is measurement-only --
+    rows[i].thickness is unchanged, and (c) editing the re-anchored dimension's
+    VALUE MOVES the downstream (Next, in ray order) element: it edits the single
+    gap upstream of that element so the Previous->Next span becomes the typed
+    value, leaves every OTHER gap unchanged, and suppresses the Quick-Estimation
+    conjugate re-solve that used to shift the wrong element (feedback #6).
+    SKIPs without a renderer.
     """
     result = PhaseResult(name="Phase 58: dimension re-anchor measures to a surface")
     from KrakenOS.UI.layout_editor import SurfaceRow
@@ -4911,16 +4914,21 @@ def phase_58_dimension_reanchor_measures_to_surface(
         )
 
     # Feedback #6: editing the re-anchored dimension's VALUE through the real edit
-    # path (the inline editor's apply_dimension_value) must move the measured
-    # reference only -- never rows[i].thickness, which previously shifted the wrong
-    # element (the Imaging Lens instead of the LED<->Object gap).
+    # path (the inline editor's apply_dimension_value) must MOVE the downstream
+    # element by editing the single upstream gap -- NOT run the Quick-Estimation
+    # conjugate solve, which previously shifted the wrong element (the Imaging Lens
+    # instead of the LED<->Object gap). Stations here: z = [0, 120, 128, 158].
+    # Re-anchor row 2's "end" onto the image surface (z=158), fixed end on surface
+    # 2 (z=128); current span = 30 = thickness[2]. Editing to 45 mm must add +15 to
+    # gap S2 only (30 -> 45) and follow the moved endpoint to z = 173.
     np = __import__("numpy")
-    app.apply_dimension_anchor_override(2, "end", np.array([0.0, 0.0, 40.0]), fixed_z=10.0)
-    thickness_pre_edit = float(app.rows[2].thickness)
+    app.apply_dimension_anchor_override(2, "end", np.array([0.0, 0.0, 158.0]), fixed_z=128.0)
+    gap0_pre = float(app.rows[0].thickness)
+    gap1_pre = float(app.rows[1].thickness)
     routed = False
     try:
         svc = inspector._open3d_thickness_dimension_service()
-        routed = bool(svc.apply_dimension_value(2, 7.0))
+        routed = bool(svc.apply_dimension_value(2, 45.0))
     except Exception as exc:  # pragma: no cover - defensive
         result.notes.append(f"value-edit routing raised: {exc}")
     ov_after = app._dimension_anchor_override_for_row(2)
@@ -4928,18 +4936,24 @@ def phase_58_dimension_reanchor_measures_to_surface(
         {
             "value_edit_routed": routed,
             "ref_z_after_value_edit": float(ov_after.get("ref_z")) if isinstance(ov_after, dict) else None,
-            "thickness_after_value_edit": float(app.rows[2].thickness),
+            "moved_gap_thickness": float(app.rows[2].thickness),
+            "upstream_gaps_unchanged": (
+                abs(float(app.rows[0].thickness) - gap0_pre) <= 1e-9
+                and abs(float(app.rows[1].thickness) - gap1_pre) <= 1e-9
+            ),
         }
     )
     if not routed:
-        result.notes.append("value edit on a re-anchored row did not route to the measurement (feedback #6)")
-    if not (isinstance(ov_after, dict) and abs(float(ov_after.get("ref_z", 0.0)) - 17.0) < 1e-6):
-        result.notes.append("value edit must move the measured ref_z to 10+7=17, not the model (feedback #6)")
-    if abs(float(app.rows[2].thickness) - thickness_pre_edit) > 1e-9:
+        result.notes.append("value edit on a re-anchored row did not move the downstream element (feedback #6)")
+    if abs(float(app.rows[2].thickness) - 45.0) > 1e-6:
         result.notes.append(
-            f"value edit changed rows[2].thickness {thickness_pre_edit} -> {app.rows[2].thickness} "
-            "(feedback #6: wrong element moved)"
+            f"value edit must move the downstream element by editing gap S2 to 45.0, "
+            f"got {app.rows[2].thickness} (feedback #6)"
         )
+    if abs(float(app.rows[0].thickness) - gap0_pre) > 1e-9 or abs(float(app.rows[1].thickness) - gap1_pre) > 1e-9:
+        result.notes.append("value edit must leave every OTHER gap unchanged (feedback #6)")
+    if not (isinstance(ov_after, dict) and abs(float(ov_after.get("ref_z", 0.0)) - 173.0) < 1e-6):
+        result.notes.append("the moved endpoint must follow to z = 158+15 = 173 (feedback #6)")
 
     try:
         app._dimension_anchor_overrides = {}
