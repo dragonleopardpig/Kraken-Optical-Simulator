@@ -881,6 +881,34 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception as exc:
             self.editor.append_debug(f"Open 3D STEP admin refresh failed: {exc}")
 
+    def sync_step_admin_canvas_selection(self, iid: str) -> None:
+        """bugs/0063: mirror a direct 3D-canvas pick into the STEP admin browser
+        so the "Selected Element" action buttons enable just as a browser-tree
+        click does. The canvas pick already applied the editor/inspector
+        selection + gizmo; this only syncs the panel's selection + button state."""
+        panel = getattr(self, "_open3d_step_admin_panel_instance", None)
+        if panel is None:
+            return
+        try:
+            panel.select_from_canvas(iid)
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D STEP admin canvas-sync failed: {exc}")
+
+    def _open3d_browser_iid_for_table_row(self, row_index: int) -> str:
+        """bugs/0063: the browser iid for a canvas-picked editable-table row --
+        promoted STEP optical solids list as ``row:N``; every other drawn row
+        (including element-group children) lists as ``scene-row:N`` (see
+        Open3DStepAdminPanel.refresh)."""
+        rows = list(getattr(self.editor, "rows", []) or [])
+        if not (0 <= row_index < len(rows)):
+            return ""
+        try:
+            if self.editor._is_open3d_promoted_optical_solid_row(rows[row_index]):
+                return f"row:{row_index}"
+        except Exception:
+            pass
+        return f"scene-row:{row_index}"
+
     def _editor_var(self, name: str, default: str = ""):
         return self._open3d_live_controls_panel().editor_var(name, default)
 

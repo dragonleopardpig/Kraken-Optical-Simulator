@@ -5528,6 +5528,47 @@ def phase_64_open3d_clipped_vignetting_parity(
     return result
 
 
+def phase_65_open3d_canvas_pick_enables_buttons(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A direct 3D-canvas pick enables the "Selected Element" buttons (bugs/0063).
+
+    The Open 3D inspector selects an imported STEP solid (or any drawn row) two
+    ways: a right-panel browser click or a direct 3D-canvas pick. The browser
+    click enabled the Selected Element action buttons; the canvas pick left them
+    grayed out. The button-enable logic (`_update_properties`) keys off the
+    browser tree IID, which the browser click set but the canvas pick never
+    synced. The fix mirrors a canvas pick into the browser via
+    `Open3DStepAdminPanel.select_from_canvas` (routed through the inspector's
+    `sync_step_admin_canvas_selection`), so both entry points land on the same
+    IID and light the same buttons.
+
+    The guard (`validate_open3d_canvas_pick_enables_buttons`) is display-free:
+    source contracts that both pick kinds sync the panel and that
+    `select_from_canvas` refreshes the buttons, plus behaviour parity on a fake
+    editor (canvas-pick IID lights the same buttons as the browser; empty
+    selection grays them all). No renderer needed, so it runs everywhere.
+    """
+    result = PhaseResult(
+        name="Phase 65: Open 3D canvas pick enables Selected-Element buttons"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_canvas_pick_enables_buttons import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"canvas-pick button guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("canvas-pick button guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -5638,6 +5679,7 @@ def main() -> int:
             phase_62_variable_thickness_solve,
             phase_63_open3d_clipped_rays_sync,
             phase_64_open3d_clipped_vignetting_parity,
+            phase_65_open3d_canvas_pick_enables_buttons,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

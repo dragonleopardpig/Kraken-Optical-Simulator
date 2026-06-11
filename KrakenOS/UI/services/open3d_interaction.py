@@ -415,6 +415,7 @@ class Open3DInteractionService:
                 remembered = self._remember_selected_step_feature(step_label, feature, surface_center_world=surface_center, face_id=picked_face_id)
                 self.editor.select_step_component(step_label)
                 self.show_step_rotation_handler(step_label, additive=shift_additive)
+                self.sync_step_admin_canvas_selection(f"overlay:{str(step_label).strip().lower()}")
                 if remembered:
                     self.status_var.set(
                         f"Selected {step_label.upper()} STEP face. Rotation handles remain active; "
@@ -610,6 +611,7 @@ class Open3DInteractionService:
         self._set_row_highlight(row_index)
         self._set_ray_highlight(None)
         self.editor._select_table_row(row_index)
+        self.sync_step_admin_canvas_selection(self._open3d_browser_iid_for_table_row(int(row_index)))
         row_name = self.editor.rows[row_index].name if 0 <= row_index < len(self.editor.rows) else "Surface"
         if self._center_row_to_ray_mode:
             if self.editor.rows[row_index].surface in {"Object", "Image"}:

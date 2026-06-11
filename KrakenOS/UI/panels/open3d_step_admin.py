@@ -783,6 +783,102 @@ class Open3DStepAdminPanel:
         kind, value = iid.split(":", 1)
         return kind, value
 
+    def _selection_flags_for_iid(self, iid: str) -> dict[str, bool]:
+        """bugs/0063: derive the "Selected Element" action gating purely from
+        the browser iid + editor state. Both a browser-tree click and a direct
+        3D-canvas pick land on the same iid, so routing the canvas pick through
+        these flags lights exactly the same buttons the browser click does."""
+        overlay = False
+        promoted_row = False
+        file_backed_row = False
+        centerable_row = False
+        iid = str(iid or "")
+        rows = list(getattr(self.editor, "rows", []) or [])
+        if iid.startswith("overlay:"):
+            label = iid.split(":", 1)[1]
+            overlay = self.editor._step_path_for_label(label) is not None
+        elif iid.startswith("row:"):
+            try:
+                row_index = int(iid.split(":", 1)[1])
+            except Exception:
+                row_index = -1
+            if 0 <= row_index < len(rows):
+                promoted_row = True
+                file_backed_row = True
+        elif iid.startswith("scene-row:"):
+            try:
+                row_index = int(iid.split(":", 1)[1])
+            except Exception:
+                row_index = -1
+            if 0 <= row_index < len(rows):
+                try:
+                    file_backed_row = self.editor._file_backed_stl_row_at(row_index) is not None
+                except Exception:
+                    file_backed_row = False
+                surface = str(getattr(rows[row_index], "surface", "") or "")
+                centerable_row = surface not in {"Object", "Image"}
+        elif iid.startswith("element:"):
+            span = self._parse_element_iid(iid)
+            if span is not None:
+                start, end = span
+                indices = [index for index in self._element_visible_indices(start, end) if 0 <= index < len(rows)]
+                centerable_row = any(
+                    str(getattr(rows[index], "surface", "") or "") not in {"Object", "Image"}
+                    for index in indices
+                )
+        return {
+            "overlay": overlay,
+            "promoted_row": promoted_row,
+            "file_backed_row": file_backed_row,
+            "centerable_row": centerable_row,
+        }
+
+    @staticmethod
+    def _compute_selection_button_states(flags: dict[str, bool]) -> dict[str, bool]:
+        overlay = bool(flags.get("overlay"))
+        promoted_row = bool(flags.get("promoted_row"))
+        file_backed_row = bool(flags.get("file_backed_row"))
+        centerable_row = bool(flags.get("centerable_row"))
+        return {
+            "carry": overlay,
+            "accept": overlay,
+            "promote": overlay,
+            "native": overlay,
+            "delete": overlay or promoted_row,
+            "faces": promoted_row or file_backed_row,
+            "center": overlay or promoted_row or centerable_row,
+            "normal": overlay,
+            "pick_normal": overlay,
+            "surface_center": overlay,
+        }
+
+    def select_from_canvas(self, iid: str) -> None:
+        """bugs/0063: mirror a direct 3D-canvas pick into the browser so the
+        "Selected Element" action buttons enable exactly as a browser-tree
+        click does. The canvas-pick handlers set the editor/inspector selection
+        and rotation gizmo but never touched this panel, so for a canvas pick
+        the buttons stayed grayed while a browser click enabled them."""
+        iid = str(iid or "")
+        self._selected_item_id = iid
+        tree = self._tree
+        if tree is not None:
+            self._refreshing = True
+            try:
+                if iid and tree.exists(iid):
+                    tree.selection_set(iid)
+                    tree.focus(iid)
+                    try:
+                        tree.see(iid)
+                    except Exception:
+                        pass
+                else:
+                    current = tree.selection()
+                    if current:
+                        tree.selection_remove(current)
+            finally:
+                self._refreshing = False
+        self._update_properties(iid)
+
     def _update_properties(self, iid: str) -> None:
         values = {
             "name": "-",
@@ -791,84 +887,66 @@ class Open3DStepAdminPanel:
             "pose": "-",
             "faces": "-",
         }
-        overlay_selected = False
-        promoted_row_selected = False
-        file_backed_row_selected = False
-        centerable_row_selected = False
-        if iid.startswith("overlay:"):
+        flags = self._selection_flags_for_iid(iid)
+        rows = list(getattr(self.editor, "rows", []) or [])
+        if iid.startswith("overlay:") and flags["overlay"]:
             label = iid.split(":", 1)[1]
-            path = self.editor._step_path_for_label(label)
-            overlay_selected = path is not None
-            if overlay_selected:
-                display = self.editor._step_overlay_display_label(label)
-                offset = self.editor._step_placement_offset_xyz(label)
-                values.update(
-                    {
-                        "name": f"{display} STEP",
-                        "kind": "Imported overlay",
-                        "file": self._step_path_name(label),
-                        "pose": (
-                            f"R=({self.editor._step_x_rotation_deg(label):.0f},"
-                            f"{self.editor._step_y_rotation_deg(label):.0f},"
-                            f"{self.editor._step_roll_deg(label):.0f}) "
-                            f"T=({float(offset[0]):.3g},{float(offset[1]):.3g},{float(offset[2]):.3g})"
-                        ),
-                        "faces": "Promote or right-click",
-                    }
+            display = self.editor._step_overlay_display_label(label)
+            offset = self.editor._step_placement_offset_xyz(label)
+            values.update(
+                {
+                    "name": f"{display} STEP",
+                    "kind": "Imported overlay",
+                    "file": self._step_path_name(label),
+                    "pose": (
+                        f"R=({self.editor._step_x_rotation_deg(label):.0f},"
+                        f"{self.editor._step_y_rotation_deg(label):.0f},"
+                        f"{self.editor._step_roll_deg(label):.0f}) "
+                        f"T=({float(offset[0]):.3g},{float(offset[1]):.3g},{float(offset[2]):.3g})"
+                    ),
+                    "faces": "Promote or right-click",
+                }
+            )
+        elif iid.startswith("row:") and flags["promoted_row"]:
+            row_index = int(iid.split(":", 1)[1])
+            row = rows[row_index]
+            advanced = getattr(row, "advanced", {}) if not isinstance(row, dict) else row.get("advanced", {})
+            promotion = advanced.get("StepOverlayPromotion", {}) if isinstance(advanced, dict) else {}
+            source_path = ""
+            if isinstance(advanced, dict):
+                source_path = str(
+                    promotion.get("source_step_path")
+                    or advanced.get("OpticalSolidSourcePath")
+                    or promotion.get("promoted_mesh_path")
+                    or advanced.get("Solid_3d_stl")
+                    or ""
                 )
-        elif iid.startswith("row:"):
-            try:
-                row_index = int(iid.split(":", 1)[1])
-            except Exception:
-                row_index = -1
-            rows = list(getattr(self.editor, "rows", []) or [])
-            if 0 <= row_index < len(rows):
-                row = rows[row_index]
-                promoted_row_selected = True
-                file_backed_row_selected = True
-                advanced = getattr(row, "advanced", {}) if not isinstance(row, dict) else row.get("advanced", {})
-                promotion = advanced.get("StepOverlayPromotion", {}) if isinstance(advanced, dict) else {}
-                source_path = ""
-                if isinstance(advanced, dict):
-                    source_path = str(
-                        promotion.get("source_step_path")
-                        or advanced.get("OpticalSolidSourcePath")
-                        or promotion.get("promoted_mesh_path")
-                        or advanced.get("Solid_3d_stl")
-                        or ""
-                    )
-                path_text = Path(source_path).name
-                face_metadata = advanced.get("OpticalSolidFaces", {}) if isinstance(advanced, dict) else {}
-                assigned = 0
-                if isinstance(face_metadata, dict):
-                    assigned = len(face_metadata)
-                values.update(
-                    {
-                        "name": str(getattr(row, "name", "") or f"S{row_index} STEP solid"),
-                        "kind": f"Promoted row S{row_index}",
-                        "file": path_text or "-",
-                        "pose": (
-                            f"D=({float(getattr(row, 'desp_x', 0.0) or 0.0):.3g},"
-                            f"{float(getattr(row, 'desp_y', 0.0) or 0.0):.3g},"
-                            f"{float(getattr(row, 'desp_z', 0.0) or 0.0):.3g})"
-                        ),
-                        "faces": f"{assigned} assigned",
-                    }
-                )
+            path_text = Path(source_path).name
+            face_metadata = advanced.get("OpticalSolidFaces", {}) if isinstance(advanced, dict) else {}
+            assigned = 0
+            if isinstance(face_metadata, dict):
+                assigned = len(face_metadata)
+            values.update(
+                {
+                    "name": str(getattr(row, "name", "") or f"S{row_index} STEP solid"),
+                    "kind": f"Promoted row S{row_index}",
+                    "file": path_text or "-",
+                    "pose": (
+                        f"D=({float(getattr(row, 'desp_x', 0.0) or 0.0):.3g},"
+                        f"{float(getattr(row, 'desp_y', 0.0) or 0.0):.3g},"
+                        f"{float(getattr(row, 'desp_z', 0.0) or 0.0):.3g})"
+                    ),
+                    "faces": f"{assigned} assigned",
+                }
+            )
         elif iid.startswith("scene-row:"):
             try:
                 row_index = int(iid.split(":", 1)[1])
             except Exception:
                 row_index = -1
-            rows = list(getattr(self.editor, "rows", []) or [])
             if 0 <= row_index < len(rows):
                 row = rows[row_index]
-                try:
-                    file_backed_row_selected = self.editor._file_backed_stl_row_at(row_index) is not None
-                except Exception:
-                    file_backed_row_selected = False
                 surface = str(getattr(row, "surface", "") or "")
-                centerable_row_selected = surface not in {"Object", "Image"}
                 advanced = getattr(row, "advanced", {}) if not isinstance(row, dict) else row.get("advanced", {})
                 face_metadata = advanced.get("OpticalSolidFaces", {}) if isinstance(advanced, dict) else {}
                 assigned = len(face_metadata) if isinstance(face_metadata, dict) else 0
@@ -876,19 +954,18 @@ class Open3DStepAdminPanel:
                     {
                         "name": self._scene_row_display_name(row_index, row),
                         "kind": f"Editable table row S{row_index}",
-                        "file": "CAD/STL row" if file_backed_row_selected else "Table",
+                        "file": "CAD/STL row" if flags["file_backed_row"] else "Table",
                         "pose": (
                             f"T=({float(getattr(row, 'thickness', 0.0) or 0.0):.3g}) "
                             f"D=({float(getattr(row, 'desp_x', 0.0) or 0.0):.3g},"
                             f"{float(getattr(row, 'desp_y', 0.0) or 0.0):.3g},"
                             f"{float(getattr(row, 'desp_z', 0.0) or 0.0):.3g})"
                         ),
-                        "faces": f"{assigned} assigned" if file_backed_row_selected else str(surface or "-"),
+                        "faces": f"{assigned} assigned" if flags["file_backed_row"] else str(surface or "-"),
                     }
                 )
         elif iid.startswith("element:"):
             span = self._parse_element_iid(iid)
-            rows = list(getattr(self.editor, "rows", []) or [])
             if span is not None:
                 start, end = span
                 indices = self._element_visible_indices(start, end)
@@ -896,10 +973,6 @@ class Open3DStepAdminPanel:
                 if valid_indices:
                     first_row = rows[valid_indices[0]]
                     name = self._element_key_for_row(first_row) or self._scene_row_display_name(valid_indices[0], first_row)
-                    centerable_row_selected = any(
-                        str(getattr(rows[index], "surface", "") or "") not in {"Object", "Image"}
-                        for index in valid_indices
-                    )
                     file_backed_count = 0
                     face_count = 0
                     for index in valid_indices:
@@ -922,19 +995,10 @@ class Open3DStepAdminPanel:
                         }
                     )
         for key, value in values.items():
-            self._property_vars[key].set(value)
-        button_states = {
-            "carry": overlay_selected,
-            "accept": overlay_selected,
-            "promote": overlay_selected,
-            "native": overlay_selected,
-            "delete": overlay_selected or promoted_row_selected,
-            "faces": promoted_row_selected or file_backed_row_selected,
-            "center": overlay_selected or promoted_row_selected or centerable_row_selected,
-            "normal": overlay_selected,
-            "pick_normal": overlay_selected,
-            "surface_center": overlay_selected,
-        }
+            var = self._property_vars.get(key)
+            if var is not None:
+                var.set(value)
+        button_states = self._compute_selection_button_states(flags)
         for key, button in self._selection_buttons.items():
             try:
                 button.configure(state="normal" if button_states.get(key, False) else "disabled")
@@ -942,7 +1006,7 @@ class Open3DStepAdminPanel:
                 pass
         if self._face_direction_combo is not None:
             try:
-                self._face_direction_combo.configure(state="readonly" if overlay_selected else "disabled")
+                self._face_direction_combo.configure(state="readonly" if flags["overlay"] else "disabled")
             except Exception:
                 pass
 

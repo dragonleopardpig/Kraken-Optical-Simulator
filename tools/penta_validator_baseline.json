@@ -66,7 +66,8 @@
     "61": "pass",
     "62": "pass",
     "63": "pass",
-    "64": "pass"
+    "64": "pass",
+    "65": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -133,6 +134,7 @@
     "61": "detector FOV plane pickable (Object + Image squares hover/double-click)",
     "62": "Variable-thickness Best Focus / Best Collimation solve (machine-vision layouts)",
     "63": "Open 3D synced clipped-rays toggle (3D Overlays follows 2D Show clipped rays both ways)",
-    "64": "Open 3D clipped-ray vignetting parity with 2D (hides non-folded strays when clipping OFF)"
+    "64": "Open 3D clipped-ray vignetting parity with 2D (hides non-folded strays when clipping OFF)",
+    "65": "Open 3D canvas pick enables Selected-Element buttons (canvas pick syncs the browser like a tree click)"
   }
 }
