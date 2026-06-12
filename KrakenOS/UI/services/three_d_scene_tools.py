@@ -71,13 +71,14 @@ def _row_has_skipped_missing_asset(advanced: dict) -> bool:
 from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timing_span
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
+from KrakenOS.UI.services.offbeam_optical_solid import offbeam_neutralized_body_transform
 from KrakenOS.UI.services.optical_solid_geometry import (
     _read_stl_triangle_vertices,
     _rotation_matrix_from_kraken_tilts,
 )
 from KrakenOS.UI.services.row_spec_contracts import _row_specs_signature
 from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABELS, STEP_OVERLAY_LABEL_SET
-from KrakenOS.UI.surface_table_model import SurfaceRow
+from KrakenOS.UI.surface_table_model import SurfaceRow, surface_row_to_spec
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SCREENSHOT_DIR = PROJECT_ROOT / "attachment"
@@ -1176,6 +1177,25 @@ class ThreeDSceneToolsMixin:
                 mesh = ThreeDSceneToolsMixin._runtime_trace_surface_mesh(system, index)
             if row_transform is None:
                 row_transform = transforms[index]
+            # A parked uncoated solid is dropped from the optical trace
+            # (bugs/0065), so its build transform is on-axis; redraw the DISPLAY
+            # body at its decentered station instead of letting it snap onto the
+            # optical axis the instant it is promoted (bugs/0067). No-op for a
+            # coated splitter, whose build keeps its decenter. Trace untouched.
+            built_surfaces = getattr(system, "SDT", None)
+            if (
+                row_transform is not None
+                and built_surfaces is not None
+                and 0 <= index < len(built_surfaces)
+            ):
+                redecentered = offbeam_neutralized_body_transform(
+                    row_transform,
+                    surface_row_to_spec(row),
+                    getattr(built_surfaces[index], "DespX", 0.0),
+                    getattr(built_surfaces[index], "DespY", 0.0),
+                )
+                if redecentered is not None:
+                    row_transform = redecentered
             if file_backed_optical_solid and row_transform is not None and mesh is None:
                 solid_mesh = self._stl_mesh_with_world_transform(row, row_transform)
                 if solid_mesh is not None and int(getattr(solid_mesh, "n_points", 0)) > 0:

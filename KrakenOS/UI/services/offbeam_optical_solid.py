@@ -38,6 +38,8 @@ from __future__ import annotations
 import copy
 import math
 
+import numpy as np
+
 from KrakenOS.UI.services.advanced_surface_attrs import (
     _advanced_surface_attrs_from_spec,
     _canonical_advanced_surface_attr,
@@ -263,3 +265,60 @@ def neutralize_offbeam_inert_solids(row_specs: list[dict]) -> list[dict]:
         else:
             result.append(spec)
     return result if changed else row_specs
+
+
+# Below this the live row counts as on-axis (nothing to restore) and a built
+# surface counts as still carrying its decenter (the build did not neutralise).
+_NEUTRALIZED_BODY_DECENTER_EPS_MM = 1e-6
+
+
+def offbeam_neutralized_body_transform(base_transform, spec, built_desp_x, built_desp_y):
+    """Redraw a neutralised off-beam solid's body back at its decentered station.
+
+    ``neutralize_offbeam_inert_solids`` drops a parked uncoated solid's decenter
+    so the solid contributes ZERO optical effect (bugs/0065) -- correct for the
+    trace, but the 3-D body is then placed by the *neutralised* on-axis build
+    transform (``TRANS_2A[index]``), so the display body snaps onto the optical
+    axis the moment the solid is promoted / the Face Editor opens (bugs/0067).
+    This restores the body's lateral station for DISPLAY ONLY; the optical solve
+    is never consulted here and stays untouched.
+
+    Returns a re-decentered copy of ``base_transform`` when -- and only when --
+    the build neutralised a decentered promoted solid: the live ``spec`` is a
+    promoted optical solid carrying a real decenter, yet the built surface's
+    ``DespX``/``DespY`` came back ~0 (the exact neutralisation signature).
+    Otherwise returns ``None`` so the caller keeps the ordinary placement -- a
+    coated splitter keeps its decenter in the build (``DespX`` != 0) and is left
+    alone.
+
+    The restored translation is exact for an untilted solid: the non-neutralised
+    and neutralised ``TRANS_2A[index]`` share their rotation block ``R`` and
+    differ in translation by precisely ``R @ desp``, so adding
+    ``base_transform[:3, :3] @ desp`` reproduces the non-neutralised world
+    station.  Restoring a neutralised solid's OWN tilt orientation is out of
+    scope (rare; coated splitters are never neutralised in the first place).
+    """
+    if base_transform is None:
+        return None
+    if not is_promoted_optical_solid_spec(spec):
+        return None
+    if solid_lateral_decenter(spec) <= _NEUTRALIZED_BODY_DECENTER_EPS_MM:
+        return None
+    built_decenter = math.hypot(
+        _float_or_zero(built_desp_x), _float_or_zero(built_desp_y)
+    )
+    if built_decenter > _NEUTRALIZED_BODY_DECENTER_EPS_MM:
+        return None
+    transform = np.array(base_transform, dtype=float)
+    if transform.shape != (4, 4):
+        return None
+    desp = np.array(
+        (
+            _float_or_zero(spec.get("desp_x", 0.0)),
+            _float_or_zero(spec.get("desp_y", 0.0)),
+            _float_or_zero(spec.get("desp_z", 0.0)),
+        ),
+        dtype=float,
+    )
+    transform[:3, 3] = transform[:3, 3] + transform[:3, :3] @ desp
+    return transform

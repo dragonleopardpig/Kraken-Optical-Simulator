@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-06-11T12:00:00+00:00",
+  "generated_at": "2026-06-12T03:06:09+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -73,7 +73,8 @@
     "68": "pass",
     "69": "pass",
     "70": "pass",
-    "71": "pass"
+    "71": "pass",
+    "72": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -147,6 +148,7 @@
     "68": "Open 3D resize overlay/promotion wiring + right-click Resize Solid... popup",
     "69": "Open 3D beam-splitter 45 deg coating recovered as a selectable face",
     "70": "Open 3D drag-to-resize gesture planner (face->axis/anchor/coupling, plan fed through the real geometry kernel)",
-    "71": "Open 3D coated splitter detected via the real dict face schema (off-axis coated cube stays in the non-seq trace, no axis snap)"
+    "71": "Open 3D coated splitter detected via the real dict face schema (off-axis coated cube stays in the non-seq trace, no axis snap)",
+    "72": "Open 3D off-beam solid body stays off-axis (no axis snap at promotion)"
   }
 }

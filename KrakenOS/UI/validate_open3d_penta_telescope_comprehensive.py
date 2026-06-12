@@ -5811,6 +5811,46 @@ def phase_71_coated_solid_schema_exempt(
     return result
 
 
+def phase_72_offbeam_body_stays_offaxis(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A neutralised off-beam solid's BODY stays off-axis in 3-D (bugs/0067).
+
+    The instant a parked, still-UNCOATED promoted solid is converted to an
+    optical row / the Face Editor opens, its 3-D body snapped onto the optical
+    axis. bugs/0065 correctly drops an off-beam inert solid from the optical
+    trace, but the body was then placed by that neutralized on-axis build
+    transform (``TRANS_2A[index]``), so it snapped to the axis. The fix
+    (``offbeam_neutralized_body_transform``, wired into
+    ``_iter_3d_optical_surface_meshes``) restores the body's lateral station for
+    DISPLAY ONLY -- exactly ``R @ desp`` -- leaving the optical solve untouched;
+    a coated splitter keeps its decenter in the build and is left alone.
+
+    The guard (`validate_open3d_offbeam_body_stays_offaxis`) is display-free: the
+    pure helper contract plus a real ``_build_system_from_specs`` round-trip that
+    proves the body WOULD snap and that the re-decenter reproduces the
+    non-neutralized station, so it runs everywhere.
+    """
+    result = PhaseResult(
+        name="Phase 72: Open 3D off-beam solid body stays off-axis (no axis snap at promotion)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_offbeam_body_stays_offaxis import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"off-beam body guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("off-beam body guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -5928,6 +5968,7 @@ def main() -> int:
             phase_69_beam_splitter_coating_recovered,
             phase_70_resize_gesture_planner,
             phase_71_coated_solid_schema_exempt,
+            phase_72_offbeam_body_stays_offaxis,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
