@@ -206,7 +206,7 @@ class ThreeDSceneToolsMixin:
         specs: list[tuple[str, Path, bool]] = []
         for label, attr, largest in (
             ("lens", "imported_lens_step_path", bool(getattr(self, "lens_step_largest_component_only", True))),
-            ("camera", "imported_camera_step_path", True),
+            ("camera", "imported_camera_step_path", False),
             ("optical", "imported_optical_step_path", False),
             ("led", "imported_led_step_path", False),
         ):

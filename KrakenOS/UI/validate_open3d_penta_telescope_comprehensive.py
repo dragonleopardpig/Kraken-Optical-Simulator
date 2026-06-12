@@ -5851,6 +5851,46 @@ def phase_72_offbeam_body_stays_offaxis(
     return result
 
 
+def phase_73_camera_step_full_body(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The camera STEP overlay renders the WHOLE camera body (bugs/0068).
+
+    The 65 MP vendor camera (BC-GM(C)65M12X4-F) drew as a thin ~6 mm sensor-
+    window slab instead of its 80x80x96 mm body: the overlay loaded with
+    ``largest_component=True`` and ``_largest_connected_step_component`` keeps the
+    region with the MOST TRIANGLES -- the densely-curved window cover -- dropping
+    the simpler, far bigger body box. The fix renders the full multi-part
+    assembly (``largest_component=False``) in both the build
+    (``_transformed_imported_camera_step_mesh``) and the cache warm-up
+    (``_open3d_step_cache_warmup_specs``).
+
+    The guard (`validate_open3d_camera_step_full_body`) is display-free and
+    portable: it proves the metric trap on a synthetic mesh against the real
+    selector, that both camera codepaths now request the full assembly, and (when
+    the gitignored vendor caches are present) that the largest-component cache is
+    the slab the user saw.
+    """
+    result = PhaseResult(
+        name="Phase 73: Open 3D camera STEP renders the full camera body (not the sensor-window slab)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_camera_step_full_body import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"camera full-body guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("camera full-body guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -5969,6 +6009,7 @@ def main() -> int:
             phase_70_resize_gesture_planner,
             phase_71_coated_solid_schema_exempt,
             phase_72_offbeam_body_stays_offaxis,
+            phase_73_camera_step_full_body,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

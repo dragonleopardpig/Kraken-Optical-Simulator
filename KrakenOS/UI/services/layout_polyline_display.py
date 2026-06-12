@@ -1201,9 +1201,16 @@ class LayoutPolylineDisplayMixin:
         )
 
         def build():
+            # A camera is a multi-part assembly (body + heat sink + mount +
+            # connectors), so render the WHOLE thing. largest_component keeps only
+            # the most-tessellated connected region (_largest_connected_step_component
+            # ranks by triangle count), which on a vendor body like the 65 MP
+            # BC-GM(C)65M12X4-F collapses the camera to its single densest part — a
+            # ~6 mm sensor-window cover (49 k triangles) — and drops the real
+            # 80x80x96 mm body (a simpler box with far fewer triangles). bugs/0068.
             mesh = self._load_step_mesh(
                 self.imported_camera_step_path,
-                largest_component=True,
+                largest_component=False,
                 allow_slow_import=not self._open3d_step_cache_warmup_active(),
             )
             if mesh is None:
