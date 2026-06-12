@@ -110,13 +110,16 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         offbeam_inert_solid_indices,
     )
 
-    lenses = [_lens(17.5, 50.0), _lens(17.5, -50.0)]
+    # `diameter` is a FULL clear-aperture diameter project-wide (KrakenOS draws
+    # apertures at Diameter/2), so a 35 mm-diameter lens has a 17.5 mm beam radius.
+    lenses = [_lens(35.0, 50.0), _lens(35.0, -50.0)]
 
     # --- A. classifier (pure, portable) --------------------------------------
     offbeam_specs = [_OBJECT, *lenses, _cube(105.0, 174.0, copy.deepcopy(_UNCOATED)), _IMAGE]
     radius = beam_clear_radius(offbeam_specs)
     ok(abs(radius - 17.5) < 1e-9,
-       f"A6: beam radius = max on-beam optical semi-diameter (17.5), got {radius}")
+       f"A6: beam radius = HALF the max on-beam full diameter (35 -> 17.5), got {radius} "
+       "(bugs/0073: a full diameter used as a radius doubled the off-beam threshold)")
     ok(offbeam_inert_solid_indices(offbeam_specs) == [3],
        "A1: an off-beam uncoated promoted cube is classified off-beam")
     ok(offbeam_inert_solid_indices([_OBJECT, *lenses, _cube(105.0, 174.0, copy.deepcopy(_COATED)), _IMAGE]) == [],
@@ -203,6 +206,48 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         plain_specs = [_OBJECT, *lenses, _IMAGE]
         ok(neutralize_offbeam_inert_solids(plain_specs) is plain_specs,
            "C6: a layout with no off-beam solid is returned unchanged (zero overhead)")
+
+    # --- D. full-diameter convention: beam_clear_radius is a true RADIUS ------
+    # Production layouts store the FULL clear-aperture diameter in `diameter`
+    # (KrakenOS draws apertures at Diameter/2; an Image row's diameter is the
+    # literal image-circle "Ø"). The off-beam test compares a RADIAL inner-edge
+    # against the beam radius, so beam_clear_radius MUST return a semi-diameter.
+    # Recording flag_20260612_155154_645: a moderately decentered beam-splitter
+    # cube (centre (22.62, 75.40), 50.5 mm footprint -> inner edge ~53.5 mm) was
+    # parked clear of a wide machine-vision lens (full diameter 46 -> radius 23),
+    # yet direct-promote (no Face Editor) bent the rays -- beam_clear_radius
+    # returned the full diameter 46, inflating the off-beam threshold to 92, so the
+    # 53.5 mm clearance was rejected and the cube's desp leaked (bugs/0073).
+    mv_lenses = [_lens(46.0, 200.0), _lens(38.0, 150.0), _lens(21.55, 0.0),
+                 _lens(38.0, 450.0), _lens(46.0, -200.0)]
+    mv_image = {"surface": "Image", "rc": 0.0, "thickness": 0.0, "diameter": 37.36, "glass": "AIR"}
+    mv_cube = {
+        "surface": "Surface", "rc": 0.0, "thickness": 50.48, "diameter": 50.48,
+        "glass": "N-BK7", "desp_x": 22.62, "desp_y": 75.40, "desp_z": 0.0,
+        "tilt_x": 0.0, "tilt_y": 0.0, "tilt_z": 0.0,
+        "advanced": {
+            "Solid_3d_stl": "attachment/prisms/cube.stl",
+            "StepOverlayPromotion": {"step_label": "optical",
+                                     "bounds_min_world": [-2.62, 50.16, 217.34],
+                                     "bounds_max_world": [47.86, 100.64, 267.82]},
+            "OpticalSolidFaces": copy.deepcopy(_UNCOATED),
+            "OpticalSolidSourceFormat": "STEP",
+        },
+    }
+    mv_specs = [_OBJECT, *mv_lenses, mv_cube, mv_image]
+    mv_cube_idx = len(mv_specs) - 2
+    mv_radius = beam_clear_radius(mv_specs)
+    ok(abs(mv_radius - 23.0) < 1e-9,
+       f"D1: beam radius is HALF the widest full diameter (46 -> 23), got {mv_radius} "
+       "(was 46 before bugs/0073 -- a full diameter read as a radius)")
+    ok(offbeam_inert_solid_indices(mv_specs) == [mv_cube_idx],
+       "D2: the moderately-decentered off-beam cube IS classified off-beam "
+       "(inner edge 53.5 >= threshold 46; rejected before the fix vs the inflated 92)")
+    sys_mv = _build(mv_specs)
+    d = sys_mv.SDT[mv_cube_idx]
+    ok(abs(float(d.DespX)) < 1e-9 and abs(float(d.DespY)) < 1e-9,
+       f"D3: the off-beam cube is neutralised end-to-end (DespX={d.DespX}, DespY={d.DespY} ~ 0) "
+       "-- no coordinate-break leak, the rays no longer bend")
 
     passed = not any(line.startswith("FAIL") for line in notes)
     if verbose:

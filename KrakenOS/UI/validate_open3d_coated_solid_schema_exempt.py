@@ -120,15 +120,16 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
            f"A4[{fn}]: a DICT-schema {fn} solid reads as coated (active-function set)")
 
     # --- B. the payoff: a coated off-axis cube is NOT neutralized (killer) ----
-    # beam_radius = 17.5 (lens semi-diameter); cube half-extent 12.5; at
+    # beam_radius = 17.5 = HALF the 35 mm full clear-aperture diameter (bugs/0073:
+    # ``diameter`` is a FULL diameter project-wide). Cube half-extent 12.5; at
     # desp_x = -55 the inner edge clears the beam (42.5 >= 35), so an UNCOATED
     # cube IS off-beam, but the COATED one must be exempt and keep its decenter.
-    lenses = [_lens(17.5, 50.0), _lens(17.5, -50.0)]
+    lenses = [_lens(35.0, 50.0), _lens(35.0, -50.0)]
     cube_idx = 3
     coated = [_OBJECT, *lenses, _cube_dict(-55.0, ["Transmit/Port", "Beam Splitter"]), _IMAGE]
     uncoated = [_OBJECT, *lenses, _cube_dict(-55.0, ["Transmit/Port", "Transmit/Port"]), _IMAGE]
     radius = beam_clear_radius(coated)
-    ok(abs(radius - 17.5) < 1e-9, f"B0: beam radius = on-beam semi-diameter (17.5), got {radius}")
+    ok(abs(radius - 17.5) < 1e-9, f"B0: beam radius = HALF the max on-beam full diameter (35 -> 17.5), got {radius}")
     ok(not is_offbeam_inert_solid_spec(coated[cube_idx], radius),
        "B1: a DICT-schema COATED off-axis cube is exempt from off-beam neutralization")
     ok(is_offbeam_inert_solid_spec(uncoated[cube_idx], radius),

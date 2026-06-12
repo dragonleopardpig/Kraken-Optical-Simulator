@@ -142,8 +142,8 @@ def solid_lateral_decenter(spec: dict) -> float:
 def solid_transverse_half_extent(spec: dict) -> float:
     """Half of the solid's larger transverse footprint span.
 
-    Prefers the drag-invariant STEP-overlay world bounds; falls back to the
-    surface clear semi-diameter when promotion bounds are absent.
+    Prefers the drag-invariant STEP-overlay world bounds; falls back to half the
+    surface clear diameter when promotion bounds are absent.
     """
     advanced = _advanced_surface_attrs_from_spec(spec)
     promotion = advanced.get("StepOverlayPromotion")
@@ -161,7 +161,10 @@ def solid_transverse_half_extent(spec: dict) -> float:
             half = 0.5 * max(span_x, span_y)
             if half > 0.0:
                 return half
-    return max(_float_or_zero(spec.get("diameter", 0.0)), 0.0)
+    # The ``diameter`` field is a FULL clear-aperture diameter project-wide
+    # (KrakenOS draws apertures at Diameter/2), so the transverse half-extent is
+    # half of it -- the same units as the bounds path above (bugs/0073).
+    return 0.5 * max(_float_or_zero(spec.get("diameter", 0.0)), 0.0)
 
 
 def beam_clear_radius(row_specs: list[dict]) -> float:
@@ -169,8 +172,18 @@ def beam_clear_radius(row_specs: list[dict]) -> float:
 
     Object/Image planes and promoted solids are excluded: solids do not define
     the beam, and Object/Image apertures are oversized stand-ins.
+
+    The ``diameter`` field is a FULL clear-aperture diameter project-wide
+    (KrakenOS draws every aperture at ``Diameter/2`` -- ``Prerequisites3D``,
+    ``Display``, ``PupilTool`` -- and an Image row's diameter is the literal
+    image-circle "Ø"). ``is_offbeam_inert_solid_spec`` compares this radius
+    against RADIAL quantities (lateral decenter, transverse half-extent), so we
+    return the SEMI-diameter. Returning the full diameter (bugs/0073) doubled the
+    off-beam clearance threshold, so a genuinely off-beam solid was left in the
+    centered prescription and its decenter leaked as a propagating coordinate
+    break that bent the rays.
     """
-    radius = 0.0
+    max_diameter = 0.0
     for spec in row_specs or []:
         if not isinstance(spec, dict):
             continue
@@ -179,8 +192,8 @@ def beam_clear_radius(row_specs: list[dict]) -> float:
             continue
         if is_promoted_optical_solid_spec(spec):
             continue
-        radius = max(radius, _float_or_zero(spec.get("diameter", 0.0)))
-    return radius
+        max_diameter = max(max_diameter, _float_or_zero(spec.get("diameter", 0.0)))
+    return 0.5 * max_diameter
 
 
 def is_offbeam_inert_solid_spec(spec: dict, beam_radius: float) -> bool:

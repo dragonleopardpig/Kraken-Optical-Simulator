@@ -5628,6 +5628,14 @@ def phase_66_offbeam_solid_display_only(
     -- zero optical effect, surface count + axial chain preserved, the 3-D body
     still drawing. A coated splitter or an on-beam solid stays in the trace.
 
+    bugs/0073: the off-beam classifier compared the cube's RADIAL decenter against
+    ``beam_clear_radius``, which used to return the max FULL clear-aperture diameter
+    (``diameter`` is a full diameter project-wide) -- doubling the clearance
+    threshold so a genuinely off-beam cube on a wide machine-vision layout was left
+    in the centered prescription and its decenter leaked as a coordinate break
+    (the same direct-promote symptom, no Face Editor). ``beam_clear_radius`` now
+    returns the SEMI-diameter; the guard's Section D pins the real layout.
+
     The guard (`validate_open3d_offbeam_solid_display_only`) is display-free: a
     pure classifier plus the real ``_build_system_from_specs`` prescription, whose
     killer check proves the off-beam-cube prescription is byte-for-byte optically
