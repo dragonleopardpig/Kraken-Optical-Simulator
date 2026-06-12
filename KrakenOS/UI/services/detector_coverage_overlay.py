@@ -128,6 +128,16 @@ def _rect_points(center, u, v, half_w, half_h):
     ])
 
 
+def pick_fill_rect_points(center, u, v, half_w, half_h):
+    """The 4 corners of the faint pickable FOV fill, in the same orientation as
+    the green object-FOV edge from ``detector_coverage_overlay_specs``: width
+    (``half_w``) spans the horizontal axis ``v`` and height (``half_h``) the
+    vertical axis ``u`` (``_basis`` returns u=+Y vertical, v horizontal). Sharing
+    this with the edge keeps the shaded fill coincident with its own outline for a
+    landscape sensor (bugs/0069 fixed the edge; bugs/0072 the lagging fill)."""
+    return _rect_points(center, v, u, half_w, half_h)[:4]
+
+
 def detector_coverage_overlay_specs(
     object_point,
     image_point,
@@ -342,8 +352,8 @@ class DetectorCoverageOverlayService:
         follow-up). The coverage overlay's FOV box / image circle are line actors
         with no fill, and with the detector overlay on the Object/Image clear-
         aperture disk is suppressed to opacity 0 -- so when only "Det" is on the
-        Object plane had no pickable geometry to click. A filled quad matches the
-        square FOV plane the user sees and gives the whole plane a pick target."""
+        Object plane had no pickable geometry to click. A filled quad coincides
+        with the drawn FOV edge and gives the whole plane a pick target."""
         pv = self._pv
         if pv is None:
             return False
@@ -353,7 +363,7 @@ class DetectorCoverageOverlayService:
             hh = float(half_h)
             if not (np.isfinite(hw) and np.isfinite(hh)) or hw <= 1e-9 or hh <= 1e-9:
                 return False
-            corners = _rect_points(c, np.asarray(u, dtype=float), np.asarray(v, dtype=float), hw, hh)[:4]
+            corners = pick_fill_rect_points(c, np.asarray(u, dtype=float), np.asarray(v, dtype=float), hw, hh)
             faces = np.asarray([4, 0, 1, 2, 3], dtype=np.int64)
             mesh = pv.PolyData(corners, faces)
             self.inspector._add_mesh_actor(

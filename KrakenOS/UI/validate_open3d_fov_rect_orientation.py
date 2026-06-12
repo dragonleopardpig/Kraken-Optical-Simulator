@@ -26,6 +26,10 @@ This guard is DISPLAY-FREE and portable (pure geometry; no vendor assets):
   * B -- the detector-coverage object-FOV rect (green) does the same.
   * C (fail-before/pass-after) -- source wiring: footprint maps width->bitangent
     (not tangent), and both overlay rects build with width->v.
+  * D (bugs/0072) -- the faint *pickable* FOV fill (a separate actor) coincides
+    with the green object-FOV edge; it lagged the 0069 fix and rendered
+    transposed against its own outline ("shaded light rectangle not matching the
+    green edge").
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_fov_rect_orientation
@@ -105,6 +109,32 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     qe_src = inspect.getsource(qeo.QuickEstimationOverlayService.add_overlays)
     ok("_rect_points(img_pt, v, u," in qe_src,
        "C4: QE recommended-sensor rect builds width->v (horizontal)")
+
+    # --- D. the faint pickable FOV fill matches the green edge (bugs/0072) -----
+    # The shaded fill is a separate actor (DetectorCoverageOverlayService.
+    # _pick_fill_actor) built from pick_fill_rect_points. Its corners must coincide
+    # with the green object_fov_rect or the shaded plane reads transposed against
+    # its own outline -- the reported "shaded light rectangle not matching the
+    # green edge". This is a behavioral check on the shared corner helper.
+    if fov is not None:
+        u, v = dco._basis(np.asarray(img_pt, dtype=float) - np.asarray(obj_pt, dtype=float))
+        fill = np.asarray(
+            dco.pick_fill_rect_points(
+                np.asarray(obj_pt, dtype=float), u, v,
+                metrics.object_fov_half_width, metrics.object_fov_half_height,
+            ),
+            dtype=float,
+        )
+        green_corners = np.asarray(fov["points"], dtype=float)[:4]
+        ok(fill.shape == (4, 3) and np.allclose(fill, green_corners, atol=1e-6),
+           "D1: pickable FOV fill corners coincide with the green object-FOV edge")
+        fx, fy, _fz = _extents(fill)
+        ok(fx > fy, f"D2: pickable FOV fill reads landscape (X {fx:.1f} > Y {fy:.1f})")
+    fill_src = inspect.getsource(dco.DetectorCoverageOverlayService._pick_fill_actor)
+    ok("pick_fill_rect_points(" in fill_src,
+       "D3: pick fill builds via pick_fill_rect_points (shares the edge orientation)")
+    ok("corners = _rect_points(" not in fill_src,
+       "D4: pick fill no longer maps width->u inline (old transposed fill)")
 
     passed = not any(line.startswith("FAIL") for line in notes)
     if verbose:

@@ -5947,7 +5947,9 @@ def phase_74_fov_rect_orientation(
     on a non-square landscape sensor it proves the shared footprint and the object-
     FOV rect put width on horizontal X / height on vertical Y, plus source-wiring
     checks that the footprint maps width->bitangent and both overlay rects build
-    width->v.
+    width->v. Extended (bugs/0072) to also pin the faint *pickable* FOV fill --
+    a separate actor that lagged the 0069 fix and rendered transposed against its
+    own green edge -- so the shaded plane now coincides with its outline.
     """
     result = PhaseResult(
         name="Phase 74: Open 3D FOV/sensor rectangles render landscape (width=long side on horizontal X, not transposed)"
