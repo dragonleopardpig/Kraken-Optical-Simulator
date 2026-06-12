@@ -136,7 +136,7 @@ caches instead of silently reusing them. **An already-promoted row keeps its bak
 re-import + promote) to pick up the recovered coating; future imports/promotes get
 it automatically.
 
-## Follow-up — off-beam non-sequential trace (reverted, deferred)
+## Follow-up — off-beam non-sequential trace (RESOLVED → bugs/0065)
 
 User parked the promoted cube off the beam path and the on-axis rays went wrong
 (focus short of the detector + diverging). First attempt (commit `02323d2`)
@@ -146,6 +146,16 @@ promoted **solid** parked off-axis becomes a vignetting thin surface in the
 sequential path. Reverted (`01a7743`). Real cause: a promoted off-beam solid
 should be a **display-only scene body** outside the optical trace path (not a
 sequential surface, not a non-seq launch perturbation) until it is on the beam or
-coated. Deferred — it is core non-sequential trace plumbing and the live ray
-render can't be verified headless (this layout class SIGSEGVs the offscreen
-renderer); needs in-app render verification. Independent of the coating fix.
+coated.
+
+**Resolved in bugs/0065.** The leak was the solid's lateral decenter
+(`desp_x`/`desp_y`) copied verbatim onto `surface.DespX`/`DespY` in
+`_build_system_from_specs` as a *propagating* coordinate break, dragging the
+off-axis cube into the centered prescription. The fix
+(`services/offbeam_optical_solid.neutralize_offbeam_inert_solids`, called at the
+top of `_build_system_from_specs`) replaces each off-beam inert promoted solid
+with a flat zero-power AIR surface at the on-axis station — zero optical effect,
+the 3-D body still draws. See `bugs/0065-open3d-offbeam-promoted-solid-display-only.md`,
+guard `validate_open3d_offbeam_solid_display_only` (18 checks), penta Phase 66.
+The live ray render still can't be confirmed headless (SIGSEGV); pinned by the
+display-free prescription guard, user confirms in-app.

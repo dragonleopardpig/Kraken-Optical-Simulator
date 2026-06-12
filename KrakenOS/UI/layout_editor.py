@@ -533,6 +533,7 @@ from KrakenOS.UI.services.advanced_surface_attrs import (
     _advanced_surface_attrs_from_spec,
 )
 from KrakenOS.UI.services.cad_cache_paths import CAD_CACHE_DIR
+from KrakenOS.UI.services.offbeam_optical_solid import neutralize_offbeam_inert_solids
 from KrakenOS.UI.services.row_spec_contracts import (
     _requires_scalar_trace,
     _row_specs_signature,
@@ -1939,6 +1940,16 @@ def _shared_setup(metal_catalogs=None):
 
 
 def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=None) -> object:
+    # bugs/0065: a promoted optical SOLID parked clear of the beam is a
+    # display-only scene body, not an optical element. Its lateral decenter
+    # would otherwise propagate as a surface.DespX/DespY coordinate break and
+    # corrupt the centered paraxial / best-focus / image-circle solve (the
+    # off-beam cube "chasing" the rays). Replace each off-beam inert solid with
+    # a flat zero-power AIR surface BEFORE both the surface loop and the
+    # output-port overrides below, preserving the surface count and axial chain.
+    # The 3-D body still draws -- the inspector keys on the row overlay, not on
+    # these transient build specs (cf. the bugs/0021 missing-mesh neutralisation).
+    row_specs = neutralize_offbeam_inert_solids(row_specs)
     surfaces = []
     clear_aperture = max(
         [max(float(spec["diameter"]), 1.0) for spec in row_specs if spec["surface"] not in {"Object", "Image"}] or [100.0]

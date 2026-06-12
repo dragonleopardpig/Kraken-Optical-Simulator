@@ -5569,6 +5569,51 @@ def phase_65_open3d_canvas_pick_enables_buttons(
     return result
 
 
+def phase_66_offbeam_solid_display_only(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A promoted optical solid parked off the beam is display-only (bugs/0065).
+
+    The user dragged a promoted beam-splitter cube clear of the ray path; the
+    on-axis trace then went wrong -- focus short of the detector, the image
+    circle offset, the rays "chasing" the cube ("behave like sequential rather
+    than non-sequential ... wrong from fundamental North Star architecture").
+    The leak: the solid's lateral decenter lives in the row's ``desp_x``/``desp_y``
+    which ``_build_system_from_specs`` copies verbatim onto ``surface.DespX``/``DespY``
+    as a *propagating* coordinate break, dragging the off-axis cube into the
+    centered prescription and corrupting the paraxial / best-focus / image-circle
+    solve. The fix (``offbeam_optical_solid.neutralize_offbeam_inert_solids``,
+    called at the top of ``_build_system_from_specs``) replaces each off-beam
+    INERT promoted solid with a flat zero-power AIR surface at the on-axis station
+    -- zero optical effect, surface count + axial chain preserved, the 3-D body
+    still drawing. A coated splitter or an on-beam solid stays in the trace.
+
+    The guard (`validate_open3d_offbeam_solid_display_only`) is display-free: a
+    pure classifier plus the real ``_build_system_from_specs`` prescription, whose
+    killer check proves the off-beam-cube prescription is byte-for-byte optically
+    identical to a plain air spacer (focus unchanged). No renderer needed, so it
+    runs everywhere.
+    """
+    result = PhaseResult(
+        name="Phase 66: Open 3D off-beam promoted solid is display-only"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_offbeam_solid_display_only import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"off-beam display-only guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("off-beam display-only guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -5680,6 +5725,7 @@ def main() -> int:
             phase_63_open3d_clipped_rays_sync,
             phase_64_open3d_clipped_vignetting_parity,
             phase_65_open3d_canvas_pick_enables_buttons,
+            phase_66_offbeam_solid_display_only,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
