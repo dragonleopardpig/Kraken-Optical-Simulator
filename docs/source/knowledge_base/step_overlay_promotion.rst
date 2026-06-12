@@ -229,6 +229,9 @@ The current parity table:
 +-----------------------------------+-------------------+-------------------+
 | Promote STEP to optical solid     | n/a               | yes               |
 +-----------------------------------+-------------------+-------------------+
+| Resize Solid…                     | n/a               | yes (imported     |
+|                                   |                   | STEP body)        |
++-----------------------------------+-------------------+-------------------+
 | Convert Type                      | yes               | 2D only           |
 +-----------------------------------+-------------------+-------------------+
 | Insert Component Below            | yes               | 2D only           |
@@ -366,6 +369,78 @@ keeps large Open 3D scenes responsive. Validator:
 ``python -m KrakenOS.UI.validate_axis_slide``.
 
 
+Resizing an imported solid (drag a face)
+----------------------------------------
+
+An imported STEP body can be resized in place from Open 3D: right-click
+the body → **Resize Solid…**. The popup is prefilled from the solid's
+current dimensions and edits them numerically — the "direct-edit the
+thickness" step of the request. A **detected beam-splitter cube** shows a
+2-DOF form (a single square **Cross-section** + a free **Depth**); any
+other solid shows independent **Width × Height × Depth**. The coupling is
+not cosmetic: a cube splitter is two cemented right-angle prisms whose 45°
+coating stays at 45° only if the two diagonal-spanning axes scale by the
+**same** factor, so the cross-section field writes *both* coupled axes to
+one value while depth is free (see :doc:`../manual/beam_splitters`).
+
+Two design points make the resize safe for the promotion pipeline:
+
+* **Mesh-space, anchored scale — not a B-rep GTransform.** A non-uniform
+  ``BRepBuilderAPI_GTransform`` silently degrades the analytic ``Plane``
+  faces to ``BSpline``, which would poison the face-role / analytic-fit
+  heuristics. So the resize scales the loaded base mesh vertices about an
+  **anchor on the fixed face** (the dragged face moves; the opposite face
+  stays put), which is exact for box/prism solids — planar faces stay
+  planar. Coupling *detection* still reads the clean analytic planes off
+  the original B-rep.
+* **Promotion inherits the resize for free.** The builders mesh the
+  *transformed* overlay and fold the resize signature into their cache
+  key, so the cached STL, promotion bounds, and promoted face
+  centroids/normals all reflect the resized body — the user then assigns
+  faces and glues the body onto a source (e.g. the LED) with the existing
+  placement metadata, no new mechanism.
+
+The gesture's planning core is pure and renderer-free
+(``KrakenOS/UI/services/open3d_resize_gesture.py``): ``plan_face_drag``
+turns a grabbed-face native normal into *which axis grows*, *which end is
+anchored*, and *whether the cross-section pair couples*;
+``resolve_resize_drag`` returns exactly the ``(target_extents,
+anchor_axis, anchor_at_max, coupled)`` tuple the numeric popup's apply
+path already consumes, so a future drag-arrow handle and the popup commit
+on one tested codepath. Validators:
+``python -m KrakenOS.UI.validate_open3d_solid_resize`` (geometry kernel),
+``…validate_open3d_solid_resize_overlay`` (overlay/promotion wiring), and
+``…validate_open3d_resize_gesture`` (the planner, with a
+geometry-integration check that a coupled cross-section drag keeps the
+coating at 45° while a single-axis change would tilt it).
+
+
+Off-beam promoted solids are display-only
+-----------------------------------------
+
+A promoted optical solid dragged **clear of the beam path** is treated as
+a display-only scene body: it still draws, but contributes **zero**
+optical effect until it is moved back onto the beam or given a coating.
+This matches the non-sequential North Star — a solid the rays never reach
+cannot bend them.
+
+The mechanism guards the single prescription chokepoint. A row's lateral
+drag stores its offset in ``row.desp_x`` / ``desp_y``; left unchecked,
+``_build_system_from_specs`` would copy that onto ``surface.DespX`` /
+``DespY`` as a *propagating* coordinate break, dragging the off-axis body
+into the centered prescription and corrupting every paraxial / best-focus
+/ spot-RMS / image-circle / live-trace solve (they all funnel through that
+one builder). ``offbeam_optical_solid.neutralize_offbeam_inert_solids``,
+called at the top of the builder, replaces each off-beam **inert**
+promoted solid with a flat zero-power AIR surface at the on-axis station —
+same thickness/diameter, so the surface count and axial chain are
+preserved, but desp/tilt are zeroed and the body's optical metadata is
+dropped. A coated splitter or an on-/near-beam solid stays in the trace;
+an intentional decentered mirror is untouched. "Off-beam" is conservative:
+the nearest transverse edge must clear the beam radius by ≥2×. Validator:
+``python -m KrakenOS.UI.validate_open3d_offbeam_solid_display_only``.
+
+
 Diagnosing "my promoted lens does not refract"
 ----------------------------------------------
 
@@ -431,3 +506,10 @@ Known follow-ups
   workaround is to re-import the source STEP into the same slot, which
   also triggers ``_preserve_unpromoted_step_overlay`` for the existing
   row.
+* **Live drag-arrow resize handle.** Resize today is the numeric
+  *Resize Solid…* popup; the planning core for an interactive
+  drag-a-face gesture (click a face → drag the arrow → live thickness
+  readout → release to confirm) already exists and is tested
+  (``open3d_resize_gesture``), but the live VTK arrow widget that feeds
+  it — a new pick target + drag handle routing the resolved tuple into
+  the same apply path — is the remaining in-app step.

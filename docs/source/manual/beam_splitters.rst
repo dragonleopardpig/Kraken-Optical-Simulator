@@ -1289,6 +1289,69 @@ The branch-level implementation and status notes are maintained in
 source-driven ray bundle, path-aware metadata, placement-helper, analysis, and
 validation notes that were previously split across root-level planning files.
 
+Resizing a cube beam splitter (coupled cross-section)
+-----------------------------------------------------
+
+An imported cube beam splitter can be resized from Open 3D (right-click
+the body → **Resize Solid…**; see
+:doc:`../knowledge_base/step_overlay_promotion`). A cube splitter is two
+cemented right-angle prisms, and its 45° coating spans a diagonal whose
+normal is ``(1, 1, 0)/√2`` — equal nonzero on two principal axes, ~0 on
+the third. That geometry makes the resize **2-DOF, not 3-DOF**:
+
+* The coating stays at 45° **only when the two diagonal-spanning axes
+  scale by the same factor.** Growing them equally keeps a square
+  cross-section; the third axis (the coating's extrusion / depth
+  direction) is free. So a detected splitter resizes as **square
+  cross-section + free depth**. For the real 50 mm vendor cube,
+  ``50³ → 55×55×78`` holds the coating at ``(0.707, 0.707, 0)``, whereas
+  an un-coupled ``55×50×78`` tilts it to ``(0.673, 0.74, 0)`` — no longer
+  a 45° splitter.
+* Coupling the cross-section also makes **"both prisms grow together"
+  automatic**: the body is one shape scaled as a unit, so the cemented
+  pair never separates.
+
+The Resize Solid… popup enforces this by exposing a single
+**Cross-section** field (which writes *both* coupled axes) plus a free
+**Depth**; a plain solid with no detected coating shows independent
+Width × Height × Depth instead. Coupling is **detected** from the original
+B-rep's clean analytic planes, while the scale itself runs in mesh space
+(anchored vertex scale about the fixed face) so the planar coating face
+stays planar. Validator:
+``python -m KrakenOS.UI.validate_open3d_solid_resize`` (includes checks
+against the real vendor STEP, skip-if-absent).
+
+Recovering the 45° coating as a selectable face
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+After promoting a cube splitter the user must assign the 45° coating, but
+it is an **interior** face — buried between the two cemented prisms, not
+clickable from outside, and a duplicate that the loader keeps in
+``document.faces`` (centroid ``(25, 25, 25)``, normal ``(1, 1, 0)/√2``)
+with **zero triangles** and excluded from ``outer_faces``. So by default
+it never became a face-editor row, and the splitter coating could not be
+assigned.
+
+``load_step_analytic_document`` recovers it: one **oblique**
+(non-axis-aligned) interior coating per duplicate group is force-included
+as a real, tessellated ``outer_faces`` entry tagged ``recovered_coating``,
+preserved through ``normalize_optical_solid_face_metadata``. It flows
+uniformly to the face-tagged display mesh and the face-role metadata, so
+it appears as a selectable ``Unassigned`` row with real geometry that the
+user assigns ``Beam Splitter``. The recovery is tightly gated — an
+axis-perpendicular doublet cement (normal ~``(0, 0, 1)``) is not oblique,
+and single-solid prisms have no interior duplicate, so neither is touched.
+Validator:
+``python -m KrakenOS.UI.validate_open3d_beam_splitter_coating_recovered``.
+
+.. note::
+
+   The analytic display mesh is cached on disk keyed by source path +
+   mtime. An already-promoted row also keeps its baked ``OpticalSolidFaces``
+   metadata, so to pick up the recovered coating an **existing** promoted
+   splitter must be re-promoted (delete + re-import + promote); fresh
+   imports get it automatically.
+
 Future tilted/folded/non-sequential Gaussian optics
 ---------------------------------------------------
 

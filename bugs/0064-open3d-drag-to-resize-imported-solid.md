@@ -90,13 +90,40 @@ This is the "direct edit the thickness" box from step 3.
 * `validate_open3d_solid_resize_overlay.py` — overlay/promotion wiring + UI source
   contracts, 17 checks (set/get/signature, anchored apply, all 4 builders, vendor
   detection, the right-click "Resize Solid…" entry + popup + apply contracts).
+* `validate_open3d_resize_gesture.py` — pure gesture planner, 24 checks
+  (face→axis/anchor/coupling, drag→clamped extent, the apply-ready tuple, live
+  readout, purity, and a geometry-integration *killer*: feeds the plan through the
+  real kernel on a synthetic cube and asserts the coating stays at 45° for a
+  coupled drag while a single-axis change would break it). Penta Phase 70.
+
+## Gesture step 3 — the drag-a-face planner (commit `f143bbd`)
+
+Step 3's gesture (click face → drag arrow → live thickness readout → click to
+confirm → direct-edit) is split into a **pure planning core** and a **live VTK
+widget**, mirroring how the geometry kernel landed before the popup wiring.
+
+`KrakenOS/UI/services/open3d_resize_gesture.py` is the pure core (no Tk/VTK/editor
+state, so it unit-tests without a renderer — the live inspector SIGSEGVs headless).
+`plan_face_drag(face_normal_native, resize_axes)` resolves the grabbed face into a
+`ResizeDragPlan`: which native axis it grows (`dominant_axis`), which end is
+anchored (the opposite/fixed face → `anchor_at_max = comps[axis] < 0`), and
+splitter coupling (both diagonal axes in the target vs a free depth axis vs a plain
+single axis). `resolve_resize_drag(...)` returns `(target_extents, anchor_axis,
+anchor_at_max, coupled, new_extent)` — **exactly** the
+`_apply_step_overlay_resize_solve` arguments plus the live-readout size — so the
+live gesture and the numeric popup commit on **one** tested codepath.
 
 ## Status / follow-up
 * **Done:** geometry kernel, overlay+promotion wiring, right-click "Resize Solid…"
-  popup (testable end-to-end).
-* **Next:** the drag-arrow gesture (click face → drag → live readout → confirm,
-  routing into the same popup/apply); a render image-snapshot test; a penta phase
-  + baseline; BRANCH_README + Sphinx manual entries.
+  popup (testable end-to-end), and the **pure gesture planner** (`f143bbd`, Phase 70).
+* **Next (in-app confirmed):** the live arrow-handle widget — a new
+  `PickTarget`/`AbstractWidget` + hold-drag that draws the grabbed-face arrow, calls
+  `resolve_resize_drag` each motion for the live readout, and on release routes the
+  resolved tuple into the existing popup/apply (the small seam:
+  `_apply_step_overlay_resize_solve(..., anchor_at_max=…)` passthrough so a −axis
+  grab can hold the +axis face, + a `prefill_extents` arg on
+  `_open_step_overlay_resize_popup`). This is live VTK, unverifiable headless.
+* **Docs:** BRANCH_README + Sphinx manual entries for the resize/coating/off-beam arc.
 * Verify undo/redo reverts a resize (the spec is set under a history capture; the
   capture's attribute coverage of `{label}_step_resize` needs a live check).
 
