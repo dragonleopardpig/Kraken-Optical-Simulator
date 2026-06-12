@@ -168,7 +168,9 @@ class QuickEstimationOverlayService:
             half_w = float(rec.get("width", 0.0)) / 2.0
             half_h = float(rec.get("height", 0.0)) / 2.0
             if half_w > 0 and half_h > 0:
-                self._solid_line_actor(_rect_points(img_pt, u, v, half_w, half_h), (1.0, 0.9, 0.2), 2.5)
+                # _basis returns (vertical, horizontal): width->v (horizontal),
+                # height->u (vertical) so a landscape sensor reads landscape.
+                self._solid_line_actor(_rect_points(img_pt, v, u, half_w, half_h), (1.0, 0.9, 0.2), 2.5)
                 count += 1
         if prev_object_semi and abs(prev_object_semi - object_semi) > 1e-6 * max(1.0, object_semi):
             prev_image_radius = abs(float(mag)) * float(prev_object_semi)

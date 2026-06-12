@@ -75,7 +75,8 @@
     "70": "pass",
     "71": "pass",
     "72": "pass",
-    "73": "pass"
+    "73": "pass",
+    "74": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -151,6 +152,7 @@
     "70": "Open 3D drag-to-resize gesture planner (face->axis/anchor/coupling, plan fed through the real geometry kernel)",
     "71": "Open 3D coated splitter detected via the real dict face schema (off-axis coated cube stays in the non-seq trace, no axis snap)",
     "72": "Open 3D off-beam solid body stays off-axis (no axis snap at promotion)",
-    "73": "Open 3D camera STEP renders the full camera body (not the sensor-window slab)"
+    "73": "Open 3D camera STEP renders the full camera body (not the sensor-window slab)",
+    "74": "Open 3D FOV/sensor rectangles render landscape (width=long side on horizontal X, not transposed)"
   }
 }

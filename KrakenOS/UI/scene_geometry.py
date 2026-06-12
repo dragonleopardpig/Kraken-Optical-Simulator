@@ -250,13 +250,16 @@ def scene_target_active_footprint_polylines(target: Any) -> list[np.ndarray]:
     center, tangent, bitangent = axes
     half_w = 0.5 * float(width)
     half_h = 0.5 * float(height)
+    # tangent is the vertical/meridional axis (default +Y), bitangent the
+    # horizontal/sagittal axis: a landscape sensor's width spans bitangent
+    # (horizontal) and its height spans tangent (vertical).
     corners = np.vstack(
         (
-            center - tangent * half_w - bitangent * half_h,
-            center + tangent * half_w - bitangent * half_h,
-            center + tangent * half_w + bitangent * half_h,
-            center - tangent * half_w + bitangent * half_h,
-            center - tangent * half_w - bitangent * half_h,
+            center - bitangent * half_w - tangent * half_h,
+            center + bitangent * half_w - tangent * half_h,
+            center + bitangent * half_w + tangent * half_h,
+            center - bitangent * half_w + tangent * half_h,
+            center - bitangent * half_w - tangent * half_h,
         )
     )
     cross = max(min(float(min(width, height)) * 0.12, float(max(width, height)) * 0.30), 0.25)

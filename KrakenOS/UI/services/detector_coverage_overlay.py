@@ -147,11 +147,13 @@ def detector_coverage_overlay_specs(
     specs: list[dict[str, Any]] = []
 
     # Object plane: FOV rectangle sized sensor / |m| (matches the sensor shape).
+    # ``_basis`` returns (vertical, horizontal); a landscape sensor's width must
+    # span the horizontal axis, so width->v (horizontal) and height->u (vertical).
     if object_mode_finite and metrics.object_fov_half_width > 1e-9 and metrics.object_fov_half_height > 1e-9:
         specs.append(
             {
                 "kind": "object_fov_rect",
-                "points": _rect_points(obj_pt, u, v, metrics.object_fov_half_width, metrics.object_fov_half_height),
+                "points": _rect_points(obj_pt, v, u, metrics.object_fov_half_width, metrics.object_fov_half_height),
                 "color": _OBJECT_FOV,
                 "dashed": False,
                 "line_width": 2.5,

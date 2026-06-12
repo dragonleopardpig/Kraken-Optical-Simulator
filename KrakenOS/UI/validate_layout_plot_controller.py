@@ -1184,9 +1184,10 @@ def main() -> None:
     ]
     _require(len(footprint_curves) == 1, "detector active footprint should be projected as a curve")
     footprint_points = np.asarray(footprint_curves[0].points_2d, dtype=float)
+    # width (4.0) spans the horizontal X axis, height (2.0) the vertical Y axis.
     _require(
-        abs(float(np.ptp(footprint_points[:, 0])) - 2.0) <= 1e-9
-        and abs(float(np.ptp(footprint_points[:, 1])) - 4.0) <= 1e-9,
+        abs(float(np.ptp(footprint_points[:, 0])) - 4.0) <= 1e-9
+        and abs(float(np.ptp(footprint_points[:, 1])) - 2.0) <= 1e-9,
         f"detector active footprint dimensions changed: {footprint_points}",
     )
     _require(len(miss_crosshairs) == 2, "missed-detector projection should draw a 2-line crosshair")

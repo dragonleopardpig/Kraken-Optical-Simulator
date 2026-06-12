@@ -5891,6 +5891,44 @@ def phase_73_camera_step_full_body(
     return result
 
 
+def phase_74_fov_rect_orientation(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The object-FOV + image-sensor rectangles render LANDSCAPE (bugs/0069).
+
+    The numeric ``29.9 x 22.4`` label read correctly, but the green object-FOV
+    rect and the orange sensor footprint drew PORTRAIT -- every in-plane producer
+    fed the sensor WIDTH to the vertical axis (tangent / u = +Y). The fix maps
+    width to the HORIZONTAL in-plane axis (bitangent / v) and height to vertical,
+    in all three producers (the shared ``scene_target_active_footprint_polylines``,
+    the detector-coverage object-FOV rect, and the QE recommended-sensor rect).
+
+    The guard (`validate_open3d_fov_rect_orientation`) is display-free and portable:
+    on a non-square landscape sensor it proves the shared footprint and the object-
+    FOV rect put width on horizontal X / height on vertical Y, plus source-wiring
+    checks that the footprint maps width->bitangent and both overlay rects build
+    width->v.
+    """
+    result = PhaseResult(
+        name="Phase 74: Open 3D FOV/sensor rectangles render landscape (width=long side on horizontal X, not transposed)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_fov_rect_orientation import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"FOV rect orientation guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("FOV rect orientation guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6010,6 +6048,7 @@ def main() -> int:
             phase_71_coated_solid_schema_exempt,
             phase_72_offbeam_body_stays_offaxis,
             phase_73_camera_step_full_body,
+            phase_74_fov_rect_orientation,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
