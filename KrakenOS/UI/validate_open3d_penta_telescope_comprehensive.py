@@ -5732,6 +5732,46 @@ def phase_69_beam_splitter_coating_recovered(
     return result
 
 
+def phase_70_resize_gesture_planner(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The drag-a-face-to-resize gesture planner (bugs/0064 step 3).
+
+    Step 3 of the resize request is the gesture: click the highlighted surface ->
+    drag the arrow -> the thickness measurement grows -> click to confirm ->
+    direct-edit the thickness. ``open3d_resize_gesture`` is the pure planning core
+    behind it -- it turns a grabbed-face normal + a drag distance into the exact
+    resize spec (target_extents / anchor_axis / anchor_at_max / coupled) the
+    existing apply path consumes, so the live gesture and the numeric popup land
+    on one codepath. The guard exercises the planner and then feeds its output
+    through the real geometry kernel (``open3d_solid_resize``) on a synthetic
+    cube, proving the resulting scale moves the grabbed face, holds the opposite
+    face, hits the new extents, and (the killer check) keeps the 45 deg coating at
+    45 deg for a coupled cross-section drag.
+
+    The guard (`validate_open3d_resize_gesture`) is fully display-free, so no
+    renderer is needed and it runs everywhere.
+    """
+    result = PhaseResult(
+        name="Phase 70: Open 3D drag-to-resize gesture planner"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_resize_gesture import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"resize-gesture guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("resize-gesture guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -5847,6 +5887,7 @@ def main() -> int:
             phase_67_solid_resize_geometry,
             phase_68_solid_resize_overlay,
             phase_69_beam_splitter_coating_recovered,
+            phase_70_resize_gesture_planner,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
