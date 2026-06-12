@@ -5614,6 +5614,124 @@ def phase_66_offbeam_solid_display_only(
     return result
 
 
+def phase_67_solid_resize_geometry(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Drag-to-resize geometry kernel for imported STEP solids (bugs/0064).
+
+    The user resizes a cube beam-splitter (50x50x50 -> 55x55x78) by growing a
+    face. A splitter is two cemented right-angle prisms whose 45 deg coating
+    stays valid only when the two diagonal-spanning axes scale by the SAME
+    factor (the third axis is free), so a detected splitter resizes with 2 DOF
+    (square cross-section + free depth) -- which also makes "both prisms grow
+    together" automatic. The kernel runs in mesh space (a non-uniform GTransform
+    degrades analytic Plane faces to BSpline) with an anchored per-axis scale so
+    the opposite face stays put.
+
+    The guard (`validate_open3d_solid_resize`) is display-free: it exercises the
+    pure kernel (coupling detection, anchored scale, coating-preservation) and,
+    when the real vendor STEP is checked out, validates against it (skip-if-
+    absent for portability). No renderer needed, so it runs everywhere.
+    """
+    result = PhaseResult(
+        name="Phase 67: Open 3D drag-to-resize geometry kernel"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_solid_resize import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"solid-resize geometry guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("solid-resize geometry guard reported failure without detail")
+    return result
+
+
+def phase_68_solid_resize_overlay(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Resize overlay + promotion wiring + right-click popup (bugs/0064).
+
+    The resize lives as per-overlay state in the solid's native frame and is
+    applied to the loaded base mesh before optical-axis alignment; each of the
+    four imported-STEP mesh builders folds the resize signature into its memo
+    key, and promotion inherits the resize for free (it meshes the transformed
+    overlay, so the cached STL + StepOverlayPromotion bounds + face metadata all
+    track the resized body). The imported-STEP right-click menu gains a
+    "Resize Solid..." popup (square Cross-section + free Depth for a detected
+    splitter; independent W x H x D otherwise) feeding the same apply/retrace.
+
+    The guard (`validate_open3d_solid_resize_overlay`) is display-free: set/get/
+    signature, anchored apply, all four builders, vendor detection, and the UI
+    source contracts for the right-click entry + popup + apply. No renderer
+    needed, so it runs everywhere.
+    """
+    result = PhaseResult(
+        name="Phase 68: Open 3D resize overlay/promotion wiring + popup"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_solid_resize_overlay import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"solid-resize overlay guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("solid-resize overlay guard reported failure without detail")
+    return result
+
+
+def phase_69_beam_splitter_coating_recovered(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A beam-splitter cube's interior 45 deg coating is a selectable face (bugs/0064).
+
+    After promoting the resized cube the face-editor table had NO row for the
+    center 45 deg coating, so the splitter coating could not be assigned. A cube
+    splitter is two cemented right-angle prisms; the coating is an interior
+    duplicate face that the loader kept in ``document.faces`` (centroid
+    (25,25,25), normal (1,1,0)/sqrt2) but with zero triangles and excluded from
+    ``outer_faces``, so it never became a table row. The fix force-includes one
+    oblique interior coating per duplicate group as a real tessellated
+    ``outer_faces`` entry tagged ``recovered_coating`` -- a selectable Unassigned
+    row the user assigns Beam Splitter. Axis-perpendicular doublet cement and
+    single-solid prisms are untouched.
+
+    The guard (`validate_open3d_beam_splitter_coating_recovered`) is display-free
+    (real parts skip-if-absent for portability). No renderer needed, so it runs
+    everywhere.
+    """
+    result = PhaseResult(
+        name="Phase 69: Open 3D beam-splitter 45 deg coating is a selectable face"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_beam_splitter_coating_recovered import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"coating-recovery guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("coating-recovery guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -5726,6 +5844,9 @@ def main() -> int:
             phase_64_open3d_clipped_vignetting_parity,
             phase_65_open3d_canvas_pick_enables_buttons,
             phase_66_offbeam_solid_display_only,
+            phase_67_solid_resize_geometry,
+            phase_68_solid_resize_overlay,
+            phase_69_beam_splitter_coating_recovered,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

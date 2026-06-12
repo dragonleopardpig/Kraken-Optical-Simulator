@@ -68,7 +68,10 @@
     "63": "pass",
     "64": "pass",
     "65": "pass",
-    "66": "pass"
+    "66": "pass",
+    "67": "pass",
+    "68": "pass",
+    "69": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -137,6 +140,9 @@
     "63": "Open 3D synced clipped-rays toggle (3D Overlays follows 2D Show clipped rays both ways)",
     "64": "Open 3D clipped-ray vignetting parity with 2D (hides non-folded strays when clipping OFF)",
     "65": "Open 3D canvas pick enables Selected-Element buttons (canvas pick syncs the browser like a tree click)",
-    "66": "Open 3D off-beam promoted solid is display-only (off-beam inert cube neutralised to AIR; prescription == plain spacer)"
+    "66": "Open 3D off-beam promoted solid is display-only (off-beam inert cube neutralised to AIR; prescription == plain spacer)",
+    "67": "Open 3D drag-to-resize geometry kernel (coupling detect + anchored mesh-space scale + coating preserved)",
+    "68": "Open 3D resize overlay/promotion wiring + right-click Resize Solid... popup",
+    "69": "Open 3D beam-splitter 45 deg coating recovered as a selectable face"
   }
 }
