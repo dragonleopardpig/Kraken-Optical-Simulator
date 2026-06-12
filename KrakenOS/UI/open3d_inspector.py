@@ -127,7 +127,8 @@ from KrakenOS.UI.source_trace_helpers import (
     SOURCE_MODEL_VALUES,
 )
 from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABELS, STEP_OVERLAY_LABEL_SET
-from KrakenOS.UI.surface_table_model import SurfaceRow
+from KrakenOS.UI.surface_table_model import SurfaceRow, surface_row_to_spec
+from KrakenOS.UI.services.offbeam_optical_solid import offbeam_neutralized_body_transform
 from KrakenOS.UI.nonseq_output_ports import optical_solid_output_port_runtime_transform_override
 from KrakenOS.UI import optical_solid_metadata
 
@@ -8431,9 +8432,34 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         try:
             if int(row_index) < 0 or int(row_index) >= len(transforms):
                 return None
-            return np.asarray(transforms[int(row_index)], dtype=float).reshape(4, 4)
+            transform = np.asarray(transforms[int(row_index)], dtype=float).reshape(4, 4)
         except Exception:
             return None
+        # bugs/0075: a parked off-beam solid is neutralised out of the trace
+        # (bugs/0065/0074), so its build transform TRANS_2A is ON the optical axis.
+        # _iter_3d_optical_surface_meshes restores the body's decentered station
+        # (bugs/0067), but EVERY other consumer of this shared transform -- the
+        # selected-body redraw, assigned-face overlays, face markers, virtual
+        # planes, the placement gizmo -- used the raw on-axis transform, so the
+        # instant the Face Editor selected the solid the whole cube snapped onto
+        # the axis while its row Desp stayed off-axis. Apply the same re-decenter
+        # here so the display is consistent (no-op for an on-/near-beam or coated
+        # solid, whose build keeps its Desp).
+        try:
+            built = getattr(system, "SDT", None)
+            rows = getattr(self.editor, "rows", None)
+            if built is not None and rows is not None and 0 <= int(row_index) < min(len(built), len(rows)):
+                redecentered = offbeam_neutralized_body_transform(
+                    transform,
+                    surface_row_to_spec(rows[int(row_index)]),
+                    getattr(built[int(row_index)], "DespX", 0.0),
+                    getattr(built[int(row_index)], "DespY", 0.0),
+                )
+                if redecentered is not None:
+                    return redecentered
+        except Exception:
+            pass
+        return transform
 
     @staticmethod
     def _row_optical_solid_face_metadata(row) -> dict[str, object]:

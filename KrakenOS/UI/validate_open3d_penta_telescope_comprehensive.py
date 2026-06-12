@@ -5883,6 +5883,16 @@ def phase_72_offbeam_body_stays_offaxis(
     DISPLAY ONLY -- exactly ``R @ desp`` -- leaving the optical solve untouched;
     a coated splitter keeps its decenter in the build and is left alone.
 
+    bugs/0075: 0067 only re-decentered the body MESH path. Every other consumer of
+    the build transform (the selected-body redraw, assigned-face overlays, markers,
+    virtual planes, the placement gizmo) reads it through
+    ``Kraken3DInspector._runtime_transform_for_row``, which returned the raw on-axis
+    ``TRANS_2A`` -- so the instant the Face Editor SELECTED a parked off-beam solid
+    the whole cube snapped onto the axis while the row Desp stayed off-axis
+    (recording flag_20260612_213626_155, pinned by the new recorder
+    ``promoted_solid_rows`` field). The same re-decenter is now applied inside
+    ``_runtime_transform_for_row`` too; the guard's Section E pins it.
+
     The guard (`validate_open3d_offbeam_body_stays_offaxis`) is display-free: the
     pure helper contract plus a real ``_build_system_from_specs`` round-trip that
     proves the body WOULD snap and that the re-decenter reproduces the

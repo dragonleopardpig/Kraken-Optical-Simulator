@@ -216,6 +216,49 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     except Exception as exc:  # pragma: no cover
         ok(False, f"D1: could not import three_d_scene_tools to confirm wiring ({type(exc).__name__}: {exc})")
 
+    # --- E. the SHARED transform helper re-decenters too (bugs/0075) -----------
+    # _iter_3d_optical_surface_meshes (D) is not the only consumer of the build
+    # transform. The selected-body redraw, assigned-face overlays, markers,
+    # virtual planes and the placement gizmo all read it through
+    # Kraken3DInspector._runtime_transform_for_row, which returned the RAW on-axis
+    # TRANS_2A -- so the instant the Face Editor selected a parked off-beam solid
+    # the whole cube snapped onto the axis while the row Desp stayed off-axis
+    # (recording flag_20260612_213626_155: row Desp (72.9, 88.4) but the body
+    # actor centred on (0, 0)).
+    try:
+        import inspect as _inspect
+        from types import SimpleNamespace as _NS
+        from KrakenOS.UI.open3d_inspector import Kraken3DInspector
+        from KrakenOS.UI.surface_table_model import SurfaceRow as _SR
+
+        rt_src = _inspect.getsource(Kraken3DInspector._runtime_transform_for_row)
+        ok("offbeam_neutralized_body_transform(" in rt_src,
+           "E1: _runtime_transform_for_row applies the off-beam re-decenter (wiring present)")
+
+        def _to_row(spec: dict):
+            fields = set(_SR.__dataclass_fields__)
+            return _SR(**{k: v for k, v in spec.items() if k in fields})
+
+        def _shared_transform(system, specs):
+            insp = object.__new__(Kraken3DInspector)
+            insp.editor = _NS(rows=[_to_row(s) for s in specs])
+            insp._saved_step_native_display_transform_for_row = lambda idx: None
+            return insp._runtime_transform_for_row(system, _CUBE_IDX)
+
+        if sys_neut is not None:
+            e_rt = _shared_transform(sys_neut, uncoated_specs)
+            ok(e_rt is not None and abs(float(e_rt[0, 3]) + 55.0) < 1e-6,
+               "E2 (KILLER): _runtime_transform_for_row re-decenters the neutralised solid "
+               f"(x={None if e_rt is None else round(float(e_rt[0, 3]), 2)} ~ -55, NOT 0) -- "
+               "the selected body / face overlays / markers / gizmo no longer snap to the optical axis")
+        if sys_coated is not None:
+            c_rt = _shared_transform(sys_coated, coated_specs)
+            ok(c_rt is not None and abs(float(c_rt[0, 3]) + 55.0) < 1e-6,
+               "E3: a coated splitter's shared transform keeps its decenter "
+               f"(x={None if c_rt is None else round(float(c_rt[0, 3]), 2)} ~ -55) -- no double-decenter")
+    except Exception as exc:  # pragma: no cover
+        ok(False, f"E: _runtime_transform_for_row re-decenter check raised {type(exc).__name__}: {exc}")
+
     passed = not any(line.startswith("FAIL") for line in notes)
     if verbose:
         for line in notes:
