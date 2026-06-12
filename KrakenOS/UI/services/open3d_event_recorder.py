@@ -67,6 +67,11 @@ class SceneSnapshot:
     hover_outline_bounds: list[float] = field(default_factory=list)
     hover_step_cell_key: str | None = None
     stray_props_above_body: list[dict[str, Any]] = field(default_factory=list)
+    # bugs/0074+: a promoted optical solid carries its world placement in the row
+    # Desp (the optical chain) AND in StepOverlayPromotion bounds (the 3-D body).
+    # Capturing both pins whether an "it snapped to the axis" flag is a DATA bug
+    # (Desp went to ~0) or a DISPLAY bug (Desp survives but the body draws on-axis).
+    promoted_solid_rows: list[dict[str, Any]] = field(default_factory=list)
     show_rays: bool = False
     # Diagnostics for the "3D shows a fan, not a cone" report (bug 0038/0040):
     # which sampling mode the live 3D actually chose and why (committed tag,
@@ -383,6 +388,49 @@ class Open3DEventRecorder:
         try:
             for label, keys in (inspector._step_actor_map or {}).items():
                 snapshot.step_actor_counts[str(label)] = len(list(keys or []))
+        except Exception:
+            pass
+
+        # bugs/0074+: promoted optical solids' LIVE row pose + StepOverlayPromotion
+        # bounds. The row Desp drives the optical chain (and, off-beam, the 0067
+        # body re-decenter); the bounds drive the 3-D body world placement. If a
+        # flag reads "snapped to the axis", a Desp ~0 here means the decenter was
+        # zeroed (data); a non-zero Desp with an on-axis body means a display bug.
+        try:
+            for index, row in enumerate(list(getattr(inspector.editor, "rows", []) or [])):
+                advanced = getattr(row, "advanced", {}) or {}
+                if not isinstance(advanced, dict):
+                    continue
+                stl = str(advanced.get("Solid_3d_stl", "") or "").strip()
+                if stl in {"", "None"}:
+                    continue
+                promotion = advanced.get("StepOverlayPromotion")
+                if not isinstance(promotion, dict):
+                    continue
+
+                def _f(value: object) -> float:
+                    try:
+                        return round(float(value), 4)
+                    except Exception:
+                        return 0.0
+
+                def _vec(value: object) -> list[float]:
+                    try:
+                        return [round(float(v), 4) for v in (value or [])][:3]
+                    except Exception:
+                        return []
+
+                snapshot.promoted_solid_rows.append({
+                    "row_index": int(index),
+                    "desp": [_f(getattr(row, "desp_x", 0.0)), _f(getattr(row, "desp_y", 0.0)), _f(getattr(row, "desp_z", 0.0))],
+                    "tilt": [_f(getattr(row, "tilt_x", 0.0)), _f(getattr(row, "tilt_y", 0.0)), _f(getattr(row, "tilt_z", 0.0))],
+                    "thickness": _f(getattr(row, "thickness", 0.0)),
+                    "diameter": _f(getattr(row, "diameter", 0.0)),
+                    "glass": str(getattr(row, "glass", "") or "").strip(),
+                    "promotion_center_world": _vec(promotion.get("center_world")),
+                    "promotion_bounds_min_world": _vec(promotion.get("bounds_min_world")),
+                    "promotion_bounds_max_world": _vec(promotion.get("bounds_max_world")),
+                })
         except Exception:
             pass
 
