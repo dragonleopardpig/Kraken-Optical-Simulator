@@ -5929,6 +5929,41 @@ def phase_74_fov_rect_orientation(
     return result
 
 
+def phase_75_bopixel_m42_camera(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The 65 MP Bopixel camera is the M42 variant, edge-to-sensor 11.5 mm (bugs/0070).
+
+    The user runs the M42-mount BC-GM65M12X4 (not the F-mount version), with the
+    camera front edge 11.5 mm in front of the sensor (the F-mount flange sat at
+    46.5 mm). The F-mount database entry was REPLACED with the M42 variant: lens
+    mount ``M42 Mount``, ``camera_front_to_sensor_mm`` 11.5, the M42 STEP body
+    (66.3 x 80.6 x 80.0 mm) and STEP path; the 29.9 x 22.4 mm sensor is unchanged.
+
+    The guard (`validate_open3d_bopixel_m42_camera`) is display-free; the camera
+    database is tracked source so its checks always run, while the layout-wiring
+    checks skip when the gitignored attachment is absent.
+    """
+    result = PhaseResult(
+        name="Phase 75: Open 3D 65MP Bopixel camera is the M42 variant (M42 Mount, 11.5 mm edge-to-sensor)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_bopixel_m42_camera import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"Bopixel M42 camera guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("Bopixel M42 camera guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6049,6 +6084,7 @@ def main() -> int:
             phase_72_offbeam_body_stays_offaxis,
             phase_73_camera_step_full_body,
             phase_74_fov_rect_orientation,
+            phase_75_bopixel_m42_camera,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

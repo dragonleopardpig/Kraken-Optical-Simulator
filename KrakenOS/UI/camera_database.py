@@ -128,9 +128,9 @@ CAMERA_DATABASE: dict[str, dict[str, object]] = {
             Path.home() / "cameras" / "3D_CAD_shr661MCX.STEP",
         ),
     },
-    "Japan Bopixel BC-GM65M12X4-F": {
+    "Japan Bopixel BC-GM65M12X4-M42": {
         "manufacturer": "Japan Bopixel",
-        "model": "BC-GM65M12X4-F",
+        "model": "BC-GM65M12X4-M42",
         "product_code": "BC-GM65M12X4",
         "product_series": "BC-G CoaXPress",
         "status": "Available",
@@ -160,13 +160,13 @@ CAMERA_DATABASE: dict[str, dict[str, object]] = {
         "power_supply": "PoCXP / External 24 VDC",
         "power_consumption_w_typ": 8.1,
         "operating_temperature_housing_c": (0.0, 60.0),
-        "body_dimensions_lwh_mm": (92.0, 80.0, 80.0),
-        "lens_mount": "F Mount",
+        "body_dimensions_lwh_mm": (66.3, 80.6, 80.0),
+        "lens_mount": "M42 Mount",
         "weight_g": 735.0,
-        "camera_front_to_sensor_mm": 46.5,
+        "camera_front_to_sensor_mm": 11.5,
         "step_path": _preferred_existing_path(
-            ATTACHMENT_CAMERA_DIR / "BC-GM(C)65M12X4-F.STEP.step",
-            Path.home() / "cameras" / "BC-GM(C)65M12X4-F.STEP.step",
+            ATTACHMENT_CAMERA_DIR / "BC-GMC65M12X4-M42.STEP",
+            Path.home() / "cameras" / "BC-GMC65M12X4-M42.STEP",
         ),
     },
 }
