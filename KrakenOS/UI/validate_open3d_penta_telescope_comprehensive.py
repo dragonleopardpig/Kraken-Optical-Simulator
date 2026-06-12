@@ -5192,6 +5192,32 @@ def phase_60_fov_plane_solve(
         and [float(r.thickness) for r in app.rows] == gaps_before
     )
 
+    # 3c) One box only (bugs/0071): fill just Height -> derive Width from the live
+    #     sensor aspect (default 4:3). Image sensor, H=12 -> W=16, Ø20, det (16,12);
+    #     a custom aspect (29.9:22.4) fills the blank box at that ratio; both boxes
+    #     blank is refused.
+    _reset_rows()
+    gaps_before = [float(r.thickness) for r in app.rows]
+    ok_h_only, _m = qe.fov_solve("image", "sensor", None, 12.0)
+    det_h = (getattr(app.rows[-1], "advanced", {}) or {}).get("Detector", {})
+    one_box_ok = (
+        ok_h_only
+        and abs(float(app.rows[-1].diameter) - 20.0) <= 1e-4
+        and abs(float(det_h.get("active_width_mm", 0.0)) - 16.0) <= 1e-4
+        and abs(float(det_h.get("active_height_mm", 0.0)) - 12.0) <= 1e-4
+        and [float(r.thickness) for r in app.rows] == gaps_before
+    )
+    _reset_rows()
+    ok_asp, _m = qe.fov_solve("image", "sensor", None, 22.4, aspect=(29.9, 22.4))
+    det_asp = (getattr(app.rows[-1], "advanced", {}) or {}).get("Detector", {})
+    aspect_fill_ok = (
+        ok_asp
+        and abs(float(det_asp.get("active_width_mm", 0.0)) - 29.9) <= 1e-4
+        and abs(float(det_asp.get("active_height_mm", 0.0)) - 22.4) <= 1e-4
+    )
+    _reset_rows()
+    both_blank_refused = qe.fov_solve("object", "sensor", None, None)[0] is False
+
     # 4) Image plane 'Solve for Thickness': image the current object field to 16 mm.
     _reset_rows()
     qe.set_target_fov(25.0)
@@ -5222,6 +5248,9 @@ def phase_60_fov_plane_solve(
     height_field_ok = "height_var" in popup and "Height" in popup
     # bugs/0057: the object popup now prefills Width x Height from object_fov_dimensions.
     object_prefill_ok = "object_fov_dimensions" in popup
+    # bugs/0071: each box is parsed independently (one may be blank) and the live
+    # sensor aspect is threaded so the blank side is derived.
+    one_box_wired = "_read_dim" in popup and "aspect" in popup
 
     # 7) Both the Object AND Image planes must be PICKABLE (bugs/0055 follow-up):
     #    the QE overlay adds a faint filled disk at each plane so the row hover-
@@ -5255,6 +5284,9 @@ def phase_60_fov_plane_solve(
             "object_sensor_wh_ok": obj_sensor_wh_ok,
             "image_sensor_ok": img_sensor_ok,
             "image_sensor_wh_ok": img_sensor_wh_ok,
+            "one_box_ok": one_box_ok,
+            "aspect_fill_ok": aspect_fill_ok,
+            "both_blank_refused": both_blank_refused,
             "image_thickness_ok": img_thickness_ok,
             "apply_path_ran": apply_error == "",
             "gesture_wired": gesture_ok,
@@ -5275,6 +5307,12 @@ def phase_60_fov_plane_solve(
         result.notes.append("image plane 'Solve for Image/Sensor Size' did not resize the sensor to the typed width")
     if not img_sensor_wh_ok:
         result.notes.append("image plane 'Solve for Image/Sensor Size' did not honour an explicit Width x Height")
+    if not one_box_ok:
+        result.notes.append("one-box solve (Height only -> derive Width at 4:3) did not produce the 16x12 sensor")
+    if not aspect_fill_ok:
+        result.notes.append("a custom sensor aspect did not fill the blank box at that ratio (29.9:22.4)")
+    if not both_blank_refused:
+        result.notes.append("a both-boxes-blank solve was not refused")
     if not img_thickness_ok:
         result.notes.append("image plane 'Solve for Thickness' did not image the object field to the typed width")
     if apply_error:
@@ -5287,6 +5325,8 @@ def phase_60_fov_plane_solve(
         result.notes.append("the FOV popup is missing the Height field (W x H input)")
     if not object_prefill_ok:
         result.notes.append("the object popup does not prefill Width x Height from object_fov_dimensions")
+    if not one_box_wired:
+        result.notes.append("the popup does not parse each box independently / thread the sensor aspect (one-box fill)")
     if overlay_error:
         result.notes.append(f"the QE plane-disk overlay raised: {overlay_error}")
     if not planes_pickable_ok:

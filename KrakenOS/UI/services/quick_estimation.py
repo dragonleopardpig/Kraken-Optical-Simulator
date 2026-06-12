@@ -547,27 +547,46 @@ class QuickEstimationService:
             return float(fov_full) * aw / norm, float(fov_full) * ah / norm
         return None
 
-    def _sensor_wh(self, width: Any, height: Any):
-        """Normalise a sensor request to ``(width, height, diagonal)``. When
-        ``height`` is None the height is derived from the 4:3 aspect so a lone
-        horizontal width maps to the same image-circle diagonal as before."""
+    def _sensor_wh(self, width: Any, height: Any, aspect: tuple[float, float] | None = None):
+        """Normalise a sensor request to ``(width, height, diagonal)``.
+
+        Either ``width`` or ``height`` may be omitted (None / blank / unparseable)
+        and the missing side is derived from ``aspect`` (default 4:3), so the user
+        can fill just one box and the other auto-completes. A value that *is*
+        supplied but is non-positive / non-finite is rejected. Returns None when
+        neither side is usable or a supplied value is invalid."""
+        aw, ah = aspect if aspect else SENSOR_ASPECT
         try:
-            w = float(width)
+            aw = float(aw)
+            ah = float(ah)
         except (TypeError, ValueError):
+            aw, ah = SENSOR_ASPECT
+        if not (np.isfinite(aw) and np.isfinite(ah) and aw > 0 and ah > 0):
+            aw, ah = SENSOR_ASPECT
+
+        def _parse(value):
+            """Blank / unparseable -> 'missing' (derive it); a parseable but
+            non-positive / non-finite number -> 'bad' (reject the whole request)."""
+            if value is None:
+                return "missing", None
+            try:
+                x = float(value)
+            except (TypeError, ValueError):
+                return "missing", None
+            if not np.isfinite(x) or x <= 0:
+                return "bad", None
+            return "ok", x
+
+        state_w, w = _parse(width)
+        state_h, h = _parse(height)
+        if state_w == "bad" or state_h == "bad":
             return None
-        if not np.isfinite(w) or w <= 0:
+        if w is None and h is None:
             return None
-        if height is None:
-            diagonal = self.horizontal_to_diagonal(w)
-            h2 = diagonal * diagonal - w * w
-            h = h2 ** 0.5 if h2 > 0 else 0.0
-            return w, h, diagonal
-        try:
-            h = float(height)
-        except (TypeError, ValueError):
-            return None
-        if not np.isfinite(h) or h <= 0:
-            return None
+        if h is None:
+            h = w * ah / aw
+        elif w is None:
+            w = h * aw / ah
         diagonal = (w * w + h * h) ** 0.5
         return w, h, diagonal
 
@@ -592,21 +611,28 @@ class QuickEstimationService:
             f"Sensor set to {w:.6g} x {h:.6g} mm (image circle Ø{diagonal:.6g} mm)."
         )
 
-    def fov_solve(self, plane: str, mode: str, width: Any, height: Any = None) -> tuple[bool, str]:
+    def fov_solve(
+        self,
+        plane: str,
+        mode: str,
+        width: Any,
+        height: Any = None,
+        aspect: tuple[float, float] | None = None,
+    ) -> tuple[bool, str]:
         """Drive the click-on-plane FOV popup.
 
         ``plane`` is "object" or "image"; ``mode`` is "thickness" (move the
-        object/image conjugate pair) or "sensor" (resize the sensor). ``width`` is
-        the typed field width -- object-side for the object plane, image-side
-        (sensor) for the image plane. ``height`` is optional for both planes: the
-        field/sensor accepts an explicit width x height; when omitted a 4:3 aspect
-        is assumed. The optical model is left in focus and the caller owns the
-        retrace.
+        object/image conjugate pair) or "sensor" (resize the sensor). ``width`` /
+        ``height`` are the typed field dimensions -- object-side for the object
+        plane, image-side (sensor) for the image plane. Either one may be omitted
+        (blank): the missing side is derived from ``aspect`` (the live sensor's
+        width:height, default 4:3), so the user can fill just one box. The optical
+        model is left in focus and the caller owns the retrace.
         """
         if plane == "object":
-            wh = self._sensor_wh(width, height)
+            wh = self._sensor_wh(width, height, aspect)
             if wh is None:
-                return False, "FOV width and height must be positive numbers."
+                return False, "Enter a positive FOV width or height."
             obj_w, obj_h, obj_diag = wh
             semi = obj_diag / 2.0
             if mode == "thickness":
@@ -628,9 +654,9 @@ class QuickEstimationService:
                     msg = f"Object {obj_w:.6g} x {obj_h:.6g} mm at |m|={abs(mag):.4g}: " + msg
                 return ok, msg
         elif plane == "image":
-            wh = self._sensor_wh(width, height)
+            wh = self._sensor_wh(width, height, aspect)
             if wh is None:
-                return False, "Sensor width and height must be positive numbers."
+                return False, "Enter a positive sensor width or height."
             img_w, img_h, img_diag = wh
             if mode == "sensor":
                 return self.apply_sensor_rect(img_w, img_h)

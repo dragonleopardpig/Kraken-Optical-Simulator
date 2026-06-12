@@ -11966,8 +11966,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         """A small modal box: type the plane's field width x height, then click
         either 'Solve for Thickness' (move the conjugate pair so the field fills /
         maps to the sensor) or 'Solve for Image/Sensor Size' (resize the sensor at
-        the current magnification). Height is optional (blank -> 4:3 aspect).
-        bugs/0055, bugs/0057."""
+        the current magnification). Fill just Width or just Height -- the blank box
+        is derived from the live sensor aspect. bugs/0055, bugs/0057."""
         qe = self._quick_estimation_service()
         if not qe.is_enabled():
             self.quick_estimation_var.set(True)
@@ -12004,33 +12004,50 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         ttk.Entry(dialog, textvariable=height_var, width=12).grid(
             row=2, column=1, padx=(0, 12), pady=(0, 10), sticky="ew"
         )
-        button_row = 3
+        ttk.Label(
+            dialog,
+            text="Fill just one box — the other is derived from the sensor aspect.",
+            foreground="#888888",
+            wraplength=320,
+            justify="left",
+        ).grid(row=3, column=0, columnspan=2, padx=12, pady=(0, 8), sticky="w")
+        button_row = 4
+
+        def _read_dim(var, label):
+            """Parse one box: blank -> (True, None) so it is derived; a present but
+            non-positive / non-numeric value -> (False, None) with a status note."""
+            raw = var.get().strip() if var is not None else ""
+            if not raw:
+                return True, None
+            try:
+                val = float(raw)
+            except (TypeError, ValueError):
+                self.status_var.set(f"{label} must be a number (or blank).")
+                return False, None
+            if not (val > 0):
+                self.status_var.set(f"{label} must be positive (or blank).")
+                return False, None
+            return True, val
 
         def run(mode):
-            try:
-                value = float(width_var.get())
-            except (TypeError, ValueError):
-                self.status_var.set("Width must be a number.")
+            ok_w, width = _read_dim(width_var, "Width")
+            if not ok_w:
                 return
-            if not (value > 0):
-                self.status_var.set("Width must be positive.")
+            ok_h, height = _read_dim(height_var, "Height")
+            if not ok_h:
                 return
-            height = None
-            if height_var is not None and height_var.get().strip():
-                try:
-                    height = float(height_var.get())
-                except (TypeError, ValueError):
-                    self.status_var.set("Height must be a number.")
-                    return
-                if not (height > 0):
-                    self.status_var.set("Height must be positive.")
-                    return
+            if width is None and height is None:
+                self.status_var.set(
+                    "Enter a Width or a Height — the other is derived from the sensor aspect."
+                )
+                return
+            aspect = (w0, h0) if (w0 and h0) else None
             try:
                 dialog.grab_release()
             except Exception:
                 pass
             dialog.destroy()
-            self._apply_quick_estimation_fov_solve(plane, mode, value, height)
+            self._apply_quick_estimation_fov_solve(plane, mode, width, height, aspect)
 
         ttk.Button(dialog, text="Solve for Thickness", command=lambda: run("thickness")).grid(
             row=button_row, column=0, padx=(12, 4), pady=(0, 6), sticky="ew"
@@ -12057,10 +12074,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         self.wait_window(dialog)
 
-    def _apply_quick_estimation_fov_solve(self, plane: str, mode: str, value: float, height: float | None = None) -> None:
+    def _apply_quick_estimation_fov_solve(
+        self,
+        plane: str,
+        mode: str,
+        width: float | None,
+        height: float | None = None,
+        aspect: tuple[float, float] | None = None,
+    ) -> None:
         qe = self._quick_estimation_service()
         self.editor._begin_history_capture()
-        ok, msg = qe.fov_solve(plane, mode, value, height)
+        ok, msg = qe.fov_solve(plane, mode, width, height, aspect)
         if ok:
             try:
                 self.editor._sync_table()

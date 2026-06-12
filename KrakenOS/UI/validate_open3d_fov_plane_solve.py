@@ -13,6 +13,10 @@ two buttons:
 The horizontal width is mapped to the model's circular image-circle diameter via
 the working 4:3 sensor aspect (horizontal / diagonal = 0.8).
 
+The popup takes a Width and a Height box; the user may fill just one (bugs/0071)
+and the blank side is derived from the live sensor aspect (default 4:3), so
+``fov_solve`` accepts a None width or height plus an explicit ``aspect``.
+
 No X server needed. The solve math is exercised against a stubbed paraxial engine
 (known focal length + magnification) so the conjugate numbers are deterministic;
 the gesture/UI wiring is asserted against the installer/handler source.
@@ -297,6 +301,72 @@ def _test_solve_refuses_bad_input() -> None:
     print("solve refuses bad / under-specified input OK")
 
 
+def _test_solve_single_dimension() -> None:
+    """bugs/0071: the popup lets the user fill JUST one box -- the blank side is
+    derived from the live sensor aspect (default 4:3). ``fov_solve`` accepts a None
+    width or height and an explicit ``aspect``."""
+    # Image 'sensor', height only (default 4:3): H=12 -> W=16, Ø=sqrt(16^2+12^2)=20.
+    app = _build_editor()
+    qe = _service(app)
+    gaps_before = [float(r.thickness) for r in app.rows]
+    ok, msg = qe.fov_solve("image", "sensor", None, 12.0)
+    if not ok:
+        raise AssertionError(f"image sensor solve with height only should succeed: {msg}")
+    if abs(float(app.rows[-1].diameter) - 20.0) > 1e-6:
+        raise AssertionError(f"height-only sensor Ø should be 20, got {app.rows[-1].diameter}")
+    det = (getattr(app.rows[-1], "advanced", {}) or {}).get("Detector", {})
+    if abs(float(det.get("active_width_mm", 0.0)) - 16.0) > 1e-6 or \
+            abs(float(det.get("active_height_mm", 0.0)) - 12.0) > 1e-6:
+        raise AssertionError(f"height-only must derive W=16 (4:3 of H=12), got {det}")
+    if [float(r.thickness) for r in app.rows] != gaps_before:
+        raise AssertionError("a sensor solve must not change any thickness")
+
+    # The width-only path must reach the identical sensor (symmetry).
+    app2 = _build_editor()
+    qe2 = _service(app2)
+    qe2.fov_solve("image", "sensor", 16.0, None)
+    if abs(float(app2.rows[-1].diameter) - 20.0) > 1e-6:
+        raise AssertionError("width-only and height-only must reach the same Ø20 sensor")
+
+    # Object 'thickness', height only: H=30 -> W=40, diag 50 (== the width-only path).
+    app3 = _build_editor()
+    qe3 = _service(app3)
+    ok, msg = qe3.fov_solve("object", "thickness", None, 30.0)
+    if not ok:
+        raise AssertionError(f"object thickness solve with height only should succeed: {msg}")
+    mag = 12.0 / 25.0
+    if abs(float(app3.rows[0].thickness) - 50.0 * (1.0 + 1.0 / mag)) > 1e-6 or \
+            abs(float(app3.rows[2].thickness) - 50.0 * (1.0 + mag)) > 1e-6:
+        raise AssertionError("height-only object thickness must match the width-only conjugate solve")
+
+    # A custom aspect (the live sensor's W:H, e.g. the 65MP Bopixel 29.9:22.4) fills
+    # the blank box at that ratio: H=22.4 -> W=29.9, Ø=sqrt(29.9^2+22.4^2)=37.36.
+    app4 = _build_editor()
+    qe4 = _service(app4)
+    ok, msg = qe4.fov_solve("image", "sensor", None, 22.4, aspect=(29.9, 22.4))
+    if not ok:
+        raise AssertionError(f"aspect-driven sensor solve should succeed: {msg}")
+    det4 = (getattr(app4.rows[-1], "advanced", {}) or {}).get("Detector", {})
+    if abs(float(det4.get("active_width_mm", 0.0)) - 29.9) > 1e-6 or \
+            abs(float(det4.get("active_height_mm", 0.0)) - 22.4) > 1e-6:
+        raise AssertionError(f"the blank width must derive from the 29.9:22.4 aspect, got {det4}")
+    if abs(float(app4.rows[-1].diameter) - 37.36000535331867) > 1e-4:
+        raise AssertionError(f"aspect-driven image circle Ø should be 37.36, got {app4.rows[-1].diameter}")
+
+    # Both boxes blank -> refuse cleanly, model untouched.
+    app5 = _build_editor()
+    qe5 = _service(app5)
+    gaps5 = [float(r.thickness) for r in app5.rows]
+    sensor5 = float(app5.rows[-1].diameter)
+    if qe5.fov_solve("object", "sensor", None, None)[0] is not False:
+        raise AssertionError("both-blank object sensor solve must be refused")
+    if qe5.fov_solve("image", "sensor", None, None)[0] is not False:
+        raise AssertionError("both-blank image sensor solve must be refused")
+    if [float(r.thickness) for r in app5.rows] != gaps5 or float(app5.rows[-1].diameter) != sensor5:
+        raise AssertionError("a refused (both-blank) solve must leave the model untouched")
+    print("one-box solve (fill just Width or just Height, aspect-derived) OK")
+
+
 def _test_double_click_gesture_wiring() -> None:
     """The gesture is a Tk double-left-click that can't run without an X server, so
     assert the wiring against the source: the binding, the plane router, and the
@@ -321,8 +391,15 @@ def _test_double_click_gesture_wiring() -> None:
         raise AssertionError("both popups must offer a Height field (W x H)")
     if "object_fov_dimensions" not in popup:
         raise AssertionError("the object popup must prefill W x H from object_fov_dimensions")
-    if 'fov_solve' not in inspect.getsource(Kraken3DInspector._apply_quick_estimation_fov_solve):
+    apply_src = inspect.getsource(Kraken3DInspector._apply_quick_estimation_fov_solve)
+    if 'fov_solve' not in apply_src:
         raise AssertionError("the popup commit must call qe.fov_solve")
+    # bugs/0071: fill just one box -- the popup parses each box independently (blank
+    # is allowed) and threads the live sensor aspect so the blank side is derived.
+    if "_read_dim" not in popup:
+        raise AssertionError("the popup must parse each box independently so one can be left blank")
+    if "aspect" not in popup or "aspect" not in apply_src:
+        raise AssertionError("the popup must thread the live sensor aspect to fill the blank box")
     print("double-click gesture + popup wiring OK")
 
 
@@ -338,6 +415,7 @@ def main() -> int:
     _test_pick_disk_registers_row()
     _test_image_solve_for_thickness()
     _test_solve_refuses_bad_input()
+    _test_solve_single_dimension()
     _test_double_click_gesture_wiring()
     print("FOV plane-solve validation passed.")
     return 0
