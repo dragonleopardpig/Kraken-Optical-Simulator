@@ -122,8 +122,9 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     # --- B. the payoff: a coated off-axis cube is NOT neutralized (killer) ----
     # beam_radius = 17.5 = HALF the 35 mm full clear-aperture diameter (bugs/0073:
     # ``diameter`` is a FULL diameter project-wide). Cube half-extent 12.5; at
-    # desp_x = -55 the inner edge clears the beam (42.5 >= 35), so an UNCOATED
-    # cube IS off-beam, but the COATED one must be exempt and keep its decenter.
+    # desp_x = -55 the inner edge clears the beam (42.5 >= threshold 21.875,
+    # bugs/0074), so an UNCOATED cube IS off-beam (fully neutralized) while the
+    # COATED one stays in the trace with its decenter -- but is axially inert.
     lenses = [_lens(35.0, 50.0), _lens(35.0, -50.0)]
     cube_idx = 3
     coated = [_OBJECT, *lenses, _cube_dict(-55.0, ["Transmit/Port", "Beam Splitter"]), _IMAGE]
@@ -147,6 +148,9 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         ok(abs(float(c.DespX) + 55.0) < 1e-6,
            f"B2 (killer): the COATED cube keeps its decenter (DespX={c.DespX}) -- "
            "stays in the non-seq trace, body off-axis (no snap)")
+        ok(abs(float(c.Thickness)) < 1e-9,
+           f"B2c: the off-beam COATED splitter is AXIALLY inert (thickness={c.Thickness} -> 0) -- "
+           "its glass depth no longer pushes the detector past focus (bugs/0074)")
         u = sys_uncoated.SDT[cube_idx]
         ok(abs(float(u.DespX)) < 1e-9,
            f"B2b: the UNCOATED cube is neutralized (DespX={u.DespX} -> on-axis), proving "

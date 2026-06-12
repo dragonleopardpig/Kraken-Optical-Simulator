@@ -5636,6 +5636,15 @@ def phase_66_offbeam_solid_display_only(
     (the same direct-promote symptom, no Face Editor). ``beam_clear_radius`` now
     returns the SEMI-diameter; the guard's Section D pins the real layout.
 
+    bugs/0074: an off-beam solid was only made *laterally* inert -- its thickness
+    was preserved as an air gap, so a cube parked clear of the beam (inner edge
+    ~38 vs radius 23, in the old 23..46 gray zone of the 2x clearance factor)
+    stayed in the chain and shoved the detector ~50 mm past best focus ("Image
+    plane wrong position, rays trace past the detector"). The clearance factor is
+    relaxed (2.0 -> 1.25) and an off-beam solid is now AXIALLY inert (zero chain
+    thickness) -- uncoated fully neutralised, coated kept in trace but axially
+    inert. The guard's Section E pins the real recording.
+
     The guard (`validate_open3d_offbeam_solid_display_only`) is display-free: a
     pure classifier plus the real ``_build_system_from_specs`` prescription, whose
     killer check proves the off-beam-cube prescription is byte-for-byte optically

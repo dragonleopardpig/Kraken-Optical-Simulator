@@ -53,9 +53,13 @@ OPTICAL_SOLID_ACTIVE_FACE_FUNCTIONS = frozenset(
 )
 
 # A solid counts as off-beam only when its nearest transverse edge clears the
-# beam radius by this factor AND by this absolute margin -- deliberately
-# conservative so nothing near the beam is ever neutralised.
-_OFFBEAM_BEAM_CLEARANCE_FACTOR = 2.0
+# beam radius by this factor AND by this absolute margin. The beam never exceeds
+# the widest clear aperture (``beam_clear_radius``), so a solid whose inner edge
+# clears that radius by ~25 % is genuinely outside the beam. The original 2x
+# factor (bugs/0074) was too strict: a cube parked clear of the beam (inner edge
+# ~38 vs radius 23) fell in the 23..46 gray zone, stayed in the sequential chain,
+# and its thickness shoved the downstream detector past best focus.
+_OFFBEAM_BEAM_CLEARANCE_FACTOR = 1.25
 _OFFBEAM_MIN_CLEARANCE_MM = 1.0
 
 # Advanced attrs dropped from a neutralised spec so it no longer reads as a
@@ -196,13 +200,17 @@ def beam_clear_radius(row_specs: list[dict]) -> float:
     return 0.5 * max_diameter
 
 
-def is_offbeam_inert_solid_spec(spec: dict, beam_radius: float) -> bool:
-    """True when a promoted uncoated solid sits clearly clear of the beam."""
+def is_offbeam_solid_spec(spec: dict, beam_radius: float) -> bool:
+    """True when a promoted solid sits clearly clear of the beam (geometry only).
+
+    Ignores coating: a coated splitter parked off the beam is just as much
+    out of the optical path as an uncoated one, so it must be axially inert too
+    (bugs/0074). Coating only decides whether the solid is also *optically*
+    neutralised (see ``is_offbeam_inert_solid_spec``).
+    """
     if beam_radius <= 0.0:
         return False
     if not is_promoted_optical_solid_spec(spec):
-        return False
-    if solid_has_active_coating(spec):
         return False
     inner_edge = solid_lateral_decenter(spec) - solid_transverse_half_extent(spec)
     if inner_edge <= 0.0:
@@ -212,6 +220,17 @@ def is_offbeam_inert_solid_spec(spec: dict, beam_radius: float) -> bool:
         beam_radius + _OFFBEAM_MIN_CLEARANCE_MM,
     )
     return inner_edge >= threshold
+
+
+def is_offbeam_inert_solid_spec(spec: dict, beam_radius: float) -> bool:
+    """True when a promoted UNCOATED solid sits clearly clear of the beam.
+
+    Such a solid is optically inert (no active face), so it is fully neutralised
+    -- flat zero-power AIR with no coordinate break. A coated splitter is off-beam
+    too (``is_offbeam_solid_spec``) but stays in the trace; it is only made
+    axially inert, never optically neutralised.
+    """
+    return is_offbeam_solid_spec(spec, beam_radius) and not solid_has_active_coating(spec)
 
 
 def _neutralize_advanced_container(container) -> None:
@@ -228,17 +247,38 @@ def _neutralize_advanced_container(container) -> None:
 def neutralized_offbeam_solid_spec(spec: dict) -> dict:
     """A flat zero-power AIR copy of an off-beam solid spec.
 
-    Drops the solid-ness and the coordinate break while preserving ``thickness``,
-    ``diameter`` and surface kind so the surface count and axial chain are intact.
+    Drops the solid-ness AND the coordinate break AND the axial footprint:
+    ``desp``/``tilt`` are zeroed (no propagating lateral break) and ``thickness``
+    is zeroed so the parked solid contributes nothing to the optical chain -- the
+    downstream Object/Image/detector stay exactly where they were before the solid
+    was dropped in. ``diameter`` and surface kind are kept so the surface count is
+    intact. Preserving the thickness (bugs/0065) left the solid as a real air gap
+    that shoved the detector past best focus (bugs/0074); the body still draws at
+    its world station from the live row + ``offbeam_neutralized_body_transform``.
     """
     new_spec = copy.deepcopy(spec)
     for key in ("desp_x", "desp_y", "desp_z", "tilt_x", "tilt_y", "tilt_z"):
         new_spec[key] = 0.0
+    new_spec["thickness"] = 0.0
     new_spec["rc"] = 0.0
     new_spec["glass"] = "AIR"
     _neutralize_advanced_container(new_spec)
     for key in ("advanced", "advanced_attrs", "surface_attrs"):
         _neutralize_advanced_container(new_spec.get(key))
+    return new_spec
+
+
+def axially_inert_offbeam_solid_spec(spec: dict) -> dict:
+    """An off-beam solid kept optically active but with zero axial footprint.
+
+    For a COATED splitter parked off the beam (bugs/0066 keeps it in the
+    non-sequential trace, body off-axis): the rays never reach it, so its glass
+    thickness must not extend the axial chain and push the detector (bugs/0074).
+    Coating, glass and ``desp`` (the off-axis body station) are all preserved --
+    only the chain ``thickness`` is zeroed.
+    """
+    new_spec = copy.deepcopy(spec)
+    new_spec["thickness"] = 0.0
     return new_spec
 
 
@@ -258,7 +298,14 @@ def offbeam_inert_solid_indices(row_specs: list[dict]) -> list[int]:
 
 
 def neutralize_offbeam_inert_solids(row_specs: list[dict]) -> list[dict]:
-    """Return ``row_specs`` with off-beam inert promoted solids neutralised.
+    """Return ``row_specs`` with off-beam promoted solids made inert.
+
+    An off-beam UNCOATED solid is fully neutralised (flat zero-power AIR, no
+    coordinate break, zero thickness). An off-beam COATED splitter stays in the
+    non-sequential trace (bugs/0066) but is made axially inert -- its thickness is
+    zeroed so it no longer pushes the detector (bugs/0074), while its decenter and
+    coating are preserved. Either way an off-beam solid contributes nothing to the
+    Object/Image/detector chain.
 
     The input list is never mutated; the original list object is returned
     unchanged when nothing is off-beam (zero overhead for ordinary layouts).
@@ -272,11 +319,14 @@ def neutralize_offbeam_inert_solids(row_specs: list[dict]) -> list[dict]:
     changed = False
     result: list[dict] = []
     for spec in specs:
-        if isinstance(spec, dict) and is_offbeam_inert_solid_spec(spec, radius):
-            result.append(neutralized_offbeam_solid_spec(spec))
-            changed = True
-        else:
+        if not isinstance(spec, dict) or not is_offbeam_solid_spec(spec, radius):
             result.append(spec)
+            continue
+        if solid_has_active_coating(spec):
+            result.append(axially_inert_offbeam_solid_spec(spec))
+        else:
+            result.append(neutralized_offbeam_solid_spec(spec))
+        changed = True
     return result if changed else row_specs
 
 
