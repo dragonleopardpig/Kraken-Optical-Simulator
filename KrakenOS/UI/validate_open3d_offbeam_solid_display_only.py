@@ -80,6 +80,10 @@ def _cube(desp_x: float, desp_y: float, faces: list[dict]) -> dict:
 
 _UNCOATED = [{"face_id": "f0", "function": "Unassigned"}, {"face_id": "f1", "function": "Transmit/Port"}]
 _COATED = [{"face_id": "f0", "function": "Transmit/Port"}, {"face_id": "fc", "function": "Beam Splitter"}]
+# The REAL persisted schema wraps the face list in a dict (bugs/0066). A
+# bare-list-only coating check silently treated this as uncoated and neutralised
+# a genuine splitter off the trace -- exercise it explicitly here.
+_COATED_DICT = {"version": 1, "source_stl": "x.stl", "faces": _COATED, "virtual_planes": []}
 _OBJECT = {"surface": "Object", "rc": 0.0, "thickness": 100.0, "diameter": 1.0, "glass": "AIR"}
 _IMAGE = {"surface": "Image", "rc": 0.0, "thickness": 0.0, "diameter": 35.0, "glass": "AIR"}
 
@@ -117,6 +121,9 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
        "A1: an off-beam uncoated promoted cube is classified off-beam")
     ok(offbeam_inert_solid_indices([_OBJECT, *lenses, _cube(105.0, 174.0, copy.deepcopy(_COATED)), _IMAGE]) == [],
        "A2: a COATED (beam-splitter) off-axis cube is exempt (stays in the trace)")
+    ok(offbeam_inert_solid_indices([_OBJECT, *lenses, _cube(105.0, 174.0, copy.deepcopy(_COATED_DICT)), _IMAGE]) == [],
+       "A2b: a COATED cube using the REAL dict face schema is also exempt (bugs/0066 -- "
+       "a bare-list-only coating check missed this and snapped the splitter onto the axis)")
     ok(offbeam_inert_solid_indices([_OBJECT, *lenses, _cube(0.0, 0.0, copy.deepcopy(_UNCOATED)), _IMAGE]) == [],
        "A3: an on-axis cube is on the beam (not neutralised)")
     ok(offbeam_inert_solid_indices([_OBJECT, *lenses, _cube(10.0, 0.0, copy.deepcopy(_UNCOATED)), _IMAGE]) == [],

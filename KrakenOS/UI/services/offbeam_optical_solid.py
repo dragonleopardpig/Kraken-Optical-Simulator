@@ -42,6 +42,7 @@ from KrakenOS.UI.services.advanced_surface_attrs import (
     _advanced_surface_attrs_from_spec,
     _canonical_advanced_surface_attr,
 )
+from KrakenOS.UI.optical_solid_metadata import normalize_optical_solid_face_metadata
 
 # Face functions that make a solid optically active -- such a solid is "coated"
 # in North-Star terms and stays in the trace even when geometrically off-axis.
@@ -102,12 +103,19 @@ def is_promoted_optical_solid_spec(spec: dict) -> bool:
 
 
 def solid_has_active_coating(spec: dict) -> bool:
-    """True if any assigned face carries an active optical function ("coated")."""
+    """True if any assigned face carries an active optical function ("coated").
+
+    Reads through ``normalize_optical_solid_face_metadata`` so it sees the real
+    persisted schema, where ``OpticalSolidFaces`` is a dict
+    ``{"version", "faces": [...], ...}`` -- not the bare face list. A raw
+    ``isinstance(faces, list)`` check silently treated every real coated solid as
+    UNCOATED, so a Beam-Splitter cube parked off the beam was wrongly neutralised
+    out of the non-sequential trace and its body snapped onto the optical axis
+    (bugs/0066).
+    """
     advanced = _advanced_surface_attrs_from_spec(spec)
-    faces = advanced.get("OpticalSolidFaces")
-    if not isinstance(faces, (list, tuple)):
-        return False
-    for face in faces:
+    metadata = normalize_optical_solid_face_metadata(advanced.get("OpticalSolidFaces"))
+    for face in metadata.get("faces", []) or []:
         if not isinstance(face, dict):
             continue
         function = str(face.get("function", face.get("role", "")) or "").strip()

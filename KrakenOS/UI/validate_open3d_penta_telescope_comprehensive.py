@@ -5772,6 +5772,45 @@ def phase_70_resize_gesture_planner(
     return result
 
 
+def phase_71_coated_solid_schema_exempt(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A coated splitter is detected via the real metadata schema (bugs/0066).
+
+    The user parked a beam-splitter cube off the axis and assigned it a Beam
+    Splitter coating; after the Face Editor the cube snapped back onto the optical
+    axis. Root cause: ``solid_has_active_coating`` read ``OpticalSolidFaces`` as a
+    bare list, but the persisted schema is a dict ``{"faces": [...]}``, so a real
+    coated solid read as UNCOATED -> it became eligible for bugs/0065 off-beam
+    neutralization, which dropped the splitter from the non-sequential trace and
+    zeroed its decenter (the body snapped on-axis). The fix reads through
+    ``normalize_optical_solid_face_metadata`` (both schemas). bugs/0065's guard
+    missed this because its fixtures used a bare list.
+
+    The guard (`validate_open3d_coated_solid_schema_exempt`) is display-free
+    (pure classifier + real ``_build_system_from_specs`` prescription; the real
+    fixture row skips if absent), so it runs everywhere.
+    """
+    result = PhaseResult(
+        name="Phase 71: Open 3D coated splitter detected via real face schema (no axis snap)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_coated_solid_schema_exempt import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"coated-solid schema guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("coated-solid schema guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -5888,6 +5927,7 @@ def main() -> int:
             phase_68_solid_resize_overlay,
             phase_69_beam_splitter_coating_recovered,
             phase_70_resize_gesture_planner,
+            phase_71_coated_solid_schema_exempt,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

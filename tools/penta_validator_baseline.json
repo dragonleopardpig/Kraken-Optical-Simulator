@@ -72,7 +72,8 @@
     "67": "pass",
     "68": "pass",
     "69": "pass",
-    "70": "pass"
+    "70": "pass",
+    "71": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -145,6 +146,7 @@
     "67": "Open 3D drag-to-resize geometry kernel (coupling detect + anchored mesh-space scale + coating preserved)",
     "68": "Open 3D resize overlay/promotion wiring + right-click Resize Solid... popup",
     "69": "Open 3D beam-splitter 45 deg coating recovered as a selectable face",
-    "70": "Open 3D drag-to-resize gesture planner (face->axis/anchor/coupling, plan fed through the real geometry kernel)"
+    "70": "Open 3D drag-to-resize gesture planner (face->axis/anchor/coupling, plan fed through the real geometry kernel)",
+    "71": "Open 3D coated splitter detected via the real dict face schema (off-axis coated cube stays in the non-seq trace, no axis snap)"
   }
 }
