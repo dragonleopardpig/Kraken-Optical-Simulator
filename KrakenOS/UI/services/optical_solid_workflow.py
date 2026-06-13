@@ -1152,6 +1152,11 @@ class LayoutOpticalSolidWorkflowMixin:
             if self.imported_lens_step_path is None:
                 return None
             cylinder_axis = self._step_primary_cylinder_axis(self.imported_lens_step_path)
+            optical_axis_point = (
+                self._step_primary_cylinder_axis_point(self.imported_lens_step_path)
+                if cylinder_axis is not None
+                else None
+            )
             return {
                 "path": self.imported_lens_step_path,
                 "largest_component": bool(getattr(self, "lens_step_largest_component_only", True)),
@@ -1159,6 +1164,7 @@ class LayoutOpticalSolidWorkflowMixin:
                 "front_face": "max",
                 "target_front_z": self._lens_front_datum_z(),
                 "label": "Lens STEP",
+                "optical_axis_point_xyz": optical_axis_point,
                 "roll_deg": float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
                 "x_rotation_deg": float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
                 "y_rotation_deg": float(getattr(self, "lens_step_rotation_y_deg", 0.0)),
@@ -1233,6 +1239,7 @@ class LayoutOpticalSolidWorkflowMixin:
             y_rotation_deg=float(params.get("y_rotation_deg", 0.0)),
             axis_offset_xy=params.get("axis_offset_xy"),
             placement_offset_xyz=params.get("placement_offset_xyz"),
+            optical_axis_point_xyz=params.get("optical_axis_point_xyz"),
         )
         if aligned_mesh is None:
             return None

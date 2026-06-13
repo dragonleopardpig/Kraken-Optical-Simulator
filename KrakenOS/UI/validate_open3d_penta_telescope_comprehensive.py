@@ -6033,6 +6033,44 @@ def phase_75_bopixel_m42_camera(
     return result
 
 
+def phase_76_lens_step_centered_on_axis(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """An imported Imaging-Lens STEP is centred on the optical axis (bugs/0077).
+
+    The user glued the lens STEP to its surrogate but the barrel sat laterally
+    off-axis (``attachment/3D.png``), pulled toward a one-sided mount tab.
+    ``_cad_mesh_aligned_to_optical_axis`` centred each overlay on its bbox
+    midpoint -- skewed by the tab -- because ``_step_primary_cylinder_axis``
+    discarded ``Axis().Location()``. The fix returns a radius-weighted point on
+    the dominant cylinder axis and uses its transverse projection as the lateral
+    centre; the lens display + promotion paths pass it.
+
+    The guard (`validate_open3d_lens_step_centered_on_axis`) is display-free: it
+    drives the alignment helper on a synthetic asymmetric lens (CAD-axis centring
+    on-axis vs bbox 4 mm off, fail-before/pass-after) and, when a vendor lens STEP
+    is present, exercises the real OCC axis-point extraction.
+    """
+    result = PhaseResult(
+        name="Phase 76: Open 3D imaging-lens STEP centred on optical axis (CAD cylinder axis, not bbox)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_lens_step_centered_on_axis import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"lens-centering guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("lens-centering guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6154,6 +6192,7 @@ def main() -> int:
             phase_73_camera_step_full_body,
             phase_74_fov_rect_orientation,
             phase_75_bopixel_m42_camera,
+            phase_76_lens_step_centered_on_axis,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -2332,6 +2332,16 @@ class ScenePlacementMixin:
             return None
         return getattr(self, f"{label}_step_resize", None)
 
+    def _step_overlay_resize_active(self, label: str) -> bool:
+        """True when ``label``'s overlay carries a non-trivial resize target, i.e.
+        :meth:`_apply_step_overlay_resize` actually scales the mesh into a frame
+        that no longer matches the STEP-native cylinder-axis point (bugs/0077)."""
+        spec = self._step_resize_for_label(label)
+        if not spec:
+            return False
+        target = spec.get("target_extents")
+        return bool(target) and not all(v is None for v in target)
+
     def _set_step_resize_for_label(
         self,
         label: str,

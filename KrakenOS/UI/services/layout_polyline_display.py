@@ -755,26 +755,60 @@ class LayoutPolylineDisplayMixin:
         return mesh
 
     def _step_primary_cylinder_axis(self, source_path: Path) -> np.ndarray | None:
+        frame = self._step_primary_cylinder_axis_frame(source_path)
+        if frame is None:
+            return None
+        axis = frame.get("axis")
+        return None if axis is None else np.asarray(axis, dtype=float).copy()
+
+    def _step_primary_cylinder_axis_point(self, source_path: Path) -> np.ndarray | None:
+        """A point that lies ON the dominant (radius-weighted) cylinder axis.
+
+        Its projection into the transverse plane is the lens's optical-axis
+        centre, which is the correct lateral anchor for
+        :meth:`_cad_mesh_aligned_to_optical_axis` -- unlike the mesh bounding-box
+        midpoint, it is not pulled off-axis by an asymmetric mount/flange
+        (bugs/0077).  Returned in the STEP's native (un-resized) frame.
+        """
+        frame = self._step_primary_cylinder_axis_frame(source_path)
+        if frame is None:
+            return None
+        point = frame.get("point")
+        return None if point is None else np.asarray(point, dtype=float).copy()
+
+    def _step_primary_cylinder_axis_frame(self, source_path: Path) -> dict | None:
         source_path = Path(source_path).expanduser()
-        cache_key = f"step-axis:{source_path.resolve()}"
+        cache_key = f"step-axis-frame:{source_path.resolve()}"
         cached = self._external_cad_mesh_cache.get(cache_key)
         if cached is not None:
-            return np.asarray(cached, dtype=float).copy()
+            return cached
         axis_cache_path = _cached_step_axis_path(source_path)
         if axis_cache_path.exists() and axis_cache_path.stat().st_size > 0:
             try:
                 payload = json.loads(axis_cache_path.read_text(encoding="utf-8"))
                 axis = np.asarray(payload.get("axis", ()), dtype=float).reshape(-1)[:3]
                 norm = float(np.linalg.norm(axis[:3])) if axis.size >= 3 else 0.0
-                if axis.size >= 3 and norm > 1.0e-12 and np.isfinite(norm):
+                point_raw = payload.get("axis_point", None)
+                # Old cache files (pre-0077) carry no axis_point; recompute so the
+                # lateral optical-axis anchor is available, rather than falling back
+                # to the bbox midpoint for the life of the cache.
+                if (
+                    axis.size >= 3
+                    and norm > 1.0e-12
+                    and np.isfinite(norm)
+                    and point_raw is not None
+                ):
                     axis = axis[:3] / norm
-                    self._external_cad_mesh_cache[cache_key] = axis.copy()
-                    open3d_timing_event(
-                        "load_step_axis_disk_cache_hit",
-                        source_path=str(source_path),
-                        cache_path=str(axis_cache_path),
-                    )
-                    return axis.copy()
+                    point = np.asarray(point_raw, dtype=float).reshape(-1)[:3]
+                    if point.size >= 3 and np.all(np.isfinite(point)):
+                        frame = {"axis": axis.copy(), "point": point.copy()}
+                        self._external_cad_mesh_cache[cache_key] = frame
+                        open3d_timing_event(
+                            "load_step_axis_disk_cache_hit",
+                            source_path=str(source_path),
+                            cache_path=str(axis_cache_path),
+                        )
+                        return frame
             except Exception:
                 try:
                     axis_cache_path.unlink(missing_ok=True)
@@ -796,7 +830,7 @@ class LayoutPolylineDisplayMixin:
             reader.TransferRoots()
             shape = reader.OneShape()
             explorer = TopExp_Explorer(shape, TopAbs_FACE)
-            axes: list[tuple[float, np.ndarray]] = []
+            axes: list[tuple[float, np.ndarray, np.ndarray]] = []
             while explorer.More():
                 face = explorer.Current()
                 surface = BRepAdaptor_Surface(face)
@@ -804,30 +838,49 @@ class LayoutPolylineDisplayMixin:
                     cylinder = surface.Cylinder()
                     direction = cylinder.Axis().Direction()
                     vector = np.array([direction.X(), direction.Y(), direction.Z()], dtype=float)
+                    location = cylinder.Axis().Location()
+                    point = np.array([location.X(), location.Y(), location.Z()], dtype=float)
                     norm = float(np.linalg.norm(vector))
                     radius = float(cylinder.Radius())
-                    if norm > 1e-12 and np.isfinite(radius) and radius > 1.0:
-                        axes.append((radius, vector / norm))
+                    if (
+                        norm > 1e-12
+                        and np.isfinite(radius)
+                        and radius > 1.0
+                        and np.all(np.isfinite(point))
+                    ):
+                        axes.append((radius, vector / norm, point))
                 explorer.Next()
             if not axes:
                 return None
             reference = axes[0][1]
             weighted = np.zeros(3, dtype=float)
-            for radius, vector in axes:
+            weighted_point = np.zeros(3, dtype=float)
+            weight_sum = 0.0
+            for radius, vector, point in axes:
                 if float(np.dot(reference, vector)) < 0.0:
                     vector = -vector
-                weighted += max(radius, 1.0) * vector
+                weight = max(radius, 1.0)
+                weighted += weight * vector
+                # Collinear cylinders (barrel inner/outer, etc.) share one axis
+                # line, so their Location points all project to the same
+                # transverse centre; the radius weighting lets the big barrel
+                # dominate any small off-axis bore (a screw hole, a mount pin).
+                weighted_point += weight * point
+                weight_sum += weight
             norm = float(np.linalg.norm(weighted))
-            if norm <= 1e-12:
+            if norm <= 1e-12 or weight_sum <= 0.0:
                 return None
             axis = weighted / norm
-            self._external_cad_mesh_cache[cache_key] = axis.copy()
+            point = weighted_point / weight_sum
+            frame = {"axis": axis.copy(), "point": point.copy()}
+            self._external_cad_mesh_cache[cache_key] = frame
             try:
                 axis_cache_path.parent.mkdir(parents=True, exist_ok=True)
                 axis_cache_path.write_text(
                     json.dumps(
                         {
                             "axis": [float(value) for value in axis[:3]],
+                            "axis_point": [float(value) for value in point[:3]],
                             "source_path": str(source_path),
                             "cylinder_count": int(len(axes)),
                         },
@@ -839,15 +892,19 @@ class LayoutPolylineDisplayMixin:
             except Exception as exc:
                 self.append_debug(f"STEP cylinder-axis cache write skipped for {source_path.name}: {exc}")
             self.append_debug(
-                "STEP CAD cylinder axis | {name} | axis=({x:.6f},{y:.6f},{z:.6f}) | cylinders={count}".format(
+                "STEP CAD cylinder axis | {name} | axis=({x:.6f},{y:.6f},{z:.6f}) | "
+                "point=({px:.3f},{py:.3f},{pz:.3f}) | cylinders={count}".format(
                     name=source_path.name,
                     x=float(axis[0]),
                     y=float(axis[1]),
                     z=float(axis[2]),
+                    px=float(point[0]),
+                    py=float(point[1]),
+                    pz=float(point[2]),
                     count=len(axes),
                 )
             )
-            return axis
+            return frame
         except Exception as exc:
             self.append_debug(f"STEP cylinder-axis extraction failed: {exc}")
             return None
@@ -865,6 +922,7 @@ class LayoutPolylineDisplayMixin:
         y_rotation_deg: float = 0.0,
         axis_offset_xy: tuple[float, float] | None = None,
         placement_offset_xyz: tuple[float, float, float] | None = None,
+        optical_axis_point_xyz: tuple[float, float, float] | None = None,
     ):
         if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
             return None
@@ -883,6 +941,7 @@ class LayoutPolylineDisplayMixin:
             axis_vector = None
         axis_text = "vector" if axis_vector is not None else str(source_axis).strip().lower()
         working_pts = pts
+        optical_axis_transverse = None
         if axis_vector is not None:
             reference = np.array([0.0, 0.0, 1.0], dtype=float)
             if abs(float(np.dot(reference, axis_vector))) > 0.9:
@@ -891,7 +950,8 @@ class LayoutPolylineDisplayMixin:
             transverse_u /= max(float(np.linalg.norm(transverse_u)), 1e-12)
             transverse_v = np.cross(axis_vector, transverse_u)
             transverse_v /= max(float(np.linalg.norm(transverse_v)), 1e-12)
-            centered = pts - np.mean(pts, axis=0)
+            mean_pts = np.mean(pts, axis=0)
+            centered = pts - mean_pts
             working_pts = np.column_stack(
                 [
                     centered @ transverse_u,
@@ -900,6 +960,23 @@ class LayoutPolylineDisplayMixin:
                 ]
             )
             axis_index = 2
+            # A point on the CAD cylinder axis projects to the optical-axis
+            # centre in the transverse plane -- a far better lateral anchor than
+            # the bbox midpoint when the body has an asymmetric mount (bugs/0077).
+            if optical_axis_point_xyz is not None:
+                try:
+                    point_vec = np.asarray(optical_axis_point_xyz, dtype=float).reshape(-1)[:3]
+                    if point_vec.size >= 3 and np.all(np.isfinite(point_vec)):
+                        point_centered = point_vec - mean_pts
+                        optical_axis_transverse = np.array(
+                            [
+                                float(point_centered @ transverse_u),
+                                float(point_centered @ transverse_v),
+                            ],
+                            dtype=float,
+                        )
+                except Exception:
+                    optical_axis_transverse = None
         elif axis_text.startswith("pca"):
             centered = pts - np.mean(pts, axis=0)
             cov = centered.T @ centered / max(int(centered.shape[0]), 1)
@@ -919,7 +996,12 @@ class LayoutPolylineDisplayMixin:
         src_max = np.max(pts, axis=0)
         work_min = np.min(working_pts, axis=0)
         work_max = np.max(working_pts, axis=0)
-        transverse_center = 0.5 * (work_min[transverse_axes] + work_max[transverse_axes])
+        if optical_axis_transverse is not None:
+            # vector branch -> axis_index == 2, transverse_axes == [0, 1], so the
+            # projected (u, v) maps straight onto the two transverse columns.
+            transverse_center = optical_axis_transverse
+        else:
+            transverse_center = 0.5 * (work_min[transverse_axes] + work_max[transverse_axes])
         optical_values = working_pts[:, axis_index]
         face = str(front_face).strip().lower()
         front_value = float(np.min(optical_values) if face == "min" else np.max(optical_values))
@@ -1133,6 +1215,15 @@ class LayoutPolylineDisplayMixin:
                 return None
             mesh = self._apply_step_overlay_resize(mesh, "lens")
             cylinder_axis = self._step_primary_cylinder_axis(self.imported_lens_step_path)
+            # Centre the lens barrel on the optical axis using the CAD cylinder
+            # axis location, not the bbox midpoint an asymmetric mount skews
+            # (bugs/0077).  The axis point is in the STEP-native frame, so only
+            # apply it when the mesh has NOT been resized into a different frame.
+            optical_axis_point = None
+            if cylinder_axis is not None and not self._step_overlay_resize_active("lens"):
+                optical_axis_point = self._step_primary_cylinder_axis_point(
+                    self.imported_lens_step_path
+                )
             return self._cad_mesh_aligned_to_optical_axis(
                 mesh,
                 source_axis=cylinder_axis if cylinder_axis is not None else "pca0",
@@ -1144,6 +1235,7 @@ class LayoutPolylineDisplayMixin:
                 y_rotation_deg=float(getattr(self, "lens_step_rotation_y_deg", 0.0)),
                 axis_offset_xy=self._step_axis_offset_xy("lens"),
                 placement_offset_xyz=self._step_placement_offset_xyz("lens"),
+                optical_axis_point_xyz=optical_axis_point,
             )
 
         return self._cached_transformed_step_overlay("lens", signature, build)

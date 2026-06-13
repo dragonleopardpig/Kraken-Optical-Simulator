@@ -77,7 +77,8 @@
     "72": "pass",
     "73": "pass",
     "74": "pass",
-    "75": "pass"
+    "75": "pass",
+    "76": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -155,6 +156,7 @@
     "72": "Open 3D off-beam solid body stays off-axis (no axis snap at promotion)",
     "73": "Open 3D camera STEP renders the full camera body (not the sensor-window slab)",
     "74": "Open 3D FOV/sensor rectangles render landscape (width=long side on horizontal X, not transposed)",
-    "75": "Open 3D 65MP Bopixel camera is the M42 variant (M42 Mount, 11.5 mm edge-to-sensor)"
+    "75": "Open 3D 65MP Bopixel camera is the M42 variant (M42 Mount, 11.5 mm edge-to-sensor)",
+    "76": "Open 3D imaging-lens STEP centred on optical axis (CAD cylinder axis, not bbox)"
   }
 }
