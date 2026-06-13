@@ -31,6 +31,15 @@ from KrakenOS.UI.services.step_overlay_analytic_fit import (
 from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABEL_SET
 from KrakenOS.UI.surface_table_model import SurfaceRow
 
+# bugs/0081 KILL-SWITCH: the bugs/0079 in-path axial placement (gap-split +
+# trailing AIR spacer at the solid's true Z) raised during a live promote and
+# aborted it -- "can't promote at all" (recording flag_20260613_223352_483). The
+# planner itself is unit-tested, so the raise is in the live promote wiring; until
+# that's reproduced headlessly and fixed, the placement is DISABLED here so every
+# promote falls back to the historic (working) append path. Flip to True only with
+# a passing headless promote test.
+_INPATH_AXIAL_PLACEMENT_ENABLED = False
+
 
 def _mesh_without_cell_data(mesh):
     """Return a deep copy of ``mesh`` with cell-data arrays cleared.
@@ -1097,7 +1106,7 @@ class StepOverlayPromotionService:
         straddles_axis = bool(
             bounds_min[0] <= 0.0 <= bounds_max[0] and bounds_min[1] <= 0.0 <= bounds_max[1]
         )
-        if inpath_axial_placement and straddles_axis and body_depth > 1.0e-6:
+        if _INPATH_AXIAL_PLACEMENT_ENABLED and inpath_axial_placement and straddles_axis and body_depth > 1.0e-6:
             from KrakenOS.UI.services.optical_chain_insert import plan_inpath_insertion
 
             chain_thicknesses = [float(getattr(r, "thickness", 0.0) or 0.0) for r in self.rows]
