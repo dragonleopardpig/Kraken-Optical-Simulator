@@ -243,6 +243,17 @@ class Open3DFaceAssignmentService:
                 )
             menu.add_separator()
             menu.add_command(
+                label="Snap Picked Face -> Optical Axis",
+                command=lambda picked_label=step_label, picked_point=point[:3].copy(), picked_normal=normal: self._snap_step_face_to_optical_axis_from_context(
+                    picked_label, picked_point, picked_normal
+                ),
+            )
+            menu.add_command(
+                label="Glue STEP to Surrogate",
+                command=lambda picked_label=step_label: self._glue_step_to_surrogate_from_context(picked_label),
+            )
+            menu.add_separator()
+            menu.add_command(
                 label="Resize Solid...",
                 command=lambda picked_label=step_label: self._open_step_overlay_resize_popup(picked_label),
             )
@@ -345,6 +356,48 @@ class Open3DFaceAssignmentService:
         self.editor.select_step_component(label)
         self._debug_trace("promote_step_from_context", label=label, counts_before=self._debug_actor_counts())
         self.promote_selected_step_to_optical_solid_row()
+
+    def _glue_step_to_surrogate_from_context(self, label: str) -> None:
+        """Right-click "Glue STEP to Surrogate": select the clicked overlay and
+        re-apply its automatic optical-surrogate placement (bugs/0077 lens
+        centring etc.)."""
+        self.editor.select_step_component(label)
+        self._debug_trace("glue_step_to_surrogate_from_context", label=label)
+        self.glue_selected_step_to_surrogate()
+
+    def _snap_step_face_to_optical_axis_from_context(self, label: str, point_world, normal_world) -> None:
+        """Right-click "Snap Picked Face -> Optical Axis": snap the clicked STEP
+        face's centre + normal onto the nearest optical axis -- one click, using
+        the already-picked feature (the beam-splitter-on-LED-STEP glue workflow).
+        Delegates to the tested editor snap (axis_frame=None -> nearest axis)."""
+        le = _layout_module()
+        _short_error_message = le._short_error_message
+        label = str(label).strip().lower()
+        self._debug_trace(
+            "snap_step_face_to_optical_axis_from_context",
+            label=label,
+            point_world=self._debug_vector(point_world),
+            normal_world=self._debug_vector(normal_world),
+        )
+        try:
+            result = self.editor.snap_step_feature_normal_to_optical_axis(label, point_world, normal_world)
+        except Exception as exc:
+            self.status_var.set(f"Snap face -> Optical Axis failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D right-click face->axis snap failed: {exc}")
+            return
+        if result is None:
+            self.status_var.set(self.editor.status_var.get())
+            return
+        # Clear the STEP selection so the post-snap refresh does not re-add the
+        # rotation handles (same guard as the menu snap path in open3d_inspector).
+        try:
+            self.editor._selected_step_label = None
+        except Exception:
+            pass
+        try:
+            self.refresh_from_editor(force_retrace=True)
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D face->axis snap refresh failed: {exc}")
 
     def _promote_step_and_assign_face_function(
         self,

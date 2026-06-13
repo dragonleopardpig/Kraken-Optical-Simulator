@@ -2319,6 +2319,43 @@ class ScenePlacementMixin:
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
 
+    def glue_step_overlay_to_surrogate(self, label: str) -> bool:
+        """Re-apply the automatic "glue to optical surrogate" placement for an
+        imported STEP overlay by clearing its manual drag offsets, so it snaps
+        back to its auto-aligned station: a **lens** re-centres on its CAD
+        cylinder axis (bugs/0077) with its front datum on the surrogate; the
+        **camera** sensor returns to the Image plane; the **LED** returns to its
+        object-distance station.  Orientation (user rotations) and any resize are
+        preserved -- this only undoes lateral/axial drags.  Returns True when it
+        actually moved the overlay (so the caller can refresh)."""
+        label = str(label).strip().lower()
+        if label not in _step_overlay_label_set():
+            return False
+        if self._step_path_for_label(label) is None:
+            self.status_var.set(f"No {label} STEP is imported to glue to its surrogate.")
+            return False
+        display = self._step_overlay_display_label(label)
+        axis_off = self._step_axis_offset_xy(label)
+        place_off = self._step_placement_offset_xyz(label)
+        already_glued = (
+            abs(float(axis_off[0])) <= 1e-9
+            and abs(float(axis_off[1])) <= 1e-9
+            and all(abs(float(v)) <= 1e-9 for v in place_off)
+        )
+        if already_glued:
+            self.status_var.set(f"{display} STEP is already glued to its optical surrogate.")
+            return False
+        self._begin_history_capture()
+        self._set_step_axis_offset_xy(label, (0.0, 0.0))
+        self._set_step_placement_offset_xyz(label, (0.0, 0.0, 0.0))
+        self._selected_step_label = label
+        self._commit_history_capture()
+        self.status_var.set(
+            f"Glued {display} STEP to its optical surrogate "
+            "(centred on the optical axis, datum aligned)."
+        )
+        return True
+
     # --- imported-solid resize (drag a face to grow a dimension) ------------- #
     # The resize is stored as per-axis target extents in the solid's *native*
     # (base-mesh) frame and applied to the loaded mesh before optical-axis

@@ -6071,6 +6071,44 @@ def phase_76_lens_step_centered_on_axis(
     return result
 
 
+def phase_77_glue_step_to_surrogate(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """"Glue STEP to Surrogate" re-applies an overlay's automatic optical-surrogate
+    placement (follow-on to bugs/0077).
+
+    The user wanted glue to be automatic AND on the right-click menu, so a STEP
+    dragged off its auto-aligned station snaps back -- a lens re-centres on its
+    CAD cylinder axis, the camera sensor returns to the Image plane, the LED to
+    its object station. `glue_step_overlay_to_surrogate` clears the two manual
+    drag offsets that `_cad_mesh_aligned_to_optical_axis` consumes; the action is
+    wired to the CAD menu and the canvas right-click (alongside a one-click "Snap
+    Picked Face -> Optical Axis" that reuses the tested feature-normal snap).
+
+    The guard (`validate_open3d_glue_step_to_surrogate`) is display-free: it drives
+    the editor glue method on a stub mixin (re-glue clears offsets; clean overlay
+    is a no-op; per-label isolation; unknown label rejected).
+    """
+    result = PhaseResult(
+        name="Phase 77: Open 3D 'Glue STEP to Surrogate' re-applies auto optical-surrogate placement"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_glue_step_to_surrogate import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"glue-to-surrogate guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("glue-to-surrogate guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6193,6 +6231,7 @@ def main() -> int:
             phase_74_fov_rect_orientation,
             phase_75_bopixel_m42_camera,
             phase_76_lens_step_centered_on_axis,
+            phase_77_glue_step_to_surrogate,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

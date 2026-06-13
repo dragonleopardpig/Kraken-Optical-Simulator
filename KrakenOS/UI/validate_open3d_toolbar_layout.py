@@ -35,6 +35,7 @@ _MENU_EXPECTATIONS: dict[str, tuple[str, ...]] = {
         "Snap STEP Surface-Center Normal->Optical Axis",
         "Snap STEP Pick-Point Normal->Optical Axis",
         "Center STEP Surface->Optical Axis",
+        "Glue STEP to Surrogate",
         "Obj->LED",
         "Export STEP",
         "Faces...",

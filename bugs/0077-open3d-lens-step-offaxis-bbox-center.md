@@ -71,3 +71,26 @@ pass no point, so their bbox centring is byte-for-byte unchanged.
 Headless VTK renders of this layout SIGSEGV on Xvfb llvmpipe, so the concentric
 overlay is verified in-app: re-import the Imaging Lens and confirm its rings are
 now concentric with the surrogate circles in `attachment/3D.png`.
+
+## Follow-on — "Glue to Surrogate" action (user: automatic + right-click; snap to a clicked LED face)
+
+The auto-centring above happens on import. To also make it **re-invokable** (the
+user asked for glue to be automatic *and* on the right-click menu), and to support
+the **beam-splitter↔LED** ask (snap to a face the user clicks on the LED STEP):
+
+- `ScenePlacementMixin.glue_step_overlay_to_surrogate(label)` re-applies the
+  automatic placement by **clearing the manual drag offsets**
+  (`<label>_step_axis_offset_xy` + `_step_placement_offset_xyz`) — so a lens
+  re-centres on its cylinder axis, the camera sensor returns to the Image plane,
+  the LED to its object station. Orientation/resize preserved; no-op when already
+  glued. Wrapped by `Kraken3DInspector.glue_selected_step_to_surrogate`.
+- Menu wiring: **"Glue STEP to Surrogate"** on the CAD/target dropdown and the
+  canvas right-click STEP menu; plus a one-click **"Snap Picked Face → Optical
+  Axis"** on the right-click menu that snaps the already-picked face's
+  centre+normal onto the nearest optical axis (delegates to the tested
+  `snap_step_feature_normal_to_optical_axis`, `axis_frame=None`) — i.e. right-click
+  the beam-splitter face on the LED STEP and it glues to the axis.
+- Guard `validate_open3d_glue_step_to_surrogate` (display-free, penta Phase 77):
+  re-glue clears offsets, clean overlay is a no-op, per-label isolation, unknown
+  label rejected. The menu wiring + the right-click snap are verified in-app
+  (headless SIGSEGV).

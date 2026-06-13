@@ -5726,6 +5726,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             "Hold the promoted solid to move it; use right-click face assignment or Faces before tracing final physics."
         )
 
+    def glue_selected_step_to_surrogate(self) -> None:
+        """Re-apply the automatic optical-surrogate glue to the selected STEP
+        overlay (clear manual drags so a lens re-centres on its CAD cylinder axis
+        / the camera sensor returns to the Image plane / the LED to its object
+        station).  Available on the CAD menu and the canvas right-click."""
+        label = self._selected_imported_step_label()
+        if not label:
+            self.status_var.set("Select or import a STEP overlay to glue to its optical surrogate.")
+            return
+        changed = self.editor.glue_step_overlay_to_surrogate(label)
+        self.status_var.set(self.editor.status_var.get())
+        if changed:
+            try:
+                self.refresh_from_editor(force_retrace=True)
+            except Exception as exc:
+                self.editor.append_debug(f"Glue STEP to surrogate refresh failed: {exc}")
+
     def promote_selected_step_to_optical_solid_row(self) -> None:
         label = self._selected_imported_step_label()
         result = self._promote_step_overlay_to_optical_solid_row(
