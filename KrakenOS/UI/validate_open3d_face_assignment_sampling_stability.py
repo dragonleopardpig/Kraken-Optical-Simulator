@@ -325,6 +325,17 @@ def _validate_face_role_save_forces_stale_trace_rebuild() -> None:
         raise AssertionError("Direct CAD/STL face assignment does not clear stale traced scene state.")
     if "force_retrace: bool = False" not in refresh_source or "refresh_from_editor(force_retrace=force_retrace)" not in refresh_source:
         raise AssertionError("Open 3D view refresh helper cannot propagate forced retrace requests.")
+    # Performance: the slow Face Editor / Save Roles came from render_face_preview
+    # re-reading the body mesh from disk + re-extracting feature edges on EVERY
+    # call, and auto-apply firing a full Open 3D retrace on EVERY field change.
+    if "base_mesh_cache" not in face_editor_source or "def base_body_raw_and_edges" not in face_editor_source:
+        raise AssertionError("Face Editor preview lacks a cached base body mesh (re-reads the STL from disk every render).")
+    if "raw_body, raw_edges = base_body_raw_and_edges()" not in face_editor_source:
+        raise AssertionError("Face Editor render_face_preview does not use the cached base body/edges.")
+    if "def schedule_face_editor_retrace" not in face_editor_source or "schedule_face_editor_retrace()" not in face_editor_source:
+        raise AssertionError("Face Editor auto-apply does not debounce the Open 3D retrace (full retrace per field change).")
+    if "cancel_pending_face_editor_retrace()" not in face_editor_source:
+        raise AssertionError("Face Editor Save Roles does not cancel the pending debounced retrace (risk of double retrace).")
 
 
 def _validate_row_face_hover_uses_runtime_mesh_geometry() -> None:

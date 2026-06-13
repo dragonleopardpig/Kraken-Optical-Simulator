@@ -292,6 +292,13 @@ class MainOpticalSolidFaceRolesDialog:
         preview_picker = None
         preview_actor_map: dict[str, int] = {}
         candidate_mesh_cache: dict[int, object] = {}
+        # Cache the raw body mesh + its feature edges (both depend only on `path`,
+        # which is constant for the dialog's lifetime). render_face_preview ran on
+        # launch, every face selection AND every field auto-apply, and each call
+        # re-read the STL from disk + re-extracted feature edges -- the slow Face
+        # Editor / Save Roles the user reported. The rigid pose transform is cheap
+        # and stays per-render, so a pose change still re-places the body.
+        base_mesh_cache: dict[str, object] = {}
         preview_drag_active = False
         preview_drag_start_xy: tuple[int, int] | None = None
         preview_drag_last_xy: tuple[int, int] | None = None
@@ -612,6 +619,28 @@ class MainOpticalSolidFaceRolesDialog:
             candidate_mesh_cache[index] = mesh
             return mesh
 
+        def base_body_raw_and_edges():
+            """Raw (untransformed) body surface mesh + its feature edges, read from
+            disk and edge-extracted ONCE and cached -- both depend only on ``path``.
+            render_face_preview applies the cheap pose transform per call, so this
+            removes the per-render disk read + edge extraction (slow Face Editor)."""
+            if "raw" in base_mesh_cache:
+                return base_mesh_cache["raw"]
+            body = edges = None
+            if le.pv is not None:
+                try:
+                    body = le.pv.read(path).extract_surface(algorithm='dataset_surface').copy(deep=True)
+                except Exception as exc:
+                    self.append_debug(f'CAD/STL face preview base mesh read failed: {exc}')
+                    body = None
+            if body is not None and int(getattr(body, 'n_points', 0)) > 0:
+                try:
+                    edges = body.extract_feature_edges(feature_angle=15, boundary_edges=True, feature_edges=True, manifold_edges=False)
+                except Exception:
+                    edges = None
+            base_mesh_cache["raw"] = (body, edges)
+            return body, edges
+
         def offset_face_mesh(mesh, index: int, selected: bool):
             if mesh is None:
                 return None
@@ -744,20 +773,17 @@ class MainOpticalSolidFaceRolesDialog:
                 return
             preview_renderer.RemoveAllViewProps()
             preview_actor_map.clear()
-            try:
-                base_mesh = transformed_mesh(le.pv.read(path).extract_surface(algorithm='dataset_surface').copy(deep=True)) if le.pv is not None else None
-            except Exception as exc:
-                preview_status_var.set(f'3D preview unavailable: {le._short_error_message(exc)}')
-                return
-            if base_mesh is None or int(getattr(base_mesh, 'n_points', 0)) <= 0:
+            raw_body, raw_edges = base_body_raw_and_edges()
+            if raw_body is None or int(getattr(raw_body, 'n_points', 0)) <= 0:
                 preview_status_var.set('3D preview unavailable: mesh has no points.')
                 return
+            base_mesh = transformed_mesh(raw_body)
             add_preview_actor(base_mesh, color=(0.12, 0.78, 0.86), opacity=0.18)
-            try:
-                edges = base_mesh.extract_feature_edges(feature_angle=15, boundary_edges=True, feature_edges=True, manifold_edges=False)
-                add_preview_actor(edges, color=(0.05, 0.18, 0.24), opacity=1.0, line_width=1.2)
-            except Exception:
-                pass
+            if raw_edges is not None and int(getattr(raw_edges, 'n_points', 0)) > 0:
+                try:
+                    add_preview_actor(transformed_mesh(raw_edges), color=(0.05, 0.18, 0.24), opacity=1.0, line_width=1.2)
+                except Exception:
+                    pass
             selected_index = selected_record_index() if selected_index is None else selected_index
             visible_faces = 0
             offset_meshes: dict[int, object] = {}
@@ -1330,6 +1356,34 @@ class MainOpticalSolidFaceRolesDialog:
                 validation_var.set(f"Applied {parsed['side_2d']} / {le._optical_solid_face_function_display(parsed['function'])} to {len(indices)} selected faces.")
             return True
 
+        # auto-apply (bound to every side/function/port/fit field) persisted the
+        # metadata AND ran a full Open 3D retrace on every change, so a few field
+        # tweaks fired several full system retraces -- the slow Face Editor the
+        # user reported. Persisting stays synchronous (no lost edits); the
+        # expensive retrace is debounced + coalesced onto the main editor's loop.
+        face_editor_retrace_after: dict[str, object] = {"id": None}
+
+        def cancel_pending_face_editor_retrace() -> None:
+            pending = face_editor_retrace_after.get("id")
+            if pending is not None:
+                try:
+                    self.after_cancel(pending)
+                except Exception:
+                    pass
+                face_editor_retrace_after["id"] = None
+
+        def schedule_face_editor_retrace() -> None:
+            cancel_pending_face_editor_retrace()
+
+            def _run_retrace() -> None:
+                face_editor_retrace_after["id"] = None
+                try:
+                    self._refresh_open_3d_views(force_retrace=True)
+                except Exception as exc:
+                    self.append_debug(f"Face Editor debounced retrace failed: {exc}")
+
+            face_editor_retrace_after["id"] = self.after(250, _run_retrace)
+
         def persist_face_editor_metadata(reason: str='Face Editor') -> None:
             metadata_to_save = le.normalize_optical_solid_face_metadata({'faces': records, 'virtual_planes': virtual_planes, 'source_stl': str(path)}, source_stl=str(path))
             self._begin_history_capture()
@@ -1342,7 +1396,7 @@ class MainOpticalSolidFaceRolesDialog:
             reason_text = str(reason or 'Face Editor')
             self._invalidate_optical_solid_face_assignment_trace(row_index, reason_text)
             self._clear_open3d_face_metadata_hover_state(row_index)
-            self._refresh_open_3d_views(force_retrace=True)
+            schedule_face_editor_retrace()
             assigned_count = sum((1 for record in records if le._normalize_optical_solid_face_function(record.get('function'), legacy_role=record.get('role')) != le.OPTICAL_SOLID_FACE_FUNCTION_DEFAULT))
             self.append_debug(f'CAD/STL face editor saved S{row_index}: {reason_text}; {assigned_count} non-default face functions.')
 
@@ -1503,6 +1557,9 @@ class MainOpticalSolidFaceRolesDialog:
             self._mark_plot_update_pending()
             self._invalidate_optical_solid_face_assignment_trace(row_index, 'Save Roles')
             self._clear_open3d_face_metadata_hover_state(row_index)
+            # Explicit save: cancel any debounced auto-apply retrace and do the one
+            # authoritative retrace now (so we never double-retrace on Save Roles).
+            cancel_pending_face_editor_retrace()
             self._refresh_open_3d_views(force_retrace=True)
             summary = self._optical_solid_faces_summary(row_index, target)
             self.append_debug(summary)
