@@ -128,6 +128,21 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
            "C3: position-aware placement is gated to elements that straddle the optical axis")
         ok('glass="AIR"' in promote_src and "inpath_trailing_gap" in promote_src,
            "C4: the trailing gap to the next element is carried by a flat AIR spacer (lens/image stay fixed)")
+        # C5/C6 (bugs/0080): the direct face-assign right-click ALSO holds the
+        # detector fixed, and the STEP face pick prefers the internal 45deg coating.
+        try:
+            from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
+            from KrakenOS.UI.services.open3d_round_lens_pick import step_feature_pick_for_display_xy
+
+            assign_src = inspect.getsource(Open3DFaceAssignmentService._promote_step_and_assign_face_function)
+            pick_src = inspect.getsource(step_feature_pick_for_display_xy)
+        except Exception as exc:  # pragma: no cover - env skip
+            notes.append(f"SKIP: direct-assign / face-pick source unavailable ({type(exc).__name__}: {exc})")
+        else:
+            ok("inpath_axial_placement=True" in assign_src,
+               "C5: the direct face-assign promote also opts into in-path placement (detector held fixed)")
+            ok("internal_ray" in pick_src and "getattr(internal_ray" in pick_src,
+               "C6: the STEP face pick prefers a deterministic internal-face hit (stable 45deg coating selection)")
 
     passed = not any(line.startswith("FAIL") for line in notes)
     if verbose:

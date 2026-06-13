@@ -432,6 +432,11 @@ class Open3DFaceAssignmentService:
                 open_face_editor=False,
                 clear_overlay=True,
                 refresh_open_3d=False,
+                # bugs/0079: the direct face-assign right-click is a UI promote of
+                # an on-axis in-path solid too -- hold the detector fixed (faces
+                # refract for the t(1-1/n) shift) instead of shoving it by the raw
+                # thickness.
+                inpath_axial_placement=True,
             )
         except Exception as exc:
             self.status_var.set(f"Promote STEP failed: {_short_error_message(exc)}")

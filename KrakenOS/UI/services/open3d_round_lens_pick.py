@@ -230,6 +230,27 @@ def step_feature_pick_for_display_xy(
     try:
         metadata = inspector.editor._step_overlay_face_metadata(label)
         faces = [face for face in list(metadata.get("faces", []) or []) if isinstance(face, dict)]
+        # A beam splitter's 45deg coating is an INTERNAL face. The VTK cell picker
+        # (below) returns the nearest EXTERNAL shell face for a translucent solid
+        # and varies pixel-to-pixel, so the user could not reliably (re-)select the
+        # diagonal on hover/right-click ("every time I select the 45 degree surface,
+        # right click will change to another surface"). For a clean solid (few
+        # faces -- a cube/prism, not a tessellated lens) prefer the DETERMINISTIC
+        # ray pick when it lands on an internal face; otherwise fall through to the
+        # cell pick (keeps tessellated-lens behavior + costs nothing for solids with
+        # no internal faces, where the ray pick returns an external hit).
+        if 0 < len(faces) < 40:
+            internal_ray = inspector._step_face_ray_pick_for_display_xy(label, display_xy)
+            if internal_ray is not None and bool(getattr(internal_ray, "internal", False)):
+                return {
+                    "feature": inspector._feature_from_face_ray_pick(
+                        internal_ray,
+                        inspector._hover_overlay_for_step_face(label, internal_ray.face),
+                    ),
+                    "surface_center": inspector._surface_center_from_face_ray_pick(internal_ray),
+                    "face_id": str(internal_ray.face.get("face_id", "") or "").strip(),
+                    "through_pick": internal_ray,
+                }
         pick_point = None
         try:
             pick_point = np.asarray(inspector._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
