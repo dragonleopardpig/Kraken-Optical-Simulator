@@ -76,6 +76,22 @@ def _check_source_contracts() -> list[str]:
     if "single_row_scene_flip" not in cascade_src or "rotate_scene_row_pose_world_axis" not in cascade_src:
         failures.append("Open 3D Row Actions must enable Flip for a single promoted STEP/STL scene row")
 
+    # An imported STEP must be promotable into a ray-traceable optical element
+    # straight from the right-click menu (not only the top CAD/target dropdown):
+    # Optical Solid Row (mesh solid), Analytic Surfaces and Native Rows (in-path
+    # surfaces). Analytic/Native were dropdown-only, so a right-click only offered
+    # the mesh-solid path -- the wrong element type for a light-through element.
+    required_step_promote_options = (
+        ("Promote STEP to Optical Solid Row", "_promote_step_from_context"),
+        ("Promote STEP to Analytic Surfaces", "_promote_step_to_analytic_from_context"),
+        ("Promote STEP to Native Rows", "_promote_step_to_native_from_context"),
+    )
+    for option_label, hook in required_step_promote_options:
+        if option_label not in menu_src:
+            failures.append(f"right-click STEP menu must offer '{option_label}' so an imported STEP is promotable from the canvas")
+        if hook not in menu_src:
+            failures.append(f"right-click STEP menu must wire {hook}")
+
     return failures
 
 

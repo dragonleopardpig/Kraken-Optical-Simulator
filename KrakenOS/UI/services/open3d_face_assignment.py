@@ -258,6 +258,8 @@ class Open3DFaceAssignmentService:
                 command=lambda picked_label=step_label: self._open_step_overlay_resize_popup(picked_label),
             )
             menu.add_command(label="Promote STEP to Optical Solid Row", command=lambda picked_label=step_label: self._promote_step_from_context(picked_label))
+            menu.add_command(label="Promote STEP to Analytic Surfaces", command=lambda picked_label=step_label: self._promote_step_to_analytic_from_context(picked_label))
+            menu.add_command(label="Promote STEP to Native Rows", command=lambda picked_label=step_label: self._promote_step_to_native_from_context(picked_label))
         else:
             self.status_var.set("Right-click assignment requires a file-backed optical CAD/STL row.")
             return "break"
@@ -356,6 +358,21 @@ class Open3DFaceAssignmentService:
         self.editor.select_step_component(label)
         self._debug_trace("promote_step_from_context", label=label, counts_before=self._debug_actor_counts())
         self.promote_selected_step_to_optical_solid_row()
+
+    def _promote_step_to_analytic_from_context(self, label: str) -> None:
+        """Right-click "Promote STEP to Analytic Surfaces": make the clicked STEP
+        a ray-traceable optical element by fitting its faces to analytic Standard
+        surfaces (the in-path-element path; light passes through it)."""
+        self.editor.select_step_component(label)
+        self._debug_trace("promote_step_to_analytic_from_context", label=label)
+        self.promote_selected_step_to_analytic_surfaces()
+
+    def _promote_step_to_native_from_context(self, label: str) -> None:
+        """Right-click "Promote STEP to Native Rows": promote via the STEP B-rep
+        into native Standard surface rows."""
+        self.editor.select_step_component(label)
+        self._debug_trace("promote_step_to_native_from_context", label=label)
+        self.promote_selected_step_to_native_surface_rows()
 
     def _glue_step_to_surrogate_from_context(self, label: str) -> None:
         """Right-click "Glue STEP to Surrogate": select the clicked overlay and
