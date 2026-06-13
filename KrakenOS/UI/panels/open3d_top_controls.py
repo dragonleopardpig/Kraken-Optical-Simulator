@@ -169,10 +169,13 @@ class Open3DTopControlsPanel:
                 MenuCommand("Clear STEP Imports", self.inspector.clear_step_imports),
                 None,
                 MenuCommand("Arm Selected STEP Carry", self.inspector.start_selected_step_carry),
-                MenuCommand("Accept STEP Placement", self.inspector.accept_selected_step_placement),
-                MenuCommand("Promote STEP to Optical Solid Row", self.inspector.promote_selected_step_to_optical_solid_row),
-                MenuCommand("Promote STEP to Native Rows", self.inspector.promote_selected_step_to_native_surface_rows),
-                MenuCommand("Promote STEP to Analytic Surfaces", self.inspector.promote_selected_step_to_analytic_surfaces),
+                # One promotion for every imported STEP: make it a ray-traceable
+                # optical solid (mesh body, traced per-physics non-sequentially)
+                # and pop the Face Editor so the user assigns face roles. The
+                # former Optical Solid Row / Native Rows / Analytic Surfaces split
+                # is gone from the UI (analytic/native remain as internal/scripted
+                # helpers for the folded-cascade builders).
+                MenuCommand("Promote to Optical Element", self.inspector.promote_selected_step_to_optical_solid_row),
                 None,
                 MenuCommand("Center STEP Axis", self.editor.start_any_step_axis_pick),
                 MenuCommand("Snap STEP Surface-Center Normal->Optical Axis", self.inspector.snap_selected_step_normal_to_optical_axis),

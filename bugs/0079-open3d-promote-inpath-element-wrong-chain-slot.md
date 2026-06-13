@@ -45,7 +45,41 @@ the chain order matches the geometry and the trace runs. General for any
 light-through element (beam splitter, lens, window); the off-beam / folding-mirror
 paths (bugs 0065–0076, which pass a `chain_exit_direction`) keep their behavior.
 
-## Status: IN PROGRESS — placement core landed + verified; promote wiring next
+## Direction corrected by the user (the architecture, not just placement)
+
+> the penta prism, I promote to Optical Solid Rows and it traces correctly. This
+> beam splitter should do the same thing. I need to have the Face Editor pop up
+> after promoting whatever optical element, assign the face role, and the ray
+> should trace according to physics. This analytical surface is designed for
+> sequential only, no gizmo pop up, no face editor pop up. … just one function is
+> enough: "Promote to Optical Element", it should apply to all imported STEP, no
+> more different kind of promotion for the user to select.
+
+So the **mesh optical-solid path is the correct model** (it pops the Face Editor,
+shows the move gizmo, and traces per-physics **non-sequentially** — the penta
+prism proves it). The analytic/native paths are sequential, no Face Editor — the
+wrong model for the user, and the source of the earlier confusion.
+
+**Done now:** the three user-facing promote options (Optical Solid Row / Analytic
+Surfaces / Native Rows) are collapsed into one **"Promote to Optical Element"** in
+both the CAD/target dropdown and the canvas right-click; it runs
+`promote_selected_step_to_optical_solid_row` (mesh solid + Face Editor pop +
+gizmo). The analytic/native methods remain as internal helpers for the scripted
+folded-cascade builders, just not offered to the user. Guards
+(`validate_open3d_toolbar_layout`, `validate_open3d_row_actions_parity`) updated to
+expect the single option.
+
+**Still to verify / fix:** whether an on-beam element parked between object and
+lens still needs the position-aware *axial* slot fix (the `desp_z = center −
+z_station` of the mesh-solid promote — recording flag_20260613_190358_687 showed
+`desp_z = −556` when parked at z≈39 but inserted at the chain end). The penta
+prism traces because it sits near its appended slot; a beam splitter parked up the
+chain may still need the slot match. The `plan_inpath_insertion` planner (below)
+is reused for that mesh-solid placement (insert the solid + a trailing AIR spacer
+at the gap that physically contains it, `desp_z = 0`, lens/image fixed), gated to
+on-beam so the off-beam / folding paths (0065–0076) are untouched.
+
+## Status: IN PROGRESS — promote unified to one mesh-solid function; placement core landed + verified; mesh-solid slot wiring next
 
 This commit lands the **pure, display-free placement core**
 (`KrakenOS/UI/services/optical_chain_insert.py`):
