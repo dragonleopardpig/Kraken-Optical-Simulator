@@ -5677,6 +5677,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 label,
                 open_face_editor=bool(open_face_editor),
                 action_label=action_label,
+                # bugs/0079: a UI "Promote to Optical Element" of an on-axis
+                # in-path solid places it at its true axial slot (gap-split,
+                # lens/image fixed) so its faces refract for the t(1-1/n) focus
+                # shift instead of its raw thickness shoving the detector.
+                inpath_axial_placement=True,
             )
         except ValueError as exc:
             self.status_var.set(str(exc))

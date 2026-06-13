@@ -1014,6 +1014,7 @@ class StepOverlayPromotionService:
         open_face_editor: bool = True,
         clear_overlay: bool = False,
         refresh_open_3d: bool = True,
+        inpath_axial_placement: bool = False,
     ) -> dict[str, object] | None:
         label = str(label).strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET:
@@ -1078,6 +1079,38 @@ class StepOverlayPromotionService:
 
         resolved_insert_at, arm_key = self._step_overlay_insert_index(insert_at)
         z_station = float(sum(float(getattr(row, "thickness", 0.0) or 0.0) for row in self.rows[:resolved_insert_at]))
+
+        # bugs/0079: physics-correct placement for an ON-AXIS, in-path element
+        # (a beam-splitter plate, a window). A plane-parallel plate shifts the
+        # focus by t(1-1/n) -- independent of WHERE it sits -- and the lens +
+        # camera are fixed physical parts, so the cube's raw thickness must NOT
+        # shove the detector down the chain (the old append-at-end + desp_z=-NNN
+        # artifact). Insert it at the axial gap it physically occupies and split
+        # that gap (front distance + glass depth + a trailing AIR spacer ==
+        # original gap), so the lens AND image plane stay put and the cube's two
+        # glass faces do the refraction. Gated to the UI promote of an element
+        # that straddles the optical axis; scripted / folded-cascade callers keep
+        # the historic behavior (they pass the default).
+        inpath_preceding_gap = None
+        inpath_trailing_gap = None
+        body_depth = float(extents[2]) if extents.size >= 3 else 0.0
+        straddles_axis = bool(
+            bounds_min[0] <= 0.0 <= bounds_max[0] and bounds_min[1] <= 0.0 <= bounds_max[1]
+        )
+        if inpath_axial_placement and straddles_axis and body_depth > 1.0e-6:
+            from KrakenOS.UI.services.optical_chain_insert import plan_inpath_insertion
+
+            chain_thicknesses = [float(getattr(r, "thickness", 0.0) or 0.0) for r in self.rows]
+            slot, preceding_gap, trailing_gap = plan_inpath_insertion(
+                chain_thicknesses, float(bounds_min[2]), body_depth
+            )
+            if slot >= 1:
+                resolved_insert_at = int(slot)
+                # The body front sits at its physical Z after the gap-split, so
+                # the chain station for desp/axial_reserve is the front face.
+                z_station = float(bounds_min[2])
+                inpath_preceding_gap = float(preceding_gap)
+                inpath_trailing_gap = float(trailing_gap)
 
         row = self._optical_stl_solid_row(
             promoted_path.resolve(),
@@ -1166,7 +1199,24 @@ class StepOverlayPromotionService:
         row.advanced[SCENE_PLACEMENT_ADVANCED_ATTR] = placement
 
         self._begin_history_capture()
-        self.rows.insert(resolved_insert_at, row)
+        if inpath_preceding_gap is not None and resolved_insert_at >= 1:
+            # Split the host gap so nothing downstream moves: object->BS front =
+            # preceding_gap, the cube carries its glass depth, then a flat AIR
+            # spacer carries the BS->next-element gap.
+            self.rows[resolved_insert_at - 1].thickness = float(inpath_preceding_gap)
+            spacer = SurfaceRow(
+                surface="Standard",
+                rc=0.0,
+                thickness=float(inpath_trailing_gap),
+                diameter=float(getattr(row, "diameter", 25.0) or 25.0),
+                glass="AIR",
+            )
+            spacer.element = getattr(row, "element", "STEP solid")
+            spacer.name = f"{getattr(row, 'name', 'Promoted STEP solid')} -> next gap (AIR)"
+            self.rows.insert(resolved_insert_at, row)
+            self.rows.insert(resolved_insert_at + 1, spacer)
+        else:
+            self.rows.insert(resolved_insert_at, row)
         if clear_overlay:
             self._clear_imported_step_overlay_state(label)
         self._normalize_special_rows()

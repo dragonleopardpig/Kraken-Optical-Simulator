@@ -6109,6 +6109,44 @@ def phase_77_glue_step_to_surrogate(
     return result
 
 
+def phase_78_inpath_element_placement(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A promoted on-axis in-path element lands at its true axial slot (bugs/0079).
+
+    The mesh-solid promote appended the solid at the chain end with a large
+    desp_z, so a beam splitter physically before the lens was sequenced after it
+    and its raw 50 mm thickness shoved the detector ~50 mm -- where physics (a
+    plane-parallel plate) says the image should move only t(1-1/n) ~ 17 mm. The
+    fix inserts an on-axis in-path solid in the gap it physically occupies and
+    splits that gap (front distance / glass depth / trailing AIR spacer) so the
+    lens + image plane stay put and the cube's faces do the refraction.
+
+    The guard (`validate_open3d_inpath_element_placement`) is display-free: the
+    gap-split planner, a real `_build_system_from_specs` round-trip (element before
+    the lens, lens & image vertices unmoved, no desp_z), and a source guard that
+    the promote wiring uses the placement core.
+    """
+    result = PhaseResult(
+        name="Phase 78: Open 3D on-axis in-path promote lands at its true axial slot (lens/image fixed)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_inpath_element_placement import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"in-path placement guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("in-path placement guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6232,6 +6270,7 @@ def main() -> int:
             phase_75_bopixel_m42_camera,
             phase_76_lens_step_centered_on_axis,
             phase_77_glue_step_to_surrogate,
+            phase_78_inpath_element_placement,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

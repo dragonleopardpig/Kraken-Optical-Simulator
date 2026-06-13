@@ -79,7 +79,39 @@ is reused for that mesh-solid placement (insert the solid + a trailing AIR space
 at the gap that physically contains it, `desp_z = 0`, lens/image fixed), gated to
 on-beam so the off-beam / folding paths (0065–0076) are untouched.
 
-## Status: IN PROGRESS — promote unified to one mesh-solid function; placement core landed + verified; mesh-solid slot wiring next
+## Physics check (user) + the wired fix
+
+> it should be determined by physics … adding a 50 mm glass to a ray path makes
+> the focusing earlier or later on the image plane, correct?
+
+Correct. A plane-parallel plate displaces the image by **Δ = t·(1 − 1/n)** in the
+propagation direction (**later** / downstream), and to first order this is
+**independent of where the plate sits** in the beam. For 50 mm BK7 (n ≈ 1.5168),
+Δ ≈ **17 mm later**. The lens + camera are fixed physical parts, so that ~17 mm is
+a defocus at the sensor — it must NOT be the ~50 mm the old promote produced by
+dumping the cube's raw thickness into the chain after the lens (a bookkeeping
+artifact, not refraction).
+
+**Wired (mesh-solid promote):** `promote_imported_step_to_optical_solid_row` gains
+`inpath_axial_placement`; the UI "Promote to Optical Element" passes it (threaded
+via `open3d_step_state.promote_imported_overlay_to_row`), scripted/folded-cascade
+callers keep the default (no-op, identical to before). When set AND the solid
+**straddles the optical axis** AND has axial depth, the promote uses
+`plan_inpath_insertion` to drop it in the gap it physically occupies, splits that
+gap (object→front distance, the cube's glass depth, then a flat **AIR spacer** to
+the next element) and sets `desp_z` to the body half-depth — so the **lens and
+image plane do not move** and the cube's two glass faces provide the refraction
+(the t(1−1/n) focus shift). The non-sequential split is unaffected (it happens at
+the mesh, whose centre is unchanged).
+
+## Status: FIXED (pending in-app ray confirmation) — promote unified to one mesh-solid function; on-axis in-path placement wired + guarded
+
+Guard `validate_open3d_inpath_element_placement` (display-free): planner gap-split
++ a real `_build_system_from_specs` round-trip (element before the lens, lens &
+image vertices unmoved, no `desp_z`) + a source guard that the promote wiring uses
+the placement core. The off-beam suite (0065–0076, build-only, no promote) is
+unaffected, and the scripted promote path is byte-identical (default-off). The
+actual ray focus is verified in-app (headless SIGSEGV).
 
 This commit lands the **pure, display-free placement core**
 (`KrakenOS/UI/services/optical_chain_insert.py`):

@@ -110,6 +110,25 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         ok(abs(pos_placed[-1] - pos_base[-1]) < 1e-6,
            f"B7: the image plane does NOT move ({pos_placed[-1]:.3f} == {pos_base[-1]:.3f})")
 
+    # --- C. the promote wiring uses the placement core (source guard) ---------
+    try:
+        import inspect
+
+        from KrakenOS.UI.services.step_overlay_promotion import StepOverlayPromotionService
+
+        promote_src = inspect.getsource(StepOverlayPromotionService.promote_imported_step_to_optical_solid_row)
+    except Exception as exc:  # pragma: no cover - env skip
+        notes.append(f"SKIP: promote-wiring source unavailable ({type(exc).__name__}: {exc})")
+    else:
+        ok("inpath_axial_placement" in promote_src,
+           "C1: optical-solid promote accepts inpath_axial_placement (UI on-axis promote opts in)")
+        ok("plan_inpath_insertion" in promote_src,
+           "C2: promote uses plan_inpath_insertion for the axial slot + gap-split")
+        ok("straddles_axis" in promote_src,
+           "C3: position-aware placement is gated to elements that straddle the optical axis")
+        ok('glass="AIR"' in promote_src and "inpath_trailing_gap" in promote_src,
+           "C4: the trailing gap to the next element is carried by a flat AIR spacer (lens/image stay fixed)")
+
     passed = not any(line.startswith("FAIL") for line in notes)
     if verbose:
         for line in notes:

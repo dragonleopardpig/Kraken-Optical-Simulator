@@ -928,6 +928,7 @@ class Open3DStepStateService:
         *,
         open_face_editor: bool,
         action_label: str = "Promote",
+        inpath_axial_placement: bool = False,
     ) -> StepPromotionTransition | None:
         """Promote a loaded imported STEP overlay into a persistent optical-solid row."""
         action = str(action_label or "Promote").strip() or "Promote"
@@ -939,6 +940,7 @@ class Open3DStepStateService:
             open_face_editor=bool(open_face_editor),
             clear_overlay=True,
             refresh_open_3d=False,
+            inpath_axial_placement=bool(inpath_axial_placement),
         )
         if result is None:
             return None
