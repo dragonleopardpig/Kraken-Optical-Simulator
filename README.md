@@ -24,37 +24,37 @@ And the Book:
 
 KrakenOS (Kraken - Optical Simulator) is a python library based in Numpy, Matplotlib, PyVTK and PyVista libraries, it provides a three-dimensional optical systems visualization and ray tracing. This tool has been programed on the object-oriented paradigm. KrakenOS focuses on performing sequential and non-sequential exact ray tracing, it permits to define all the parameters of the optical elements or even the mathematical function to describe their shape, it also allows adding optical properties to 3D solid elements in STL format and use glass catalogs. The library permit to control and modifying the position of the surfaces in a three-dimensional space, this allows generating off-axis systems. It also has several tools such as the calculation of wavefront aberrations in terms of Zernike polynomials, Seidel sums, Entrance and exit pupil calculation and paraxial optics.
 
-## install KrakenOS
-```python
+## Installation
+
+**As a library (from PyPI):**
+```bash
 pip install KrakenOS
 ```
 
-## Prerequisites
-The library has been tested with the following packages and versions, these are also installed with the previous instruction.
+**For development in this repository**, use the provided [devenv](https://devenv.sh) — this is the supported, reproducible environment (Python 3.13, current dependency versions, and the Nix-built VTK/PyVista the embedded layout editor needs). One-time setup after cloning:
+```bash
+direnv allow
+devenv shell kraken-install
+```
+Note: `devenv shell` only bootstraps an empty virtualenv and prints `Run: kraken-install` — it does **not** install the dependencies for you. The `kraken-install` step does, so it must be run once per clone (the built `.devenv/` directory is not committed to git).
 
-    • Python 3.13.1 
-    • numpy 2.2.2 
-    • scipy 1.15.1 
-    • pyvista 0.44.1 
-    • matplotlib 3.10.0 
-    • vtk 9.4.1 
-    • pandas 2.2.3 
-
-to install prerequisites
-
-```python
-pip install pyvista
-pip install PyVTK
-pip install vtk
-pip install numpy
-pip install scipy
-pip install matplotlib
-pip install csv342
-pip install pandas
+**In a plain Python virtual environment** (no Nix/devenv), install the editable package with the UI extra:
+```bash
+python -m pip install --upgrade pip "setuptools<82" wheel
+python -m pip install -e ".[ui]"
 ```
 
-• Or clone the repository and place the directory “KrakenOS” in the same path where the code to be executed is located.    
+All dependencies are declared in `pyproject.toml`, so the old per-package `pip install` list is no longer needed. The full guide lives in `docs/source/manual/installation.rst`.
 
+> **STEP / CAD import note:** the 3D STEP-import and CAD features depend on `pythonocc-core` (OCC), which is **not available on PyPI** — it is supplied by the devenv (Nix) environment. In a plain pip install these features degrade gracefully (STEP import is disabled); use the devenv for full functionality.
+
+### Running the layout editor
+With the environment active:
+```bash
+python -m KrakenOS.UI.layout_editor
+```
+
+- Or clone the repository and place the directory "KrakenOS" in the same path where the code to be executed is located.
 
 ### A little fun before class ... and objects
 
