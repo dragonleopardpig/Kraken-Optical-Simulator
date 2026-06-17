@@ -6216,6 +6216,33 @@ def phase_80_show_rays_toggle_rebuilds_moved_overlay(
     return result
 
 
+def phase_81_detector_hard_stop_clip(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A detector/Image plane hard-stops the drawn ray polyline (bugs/0088 Phase A).
+
+    The drawn ray (2D + 3D) is truncated at the first detector plane it crosses
+    within the detector's extent, so no ray (incl. an escaped/missed one shown
+    via the Miss toggle) is drawn past a detector. Display-only -- the trace is
+    unchanged. Guard `validate_open3d_detector_hard_stop_clip` is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 81: Open 3D detector/Image plane hard-stops the drawn ray polyline"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_detector_hard_stop_clip import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"detector hard-stop guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6342,6 +6369,7 @@ def main() -> int:
             phase_78_inpath_element_placement,
             phase_79_step_fallback_pick_on_live_body,
             phase_80_show_rays_toggle_rebuilds_moved_overlay,
+            phase_81_detector_hard_stop_clip,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -39,6 +39,7 @@ from KrakenOS.UI.scene_geometry import (
 )
 from KrakenOS.UI.scene_projector import (
     bounded_ray_points_for_scene_display,
+    detector_planes_for_hard_stop,
     normalize_projection_plane,
     scene_display_center_radius,
 )
@@ -2233,6 +2234,7 @@ class ThreeDSceneToolsMixin:
         terminal_status: str = "",
         terminal_target: SceneTarget3D | None = None,
         terminal_direction=None,
+        detector_planes=None,
     ) -> tuple[np.ndarray, bool]:
         return bounded_ray_points_for_scene_display(
             points,
@@ -2241,7 +2243,18 @@ class ThreeDSceneToolsMixin:
             terminal_status=terminal_status,
             terminal_target=terminal_target,
             terminal_direction=terminal_direction,
+            detector_planes=detector_planes,
         )
+
+    @staticmethod
+    def _detector_planes_for_hard_stop(scene_bundle, radius: float):
+        """Detector planes that hard-stop the drawn 3D ray polylines (bugs/0088)."""
+        if scene_bundle is None:
+            return []
+        try:
+            return detector_planes_for_hard_stop(scene_bundle, float(radius))
+        except Exception:
+            return []
 
     @staticmethod
     def _ray_vertex_display_inset(radius: float) -> float:

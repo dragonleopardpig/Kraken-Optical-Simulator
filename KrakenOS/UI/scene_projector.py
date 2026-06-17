@@ -293,6 +293,7 @@ class SceneProjector2D:
             folded_display = bundle.extra.get("folded_ray_display_paths")
         scene_center, scene_radius = scene_display_center_radius(bundle)
         targets_by_surface = _targets_by_trace_surface(bundle)
+        detector_planes = detector_planes_for_hard_stop(bundle, scene_radius)
         for path in bundle.ray_paths:
             folded_pts = None
             if folded_display is not None and path.ray_index < len(folded_display):
@@ -315,6 +316,7 @@ class SceneProjector2D:
                     terminal_status=terminal_status,
                     terminal_target=terminal_target,
                     terminal_direction=_terminal_display_direction_from_path(path),
+                    detector_planes=detector_planes,
                 )
                 if pts.shape[0] < 2:
                     continue
@@ -618,6 +620,83 @@ def _display_detector_miss_point_on_plane(
     return display_point, capped
 
 
+def detector_planes_for_hard_stop(bundle: object, radius: float) -> list[tuple[np.ndarray, np.ndarray, float]]:
+    """Detector/Image planes that hard-stop the DRAWN ray polyline (display-only).
+
+    Returns ``(center_world, normal_unit, radial_limit)`` for every
+    ``is_detector`` scene target. A ray polyline that crosses one of these planes
+    within ``radial_limit`` of its centre is truncated there by
+    ``bounded_ray_points_for_scene_display`` so no ray (incl. an escaped/missed
+    one shown via the Miss toggle) is drawn past a detector. The limit reuses
+    ``_display_detector_miss_limit`` so the hard stop matches the existing
+    missed-detector cap (a generous radial board, NOT a tight active-area rect).
+    """
+    planes: list[tuple[np.ndarray, np.ndarray, float]] = []
+    for target in list(getattr(bundle, "targets", []) or []):
+        if not bool(getattr(target, "is_detector", False)):
+            continue
+        axes = _target_frame_axes_for_projection(target)
+        if axes is None:
+            continue
+        center = axes[0]
+        normal = _unit_vector_or_none(getattr(target, "normal_world", None))
+        if normal is None:
+            continue
+        limit = float(_display_detector_miss_limit(target, radius))
+        if not np.isfinite(limit) or limit <= 0.0:
+            continue
+        planes.append((np.asarray(center, dtype=float)[:3], np.asarray(normal, dtype=float)[:3], limit))
+    return planes
+
+
+def _clip_polyline_at_detector_planes(
+    pts: np.ndarray,
+    detector_planes: list[tuple[np.ndarray, np.ndarray, float]] | None,
+) -> tuple[np.ndarray, bool]:
+    """Truncate ``pts`` at the FIRST detector plane it crosses within extent.
+
+    A pass-through crossing (sign change of ``(p-centre)·normal`` strictly
+    inside a segment, with the crossing point within the plane's radial limit)
+    ends the drawn polyline at the plane. Crossings essentially at an endpoint
+    are skipped -- a ray that already terminates at/just misses a detector keeps
+    its existing hit/miss cap and is not re-clipped to zero length.
+    """
+    if detector_planes is None or len(detector_planes) == 0:
+        return pts, False
+    if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+        return pts, False
+    for i in range(pts.shape[0] - 1):
+        p0 = pts[i, :3]
+        p1 = pts[i + 1, :3]
+        seg = p1 - p0
+        best_t: float | None = None
+        best_cross: np.ndarray | None = None
+        for center, normal, limit in detector_planes:
+            d0 = float(np.dot(p0 - center, normal))
+            d1 = float(np.dot(p1 - center, normal))
+            denom = d0 - d1
+            if abs(denom) <= 1.0e-12:
+                continue
+            if (d0 > 0.0) == (d1 > 0.0):
+                continue  # both sides agree -> no crossing inside this segment
+            t = d0 / denom
+            if t <= 1.0e-6 or t >= 1.0 - 1.0e-6:
+                continue  # crossing at an endpoint -> already terminates here
+            cross = p0 + t * seg
+            radial = float(np.linalg.norm(cross - center))
+            if radial > limit:
+                continue
+            if best_t is None or t < best_t:
+                best_t = t
+                best_cross = cross
+        if best_cross is not None:
+            truncated = np.vstack((pts[: i + 1, :3], best_cross.reshape(1, 3)))
+            if truncated.shape[0] >= 2:
+                return truncated, True
+            return pts, False
+    return pts, False
+
+
 def bounded_ray_points_for_scene_display(
     points: object,
     center: np.ndarray,
@@ -626,6 +705,7 @@ def bounded_ray_points_for_scene_display(
     terminal_status: str = "",
     terminal_target: object | None = None,
     terminal_direction: object | None = None,
+    detector_planes: list[tuple[np.ndarray, np.ndarray, float]] | None = None,
 ) -> tuple[np.ndarray, bool]:
     try:
         pts = np.asarray(points, dtype=float)
@@ -685,6 +765,14 @@ def bounded_ray_points_for_scene_display(
                 remaining_length = max_terminal_length - terminal_length
                 if remaining_length > 1.0e-9:
                     pts = np.vstack((pts, pts[-1] + direction * remaining_length))
+            terminal_was_capped = True
+    # Hard stop: a detector/Image plane terminates the DRAWN ray (display-only;
+    # the trace is unchanged). Applied after the escaped tail / missed cap so a
+    # tail that would shoot past a detector is truncated at the plane instead.
+    detector_clip_applied = False
+    if detector_planes:
+        pts, detector_clip_applied = _clip_polyline_at_detector_planes(pts, detector_planes)
+        if detector_clip_applied:
             terminal_was_capped = True
     display_radius = max(scene_radius * 3.0, 250.0)
     offsets = pts - scene_center

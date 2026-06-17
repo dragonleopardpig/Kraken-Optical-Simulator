@@ -758,6 +758,9 @@ class Open3DSceneRefreshService:
             else:
                 center, radius = self._row_scene_bounds()
             paths_by_ray_index = KrakenLayoutEditor._scene_ray_path_by_index(scene_bundle)
+            # bugs/0088: hard-stop -- the drawn ray never crosses a detector/Image
+            # plane. Computed once per refresh from the scene's is_detector targets.
+            detector_hard_stop_planes = KrakenLayoutEditor._detector_planes_for_hard_stop(scene_bundle, radius)
             ray_radius = max(radius * 0.0015, 0.08)
             bounded_ray_count = 0
             suppressed_endpoint_count = 0
@@ -785,6 +788,7 @@ class Open3DSceneRefreshService:
                     terminal_status=terminal_status,
                     terminal_target=terminal_target,
                     terminal_direction=terminal_direction,
+                    detector_planes=detector_hard_stop_planes,
                 )
                 if was_bounded:
                     bounded_ray_count += 1
