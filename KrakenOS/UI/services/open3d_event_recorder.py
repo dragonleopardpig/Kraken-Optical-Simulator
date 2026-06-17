@@ -72,6 +72,15 @@ class SceneSnapshot:
     # Capturing both pins whether an "it snapped to the axis" flag is a DATA bug
     # (Desp went to ~0) or a DISPLAY bug (Desp survives but the body draws on-axis).
     promoted_solid_rows: list[dict[str, Any]] = field(default_factory=list)
+    # bugs/0086: an imported (un-promoted) STEP overlay can DESYNC -- the body
+    # draws on-axis while its stored placement / gizmo / face metadata sit at the
+    # dragged-off pose ("snap back when ray off" + floating gizmo). The desync is
+    # not reproducible headlessly, so capture the data side here: the live
+    # placement/axis offset, whether an axis-snap anchor is still bound, and the
+    # live-trace plan's row decenter. Compared with step_actor_bounds (the drawn
+    # body) this pins whether the body reverted (offset survives, body on-axis) or
+    # the placement was cleared (offset ~0).
+    step_overlay_poses: dict[str, Any] = field(default_factory=dict)
     show_rays: bool = False
     # Diagnostics for the "3D shows a fan, not a cone" report (bug 0038/0040):
     # which sampling mode the live 3D actually chose and why (committed tag,
@@ -431,6 +440,62 @@ class Open3DEventRecorder:
                     "promotion_bounds_min_world": _vec(promotion.get("bounds_min_world")),
                     "promotion_bounds_max_world": _vec(promotion.get("bounds_max_world")),
                 })
+        except Exception:
+            pass
+
+        # bugs/0086: per imported STEP overlay, capture the DATA-side pose so the
+        # "snap back / floating gizmo" desync (not reproducible headlessly) is
+        # pinned: the live placement+axis offset, the bound axis-snap anchor (if
+        # any) + its target, and the live-trace plan row decenter. The analyzer
+        # compares these with step_actor_bounds (the drawn body).
+        try:
+            editor = getattr(inspector, "editor", None)
+            label_set = set()
+            try:
+                from KrakenOS.UI.layout_editor import STEP_OVERLAY_LABEL_SET as _LBLS
+                label_set = set(_LBLS)
+            except Exception:
+                label_set = {"optical", "lens", "camera", "led"}
+            for label in sorted(label_set):
+                if editor is None:
+                    break
+                try:
+                    if editor._step_path_for_label(label) is None:
+                        continue
+                except Exception:
+                    continue
+                pose: dict[str, Any] = {}
+                try:
+                    pose["placement_offset_xyz"] = [round(float(v), 4) for v in editor._step_placement_offset_xyz(label)]
+                except Exception:
+                    pass
+                try:
+                    pose["axis_offset_xy"] = [round(float(v), 4) for v in editor._step_axis_offset_xy(label)]
+                except Exception:
+                    pass
+                try:
+                    anchor = editor._step_overlay_axis_anchor(label)
+                    if isinstance(anchor, dict):
+                        pose["axis_anchor"] = {
+                            "face_id": str(anchor.get("face_id", "") or ""),
+                            "target_point": [round(float(v), 4) for v in (anchor.get("target_point") or [])][:3],
+                            "source": str(anchor.get("source", "") or ""),
+                        }
+                    else:
+                        pose["axis_anchor"] = None
+                except Exception:
+                    pass
+                if label == "optical":
+                    try:
+                        _rows, records = editor._live_step_overlay_trace_rows()
+                        rec = records[0] if records else {}
+                        if isinstance(rec, dict):
+                            pose["live_trace_row_decenter_mm"] = [round(float(v), 4) for v in (rec.get("row_decenter_mm") or [])][:3]
+                            pose["live_trace_pose_source"] = str(rec.get("pose_source", "") or "")
+                    except Exception:
+                        pass
+                if pose:
+                    snapshot.step_overlay_poses[str(label)] = pose
         except Exception:
             pass
 
