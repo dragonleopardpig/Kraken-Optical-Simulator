@@ -6182,6 +6182,40 @@ def phase_79_step_fallback_pick_on_live_body(
     return result
 
 
+def phase_80_show_rays_toggle_rebuilds_moved_overlay(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A Show-Rays toggle rebuilds after a moved STEP overlay (bugs/0087).
+
+    A live-trace beam-splitter overlay's body snapped back to the optical axis
+    when Show Rays was toggled off after dragging it: the live carry-drag moves
+    the body via AddPosition without rebuilding the cached scene bundle, then the
+    fast `can_reuse_current_scene_for_show_rays` path reused that pre-drag bundle
+    (overlay on-axis) -- the placement offset survived, the drawn body reverted
+    (also floating the gizmo + breaking right-click face assignment). The fix
+    refuses to reuse a scene whose preview trace is dirty.
+
+    The guard (`validate_open3d_show_rays_toggle_rebuilds_moved_overlay`) is
+    display-free: a dirtied scene must NOT be reusable on a Show-Rays toggle while
+    a clean scene still fast-reuses.
+    """
+    result = PhaseResult(
+        name="Phase 80: Open 3D Show-Rays toggle rebuilds a moved STEP overlay (no snap-back to axis)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_show_rays_toggle_rebuilds_moved_overlay import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"show-rays reuse-gate guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6307,6 +6341,7 @@ def main() -> int:
             phase_77_glue_step_to_surrogate,
             phase_78_inpath_element_placement,
             phase_79_step_fallback_pick_on_live_body,
+            phase_80_show_rays_toggle_rebuilds_moved_overlay,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

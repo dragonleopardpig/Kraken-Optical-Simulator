@@ -205,6 +205,17 @@ class Open3DTraceRefreshService:
                 return False
         if not list(getattr(inspector, "_current_row_names", []) or []):
             return False
+        # bugs/0086: never reuse a scene whose preview trace has been dirtied. A
+        # live carry-drag of an imported STEP overlay moves its body actors via
+        # AddPosition WITHOUT rebuilding the cached scene bundle (which holds the
+        # overlay's pre-drag, on-axis live-trace row). Reusing that bundle on a
+        # Show-Rays toggle redraws the body at the former pose -- the "snap back
+        # to the optical axis when ray off" + floating-gizmo desync (the placement
+        # offset survives, the drawn body reverts). A placement change calls
+        # _invalidate_preview_scene_trace() -> _preview_scene_trace_dirty, so fall
+        # through to a full rebuild that redraws the body at its live placement.
+        if bool(getattr(self.editor, "_preview_scene_trace_dirty", False)):
+            return False
         try:
             showing_rays = bool(inspector.show_rays_var.get())
         except Exception:
