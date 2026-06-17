@@ -6747,6 +6747,88 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             add(label)
         return ordered
 
+    def _live_step_body_world_bounds(self, label):
+        """Union world bounds of the LIVE rendered step body actors for ``label``.
+
+        Returns ``(xmin, xmax, ymin, ymax, zmin, zmax)`` or ``None`` when no
+        body actor is drawn for the label. Used by the camera-ray fallback pick
+        to reject a metadata hit stranded off the rendered body (bugs/0085).
+        """
+        label = str(label or "").strip().lower()
+        actor_map = getattr(self, "_step_actor_map", None)
+        actor_keys = actor_map.get(label) if isinstance(actor_map, dict) else None
+        if not actor_keys:
+            return None
+        by_key = getattr(self, "_actor_by_key", None)
+        if not isinstance(by_key, dict):
+            return None
+        bmin = [float("inf")] * 3
+        bmax = [float("-inf")] * 3
+        found = False
+        for actor_key in list(actor_keys):
+            actor = by_key.get(actor_key) or by_key.get(str(actor_key))
+            if actor is None:
+                continue
+            try:
+                ab = [float(v) for v in actor.GetBounds()[:6]]
+            except Exception:
+                continue
+            if len(ab) < 6 or any(ab[i] > ab[i + 1] for i in (0, 2, 4)):
+                continue
+            bmin[0] = min(bmin[0], ab[0]); bmax[0] = max(bmax[0], ab[1])
+            bmin[1] = min(bmin[1], ab[2]); bmax[1] = max(bmax[1], ab[3])
+            bmin[2] = min(bmin[2], ab[4]); bmax[2] = max(bmax[2], ab[5])
+            found = True
+        if not found:
+            return None
+        return (bmin[0], bmax[0], bmin[1], bmax[1], bmin[2], bmax[2])
+
+    def _step_fallback_hit_on_live_body(self, label, feature_pick, feature) -> bool:
+        """True if a camera-ray fallback pick lands on the rendered body (bugs/0085).
+
+        The fallback reads pose-baked metadata, so when a live-trace overlay's
+        display has snapped to its on-axis trace station but the drag offset is
+        still in the metadata, the metadata hit floats off the drawn body. Only
+        reject when a live body exists AND the hit is clearly outside it (a few
+        mm of margin tolerates surface-edge hits + the hover view-offset nudge);
+        if we cannot resolve a body or a hit point, default to keeping the pick
+        so legitimate translucent-back-face coverage is never lost.
+        """
+        bounds = self._live_step_body_world_bounds(label)
+        if bounds is None:
+            return True
+        hit = None
+        through_pick = feature_pick.get("through_pick") if isinstance(feature_pick, dict) else None
+        if through_pick is not None:
+            hit = getattr(through_pick, "point_world", None)
+        if hit is None and isinstance(feature_pick, dict):
+            hit = feature_pick.get("surface_center")
+        if hit is None and feature is not None:
+            try:
+                hit = feature[0]
+            except Exception:
+                hit = None
+        if hit is None:
+            return True
+        try:
+            point = np.asarray(hit, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return True
+        if point.size < 3 or not np.all(np.isfinite(point)):
+            return True
+        span = max(
+            bounds[1] - bounds[0],
+            bounds[3] - bounds[2],
+            bounds[5] - bounds[4],
+            1.0,
+        )
+        margin = max(2.0, 0.05 * float(span))
+        return (
+            bounds[0] - margin <= point[0] <= bounds[1] + margin
+            and bounds[2] - margin <= point[1] <= bounds[3] + margin
+            and bounds[4] - margin <= point[2] <= bounds[5] + margin
+        )
+
     def _step_feature_pick_any_for_display_xy(self, display_xy, labels=None) -> dict[str, object] | None:
         """Pick an imported STEP face by display ray, even when VTK returns no actor.
 
@@ -6780,6 +6862,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if feature is None:
                 continue
             through_pick = feature_pick.get("through_pick")
+            # bugs/0085: this fallback fires even when VTK reports no actor,
+            # reading pose-baked face metadata rather than the rendered body.
+            # When a live-trace overlay's DISPLAY snaps to its on-axis trace
+            # station while the manual drag offset still lives in the metadata
+            # (the "beam splitter snaps back to axis" flow), the two desync and
+            # a hit lands where no body is drawn -- a stranded gold "ghost"
+            # selection highlight above the on-axis body. Reject any fallback
+            # hit that falls outside the LIVE rendered body so the highlight
+            # always reflects what is actually on screen. A genuine hover over
+            # the body (incl. a translucent prism's far/internal face) stays
+            # inside the body bounds and is unaffected.
+            if not self._step_fallback_hit_on_live_body(label, feature_pick, feature):
+                continue
             distance = float(order)
             if through_pick is not None:
                 try:

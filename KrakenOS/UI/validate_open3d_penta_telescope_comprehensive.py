@@ -6147,6 +6147,41 @@ def phase_78_inpath_element_placement(
     return result
 
 
+def phase_79_step_fallback_pick_on_live_body(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The camera-ray STEP face fallback pick stays on the rendered body (bugs/0085).
+
+    A live-trace beam-splitter overlay folded into the non-sequential trace is
+    placed on the optical axis, so toggling Show Rays snaps its DISPLAY back to
+    y=0 -- but the user's manual drag offset is still baked into the face
+    metadata. The fallback pick (which fires even when VTK reports no actor)
+    then resolves a face at the stale off-axis pose, lighting a gold "ghost"
+    selection highlight above the on-axis body. The fix rejects a fallback hit
+    that lands outside the LIVE rendered body's world bounds.
+
+    The guard (`validate_open3d_step_fallback_pick_on_live_body`) is display-free
+    -- it drives the real inspector guard helpers against on-axis vs off-axis
+    body bounds (ghost rejected, on-body / translucent far face / edge kept,
+    no-body keeps coverage).
+    """
+    result = PhaseResult(
+        name="Phase 79: Open 3D STEP face fallback pick stays on the live rendered body (no ghost highlight)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_step_fallback_pick_on_live_body import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"fallback-pick live-body guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6271,6 +6306,7 @@ def main() -> int:
             phase_76_lens_step_centered_on_axis,
             phase_77_glue_step_to_surrogate,
             phase_78_inpath_element_placement,
+            phase_79_step_fallback_pick_on_live_body,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
