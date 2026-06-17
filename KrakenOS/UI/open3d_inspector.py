@@ -8248,15 +8248,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 )
             ]
             physical_paths = [path for path in physical_paths if _path_has_non_refractive_steering(path)]
-            # The global guide already represents the incoming +Z optical axis,
-            # so a traced segment only earns a SEPARATE axis when it is genuinely
-            # folded away from that axis (a beam splitter's reflected branch, a
-            # fold mirror, TIR, a penta deviation). Field-angle spread on the
-            # straight-through branch stays collinear-ish with +Z; without this
-            # gate a beam splitter's many transmitted field rays each spawn a
-            # near-duplicate guide hugging the global axis. Genuine folds deviate
-            # far more than field spread (a 45 deg splitter folds 90 deg), so a
-            # generous collinearity tolerance separates them cleanly.
+            # A traced segment only earns a SEPARATE axis when it is genuinely
+            # folded -- its direction CHANGED at a reflection/TIR/splitter (a beam
+            # splitter's reflected branch, a fold mirror, a penta deviation). The
+            # fold is measured against THAT RAY'S OWN LAUNCH DIRECTION, not the
+            # global +Z axis (bugs/0083): a finite/off-axis source launches field
+            # chief rays tilted several degrees, so their straight-through
+            # transmitted segments deviate from +Z by the field angle and would
+            # masquerade as folds, each spawning an unwanted extra optical axis.
+            # Measured against the ray's launch direction, a straight transmit
+            # stays collinear (deviation ~0 -> not a fold) while a real reflection
+            # still deviates ~90 deg. For the on-axis chief ray (launch == +Z)
+            # this is identical to the old +Z test, so splitter/penta are unchanged.
             global_axis_direction = np.asarray((0.0, 0.0, 1.0), dtype=float)
             fold_collinearity_tol = 0.1  # sin(~5.7 deg)
 
@@ -8270,11 +8273,22 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     return None
                 return vector / norm
 
-            def _segment_is_genuine_fold(direction) -> bool:
+            def _path_launch_axis(path) -> np.ndarray:
+                points = _clean_polyline_points(getattr(path, "points_world", np.empty((0, 3))))
+                if points.shape[0] >= 2:
+                    launch = _axis_unit(points[1, :3] - points[0, :3])
+                    if launch is not None:
+                        return launch
+                return global_axis_direction
+
+            def _segment_is_genuine_fold(direction, reference_axis) -> bool:
                 unit = _axis_unit(direction)
                 if unit is None:
                     return False
-                transverse = unit - float(np.dot(unit, global_axis_direction)) * global_axis_direction
+                reference = _axis_unit(reference_axis)
+                if reference is None:
+                    reference = global_axis_direction
+                transverse = unit - float(np.dot(unit, reference)) * reference
                 return float(np.linalg.norm(transverse)) >= fold_collinearity_tol
 
             if physical_paths:
@@ -8293,9 +8307,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 traced_segments: list[dict[str, object]] = []
                 kept_fold_units: list[np.ndarray] = []
                 for path in sorted(physical_paths, key=_path_score):
+                    launch_axis = _path_launch_axis(path)
                     for segment in _dotted_axis_records_from_ray_path(path, bounds):
                         unit = _axis_unit(segment.get("segment_direction"))
-                        if unit is None or not _segment_is_genuine_fold(segment.get("segment_direction")):
+                        if unit is None or not _segment_is_genuine_fold(
+                            segment.get("segment_direction"), launch_axis
+                        ):
                             continue
                         if any(float(np.dot(unit, kept)) >= fold_merge_cos for kept in kept_fold_units):
                             continue

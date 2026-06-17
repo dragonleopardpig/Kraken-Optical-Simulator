@@ -112,6 +112,96 @@ def _folded_path() -> RayPath3D:
     )
 
 
+def _finite_field_transmit_path() -> RayPath3D:
+    """A finite/off-axis source FIELD chief ray launched tilted that transmits
+    straight through a beam splitter. Every segment stays collinear with the
+    ray's OWN launch direction (only the field angle tilts it off +Z), so it
+    must NOT spawn an extra optical axis. bugs/0083: the old fold test measured
+    deviation from the global +Z axis, so the field tilt (~8 deg here) read as a
+    fold and each field ray spawned an unwanted 'Optical Axis N'. The splitter
+    event makes the path a non-refractive-steering 'physical path', so it reaches
+    the fold gate exactly like the recording's field rays did."""
+    return RayPath3D(
+        ray_index=22,
+        field_index=3,
+        points_world=np.asarray(
+            [
+                [0.0, -9.0, -20.0],
+                [0.0, -6.0, 0.0],
+                [0.0, -3.0, 20.0],
+                [0.0, 0.0, 40.0],
+            ],
+            dtype=float,
+        ),
+        events=[
+            RayEvent3D(
+                event_id="surface:1",
+                event_kind="surface",
+                event_type="refraction",
+                ray_index=22,
+                step=1,
+                surface_id=1,
+                mesh_face_id="F101",
+                point_world=np.asarray([0.0, -6.0, 0.0], dtype=float),
+            ),
+            RayEvent3D(
+                event_id="surface:2",
+                event_kind="surface",
+                event_type="transmit",
+                surface_name="Beam Splitter",
+                ray_index=22,
+                step=2,
+                surface_id=2,
+                mesh_face_id="F102",
+                point_world=np.asarray([0.0, -3.0, 20.0], dtype=float),
+            ),
+        ],
+    )
+
+
+def _off_axis_launch_fold_path() -> RayPath3D:
+    """A field ray launched tilted that GENUINELY folds (90 deg reflection to
+    +X). Its reflected segment deviates ~90 deg from the ray's own launch
+    direction, so it must still earn a traced axis -- guarding bugs/0083 against
+    over-suppressing real folds carried by off-axis-launched rays."""
+    return RayPath3D(
+        ray_index=9,
+        field_index=2,
+        points_world=np.asarray(
+            [
+                [0.0, -9.0, -20.0],
+                [0.0, -6.0, 0.0],
+                [0.0, -3.0, 20.0],
+                [20.0, -3.0, 20.0],
+            ],
+            dtype=float,
+        ),
+        events=[
+            RayEvent3D(
+                event_id="surface:1",
+                event_kind="surface",
+                event_type="refraction",
+                ray_index=9,
+                step=1,
+                surface_id=1,
+                mesh_face_id="F201",
+                point_world=np.asarray([0.0, -6.0, 0.0], dtype=float),
+            ),
+            RayEvent3D(
+                event_id="surface:2",
+                event_kind="surface",
+                event_type="reflect",
+                surface_name="Fold Mirror",
+                ray_index=9,
+                step=2,
+                surface_id=2,
+                mesh_face_id="F202",
+                point_world=np.asarray([0.0, -3.0, 20.0], dtype=float),
+            ),
+        ],
+    )
+
+
 def main() -> int:
     centered_bundle = SceneBundle(
         ray_paths=[_chief_path()],
@@ -163,6 +253,37 @@ def main() -> int:
     ]
     if len(off_axis_folded_records) <= 1 or not traced_off_axis_folded:
         raise AssertionError(f"Off-axis folded scenes should keep traced axis guides, got {off_axis_folded_records!r}")
+
+    finite_field_bundle = SceneBundle(
+        ray_paths=[_finite_field_transmit_path()],
+        optical_volumes=[OpticalVolume3D(volume_id="splitter:1")],
+        has_off_axis=True,
+    )
+    finite_field_records = _records_for(finite_field_bundle)
+    traced_finite_field = [
+        record for record in finite_field_records if str(record.get("axis_kind", "") or "") == "traced_chief_ray_segment"
+    ]
+    if len(finite_field_records) != 1 or traced_finite_field:
+        raise AssertionError(
+            "Finite/off-axis field rays that transmit straight through must not spawn extra optical axes "
+            f"(bugs/0083), got {finite_field_records!r}"
+        )
+
+    off_axis_launch_fold_bundle = SceneBundle(
+        ray_paths=[_off_axis_launch_fold_path()],
+        has_off_axis=True,
+    )
+    off_axis_launch_fold_records = _records_for(off_axis_launch_fold_bundle)
+    traced_off_axis_launch_fold = [
+        record
+        for record in off_axis_launch_fold_records
+        if str(record.get("axis_kind", "") or "") == "traced_chief_ray_segment"
+    ]
+    if len(off_axis_launch_fold_records) <= 1 or not traced_off_axis_launch_fold:
+        raise AssertionError(
+            "A genuinely folded ray launched off-axis must still keep its traced axis (bugs/0083), "
+            f"got {off_axis_launch_fold_records!r}"
+        )
 
     folded_volume_bundle = SceneBundle(
         ray_paths=[_folded_path()],
