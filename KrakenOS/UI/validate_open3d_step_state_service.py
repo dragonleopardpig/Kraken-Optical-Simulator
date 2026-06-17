@@ -50,12 +50,14 @@ class _Editor:
         open_face_editor: bool,
         clear_overlay: bool,
         refresh_open_3d: bool,
+        inpath_axial_placement: bool = False,
     ) -> dict[str, object]:
         record = {
             "label": str(label),
             "open_face_editor": bool(open_face_editor),
             "clear_overlay": bool(clear_overlay),
             "refresh_open_3d": bool(refresh_open_3d),
+            "inpath_axial_placement": bool(inpath_axial_placement),
         }
         self.promotions.append(record)
         return {
@@ -458,6 +460,7 @@ def main() -> int:
                         "open_face_editor": False,
                         "clear_overlay": True,
                         "refresh_open_3d": False,
+                        "inpath_axial_placement": False,
                     }
                 )
             )(
@@ -465,6 +468,25 @@ def main() -> int:
                     "optical",
                     open_face_editor=False,
                     action_label="Accept",
+                )
+            ),
+        ),
+        (
+            # bugs/0082: the inpath_axial_placement kwarg must thread all the way
+            # to the editor promote method; a missing parameter on the wrapper
+            # raised TypeError and silently broke every promote gesture.
+            "STEP overlay promotion forwards inpath_axial_placement",
+            (
+                lambda transition: (
+                    transition is not None
+                    and editor.promotions[-1]["inpath_axial_placement"] is True
+                )
+            )(
+                service.promote_imported_overlay_to_row(
+                    "optical",
+                    open_face_editor=False,
+                    action_label="Accept",
+                    inpath_axial_placement=True,
                 )
             ),
         ),

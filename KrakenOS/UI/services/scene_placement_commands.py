@@ -2609,13 +2609,21 @@ class ScenePlacementMixin:
         open_face_editor: bool = True,
         clear_overlay: bool = False,
         refresh_open_3d: bool = True,
+        inpath_axial_placement: bool = False,
     ) -> dict[str, object] | None:
+        # bugs/0082: the direct "Promote and set <face function>" right-click
+        # (open3d_face_assignment) forwards inpath_axial_placement here, matching
+        # the "Promote to Optical Element" path. This wrapper must accept and
+        # thread it to the service method (which already gates it behind the
+        # _INPATH_AXIAL_PLACEMENT_ENABLED kill switch); without the parameter the
+        # gesture raised TypeError and silently never promoted.
         return self._step_overlay_promotion_service().promote_imported_step_to_optical_solid_row(
             label,
             insert_at=insert_at,
             open_face_editor=open_face_editor,
             clear_overlay=clear_overlay,
             refresh_open_3d=refresh_open_3d,
+            inpath_axial_placement=inpath_axial_placement,
         )
 
     def promote_imported_step_to_native_surface_rows(
