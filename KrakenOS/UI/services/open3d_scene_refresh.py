@@ -70,6 +70,30 @@ class Open3DSceneRefreshService:
             return False
         return bool(np.isfinite(radius) and radius > 0.0)
 
+    @staticmethod
+    def _suppress_reference_aperture(
+        row_surface: str,
+        *,
+        detector_coverage_active: bool,
+        scene_has_branch_detector: bool,
+    ) -> bool:
+        """Whether to hide an Object/Image clear-aperture reference disk.
+
+        - bugs/0033/0047: when the detector-coverage overlay draws its own
+          image-circle / FOV geometry, the Object+Image disks only masquerade as
+          it, so suppress them.
+        - bugs/0092: a beam-splitter split derives a branch detector on the
+          transmit arm at its focus, superseding the sequential Image; don't also
+          draw the (often zero-size) Image marker beyond it.
+        """
+        if row_surface not in {"Object", "Image"}:
+            return False
+        if detector_coverage_active:
+            return True
+        if row_surface == "Image" and scene_has_branch_detector:
+            return True
+        return False
+
     def _refresh_rays_only(self, rays, scene_bundle: Any = None) -> None:
         """bugs/0024: refresh ONLY the traced-ray actors, leaving every body,
         handle and overlay actor in place.
@@ -181,6 +205,15 @@ class Open3DSceneRefreshService:
         # the same precondition the coverage overlay itself needs to draw.
         detector_overlays_on = bool(self.show_detector_overlays_var.get())
         detector_coverage_active = detector_overlays_on and self._detector_coverage_will_draw(scene_bundle)
+        # bugs/0092: a beam-splitter split gives the transmit arm its own derived
+        # branch detector at its focus, which supersedes the (often zero-size)
+        # sequential Image -- so don't also draw the Image clear-aperture marker
+        # beyond it ("a previous 1mm detector after the new detector").
+        scene_has_branch_detector = any(
+            isinstance(getattr(t, "metadata", None), dict)
+            and str(getattr(t, "metadata").get("target_source", "") or "") == "branch_detector"
+            for t in (getattr(scene_bundle, "targets", []) or [])
+        )
         mesh_collect_start = time.perf_counter()
         mesh_items = list(
             self.editor._scene_surface_meshes(
@@ -504,7 +537,11 @@ class Open3DSceneRefreshService:
             # ``continue`` below. bugs/0047: gated on detector_coverage_active so
             # this only fires when that replacement geometry actually exists --
             # otherwise the disks stay visible.
-            suppress_reference_aperture = detector_coverage_active and row_surface in {"Object", "Image"}
+            suppress_reference_aperture = self._suppress_reference_aperture(
+                row_surface,
+                detector_coverage_active=detector_coverage_active,
+                scene_has_branch_detector=scene_has_branch_detector,
+            )
             if suppress_reference_aperture:
                 mesh_opacity = 0.0
             glassy_lens = analytic_optic_surface and mesh_opacity > 0.0

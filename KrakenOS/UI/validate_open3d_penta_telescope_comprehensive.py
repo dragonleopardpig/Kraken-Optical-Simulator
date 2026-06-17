@@ -6332,6 +6332,35 @@ def phase_84_qe_menu_skips_step_overlay(
     return result
 
 
+def phase_85_branch_detector_supersedes_image(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A beam-splitter branch detector supersedes the redundant sequential Image
+    marker (bugs/0092).
+
+    The transmit arm's derived branch detector sits at its focus; the (often
+    zero-size) sequential Image was still drawn as a ~1 mm marker beyond it. The
+    fix suppresses the Image reference aperture when the scene has a branch
+    detector. Guard `validate_open3d_branch_detector_supersedes_image` is
+    display-free.
+    """
+    result = PhaseResult(
+        name="Phase 85: Open 3D branch detector supersedes the redundant sequential Image marker"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_branch_detector_supersedes_image import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"branch-detector-supersedes-Image guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6462,6 +6491,7 @@ def main() -> int:
             phase_82_beam_splitter_branch_detectors,
             phase_83_right_click_live_trace_overlay,
             phase_84_qe_menu_skips_step_overlay,
+            phase_85_branch_detector_supersedes_image,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
