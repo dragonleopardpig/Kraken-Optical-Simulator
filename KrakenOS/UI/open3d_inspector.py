@@ -6788,21 +6788,28 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
         The fallback reads pose-baked metadata, so when a live-trace overlay's
         display has snapped to its on-axis trace station but the drag offset is
-        still in the metadata, the metadata hit floats off the drawn body. Only
-        reject when a live body exists AND the hit is clearly outside it (a few
-        mm of margin tolerates surface-edge hits + the hover view-offset nudge);
-        if we cannot resolve a body or a hit point, default to keeping the pick
-        so legitimate translucent-back-face coverage is never lost.
+        still in the metadata, the highlighted face floats off the drawn body.
+        Only reject when a live body exists AND the face is clearly outside it (a
+        few mm of margin tolerates surface-edge hits + the hover view-offset
+        nudge); if we cannot resolve a body or a face location, default to
+        keeping the pick so translucent-back-face coverage is never lost.
+
+        Discriminate on the face CENTROID (``surface_center``), not the ray hit
+        point: a large stale face can partially overlap the on-axis body, so the
+        ray hit lands inside the overlap and passes while the outline still
+        floats off-body (bugs/0086 -- the post-pivot ghost 0085 missed). The
+        centroid is the representative location of the highlighted outline.
         """
         bounds = self._live_step_body_world_bounds(label)
         if bounds is None:
             return True
         hit = None
-        through_pick = feature_pick.get("through_pick") if isinstance(feature_pick, dict) else None
-        if through_pick is not None:
-            hit = getattr(through_pick, "point_world", None)
-        if hit is None and isinstance(feature_pick, dict):
+        if isinstance(feature_pick, dict):
             hit = feature_pick.get("surface_center")
+        if hit is None:
+            through_pick = feature_pick.get("through_pick") if isinstance(feature_pick, dict) else None
+            if through_pick is not None:
+                hit = getattr(through_pick, "point_world", None)
         if hit is None and feature is not None:
             try:
                 hit = feature[0]

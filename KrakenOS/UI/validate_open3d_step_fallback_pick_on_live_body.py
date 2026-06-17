@@ -82,6 +82,15 @@ def run_checks() -> tuple[bool, list[str]]:
     if stub._step_fallback_hit_on_live_body("optical", ghost_fp, ghost_feature):
         failures.append("FAIL: ghost hit at y=31.2 above the on-axis body was NOT rejected")
 
+    # 2c) bugs/0086 (post-pivot ghost): a large stale face PARTIALLY OVERLAPS the
+    #     on-axis body, so the ray hit lands in the overlap (y=20, inside bounds)
+    #     while the face CENTROID is off-body (y=41). Must reject on the centroid,
+    #     not the ray hit point -- this is the case the 0085 hit-point gate missed.
+    overlap_fp = {"through_pick": _through((-25.0, 20.0, 150.0)), "surface_center": (-25.0, 41.0, 150.0)}
+    overlap_feature = ((-25.0, 20.0, 150.0), object())
+    if stub._step_fallback_hit_on_live_body("optical", overlap_fp, overlap_feature):
+        failures.append("FAIL: stale face overlapping the body (hit in overlap, centroid off-body) was NOT rejected (bugs/0086)")
+
     # 3) ON-BODY: hit on the rendered body face -> keep.
     on_fp = {"through_pick": _through((0.0, 0.0, 166.0)), "surface_center": (0.0, 0.0, 166.0)}
     on_feature = ((0.0, 0.0, 166.0), object())
