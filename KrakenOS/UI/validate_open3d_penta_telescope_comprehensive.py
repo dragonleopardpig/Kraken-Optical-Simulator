@@ -6302,6 +6302,36 @@ def phase_83_right_click_live_trace_overlay(
     return result
 
 
+def phase_84_qe_menu_skips_step_overlay(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The Quick-Estimation plane menu does not hijack a right-click on a STEP
+    overlay / its live-trace row (bugs/0091).
+
+    A live-trace overlay row is inserted into the traced rows, so its SCENE index
+    collides with a different editor row (e.g. the Image), and
+    `_maybe_show_quick_estimation_role_menu` popped the QE menu (no promote)
+    instead of the overlay's promote/face-assign menu. The fix
+    (`_optical_surface_row_for_actor`) returns None for STEP-overlay / live-trace
+    actors. Guard `validate_open3d_qe_menu_skips_step_overlay` is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 84: Open 3D right-click on a STEP overlay reaches the overlay menu (QE menu doesn't hijack it)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_qe_menu_skips_step_overlay import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"QE-menu / step-overlay guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6431,6 +6461,7 @@ def main() -> int:
             phase_81_detector_hard_stop_clip,
             phase_82_beam_splitter_branch_detectors,
             phase_83_right_click_live_trace_overlay,
+            phase_84_qe_menu_skips_step_overlay,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

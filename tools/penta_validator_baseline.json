@@ -85,7 +85,8 @@
     "80": "pass",
     "81": "pass",
     "82": "pass",
-    "83": "pass"
+    "83": "pass",
+    "84": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -171,6 +172,7 @@
     "80": "Open 3D Show-Rays toggle rebuilds a moved STEP overlay (no snap-back to optical axis)",
     "81": "Open 3D detector/Image plane hard-stops the drawn ray polyline (no ray past a detector)",
     "82": "Open 3D branch detector per terminal leaf branch (beam splitter arms, cascading-correct)",
-    "83": "Open 3D right-click on a live-trace STEP overlay opens the promote/face-assign menu"
+    "83": "Open 3D right-click on a live-trace STEP overlay opens the promote/face-assign menu",
+    "84": "Open 3D right-click on a STEP overlay reaches the overlay menu (QE menu does not hijack it)"
   }
 }

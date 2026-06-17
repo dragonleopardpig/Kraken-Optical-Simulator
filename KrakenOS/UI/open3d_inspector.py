@@ -11871,8 +11871,33 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         row_index = self._actor_thickness_dimension_map.get(actor_key)
         return int(row_index) if row_index is not None else None
 
+    def _optical_surface_row_for_actor(self, actor_key) -> int | None:
+        """Editor surface-row index for a picked actor, or None when the actor is
+        a STEP overlay (incl. its transient live-trace row) (bugs/0091).
+
+        A STEP overlay is NOT an Object/Image plane, and its scene row index does
+        NOT index ``editor.rows`` (a live-trace overlay row is INSERTED into the
+        traced rows, shifting later indices -- e.g. the overlay lands at scene row
+        4 while ``editor.rows[4]`` is the Image). If the Quick-Estimation plane
+        menu read that, a right-click on the cube popped the QE menu instead of the
+        overlay's promote / face-assign menu.
+        """
+        if actor_key is None:
+            return None
+        if actor_key in (self._actor_step_map or {}):
+            return None
+        row = (self._actor_row_map or {}).get(actor_key)
+        if row is None:
+            return None
+        try:
+            if int(row) in (self._live_trace_step_overlay_label_by_row() or {}):
+                return None
+        except Exception:
+            pass
+        return int(row)
+
     def _surface_row_under_cursor(self, event) -> int | None:
-        """Table-row index of the optical surface actor under the right-click."""
+        """Editor-table row index of the optical surface actor under the right-click."""
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
             return None
         try:
@@ -11887,10 +11912,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             actor_key = self._actor_key(actor)
         except Exception:
             return None
-        if actor_key is None:
-            return None
-        row = self._actor_row_map.get(actor_key)
-        return int(row) if row is not None else None
+        return self._optical_surface_row_for_actor(actor_key)
 
     def _maybe_show_quick_estimation_role_menu(self, event) -> bool:
         """Right-click on a conjugate thickness handle OR an Object/Image plane
