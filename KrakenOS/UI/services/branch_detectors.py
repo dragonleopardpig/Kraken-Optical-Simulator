@@ -177,11 +177,15 @@ def derive_branch_detectors(
     scene_radius: float = 50.0,
     default_distance: float | None = None,
 ) -> list[BranchDetector]:
-    """One :class:`BranchDetector` per terminal leaf branch needing a detector.
+    """One :class:`BranchDetector` per terminal leaf branch.
 
-    Skips the sequential/transmit leaf (it already reaches the Image) and any
-    intermediate branch (one that feeds a downstream splitter). See module docs
-    for the cascading + absorbing semantics.
+    When a split occurred (>1 terminal leaf) EVERY leaf gets a detector at its own
+    focus -- including the straight-through transmit leaf that reaches the
+    sequential Image (bugs/0090: a beam splitter must show a detector on BOTH
+    arms). A plain sequential scene (single leaf reaching the Image) keeps that
+    Image and derives nothing. Intermediate branches (proper prefixes of another
+    branch -- they feed a downstream splitter) never get one. See module docs for
+    the cascading + absorbing semantics.
     """
     paths = [p for p in list(ray_paths or []) if p is not None]
     if not paths:
@@ -206,12 +210,16 @@ def derive_branch_detectors(
         radius = 50.0
     fallback_distance = float(default_distance) if (default_distance and float(default_distance) > 0.0) else max(radius, 50.0)
 
+    # When a SPLIT occurred (>1 terminal leaf), EVERY leaf -- including the
+    # straight-through transmit leaf that reaches the sequential Image -- gets a
+    # detector at its own focus, so a beam splitter shows a detector on BOTH arms
+    # (bugs/0090; the user's "the transmitted one is missing"). A plain sequential
+    # scene has a single leaf reaching the Image -> keep that Image, derive nothing.
+    multi_leaf = len(leaves) > 1
     detectors: list[BranchDetector] = []
     for index, bp in enumerate(sorted(leaves)):
         group = groups[bp]
-        # An empty-component leaf ("primary" with no splits) is the sequential
-        # path -- it reaches the Image and is skipped by the check below.
-        if _leaf_reaches_existing_detector(group):
+        if not multi_leaf and _leaf_reaches_existing_detector(group):
             continue
         origins, directions = _exit_rays_for_group(group)
         if origins.shape[0] == 0:
@@ -227,16 +235,20 @@ def derive_branch_detectors(
             focus_source = "default_distance"
         else:
             focus_source = "converging_rays"
-        if default_half is not None:
+        # Size to the beam FOOTPRINT entering this branch (catches the whole beam
+        # and stays visible), NOT the focus spot (~0, which collapsed the plane to
+        # a sub-mm sliver). A real, sensibly-sized existing detector wins;
+        # otherwise a scene-scaled minimum keeps the plane visible (bugs/0090).
+        footprint = 0.0
+        for o in origins:
+            rel = np.asarray(o, dtype=float) - mean_origin
+            trans = rel - float(np.dot(rel, mean_dir)) * mean_dir
+            footprint = max(footprint, float(np.linalg.norm(trans)))
+        min_half = max(0.04 * radius, 5.0)
+        if default_half is not None and min(default_half) >= min_half:
             half_w, half_h = default_half
         else:
-            spread = 0.0
-            for o in origins:
-                rel = focus - o
-                trans = rel - float(np.dot(rel, mean_dir)) * mean_dir
-                spread = max(spread, float(np.linalg.norm(trans)))
-            half = max(spread, 2.0)
-            half_w = half_h = half
+            half_w = half_h = max(footprint, min_half)
         tangent = _orthogonal_unit(mean_dir)
         detectors.append(
             BranchDetector(

@@ -5,10 +5,10 @@ cascading splitters), derived from the traced rays.
 
 Drives `KrakenOS.UI.services.branch_detectors.derive_branch_detectors` against
 synthesized ray paths (no trace, no Xvfb, no VTK):
-  - single beam splitter -> exactly ONE derived detector (the reflect leaf) at
-    the converging focus; the transmit leaf (reaches the Image) gets none.
-  - CASCADING (two splitters) -> a detector on each TERMINAL leaf arm only, and
-    NONE on the intermediate arm feeding the second splitter.
+  - single beam splitter -> TWO derived detectors (transmit + reflect leaves),
+    each at its converging focus, sized to a visible plane (bugs/0090).
+  - CASCADING (two splitters) -> a detector on each TERMINAL leaf arm (incl. the
+    straight-through transmit), NONE on the intermediate arm feeding splitter 2.
   - absorbing reflect output (reflect branch absent from the rays) -> none.
   - no splitter (only the sequential leaf) -> none.
   - a derived detector is an is_detector target AND appears in Phase A's
@@ -63,20 +63,29 @@ def run_checks() -> tuple[bool, list[str]]:
 
     failures: list[str] = []
 
-    # 1) single beam splitter: transmit (reaches Image) + reflect (converging up).
+    # 1) single beam splitter -> a detector on BOTH arms, each at its converging
+    #    focus, with a visible (non-sliver) size (bugs/0090).
     reflect_focus = np.asarray((0.0, 80.0, 150.0), dtype=float)
     single = _sequential_paths("S4:BS/transmit") + _converging_paths("S4:BS/reflect", reflect_focus)
     dets = derive_branch_detectors(single, existing_targets=[], scene_radius=50.0)
-    if len(dets) != 1:
-        failures.append(f"FAIL: single BS expected 1 branch detector, got {len(dets)} ({[d.branch_path for d in dets]})")
-    elif "reflect" not in dets[0].branch_path:
-        failures.append(f"FAIL: single BS detector is on the wrong branch: {dets[0].branch_path}")
+    if len(dets) != 2:
+        failures.append(f"FAIL: single BS expected 2 branch detectors (both arms), got {len(dets)} ({[d.branch_path for d in dets]})")
+    reflect = next((d for d in dets if "reflect" in d.branch_path), None)
+    transmit = next((d for d in dets if "transmit" in d.branch_path), None)
+    if reflect is None or transmit is None:
+        failures.append(f"FAIL: single BS missing an arm detector: {[d.branch_path for d in dets]}")
     else:
-        d = dets[0]
-        if not np.allclose(d.center_world, reflect_focus, atol=1.0):
-            failures.append(f"FAIL: reflect detector focus {d.center_world} != converging focus {reflect_focus}")
-        if d.focus_source != "converging_rays":
-            failures.append(f"FAIL: reflect focus_source = {d.focus_source!r}, expected converging_rays")
+        if not np.allclose(reflect.center_world, reflect_focus, atol=1.0):
+            failures.append(f"FAIL: reflect detector focus {reflect.center_world} != {reflect_focus}")
+        if reflect.focus_source != "converging_rays":
+            failures.append(f"FAIL: reflect focus_source = {reflect.focus_source!r}, expected converging_rays")
+        if not np.allclose(transmit.center_world, (0.0, 0.0, 200.0), atol=1.5):
+            failures.append(f"FAIL: transmit detector focus {transmit.center_world} != ~(0,0,200)")
+        if min(reflect.half_w, reflect.half_h, transmit.half_w, transmit.half_h) < 5.0:
+            failures.append(
+                f"FAIL: detector plane collapsed to a sliver (half<5mm): "
+                f"reflect={reflect.half_w:.2f},{reflect.half_h:.2f} transmit={transmit.half_w:.2f},{transmit.half_h:.2f}"
+            )
 
     # 2) cascading: BS1 reflect -> BS2 splits again. Detector ONLY on the two
     #    terminal leaves, NOT on the intermediate BS1-reflect arm.
@@ -90,9 +99,15 @@ def run_checks() -> tuple[bool, list[str]]:
     )
     cdets = derive_branch_detectors(cascading, existing_targets=[], scene_radius=50.0)
     cpaths = sorted(d.branch_path for d in cdets)
-    expected = ["S4:BS/reflect -> S7:BS2/reflect", "S4:BS/reflect -> S7:BS2/transmit"]
+    expected = sorted([
+        "S4:BS/transmit",
+        "S4:BS/reflect -> S7:BS2/transmit",
+        "S4:BS/reflect -> S7:BS2/reflect",
+    ])
     if cpaths != expected:
-        failures.append(f"FAIL: cascading leaves wrong. got {cpaths}, expected {expected} (intermediate must be pruned)")
+        failures.append(f"FAIL: cascading leaves wrong. got {cpaths}, expected {expected}")
+    if "S4:BS/reflect" in cpaths:
+        failures.append("FAIL: intermediate arm 'S4:BS/reflect' must NOT get a detector (it feeds BS2)")
 
     # 3) absorbing reflect output: reflect branch absent -> only the transmit leaf.
     absorbing = _sequential_paths("S4:BS/transmit")
