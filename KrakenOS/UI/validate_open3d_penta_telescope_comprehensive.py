@@ -6272,6 +6272,36 @@ def phase_82_beam_splitter_branch_detectors(
     return result
 
 
+def phase_83_right_click_live_trace_overlay(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Right-click on a snapped STEP overlay's live-trace row still opens the
+    Promote / face-assign menu (bugs/0089).
+
+    An axis-snap marks the overlay physics-preview-ready -> it is drawn as a
+    transient live-trace row; a right-click landing on that row resolved no
+    step_label and the row is not file-backed, so the menu fell through to
+    "requires a file-backed CAD/STL row" (promote/assign vanished). The fix maps
+    a picked live-trace overlay row back to its overlay label. Guard
+    `validate_open3d_right_click_live_trace_overlay` is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 83: Open 3D right-click on a live-trace STEP overlay opens the overlay menu (promote/assign)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_right_click_live_trace_overlay import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"right-click live-trace overlay guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6400,6 +6430,7 @@ def main() -> int:
             phase_80_show_rays_toggle_rebuilds_moved_overlay,
             phase_81_detector_hard_stop_clip,
             phase_82_beam_splitter_branch_detectors,
+            phase_83_right_click_live_trace_overlay,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

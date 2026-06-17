@@ -1196,6 +1196,27 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         candidates.sort(key=lambda item: (item[0], item[1]))
         return candidates[0][2]
 
+    def _resolve_picked_step_overlay(self, step_label, row_index):
+        """Map a picked transient live-trace ROW back to its STEP-overlay label (bugs/0089).
+
+        After an axis-snap marks an imported STEP overlay physics-preview-ready it
+        is folded into the trace and ALSO drawn as a transient live-trace row (rays
+        on). A right-click that lands on that row actor resolves no ``step_label``
+        and the row is not file-backed, so the context menu falls through to
+        "requires a file-backed CAD/STL row" -- the promote / face-assign options
+        vanish. When the picked row is a live-trace overlay, treat it as the STEP
+        overlay (and drop the row index) so the overlay menu still appears.
+        Returns ``(step_label, row_index)``.
+        """
+        if step_label is None and row_index is not None:
+            try:
+                live_label = (self._live_trace_step_overlay_label_by_row() or {}).get(int(row_index))
+            except Exception:
+                live_label = None
+            if live_label:
+                return str(live_label), None
+        return step_label, row_index
+
     def _right_click_pick_context(self, event) -> dict[str, object] | None:
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
             return None
@@ -1218,6 +1239,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pick_point = np.asarray([], dtype=float)
         row_index = self._actor_row_map.get(actor_key)
         step_label = self._actor_step_map.get(actor_key)
+        # bugs/0089: a physics-preview-ready STEP overlay is also drawn as a
+        # transient live-trace row; a right-click on that row must still open the
+        # overlay's promote / face-assign menu.
+        step_label, row_index = self._resolve_picked_step_overlay(step_label, row_index)
         persistent_file_backed = False
         if row_index is not None:
             try:
