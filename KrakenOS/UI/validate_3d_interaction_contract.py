@@ -622,10 +622,14 @@ def main() -> int:
         ("fixed drag preserves focal point", "camera.SetFocalPoint(*focal)" in rotation),
         ("fixed drag uses azimuth/elevation only", "camera.Azimuth" in rotation and "camera.Elevation" in rotation),
         (
-            "middle drag pans camera in the view plane",
+            "middle or Shift+Left drag pans camera in the view plane",
             '"<ButtonPress-2>"' in bindings
             and '"<B2-Motion>"' in bindings
             and '"<ButtonRelease-2>"' in bindings
+            # touchpad-friendly Shift+Left pan mirrors the middle-button pan
+            and '"<Shift-ButtonPress-1>"' in bindings
+            and '"<Shift-B1-Motion>"' in bindings
+            and '"<Shift-ButtonRelease-1>"' in bindings
             and "_pan_camera_fixed_drag(dx, dy)" in bindings
             and "camera.SetPosition(*(position[:3] + delta[:3]))" in camera_pan
             and "camera.SetFocalPoint(*(focal[:3] + delta[:3]))" in camera_pan

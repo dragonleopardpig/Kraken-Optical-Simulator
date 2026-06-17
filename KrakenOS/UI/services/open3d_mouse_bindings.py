@@ -21,7 +21,7 @@ class Open3DMouseBindingsService:
         setattr(self._inspector, name, value)
 
     def _install_pick_only_left_click_bindings(self) -> None:
-        """Left click selects; left drag rotates; middle drag pans the camera."""
+        """Left click selects; left drag rotates; middle (or Shift+Left) drag pans the camera."""
         if self._vtk_widget is None:
             return
 
@@ -355,6 +355,14 @@ class Open3DMouseBindingsService:
             self._vtk_widget.bind("<ButtonPress-2>", middle_press)
             self._vtk_widget.bind("<B2-Motion>", middle_motion)
             self._vtk_widget.bind("<ButtonRelease-2>", middle_release)
+            # Touchpad-friendly pan: Shift+Left drag mirrors the middle-button
+            # pan so laptop users without a middle button (or three-finger
+            # gesture) can still slide the scene. Reuses the middle handlers so
+            # the behavior is identical; the Shift modifier keeps it distinct
+            # from plain left-drag rotate / left-click pick.
+            self._vtk_widget.bind("<Shift-ButtonPress-1>", middle_press)
+            self._vtk_widget.bind("<Shift-B1-Motion>", middle_motion)
+            self._vtk_widget.bind("<Shift-ButtonRelease-1>", middle_release)
             self._vtk_widget.bind("<ButtonPress-3>", self._show_surface_function_context_menu)
             self._vtk_widget.bind("<Motion>", hover_motion, add="+")
         except Exception as exc:
