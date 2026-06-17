@@ -947,6 +947,34 @@ def build_scene_bundle(
         )
     ray_events = [event for path in ray_paths for event in list(getattr(path, "events", []) or [])]
 
+    # --- branch detectors (bugs/0088 Phase B1) ---
+    # Derive a detector per TERMINAL leaf branch of the traced ray tree (beam
+    # splitter arms etc.), so reflected/leaf branches get a hard-stop detector at
+    # their focus. Display-only: these are is_detector SceneTarget3D appended to
+    # the target list so they (a) draw as a plane and (b) feed Phase A's
+    # detector_planes_for_hard_stop. Pure sequential/folded scenes produce only a
+    # leaf that reaches the Image, so they get NONE (no behaviour change). The
+    # transmit/sequential Image detector is untouched (not duplicated).
+    try:
+        from KrakenOS.UI.services.branch_detectors import (
+            derive_branch_detectors,
+            branch_detector_scene_target,
+            branch_detector_plane_curve,
+        )
+
+        branch_detectors = derive_branch_detectors(
+            ray_paths,
+            existing_targets=scene_targets,
+            scene_radius=float(max_half) * 2.0,
+        )
+        for offset, branch_detector in enumerate(branch_detectors):
+            scene_targets.append(
+                branch_detector_scene_target(branch_detector, row_index=100000 + offset)
+            )
+            surface_curves.append(branch_detector_plane_curve(branch_detector))
+    except Exception:
+        pass
+
     # --- 3-D surface/body meshes ---
     surface_meshes = []
     if surface_meshes_fn is not None and system is not None:

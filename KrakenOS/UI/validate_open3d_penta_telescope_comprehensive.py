@@ -6243,6 +6243,35 @@ def phase_81_detector_hard_stop_clip(
     return result
 
 
+def phase_82_beam_splitter_branch_detectors(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """One detector per TERMINAL leaf branch of the traced ray tree (bugs/0088 B1).
+
+    Beam-splitter arms (generalized to cascading splitters) each get a derived
+    detector at the converging focus; the transmit/sequential leaf keeps the
+    Image; an intermediate arm feeding the next splitter gets none; an absorbing
+    output face (no exit rays) gets none. The derived detector feeds Phase A's
+    hard-stop. Guard `validate_open3d_beam_splitter_branch_detectors` is
+    display-free.
+    """
+    result = PhaseResult(
+        name="Phase 82: Open 3D branch detector per terminal leaf branch (beam splitter, cascading)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_beam_splitter_branch_detectors import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"branch-detector guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6370,6 +6399,7 @@ def main() -> int:
             phase_79_step_fallback_pick_on_live_body,
             phase_80_show_rays_toggle_rebuilds_moved_overlay,
             phase_81_detector_hard_stop_clip,
+            phase_82_beam_splitter_branch_detectors,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
