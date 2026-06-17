@@ -164,6 +164,26 @@ def select_optical_solid_output_face(world_faces: list[dict[str, object]]) -> di
     pool = explicit_output_faces or inferred_output_faces
     if not pool:
         return None
+    if pool is inferred_output_faces:
+        # bugs/0084: a beam-splitter / plate CUBE has all six outer faces inferred
+        # as Transmit outputs. The side-priority sort below ranks Down > Up >
+        # Right, so it would pick a SIDE face (the -Y 'Down' face) as the exit and
+        # the follower-row builder would fling the whole downstream chain onto that
+        # face's normal -- the user saw the lens stack jump to y=-120 with the rays
+        # escaping. When an inferred STRAIGHT-THROUGH exit exists (a face whose
+        # world normal runs along the incoming +Z optical axis) prefer it: it is
+        # the real transmit continuation and trips the "non-folding -> leave rows
+        # alone" guard downstream. A genuine fold prism (penta, right-angle) has no
+        # +Z-aligned transmit exit -- its output is a side face -- so it still
+        # falls back to the side-priority pick below. Faces without a world normal
+        # default to +Z, so non-world callers keep their existing behavior.
+        axial_outputs = [
+            face
+            for face in inferred_output_faces
+            if float(_unit_vector(face.get("normal_world", (0.0, 0.0, 1.0)))[2]) >= 0.966  # cos(~15 deg)
+        ]
+        if axial_outputs:
+            return max(axial_outputs, key=_output_face_sort_key)
     return max(pool, key=_output_face_sort_key)
 
 

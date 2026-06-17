@@ -52,11 +52,18 @@ os.environ.setdefault("PYVISTA_OFF_SCREEN", "true")
 
 import numpy as np
 
-from KrakenOS.UI.nonseq_output_ports import build_optical_solid_output_port_pose_overrides
+from KrakenOS.UI.nonseq_output_ports import (
+    build_optical_solid_output_port_pose_overrides,
+    select_optical_solid_output_face,
+)
 from KrakenOS.UI.open3d_inspector import Kraken3DInspector
-from KrakenOS.UI.optical_solid_metadata import OPTICAL_SOLID_FACES_ADVANCED_ATTR
+from KrakenOS.UI.optical_solid_metadata import (
+    OPTICAL_SOLID_FACES_ADVANCED_ATTR,
+    OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
+    normalize_optical_solid_face_metadata,
+)
 from KrakenOS.UI.scene_geometry import RayEvent3D, RayPath3D, SceneBundle
-from KrakenOS.UI.validate_optical_solid_chained_ports import _synthetic_port_metadata
+from KrakenOS.UI.validate_optical_solid_chained_ports import _face, _synthetic_port_metadata
 
 PRESCRIPTION = Path("attachment/machine_vision_150mm_measured_test.py")
 
@@ -103,6 +110,45 @@ def _facet_a_override_keys() -> tuple[list[int], list[int]]:
     )
     folded_keys = _override_keys([object_row, _cube_row(folded_meta, "synthetic_fold.stl"), dict(image_row)])
     return on_axis_keys, folded_keys
+
+
+# --------------------------------------------------------------------------
+# bugs/0084 — a straight-through beam-splitter CUBE (all six outer faces inferred
+# Transmit) must pick its +Z exit, not a -Y side face, so the downstream chain is
+# not flung off-axis.
+
+def _full_beam_splitter_cube_row() -> dict[str, object]:
+    faces = [
+        _face("IN",    side="Left",  function=OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT, normal=(0.0, 0.0, -1.0), centroid=(0.0, 0.0, -25.0), triangle_start=0),
+        _face("OUT",   side="Right", function=OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT, normal=(0.0, 0.0, 1.0), centroid=(0.0, 0.0, 25.0), triangle_start=2),
+        _face("UP",    side="Up",    function=OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT, normal=(0.0, 1.0, 0.0), centroid=(0.0, 25.0, 0.0), triangle_start=4),
+        _face("DOWN",  side="Down",  function=OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT, normal=(0.0, -1.0, 0.0), centroid=(0.0, -25.0, 0.0), triangle_start=6),
+        _face("FRONT", side="Front", function=OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT, normal=(-1.0, 0.0, 0.0), centroid=(-25.0, 0.0, 0.0), triangle_start=8),
+        _face("BACK",  side="Back",  function=OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT, normal=(1.0, 0.0, 0.0), centroid=(25.0, 0.0, 0.0), triangle_start=10),
+        _face("BS",    side="Up",    function="Beam Splitter", normal=(0.0, -0.7071, 0.7071), centroid=(0.0, 0.0, 0.0), triangle_start=12),
+    ]
+    meta = normalize_optical_solid_face_metadata({"faces": faces})
+    return {
+        "surface": "Standard", "name": "Promoted beam-splitter cube", "glass": "BK7",
+        "thickness": 50.0, "diameter": 50.0,
+        "advanced": {OPTICAL_SOLID_FACES_ADVANCED_ATTR: meta, "Solid_3d_stl": "cube.stl"},
+    }
+
+
+def _cube_output_side() -> str:
+    # World-record style faces (normal_world set) -- the selection only differs
+    # from the old side-priority pick when world normals are present.
+    def wf(fid, side, normal):
+        return {"face_id": fid, "side_2d": side, "function": "Transmit/Port",
+                "port_role": "Auto", "role": "Output", "normal_world": normal,
+                "centroid_world": (0.0, 0.0, 0.0), "area_mm2": 2500.0}
+    faces = [
+        wf("Left", "Left", (0.0, 0.0, -1.0)), wf("Right", "Right", (0.0, 0.0, 1.0)),
+        wf("Up", "Up", (0.0, 1.0, 0.0)), wf("Down", "Down", (0.0, -1.0, 0.0)),
+        wf("Front", "Front", (-1.0, 0.0, 0.0)), wf("Back", "Back", (1.0, 0.0, 0.0)),
+    ]
+    picked = select_optical_solid_output_face(faces)
+    return str(picked.get("side_2d")) if picked else ""
 
 
 # --------------------------------------------------------------------------
@@ -297,6 +343,26 @@ def run_checks() -> tuple[bool, list[str]]:
             abs(float(direction[0])) > 0.9,
             f"reflected optical axis points along the fold (+X) direction (dir={direction.round(3).tolist()})",
         )
+
+    # 2c. bugs/0084 — a straight-through beam-splitter cube as the FIRST element
+    #     must keep its downstream chain on-axis. The selector must pick the +Z
+    #     'Right' exit (not the -Y 'Down' side the old side-priority preferred),
+    #     and the override builder must not reposition any follower row.
+    _check(
+        _cube_output_side() == "Right",
+        f"beam-splitter cube selects its +Z straight-through exit, not a side face (picked side={_cube_output_side()!r})",
+    )
+    cube_chain = [
+        {"surface": "Object", "name": "Object", "thickness": 100.0, "diameter": 20.0, "advanced": {}},
+        _full_beam_splitter_cube_row(),
+        {"surface": "Standard", "name": "Lens", "glass": "BK7", "thickness": 10.0, "diameter": 30.0, "advanced": {}},
+        {"surface": "Image", "name": "Image", "thickness": 0.0, "diameter": 30.0, "advanced": {}},
+    ]
+    cube_overrides = build_optical_solid_output_port_pose_overrides(cube_chain)
+    _check(
+        not cube_overrides,
+        f"straight-through cube does not reposition the downstream chain (override_keys={sorted(cube_overrides)})",
+    )
 
     # 3. Optional: the user's real saved beam-splitter-cube scene.
     real = _real_prescription_summary()
