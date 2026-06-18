@@ -77,6 +77,20 @@ def run_checks() -> tuple[bool, list[str]]:
     if 3 not in sorted(getattr(x, "row_index") for x in c2):
         failures.append("FAIL: dropped a curve when there was no Image row to supersede")
 
+    # 4) Thickness-dimension companion: the dimension whose NEXT row is the
+    #    superseded Image is skipped (the "distance overlay still shows the old
+    #    image plane" reveal), but only when a branch detector exists.
+    from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
+
+    runs_to = Open3DThicknessDimensionService._dimension_runs_to_superseded_image
+    # rows = [Object, Standard, Solid, Image]; the cube row (2) points at Image (3).
+    if not runs_to(rows, 2, has_branch_detector=True):
+        failures.append("FAIL: dimension into the superseded Image (row 2->3) was NOT skipped")
+    if runs_to(rows, 1, has_branch_detector=True):
+        failures.append("FAIL: a lens->cube dimension (row 1->2) was wrongly skipped")
+    if runs_to(rows, 2, has_branch_detector=False):
+        failures.append("FAIL: dimension skipped with NO branch detector (sequential scene must keep it)")
+
     return (not failures), failures
 
 

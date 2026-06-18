@@ -31,8 +31,21 @@ Image's curve + label whenever a split produced a branch detector — so the onl
 focus marker left is the branch detector at the true focus (233), and the Image
 "lands on" it. The Image *target* is kept (hard-stop / picking; it has no visible
 plane of its own). No-op on plain sequential/folded scenes (no branch detector).
-Guard: `validate_open3d_superseded_image_plane_hidden` (display-free) +
-penta Phase 86. **In-app visual confirm still pending (headless VTK segfaults).**
+
+**Follow-up (re-recordings 092957 "old image plane still there" / 093142 "the
+distance overlay shows it"):** the running app was STALE (the curve fix `5aba0933`
+wasn't loaded — verified the fix DOES drop the Image curve+label on a real
+editor-built bundle: branch detectors present, 0 Image curves/labels). A SECOND
+reveal path remained: the **thickness/distance-dimension** overlay still drew an
+arrow out to the Image at z=266. That overlay is built in
+`open3d_thickness_dimensions.add_overlays` from the rows (not the bundle), so the
+curve fix never touched it. Added
+`Open3DThicknessDimensionService._dimension_runs_to_superseded_image(...)`; the loop
+now skips the span whose NEXT row is a branch-detector-superseded Image.
+
+Guard: `validate_open3d_superseded_image_plane_hidden` (display-free; covers curve +
+label + dimension-skip) + penta Phase 86. **Requires an app RESTART to load (both
+modules import at startup); in-app visual confirm pending (headless VTK segfaults).**
 
 ---
 ### (superseded) earlier headless conclusion

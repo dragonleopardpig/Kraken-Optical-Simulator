@@ -227,8 +227,19 @@ class Open3DThicknessDimensionService:
             self.editor.append_debug(f"3D thickness label skipped: {exc}")
             return False
 
+    @staticmethod
+    def _dimension_runs_to_superseded_image(rows, row_index, *, has_branch_detector) -> bool:
+        """bugs/0093: True when this row's thickness dimension would terminate at a
+        sequential Image that a branch detector has superseded -- skip it so the
+        distance overlay doesn't draw an arrow out to the stale image plane."""
+        if not has_branch_detector:
+            return False
+        nxt = int(row_index) + 1
+        if not (0 <= nxt < len(rows)):
+            return False
+        return str(getattr(rows[nxt], "surface", "") or "") == "Image"
+
     def add_overlays(self, system: Any, scene_bundle: Any = None) -> int:
-        del scene_bundle
         pv = self.pv
         if pv is None:
             return 0
@@ -238,6 +249,18 @@ class Open3DThicknessDimensionService:
         rows = list(getattr(self.editor, "rows", []) or [])
         if len(rows) < 2:
             return 0
+        # bugs/0093: when a split derived a branch detector at the true focus, the
+        # sequential Image is superseded AND displaced back by the inserted
+        # element's thickness. Don't draw the thickness dimension that runs out to
+        # it ("the distance overlay still shows the old image plane behind the
+        # detector") -- skip the span whose NEXT row is that superseded Image. The
+        # Image's plane curve + label are dropped in build_scene_bundle; this is the
+        # matching dimension suppression. No-op without a branch detector.
+        scene_has_branch_detector = any(
+            isinstance(getattr(t, "metadata", None), dict)
+            and str(getattr(t, "metadata", {}).get("target_source", "") or "") == "branch_detector"
+            for t in (getattr(scene_bundle, "targets", []) or [])
+        )
         _center, scene_span = self.inspector._row_scene_bounds()
         # Match the 2D layout's physical-distance arrows, which stand ~8% of the
         # view span off the axis -- a clearly readable margin (bugs/0007). At the
@@ -257,6 +280,11 @@ class Open3DThicknessDimensionService:
         screen_up = screen_axes[1] if screen_axes else None
         count = 0
         for row_index, row in enumerate(rows[:-1]):
+            # bugs/0093: skip the dimension that terminates at a superseded Image.
+            if self._dimension_runs_to_superseded_image(
+                rows, row_index, has_branch_detector=scene_has_branch_detector
+            ):
+                continue
             try:
                 thickness = float(getattr(row, "thickness", 0.0) or 0.0)
             except Exception:
