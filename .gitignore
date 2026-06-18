@@ -204,3 +204,6 @@ dmypy.json
 # Pyre type checker
 .pyre/
 .DS_Store
+
+# bugs/0093 headless repro — regenerable cube meshes
+attachment/repro_0093/

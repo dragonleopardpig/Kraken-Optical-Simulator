@@ -1,6 +1,19 @@
 # 0093 — Open 3D: a promoted beam-splitter cube OVER-focuses the transmitted beam (focus lands before, not beyond, the bare-lens focus)
 
-## Status: OPEN — investigation needed (not yet fixed)
+## Status: CANNOT REPRODUCE headlessly — the non-seq trace is physically CORRECT (2026-06-18)
+
+Headless investigation (see `bugs/repro_0093.py`) shows the promoted beam-splitter
+cube trace is **correct**: across a flat BK7 cube, a hand-built BK7 BS cube, and
+the **real** promoted STEP cube (`step_32704`), the transmitted focus always lands
+*further* than the bare-lens focus by the plane-parallel-plate shift `t*(1-1/n)`,
+never closer. The 45° face is classified `internal` (no refraction) and
+`inside_volumes` tracks correctly on both arms. So the over-convergence in the
+recording is NOT a generic non-seq trace bug. Likely a **stale running app** at
+record time (see the bug-handling note: a recording that won't reproduce after a
+thorough dig → ask the user to restart + re-record), or a scene-specific factor
+(coating / doublet placement / index) not captured by the recording's UI snapshot.
+**Action: ask the user to restart Open 3D + re-record before any trace surgery.**
+See the investigation log at the bottom.
 
 Discovered 2026-06-18 from the user's physics reasoning while reviewing the
 branch-detector positions (recordings `flag_20260618_001227_407` +
@@ -72,7 +85,44 @@ refracted where it shouldn't be.
 - This is separate from the detector-redesign display series (A/B1/0090/0091/0092),
   which is correct relative to the trace.
 
+## Investigation log (2026-06-18, headless — `bugs/repro_0093.py`)
+
+All headless (numeric ray convergence via `_closest_approach`, no VTK), so the
+trace physics is verified directly (not the display). Converging cone focusing at
+a bare z=200; cube centered ~z=80.
+
+| experiment | transmit focus | reflect focus | verdict |
+|---|---|---|---|
+| flat BK7 cube (40 mm, no BS, no branch) | z=213.7 (+13.7 = plate shift) | — | CORRECT (further) |
+| hand-built BK7 BS cube (40 mm, branching) | z=213.7 (+13.7) | 133.7 mm from split (=120+13.6) | CORRECT (further) |
+| **real promoted STEP cube `step_32704` (50 mm)** | **z=217.1 (+17 = 50 mm plate shift)** | **+137 mm from split (=120+17), reflects +y** | **CORRECT (further)** |
+
+Media sequence on every branch: `entry → internal(split) → exit`; the 45° face is
+`internal` (no index step, no refraction). Both arms get the right plate shift.
+
+Findings that overturn the original hypotheses:
+- Hypotheses 1–3 (45° face refracting / front-back wrong-signed / mesh refraction)
+  are all FALSE for the generic and the real geometry.
+- The "media-state propagation through the split" theory is also FALSE — the child
+  rays correctly inherit `inside_volumes`, so the exit faces refract glass→air.
+- The detector display (`derive_branch_detectors._closest_approach_point`) is a
+  faithful readout of where the traced rays converge, and that point is correct.
+
+Conclusion: the recording's "transmit focus before the bare focus" does not occur
+on current code. Most likely a **stale app** at record time (the running Open 3D
+predated a trace fix in the 0085–0092 series), or a scene factor the UI snapshot
+(`state.json`) doesn't carry (a coating on the cube faces, the doublet's exact
+prescription, or a non-BK7 index). Re-record on a freshly restarted app; if it
+still over-focuses, capture the full prescription (not just the UI snapshot) so the
+exact scene can be rebuilt headlessly.
+
+Repro harness `bugs/repro_0093.py` is reusable: it builds flat / synthetic-BS /
+real-STEP cubes, traces a converging cone with the real non-seq engine, and prints
+per-branch media sequence + convergence. Swap `stl_override` to test any cached
+promoted cube under `attachment/cad_cache/promoted_step_overlays/`.
+
 ## Related
 
-[[project-open3d-detector-redesign]] (B1 detectors follow this focus),
-[[feedback_trace_mode_north_star]], [[feedback_random_element_ray_trace]].
+[[project-open3d-detector-redesign]] (B1 detectors follow this focus — confirmed
+faithful), [[feedback_trace_mode_north_star]], [[feedback_random_element_ray_trace]],
+[[feedback_stale_app_recording]].
