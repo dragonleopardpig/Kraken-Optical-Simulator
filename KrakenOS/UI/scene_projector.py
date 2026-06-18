@@ -653,47 +653,52 @@ def _clip_polyline_at_detector_planes(
     pts: np.ndarray,
     detector_planes: list[tuple[np.ndarray, np.ndarray, float]] | None,
 ) -> tuple[np.ndarray, bool]:
-    """Truncate ``pts`` at the FIRST detector plane it crosses within extent.
+    """Truncate ``pts`` at the FIRST detector plane the ray reaches within extent.
 
-    A pass-through crossing (sign change of ``(p-centre)·normal`` strictly
-    inside a segment, with the crossing point within the plane's radial limit)
-    ends the drawn polyline at the plane. Crossings essentially at an endpoint
-    are skipped -- a ray that already terminates at/just misses a detector keeps
-    its existing hit/miss cap and is not re-clipped to zero length.
+    Finds the first point along the polyline where it crosses FORWARD into a
+    detector plane (``(p-centre)·normal`` goes from <0 to >=0) within the plane's
+    radial limit, and truncates there. This now includes a ray PASSING THROUGH the
+    plane at an interior vertex (bugs/0093: a transmit beam whose polyline has a
+    vertex exactly on the image/detector plane and continues past it -- the
+    diverging tail beyond was still drawn). A ray that TERMINATES on the plane (its
+    last vertex is on it) keeps its cap (not re-clipped to zero); a ray that crosses
+    outside the radial board (a genuine miss) is left alone.
     """
     if detector_planes is None or len(detector_planes) == 0:
         return pts, False
     if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
         return pts, False
-    for i in range(pts.shape[0] - 1):
-        p0 = pts[i, :3]
-        p1 = pts[i + 1, :3]
-        seg = p1 - p0
-        best_t: float | None = None
-        best_cross: np.ndarray | None = None
-        for center, normal, limit in detector_planes:
-            d0 = float(np.dot(p0 - center, normal))
-            d1 = float(np.dot(p1 - center, normal))
-            denom = d0 - d1
-            if abs(denom) <= 1.0e-12:
-                continue
-            if (d0 > 0.0) == (d1 > 0.0):
-                continue  # both sides agree -> no crossing inside this segment
-            t = d0 / denom
-            if t <= 1.0e-6 or t >= 1.0 - 1.0e-6:
-                continue  # crossing at an endpoint -> already terminates here
-            cross = p0 + t * seg
-            radial = float(np.linalg.norm(cross - center))
-            if radial > limit:
-                continue
-            if best_t is None or t < best_t:
-                best_t = t
+    p = pts[:, :3]
+    n = p.shape[0]
+    best_param: float | None = None
+    best_cross: np.ndarray | None = None
+    best_i: int | None = None
+    for center, normal, limit in detector_planes:
+        center = np.asarray(center, dtype=float)[:3]
+        normal = np.asarray(normal, dtype=float)[:3]
+        d = (p - center) @ normal  # signed distance of every vertex to this plane
+        for i in range(1, n):
+            if not (d[i - 1] < -1.0e-6 and d[i] >= -1.0e-6):
+                continue  # the ray does not cross FORWARD into the plane here
+            if i == n - 1 and abs(d[i]) <= 1.0e-6:
+                break  # the ray ENDS on the plane (hit_detector) -> keep its cap
+            denom = d[i - 1] - d[i]
+            t = (d[i - 1] / denom) if abs(denom) > 1.0e-12 else 1.0
+            t = min(max(t, 0.0), 1.0)
+            cross = p[i - 1] + t * (p[i] - p[i - 1])
+            if float(np.linalg.norm(cross - center)) > limit:
+                break  # crosses outside the radial board -> a genuine miss
+            param = float(i - 1) + t
+            if best_param is None or param < best_param:
+                best_param = param
                 best_cross = cross
-        if best_cross is not None:
-            truncated = np.vstack((pts[: i + 1, :3], best_cross.reshape(1, 3)))
-            if truncated.shape[0] >= 2:
-                return truncated, True
-            return pts, False
+                best_i = i
+            break  # first forward crossing for this plane
+    if best_cross is None or best_i is None:
+        return pts, False
+    truncated = np.vstack((p[:best_i], best_cross.reshape(1, 3)))
+    if truncated.shape[0] >= 2:
+        return truncated, True
     return pts, False
 
 

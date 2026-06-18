@@ -101,6 +101,17 @@ def run_checks() -> tuple[bool, list[str]]:
     if len(planes) != 1:
         failures.append(f"FAIL: expected 1 detector plane from the bundle, got {len(planes)}")
 
+    # 9) bugs/0093: a ray PASSING THROUGH a detector at an INTERIOR vertex (z=100 is a
+    #    polyline vertex, the ray continues to z=200) is truncated at that vertex -- the
+    #    diverging tail beyond is dropped (the transmit beam through the image/detector
+    #    plane). Previously the at-endpoint skip left the tail drawn.
+    through = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 100.0], [0.0, 0.0, 200.0]])
+    out_thru, clipped_thru = _clip_polyline_at_detector_planes(through, plane_in)
+    if not clipped_thru:
+        failures.append("FAIL: a ray passing THROUGH a detector vertex was not truncated (diverging tail drawn)")
+    elif abs(float(out_thru[-1, 2]) - 100.0) > 1e-6 or out_thru.shape[0] != 2:
+        failures.append(f"FAIL: pass-through truncation should end at the vertex z=100: {out_thru.tolist()}")
+
     return (not failures), failures
 
 
