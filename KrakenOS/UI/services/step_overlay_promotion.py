@@ -1272,6 +1272,84 @@ class StepOverlayPromotionService:
             "diagnostics": diagnostics,
         }
 
+    @staticmethod
+    def _is_inpath_trailing_spacer(spacer) -> bool:
+        """The flat AIR spacer the in-path promote inserts after the solid."""
+        return (
+            str(getattr(spacer, "surface", "") or "").strip() == "Standard"
+            and str(getattr(spacer, "glass", "") or "").strip().upper() == "AIR"
+            and str(getattr(spacer, "name", "") or "").strip().endswith("-> next gap (AIR)")
+        )
+
+    def unpromote_optical_solid_to_overlay(self, row_index: int, *, refresh_open_3d: bool = True) -> dict | None:
+        """Inverse of ``promote_imported_step_to_optical_solid_row``: turn a promoted
+        optical-solid row back into a decorative imported STEP overlay (user-invoked
+        right-click, bugs/0093). Removes the solid row + its in-path AIR spacer,
+        gives that span back to the preceding row (un-splits the gap so nothing
+        downstream moves), and restores the overlay at the solid's CURRENT (possibly
+        slid) pose from the stored ``StepOverlayPromotion`` metadata. The element is
+        re-promotable. No-op for a row that wasn't promoted from a STEP overlay."""
+        try:
+            idx = int(row_index)
+            row = self.rows[idx]
+        except Exception:
+            return None
+        advanced = getattr(row, "advanced", {}) or {}
+        promo = advanced.get("StepOverlayPromotion") if isinstance(advanced, dict) else None
+        if not isinstance(promo, dict):
+            self.status_var.set("This row was not promoted from a STEP overlay -- cannot unpromote.")
+            return None
+        label = str(promo.get("step_label", "optical") or "optical").strip().lower()
+        source_path = promo.get("source_step_path")
+        if not source_path or label not in STEP_OVERLAY_LABEL_SET:
+            self.status_var.set("Unpromote: missing source STEP path; leaving the row in place.")
+            return None
+        center0 = list(promo.get("center_world", (0.0, 0.0, 0.0)) or (0.0, 0.0, 0.0))
+        place0 = list(promo.get("placement_offset_xyz", (0.0, 0.0, 0.0)) or (0.0, 0.0, 0.0))
+        rot = list(promo.get("step_rotation_deg", (0.0, 0.0, 0.0)) or (0.0, 0.0, 0.0))
+        axoff = list(promo.get("axis_offset_xy", (0.0, 0.0)) or (0.0, 0.0))
+        desp = (float(getattr(row, "desp_x", 0.0) or 0.0), float(getattr(row, "desp_y", 0.0) or 0.0))
+        # carry the lateral slide (desp - original center) onto the overlay placement
+        # so the overlay reappears where the solid currently sits (z kept; a pure
+        # axial re-place may need a nudge -- in-app verify).
+        new_place = (
+            float(place0[0]) + (desp[0] - float(center0[0])),
+            float(place0[1]) + (desp[1] - float(center0[1])),
+            float(place0[2]),
+        )
+
+        self._begin_history_capture()
+        restored = float(getattr(row, "thickness", 0.0) or 0.0)
+        spacer_idx = idx + 1
+        if spacer_idx < len(self.rows) and self._is_inpath_trailing_spacer(self.rows[spacer_idx]):
+            restored += float(getattr(self.rows[spacer_idx], "thickness", 0.0) or 0.0)
+            del self.rows[spacer_idx]
+            if idx >= 1:  # un-split: hand the whole host gap back to the preceding row
+                self.rows[idx - 1].thickness = float(getattr(self.rows[idx - 1], "thickness", 0.0) or 0.0) + restored
+        del self.rows[idx]
+
+        # restore the imported overlay state at the (slid) pose
+        setattr(self, f"imported_{label}_step_path", Path(source_path))
+        for axis, value in zip("xyz", rot):
+            attr = f"{label}_step_rotation_{axis}_deg"
+            if hasattr(self, attr):
+                setattr(self, attr, float(value))
+        if hasattr(self, f"{label}_step_axis_offset_xy"):
+            setattr(self, f"{label}_step_axis_offset_xy", (float(axoff[0]), float(axoff[1])))
+        if hasattr(self, f"{label}_step_placement_offset_xyz"):
+            setattr(self, f"{label}_step_placement_offset_xyz", new_place)
+        self._selected_step_label = label
+        self._live_step_overlay_trace_plan_cache = {}
+        self._invalidate_preview_scene_trace()
+        self._normalize_special_rows()
+        self._sync_table()
+        self._commit_history_capture()
+        self._mark_plot_update_pending()
+        self.status_var.set(f"Unpromoted the {label.upper()} optical solid back to a STEP overlay (re-promotable).")
+        if refresh_open_3d:
+            self._refresh_open_3d_views(step_label=label)
+        return {"label": label, "removed_row_index": idx, "placement_offset_xyz": new_place}
+
     def _cache_promoted_step_body_mesh(
         self,
         label: str,

@@ -161,6 +161,8 @@ class Open3DFaceAssignmentService:
                 )
             menu.add_separator()
             menu.add_command(label="Open Face Editor...", command=lambda idx=int(row_index): self.editor.open_optical_solid_face_role_editor(idx))
+            if self._row_has_step_overlay_promotion(int(row_index)):
+                menu.add_command(label="Unpromote to STEP overlay", command=lambda idx=int(row_index): self._unpromote_step_solid_from_context(idx))
             menu.add_separator()
             self._build_row_actions_cascade(menu, int(row_index))
         elif row_index is not None and self.editor._is_any_promoted_optical_solid_row(self.editor.rows[int(row_index)]):
@@ -170,6 +172,9 @@ class Open3DFaceAssignmentService:
             )
             menu.add_command(label=f"Row Actions for {label_text}", state="disabled")
             menu.add_separator()
+            if self._row_has_step_overlay_promotion(int(row_index)):
+                menu.add_command(label="Unpromote to STEP overlay", command=lambda idx=int(row_index): self._unpromote_step_solid_from_context(idx))
+                menu.add_separator()
             self._build_row_actions_cascade(menu, int(row_index))
         elif step_label in STEP_OVERLAY_LABEL_SET:
             try:
@@ -356,6 +361,27 @@ class Open3DFaceAssignmentService:
         self.editor.select_step_component(label)
         self._debug_trace("promote_step_from_context", label=label, counts_before=self._debug_actor_counts())
         self.promote_selected_step_to_optical_solid_row()
+
+    def _row_has_step_overlay_promotion(self, row_index: int) -> bool:
+        """bugs/0093: a promoted optical-solid row that came from a STEP overlay (so
+        it can be reverted to a decorative overlay via the right-click 'Unpromote')."""
+        try:
+            advanced = getattr(self.editor.rows[int(row_index)], "advanced", {}) or {}
+        except Exception:
+            return False
+        return isinstance(advanced, dict) and isinstance(advanced.get("StepOverlayPromotion"), dict)
+
+    def _unpromote_step_solid_from_context(self, row_index: int) -> None:
+        """Right-click "Unpromote to STEP overlay": revert the promoted optical solid
+        back to an imported STEP overlay at its current pose (bugs/0093)."""
+        try:
+            self.editor.unpromote_optical_solid_to_overlay(int(row_index))
+        except Exception as exc:
+            self.editor.append_debug(f"Unpromote of S{row_index} failed: {exc}")
+            try:
+                self.editor.status_var.set(f"Unpromote failed: {exc}")
+            except Exception:
+                pass
 
     def _glue_step_to_surrogate_from_context(self, label: str) -> None:
         """Right-click "Glue STEP to Surrogate": select the clicked overlay and
