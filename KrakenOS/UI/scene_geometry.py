@@ -507,7 +507,14 @@ _NON_REFRACTIVE_STEERING_TOKENS = (
     "reflect",
     "mirror",
     "tir",
-    "split",
+    # NB: deliberately NOT a bare "split". A beam splitter's TRANSMITTED branch
+    # (event_type "split_transmit") passes straight through -- a refractive
+    # pass-through, NOT a deliberate fold. bugs/0093: "split" matched
+    # "split_transmit", so straight-through rays were tagged as folds and shown
+    # UNCONDITIONALLY (a transmit ray that missed the detector could never be
+    # hidden by "Show clipped rays" -- the user's "missed rays that won't hide").
+    # The REFLECTED branch (event_type "split_reflect") is still caught by
+    # "reflect", so genuine beam-splitter folds stay visible.
     "scatter",
     "diffract",
     "grating",
