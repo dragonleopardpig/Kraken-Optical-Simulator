@@ -163,6 +163,30 @@ def run_checks() -> tuple[bool, list[str]]:
         if (tgt.metadata or {}).get("assigned_camera_label") != "hr25MCX":
             failures.append("FAIL: reflect scene target metadata missing assigned_camera_label")
 
+    # 7) reached-image pinning (bugs/0093): a transmit leaf that REACHES the sequential
+    #    Image is pinned ONTO that Image (the user's designed focus), not a forward
+    #    convergence -- so the detector and image coincide (cube-before-lens fix:
+    #    "the original is correct, the image plane lands on the detector"). The reflect
+    #    arm (does NOT reach the image) keeps its own converging focus.
+    img_target = SimpleNamespace(
+        is_detector=True, surface="Image",
+        center_world=np.asarray((0.0, 0.0, 300.0), dtype=float),
+        active_width_mm=20.0, active_height_mm=20.0,
+        metadata={"target_source": "table_row"},
+    )
+    pinned = derive_branch_detectors(single, existing_targets=[img_target], scene_radius=50.0)
+    tp = next((d for d in pinned if "transmit" in d.branch_path), None)
+    rp = next((d for d in pinned if "reflect" in d.branch_path), None)
+    if tp is None:
+        failures.append("FAIL: reached-image pin -- transmit detector missing")
+    else:
+        if abs(float(tp.center_world[2]) - 300.0) > 1.0:
+            failures.append(f"FAIL: transmit detector not pinned to the reached Image z=300 (got {tp.center_world})")
+        if tp.focus_source != "reached_image":
+            failures.append(f"FAIL: transmit focus_source should be 'reached_image', got {tp.focus_source!r}")
+    if rp is not None and not np.allclose(rp.center_world, reflect_focus, atol=1.0):
+        failures.append(f"FAIL: reflect arm wrongly moved (should keep its focus {reflect_focus}): {rp.center_world}")
+
     return (not failures), failures
 
 

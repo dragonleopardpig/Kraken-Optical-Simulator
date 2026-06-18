@@ -109,6 +109,28 @@ def _leaf_reaches_existing_detector(group: list) -> bool:
     return False
 
 
+def _reached_image_target(existing_targets: list | None):
+    """bugs/0093: the sequential Image/detector target a transmit leaf terminates on
+    (the furthest non-branch-detector Image plane). Used to pin a reached-image branch
+    detector ONTO that image so they coincide. None when no such target exists."""
+    best = None
+    for target in (existing_targets or []):
+        if not bool(getattr(target, "is_detector", False)):
+            continue
+        if str(getattr(target, "surface", "") or "") != "Image":
+            continue
+        meta = getattr(target, "metadata", {}) or {}
+        if str(meta.get("target_source", "") or "") == "branch_detector":
+            continue
+        try:
+            z = float(np.asarray(getattr(target, "center_world", (0.0, 0.0, 0.0)), dtype=float).reshape(-1)[-1])
+        except Exception:
+            continue
+        if best is None or z > best[0]:
+            best = (z, target)
+    return best[1] if best is not None else None
+
+
 def _exit_rays_for_group(group: list) -> tuple[np.ndarray, np.ndarray]:
     """Return (origins, unit_directions) for the EXIT segment of each ray.
 
@@ -223,7 +245,8 @@ def derive_branch_detectors(
     detectors: list[BranchDetector] = []
     for index, bp in enumerate(sorted(leaves)):
         group = groups[bp]
-        if not multi_leaf and _leaf_reaches_existing_detector(group):
+        reaches_image = _leaf_reaches_existing_detector(group)
+        if not multi_leaf and reaches_image:
             continue
         origins, directions = _exit_rays_for_group(group)
         if origins.shape[0] == 0:
@@ -239,6 +262,19 @@ def derive_branch_detectors(
             focus_source = "default_distance"
         else:
             focus_source = "converging_rays"
+        # bugs/0093: a transmit leaf that REACHES the sequential Image focuses AT that
+        # image (the user's designed focus). When the splitter sits BEFORE the lens the
+        # branch path's exit-ray convergence is unreliable -- it lands far FORWARD of
+        # the lens focus (recording flag_20260618_221055: transmit detector pulled
+        # ~270 mm forward of the image, physically backwards). Pin the detector to the
+        # reached Image so the detector and image COINCIDE ("the original is correct,
+        # the image plane lands on the detector").
+        reached = _reached_image_target(existing_targets) if reaches_image else None
+        if reached is not None:
+            ri = np.asarray(getattr(reached, "center_world", focus), dtype=float).reshape(-1)
+            if ri.shape == (3,) and np.all(np.isfinite(ri)):
+                focus = ri
+                focus_source = "reached_image"
         # Size to the beam FOOTPRINT entering this branch (catches the whole beam
         # and stays visible), NOT the focus spot (~0, which collapsed the plane to
         # a sub-mm sliver). A real, sensibly-sized existing detector wins;
