@@ -117,9 +117,15 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         from KrakenOS.UI.services.step_overlay_promotion import StepOverlayPromotionService
 
         promote_src = inspect.getsource(StepOverlayPromotionService.promote_imported_step_to_optical_solid_row)
+        from KrakenOS.UI.services.step_overlay_promotion import _INPATH_AXIAL_PLACEMENT_ENABLED
     except Exception as exc:  # pragma: no cover - env skip
         notes.append(f"SKIP: promote-wiring source unavailable ({type(exc).__name__}: {exc})")
     else:
+        # bugs/0079 re-enabled 2026-06-18 (the bugs/0081 kill-switch was for a kwarg
+        # TypeError fixed in bugs/0082; validate_open3d_inpath_promote_live drives the
+        # live path with no raise + a downstream-preserved chain).
+        ok(_INPATH_AXIAL_PLACEMENT_ENABLED is True,
+           "C0: bugs/0079 in-path axial placement is ENABLED (kill switch off)")
         ok("inpath_axial_placement" in promote_src,
            "C1: optical-solid promote accepts inpath_axial_placement (UI on-axis promote opts in)")
         ok("plan_inpath_insertion" in promote_src,
