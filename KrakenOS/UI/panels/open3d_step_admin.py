@@ -53,23 +53,48 @@ class Open3DStepAdminPanel:
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
 
-        # bugs/0093: make the whole Scene Components panel vertically scrollable so
-        # every section (browser + Import / Properties / Selected Element / STEP)
-        # stays reachable when the window is short. The scrollbar appears only when
-        # the content overflows ("when required"); when there is room the inner frame
-        # fills the canvas so the browser tree (row 0, weight=1) still expands with
-        # the panel as before (resizable via the pane sash + window).
-        canvas = tk.Canvas(parent, highlightthickness=0, borderwidth=0)
+        # bugs/0093: vertical pane -- the browser tree (top) is height-resizable via a
+        # draggable sash (the height edge now shows a resize cursor), over a scrollable
+        # controls area (Import / Properties / Selected Element / STEP). The controls
+        # show a vertical scrollbar + scroll on the wheel/touchpad (bound over the
+        # buttons too, not just empty canvas) when they don't fit; the tree keeps its
+        # own row scrollbar.
+        pane = ttk.Panedwindow(parent, orient="vertical")
+        pane.grid(row=0, column=0, sticky="nsew")
+        self._panel_pane = pane
+
+        tree_frame = ttk.Frame(pane)
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(1, weight=1)
+        header = ttk.Frame(tree_frame)
+        header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        header.columnconfigure(0, weight=1)
+        ttk.Button(header, text="▶", width=2, command=self.inspector.toggle_scene_components_panel).grid(row=0, column=1, sticky="e")
+        tree = ttk.Treeview(tree_frame, show="tree", selectmode="browse", height=10)
+        tree.grid(row=1, column=0, sticky="nsew")
+        tree_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+        tree_scroll.grid(row=1, column=1, sticky="ns")
+        tree.configure(yscrollcommand=tree_scroll.set)
+        tree.bind("<<TreeviewSelect>>", self._on_tree_select)
+        tree.bind("<Shift-Button-1>", self._on_tree_shift_click)
+        tree.bind("<Button-3>", self._on_tree_right_click)
+        tree.tag_configure("hidden", foreground="#9aa0a6")  # grey out hidden elements
+        self._tree = tree
+        pane.add(tree_frame, weight=3)
+
+        controls_host = ttk.Frame(pane)
+        controls_host.columnconfigure(0, weight=1)
+        controls_host.rowconfigure(0, weight=1)
+        canvas = tk.Canvas(controls_host, highlightthickness=0, borderwidth=0)
         canvas.grid(row=0, column=0, sticky="nsew")
-        panel_scroll = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        panel_scroll = ttk.Scrollbar(controls_host, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=panel_scroll.set)
         self._panel_canvas = canvas
         self._panel_scrollbar = panel_scroll
-
         stack = ttk.Frame(canvas)
         stack_window = canvas.create_window((0, 0), window=stack, anchor="nw")
         stack.columnconfigure(0, weight=1)
-        stack.rowconfigure(0, weight=1)
+        pane.add(controls_host, weight=2)
 
         def _update_panel_scroll() -> None:
             try:
@@ -83,8 +108,6 @@ class Open3DStepAdminPanel:
                 pass
 
         def _on_canvas_configure(event) -> None:
-            # match the inner width; when content is shorter than the canvas, stretch
-            # it to fill so the browser tree keeps expanding (no dead space below).
             fill_height = max(int(event.height), stack.winfo_reqheight())
             canvas.itemconfigure(stack_window, width=int(event.width), height=fill_height)
             _update_panel_scroll()
@@ -102,28 +125,7 @@ class Open3DStepAdminPanel:
 
         stack.bind("<Configure>", lambda _e: _update_panel_scroll())
         canvas.bind("<Configure>", _on_canvas_configure)
-        for _seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
-            canvas.bind(_seq, _on_mousewheel)
-            stack.bind(_seq, _on_mousewheel)
-
-        tree_frame = ttk.Frame(stack)
-        tree_frame.grid(row=0, column=0, sticky="nsew")
-        tree_frame.columnconfigure(0, weight=1)
-        tree_frame.rowconfigure(1, weight=1)
-        header = ttk.Frame(tree_frame)
-        header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
-        header.columnconfigure(0, weight=1)
-        ttk.Button(header, text="▶", width=2, command=self.inspector.toggle_scene_components_panel).grid(row=0, column=1, sticky="e")
-        tree = ttk.Treeview(tree_frame, show="tree", selectmode="browse", height=12)
-        tree.grid(row=1, column=0, sticky="nsew")
-        scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
-        scrollbar.grid(row=1, column=1, sticky="ns")
-        tree.configure(yscrollcommand=scrollbar.set)
-        tree.bind("<<TreeviewSelect>>", self._on_tree_select)
-        tree.bind("<Shift-Button-1>", self._on_tree_shift_click)
-        tree.bind("<Button-3>", self._on_tree_right_click)
-        tree.tag_configure("hidden", foreground="#9aa0a6")  # grey out hidden elements
-        self._tree = tree
+        self._panel_wheel_handler = _on_mousewheel
 
         import_frame = ttk.LabelFrame(stack, text="Import", padding=8)
         import_frame.grid(row=1, column=0, sticky="ew", pady=(8, 0))
@@ -202,8 +204,43 @@ class Open3DStepAdminPanel:
                           self.inspector.promote_selected_step_to_optical_solid_row)
         self._grid_button(step_frame, 1, 1, "Clear STEP", self.inspector.clear_step_imports)
 
+        # bugs/0093: bind the wheel on every control widget (not just the canvas) so a
+        # mouse/touchpad scroll anywhere over the controls scrolls them -- a wheel
+        # event is delivered to the widget under the cursor, so binding only the
+        # canvas missed the buttons/frames. The tree is excluded (keeps its own).
+        self._bind_wheel_to_controls(stack)
+
         self.refresh()
         return stack
+
+    def _bind_wheel_to_controls(self, widget: tk.Widget) -> None:
+        handler = getattr(self, "_panel_wheel_handler", None)
+        canvas = getattr(self, "_panel_canvas", None)
+        if handler is None:
+            return
+        if canvas is not None:
+            for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+                try:
+                    canvas.bind(seq, handler)
+                except Exception:
+                    pass
+
+        def _bind(node: tk.Widget) -> None:
+            if node is getattr(self, "_tree", None):
+                return  # the browser tree scrolls itself
+            for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+                try:
+                    node.bind(seq, handler)
+                except Exception:
+                    pass
+            try:
+                children = node.winfo_children()
+            except Exception:
+                children = []
+            for child in children:
+                _bind(child)
+
+        _bind(widget)
 
     @staticmethod
     def _grid_button(
