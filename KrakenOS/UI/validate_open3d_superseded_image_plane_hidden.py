@@ -179,6 +179,36 @@ def run_checks() -> tuple[bool, list[str]]:
     if off_spans:
         failures.append(f"FAIL: OFF-axis overlay must NOT be carved from the dimension (got {len(off_spans)} spans)")
 
+    # 8) the in-path trailing AIR spacer (bugs/0079) must NOT draw a clear-aperture
+    #    ring -- it's the "big circle" the user saw at the cube's transmit output.
+    from KrakenOS.UI.scene_builder import _is_inpath_trailing_spacer_row, _build_sequential_surface_curves
+    spacer_row = SimpleNamespace(surface="Standard", thickness=30.0, diameter=80.0, glass="AIR",
+                                 name="cube -> next gap (AIR)", advanced={"InPathTrailingSpacer": True})
+    lens_row = SimpleNamespace(surface="Standard", thickness=10.0, diameter=30.0, glass="N-BK7",
+                               name="lens", advanced={})
+    if not _is_inpath_trailing_spacer_row(spacer_row):
+        failures.append("FAIL: trailing spacer not recognised by _is_inpath_trailing_spacer_row")
+    if _is_inpath_trailing_spacer_row(lens_row):
+        failures.append("FAIL: a normal lens row wrongly flagged as a trailing spacer")
+    seq_rows = [
+        SimpleNamespace(surface="Object", thickness=10.0, diameter=10.0, glass="AIR", name="Object", advanced={}),
+        lens_row,
+        spacer_row,
+        SimpleNamespace(surface="Image", thickness=0.0, diameter=10.0, glass="AIR", name="Image", advanced={}),
+    ]
+    try:
+        seq_curves = _build_sequential_surface_curves(
+            seq_rows, object(),
+            lambda system, row_index, z_pos: [np.array([[0., -40., float(z_pos)], [0., 40., float(z_pos)]])],
+        )
+        drawn = {getattr(c, "row_index") for c in seq_curves}
+        if 2 in drawn:
+            failures.append("FAIL: the in-path trailing spacer (row 2) still draws a surface ring (big circle)")
+        if 1 not in drawn:
+            failures.append("FAIL: the lens row (row 1) lost its surface curve -- skip too aggressive")
+    except Exception as exc:  # pragma: no cover - keep the helper assertion authoritative
+        failures.append(f"FAIL: _build_sequential_surface_curves raised on the spacer-skip path: {type(exc).__name__}: {exc}")
+
     return (not failures), failures
 
 

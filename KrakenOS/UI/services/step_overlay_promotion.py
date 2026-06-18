@@ -1227,6 +1227,11 @@ class StepOverlayPromotionService:
             )
             spacer.element = getattr(row, "element", "STEP solid")
             spacer.name = f"{getattr(row, 'name', 'Promoted STEP solid')} -> next gap (AIR)"
+            # bugs/0093: the spacer keeps the cube's (large) diameter so the trace
+            # never clips the beam, but it's a bookkeeping AIR gap, NOT a physical
+            # surface -- flag it so the display does not draw its big clear-aperture
+            # ring at the cube's transmit output ("why is there a big circle?").
+            spacer.advanced = {"InPathTrailingSpacer": True}
             self.rows.insert(resolved_insert_at, row)
             self.rows.insert(resolved_insert_at + 1, spacer)
         else:

@@ -1136,6 +1136,12 @@ class ThreeDSceneToolsMixin:
             row_transform = optical_solid_output_port_runtime_transform_override(system, self.rows, index)
             mesh = None
             advanced = row.advanced if isinstance(row.advanced, dict) else {}
+            if advanced.get("InPathTrailingSpacer"):
+                # bugs/0093: the in-path gap-carrier (bugs/0079) keeps the solid's
+                # large diameter so the trace never clips, but it is a bookkeeping AIR
+                # gap, NOT a physical surface -- don't draw its big flat clear-aperture
+                # disk at the cube's transmit output ("why is there a big circle?").
+                continue
             # User explicitly skipped a missing CAD asset in the
             # Missing-assets dialog: emit a visible placeholder instead
             # of falling through to the silent analytic single-face

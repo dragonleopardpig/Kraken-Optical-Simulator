@@ -1139,6 +1139,15 @@ def _optical_volume_diagnostics(material: str, boundary_faces: list[BoundaryFace
 # Surface curve builders
 # ---------------------------------------------------------------------------
 
+def _is_inpath_trailing_spacer_row(row: Any) -> bool:
+    """bugs/0093: the AIR gap-carrier the in-path promote (bugs/0079) inserts after a
+    promoted solid. It keeps the solid's large diameter so the trace never clips, but
+    it is NOT a physical surface, so the display must not draw its clear-aperture ring
+    (the "big circle" at the cube's transmit output)."""
+    advanced = getattr(row, "advanced", {}) or {}
+    return isinstance(advanced, dict) and bool(advanced.get("InPathTrailingSpacer"))
+
+
 def _build_sequential_surface_curves(
     rows: list,
     system: Any | None,
@@ -1149,6 +1158,9 @@ def _build_sequential_surface_curves(
     z_pos = 0.0
     for row_index, row in enumerate(rows):
         if row.surface in {"Object", "Image"}:
+            z_pos += float(row.thickness)
+            continue
+        if _is_inpath_trailing_spacer_row(row):
             z_pos += float(row.thickness)
             continue
         color, linewidth, alpha = surface_style_for_row(row)
@@ -1227,6 +1239,8 @@ def _build_folded_surface_curves(
         surface_type, center, row, branch_dir = elem[0], elem[1], elem[2], elem[3]
         mirror_tangent = elem[4] if len(elem) > 4 else None
         row_index = idx + 1
+        if _is_inpath_trailing_spacer_row(row):  # bugs/0093: gap-carrier, no ring
+            continue
         if surface_type in {"Mirror", "Object Target", "Diffuse Object"}:
             half = max(row.diameter / 2.0, 0.5)
             if mirror_tangent is not None:
