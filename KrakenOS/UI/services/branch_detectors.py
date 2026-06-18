@@ -179,6 +179,7 @@ def derive_branch_detectors(
     *,
     scene_radius: float = 50.0,
     default_distance: float | None = None,
+    branch_camera_sensors: dict | None = None,
 ) -> list[BranchDetector]:
     """One :class:`BranchDetector` per terminal leaf branch.
 
@@ -252,6 +253,20 @@ def derive_branch_detectors(
             half_w, half_h = default_half
         else:
             half_w = half_h = max(footprint, min_half)
+        # B2 (bugs/0093, vendor-step-import-semantics): a vendor camera STEP
+        # registered to this branch determines the SENSOR SIZE -- blend the detector
+        # plane to the camera's active sensor (w x h) so the per-branch FOV / sensor
+        # quick-estimation reads the real sensor instead of the beam footprint.
+        assigned_camera_label = None
+        cam = (branch_camera_sensors or {}).get(bp)
+        if cam is not None:
+            assigned_camera_label = cam[0] or None
+            try:
+                sensor_w, sensor_h = float(cam[1][0]), float(cam[1][1])
+                if np.isfinite(sensor_w) and np.isfinite(sensor_h) and sensor_w > 1.0e-6 and sensor_h > 1.0e-6:
+                    half_w, half_h = sensor_w / 2.0, sensor_h / 2.0
+            except Exception:
+                pass
         tangent = _orthogonal_unit(mean_dir)
         detectors.append(
             BranchDetector(
@@ -263,6 +278,7 @@ def derive_branch_detectors(
                 half_w=float(half_w),
                 half_h=float(half_h),
                 focus_source=focus_source,
+                assigned_camera_label=assigned_camera_label,
                 exit_point_world=np.asarray(mean_origin, dtype=float),
             )
         )

@@ -135,6 +135,34 @@ def run_checks() -> tuple[bool, list[str]]:
         elif not np.allclose(planes[0][0], dets[0].center_world, atol=1.0):
             failures.append("FAIL: hard-stop plane center != branch detector focus")
 
+    # 6) B2 (bugs/0093, vendor camera STEP = sensor size): a camera registered to a
+    #    branch BLENDS that detector to the camera's active sensor (w x h) and tags
+    #    it; arms without a camera keep their footprint size. The scene target then
+    #    carries the sensor as its active dims (so the per-branch FOV / sensor
+    #    quick-estimation reads the real sensor).
+    sized = derive_branch_detectors(
+        single, existing_targets=[], scene_radius=50.0,
+        branch_camera_sensors={"S4:BS/reflect": ("hr25MCX", (23.04, 23.04))},
+    )
+    rs = next((d for d in sized if "reflect" in d.branch_path), None)
+    ts = next((d for d in sized if "transmit" in d.branch_path), None)
+    if rs is None or ts is None:
+        failures.append("FAIL: B2 camera-sized derive missing an arm")
+    else:
+        if abs(rs.half_w - 11.52) > 1e-6 or abs(rs.half_h - 11.52) > 1e-6:
+            failures.append(f"FAIL: reflect detector not blended to the 23.04x23.04 sensor (half {rs.half_w},{rs.half_h})")
+        if rs.assigned_camera_label != "hr25MCX":
+            failures.append(f"FAIL: reflect detector assigned_camera_label = {rs.assigned_camera_label!r}, expected 'hr25MCX'")
+        if ts.assigned_camera_label is not None:
+            failures.append(f"FAIL: transmit (no camera) should keep assigned_camera_label=None, got {ts.assigned_camera_label!r}")
+        if abs(ts.half_w - 11.52) < 1e-6:
+            failures.append("FAIL: transmit (no camera) was wrongly resized to the sensor")
+        tgt = branch_detector_scene_target(rs, row_index=100000)
+        if abs(float(tgt.active_width_mm) - 23.04) > 1e-6 or abs(float(tgt.active_height_mm) - 23.04) > 1e-6:
+            failures.append(f"FAIL: reflect scene target active dims != sensor 23.04 ({tgt.active_width_mm},{tgt.active_height_mm})")
+        if (tgt.metadata or {}).get("assigned_camera_label") != "hr25MCX":
+            failures.append("FAIL: reflect scene target metadata missing assigned_camera_label")
+
     return (not failures), failures
 
 
