@@ -6361,6 +6361,37 @@ def phase_85_branch_detector_supersedes_image(
     return result
 
 
+def phase_86_superseded_image_plane_hidden(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The superseded sequential Image plane is hidden behind the branch detector
+    (bugs/0093).
+
+    A split derives a branch detector at the transmit arm's true focus (= bare
+    focus + plate shift); inserting the splitter also shoved the sequential Image
+    back by the element's thickness, so it lingered as a plane BEHIND the detector
+    (user: "the original image plane is still behind the new detector"). 0092 hid
+    only the 3-D aperture disk; the fix also drops the Image's bundle curve + label
+    (drawn by both views). Guard `validate_open3d_superseded_image_plane_hidden`
+    is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 86: Open 3D superseded sequential Image plane hidden behind the branch detector"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_superseded_image_plane_hidden import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"superseded-Image-plane guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6492,6 +6523,7 @@ def main() -> int:
             phase_83_right_click_live_trace_overlay,
             phase_84_qe_menu_skips_step_overlay,
             phase_85_branch_detector_supersedes_image,
+            phase_86_superseded_image_plane_hidden,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

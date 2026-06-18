@@ -87,7 +87,8 @@
     "82": "pass",
     "83": "pass",
     "84": "pass",
-    "85": "pass"
+    "85": "pass",
+    "86": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -175,6 +176,7 @@
     "82": "Open 3D branch detector per terminal leaf branch (beam splitter arms, cascading-correct)",
     "83": "Open 3D right-click on a live-trace STEP overlay opens the promote/face-assign menu",
     "84": "Open 3D right-click on a STEP overlay reaches the overlay menu (QE menu does not hijack it)",
-    "85": "Open 3D branch detector supersedes the redundant sequential Image marker"
+    "85": "Open 3D branch detector supersedes the redundant sequential Image marker",
+    "86": "Open 3D superseded sequential Image plane hidden behind the branch detector"
   }
 }

@@ -199,16 +199,18 @@ def _bs_cube_row(stl_override=None):
     ), stl, metadata
 
 
-def _experiment2_bs_cube(stl_override=None, label="synthetic"):
+def _experiment2_bs_cube(stl_override=None, label="synthetic",
+                         centroid_z=CUBE_CENTER_Z - CUBE_MM / 2.0, focus_z=BARE_FOCUS_Z):
     from KrakenOS.UI.nonseq_output_ports import (
         attach_scene_boundary_face_index, attach_scene_optical_volume_index)
     from KrakenOS.UI.layout_editor import SurfaceRow
 
     print(f"\n=== EXPERIMENT: BK7 BEAM-SPLITTER cube (branching) [{label}] ===")
+    print(f"  cube centroid z={centroid_z}, bare cone focus z={focus_z}")
     bs_row, stl, metadata = _bs_cube_row(stl_override)
 
     obj = Kos.surf(); obj.Name = "Source ref"; obj.Diameter = 60.0; obj.Drawing = 0
-    obj.Thickness = CUBE_CENTER_Z - CUBE_MM / 2.0
+    obj.Thickness = centroid_z
     cube = Kos.surf(); cube.Name = "BS cube"; cube.Solid_3d_stl = stl
     cube.Glass = "BK7"; cube.Diameter = CUBE_MM * 1.6; cube.Thickness = 200.0
     cube.OpticalSolidFaces = metadata   # enables the branching gate (SDT[j].OpticalSolidFaces)
@@ -216,7 +218,7 @@ def _experiment2_bs_cube(stl_override=None, label="synthetic"):
     system = Kos.system([obj, cube, img], Kos.Setup())
 
     rows = [SurfaceRow(surface="Object", name="Source ref", diameter=60.0,
-                       thickness=CUBE_CENTER_Z - CUBE_MM / 2.0),
+                       thickness=centroid_z),
             bs_row,
             SurfaceRow(surface="Image", name="Detector", glass="AIR", diameter=120.0)]
     attach_scene_boundary_face_index(system, rows)
@@ -225,7 +227,7 @@ def _experiment2_bs_cube(stl_override=None, label="synthetic"):
     system.NsLimit = 200
 
     rays = Kos.raykeeper(system)
-    for o, d in _converging_dirs(8.0, 5, BARE_FOCUS_Z):
+    for o, d in _converging_dirs(8.0, 5, focus_z):
         system.NsTrace([float(o[0]), float(o[1]), 0.0],
                        [float(d[0]), float(d[1]), float(d[2])], WL)
         rays.push()
@@ -300,6 +302,11 @@ def main():
     real = "attachment/cad_cache/promoted_step_overlays/optical_d647708c38ec4cd3.stl"
     if Path(real).exists():
         _experiment2_bs_cube(stl_override=real, label="REAL step_32704 cube")
+        # EXPERIMENT 4: real cube AT THE RECORDING'S GEOMETRY (centroid z=162, bare
+        # focus z=266). Recording flag_20260618_085815_940 shows transmit detector
+        # z=233 < old image z=266 (the 0093 complaint). Does this geometry repro it?
+        _experiment2_bs_cube(stl_override=real, label="REAL cube @ recording geometry",
+                             centroid_z=162.0, focus_z=266.0)
 
 
 if __name__ == "__main__":

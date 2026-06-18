@@ -804,6 +804,38 @@ def _scene_target_frame(row_index: int, row: Any, z_pos: float) -> tuple[np.ndar
     return np.asarray(center, dtype=float), normal, tangent
 
 
+def _superseded_image_row_indices(rows) -> set:
+    """Row indices of sequential Image surfaces (bugs/0093 supersession)."""
+    return {
+        int(i)
+        for i, r in enumerate(rows or [])
+        if str(getattr(r, "surface", "") or "") == "Image"
+    }
+
+
+def drop_superseded_image_display(surface_curves, labels, rows, *, has_branch_detector):
+    """bugs/0093: hide the sequential Image's plane curve + label when a branch
+    detector supersedes it.
+
+    A beam-splitter split derives a branch detector at the transmit arm's true
+    focus (= bare focus + plate shift). Inserting the splitter also pushes the
+    sequential Image surface back by the element's thickness, so the Image lingers
+    as a plane BEHIND the (correct) detector. 0092 hid only the 3-D aperture disk;
+    this drops the Image's bundle curve + label so neither the 2-D nor the 3-D view
+    draws a focus marker beyond the branch detector. The Image *target* is kept
+    (hard-stop / picking). No-op without a branch detector, so plain
+    sequential/folded scenes are unaffected. Returns ``(curves, labels)``.
+    """
+    if not has_branch_detector:
+        return surface_curves, labels
+    rows_idx = _superseded_image_row_indices(rows)
+    if not rows_idx:
+        return surface_curves, labels
+    curves = [c for c in surface_curves if int(getattr(c, "row_index", -1)) not in rows_idx]
+    kept_labels = [lbl for lbl in labels if int(getattr(lbl, "row_index", -1)) not in rows_idx]
+    return curves, kept_labels
+
+
 def build_scene_bundle(
     *,
     rows: list,
@@ -955,6 +987,7 @@ def build_scene_bundle(
     # detector_planes_for_hard_stop. Pure sequential/folded scenes produce only a
     # leaf that reaches the Image, so they get NONE (no behaviour change). The
     # transmit/sequential Image detector is untouched (not duplicated).
+    branch_detectors: list = []
     try:
         from KrakenOS.UI.services.branch_detectors import (
             derive_branch_detectors,
@@ -973,7 +1006,7 @@ def build_scene_bundle(
             )
             surface_curves.append(branch_detector_plane_curve(branch_detector))
     except Exception:
-        pass
+        branch_detectors = []
 
     # --- 3-D surface/body meshes ---
     surface_meshes = []
@@ -992,6 +1025,12 @@ def build_scene_bundle(
     )
     labels.extend(source_labels)
     labels.extend(_build_key_optic_labels(rows, surface_curves))
+
+    # bugs/0093: drop the superseded sequential Image's plane curve + label when a
+    # split derived a branch detector at the true focus (see helper docstring).
+    surface_curves, labels = drop_superseded_image_display(
+        surface_curves, labels, rows, has_branch_detector=bool(branch_detectors)
+    )
 
     # --- pick regions ---
     pick_regions = _build_pick_regions(rows, surface_curves)

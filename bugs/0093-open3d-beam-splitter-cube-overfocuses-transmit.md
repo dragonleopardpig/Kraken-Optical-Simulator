@@ -1,6 +1,41 @@
 # 0093 — Open 3D: a promoted beam-splitter cube OVER-focuses the transmitted beam (focus lands before, not beyond, the bare-lens focus)
 
-## Status: CANNOT REPRODUCE headlessly — the non-seq trace is physically CORRECT (2026-06-18)
+## Status: RESOLVED — NOT A TRACE BUG. The detector position is CORRECT; the "266 bare focus" premise was wrong (2026-06-18, re-recordings flag_20260618_085552/085713/085815)
+
+The user re-recorded a 3-step sequence. It is decisive:
+- **`085552` "without beam splitter": the bare image/focus is at z=216.4** (NOT 266).
+- **`085713` "after inserting the splitter": the image plane jumps to z=266.4** — exactly
+  +50 mm, the inserted cube's thickness. The sequential layout just shoved the
+  original Image surface back by the new element's thickness; **266 is not the focus.**
+- **`085815` "after promotion": transmit branch detector at z=233.4.**
+
+Physics: true bare focus 216.4 + plate shift `t*(1-1/n)=50*(1-1/1.5168)=17.0` = **233.4
+= exactly the detector**. Headless trace at this geometry (bare focus 216.4, real
+`step_32704` cube) gives transmit z=233.49. **So the detector is physically correct;
+the cube pushes the focus 216→233, and the stale Image plane sits at 266 only because
+it was mechanically displaced +50 mm by the cube insertion.** The original 0093 report
+("focus lands before the bare focus") rested on treating 266 as the bare focus, which
+it is not.
+
+**The genuine remaining issue (085815's actual words): the displaced original Image
+plane at z=266 is still drawn BEHIND the correct branch detector at z=233** — a
+redundant/confusing leftover. NOT a trace fix.
+
+### FIX (display, shipped): drop the superseded Image's curve + label
+0092 hid only the 3-D clear-aperture **disk** (`_suppress_reference_aperture`). The
+plane the user still sees at z=266 is the Image's **bundle `surface_curve`** (its
+rectangle outline) + its **label**, which BOTH the 2-D and 3-D views draw from
+`SceneBundle`. New `scene_builder.drop_superseded_image_display(...)` (called in
+`build_scene_bundle` right after branch-detector derivation) drops the sequential
+Image's curve + label whenever a split produced a branch detector — so the only
+focus marker left is the branch detector at the true focus (233), and the Image
+"lands on" it. The Image *target* is kept (hard-stop / picking; it has no visible
+plane of its own). No-op on plain sequential/folded scenes (no branch detector).
+Guard: `validate_open3d_superseded_image_plane_hidden` (display-free) +
+penta Phase 86. **In-app visual confirm still pending (headless VTK segfaults).**
+
+---
+### (superseded) earlier headless conclusion
 
 Headless investigation (see `bugs/repro_0093.py`) shows the promoted beam-splitter
 cube trace is **correct**: across a flat BK7 cube, a hand-built BK7 BS cube, and
