@@ -40,6 +40,8 @@ class Open3DStepAdminPanel:
         self.inspector = inspector
         self.editor = inspector.editor
         self._tree: ttk.Treeview | None = None
+        self._panel_canvas: tk.Canvas | None = None
+        self._panel_scrollbar: ttk.Scrollbar | None = None
         self._refreshing = False
         self._selected_item_id = ""
         self._property_vars: dict[str, tk.StringVar] = {}
@@ -51,10 +53,58 @@ class Open3DStepAdminPanel:
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
 
-        stack = ttk.Frame(parent)
-        stack.grid(row=0, column=0, sticky="nsew")
+        # bugs/0093: make the whole Scene Components panel vertically scrollable so
+        # every section (browser + Import / Properties / Selected Element / STEP)
+        # stays reachable when the window is short. The scrollbar appears only when
+        # the content overflows ("when required"); when there is room the inner frame
+        # fills the canvas so the browser tree (row 0, weight=1) still expands with
+        # the panel as before (resizable via the pane sash + window).
+        canvas = tk.Canvas(parent, highlightthickness=0, borderwidth=0)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        panel_scroll = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=panel_scroll.set)
+        self._panel_canvas = canvas
+        self._panel_scrollbar = panel_scroll
+
+        stack = ttk.Frame(canvas)
+        stack_window = canvas.create_window((0, 0), window=stack, anchor="nw")
         stack.columnconfigure(0, weight=1)
         stack.rowconfigure(0, weight=1)
+
+        def _update_panel_scroll() -> None:
+            try:
+                canvas.configure(scrollregion=canvas.bbox("all"))
+                overflow = stack.winfo_reqheight() > canvas.winfo_height() + 1
+                if overflow and not panel_scroll.grid_info():
+                    panel_scroll.grid(row=0, column=1, sticky="ns")
+                elif not overflow and panel_scroll.grid_info():
+                    panel_scroll.grid_remove()
+            except tk.TclError:
+                pass
+
+        def _on_canvas_configure(event) -> None:
+            # match the inner width; when content is shorter than the canvas, stretch
+            # it to fill so the browser tree keeps expanding (no dead space below).
+            fill_height = max(int(event.height), stack.winfo_reqheight())
+            canvas.itemconfigure(stack_window, width=int(event.width), height=fill_height)
+            _update_panel_scroll()
+
+        def _on_mousewheel(event) -> "str | None":
+            if stack.winfo_reqheight() <= canvas.winfo_height():
+                return None
+            num = getattr(event, "num", 0)
+            delta = getattr(event, "delta", 0)
+            if num == 4 or delta > 0:
+                canvas.yview_scroll(-1, "units")
+            elif num == 5 or delta < 0:
+                canvas.yview_scroll(1, "units")
+            return "break"
+
+        stack.bind("<Configure>", lambda _e: _update_panel_scroll())
+        canvas.bind("<Configure>", _on_canvas_configure)
+        for _seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            canvas.bind(_seq, _on_mousewheel)
+            stack.bind(_seq, _on_mousewheel)
 
         tree_frame = ttk.Frame(stack)
         tree_frame.grid(row=0, column=0, sticky="nsew")
