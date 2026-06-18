@@ -160,6 +160,25 @@ def run_checks() -> tuple[bool, list[str]]:
     if svc2._optical_solid_entry_point(4, np.array([0., 0., 1.]), np.array([0., 0., 119.])) is not None:
         failures.append("FAIL: entry point should be None with no rendered actors (headless-safe)")
 
+    # 7) An OFF-axis overlay (randomly parked, not on the beam) must NOT be carved
+    #    out of a thickness dimension; an on-axis (straddling) one still is.
+    svc3 = object.__new__(S)
+    svc3.inspector = SimpleNamespace(
+        _step_actor_map={"cube": ["k"]},
+        _axial_extent_from_actor_keys=lambda keys, axis: {
+            "proj_min": 130.0, "proj_max": 180.0, "proj_center": 155.0, "straddles_axis": True,
+        },
+    )
+    on_spans = svc3._overlay_axial_spans_within(np.array([0., 0., 1.]), 100.0, 220.0)
+    if len(on_spans) != 1:
+        failures.append(f"FAIL: on-axis overlay should be carved from the dimension (got {len(on_spans)} spans)")
+    svc3.inspector._axial_extent_from_actor_keys = lambda keys, axis: {
+        "proj_min": 130.0, "proj_max": 180.0, "proj_center": 155.0, "straddles_axis": False,
+    }
+    off_spans = svc3._overlay_axial_spans_within(np.array([0., 0., 1.]), 100.0, 220.0)
+    if off_spans:
+        failures.append(f"FAIL: OFF-axis overlay must NOT be carved from the dimension (got {len(off_spans)} spans)")
+
     return (not failures), failures
 
 

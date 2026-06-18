@@ -548,6 +548,12 @@ class Open3DThicknessDimensionService:
                 extent = None
             if extent is None:
                 continue
+            # bugs/0093: only carve overlays actually ON the beam (straddling the
+            # optical axis). A randomly-parked, off-axis cube overlaps in z but
+            # isn't in the light path, so the dimension must NOT split around it
+            # ("the gap thickness still includes the random-placed beam splitter").
+            if not bool(extent.get("straddles_axis", True)):
+                continue
             center = float(extent.get("proj_center", float("nan")))
             if not np.isfinite(center) or center <= lo + margin or center >= hi - margin:
                 continue
@@ -651,8 +657,11 @@ class Open3DThicknessDimensionService:
                 )
         except Exception:
             pass
-        # bugs/0093: label centred on the segment, offset perpendicular to the arrow.
-        label_position = 0.5 * (start + end) + side * max(base_offset * 0.22, 0.8)
+        # bugs/0093: label centred on the segment but pushed well CLEAR of the arrow
+        # row (the perpendicular labels are tall, so a small offset let them cross
+        # the arrows). `start`/`end` already sit `base_offset` off the axis, so this
+        # drops the label most of another `base_offset` past the arrow line.
+        label_position = 0.5 * (start + end) + side * max(base_offset * 0.85, 5.0)
         if self.add_label_actor(
             row_index, label_position, label,
             drag_start=drag_start, drag_end=drag_end,

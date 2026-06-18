@@ -3606,6 +3606,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             "proj_max": float(np.max(projections)),
             "proj_center": float(np.dot(centroid, axis)),
             "centroid": centroid,
+            # bugs/0093: does the body's transverse bounds include the optical axis
+            # (x=y=0)? An OFF-axis (randomly-parked) overlay must NOT be carved out
+            # of a thickness dimension -- it isn't on the beam.
+            "straddles_axis": bool(
+                (float(mins[0]) <= 0.0 <= float(maxs[0]))
+                and (float(mins[1]) <= 0.0 <= float(maxs[1]))
+            ),
         }
 
     def _scene_component_axial_extents(
