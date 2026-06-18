@@ -525,7 +525,30 @@ class LayoutSceneBundleDisplayMixin:
             detector_active_dims_overrides=self._camera_detector_active_dims_overrides(),
             allow_target_plane_contact=True,
             source_row_order=normalize_source_row_order(getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT)),
+            branch_camera_sensors=self._branch_detector_camera_sensors(),
         )
+
+    def _branch_detector_camera_sensors(self) -> dict | None:
+        """B2 (vendor-step-import-semantics): map ``{branch_path -> (camera_label,
+        (sensor_w_mm, sensor_h_mm))}`` from the per-branch camera registrations,
+        resolved through the vendor camera DB. derive_branch_detectors blends each
+        registered branch detector to its camera's active sensor."""
+        assignments = getattr(self, "branch_detector_camera_assignments", None) or {}
+        if not assignments:
+            return None
+        try:
+            from KrakenOS.UI.camera_database import camera_sensor_active_mm
+        except Exception:
+            return None
+        out: dict[str, tuple] = {}
+        for branch_path, camera in dict(assignments).items():
+            try:
+                dims = camera_sensor_active_mm(str(camera))
+            except Exception:
+                dims = None
+            if dims is not None:
+                out[str(branch_path)] = (str(camera), (float(dims[0]), float(dims[1])))
+        return out or None
 
     # _current_surface_scene, _render_current_layout_surfaces removed —
     # now in scene_builder.build_scene_bundle()

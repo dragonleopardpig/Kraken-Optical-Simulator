@@ -867,6 +867,7 @@ def build_scene_bundle(
     allow_target_plane_contact: bool = False,
     sources: list[SceneSource3D] | None = None,
     source_row_order: str = "after_object",
+    branch_camera_sensors: dict | None = None,
 ) -> SceneBundle:
     """Construct a complete :class:`SceneBundle` from tracing data.
 
@@ -1004,6 +1005,7 @@ def build_scene_bundle(
             ray_paths,
             existing_targets=scene_targets,
             scene_radius=float(max_half) * 2.0,
+            branch_camera_sensors=branch_camera_sensors,
         )
         for offset, branch_detector in enumerate(branch_detectors):
             scene_targets.append(
