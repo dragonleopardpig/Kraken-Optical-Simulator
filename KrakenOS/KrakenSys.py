@@ -3437,8 +3437,16 @@ class system():
         length = sum(thicknesses) if thicknesses else 0.0
         return max(50.0, aperture * 2.0, length * 0.35)
 
-    def __AppendNsTerminalSegment(self, RayOrig, ResVec, SIGN=1):
+    def __AppendNsTerminalSegment(self, RayOrig, ResVec, SIGN=1, stop_point=None):
         if len(self.RAY) == 0:
+            return None
+        if stop_point is not None:
+            # bugs/0093: a vignetted ray ENDS at the blocking plane (the aperture
+            # stop), not at a far escape length.
+            terminal = np.asarray(stop_point, dtype=float).reshape(3)
+            last = np.asarray(self.RAY[-1], dtype=float)
+            if np.linalg.norm(terminal - last) > 1e-9:
+                self.RAY.append(terminal)
             return None
         direction = np.asarray(ResVec, dtype=float)
         try:
@@ -3453,6 +3461,76 @@ class system():
         if np.linalg.norm(terminal - last) > 1e-9:
             self.RAY.append(terminal)
         return None
+
+    def __NsApertureStopVignette(self, RayOrig, ResVec, SIGN, pTarget):
+        """bugs/0093: vignette a ray that crosses an APERTURE STOP plane OUTSIDE its
+        clear aperture before reaching the chosen surface.
+
+        In non-sequential mode a ray that lands outside a finite stop is simply not
+        chosen by ``__NonSequentialChooser`` and sails straight through, unrefracted
+        and unblocked -- that is the cube-before-lens "diverging rays" (the cube
+        forces non-seq mode). A real aperture stop blocks rays outside its clear
+        aperture, so here we terminate the ray AT the stop plane. Only surfaces the
+        editor flagged ``IsApertureStop`` are blocking -- arbitrary elements/lens
+        edges are NOT, so this never makes rays vanish at a randomly-placed element
+        (see the random-element robustness rule). Returns the world vignette point or
+        None.
+        """
+        try:
+            RayOrig = np.asarray(RayOrig, dtype=float).reshape(3)
+            ResVec = np.asarray(ResVec, dtype=float).reshape(3)
+        except Exception:
+            return None
+        nd = float(np.linalg.norm(ResVec))
+        if nd <= 1.0e-12:
+            return None
+        udir = (ResVec / nd) * float(SIGN)
+        try:
+            d_next = float(np.linalg.norm(np.asarray(pTarget, dtype=float).reshape(3) - RayOrig))
+        except Exception:
+            d_next = None
+        far = RayOrig + udir * 1.0e9
+        best_d = None
+        best_pt = None
+        for k in range(1, len(self.SDT)):
+            s = self.SDT[k]
+            if not bool(getattr(s, "IsApertureStop", False)):
+                continue
+            try:
+                T = self.Pr3D.TRANS_1A[k]
+                Ps = T.dot(np.array([RayOrig[0], RayOrig[1], RayOrig[2], 1.0]))
+                Pf = T.dot(np.array([far[0], far[1], far[2], 1.0]))
+                P_x1, P_y1, P_z1 = float(Ps[(0, 0)]), float(Ps[(0, 1)]), float(Ps[(0, 2)])
+                F_x, F_y, F_z = float(Pf[(0, 0)]), float(Pf[(0, 1)]), float(Pf[(0, 2)])
+            except Exception:
+                continue
+            P12 = np.array([F_x - P_x1, F_y - P_y1, F_z - P_z1])
+            seg = float(np.linalg.norm(P12))
+            if seg < 1.0e-12:
+                continue
+            L, M, N = (P12 / seg)
+            if abs(N) < 1.0e-12:
+                continue
+            d_stop = -P_z1 / N  # forward distance to the stop plane (rigid transform preserves length)
+            if d_stop <= 1.0e-6:
+                continue
+            if d_next is not None and d_stop >= d_next - 1.0e-6:
+                continue  # the chosen surface is reached at/before the stop
+            Px = (L / N) * (-P_z1) + P_x1
+            Py = (M / N) * (-P_z1) + P_y1
+            try:
+                sub = s.SubAperture
+                sub0, sub1, sub2 = float(sub[0]), float(sub[1]), float(sub[2])
+            except Exception:
+                sub0, sub1, sub2 = 1.0, 0.0, 0.0
+            D0 = 2.0 * float(np.hypot(Px - sub2, Py - sub1))
+            DiamSup = float(getattr(s, "Diameter", 0.0)) * sub0
+            DiamInf = float(getattr(s, "InDiameter", 0.0)) * sub0 * float(getattr(self.INORM, "Disable_Inner", 1.0))
+            if D0 > DiamSup or D0 < DiamInf:  # outside the clear aperture -> blocked
+                if best_d is None or d_stop < best_d:
+                    best_d = d_stop
+                    best_pt = RayOrig + udir * d_stop
+        return best_pt
 
     def __NsTraceTerminationDiagnostic(
         self,
@@ -3935,6 +4013,20 @@ class system():
                     if (SurfHit == 0):
                         self.__AppendNsTerminalSegment(RayOrig, ResVec, SIGN)
                         termination_reason = "surface_intersection_failed"
+                        termination_diagnostic = self.__NsTraceTerminationDiagnostic(
+                            termination_reason,
+                            RayOrig,
+                            ResVec,
+                            SIGN,
+                            branch_path,
+                            count,
+                            surface_index=j,
+                        )
+                        break
+                    vign_pt = self.__NsApertureStopVignette(RayOrig, ResVec, SIGN, pTarget)
+                    if vign_pt is not None:
+                        self.__AppendNsTerminalSegment(RayOrig, ResVec, SIGN, stop_point=vign_pt)
+                        termination_reason = "aperture_stop_vignette"
                         termination_diagnostic = self.__NsTraceTerminationDiagnostic(
                             termination_reason,
                             RayOrig,
@@ -4602,6 +4694,10 @@ class system():
                     timing_started = self.NsTraceTimingStart()
                     self.__AppendNsTerminalSegment(RayOrig, ResVec, SIGN)
                     self.NsTraceTimingRecord("NsTrace.terminal_segment", timing_started)
+                    break
+                vign_pt = self.__NsApertureStopVignette(RayOrig, ResVec, SIGN, pTarget)
+                if vign_pt is not None:
+                    self.__AppendNsTerminalSegment(RayOrig, ResVec, SIGN, stop_point=vign_pt)
                     break
                 ImpVec = np.asarray(ResVec)
                 (CurrN, alpha) = (self.N_Prec[j_gg], self.AlphaPrecal[j_gg])

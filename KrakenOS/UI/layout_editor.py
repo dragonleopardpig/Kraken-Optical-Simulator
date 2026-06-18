@@ -2031,6 +2031,11 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
                 surface.Diff_Ord = 1.0
             if abs(float(surface.Grating_D)) < 1e-12:
                 surface.Grating_D = 1.0
+        if spec["surface"] == "Aperture":
+            # bugs/0093: mark the aperture stop so the non-seq trace VIGNETTES rays
+            # landing outside its clear aperture, instead of skipping the finite stop
+            # and shooting them straight through (the cube-before-lens diverging rays).
+            surface.IsApertureStop = True
         surfaces.append(surface)
     metal_catalogs = _metal_catalogs_from_row_specs(row_specs)
     system = Kos.system(surfaces, _shared_setup(metal_catalogs) if setup is None else setup, build=int(build))
