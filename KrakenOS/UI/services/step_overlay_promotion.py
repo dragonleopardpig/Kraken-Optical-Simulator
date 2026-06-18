@@ -1218,6 +1218,14 @@ class StepOverlayPromotionService:
             # that excess so preceding + axial_reserve + trailing == original gap and
             # the lens/image stay EXACTLY put (was off by axial_reserve - body_depth).
             corrected_trailing = max(0.0, float(inpath_trailing_gap) + body_depth - axial_reserve)
+            # bugs/0093 image-at-focus: a refracting in-path solid pushes the focus
+            # FURTHER by the plane-parallel-plate shift t(1-1/n) -- exactly where the
+            # transmit branch detector lands. Extend the trailing gap by that shift so
+            # the sequential Image moves to the REAL focus and the transmit ray reaches
+            # it (like the reflect ray reaches its detector); otherwise the Image stays
+            # at the bare focus and terminates the ray ~17 mm short of its detector
+            # ("ray doesn't hit the transmit detector", flag_20260618_180621).
+            plate_shift = self._inpath_plate_focus_shift(getattr(row, "glass", ""), float(body_depth))
             spacer = SurfaceRow(
                 surface="Standard",
                 rc=0.0,
@@ -1234,6 +1242,17 @@ class StepOverlayPromotionService:
             spacer.advanced = {"InPathTrailingSpacer": True}
             self.rows.insert(resolved_insert_at, row)
             self.rows.insert(resolved_insert_at + 1, spacer)
+            # bugs/0093 image-at-focus: move the LAST surface (the Image) to the
+            # plate-shifted focus by extending ITS preceding gap -- not the cube's
+            # trailing spacer, which can sit before the lens (extending it there
+            # would shove the lens, not the focus). This keeps the lens fixed and
+            # lands the Image where the transmit ray actually focuses (= the detector).
+            if (
+                plate_shift > 1.0e-9
+                and len(self.rows) >= 2
+                and str(getattr(self.rows[-1], "surface", "")) == "Image"
+            ):
+                self.rows[-2].thickness = float(getattr(self.rows[-2], "thickness", 0.0) or 0.0) + plate_shift
         else:
             self.rows.insert(resolved_insert_at, row)
         if clear_overlay:
@@ -1276,6 +1295,21 @@ class StepOverlayPromotionService:
             "center_world": tuple(float(value) for value in center_world[:3]),
             "diagnostics": diagnostics,
         }
+
+    @staticmethod
+    def _inpath_plate_focus_shift(glass: str, depth: float) -> float:
+        """bugs/0093: the plane-parallel-plate longitudinal focus shift t(1-1/n) a
+        refracting in-path solid adds (the transmit focus/detector lands there). 0 for
+        AIR or an unknown glass, so non-refracting elements leave downstream fixed."""
+        try:
+            from KrakenOS.UI.layout_editor import _glass_nd_vd_from_setup
+            nd_vd = _glass_nd_vd_from_setup(str(glass or "").strip())
+            nd = float(nd_vd[0]) if nd_vd else 0.0
+            if nd > 1.0001 and float(depth) > 1.0e-6:
+                return float(depth) * (1.0 - 1.0 / nd)
+        except Exception:
+            pass
+        return 0.0
 
     @staticmethod
     def _is_inpath_trailing_spacer(spacer) -> bool:

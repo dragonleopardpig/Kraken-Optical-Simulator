@@ -8,9 +8,10 @@ kwarg TypeError later fixed in bugs/0082).
 Boots the real inspector (its own Xvfb), imports the tracked prism into the
 object gap, promotes with ``inpath_axial_placement=True`` and asserts:
   * the promote succeeds (no raise) and inserts the solid + a trailing AIR spacer,
-  * the chain total of the split gap == the original gap (downstream preserved),
-  * the lens and image vertices do NOT move,
-  * the preceding row's thickness becomes the object->solid gap.
+  * the cube + spacer fit the original gap (the lens stays fixed),
+  * the Image moves to the plate-shifted focus t(1-1/n) further (image-at-focus,
+    bugs/0093: so the transmit ray reaches its detector instead of stopping at the
+    bare focus), while the lens does not move.
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_inpath_promote_live
@@ -103,10 +104,15 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         solid_t = float(app.rows[slot].thickness)
         trail_t = float(app.rows[slot + 1].thickness)
         ok(abs((pre_t + solid_t + trail_t) - original_gap) < 1e-6,
-           f"split gap preserved: {pre_t}+{solid_t}+{trail_t} == original {original_gap}")
+           f"cube fits the original gap (lens stays put): {pre_t}+{solid_t}+{trail_t} == {original_gap}")
         after_image_z = _vertices(app.rows)[-1]
-        ok(abs(after_image_z - before_image_z) < 1e-6,
-           f"image vertex fixed ({after_image_z:.3f} == {before_image_z:.3f})")
+        # bugs/0093 image-at-focus: a refracting in-path solid pushes the focus
+        # FURTHER by the plane-parallel-plate shift t(1-1/n); the Image moves THERE
+        # (so the transmit ray reaches its detector), while the lens stays fixed (the
+        # cube + spacer still fit the original gap above).
+        focus_shift = after_image_z - before_image_z
+        ok(0.0 < focus_shift < solid_t,
+           f"image moved to the plate-shifted focus (0 < {focus_shift:.3f} < glass depth {solid_t})")
         ok(str(getattr(app.rows[slot + 1], "glass", "")).upper() == "AIR",
            "trailing spacer is a flat AIR gap")
     finally:
