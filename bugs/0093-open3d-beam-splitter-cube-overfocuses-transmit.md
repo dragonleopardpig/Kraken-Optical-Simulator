@@ -64,13 +64,19 @@ confusing redirect. New design:
   overlay replaces it — no redundant blue arrow on the transmit arm). Reverted the
   `_superseding_branch_focus` redirect.
 
-Still OPEN (user chose "overlays first, then this"): **S3 is the stale original
-lens→image back-focal distance (97.376 mm).** Promotion stopped the gap-split
-(`_overlay_axial_spans_within` only sees imported STEP overlays, not promoted
-optical-solid rows), exposing row 3's stored thickness; snapping the cube to z≈134
-never reconciled the preceding gap (~15 mm). The cube's display pose and its
-sequential-chain position disagree — the same root cause that places the Image at
-266 (= original 216 + cube 50). Fix pending.
+**Follow-up #4 (S3 fix + doublet→splitter dimension):** user confirmed the per-branch
+overlay distance is physically correct (bare 216 + 17 plate shift = 233 detector;
+overlay = exit-face→focus air gap = 48 mm — verified headlessly). Then: fix S3 (the
+stale 97.376 lens→image back-focal distance, exposed post-promotion because the
+gap-split only scans imported STEP overlays, not promoted solid rows) and add a
+doublet-last-surface → beam-splitter-first-surface dimension. Both done with one
+change: when a thickness dimension's NEXT row is a promoted optical solid
+(`_row_optical_solid_stl`), measure from this surface to the solid's ENTRY face
+(`_optical_solid_entry_point`, the body's near axial bound from the rendered actor
+bounds) and label the real air gap (`"to <solid> = N mm"`), instead of the stale
+stored thickness. Headless-safe (no rendered actors → returns None → unchanged), so
+it only activates in the live app. Display-free guard covers the detection, short
+name and near-face math.
 
 Guard: `validate_open3d_superseded_image_plane_hidden` (display-free; target+curve+
 label drop, dimension skip, branch-overlay exit-point + arm label) + penta Phase 86.

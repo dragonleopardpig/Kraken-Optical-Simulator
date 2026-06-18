@@ -134,6 +134,32 @@ def run_checks() -> tuple[bool, list[str]]:
     if arm("S4:BS/transmit") != "transmit":
         failures.append(f"FAIL: transmit branch arm label wrong: {arm('S4:BS/transmit')!r}")
 
+    # 6) Promoted-solid gap (S3 fix): detect an optical-solid row, name it, and
+    #    measure to its ENTRY (near) face -- the "doublet -> beam-splitter first
+    #    surface" distance, replacing the stale stored thickness.
+    S = Open3DThicknessDimensionService
+    solid_row = SimpleNamespace(surface="Solid 3D STL", name="BS cube", advanced={"Solid_3d_stl": "/x/cube.stl"})
+    plain_row = SimpleNamespace(surface="Standard", name="lens", advanced={})
+    if not S._row_optical_solid_stl(solid_row):
+        failures.append("FAIL: promoted optical-solid row not detected")
+    if S._row_optical_solid_stl(plain_row):
+        failures.append("FAIL: plain (lens) row wrongly detected as an optical solid")
+    if S._row_short_name(solid_row) != "BS cube":
+        failures.append(f"FAIL: row short name wrong: {S._row_short_name(solid_row)!r}")
+    # entry face: body spans z[135,185]; from p0 z=119 the NEAR face is 135.
+    svc = object.__new__(S)
+    svc.inspector = SimpleNamespace(
+        _all_actor_keys_for_row=lambda i: ["k"],
+        _axial_extent_from_actor_keys=lambda keys, axis: {"proj_min": 135.0, "proj_max": 185.0, "proj_center": 160.0},
+    )
+    entry = svc._optical_solid_entry_point(4, np.array([0., 0., 1.]), np.array([0., 0., 119.]))
+    if entry is None or abs(float(entry[2]) - 135.0) > 1e-6:
+        failures.append(f"FAIL: optical-solid entry face should be z=135 (near face), got {entry}")
+    svc2 = object.__new__(S)
+    svc2.inspector = SimpleNamespace(_all_actor_keys_for_row=lambda i: [], _axial_extent_from_actor_keys=lambda k, a: None)
+    if svc2._optical_solid_entry_point(4, np.array([0., 0., 1.]), np.array([0., 0., 119.])) is not None:
+        failures.append("FAIL: entry point should be None with no rendered actors (headless-safe)")
+
     return (not failures), failures
 
 

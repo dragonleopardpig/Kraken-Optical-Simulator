@@ -311,6 +311,48 @@ class Open3DThicknessDimensionService:
                 count += 1
         return count
 
+    @staticmethod
+    def _row_optical_solid_stl(row) -> str:
+        """bugs/0093: the source STL of a promoted optical-solid row ('' if none)."""
+        try:
+            from KrakenOS.UI.scene_builder import _row_optical_solid_source_stl
+            return _row_optical_solid_source_stl(row)
+        except Exception:
+            advanced = getattr(row, "advanced", {}) or {}
+            src = str((advanced.get("Solid_3d_stl", "") if isinstance(advanced, dict) else "") or "").strip()
+            return "" if src == "None" else src
+
+    @staticmethod
+    def _row_short_name(row) -> str:
+        name = str(getattr(row, "name", "") or "").strip()
+        return name or (str(getattr(row, "surface", "") or "").strip() or "solid")
+
+    def _optical_solid_entry_point(self, row_index, axis, p0):
+        """bugs/0093: world point at the ENTRY (near) face of a promoted optical-solid
+        row body, on the line through ``p0`` along ``axis`` -- so a preceding surface's
+        dimension reads the real air gap to the solid's first face (the 'doublet last
+        surface -> beam-splitter first surface' distance), not its stale stored
+        thickness. Returns None headless / when the body has no rendered actors."""
+        try:
+            keys = self.inspector._all_actor_keys_for_row(int(row_index))
+        except Exception:
+            keys = None
+        if not keys:
+            return None
+        ext = self.inspector._axial_extent_from_actor_keys(keys, axis)
+        if not isinstance(ext, dict):
+            return None
+        try:
+            pmin = float(ext["proj_min"])
+            pmax = float(ext["proj_max"])
+        except Exception:
+            return None
+        p0 = np.asarray(p0, dtype=float).reshape(3)
+        axis = np.asarray(axis, dtype=float).reshape(3)
+        a0 = float(np.dot(p0, axis))
+        near = pmin if abs(pmin - a0) <= abs(pmax - a0) else pmax  # the face nearer p0
+        return p0 + axis * (near - a0)
+
     def add_overlays(self, system: Any, scene_bundle: Any = None) -> int:
         pv = self.pv
         if pv is None:
@@ -377,6 +419,24 @@ class Open3DThicknessDimensionService:
                 rows, row_index, has_branch_detector=scene_has_branch_detector
             ):
                 continue
+            # bugs/0093: when the NEXT row is a promoted optical solid (e.g. a beam-
+            # splitter cube), its stored thickness is stale -- snapping the solid into
+            # place never reconciled the preceding gap, and post-promotion the gap-
+            # split can't carve it (it only scans imported STEP overlays, not solid
+            # rows). Measure the REAL air gap from this surface to the solid's ENTRY
+            # face -- the "doublet last surface -> beam-splitter first surface"
+            # distance -- and label THAT instead of the stale stored thickness.
+            solid_gap_label = None
+            if self._row_optical_solid_stl(rows[row_index + 1]):
+                seg0 = p1 - p0
+                n0 = float(np.linalg.norm(seg0))
+                if n0 > 1e-9:
+                    entry = self._optical_solid_entry_point(row_index + 1, seg0 / n0, p0)
+                    if entry is not None and np.all(np.isfinite(entry)):
+                        gap = float(np.linalg.norm(np.asarray(entry, dtype=float).reshape(3) - p0))
+                        if np.isfinite(gap) and gap > 1e-6:
+                            p1 = np.asarray(entry, dtype=float).reshape(3)
+                            solid_gap_label = f"to {self._row_short_name(rows[row_index + 1])} = {gap:.6g} mm"
             # bugs/0053: a re-anchored row is a direct MEASUREMENT to a picked
             # surface/edge z -- draw a single arrow to it (no gap-splitting) and
             # label the measured distance, visually distinct from a model thickness.
@@ -418,7 +478,9 @@ class Open3DThicknessDimensionService:
                 frac_hi = (gap_hi - a0) / (a1 - a0)
                 base_lo = p0 + segment * frac_lo
                 base_hi = p0 + segment * frac_hi
-                if split:
+                if solid_gap_label is not None:
+                    label = solid_gap_label
+                elif split:
                     label = f"gap = {gap_mm:.4g} mm"
                 else:
                     label = f"S{row_index} Thickness = {thickness:.6g} mm"
