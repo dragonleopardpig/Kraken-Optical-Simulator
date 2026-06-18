@@ -371,6 +371,33 @@ class Open3DThicknessDimensionService:
         near = pmin if abs(pmin - a0) <= abs(pmax - a0) else pmax  # the face nearer p0
         return p0 + axis * (near - a0)
 
+    def _optical_solid_span_points(self, row_index, axis, p_on_axis):
+        """bugs/0093: world points at the FRONT (min) and BACK (max) faces of a
+        promoted optical-solid body along ``axis``, on the line through
+        ``p_on_axis``. The row reference point is the desp_z body CENTRE, so the
+        solid's own thickness dimension started mid-body (a 50 mm cube measured
+        ~25 mm); span its rendered front->back instead. None headless / no actors."""
+        try:
+            keys = self.inspector._all_actor_keys_for_row(int(row_index))
+        except Exception:
+            keys = None
+        if not keys:
+            return None
+        axis = np.asarray(axis, dtype=float).reshape(3)
+        ext = self.inspector._axial_extent_from_actor_keys(keys, axis)
+        if not isinstance(ext, dict):
+            return None
+        try:
+            pmin = float(ext["proj_min"])
+            pmax = float(ext["proj_max"])
+        except Exception:
+            return None
+        if not (np.isfinite(pmin) and np.isfinite(pmax)) or (pmax - pmin) <= 1e-9:
+            return None
+        p = np.asarray(p_on_axis, dtype=float).reshape(3)
+        a0 = float(np.dot(p, axis))
+        return p + axis * (pmin - a0), p + axis * (pmax - a0)
+
     def add_overlays(self, system: Any, scene_bundle: Any = None) -> int:
         pv = self.pv
         if pv is None:
@@ -426,6 +453,37 @@ class Open3DThicknessDimensionService:
                 continue
             if not (np.all(np.isfinite(p0)) and np.all(np.isfinite(p1))):
                 continue
+            # bugs/0093: a promoted optical solid's OWN thickness dimension. Its row
+            # reference point is the desp_z body CENTRE, so S{row} started mid-body
+            # and a 50 mm cube measured ~25 mm (recording flag_20260618_180621).
+            # Anchor the arrow to the solid's rendered FRONT->BACK faces and emit a
+            # SINGLE span -- don't let _overlay_axial_spans_within carve the body's
+            # own dimension around itself. Headless-safe (no actors -> fall through).
+            if self._row_optical_solid_stl(row):
+                seg_s = p1 - p0
+                ns = float(np.linalg.norm(seg_s))
+                if ns > 1e-9:
+                    span = self._optical_solid_span_points(row_index, seg_s / ns, p0)
+                    if span is not None:
+                        front, back = (np.asarray(v, dtype=float).reshape(3) for v in span)
+                        extent = float(np.linalg.norm(back - front))
+                        if np.isfinite(extent) and extent > 1e-6:
+                            side_s = self.offset_direction(back - front, view_normal=view_normal, screen_up=screen_up)
+                            count += self._emit_span_dimension(
+                                row_index=row_index,
+                                base_lo=front,
+                                base_hi=back,
+                                side=side_s,
+                                offset=side_s * base_offset,
+                                base_offset=base_offset,
+                                scene_span=scene_span,
+                                color=color,
+                                label=f"S{row_index} Thickness = {extent:.4g} mm",
+                                drag_start=front,
+                                drag_end=back,
+                                label_orientation_deg=90.0,
+                            )
+                            continue
             # bugs/0093: skip the sequential dimension that would run out to a
             # branch-detector-superseded Image (the splitter displaced it past the
             # true focus). The per-branch exit->detector overlay (_add_branch_

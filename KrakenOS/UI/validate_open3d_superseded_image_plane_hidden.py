@@ -155,6 +155,12 @@ def run_checks() -> tuple[bool, list[str]]:
     entry = svc._optical_solid_entry_point(4, np.array([0., 0., 1.]), np.array([0., 0., 119.]))
     if entry is None or abs(float(entry[2]) - 135.0) > 1e-6:
         failures.append(f"FAIL: optical-solid entry face should be z=135 (near face), got {entry}")
+    # bugs/0093: the solid's OWN thickness dimension spans front->back even when the
+    # row reference point is the desp_z body CENTRE (z=160): a 50mm body reads 50mm,
+    # not center->back (~25mm).
+    span = svc._optical_solid_span_points(4, np.array([0., 0., 1.]), np.array([0., 0., 160.0]))
+    if span is None or abs(float(span[0][2]) - 135.0) > 1e-6 or abs(float(span[1][2]) - 185.0) > 1e-6:
+        failures.append(f"FAIL: optical-solid span should be front=135 back=185 (50mm), got {span}")
     svc2 = object.__new__(S)
     svc2.inspector = SimpleNamespace(_all_actor_keys_for_row=lambda i: [], _axial_extent_from_actor_keys=lambda k, a: None)
     if svc2._optical_solid_entry_point(4, np.array([0., 0., 1.]), np.array([0., 0., 119.])) is not None:
