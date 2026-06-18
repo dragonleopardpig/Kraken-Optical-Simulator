@@ -11944,7 +11944,108 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if surface == "Image":
                 self._show_quick_estimation_role_menu(event, IMAGE_THICKNESS, plane="Image Plane")
                 return True
+        # 3) a branch detector (beam-splitter arm) -> register a vendor STEP camera
+        #    (B2): the camera determines the sensor size; the detector blends to it
+        #    and the per-branch FOV / sensor quick-estimation follows.
+        branch_path = self._branch_detector_under_cursor(event)
+        if branch_path:
+            self._show_branch_detector_camera_menu(event, str(branch_path))
+            return True
         return False
+
+    def _branch_detector_under_cursor(self, event) -> str | None:
+        """B2: the branch_path of the branch detector whose plane is under the
+        right-click, resolved by the picked world point's nearest branch-detector
+        target (branch detectors are scene-index 100000+ targets, not editor rows)."""
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return None
+        try:
+            self._vtk_interactor.SetEventInformationFlipY(int(event.x), int(event.y), 0, 0, chr(0), 0, None)
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            if self._picker.GetActor() is None:
+                return None
+            point = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)
+        except Exception:
+            return None
+        if point.shape != (3,) or not np.all(np.isfinite(point)):
+            return None
+        bundle = getattr(self.editor, "_last_scene_bundle", None)
+        if bundle is None:
+            return None
+        best_path = None
+        best_d = None
+        for target in (getattr(bundle, "targets", []) or []):
+            meta = getattr(target, "metadata", {}) or {}
+            if str(meta.get("target_source", "") or "") != "branch_detector":
+                continue
+            try:
+                center = np.asarray(getattr(target, "center_world", None), dtype=float).reshape(3)
+            except Exception:
+                continue
+            dist = float(np.linalg.norm(point - center))
+            half = max(
+                float(getattr(target, "active_width_mm", 0.0) or 0.0) / 2.0,
+                float(getattr(target, "active_height_mm", 0.0) or 0.0) / 2.0,
+                5.0,
+            )
+            if dist <= half * 1.5 and (best_d is None or dist < best_d):
+                best_d = dist
+                best_path = meta.get("branch_path")
+        return str(best_path) if best_path else None
+
+    def _show_branch_detector_camera_menu(self, event, branch_path: str) -> None:
+        """B2 right-click menu: register/unregister a vendor STEP camera (= sensor
+        size) on a branch detector."""
+        try:
+            from KrakenOS.UI.camera_database import camera_names
+            names = list(camera_names())
+        except Exception:
+            names = []
+        assignments = dict(getattr(self.editor, "branch_detector_camera_assignments", {}) or {})
+        current = assignments.get(branch_path)
+        short = branch_path.split("->")[-1].strip() if "->" in branch_path else branch_path
+        menu = tk.Menu(self, tearoff=False)
+        menu.add_command(label=f"Branch detector: {short}", state="disabled")
+        if current:
+            menu.add_command(label=f"camera sensor: {current}", state="disabled")
+        menu.add_separator()
+        cam_menu = tk.Menu(menu, tearoff=False)
+        for name in names:
+            mark = "● " if name == current else "    "
+            cam_menu.add_command(label=mark + name, command=lambda n=name, bp=branch_path: self._register_branch_detector_camera(bp, n))
+        if names:
+            menu.add_cascade(label="Register STEP camera (sensor size)…", menu=cam_menu)
+        else:
+            menu.add_command(label="Register STEP camera (no cameras in DB)", state="disabled")
+        if current:
+            menu.add_command(label=f"Unregister camera ({current})", command=lambda bp=branch_path: self._register_branch_detector_camera(bp, None))
+        try:
+            menu.tk_popup(int(event.x_root), int(event.y_root))
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
+
+    def _register_branch_detector_camera(self, branch_path: str, camera_name: str | None) -> None:
+        """B2: set/clear the per-branch camera registration, then retrace so the
+        branch detector re-sizes to the vendor sensor (and piece 4 glues the camera
+        body onto the plane)."""
+        assignments = dict(getattr(self.editor, "branch_detector_camera_assignments", {}) or {})
+        if camera_name is None:
+            assignments.pop(branch_path, None)
+            msg = f"Unregistered camera from {branch_path}"
+        else:
+            assignments[branch_path] = str(camera_name)
+            msg = f"Registered {camera_name} sensor to {branch_path}"
+        self.editor.branch_detector_camera_assignments = assignments
+        try:
+            self.editor._invalidate_preview_scene_trace()
+        except Exception:
+            pass
+        self.refresh_from_editor(force_retrace=True)
+        self.status_var.set(msg)
 
     def _show_quick_estimation_role_menu(self, event, quantity: str, plane: str | None = None) -> None:
         from KrakenOS.UI.services.quick_estimation import (
