@@ -239,44 +239,77 @@ class Open3DThicknessDimensionService:
             return False
         return str(getattr(rows[nxt], "surface", "") or "") == "Image"
 
+    # bugs/0093: teal marks a per-branch exit->detector distance, distinct from the
+    # blue sequential model-thickness arrows and the green live-gap labels.
+    BRANCH_DISTANCE_COLOR = (0.06, 0.52, 0.46)
+
     @staticmethod
-    def _superseding_branch_focus(scene_bundle, p0, p1):
-        """bugs/0093: the ON-AXIS branch-detector focus that supersedes the Image at
-        ``p1`` -- the straight-through (transmit) arm's detector, used to redirect a
-        thickness dimension to the real focus. Picks the branch-detector target most
-        aligned with the p0->p1 axis (smallest perpendicular offset, forward of p0);
-        returns None if none is genuinely on that axis (e.g. only a reflected arm),
-        so the caller skips rather than draw a skew arrow."""
-        p0 = np.asarray(p0, dtype=float).reshape(3)
-        p1 = np.asarray(p1, dtype=float).reshape(3)
-        axis = p1 - p0
-        span = float(np.linalg.norm(axis))
-        if span <= 1e-9:
-            return None
-        axis = axis / span
-        best = None
-        best_perp = None
+    def _branch_arm_label(branch_path) -> str:
+        """A short arm name for a branch overlay label, e.g.
+        'S4:BS/transmit -> S7:BS2/reflect' -> 'reflect'."""
+        text = str(branch_path or "").strip()
+        if not text:
+            return "branch"
+        last = text.split("->")[-1].strip()
+        last = last.split("/")[-1].strip()
+        return last.split(":")[-1].strip() or "branch"
+
+    def _branch_distance_overlays(self, scene_bundle, *, scene_span, base_offset, view_normal, screen_up) -> int:
+        """bugs/0093: one distance dimension per branch detector, from where the arm
+        EXITS the cube (the branch's mean exit-ray origin) to its detector focus --
+        the per-arm 'exit face -> detector' measurement (the user's transmit AND
+        reflect thickness overlays). Display-only; no draggable row binding."""
+        pv = self.pv
+        if pv is None:
+            return 0
+        count = 0
         for target in (getattr(scene_bundle, "targets", []) or []):
             meta = getattr(target, "metadata", None)
             if not (isinstance(meta, dict) and str(meta.get("target_source", "") or "") == "branch_detector"):
                 continue
+            exit_pt = meta.get("exit_point_world")
+            if exit_pt is None:
+                continue
             try:
-                center = np.asarray(getattr(target, "center_world", None), dtype=float).reshape(-1)[:3]
+                p0 = np.asarray(exit_pt, dtype=float).reshape(3)
+                p1 = np.asarray(getattr(target, "center_world", None), dtype=float).reshape(3)
             except Exception:
                 continue
-            if center.size < 3 or not np.all(np.isfinite(center)):
+            if not (np.all(np.isfinite(p0)) and np.all(np.isfinite(p1))):
                 continue
-            rel = center - p0
-            along = float(np.dot(rel, axis))
-            if along <= 1e-6:
-                continue  # must be forward of the surface
-            perp = float(np.linalg.norm(rel - along * axis))
-            if perp > 0.30 * along:
-                continue  # off-axis (a reflected arm) -- not this dimension's focus
-            if best_perp is None or perp < best_perp:
-                best_perp = perp
-                best = center
-        return best
+            segment = p1 - p0
+            distance = float(np.linalg.norm(segment))
+            if not np.isfinite(distance) or distance <= 1e-6:
+                continue
+            side = self.offset_direction(segment, view_normal=view_normal, screen_up=screen_up)
+            offset = side * base_offset
+            start = p0 + offset
+            end = p1 + offset
+            mesh = self.arrow_mesh(start, end, scene_span=scene_span)
+            if mesh is None:
+                continue
+            actor = self.inspector._add_mesh_actor(
+                mesh, color=self.BRANCH_DISTANCE_COLOR, opacity=0.92,
+                flat_shading=True, backface_culling=False,
+            )
+            if actor is None:
+                continue
+            count += 1
+            try:
+                for tip, anchor in ((p0, start), (p1, end)):
+                    self.inspector._add_mesh_actor(
+                        pv.Line(tuple(float(v) for v in tip), tuple(float(v) for v in anchor)),
+                        color=(0.45, 0.72, 0.66), opacity=0.5,
+                        line_width=self.DIMENSION_LEADER_LINE_WIDTH, backface_culling=False,
+                    )
+            except Exception:
+                pass
+            arm = self._branch_arm_label(meta.get("branch_path", ""))
+            label = f"{arm}: exit→detector = {distance:.4g} mm"
+            label_pos = 0.5 * (start + end) + side * max(base_offset * 0.22, 0.8)
+            if self.add_label_actor(int(getattr(target, "row_index", 100000) or 100000), label_pos, label):
+                count += 1
+        return count
 
     def add_overlays(self, system: Any, scene_bundle: Any = None) -> int:
         pv = self.pv
@@ -333,19 +366,17 @@ class Open3DThicknessDimensionService:
                 continue
             if not (np.all(np.isfinite(p0)) and np.all(np.isfinite(p1))):
                 continue
-            # bugs/0093: if this span would terminate at an Image a branch detector
-            # superseded (the splitter displaced it by its FULL thickness, past the
-            # true focus), redirect the far end to the on-axis branch-detector focus.
-            # So the "thickness after the splitting surface" reads to the REAL focus
-            # (the detector), not out to the stale image plane. If no on-axis focus
-            # exists, skip it rather than draw an arrow to the stale plane.
+            # bugs/0093: skip the sequential dimension that would run out to a
+            # branch-detector-superseded Image (the splitter displaced it past the
+            # true focus). The per-branch exit->detector overlay (_add_branch_
+            # distance_overlays, below) measures each arm instead -- cleanly, from
+            # the cube exit face to its detector -- so there is no arrow to the
+            # stale image plane and no redundant sequential arrow on the transmit
+            # arm. No-op without a branch detector (plain sequential scenes keep it).
             if self._dimension_runs_to_superseded_image(
                 rows, row_index, has_branch_detector=scene_has_branch_detector
             ):
-                focus = self._superseding_branch_focus(scene_bundle, p0, p1)
-                if focus is None:
-                    continue
-                p1 = np.asarray(focus, dtype=float).reshape(3)
+                continue
             # bugs/0053: a re-anchored row is a direct MEASUREMENT to a picked
             # surface/edge z -- draw a single arrow to it (no gap-splitting) and
             # label the measured distance, visually distinct from a model thickness.
@@ -404,6 +435,11 @@ class Open3DThicknessDimensionService:
                     drag_start=p0,
                     drag_end=p1,
                 )
+        # bugs/0093: per-branch exit->detector distance overlays (transmit + reflect).
+        count += self._branch_distance_overlays(
+            scene_bundle, scene_span=scene_span, base_offset=base_offset,
+            view_normal=view_normal, screen_up=screen_up,
+        )
         return count
 
     def _overlay_axial_spans_within(

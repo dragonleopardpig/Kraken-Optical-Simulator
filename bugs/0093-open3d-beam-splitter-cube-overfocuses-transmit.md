@@ -45,13 +45,35 @@ real editor-built bundle showed TWO things the curve/label drop missed:
   target (the branch detector hard-stops the rays before it; nothing needs the 266
   plane). Verified: real bundle now has 0 sequential-Image targets.
 - skipping the dimension entirely *removed the cube's own thickness* ("thickness
-  missing"). Fix: instead of skipping, **redirect** the span's far end to the on-axis
-  (transmit) branch-detector focus via `_superseding_branch_focus(...)` — so the
-  thickness-after-the-splitter reads to the REAL focus (233), not the stale image.
-  Falls back to skip if no on-axis focus (a reflect-only arm).
+  missing"). Resolved in follow-up #3 below.
 
-Guard: `validate_open3d_superseded_image_plane_hidden` (display-free; covers target +
-curve + label drop AND the dimension redirect/focus selection) + penta Phase 86.
+**Follow-up #3 (re-recordings 101227/101442 — "Detector missing, ray goes beyond …
+how to measure?" / "is the S3 thickness overlay correct? … Where is the reflected ray
+thickness overlay?"):** user-chosen direction = **per-branch distance overlays, cube
+exit face → each detector**. The sequential thickness dims only follow the
+straight-through chain, so the reflect arm had none and the transmit's was a
+confusing redirect. New design:
+- `BranchDetector.exit_point_world` (the arm's mean exit-ray origin = where it leaves
+  the cube), carried into the scene-target metadata.
+- `Open3DThicknessDimensionService._branch_distance_overlays(...)` draws one TEAL
+  dimension per branch detector from `exit_point_world` → detector focus, labelled
+  `"<arm>: exit→detector = N mm"` (e.g. transmit + reflect). Verified on a real
+  bundle: reflect exits the +y face → its detector; transmit exits the back face →
+  its detector.
+- the sequential span into the superseded Image is now simply **skipped** (the branch
+  overlay replaces it — no redundant blue arrow on the transmit arm). Reverted the
+  `_superseding_branch_focus` redirect.
+
+Still OPEN (user chose "overlays first, then this"): **S3 is the stale original
+lens→image back-focal distance (97.376 mm).** Promotion stopped the gap-split
+(`_overlay_axial_spans_within` only sees imported STEP overlays, not promoted
+optical-solid rows), exposing row 3's stored thickness; snapping the cube to z≈134
+never reconciled the preceding gap (~15 mm). The cube's display pose and its
+sequential-chain position disagree — the same root cause that places the Image at
+266 (= original 216 + cube 50). Fix pending.
+
+Guard: `validate_open3d_superseded_image_plane_hidden` (display-free; target+curve+
+label drop, dimension skip, branch-overlay exit-point + arm label) + penta Phase 86.
 **Requires an app RESTART to load; in-app visual confirm pending (headless VTK
 segfaults).**
 

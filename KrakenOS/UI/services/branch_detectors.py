@@ -57,6 +57,9 @@ class BranchDetector:
     focus_source: str = ""  # "converging_rays" | "default_distance"
     # B2 (reserved -- a STEP camera registered to this detector). Unused in B1.
     assigned_camera_label: str | None = None
+    # bugs/0093: where this arm exits the cube / its last surface (the mean exit-ray
+    # origin), for the per-branch "exit face -> detector" distance overlay.
+    exit_point_world: Any = None
 
 
 def _unit(value: Any) -> np.ndarray | None:
@@ -260,6 +263,7 @@ def derive_branch_detectors(
                 half_w=float(half_w),
                 half_h=float(half_h),
                 focus_source=focus_source,
+                exit_point_world=np.asarray(mean_origin, dtype=float),
             )
         )
     return detectors
@@ -296,6 +300,11 @@ def branch_detector_scene_target(detector: BranchDetector, row_index: int | None
             "branch_path": detector.branch_path,
             "assigned_camera_label": detector.assigned_camera_label,
             "focus_source": detector.focus_source,
+            "exit_point_world": (
+                tuple(float(v) for v in np.asarray(detector.exit_point_world, dtype=float).reshape(-1)[:3])
+                if detector.exit_point_world is not None
+                else None
+            ),
         },
     )
 

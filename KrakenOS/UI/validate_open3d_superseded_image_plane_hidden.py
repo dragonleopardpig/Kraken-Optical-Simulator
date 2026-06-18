@@ -99,10 +99,9 @@ def run_checks() -> tuple[bool, list[str]]:
     if 3 not in sorted(getattr(x, "row_index") for x in t2):
         failures.append("FAIL: dropped a target when there was no Image row to supersede")
 
-    # 4) Thickness dimension: the span into the superseded Image (row 2->3) is
-    #    REDIRECTED to the on-axis (transmit) branch-detector focus, not the stale
-    #    image -- so "the thickness after the splitting surface" still draws, to the
-    #    real focus.
+    # 4) Thickness dimension: the sequential span that would run out to the
+    #    superseded Image (row 2->3) is SKIPPED -- the per-branch exit->detector
+    #    overlay measures that arm instead. Only when a branch detector exists.
     from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
 
     runs_to = Open3DThicknessDimensionService._dimension_runs_to_superseded_image
@@ -113,19 +112,27 @@ def run_checks() -> tuple[bool, list[str]]:
     if runs_to(rows, 2, has_branch_detector=False):
         failures.append("FAIL: dimension flagged with NO branch detector (sequential scene must keep it)")
 
-    focus_fn = Open3DThicknessDimensionService._superseding_branch_focus
-    bundle = SimpleNamespace(targets=targets)
-    # cube (p0 ~z164 on-axis) -> stale image (p1 z266): redirect to the on-axis
-    # transmit detector (233), NOT the off-axis reflect detector (164,+y).
-    focus = focus_fn(bundle, np.array([0., 0., 164.]), np.array([0., 0., 266.]))
-    if focus is None or abs(float(np.asarray(focus)[2]) - 233.0) > 1.0:
-        failures.append(f"FAIL: dimension redirect should pick the on-axis transmit focus z=233, got {focus}")
-    # a forward-but-off-axis detector must be rejected (no skew arrow).
-    off_bundle = SimpleNamespace(targets=[
-        SimpleNamespace(center_world=np.array([0., 90., 233.]), metadata={"target_source": "branch_detector"}),
-    ])
-    if focus_fn(off_bundle, np.array([0., 0., 164.]), np.array([0., 0., 266.])) is not None:
-        failures.append("FAIL: off-axis-only branch detector wrongly used as a dimension redirect focus")
+    # 5) Per-branch exit->detector overlay: the branch detector scene target carries
+    #    exit_point_world (where the arm exits the cube), and the arm label is
+    #    extracted from branch_path. (The overlay itself is VTK -- the geometry +
+    #    metadata are what's display-free verifiable here.)
+    from KrakenOS.UI.services.branch_detectors import BranchDetector, branch_detector_scene_target
+
+    bd = BranchDetector(
+        detector_id="x", branch_path="S4:BS/reflect",
+        center_world=np.array([0., 121., 162.]), normal_world=np.array([0., 1., 0.]),
+        tangent_world=np.array([1., 0., 0.]), half_w=10.0, half_h=10.0,
+        exit_point_world=np.array([0., 25.0, 159.0]),
+    )
+    tgt = branch_detector_scene_target(bd, row_index=100000)
+    ept = (getattr(tgt, "metadata", {}) or {}).get("exit_point_world")
+    if ept is None or abs(float(ept[1]) - 25.0) > 1e-6 or abs(float(ept[2]) - 159.0) > 1e-6:
+        failures.append(f"FAIL: branch detector target missing/odd exit_point_world: {ept}")
+    arm = Open3DThicknessDimensionService._branch_arm_label
+    if arm("S4:BS/transmit -> S7:BS2/reflect") != "reflect":
+        failures.append(f"FAIL: cascaded branch arm label wrong: {arm('S4:BS/transmit -> S7:BS2/reflect')!r}")
+    if arm("S4:BS/transmit") != "transmit":
+        failures.append(f"FAIL: transmit branch arm label wrong: {arm('S4:BS/transmit')!r}")
 
     return (not failures), failures
 
