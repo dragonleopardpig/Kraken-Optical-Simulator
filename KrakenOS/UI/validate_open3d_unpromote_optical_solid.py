@@ -81,6 +81,15 @@ def run_checks() -> "tuple[bool, list[str]]":
     if abs(place[1] - 80.0) > 1e-6 or abs(place[2] - 160.0) > 1e-6:
         failures.append(f"FAIL: overlay placement didn't carry the slid pose: {place} (want (0,80,160))")
 
+    # The EDITOR must expose unpromote_optical_solid_to_overlay via an explicit
+    # delegating wrapper (same as promote_...). Without it the right-click call
+    # falls through tkinter __getattr__ -> AttributeError and silently no-ops
+    # ("unpromote not functioning", recording flag_20260618_172636).
+    from KrakenOS.UI.services.scene_placement_commands import ScenePlacementMixin
+    if not callable(getattr(ScenePlacementMixin, "unpromote_optical_solid_to_overlay", None)):
+        failures.append("FAIL: editor (ScenePlacementMixin) has no unpromote_optical_solid_to_overlay wrapper "
+                        "-- the right-click would AttributeError")
+
     # A non-promoted row is a no-op (returns None, rows untouched).
     plain = [SimpleNamespace(surface="Image", name="Image", thickness=0.0, glass="AIR", advanced={})]
     svc2, _ed2 = _stub_service(plain)

@@ -2626,6 +2626,18 @@ class ScenePlacementMixin:
             inpath_axial_placement=inpath_axial_placement,
         )
 
+    def unpromote_optical_solid_to_overlay(
+        self, row_index: int, *, refresh_open_3d: bool = True
+    ) -> dict[str, object] | None:
+        # bugs/0093: the right-click "Unpromote to STEP overlay" invokes this on the
+        # editor. Like promote_... above, it MUST have an explicit wrapper that
+        # delegates to the service -- otherwise the call falls through tkinter's
+        # __getattr__ and AttributeErrors, so the right-click silently no-ops
+        # ("unpromote not functioning", recording flag_20260618_172636).
+        return self._step_overlay_promotion_service().unpromote_optical_solid_to_overlay(
+            int(row_index), refresh_open_3d=refresh_open_3d
+        )
+
     def promote_imported_step_to_native_surface_rows(
         self,
         label: str,
