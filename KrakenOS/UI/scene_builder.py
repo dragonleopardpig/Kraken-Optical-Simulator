@@ -813,27 +813,32 @@ def _superseded_image_row_indices(rows) -> set:
     }
 
 
-def drop_superseded_image_display(surface_curves, labels, rows, *, has_branch_detector):
-    """bugs/0093: hide the sequential Image's plane curve + label when a branch
-    detector supersedes it.
+def drop_superseded_image_display(targets, surface_curves, labels, rows, *, has_branch_detector):
+    """bugs/0093: hide the sequential Image's target + plane curve + label when a
+    branch detector supersedes it.
 
     A beam-splitter split derives a branch detector at the transmit arm's true
     focus (= bare focus + plate shift). Inserting the splitter also pushes the
-    sequential Image surface back by the element's thickness, so the Image lingers
-    as a plane BEHIND the (correct) detector. 0092 hid only the 3-D aperture disk;
-    this drops the Image's bundle curve + label so neither the 2-D nor the 3-D view
-    draws a focus marker beyond the branch detector. The Image *target* is kept
-    (hard-stop / picking). No-op without a branch detector, so plain
-    sequential/folded scenes are unaffected. Returns ``(curves, labels)``.
+    sequential Image surface back by the element's *full* thickness (not the plate
+    shift), so the Image lingers BEHIND the (correct) detector. 0092 hid only the
+    3-D aperture disk; this also drops:
+      * the Image **target** -- otherwise its ``is_detector`` footprint still draws
+        as an orange detector marker at the stale location (the leftover the user
+        kept flagging). The branch detector(s) hard-stop the rays before it, so
+        nothing needs the superseded Image plane.
+      * the Image plane **curve** + **label** (drawn by both the 2-D and 3-D views).
+    No-op without a branch detector, so plain sequential/folded scenes are
+    unaffected. Returns ``(targets, curves, labels)``.
     """
     if not has_branch_detector:
-        return surface_curves, labels
+        return targets, surface_curves, labels
     rows_idx = _superseded_image_row_indices(rows)
     if not rows_idx:
-        return surface_curves, labels
+        return targets, surface_curves, labels
+    kept_targets = [t for t in targets if int(getattr(t, "row_index", -1)) not in rows_idx]
     curves = [c for c in surface_curves if int(getattr(c, "row_index", -1)) not in rows_idx]
     kept_labels = [lbl for lbl in labels if int(getattr(lbl, "row_index", -1)) not in rows_idx]
-    return curves, kept_labels
+    return kept_targets, curves, kept_labels
 
 
 def build_scene_bundle(
@@ -1026,10 +1031,10 @@ def build_scene_bundle(
     labels.extend(source_labels)
     labels.extend(_build_key_optic_labels(rows, surface_curves))
 
-    # bugs/0093: drop the superseded sequential Image's plane curve + label when a
-    # split derived a branch detector at the true focus (see helper docstring).
-    surface_curves, labels = drop_superseded_image_display(
-        surface_curves, labels, rows, has_branch_detector=bool(branch_detectors)
+    # bugs/0093: drop the superseded sequential Image's target + plane curve + label
+    # when a split derived a branch detector at the true focus (see helper docstring).
+    scene_targets, surface_curves, labels = drop_superseded_image_display(
+        scene_targets, surface_curves, labels, rows, has_branch_detector=bool(branch_detectors)
     )
 
     # --- pick regions ---

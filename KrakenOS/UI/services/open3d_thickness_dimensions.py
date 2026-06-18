@@ -239,6 +239,45 @@ class Open3DThicknessDimensionService:
             return False
         return str(getattr(rows[nxt], "surface", "") or "") == "Image"
 
+    @staticmethod
+    def _superseding_branch_focus(scene_bundle, p0, p1):
+        """bugs/0093: the ON-AXIS branch-detector focus that supersedes the Image at
+        ``p1`` -- the straight-through (transmit) arm's detector, used to redirect a
+        thickness dimension to the real focus. Picks the branch-detector target most
+        aligned with the p0->p1 axis (smallest perpendicular offset, forward of p0);
+        returns None if none is genuinely on that axis (e.g. only a reflected arm),
+        so the caller skips rather than draw a skew arrow."""
+        p0 = np.asarray(p0, dtype=float).reshape(3)
+        p1 = np.asarray(p1, dtype=float).reshape(3)
+        axis = p1 - p0
+        span = float(np.linalg.norm(axis))
+        if span <= 1e-9:
+            return None
+        axis = axis / span
+        best = None
+        best_perp = None
+        for target in (getattr(scene_bundle, "targets", []) or []):
+            meta = getattr(target, "metadata", None)
+            if not (isinstance(meta, dict) and str(meta.get("target_source", "") or "") == "branch_detector"):
+                continue
+            try:
+                center = np.asarray(getattr(target, "center_world", None), dtype=float).reshape(-1)[:3]
+            except Exception:
+                continue
+            if center.size < 3 or not np.all(np.isfinite(center)):
+                continue
+            rel = center - p0
+            along = float(np.dot(rel, axis))
+            if along <= 1e-6:
+                continue  # must be forward of the surface
+            perp = float(np.linalg.norm(rel - along * axis))
+            if perp > 0.30 * along:
+                continue  # off-axis (a reflected arm) -- not this dimension's focus
+            if best_perp is None or perp < best_perp:
+                best_perp = perp
+                best = center
+        return best
+
     def add_overlays(self, system: Any, scene_bundle: Any = None) -> int:
         pv = self.pv
         if pv is None:
@@ -280,11 +319,6 @@ class Open3DThicknessDimensionService:
         screen_up = screen_axes[1] if screen_axes else None
         count = 0
         for row_index, row in enumerate(rows[:-1]):
-            # bugs/0093: skip the dimension that terminates at a superseded Image.
-            if self._dimension_runs_to_superseded_image(
-                rows, row_index, has_branch_detector=scene_has_branch_detector
-            ):
-                continue
             try:
                 thickness = float(getattr(row, "thickness", 0.0) or 0.0)
             except Exception:
@@ -299,6 +333,19 @@ class Open3DThicknessDimensionService:
                 continue
             if not (np.all(np.isfinite(p0)) and np.all(np.isfinite(p1))):
                 continue
+            # bugs/0093: if this span would terminate at an Image a branch detector
+            # superseded (the splitter displaced it by its FULL thickness, past the
+            # true focus), redirect the far end to the on-axis branch-detector focus.
+            # So the "thickness after the splitting surface" reads to the REAL focus
+            # (the detector), not out to the stale image plane. If no on-axis focus
+            # exists, skip it rather than draw an arrow to the stale plane.
+            if self._dimension_runs_to_superseded_image(
+                rows, row_index, has_branch_detector=scene_has_branch_detector
+            ):
+                focus = self._superseding_branch_focus(scene_bundle, p0, p1)
+                if focus is None:
+                    continue
+                p1 = np.asarray(focus, dtype=float).reshape(3)
             # bugs/0053: a re-anchored row is a direct MEASUREMENT to a picked
             # surface/edge z -- draw a single arrow to it (no gap-splitting) and
             # label the measured distance, visually distinct from a model thickness.

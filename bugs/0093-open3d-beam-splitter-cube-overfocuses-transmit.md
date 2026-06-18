@@ -32,20 +32,28 @@ focus marker left is the branch detector at the true focus (233), and the Image
 "lands on" it. The Image *target* is kept (hard-stop / picking; it has no visible
 plane of its own). No-op on plain sequential/folded scenes (no branch detector).
 
-**Follow-up (re-recordings 092957 "old image plane still there" / 093142 "the
-distance overlay shows it"):** the running app was STALE (the curve fix `5aba0933`
-wasn't loaded — verified the fix DOES drop the Image curve+label on a real
-editor-built bundle: branch detectors present, 0 Image curves/labels). A SECOND
-reveal path remained: the **thickness/distance-dimension** overlay still drew an
-arrow out to the Image at z=266. That overlay is built in
-`open3d_thickness_dimensions.add_overlays` from the rows (not the bundle), so the
-curve fix never touched it. Added
-`Open3DThicknessDimensionService._dimension_runs_to_superseded_image(...)`; the loop
-now skips the span whose NEXT row is a branch-detector-superseded Image.
+**Follow-up #1 (re-recordings 092957/093142):** the running app was STALE (the curve
+fix `5aba0933` wasn't loaded). A 2nd reveal path: the thickness dimension drew an
+arrow to z=266; first attempt skipped that span.
 
-Guard: `validate_open3d_superseded_image_plane_hidden` (display-free; covers curve +
-label + dimension-skip) + penta Phase 86. **Requires an app RESTART to load (both
-modules import at startup); in-app visual confirm pending (headless VTK segfaults).**
+**Follow-up #2 (re-recording 094836 after restart — "thickness missing after
+splitting surface. The old image location is still there"):** ground-truth dump of a
+real editor-built bundle showed TWO things the curve/label drop missed:
+- the sequential **Image TARGET** survived (kept "for hard-stop") and, being
+  `is_detector`, still drew an **orange detector footprint** at z=266 — the marker
+  the user kept seeing. Fix: `drop_superseded_image_display` now also drops the Image
+  target (the branch detector hard-stops the rays before it; nothing needs the 266
+  plane). Verified: real bundle now has 0 sequential-Image targets.
+- skipping the dimension entirely *removed the cube's own thickness* ("thickness
+  missing"). Fix: instead of skipping, **redirect** the span's far end to the on-axis
+  (transmit) branch-detector focus via `_superseding_branch_focus(...)` — so the
+  thickness-after-the-splitter reads to the REAL focus (233), not the stale image.
+  Falls back to skip if no on-axis focus (a reflect-only arm).
+
+Guard: `validate_open3d_superseded_image_plane_hidden` (display-free; covers target +
+curve + label drop AND the dimension redirect/focus selection) + penta Phase 86.
+**Requires an app RESTART to load; in-app visual confirm pending (headless VTK
+segfaults).**
 
 ---
 ### (superseded) earlier headless conclusion
