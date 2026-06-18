@@ -199,6 +199,7 @@ class Open3DThicknessDimensionService:
         *,
         drag_start: np.ndarray | None = None,
         drag_end: np.ndarray | None = None,
+        orientation_deg: float = 0.0,
     ) -> bool:
         actor_cls = self.billboard_text_actor_cls
         if self.inspector._renderer is None or actor_cls is None:
@@ -216,6 +217,16 @@ class Open3DThicknessDimensionService:
                 text_prop.SetBackgroundOpacity(0.82)
                 text_prop.SetFrame(1)
                 text_prop.SetFrameColor(0.05, 0.42, 0.70)
+                # bugs/0093: rotate the billboard text so it reads PERPENDICULAR to
+                # the (horizontal) thickness arrows -- lets adjacent labels stack on
+                # one row without overlapping.
+                if abs(float(orientation_deg)) > 1e-6:
+                    text_prop.SetOrientation(float(orientation_deg))
+                    try:
+                        text_prop.SetJustificationToCentered()
+                        text_prop.SetVerticalJustificationToCentered()
+                    except Exception:
+                        pass
             except Exception:
                 pass
             self.inspector._register_thickness_dimension_actor(actor, int(row_index))
@@ -325,7 +336,14 @@ class Open3DThicknessDimensionService:
     @staticmethod
     def _row_short_name(row) -> str:
         name = str(getattr(row, "name", "") or "").strip()
-        return name or (str(getattr(row, "surface", "") or "").strip() or "solid")
+        if name and len(name) <= 16:
+            return name
+        low = name.lower()
+        if "split" in low:
+            return "splitter"
+        if "prism" in low:
+            return "prism"
+        return "solid"
 
     def _optical_solid_entry_point(self, row_index, axis, p0):
         """bugs/0093: world point at the ENTRY (near) face of a promoted optical-solid
@@ -436,7 +454,7 @@ class Open3DThicknessDimensionService:
                         gap = float(np.linalg.norm(np.asarray(entry, dtype=float).reshape(3) - p0))
                         if np.isfinite(gap) and gap > 1e-6:
                             p1 = np.asarray(entry, dtype=float).reshape(3)
-                            solid_gap_label = f"to {self._row_short_name(rows[row_index + 1])} = {gap:.6g} mm"
+                            solid_gap_label = f"gap to {self._row_short_name(rows[row_index + 1])} = {gap:.4g} mm"
             # bugs/0053: a re-anchored row is a direct MEASUREMENT to a picked
             # surface/edge z -- draw a single arrow to it (no gap-splitting) and
             # label the measured distance, visually distinct from a model thickness.
@@ -468,7 +486,10 @@ class Open3DThicknessDimensionService:
             gaps = self.split_span_at_overlays(a0, a1, overlay_spans)
             split = len(gaps) > 1
             side = self.offset_direction(segment, view_normal=view_normal, screen_up=screen_up)
-            row_band = 1.0 + 0.38 * float(row_index % 3)
+            # bugs/0093: all thickness arrows on ONE row, adjacent (was staggered into
+            # 3 bands by `row_index % 3`); labels read perpendicular so adjacent ones
+            # don't collide on the single row.
+            row_band = 1.0
             offset = side * base_offset * row_band
             for gap_lo, gap_hi in gaps:
                 gap_mm = float(gap_hi - gap_lo)
@@ -496,6 +517,7 @@ class Open3DThicknessDimensionService:
                     label=label,
                     drag_start=p0,
                     drag_end=p1,
+                    label_orientation_deg=90.0,
                 )
         # bugs/0093: per-branch exit->detector distance overlays (transmit + reflect).
         count += self._branch_distance_overlays(
@@ -587,6 +609,7 @@ class Open3DThicknessDimensionService:
         label: str,
         drag_start: np.ndarray,
         drag_end: np.ndarray,
+        label_orientation_deg: float = 0.0,
     ) -> int:
         """Draw one dimension (shaft + leaders + label) between ``base_lo`` and
         ``base_hi``, offset to ``side``.
@@ -628,8 +651,13 @@ class Open3DThicknessDimensionService:
                 )
         except Exception:
             pass
+        # bugs/0093: label centred on the segment, offset perpendicular to the arrow.
         label_position = 0.5 * (start + end) + side * max(base_offset * 0.22, 0.8)
-        if self.add_label_actor(row_index, label_position, label, drag_start=drag_start, drag_end=drag_end):
+        if self.add_label_actor(
+            row_index, label_position, label,
+            drag_start=drag_start, drag_end=drag_end,
+            orientation_deg=label_orientation_deg,
+        ):
             count += 1
         return count
 
