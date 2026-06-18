@@ -80,19 +80,10 @@ class Open3DTopControlsPanel:
             command=self.inspector._on_ray_pick_changed,
             padx=(8, 0),
         )
-        # Ray count shares the 2D ray_count_var (via _editor_var) so the count
-        # stays in sync with the main window; sits next to Show rays so the
-        # always-visible toolbar can set how many rays it shows.
-        ttk.Label(view_toolbar, text="Ray count").pack(side="left", padx=(12, 4))
-        ray_count_entry = CommitEntry(
-            view_toolbar,
-            textvariable=self.inspector._editor_var("ray_count_var"),
-            width=4,
-            on_commit=lambda _event: self.inspector._commit_live_control_update(sync_fields=True),
-            on_focus_in=self.editor._begin_history_capture,
-        )
-        ray_count_entry.pack(side="left")
-        self.inspector._open3d_toolbar_ray_count_entry = ray_count_entry
+        # bugs/0093: the Ray count entry was removed from the top toolbar -- it
+        # duplicated the Live Controls (Left Panel) "Ray count" entry (both bound to
+        # ray_count_var). The Left Panel one is the single source.
+        self.inspector._open3d_toolbar_ray_count_entry = None
         overlay_menu = create_popup_menu(view_toolbar)
         add_menu_checkbuttons(
             overlay_menu,
