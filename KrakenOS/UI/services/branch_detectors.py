@@ -143,8 +143,17 @@ def _exit_rays_for_group(group: list) -> tuple[np.ndarray, np.ndarray]:
         pts = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
         if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
             continue
-        origin = pts[-2, :3]
-        direction = _unit(pts[-1, :3] - pts[-2, :3])
+        # bugs/0099: a ray absorbed at its terminal surface can record the SAME world
+        # point many times (a FOLDED detector re-intersected itself up to the ns-limit on
+        # the reflect arm -- 199 identical trailing points), leaving the last raw segment
+        # zero-length so that arm got NO detector. Drop consecutive duplicates and use the
+        # last REAL segment (the ray's approach to its focus).
+        xyz = pts[:, :3]
+        xyz = xyz[np.concatenate(([True], np.linalg.norm(np.diff(xyz, axis=0), axis=1) > 1.0e-9))]
+        if xyz.shape[0] < 2:
+            continue
+        origin = xyz[-2]
+        direction = _unit(xyz[-1] - xyz[-2])
         if direction is None or not np.all(np.isfinite(origin)):
             continue
         origins.append(np.asarray(origin, dtype=float))
@@ -285,8 +294,17 @@ def derive_branch_detectors(
                 dist = float(np.linalg.norm(to_image))
                 on_this_leaf = dist > 1.0e-6 and float(np.dot(to_image, mean_dir)) / dist > 0.7
             if on_this_leaf:
-                focus = ri
-                focus_source = "reached_image"
+                # bugs/0099: pin to the reached Image only when the exit rays don't already
+                # converge BEFORE it. The dual-lens reflect arm's rays focus ~36mm SHORT of
+                # the nominal image (the REAL per-branch focus) -- pinning to the image put
+                # the detector BEYOND the focus, so "the rays don't reach the detector" (a
+                # tight spot stopping short of the plane). 0093's cube-before-lens case is the
+                # opposite: the convergence lands far FORWARD of the image (unreliable), so
+                # there we DO pin. Trust a reliable convergence that sits >1mm behind the image.
+                behind = float(np.dot(np.asarray(focus, dtype=float) - ri, mean_dir)) if converged else 0.0
+                if not (converged and focus_source == "converging_rays" and behind < -1.0):
+                    focus = ri
+                    focus_source = "reached_image"
         # Size to the beam FOOTPRINT entering this branch (catches the whole beam
         # and stays visible), NOT the focus spot (~0, which collapsed the plane to
         # a sub-mm sliver). A real, sensibly-sized existing detector wins;
