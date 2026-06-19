@@ -1,8 +1,13 @@
 # Design note — the non-sequential first-order seam (source/pupil aiming fails on beam splitters)
 
-Status: **PHASE 1 (one-arm reference, §5/§6) IMPLEMENTED + pushed** — `c86e23c` (reference
-builder + analysis pupil) + `3b91f99` (3D-preview source launch). `validate_open3d_first_order_reference`
-green; in-app render confirm pending. **PHASE 2 (per-branch source/pupil, §5b) is next.**
+Status: **PHASE 1 (one-arm reference, §5/§6) SHIPPED + CONFIRMED in-app** — `c86e23c` +
+`3b91f99`. **PHASE 2 FIRST-ORDER CORE (per-branch pupil, §5b) SHIPPED + headless-proven** —
+`1188dd9` (`_pupil_model_inputs(rows=leaf)` per-leaf hook + `validate_open3d_per_branch_pupil`:
+private-stop arms → pupils differ ~66 mm; a stop *before* the split → one shared pupil) +
+`7138c46` (`unfold_branch_tilts` → a folded reflect arm unfolds to the same axial pupil).
+**REMAINING Phase 2 = the per-leaf tagged LAUNCH + live 2D/3D display** — trace-dependent
+(extract each imaging leaf's rows via `branch_selector`; the two-arm scene
+`beam_splitter_two_arm_doublets.py` exists) + display-integrated → needs in-app render verify.
 Date: 2026-06-19. Branch: `nonseq-display-refactor`.
 
 ---
