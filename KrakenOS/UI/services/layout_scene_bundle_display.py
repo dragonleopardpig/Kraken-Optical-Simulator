@@ -466,7 +466,11 @@ class LayoutSceneBundleDisplayMixin:
         if trace_runtime_note:
             trace_note = f"{trace_note} {trace_runtime_note}".strip()
         folded_geometry = self._current_folded_surface_geometry(system=system)
-
+        # Two-arm splitter scenes use the DISPLAY-FOLD architecture: each imaging arm is traced
+        # straight + sequential (optics always correct) and the bent arm's rays + detector are
+        # folded in (services/two_arm_display_fold.py). When active, override ray_paths/targets
+        # below and let the 2D pane project the already-folded ray paths.
+        two_arm_parts = self._two_arm_fold_parts(system)
 
         # Compute folded ray display overrides (pre-projected paths for folded layouts)
         folded_ray_display_paths = None
@@ -486,13 +490,15 @@ class LayoutSceneBundleDisplayMixin:
             )
         if folded_ray_display_paths is None and not bool(trace_state.get("use_nonseq")):
             folded_ray_display_paths = self._branch_output_display_path_overrides(rays)
+        if two_arm_parts is not None:
+            folded_ray_display_paths = None  # 2D projects the already-folded ray_paths
 
         field_count = max(
             1,
             int(getattr(self, "_preview_field_bundle_count", self._current_field_count())),
         )
 
-        return build_scene_bundle(
+        bundle = build_scene_bundle(
             rows=self.rows,
             system=system,
             rays=rays,
@@ -527,6 +533,56 @@ class LayoutSceneBundleDisplayMixin:
             source_row_order=normalize_source_row_order(getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT)),
             branch_camera_sensors=self._branch_detector_camera_sensors(),
         )
+        if two_arm_parts is not None:
+            fold_paths, fold_targets = two_arm_parts
+            bundle.ray_paths = fold_paths
+            bundle.targets = [t for t in bundle.targets if not getattr(t, "is_detector", False)] + fold_targets
+        return bundle
+
+    def _settings_for_two_arm_leaf_trace(self) -> dict:
+        """The launch settings each per-arm sequential leaf trace needs (the rest default)."""
+        out: dict = {}
+        for key in ("object_mode", "wavelength", "ray_count", "ray_height_factor",
+                    "source_model", "pupil_pattern", "aperture_type", "aperture_value",
+                    "field_type", "field_value", "field_count"):
+            var = getattr(self, f"{key}_var", None)
+            if var is not None:
+                try:
+                    out[key] = var.get()
+                except Exception:
+                    pass
+        return out
+
+    def _two_arm_fold_parts(self, system):
+        """Per-arm folded ray paths + detectors for a >=2-imaging-arm splitter scene (cached).
+
+        Returns ``None`` for ordinary scenes (the normal trace stands). For a two-arm splitter
+        it traces each arm straight + sequential and folds the bent arm -- see
+        ``services/two_arm_display_fold.py`` and the ``two-arm-display-fold-architecture`` note.
+        """
+        try:
+            leaves = self._imaging_branch_leaves()
+        except Exception:
+            return None
+        if not leaves or len(leaves) < 2:
+            return None
+        settings = self._settings_for_two_arm_leaf_trace()
+        try:
+            from KrakenOS.UI.services.row_spec_contracts import _row_specs_signature
+            sig = (_row_specs_signature(self._serializable_row_specs()), tuple(sorted(settings.items())))
+        except Exception:
+            sig = None
+        cache = self.__dict__.get("_two_arm_fold_cache")  # __dict__ avoids the tkinter __getattr__ recursion
+        if sig is not None and cache is not None and cache[0] == sig:
+            return cache[1]
+        try:
+            from KrakenOS.UI.services.two_arm_display_fold import build_two_arm_fold_parts
+            max_radius = max(float(r.diameter) for r in self.rows) / 2.0
+            parts = build_two_arm_fold_parts(leaves, settings, self._current_wavelength(), max_radius)
+        except Exception:
+            parts = None
+        self._two_arm_fold_cache = (sig, parts)
+        return parts
 
     def _branch_detector_camera_sensors(self) -> dict | None:
         """B2 (vendor-step-import-semantics): map ``{branch_path -> (camera_label,
