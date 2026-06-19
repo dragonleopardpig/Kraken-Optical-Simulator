@@ -187,6 +187,26 @@ def run_checks() -> tuple[bool, list[str]]:
             f"got transmit z={tx_z:.2f} ~= reflect z={rx_z:.2f}"
         )
 
+    # The real dual-lens scene: the FOLDED reflect arm's entry gap (splitter -> first
+    # lens) is encoded in the decenter, not the linear thickness; the extraction recovers
+    # it so each arm keeps its own object conjugate (MV150 1X: 275 mm; MV120 1X: 215 mm).
+    from KrakenOS.common_optical_layouts.beam_splitter_dual_mv_150_120 import SURFACES as DUAL
+    from KrakenOS.UI.surface_table_model import SurfaceRow
+
+    dual = [SurfaceRow(**{k: v for k, v in s.items() if k in SurfaceRow.__dataclass_fields__}) for s in DUAL]
+    dual_tx = _branch_leaf_rows(dual, "transmit")
+    dual_rx = _branch_leaf_rows(dual, "reflect")
+    # leaf = [Object, splitter, <lens...>]; object->lens = object.thickness + splitter.thickness.
+    tx_conj = float(dual_tx[0].thickness) + float(dual_tx[1].thickness)
+    rx_conj = float(dual_rx[0].thickness) + float(dual_rx[1].thickness)
+    if abs(tx_conj - 275.0) > 1.0:
+        failures.append(f"FAIL: dual-lens transmit object->lens = {tx_conj:.1f}, expected 275 (MV150 1X)")
+    if abs(rx_conj - 215.0) > 1.0:
+        failures.append(
+            f"FAIL: dual-lens reflect object->lens = {rx_conj:.1f}, expected 215 (MV120 1X) -- the "
+            f"folded entry gap was not recovered from the decenter"
+        )
+
     return (not failures), failures
 
 

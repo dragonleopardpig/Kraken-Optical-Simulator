@@ -127,6 +127,19 @@ def _branch_leaf_rows(rows: list[SurfaceRow], branch_selector: str) -> list[Surf
                 common.append(row)
         elif bsel == selector:
             arm.append(row)
+    # A FOLDED arm (e.g. the reflect arm bent +Y): the splitter -> first-arm-surface ENTRY
+    # gap is encoded in the first arm surface's in-plane DECENTER (its distance from the
+    # splitter axis), not the last common row's linear thickness -- that thickness is the
+    # OTHER arm's straight-through gap. Override it so the unfolded reference carries the
+    # right object->lens conjugate for THIS arm (the straight arm has zero decenter -> no
+    # override). The intra-arm spacings are the arm rows' own thicknesses, already correct.
+    if common and arm:
+        first = arm[0]
+        entry = float(np.hypot(float(getattr(first, "desp_x", 0.0)), float(getattr(first, "desp_y", 0.0))))
+        if entry > 1e-6:
+            anchor = SurfaceRow(**asdict(common[-1]))
+            anchor.thickness = entry
+            common = common[:-1] + [anchor]
     return common + arm
 
 
