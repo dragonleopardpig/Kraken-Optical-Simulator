@@ -2038,7 +2038,21 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
             surface.IsApertureStop = True
         surfaces.append(surface)
     metal_catalogs = _metal_catalogs_from_row_specs(row_specs)
+    _build_t0 = time.perf_counter()
     system = Kos.system(surfaces, _shared_setup(metal_catalogs) if setup is None else setup, build=int(build))
+    # Timing: the build=1 path runs Prerequisites3D ("Creating solid objects"), the slow
+    # one. Logged so summarize_open3d_timing surfaces it (it is NOT inside refresh_scene).
+    try:
+        from KrakenOS.UI.services.open3d_timing import open3d_timing_event
+
+        open3d_timing_event(
+            "build_system_from_specs",
+            build=int(build),
+            surfaces=len(surfaces),
+            duration_ms=round(float((time.perf_counter() - _build_t0) * 1000.0), 3),
+        )
+    except Exception:
+        pass
     apply_optical_solid_output_port_system_overrides(system, row_specs)
     return system
 
