@@ -31,6 +31,7 @@ from KrakenOS.UI.source_trace_helpers import (
     PUPIL_PATTERN_VALUES,
     SOURCE_MODEL_DEFAULT,
     SOURCE_MODEL_VALUES,
+    kraken_pattern_samp_for_count,
 )
 
 # bug 0041 (North Star invariant #2: 2D is a slice of the traced 3D data, not a
@@ -1090,8 +1091,11 @@ class TracePreviewSamplingMixin:
                 self._current_aperture_type(),
                 self._current_aperture_value(),
             )
-            pupil.Samp = max(3, self._current_ray_count())
             pupil.Ptype = self._current_analysis_pupil_pattern()
+            # bugs/0095: "Ray Fan count = N" is a literal per-field ray count, not
+            # a per-axis Samp -- invert Samp for the pattern so the display bundle
+            # draws N rays per field (a Meridional fan of N), not ~50.
+            pupil.Samp = kraken_pattern_samp_for_count(pupil.Ptype, self._current_ray_count())
             pupil.FieldType = "angle"
             bundles = []
             for field_x, field_y in self._sample_field_grid_pairs(self._current_field_angle_deg()):
@@ -1153,8 +1157,11 @@ class TracePreviewSamplingMixin:
                 self._current_aperture_type(),
                 self._current_aperture_value(),
             )
-            pupil.Samp = max(3, self._current_ray_count())
             pupil.Ptype = self._current_analysis_pupil_pattern()
+            # bugs/0095: "Ray Fan count = N" is a literal per-field ray count, not
+            # a per-axis Samp -- invert Samp for the pattern so the display bundle
+            # draws N rays per field (a Meridional fan of N), not ~50.
+            pupil.Samp = kraken_pattern_samp_for_count(pupil.Ptype, self._current_ray_count())
             pupil.FieldType = "height"
             bundles = []
             for field_x, field_y in self._sample_field_grid_pairs(self._launch_field_radial_max()):

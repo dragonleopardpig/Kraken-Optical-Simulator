@@ -75,6 +75,12 @@ PUPIL_PATTERN_VALUES = (
     "R-theta",
 )
 PUPIL_PATTERN_TO_KRAKEN = {
+    # bugs/0095: "Meridional fan" is the default label but was absent here, so
+    # _current_kraken_pupil_pattern() returned None and the launch silently fell
+    # back to Hexapolar -- a dense 2-D grid, not the flat meridional fan the user
+    # selected (Samp=5 -> 91 rays in 3-D; the 2-D YZ projection collapsed them to
+    # ~3 visible lines). A meridional fan IS a fan in the tangential (Y-Z) plane.
+    "Meridional fan": "fany",
     "Cross fan": "fan",
     "Fan X": "fanx",
     "Fan Y": "fany",
@@ -84,6 +90,38 @@ PUPIL_PATTERN_TO_KRAKEN = {
     "Chief ray": "chief",
     "R-theta": "rtheta",
 }
+
+
+def kraken_pattern_samp_for_count(kraken_pattern: str, ray_count: int) -> int:
+    """KrakenOS ``PupilCalc.Samp`` whose ``Pattern()`` emits ~``ray_count`` rays.
+
+    bugs/0095: the UI "Ray Fan count = N" should be a *literal* per-field ray
+    count, but KrakenOS's ``Samp`` is a per-axis sampling density, and the pattern
+    multiplies it (fan-X/Y -> 2S+1, cross fan -> 4S+1, hexapolar -> 1+3S(S+1),
+    square -> ~pi/4*(2S+1)^2, random -> ~pi*S^2). Invert that per pattern so the
+    finite/angular display bundles draw N rays per field instead of ~50.
+    """
+    n = max(1, int(ray_count))
+    pattern = str(kraken_pattern or "").strip().lower()
+    if pattern in ("chief", "rtheta"):
+        return 1
+    if pattern in ("fanx", "fany"):
+        return max(1, (n - 1) // 2)
+    if pattern == "fan":
+        return max(1, (n - 1) // 4)
+    if pattern == "hexapolar":
+        samp = 1
+        while 1 + 3 * samp * (samp + 1) < n:
+            samp += 1
+        return samp
+    if pattern == "square":
+        samp = 1
+        while int(round(np.pi / 4.0 * (2 * samp + 1) ** 2)) < n:
+            samp += 1
+        return samp
+    if pattern == "rand":
+        return max(1, int(round(np.sqrt(max(n, 1) / np.pi))))
+    return max(1, n)
 ATMOS_PLOT_MODE_DEFAULT = "Refraction / dispersion"
 ATMOS_PLOT_MODE_VALUES = (
     ATMOS_PLOT_MODE_DEFAULT,
