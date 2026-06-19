@@ -45,7 +45,7 @@ def _cube_stl(mm: float = 50.0) -> str:
     return path
 
 
-def _leaf_pupil_z(leaf_rows) -> float:
+def _leaf_pupil_z(leaf_rows, *, unfold: bool = False) -> float:
     """Entrance-pupil z of one beam-splitter arm, via its first-order reference."""
     import numpy as np
 
@@ -54,7 +54,9 @@ def _leaf_pupil_z(leaf_rows) -> float:
     from KrakenOS.UI.surface_table_model import surface_rows_to_specs
     from KrakenOS.UI.services.paraxial_tools import ParaxialToolsMixin
 
-    reference, _last = ParaxialToolsMixin._paraxial_reference_rows_for_layout(None, leaf_rows)
+    reference, _last = ParaxialToolsMixin._paraxial_reference_rows_for_layout(
+        None, leaf_rows, unfold_branch_tilts=unfold
+    )
     stop_index = next(i for i, r in enumerate(reference) if r.surface == "Aperture")
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
@@ -72,8 +74,8 @@ def _rows():
     adv = lambda: {"Solid_3d_stl": _cube_stl(), "OpticalSolidFaces": {"faces": []}}
     obj = lambda t=200.0: SurfaceRow(surface="Object", name="O", thickness=t, diameter=30.0, glass="AIR")
     bs = lambda t=50.0: SurfaceRow(surface="Standard", name="BS", thickness=t, diameter=50.0, glass="BK7", advanced=adv())
-    lens = lambda rc, t: SurfaceRow(surface="Thin Lens", name="L", rc=rc, thickness=t, diameter=30.0, glass="AIR")
-    stop = lambda d, t: SurfaceRow(surface="Aperture", name="stop", thickness=t, diameter=d, glass="AIR")
+    lens = lambda rc, t, tilt=0.0: SurfaceRow(surface="Thin Lens", name="L", rc=rc, thickness=t, diameter=30.0, glass="AIR", tilt_x=tilt)
+    stop = lambda d, t, tilt=0.0: SurfaceRow(surface="Aperture", name="stop", thickness=t, diameter=d, glass="AIR", tilt_x=tilt)
     image = lambda: SurfaceRow(surface="Image", name="I", thickness=0.0, diameter=20.0, glass="AIR")
 
     # Private stop per arm (stop AFTER each arm's own lens) -> different pupils.
@@ -87,12 +89,18 @@ def _rows():
         "transmit": pre() + [lens(80.0, 60.0), image()],
         "reflect": pre() + [lens(40.0, 60.0), image()],
     }
-    return private, shared
+    # A FOLDED reflect arm (bent off-axis via tilt, like beam_splitter_two_arm_doublets)
+    # must UNFOLD to the same entrance pupil as the equivalent straight arm.
+    folded = {
+        "straight": [obj(), bs(), lens(100.0, 80.0), stop(20.0, 50.0), image()],
+        "folded": [obj(), bs(), lens(100.0, 80.0, -90.0), stop(20.0, 50.0, -90.0), image()],
+    }
+    return private, shared, folded
 
 
 def run_checks() -> tuple[bool, list[str]]:
     failures: list[str] = []
-    private, shared = _rows()
+    private, shared, folded = _rows()
 
     try:
         priv_t = _leaf_pupil_z(private["transmit"])
@@ -114,6 +122,18 @@ def run_checks() -> tuple[bool, list[str]]:
         failures.append(
             f"FAIL: a stop BEFORE the split should give ONE shared entrance pupil, got "
             f"transmit z={shar_t:.2f} != reflect z={shar_r:.2f}"
+        )
+
+    # A folded arm must unfold to the same entrance pupil as the straight equivalent.
+    try:
+        straight_z = _leaf_pupil_z(folded["straight"])
+        folded_z = _leaf_pupil_z(folded["folded"], unfold=True)
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"FAIL: folded-arm unfold raised {type(exc).__name__}: {exc}"]
+    if abs(straight_z - folded_z) > 0.5:
+        failures.append(
+            f"FAIL: a folded arm should unfold to the SAME entrance pupil as the straight "
+            f"arm, got straight z={straight_z:.2f} != folded z={folded_z:.2f}"
         )
 
     return (not failures), failures

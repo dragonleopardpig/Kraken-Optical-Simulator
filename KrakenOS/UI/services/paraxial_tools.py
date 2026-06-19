@@ -190,6 +190,8 @@ class ParaxialToolsMixin:
     def _paraxial_reference_rows_for_layout(
         self,
         rows: list[SurfaceRow] | None = None,
+        *,
+        unfold_branch_tilts: bool = False,
     ) -> tuple[list[SurfaceRow], int]:
         source_rows = self.rows if rows is None else rows
         if len(source_rows) < 3:
@@ -217,7 +219,7 @@ class ParaxialToolsMixin:
                 continue
             if row.surface not in {"Standard", "Thin Lens", "Aperture"}:
                 raise RuntimeError("Paraxial solve supports centered refractive systems plus folding mirrors only")
-            if any(
+            tilted = any(
                 abs(value) > 1e-9
                 for value in (
                     row.tilt_x,
@@ -228,9 +230,21 @@ class ParaxialToolsMixin:
                     row.desp_z,
                     row.axis_move,
                 )
-            ):
+            )
+            if tilted and not unfold_branch_tilts:
                 raise RuntimeError("Paraxial solve supports centered refractive systems plus folding mirrors only")
-            reference_rows.append(SurfaceRow(**asdict(row)))
+            kept = SurfaceRow(**asdict(row))
+            if tilted:
+                # DESIGN §5b (Phase 2): a per-leaf branch reference UNFOLDS the arm.
+                # A beam splitter sends the reflect arm off-axis (the rows carry
+                # tilt/decenter to sit on the folded path), but the first-order
+                # entrance pupil is an AXIAL property independent of the fold
+                # direction, and the row thickness already is the unfolded gap. Zero
+                # the fold so the centered ABCD / PupilCalc sees a straight chain.
+                kept.tilt_x = kept.tilt_y = kept.tilt_z = 0.0
+                kept.desp_x = kept.desp_y = kept.desp_z = 0.0
+                kept.axis_move = 0.0
+            reference_rows.append(kept)
             last_source_index = index
         if last_source_index is None:
             raise RuntimeError("No optical block available for paraxial solve")
