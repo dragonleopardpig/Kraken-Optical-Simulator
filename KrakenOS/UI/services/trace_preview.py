@@ -78,6 +78,14 @@ class TracePreviewService:
             self._preview_field_bundle_count = 1
             system.Vignetting(0)
             return
+        # DESIGN §5b per-branch launch: a beam splitter with > 1 IMAGING arm (each a
+        # branch_selector arm with its own stop) needs ONE launch bundle per arm, each
+        # aimed at that arm's own pupil -- a single launch cannot serve two arms with
+        # different pupils and sprays (it can't even build the whole-layout reference
+        # past the folded arm). No-op for ordinary single-axis scenes.
+        if self._trace_per_branch_bundles(system, rays, wavelength, pupil_radius):
+            system.Vignetting(0)
+            return
         use_legacy_default_cone = self._should_use_default_finite_cone_source(system=system)
         if use_legacy_default_cone and mode in {"source_cone_world", "world_source_cone", "point_cone_world"}:
             default_cone_bundles, default_cone_ray_count = self._build_default_finite_cone_world_bundles()

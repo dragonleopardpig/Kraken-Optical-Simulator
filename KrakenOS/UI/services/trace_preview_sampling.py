@@ -1086,6 +1086,54 @@ class TracePreviewSamplingMixin:
         except Exception:
             pass
 
+    def _imaging_branch_leaves(self) -> dict:
+        """DESIGN §5b: ``{branch_selector: leaf rows}`` for each IMAGING beam-splitter arm
+        -- an arm tagged ``advanced.Element.branch_selector`` that carries its OWN stop
+        (hence its own entrance pupil). Empty unless the layout has >= 2 such arms, which
+        is what gates the per-branch launch so ordinary single-axis scenes are untouched.
+        """
+        try:
+            from KrakenOS.UI.services.paraxial_tools import _scene_branch_selectors, _branch_leaf_rows
+        except Exception:
+            return {}
+        rows = list(getattr(self, "rows", None) or [])
+        leaves: dict = {}
+        for selector in _scene_branch_selectors(rows):
+            leaf = _branch_leaf_rows(rows, selector)
+            if any(str(getattr(r, "surface", "") or "") == "Aperture" for r in leaf):
+                leaves[selector] = leaf
+        return leaves
+
+    def _trace_per_branch_bundles(self, system, rays, wavelength: float, pupil_radius: float) -> bool:
+        """DESIGN §5b per-branch launch. A beam splitter with > 1 IMAGING arm gives each
+        arm its OWN entrance pupil, so a single launch sprays (it cannot even build the
+        whole-layout reference -- the folded reflect arm makes it throw). Build a finite
+        grid bundle PER arm, aimed at THAT arm's pupil (its leaf reference), and trace them
+        together so each arm focuses on its own detector. Returns True when it launched
+        (the caller then returns), False for non-two-arm scenes (fall through to the
+        ordinary single-launch path).
+        """
+        leaves = self._imaging_branch_leaves()
+        if len(leaves) < 2:
+            return False
+        all_bundles: list = []
+        for _selector, leaf_rows in leaves.items():
+            try:
+                arm_bundles = self._build_grid_finite_object_bundles(
+                    system, wavelength, pupil_radius, pupil_leaf_rows=leaf_rows
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._note_pupil_launch_fallback(exc)
+                arm_bundles = []
+            all_bundles.extend(arm_bundles)
+        if not all_bundles:
+            return False
+        rays.clean()
+        self._trace_preview_bundles(system, rays, wavelength, all_bundles)
+        self._preview_field_ray_count = max((int(len(np.asarray(b[0]))) for b in all_bundles), default=0)
+        self._preview_field_bundle_count = len(all_bundles)
+        return True
+
     def _build_grid_angular_bundles(self, system, wavelength: float, pupil_radius: float):
         """Filled pupil bundles for infinity-object preview.
 
@@ -1154,14 +1202,23 @@ class TracePreviewSamplingMixin:
             bundles.append(bundle)
         return bundles
 
-    def _build_grid_finite_object_bundles(self, system, wavelength: float, pupil_radius: float):
-        """Filled pupil bundles for finite-object full-pupil preview."""
+    def _build_grid_finite_object_bundles(self, system, wavelength: float, pupil_radius: float, *, pupil_leaf_rows=None):
+        """Filled pupil bundles for finite-object full-pupil preview.
+
+        ``pupil_leaf_rows`` (DESIGN §5b, per-branch launch): aim at ONE beam-splitter
+        arm's entrance pupil -- the leaf's own reference -- instead of the whole layout's.
+        A two-arm scene's whole-layout reference cannot be built (the folded reflect arm),
+        so a single launch sprays; each arm's leaf reference builds cleanly and aims that
+        arm's bundle at its own pupil.
+        """
         # bugs/0094: aim the source off the transmissive FIRST-ORDER REFERENCE, not the
         # live system -- the sequential PupilCalc cannot trace a beam splitter / mesh
         # solid (it branches and throws, after which the geometric fallback aimed the beam
         # at the cube). The reference also recomputes the stop index, fixing the in-path-
         # promotion row shift.
-        pupil_system, _pupil_rows, pupil_index = self._pupil_model_inputs(system, build_reference=True)
+        pupil_system, _pupil_rows, pupil_index = self._pupil_model_inputs(
+            system, build_reference=True, rows=pupil_leaf_rows
+        )
         try:
             pupil = Kos.PupilCalc(
                 pupil_system,
