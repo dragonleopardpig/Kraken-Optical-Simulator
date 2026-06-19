@@ -314,6 +314,13 @@ class ParaxialToolsMixin:
         image_row.surface = "Image"
         image_row.name = image_row.name or "Image"
         image_row.thickness = 0.0
+        # The terminal Image of a centered reference must itself be centered. When the
+        # last leaf row is a FOLDED arm's detector (tilt_x=-90 etc.), copying it left the
+        # Image tilted -> the sequential PupilCalc test trace hit a tilted image plane and
+        # returned no rays (DESIGN §5b: this broke the reflect arm's per-branch pupil).
+        image_row.tilt_x = image_row.tilt_y = image_row.tilt_z = 0.0
+        image_row.desp_x = image_row.desp_y = image_row.desp_z = 0.0
+        image_row.axis_move = 0.0
         reference_rows.append(image_row)
         return reference_rows, int(last_source_index)
 

@@ -206,6 +206,19 @@ def run_checks() -> tuple[bool, list[str]]:
             f"FAIL: dual-lens reflect object->lens = {rx_conj:.1f}, expected 215 (MV120 1X) -- the "
             f"folded entry gap was not recovered from the decenter"
         )
+    # Both arms' pupils must COMPUTE -- the reflect arm's folded detector used to leave the
+    # reference's terminal Image tilted (tilt_x=-90), so the sequential PupilCalc test trace
+    # returned no rays and the per-branch launch fell back to a spray on that arm.
+    try:
+        dual_tx_z = _leaf_pupil_z(dual_tx, unfold=True)
+        dual_rx_z = _leaf_pupil_z(dual_rx, unfold=True)
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"FAIL: dual-lens per-arm pupil raised {type(exc).__name__}: {exc} (tilted reference Image?)"]
+    if abs(dual_tx_z - dual_rx_z) <= 1.0:
+        failures.append(
+            f"FAIL: the two dual-lens arms should get DIFFERENT pupils, got transmit z={dual_tx_z:.2f}, "
+            f"reflect z={dual_rx_z:.2f}"
+        )
 
     return (not failures), failures
 
