@@ -8335,14 +8335,27 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         ) or bool(list(getattr(scene_bundle, "boundary_faces", []) or []))
         if not allow_traced_axis_guides:
             return records
+        # One cleaned polyline per path, shared by the filter below and _path_score (run
+        # once per path inside sorted(...)) and _path_launch_axis -- avoids cleaning every
+        # path 2x+ over the potentially hundreds the per-branch launch emits.
+        _pts_cache: dict[int, np.ndarray] = {}
+
+        def _cleaned_points(path) -> np.ndarray:
+            key = id(path)
+            cached = _pts_cache.get(key)
+            if cached is None:
+                cached = _clean_polyline_points(getattr(path, "points_world", np.empty((0, 3))))
+                _pts_cache[key] = cached
+            return cached
+
         paths = [
             path
             for path in list(getattr(scene_bundle, "ray_paths", []) or [])
-            if _clean_polyline_points(getattr(path, "points_world", np.empty((0, 3)))).shape[0] >= 2
+            if _cleaned_points(path).shape[0] >= 2
         ]
         if paths:
             def _path_score(path) -> tuple[float, float, float, float, float]:
-                points = _clean_polyline_points(getattr(path, "points_world", np.empty((0, 3))))
+                points = _cleaned_points(path)
                 if points.shape[0] >= 2:
                     launch_radius = float(np.hypot(points[0, 0], points[0, 1]))
                     launch_direction = points[1, :3] - points[0, :3]
@@ -8408,7 +8421,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 return vector / norm
 
             def _path_launch_axis(path) -> np.ndarray:
-                points = _clean_polyline_points(getattr(path, "points_world", np.empty((0, 3))))
+                points = _cleaned_points(path)
                 if points.shape[0] >= 2:
                     launch = _axis_unit(points[1, :3] - points[0, :3])
                     if launch is not None:

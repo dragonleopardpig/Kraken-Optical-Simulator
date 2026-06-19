@@ -245,13 +245,18 @@ def _clean_polyline_points(points) -> np.ndarray:
         return np.empty((0, 3), dtype=float)
     if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
         return np.empty((0, 3), dtype=float)
-    clean: list[np.ndarray] = []
-    for point in pts[:, :3]:
-        if not np.all(np.isfinite(point)):
-            continue
-        if clean and float(np.linalg.norm(point - clean[-1])) <= 1e-8:
-            continue
-        clean.append(np.asarray(point, dtype=float))
+    # Vectorized finite filter (was a per-point Python loop + per-point np.all). This is
+    # cleaned once per ray path in the optical-axis overlay's filter AND its sort key, over
+    # every path the per-branch launch emits, so the loop overhead dominated. The result is
+    # identical: keep finite points, then drop ones coincident with the last KEPT point.
+    xyz = pts[:, :3]
+    xyz = xyz[np.all(np.isfinite(xyz), axis=1)]
+    if xyz.shape[0] < 2:
+        return np.empty((0, 3), dtype=float)
+    clean: list[np.ndarray] = [xyz[0]]
+    for point in xyz[1:]:
+        if float(np.linalg.norm(point - clean[-1])) > 1e-8:
+            clean.append(point)
     if len(clean) < 2:
         return np.empty((0, 3), dtype=float)
     return np.vstack(clean)
