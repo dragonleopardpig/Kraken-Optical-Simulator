@@ -796,7 +796,12 @@ class AnalysisComputeWorkflowMixin:
         pupil_system = system
         pupil_rows = source_rows
         if build_reference and self._layout_needs_paraxial_reference(source_rows):
-            pupil_rows, _last_source_index = self._paraxial_reference_rows_for_layout(source_rows)
+            # A per-leaf launch passes one ARM's rows (folded reflect arm included); unfold
+            # its tilts so the reference is a clean centered chain. The whole-layout call
+            # (rows=None) must NOT unfold -- that would collapse two arms into one chain.
+            pupil_rows, _last_source_index = self._paraxial_reference_rows_for_layout(
+                source_rows, unfold_branch_tilts=(rows is not None)
+            )
             pupil_system = _build_system_from_specs(self._serializable_specs_for_rows(pupil_rows), build=0)
         pupil_surface_index = self._pupil_surface_index_for_rows(pupil_rows)
         return pupil_system, pupil_rows, pupil_surface_index
