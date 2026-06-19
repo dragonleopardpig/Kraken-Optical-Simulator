@@ -214,8 +214,25 @@ class Prerequisites():
                     r_RES = 5
                     RES = 5
                 else:
-                    r_RES = r_RES
-                    RES =RES
+                    # A FLAT surface (zero sag across its aperture) is meshed EXACTLY by a
+                    # coarse disc. The non-sequential ray trace intersects every surface's
+                    # disc on every ray and every bounce, and an ~8700-face disc on each flat
+                    # aperture / detector / beam-splitter plane was the dominant cost -- a
+                    # beam-splitter scene took minutes. Sample the true sag (SurfaceShape, the
+                    # same function Flat2SigmaSurface deforms by) and cap flat surfaces'
+                    # resolution; curved / aspheric surfaces keep full resolution for fidelity.
+                    try:
+                        _rs = np.linspace(max(float(INNER), 1.0e-3), max(float(OUTER), 1.0e-3), 6)
+                        _th = np.linspace(0.0, 2.0 * np.pi, 8, endpoint=False)
+                        _xx = np.outer(_rs, np.cos(_th)).ravel() + self.SDT[j].SubAperture[2]
+                        _yy = np.outer(_rs, np.sin(_th)).ravel() + self.SDT[j].SubAperture[1]
+                        _sag = np.asarray(self.SuTo.SurfaceShape(_xx, _yy, j), dtype=float)
+                        _is_flat = bool(np.all(np.isfinite(_sag))) and float(np.max(np.abs(_sag))) <= 1.0e-7
+                    except Exception:
+                        _is_flat = False
+                    if _is_flat:
+                        r_RES = min(int(r_RES), 4)
+                        RES = min(int(RES), 16)
 
                 # print(self.SDT[j].Const[1], r_RES, RES)
 
