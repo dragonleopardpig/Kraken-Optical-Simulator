@@ -782,14 +782,21 @@ class AnalysisComputeWorkflowMixin:
         system,
         *,
         build_reference: bool,
+        rows: list[SurfaceRow] | None = None,
     ) -> tuple[object, list[SurfaceRow], int]:
-        pupil_system = system
-        pupil_rows = self.rows
         # bugs/0094: build the transmissive first-order reference for ANY non-seq element
         # (folding mirror, beam splitter, promoted mesh solid) -- not just mirrors -- so
         # PupilCalc traces a clean centered system instead of branching/throwing.
-        if build_reference and self._layout_needs_paraxial_reference(self.rows):
-            pupil_rows, _last_source_index = self._paraxial_reference_rows_for_layout(self.rows)
+        # DESIGN_nonseq_first_order_reference.md §5b (Phase 2): pass a per-leaf `rows`
+        # sequence to model ONE beam-splitter arm's first-order pupil -- each terminal
+        # branch images its own stop to a different entrance pupil (location + EPD), so a
+        # single launch can't serve two imaging arms. `rows=None` => the whole layout
+        # (the one-arm / shared-pupil case), byte-identical to the pre-Phase-2 behaviour.
+        source_rows = self.rows if rows is None else rows
+        pupil_system = system
+        pupil_rows = source_rows
+        if build_reference and self._layout_needs_paraxial_reference(source_rows):
+            pupil_rows, _last_source_index = self._paraxial_reference_rows_for_layout(source_rows)
             pupil_system = _build_system_from_specs(self._serializable_specs_for_rows(pupil_rows), build=0)
         pupil_surface_index = self._pupil_surface_index_for_rows(pupil_rows)
         return pupil_system, pupil_rows, pupil_surface_index
