@@ -1062,6 +1062,16 @@ class TracePreviewSamplingMixin:
         n_values = np.ones(n_pts, dtype=float)
         return (x_values, y_values, z_values, l_values, m_values, n_values)
 
+    def _note_pupil_launch_fallback(self, exc: Exception) -> None:
+        """bugs/0094: surface (don't silently swallow) a PupilCalc failure on the
+        first-order reference -- the launch then falls back to a coarse geometric aim."""
+        try:
+            self.append_debug(
+                f"[pupil] reference launch failed, geometric fallback: {repr(exc)[:200]}\n"
+            )
+        except Exception:
+            pass
+
     def _build_grid_angular_bundles(self, system, wavelength: float, pupil_radius: float):
         """Filled pupil bundles for infinity-object preview.
 
@@ -1069,10 +1079,13 @@ class TracePreviewSamplingMixin:
         entrance pupil. This avoids drawing artificial pre-focus cones before
         the first surface for on-axis collimated beams.
         """
+        # bugs/0094: aim off the transmissive first-order reference (not the live system),
+        # which the sequential PupilCalc cannot trace through a beam splitter / mesh solid.
+        pupil_system, _pupil_rows, pupil_index = self._pupil_model_inputs(system, build_reference=True)
         try:
             pupil = Kos.PupilCalc(
-                system,
-                self._analysis_surface_index(),
+                pupil_system,
+                pupil_index,
                 float(wavelength),
                 self._current_aperture_type(),
                 self._current_aperture_value(),
@@ -1090,8 +1103,8 @@ class TracePreviewSamplingMixin:
                     bundles.append(bundle)
             if bundles:
                 return bundles
-        except Exception:
-            pass
+        except Exception as exc:
+            self._note_pupil_launch_fallback(exc)
 
         radius = float(pupil_radius) if np.isfinite(pupil_radius) else 0.0
         if radius <= 1e-9 and self.rows:
@@ -1126,10 +1139,16 @@ class TracePreviewSamplingMixin:
 
     def _build_grid_finite_object_bundles(self, system, wavelength: float, pupil_radius: float):
         """Filled pupil bundles for finite-object full-pupil preview."""
+        # bugs/0094: aim the source off the transmissive FIRST-ORDER REFERENCE, not the
+        # live system -- the sequential PupilCalc cannot trace a beam splitter / mesh
+        # solid (it branches and throws, after which the geometric fallback aimed the beam
+        # at the cube). The reference also recomputes the stop index, fixing the in-path-
+        # promotion row shift.
+        pupil_system, _pupil_rows, pupil_index = self._pupil_model_inputs(system, build_reference=True)
         try:
             pupil = Kos.PupilCalc(
-                system,
-                self._analysis_surface_index(),
+                pupil_system,
+                pupil_index,
                 float(wavelength),
                 self._current_aperture_type(),
                 self._current_aperture_value(),
@@ -1146,8 +1165,8 @@ class TracePreviewSamplingMixin:
                     bundles.append(bundle)
             if bundles:
                 return bundles
-        except Exception:
-            pass
+        except Exception as exc:
+            self._note_pupil_launch_fallback(exc)
 
         radius = float(pupil_radius) if np.isfinite(pupil_radius) else 0.0
         if radius <= 1e-9:
