@@ -16,7 +16,10 @@ shrank from *object→lens* (275) to *object→cube* (~176). So the rays are aim
 cube. **Fix:** give the first-order subsystem a *transmissive sequential reference* of
 the layout (beam splitters & mesh solids → flat plates; mirrors already folded out) and
 trace **that** for the pupil, instead of choking on the non-seq system. This is the
-upstream root of the whole cube-before-lens bug arc.
+upstream root of the whole cube-before-lens bug arc. **The general target (§5b) is a
+*per-branch* source — each terminal beam-splitter leaf gets its own first-order
+reference, entrance pupil, and launch; the single reference is the one-imaging-arm
+special case, and the per-branch form handles cascading splitters.**
 
 ---
 
@@ -149,7 +152,64 @@ reference fixes the aim.
 
 ---
 
+## 5b. The real target — per-branch source/pupil (handles cascades)
+
+The single reference in §5 is the **one-imaging-arm special case** (the current scene:
+the lens is on the transmit arm; the reflect arm is afocal to a near detector, so one
+launch is fine). The general architecture, when **each arm carries its own imaging lens
++ stop**:
+
+**Why one launch can't serve two imaging arms.** A launch fills the *entrance pupil* =
+the image of the *aperture stop* in object space. Where the stop sits decides everything:
+- **Common stop *before* the split** (one objective → BS → two sensors): both arms share
+  one entrance pupil → a single launch fills both, and each arm may differ in post-split
+  focal length / sensor / magnification and still focus cleanly. **Seamless.**
+- **A stop in *each* arm after the split** ("different aperture size"): each arm images
+  its stop back to a **different entrance pupil — different *location* AND *diameter***
+  (EPD = stop diameter scaled by the magnification of the optics imaging it into object
+  space, which differs per arm). One launch fills only one; the other arm still *focuses*
+  (the lens does that regardless of sampling) but is **vignetted at its stop rim and
+  non-uniformly filled** — its spot / energy / MTF is wrong.
+
+**The construction (per terminal leaf).** For each terminal branch *B* (the leaves
+`branch_detectors.derive_branch_detectors` already discovers), linearise object→…→*B*'s
+detector: each beam splitter on the path → a **flat plate** where *B* transmits, a **fold
+mirror** where *B* reflects (the fold-merge `_paraxial_reference_rows_for_layout` already
+does for mirrors). That sequential reference yields *B*'s stop, entrance pupil, and EPD.
+Launch a **separate bundle per branch** (same field grid, branch-specific pupil aim +
+size), **tag** each ray with *B*, and each detector collects **its own** bundle. This is
+a multi-configuration source — one config per imaging detector — parallel to the
+per-branch detectors and the B2 per-branch camera/sensor work; each arm becomes a full
+`{lens, stop, pupil, sensor}` configuration.
+
+**Cascading beam splitters — yes, this works.** A terminal leaf's path is a well-defined
+*sequential chain* no matter the cascade depth, once the transmit/reflect choice is fixed
+at each splitter (e.g. `branch_path = "S4:BS/reflect → S7:BS2/transmit"`). The plate/fold
+substitution simply **composes along the cascade**, and the per-leaf reference
+**auto-finds the limiting stop along that full path** via `_pupil_surface_index_for_rows`
+— so it transparently handles a stop shared *upstream* of a splitter (children share that
+part of the pupil) vs a stop *private* to each leaf. The cascade topology is **already
+discovered** by the branch-detector walk, so per-branch pupils inherit it for free.
+
+Caveats / bounds:
+- **Launch count = number of *imaging* terminal leaves** (afocal / absorbed leaves need no
+  pupil). Up to 2^N for N splitters in principle, but in practice the number of imaging
+  detectors.
+- **Tagging + collection:** each launched bundle still spawns the full ray tree at every
+  splitter; a detector keeps only the rays from the bundle aimed at *its* leaf (the rest
+  are the deliberately-mis-sampled strays for other arms).
+- **Out of scope:** resonators / loops (a leaf's path isn't a simple chain) and gratings
+  (need a first-order angular-dispersion / tilt model, not just plate/fold).
+
+---
+
 ## 6. Implementation plan (the change set, when approved)
+
+**Phasing.** Changes (A)–(D) below implement the **one-arm reference** (§5) and fix the
+current scene. The **per-branch source** (§5b) is the general target — it generalises
+(A)–(C) to build a reference + launch *per terminal leaf* (reusing `branch_detectors`'
+topology) and tags rays per branch. Land the one-arm fix first (small, verifiable), then
+the per-branch generalisation as its own reviewed change.
 
 Three first-order files; blast radius limited to layouts that contain a non-seq element
 (which today already fail into the silent fallback). No change to the ray trace itself.
@@ -197,10 +257,11 @@ sanely instead of aiming at a non-powered element.
 
 ## 7. Risks & open questions
 
-- **Which path does the reflect branch's pupil use?** The reference models the **transmit
-  (imaging) path** (BS → flat plate). The reflect arm has its own (usually afocal /
-  no-lens) pupil; per-branch first-order is out of scope here and is fine as the existing
-  branch-detector handling.
+- **Which path does the reflect branch's pupil use?** Resolved by §5b: each branch gets
+  its own reference + pupil (BS → flat plate where it transmits, → fold mirror where it
+  reflects). The one-arm fix (§5/§6) models only the transmit imaging path; the reflect
+  arm in the current scene is afocal and needs no pupil. When the reflect arm carries its
+  own lens, the per-branch source (§5b) is required, not optional.
 - **Residual overfill.** Even with the correct aim, the EPD maps with a little overfill /
   thin-lens-mesh aberration (7/11 above). That residual is by design caught by the
   aperture-stop vignette; the aim fix removes the *gross* mis-aim, not micro-vignetting.
