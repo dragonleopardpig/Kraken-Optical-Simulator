@@ -262,18 +262,21 @@ def _draw_ray_endpoint_markers(
         marker = str(style["marker"])
         if status == "missed_detector":
             colors = [status_color for _group_item in group]
-        artist = ax.scatter(
-            xy[:, 0],
-            xy[:, 1],
+        scatter_kwargs: dict = dict(
             s=float(style["size"]),
             c=colors,
-            edgecolors=status_color,
             linewidths=float(style["linewidth"]),
             alpha=float(style["alpha"]),
             marker=marker,
             zorder=86.0,
             label=label,
         )
+        # Unfilled markers ('x', '+', ...) draw in the FACE color; passing edgecolors then
+        # warns ("ignoring the edgecolor in favor of the facecolor") and is dropped. Only
+        # outline filled markers.
+        if marker not in {"x", "+", "|", "_", ".", ",", "1", "2", "3", "4"}:
+            scatter_kwargs["edgecolors"] = status_color
+        artist = ax.scatter(xy[:, 0], xy[:, 1], **scatter_kwargs)
         visible_handles.append(artist)
     if len(visible_handles) > 1:
         ax.legend(handles=visible_handles, loc="lower right", fontsize=7, title="Ray terminal")
