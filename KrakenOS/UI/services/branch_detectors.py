@@ -272,7 +272,19 @@ def derive_branch_detectors(
         reached = _reached_image_target(existing_targets) if reaches_image else None
         if reached is not None:
             ri = np.asarray(getattr(reached, "center_world", focus), dtype=float).reshape(-1)
+            # bugs/0097: in a multi-arm split EVERY leaf that lands on a detector trips
+            # reaches_image, but _reached_image_target returns the single furthest global
+            # Image. Pinning a reflect leaf (beam +Y) onto a +Z image collapsed BOTH
+            # branch detectors onto that image (the two perpendicular squares at the
+            # transmit end of beam_splitter_two_arm_doublets). Only pin when the image
+            # lies on THIS leaf's beam -- ahead of the exit and aligned with the mean
+            # exit direction -- so the reflect leaf keeps its own +Y convergence focus.
+            on_this_leaf = False
             if ri.shape == (3,) and np.all(np.isfinite(ri)):
+                to_image = ri - mean_origin
+                dist = float(np.linalg.norm(to_image))
+                on_this_leaf = dist > 1.0e-6 and float(np.dot(to_image, mean_dir)) / dist > 0.7
+            if on_this_leaf:
                 focus = ri
                 focus_source = "reached_image"
         # Size to the beam FOOTPRINT entering this branch (catches the whole beam
