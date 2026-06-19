@@ -92,6 +92,55 @@ def _transmissive_reference_row(row) -> SurfaceRow:
     return ref
 
 
+def _row_branch_selector(row) -> str:
+    """Which beam-splitter arm a row belongs to ('' = common / pre-split / global),
+    read from the element metadata (DESIGN §5b; e.g. beam_splitter_two_arm_doublets
+    tags arm rows 'transmit' / 'reflect' in ``advanced.Element.branch_selector``)."""
+    advanced = getattr(row, "advanced", None) or {}
+    if not isinstance(advanced, dict):
+        return ""
+    element = advanced.get("Element")
+    if isinstance(element, dict) and element.get("branch_selector"):
+        return str(element.get("branch_selector") or "").strip()
+    return str(advanced.get("branch_selector", "") or "").strip()
+
+
+def _branch_leaf_rows(rows: list[SurfaceRow], branch_selector: str) -> list[SurfaceRow]:
+    """The ordered row sequence of ONE beam-splitter arm (DESIGN §5b Phase 2).
+
+    A two-arm splitter scene is one linear table tagged per arm: the common
+    (pre-split) rows, then both arms interleaved by row order, then a global image.
+    This returns the leaf's *optical path* = the common rows BEFORE the split + that
+    arm's own rows. Feed it to ``_paraxial_reference_rows_for_layout(...,
+    unfold_branch_tilts=True)`` (the beam splitter -> flat plate, the folded arm
+    unfolded) to get that arm's first-order entrance pupil, so a per-branch launch can
+    aim each arm at its own pupil. ``''``-selector rows after the arm starts (the
+    global image) are excluded.
+    """
+    selector = str(branch_selector or "").strip()
+    common: list[SurfaceRow] = []
+    arm: list[SurfaceRow] = []
+    for row in rows:
+        bsel = _row_branch_selector(row)
+        if not bsel:
+            if not arm:  # only the pre-split common rows; skip the trailing global image
+                common.append(row)
+        elif bsel == selector:
+            arm.append(row)
+    return common + arm
+
+
+def _scene_branch_selectors(rows: list[SurfaceRow]) -> list[str]:
+    """Distinct beam-splitter arm selectors present in a layout, in first-seen order
+    (empty when the scene has no per-arm tagging)."""
+    seen: list[str] = []
+    for row in rows:
+        bsel = _row_branch_selector(row)
+        if bsel and bsel not in seen:
+            seen.append(bsel)
+    return seen
+
+
 class ParaxialToolsMixin:
     def _paraxial_solve_target_for_cell(self, row_index: int, field: str) -> str | None:
         return None

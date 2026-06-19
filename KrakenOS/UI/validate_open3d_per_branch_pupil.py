@@ -98,6 +98,29 @@ def _rows():
     return private, shared, folded
 
 
+def _two_arm_scene():
+    """A single tagged surface table for a beam splitter with a DIFFERENT lens+stop per
+    arm and a FOLDED reflect arm -- the structure of beam_splitter_two_arm_doublets, the
+    shape a per-branch launch must drive."""
+    from KrakenOS.UI.surface_table_model import SurfaceRow
+
+    mesh = lambda: {"Solid_3d_stl": _cube_stl(), "OpticalSolidFaces": {"faces": []}}
+    arm = lambda sel: {"Element": {"branch_selector": sel}}
+    return [
+        SurfaceRow(surface="Object", name="O", thickness=200.0, diameter=30.0, glass="AIR"),
+        SurfaceRow(surface="Standard", name="BS", thickness=50.0, diameter=50.0, glass="BK7", advanced=mesh()),
+        # transmit arm (+Z, straight)
+        SurfaceRow(surface="Thin Lens", name="TXL", rc=100.0, thickness=80.0, diameter=30.0, glass="AIR", advanced=arm("transmit")),
+        SurfaceRow(surface="Aperture", name="TXS", thickness=50.0, diameter=20.0, glass="AIR", advanced=arm("transmit")),
+        SurfaceRow(surface="Image", name="TXI", thickness=0.0, diameter=20.0, glass="AIR", advanced=arm("transmit")),
+        # reflect arm (folded -90 about X), different lens + smaller stop
+        SurfaceRow(surface="Thin Lens", name="RXL", rc=60.0, thickness=50.0, diameter=30.0, glass="AIR", tilt_x=-90.0, advanced=arm("reflect")),
+        SurfaceRow(surface="Aperture", name="RXS", thickness=30.0, diameter=10.0, glass="AIR", tilt_x=-90.0, advanced=arm("reflect")),
+        SurfaceRow(surface="Image", name="RXI", thickness=0.0, diameter=20.0, glass="AIR", tilt_x=-90.0, advanced=arm("reflect")),
+        SurfaceRow(surface="Image", name="GLOBAL", thickness=0.0, diameter=40.0, glass="AIR"),
+    ]
+
+
 def run_checks() -> tuple[bool, list[str]]:
     failures: list[str] = []
     private, shared, folded = _rows()
@@ -134,6 +157,34 @@ def run_checks() -> tuple[bool, list[str]]:
         failures.append(
             f"FAIL: a folded arm should unfold to the SAME entrance pupil as the straight "
             f"arm, got straight z={straight_z:.2f} != folded z={folded_z:.2f}"
+        )
+
+    # Phase 2 extraction: pull each arm's optical path from ONE tagged two-arm table
+    # (branch_selector) and confirm a per-branch launch could aim each at its own pupil.
+    from KrakenOS.UI.services.paraxial_tools import _branch_leaf_rows, _scene_branch_selectors
+
+    scene = _two_arm_scene()
+    selectors = _scene_branch_selectors(scene)
+    if selectors != ["transmit", "reflect"]:
+        failures.append(f"FAIL: scene branch selectors {selectors}, expected ['transmit', 'reflect']")
+    tx_leaf = _branch_leaf_rows(scene, "transmit")
+    rx_leaf = _branch_leaf_rows(scene, "reflect")
+    tx_names = [r.name for r in tx_leaf]
+    rx_names = [r.name for r in rx_leaf]
+    # Each leaf = common (Object + BS) + its OWN arm, never the other arm or the GLOBAL image.
+    if tx_names != ["O", "BS", "TXL", "TXS", "TXI"]:
+        failures.append(f"FAIL: transmit leaf extraction = {tx_names}")
+    if rx_names != ["O", "BS", "RXL", "RXS", "RXI"]:
+        failures.append(f"FAIL: reflect leaf extraction = {rx_names}")
+    try:
+        tx_z = _leaf_pupil_z(tx_leaf, unfold=True)
+        rx_z = _leaf_pupil_z(rx_leaf, unfold=True)
+    except Exception as exc:  # noqa: BLE001
+        return False, [f"FAIL: extracted two-arm leaf pupil raised {type(exc).__name__}: {exc}"]
+    if abs(tx_z - rx_z) <= 1.0:
+        failures.append(
+            f"FAIL: the two extracted arms (different lens+stop) should get DIFFERENT pupils, "
+            f"got transmit z={tx_z:.2f} ~= reflect z={rx_z:.2f}"
         )
 
     return (not failures), failures
