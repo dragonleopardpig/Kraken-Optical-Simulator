@@ -1,6 +1,8 @@
 # Design note — the non-sequential first-order seam (source/pupil aiming fails on beam splitters)
 
-Status: **diagnosis confirmed + fix verified in concept; NO production code changed yet** (awaiting review of this plan).
+Status: **PHASE 1 (one-arm reference, §5/§6) IMPLEMENTED + pushed** — `c86e23c` (reference
+builder + analysis pupil) + `3b91f99` (3D-preview source launch). `validate_open3d_first_order_reference`
+green; in-app render confirm pending. **PHASE 2 (per-branch source/pupil, §5b) is next.**
 Date: 2026-06-19. Branch: `nonseq-display-refactor`.
 
 ---
