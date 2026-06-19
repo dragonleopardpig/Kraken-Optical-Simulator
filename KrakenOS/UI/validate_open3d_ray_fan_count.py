@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Display-free regression for bugs/0095: "Ray Fan count = N" is a LITERAL count.
+"""Display-free regression for bugs/0095 + 0096: "Ray Fan count = N" is LITERAL.
 
 KrakenOS's ``PupilCalc.Samp`` is a per-axis sampling *density*, not a ray count
 (a meridional fan emits ``2*Samp+1`` rays, hexapolar ``1+3*Samp*(Samp+1)``), and
@@ -95,6 +95,45 @@ def run_checks() -> tuple[bool, list[str]]:
         samps = [kraken_pattern_samp_for_count(pattern, n) for n in range(1, 40)]
         if any(b < a for a, b in zip(samps, samps[1:])):
             failures.append(f"FAIL: Samp inversion for {pattern} is not monotone in N")
+
+    # 5) bugs/0096: the WORLD_CONE sampler (the path "Pupil / field" scenes use,
+    #    not the grid bundles above) must honor a meridional fan as a FLAT N-ray
+    #    fan -- it previously revolved it into 1 + (N//2)*azimuth rays (N=5 -> 33)
+    #    in 3D and a ring-slice in 2D. A flat fan sits entirely at X=0, so the 3D
+    #    bundle and the 2D X=0 slice both show exactly N. Non-seq/folded scenes
+    #    (prefers_meridional_fan False) still revolve into a filled cone.
+    from KrakenOS.UI.services.trace_preview_sampling import TracePreviewSamplingMixin
+
+    class _ConeStub:
+        rows: list = []
+
+        def __init__(self, prefers: bool, count: int) -> None:
+            self._prefers, self._count = prefers, count
+
+        def _current_ray_count(self) -> int:
+            return self._count
+
+        def _launch_pupil_prefers_meridional_fan(self) -> bool:
+            return self._prefers
+
+        def _current_display_slice_axis(self) -> str:
+            return "y"
+
+        def _cone_azimuth_count(self) -> int:
+            return 16
+
+    cone = TracePreviewSamplingMixin._sample_ray_count_cone_points
+    for n in (3, 5, 7, 11):
+        pts = np.asarray(cone(_ConeStub(True, n), 25.0), dtype=float)
+        if pts.shape[0] != n:
+            failures.append(f"FAIL: world_cone meridional fan N={n} drew {pts.shape[0]} rays, expected {n}")
+        elif float(np.max(np.abs(pts[:, 0]))) > 1e-9:
+            failures.append(f"FAIL: world_cone meridional fan N={n} is not meridional (X != 0)")
+        elif len(set(np.round(pts[:, 1], 6))) != n:
+            failures.append(f"FAIL: world_cone meridional fan N={n} has duplicate heights")
+    revolved = np.asarray(cone(_ConeStub(False, 5), 25.0), dtype=float)
+    if revolved.shape[0] <= 5:
+        failures.append(f"FAIL: non-seq world_cone should revolve into a filled cone, got {revolved.shape[0]} rays")
 
     return (not failures), failures
 

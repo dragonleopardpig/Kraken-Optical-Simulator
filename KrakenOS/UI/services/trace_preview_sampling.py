@@ -753,6 +753,19 @@ class TracePreviewSamplingMixin:
         count = max(1, int(self._current_ray_count()))
         if count == 1:
             return np.asarray([[0.0, 0.0]], dtype=float)
+        if self._launch_pupil_prefers_meridional_fan():
+            # bugs/0096: a Meridional fan (sequential, non-folded scene) stays a
+            # FLAT fan of exactly N rays in the cone preview too. Revolving it
+            # (below) drew 1 + (count//2)*azimuth rays in 3D (N=5 -> 33) and only a
+            # ring-slice in the 2D layout. Mirror _sample_ray_count_pupil_points so
+            # the 3D bundle and its 2D X=0 slice both show exactly N. Non-seq /
+            # folded scenes (prefers_meridional_fan False) still revolve into the
+            # area-filling disk the branched-path 3D envelope needs.
+            heights = np.linspace(-radius, radius, count)
+            zeros = np.zeros(count, dtype=float)
+            if self._current_display_slice_axis() == "x":
+                return np.column_stack((heights, zeros)).astype(float)
+            return np.column_stack((zeros, heights)).astype(float)
         n_rings = max(1, count // 2)
         n_az = self._cone_azimuth_count()
         radii = radius * (np.arange(1, n_rings + 1, dtype=float) / float(n_rings))
