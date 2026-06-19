@@ -785,7 +785,10 @@ class AnalysisComputeWorkflowMixin:
     ) -> tuple[object, list[SurfaceRow], int]:
         pupil_system = system
         pupil_rows = self.rows
-        if build_reference and any(row.surface == "Mirror" for row in self.rows):
+        # bugs/0094: build the transmissive first-order reference for ANY non-seq element
+        # (folding mirror, beam splitter, promoted mesh solid) -- not just mirrors -- so
+        # PupilCalc traces a clean centered system instead of branching/throwing.
+        if build_reference and self._layout_needs_paraxial_reference(self.rows):
             pupil_rows, _last_source_index = self._paraxial_reference_rows_for_layout(self.rows)
             pupil_system = _build_system_from_specs(self._serializable_specs_for_rows(pupil_rows), build=0)
         pupil_surface_index = self._pupil_surface_index_for_rows(pupil_rows)

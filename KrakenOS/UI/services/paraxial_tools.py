@@ -52,6 +52,46 @@ def _short_error_message(exc: Exception, limit: int = 220) -> str:
     return text
 
 
+def _row_is_nonseq_optical_solid(row) -> bool:
+    """A non-sequential optical element with no clean paraxial form: a Beam Splitter
+    surface or a promoted mesh solid (``Solid_3d_stl``). Its straight-through (transmit)
+    path is, to first order, a flat refractive plate -- which is what the first-order
+    reference uses so the *sequential* pupil/paraxial trace (PupilCalc, the ABCD solve)
+    does not branch and throw (bugs/0094)."""
+    if str(getattr(row, "surface", "") or "") == BEAM_SPLITTER_SURFACE:
+        return True
+    advanced = getattr(row, "advanced", None) or {}
+    stl = str(advanced.get("Solid_3d_stl", "None") or "None").strip()
+    return stl not in ("", "None", "none")
+
+
+def _transmissive_reference_row(row) -> SurfaceRow:
+    """Straight-through (transmit) first-order equivalent of a non-seq optical solid, for
+    the *sequential* pupil/paraxial trace. KEEP its geometry -- the mesh ``Solid_3d_stl``
+    and glass + thickness, i.e. the transmit optical path -- but STRIP the branch-inducing
+    attributes (beam-splitter coating, per-face assignments, diffuse scatter, reflective
+    coating) and any tilt/decenter, so the sequential trace passes straight through it
+    instead of branching and throwing (bugs/0094). Keeping the mesh makes the reference
+    pupil match what PupilCalc computes for the same solid WITHOUT a splitter; replacing
+    it with an analytic plate drifted ~8 mm because the mesh pose != the row-thickness
+    position. A ``Beam Splitter`` *surface* (no mesh) collapses to a flat refractive
+    interface."""
+    ref = SurfaceRow(**asdict(row))
+    ref.surface = "Standard"
+    ref.tilt_x = ref.tilt_y = ref.tilt_z = 0.0
+    ref.desp_x = ref.desp_y = ref.desp_z = 0.0
+    ref.axis_move = 0.0
+    advanced = dict(ref.advanced or {})
+    has_mesh = str(advanced.get("Solid_3d_stl", "None") or "None").strip() not in ("", "None", "none")
+    for key in ("BeamSplitter", "OpticalSolidFaces", "Coating", "CoatingMet", "DiffuseScatter"):
+        advanced.pop(key, None)
+    if not has_mesh:
+        ref.rc = 0.0
+        ref.k = 0.0
+    ref.advanced = advanced
+    return ref
+
+
 class ParaxialToolsMixin:
     def _paraxial_solve_target_for_cell(self, row_index: int, field: str) -> str | None:
         return None
@@ -165,6 +205,16 @@ class ParaxialToolsMixin:
                 # solves still see the equivalent unfolded air gap.
                 reference_rows[-1].thickness += max(float(row.thickness), 0.0)
                 continue
+            if _row_is_nonseq_optical_solid(row):
+                # bugs/0094: a beam splitter / promoted mesh solid has no clean paraxial
+                # form and makes the sequential pupil/paraxial trace branch and throw.
+                # Replace it with its transmissive flat-plate equivalent (the
+                # straight-through first-order path) so first-order code traces a clean
+                # centered system.  (The reflect arm / per-branch references are the
+                # general target in bugs/DESIGN_nonseq_first_order_reference.md §5b.)
+                reference_rows.append(_transmissive_reference_row(row))
+                last_source_index = index
+                continue
             if row.surface not in {"Standard", "Thin Lens", "Aperture"}:
                 raise RuntimeError("Paraxial solve supports centered refractive systems plus folding mirrors only")
             if any(
@@ -190,6 +240,18 @@ class ParaxialToolsMixin:
         image_row.thickness = 0.0
         reference_rows.append(image_row)
         return reference_rows, int(last_source_index)
+
+    def _layout_needs_paraxial_reference(self, rows: list[SurfaceRow] | None = None) -> bool:
+        """True when the layout has a non-sequential element (folding mirror, beam
+        splitter, or promoted mesh solid) that the sequential first-order code cannot
+        trace directly -- so first-order consumers (pupil, paraxial solve, cardinals)
+        must build the transmissive reference instead of tracing the live system
+        (bugs/0094)."""
+        source = self.rows if rows is None else rows
+        return any(
+            getattr(row, "surface", "") == "Mirror" or _row_is_nonseq_optical_solid(row)
+            for row in source
+        )
 
     def _paraxial_total_image_gap(
         self,
