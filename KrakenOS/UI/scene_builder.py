@@ -832,12 +832,26 @@ def drop_superseded_image_display(targets, surface_curves, labels, rows, *, has_
     """
     if not has_branch_detector:
         return targets, surface_curves, labels
-    rows_idx = _superseded_image_row_indices(rows)
-    if not rows_idx:
+    # bugs/0098: a split derives a branch detector per arm at each leaf's focus -- the
+    # canonical per-arm display. Drop EVERY redundant sequential detector it supersedes:
+    # the scene's per-arm detector rows AND the global Image (surface "Image" is flagged
+    # is_detector at build time). The branch detectors live on synthetic rows >= 100000
+    # and are kept, so each arm shows ONE clean, correctly-oriented detector instead of
+    # the overlapping sequential + branch + Image planes (the user's "2 square detectors
+    # per arm", and the mis-oriented sequential reflect detector). 0093 dropped only the
+    # Image; this generalises to all sequential detectors. No-op without a branch
+    # detector, so plain sequential/folded scenes keep their single detector/Image.
+    drop_rows = {
+        int(getattr(target, "row_index", -1))
+        for target in targets
+        if bool(getattr(target, "is_detector", False))
+        and -1 < int(getattr(target, "row_index", -1)) < 100000
+    }
+    if not drop_rows:
         return targets, surface_curves, labels
-    kept_targets = [t for t in targets if int(getattr(t, "row_index", -1)) not in rows_idx]
-    curves = [c for c in surface_curves if int(getattr(c, "row_index", -1)) not in rows_idx]
-    kept_labels = [lbl for lbl in labels if int(getattr(lbl, "row_index", -1)) not in rows_idx]
+    kept_targets = [t for t in targets if int(getattr(t, "row_index", -1)) not in drop_rows]
+    curves = [c for c in surface_curves if int(getattr(c, "row_index", -1)) not in drop_rows]
+    kept_labels = [lbl for lbl in labels if int(getattr(lbl, "row_index", -1)) not in drop_rows]
     return kept_targets, curves, kept_labels
 
 

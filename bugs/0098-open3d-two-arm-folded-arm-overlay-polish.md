@@ -2,11 +2,13 @@
 
 **Date:** 2026-06-19 (M90aPro)
 **Branch:** nonseq-display-refactor
-**Status:** DOCUMENTED, not yet fixed. Display-geometry bugs on the folded reflect
-arm; need in-app render verification per fix (cannot render off-screen here — the
-editor-based validators hit the pre-existing `_branch_detector_camera_sensors`
-RecursionError). Follows 0097 (branch-detector collapse + cross-arm thickness), which
-fixed the worst of it; these are the remaining polish items.
+**Status:** issues 1 + 2 **FIXED** — `drop_superseded_image_display` now drops ALL
+sequential detectors (per-arm detector rows + the global Image) when branch detectors
+exist, so each arm shows ONE clean branch detector and the mis-oriented row-10 plane is
+no longer drawn (`validate_open3d_detector_redundancy_drop` green). Issues 3 (missing
+BS→lens reflect entry gap) + 4 (overlapping/skewed reflect thickness dims) still open.
+In-app render confirm pending (cannot render off-screen here — editor validators hit the
+pre-existing `_branch_detector_camera_sensors` RecursionError). Follows 0097.
 
 **Scene:** `KrakenOS/common_optical_layouts/beam_splitter_two_arm_doublets.py` —
 rows 0-2 common (Object + BS front/rear), 3-6 transmit doublet+detector (along +Z),
