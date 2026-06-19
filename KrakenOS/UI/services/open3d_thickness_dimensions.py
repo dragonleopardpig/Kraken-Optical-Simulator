@@ -334,6 +334,31 @@ class Open3DThicknessDimensionService:
             return "" if src == "None" else src
 
     @staticmethod
+    def _row_branch_selector(row) -> str:
+        """bugs/0097: which beam-splitter arm a row belongs to ('' = common / global),
+        from the element metadata (e.g. beam_splitter_two_arm_doublets tags rows
+        'transmit' / 'reflect')."""
+        advanced = getattr(row, "advanced", None) or {}
+        if not isinstance(advanced, dict):
+            return ""
+        element = advanced.get("Element")
+        if isinstance(element, dict) and element.get("branch_selector"):
+            return str(element.get("branch_selector") or "").strip()
+        return str(advanced.get("branch_selector", "") or "").strip()
+
+    @classmethod
+    def _is_cross_arm_gap(cls, rows, row_index) -> bool:
+        """True when the gap row_index -> row_index+1 crosses between two splitter arms
+        (the last transmit row to the first reflect row, or an arm row back to the global
+        image). The linear table puts those rows adjacent, but the gap is not a real axial
+        spacing -- measuring it draws a dimension spanning transmit->reflect (bugs/0097)."""
+        if not (0 <= row_index < len(rows) - 1):
+            return False
+        here = cls._row_branch_selector(rows[row_index])
+        nxt = cls._row_branch_selector(rows[row_index + 1])
+        return bool(here) and here != nxt
+
+    @staticmethod
     def _row_short_name(row) -> str:
         name = str(getattr(row, "name", "") or "").strip()
         if name and len(name) <= 16:
@@ -444,6 +469,14 @@ class Open3DThicknessDimensionService:
             except Exception:
                 continue
             if not np.isfinite(thickness) or abs(thickness) <= 1e-9:
+                continue
+            if self._is_cross_arm_gap(rows, row_index):
+                # bugs/0097: the surface table is one linear list but a beam splitter
+                # forks into two arms (branch_selector tags). The gap from the last
+                # transmit row to the first reflect row (or an arm row back to the
+                # global image) is NOT a real axial spacing -- it jumped across the two
+                # arms and drew a dimension spanning transmit->reflect. Skip it; the
+                # per-branch exit->detector overlays measure each arm cleanly.
                 continue
             try:
                 p0 = np.asarray(self.editor._surface_reference_world_point(row_index, system=system), dtype=float).reshape(3)

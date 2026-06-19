@@ -2,7 +2,18 @@
 
 **Date:** 2026-06-19 (M90aPro)
 **Branch:** nonseq-display-refactor
-**Status:** branch-detector collapse FIXED — `validate_branch_detector_multi_arm` green; in-app confirm pending. (Two sibling overlay bugs on the same scene still open: a mis-tilted reflect detector plane, and a thickness dimension spanning across arms.)
+**Status:** branch-detector collapse FIXED (`validate_branch_detector_multi_arm`) + cross-arm thickness dimension FIXED (`validate_open3d_thickness_cross_arm_skip`); in-app confirm pending. (One sibling overlay bug still open: the mis-tilted reflect detector plane, row 10.)
+
+## Cross-arm thickness dimension (the "one thickness overlay span from transmitting to reflecting")
+
+`Open3DThicknessDimensionService.add_overlays` measures the gap between **consecutive
+rows** in the linear table. With the two arms tagged by `branch_selector`, the gap
+from the last transmit row (6) to the first reflect row (7) -- and the last reflect
+row (10) to the global image (11) -- jumps **across** the two arms, so a dimension
+spanned transmit→reflect. Fix: `_is_cross_arm_gap(rows, i)` (True when
+`branch_selector(i)` is a real arm and differs from `branch_selector(i+1)`) makes the
+loop skip those; within-arm and common→arm-start gaps stay. The per-branch
+exit→detector overlays already measure each arm cleanly.
 
 ## Symptom (flag_20260619_154528, beam_splitter_two_arm_doublets)
 
