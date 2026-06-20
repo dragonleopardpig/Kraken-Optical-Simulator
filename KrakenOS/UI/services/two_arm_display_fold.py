@@ -77,6 +77,69 @@ def _leaf_folds(leaf_rows) -> bool:
     return False
 
 
+def _image_plane_z_from_rays(paths, prescription_z: float, tol: float = 5.0):
+    """The image plane = where the exit rays PHYSICALLY converge, not a formula.
+
+    Group the rays that actually reach the image (last vertex within ``tol`` of the prescription
+    image) by their object field point, intersect each field's exit ray (least-squares closest
+    point), and take the median z. Grouping by FIELD is essential: the least-squares intersection
+    of *all* rays is the exit pupil (every chief ray crosses there), not the image. Returns None
+    when it cannot be determined (caller falls back to the prescription).
+    """
+    from collections import defaultdict
+    from KrakenOS.UI.services.ray_display_geometry import _clean_polyline_points
+    groups: dict = defaultdict(list)
+    for path in paths:
+        pts = _clean_polyline_points(np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float))
+        if pts.shape[0] < 4:
+            continue
+        if abs(float(pts[-1][2]) - prescription_z) > tol:   # vignetted / didn't reach the image
+            continue
+        a, b = pts[-2], pts[-1]
+        d = b - a
+        n = float(np.linalg.norm(d))
+        if n < 1e-9:
+            continue
+        groups[tuple(np.round(pts[0][:2], 0))].append((a, d / n))
+    zs: list = []
+    for lines in groups.values():
+        if len(lines) < 2:
+            continue
+        M = np.zeros((3, 3)); rhs = np.zeros(3)
+        for p, d in lines:
+            P = np.eye(3) - np.outer(d, d); M += P; rhs += P @ p
+        try:
+            zs.append(float(np.linalg.lstsq(M, rhs, rcond=None)[0][2]))
+        except Exception:
+            continue
+    return float(np.median(zs)) if zs else None
+
+
+def _extend_ray_to_image_z(pts: np.ndarray, image_z: float, prescription_z: float, tol: float = 5.0) -> np.ndarray:
+    """Move a ray's final vertex onto the physical image plane (so it lands on the focus).
+
+    Only rays that reached the prescription image are extended (vignetted rays that stopped at an
+    aperture keep their real, shorter path). The exit ray is collinear, so moving the endpoint just
+    continues the straight beam to where it truly converges.
+    """
+    from KrakenOS.UI.services.ray_display_geometry import _clean_polyline_points
+    pts = _clean_polyline_points(np.asarray(pts, dtype=float))
+    if pts.shape[0] < 2:
+        return pts
+    if abs(float(pts[-1][2]) - prescription_z) > tol:   # vignetted: keep its real, shorter path
+        return pts
+    a, b = pts[-2], pts[-1]
+    d = b - a
+    if abs(float(d[2])) < 1e-9:
+        return pts
+    t = (image_z - float(a[2])) / float(d[2])
+    if t <= 0.0:
+        return pts
+    out = pts.copy()
+    out[-1] = a + t * d
+    return out
+
+
 def build_two_arm_fold_parts(leaves, settings, wavelength: float, max_radius: float):
     """Build per-arm folded ray paths + detectors for a >=2-imaging-arm splitter scene.
 
@@ -103,21 +166,18 @@ def build_two_arm_fold_parts(leaves, settings, wavelength: float, max_radius: fl
             ]
             fold = _leaf_folds(leaf_rows)
             splitter_z = float(ref_rows[0].thickness)  # object -> splitter (the shared path)
-            # GLASS-PLATE CORRECTION: the splitter is a glass cube, not air. Trace the reference
-            # THROUGH the cube glass (split its air plate into [glass cube] + [residual air gap]);
-            # it pushes the focus further by t(1-1/n) so the detector lands at the real image.
+            # The splitter is a glass CUBE, not air: trace the reference THROUGH the cube glass
+            # (split its plate into [glass cube] + [residual air gap]). The cube's refraction then
+            # PHYSICALLY shifts the focus -- we read the focus from where the rays actually converge
+            # (below), NOT from a t(1-1/n) formula. Cube side = aperture DIAMETER (a cube's glass
+            # path = its side); fall back to _CUBE_THICKNESS_MM only if no diameter. The cube
+            # MATERIAL is not encoded in the scene, so N-BK7 is assumed -- but a different glass just
+            # moves the physical focus, which the ray convergence picks up automatically.
             bs_index = 1  # object, splitter, lens, ...
             bs_row = ref_rows[bs_index]
             original_thickness = float(bs_row.thickness)
-            # A beam-splitter CUBE's glass path length = its side = its aperture DIAMETER. The
-            # scene encodes the arm GAP as the splitter 'thickness' with AIR glass (a 185mm glass
-            # block would break the paraxial pupil solve), so derive the cube depth from the
-            # diameter -- NOT a hardcoded 50 -- falling back to _CUBE_THICKNESS_MM if absent. The
-            # cube MATERIAL is not encoded anywhere in the scene, so we assume N-BK7 (_CUBE_GLASS),
-            # the standard beam-splitter-cube glass; a different glass would change glass_shift.
             diameter = float(getattr(bs_row, "diameter", 0.0) or 0.0)
             cube_thickness = min(diameter if diameter > 1.0 else _CUBE_THICKNESS_MM, original_thickness)
-            glass_shift = 0.0
             if cube_thickness > 1.0 and original_thickness > cube_thickness:
                 bs_row.thickness = cube_thickness
                 bs_row.glass = _CUBE_GLASS
@@ -125,37 +185,43 @@ def build_two_arm_fold_parts(leaves, settings, wavelength: float, max_radius: fl
                     surface="Standard", name="bs_air_gap",
                     thickness=original_thickness - cube_thickness,
                     diameter=float(bs_row.diameter), glass="AIR"))
-                glass_shift = cube_thickness * (1.0 - 1.0 / _CUBE_INDEX)
-                # IMAGE-AT-FOCUS (cf. bug 0093): the cube pushes the real focus +glass_shift PAST
-                # the prescription image, so the traced rays terminate ~glass_shift short of the
-                # detector ("Sensor and image plane detached"). Extend the IMAGE's preceding gap
-                # so the IMAGE row -- and the rays -- land ON the real focus = the detector.
-                if len(ref_rows) >= 2:
-                    ref_rows[-2].thickness = float(ref_rows[-2].thickness) + glass_shift
 
+            leaf_radius = max(float(r.diameter) for r in ref_rows) / 2.0
+            # Enlarge the IMAGE aperture so rays are not image-vignetted short of the plane -- the
+            # physical image plane is read from where the rays converge (below), which needs enough
+            # rays to actually reach it. The displayed detector size is independent (2*max_radius).
+            ref_rows[-1].diameter = max(float(ref_rows[-1].diameter or 0.0), 8.0 * leaf_radius)
             cfg = dict(settings)
             cfg["trace_mode"] = "Sequential"
             editor = _snapshot_editor(ref_rows, cfg)
             editor.branch_detector_camera_assignments = {}
             system = _build_system_from_specs(editor._serializable_row_specs(), build=0)
             rays = Kos.raykeeper(system)
-            leaf_radius = max(float(r.diameter) for r in ref_rows) / 2.0
             editor._trace_preview_rays(system, rays, wavelength, leaf_radius)
             bundle = editor._build_scene_bundle(system, rays, leaf_radius)
         except Exception as exc:  # surfaced + logged + degraded gracefully by _two_arm_fold_parts
             raise RuntimeError(f"two-arm leaf '{selector}' trace failed: {exc}") from exc
 
+        # THE IMAGE PLANE IS PHYSICS, NOT A FORMULA: read it from where the exit rays actually
+        # converge (per object field), then extend every ray to land on it. The old t(1-1/n)
+        # formula + gap-extension placed the plane ~2mm off AND left the prescription image as a
+        # second plane (the user's "two image planes"). The cube glass is in the trace, so the
+        # convergence already carries the real focus shift -- no formula needed.
+        prescription_z = sum(float(r.thickness) for r in ref_rows[:-1])
+        image_z = _image_plane_z_from_rays(getattr(bundle, "ray_paths", []) or [], prescription_z)
+        if image_z is None:
+            image_z = prescription_z
         for path in (getattr(bundle, "ray_paths", []) or []):
             pts = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
             if pts.shape[0] < 2:
                 continue
+            pts = _extend_ray_to_image_z(pts, image_z, prescription_z)
             if fold:
-                path.points_world = fold_points(pts, splitter_z)
+                pts = fold_points(pts, splitter_z)
+            path.points_world = pts
             path.branch_path = f"twoarm/{selector}"
             path.reaches_image = True
             ray_paths.append(path)
-
-        image_z = sum(float(r.thickness) for r in ref_rows[:-1])  # gap already extended by glass_shift
         # Per-arm quick-estimation inputs (the leaf editor still holds THIS arm's straight,
         # sequential state): its paraxial magnification + real-image-circle radius. The
         # detector-coverage / object-FOV overlay otherwise reads the WHOLE folded scene --
