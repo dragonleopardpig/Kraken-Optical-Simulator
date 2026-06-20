@@ -115,6 +115,12 @@ def build_two_arm_fold_parts(leaves, settings, wavelength: float, max_radius: fl
                     thickness=original_thickness - _CUBE_THICKNESS_MM,
                     diameter=float(ref_rows[bs_index].diameter), glass="AIR"))
                 glass_shift = _CUBE_THICKNESS_MM * (1.0 - 1.0 / _CUBE_INDEX)
+                # IMAGE-AT-FOCUS (cf. bug 0093): the cube pushes the real focus +glass_shift PAST
+                # the prescription image, so the traced rays terminate ~glass_shift short of the
+                # detector ("Sensor and image plane detached"). Extend the IMAGE's preceding gap
+                # so the IMAGE row -- and the rays -- land ON the real focus = the detector.
+                if len(ref_rows) >= 2:
+                    ref_rows[-2].thickness = float(ref_rows[-2].thickness) + glass_shift
 
             cfg = dict(settings)
             cfg["trace_mode"] = "Sequential"
@@ -138,7 +144,7 @@ def build_two_arm_fold_parts(leaves, settings, wavelength: float, max_radius: fl
             path.reaches_image = True
             ray_paths.append(path)
 
-        image_z = sum(float(r.thickness) for r in ref_rows[:-1]) + glass_shift
+        image_z = sum(float(r.thickness) for r in ref_rows[:-1])  # gap already extended by glass_shift
         # Per-arm quick-estimation inputs (the leaf editor still holds THIS arm's straight,
         # sequential state): its paraxial magnification + real-image-circle radius. The
         # detector-coverage / object-FOV overlay otherwise reads the WHOLE folded scene --

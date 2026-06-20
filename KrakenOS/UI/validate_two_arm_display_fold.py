@@ -82,6 +82,19 @@ def main() -> int:
     _require(editor._current_finite_paraxial_magnification() is not None, "paraxial magnification fallback returns a value for the fold")
     print("[ok] paraxial magnification fallback for the folded scene")
 
+    # 5. image-at-focus: the rays REACH each detector (no sensor/image-plane detachment, 0107).
+    from KrakenOS.UI.services.ray_display_geometry import _clean_polyline_points as _clean
+    for det, axis, tag in ((transmit, 2, "transmit"), (reflect, 1, "reflect")):
+        arm_paths = [p for p in fold_paths if tag in str(getattr(p, "branch_path", "") or "")]
+        ends = np.array([
+            _clean(np.asarray(p.points_world, dtype=float))[-1]
+            for p in arm_paths
+            if _clean(np.asarray(p.points_world, dtype=float)).shape[0] >= 2
+        ])
+        reach_gap = float(np.asarray(det.center_world, dtype=float)[axis]) - float(ends[:, axis].max())
+        _require(abs(reach_gap) < 2.0, f"{tag} rays reach the detector (gap {reach_gap:.0f} mm)")
+    print("[ok] image-at-focus: rays land on each detector (sensor + image plane coincide)")
+
     print("[PASS] two-arm display-fold + per-arm coverage overlays")
     return 0
 
