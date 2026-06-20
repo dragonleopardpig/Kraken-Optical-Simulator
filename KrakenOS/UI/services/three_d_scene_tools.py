@@ -1144,8 +1144,21 @@ class ThreeDSceneToolsMixin:
         block_count = min(len(self.rows), getattr(surfaces, "n_blocks", 0), len(transforms), surface_count)
         mesh_items: list[SurfaceMesh3D] = []
         pose_overrides = optical_solid_output_port_pose_overrides(system, self.rows)
+        # 0113: in a two-arm splitter fold, the per-arm fold detectors sit at the PHYSICAL focus and
+        # supersede the scene's prescription Detector/Image surfaces. Skip their clear-aperture DISKS
+        # (drawn here, separate from the surface_curves suppressed in 0110/0112) so no no-correction
+        # "image plane in front" is drawn at the prescription focus -- the user's flag.
+        try:
+            _two_arm_fold = len(self._imaging_branch_leaves()) >= 2
+        except Exception:
+            _two_arm_fold = False
         for index in range(block_count):
             row = self.rows[index]
+            if _two_arm_fold:
+                _name = str(getattr(row, "name", "") or "").strip().lower()
+                _surf = str(getattr(row, "surface", "") or "").strip().lower()
+                if _surf == "image" or "detector" in _name:
+                    continue
             if not include_reference_surfaces and row.surface in {"Object", "Image"}:
                 continue
             row_transform = optical_solid_output_port_runtime_transform_override(system, self.rows, index)
