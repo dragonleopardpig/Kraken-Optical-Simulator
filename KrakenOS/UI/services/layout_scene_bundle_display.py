@@ -177,7 +177,19 @@ class LayoutSceneBundleDisplayMixin:
             ):
                 return float(image_principal / object_principal)
         except Exception:
-            return None
+            pass
+        # Two-arm splitter fold: the single-axis paraxial solve can't handle the folded/branched
+        # scene (returns None). Fall back to a fold arm's per-leaf magnification so the
+        # quick-estimation / detector-coverage tools show a representative value, not "--".
+        try:
+            parts = self._two_arm_fold_parts(None)
+            if parts is not None:
+                for target in (parts[1] or []):
+                    mag = (getattr(target, "metadata", None) or {}).get("two_arm_magnification")
+                    if mag is not None and np.isfinite(float(mag)):
+                        return float(mag)
+        except Exception:
+            pass
         return None
 
     def _schedule_refresh_plot(self, *_args) -> None:
