@@ -562,8 +562,17 @@ class LayoutSceneBundleDisplayMixin:
         """
         try:
             leaves = self._imaging_branch_leaves()
-        except Exception:
+        except Exception as exc:
+            try:
+                self.append_debug(f"[two-arm display-fold] imaging-leaf detection raised: {exc!r}")
+            except Exception:
+                pass
             return None
+        if leaves:  # splitter scene with >=1 imaging arm -- log for diagnosis (single-axis scenes stay quiet)
+            try:
+                self.append_debug(f"[two-arm display-fold] {len(leaves)} imaging arm(s): {sorted(leaves)}")
+            except Exception:
+                pass
         if not leaves or len(leaves) < 2:
             return None
         settings = self._settings_for_two_arm_leaf_trace()
@@ -579,6 +588,12 @@ class LayoutSceneBundleDisplayMixin:
             from KrakenOS.UI.services.two_arm_display_fold import build_two_arm_fold_parts
             max_radius = max(float(r.diameter) for r in self.rows) / 2.0
             parts = build_two_arm_fold_parts(leaves, settings, self._current_wavelength(), max_radius)
+            try:
+                self.append_debug(
+                    f"[two-arm display-fold] applied {len(parts[0])} folded paths"
+                    if parts else "[two-arm display-fold] build returned None")
+            except Exception:
+                pass
         except Exception as exc:  # noqa: BLE001 -- degrade to the ordinary trace, but record why
             try:
                 self.append_debug(f"[two-arm display-fold] disabled this refresh: {exc!r}")
