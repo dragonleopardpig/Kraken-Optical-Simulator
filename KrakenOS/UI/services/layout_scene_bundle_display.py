@@ -555,6 +555,12 @@ class LayoutSceneBundleDisplayMixin:
             # shows per arm -- the user's "two image planes" (prescription 595.8 + physics 615.1)
             # collapse to one at the physics focus.
             def _is_superseded_terminal(curve) -> bool:
+                # ANY image-plane curve is superseded by the fold detectors. The scene draws the
+                # global/prescription image as a kind="image" curve with row_index=-1 (no glass
+                # correction -> it sits at the WRONG focus, the user's "image plane in front
+                # without the 50mm cube correction"); a row-index check alone misses it.
+                if str(getattr(curve, "kind", "") or "").strip().lower() == "image":
+                    return True
                 ri = getattr(curve, "row_index", None)
                 try:
                     ri = int(ri)
