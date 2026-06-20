@@ -22,8 +22,10 @@ import numpy as np
 from KrakenOS.UI.scene_geometry import SceneTarget3D
 
 _CUBE_GLASS = "BK7"
-_CUBE_INDEX = 1.5168  # N-BK7 near 0.55 um; t(1-1/n) ~= 0.341 t
-_CUBE_THICKNESS_MM = 50.0
+_CUBE_INDEX = 1.5168  # N-BK7 near 0.55 um; t(1-1/n) ~= 0.341 t -- the splitter material is NOT
+#                       encoded in the scene, so this glass/index is an assumption (standard cube)
+_CUBE_THICKNESS_MM = 50.0  # fallback cube side ONLY when the splitter has no aperture diameter;
+#                            normally the cube side is derived from the splitter diameter
 
 
 def fold_points(points: np.ndarray, splitter_z: float) -> np.ndarray:
@@ -105,16 +107,25 @@ def build_two_arm_fold_parts(leaves, settings, wavelength: float, max_radius: fl
             # THROUGH the cube glass (split its air plate into [glass cube] + [residual air gap]);
             # it pushes the focus further by t(1-1/n) so the detector lands at the real image.
             bs_index = 1  # object, splitter, lens, ...
-            original_thickness = float(ref_rows[bs_index].thickness)
+            bs_row = ref_rows[bs_index]
+            original_thickness = float(bs_row.thickness)
+            # A beam-splitter CUBE's glass path length = its side = its aperture DIAMETER. The
+            # scene encodes the arm GAP as the splitter 'thickness' with AIR glass (a 185mm glass
+            # block would break the paraxial pupil solve), so derive the cube depth from the
+            # diameter -- NOT a hardcoded 50 -- falling back to _CUBE_THICKNESS_MM if absent. The
+            # cube MATERIAL is not encoded anywhere in the scene, so we assume N-BK7 (_CUBE_GLASS),
+            # the standard beam-splitter-cube glass; a different glass would change glass_shift.
+            diameter = float(getattr(bs_row, "diameter", 0.0) or 0.0)
+            cube_thickness = min(diameter if diameter > 1.0 else _CUBE_THICKNESS_MM, original_thickness)
             glass_shift = 0.0
-            if original_thickness > _CUBE_THICKNESS_MM:
-                ref_rows[bs_index].thickness = _CUBE_THICKNESS_MM
-                ref_rows[bs_index].glass = _CUBE_GLASS
+            if cube_thickness > 1.0 and original_thickness > cube_thickness:
+                bs_row.thickness = cube_thickness
+                bs_row.glass = _CUBE_GLASS
                 ref_rows.insert(bs_index + 1, SurfaceRow(
                     surface="Standard", name="bs_air_gap",
-                    thickness=original_thickness - _CUBE_THICKNESS_MM,
-                    diameter=float(ref_rows[bs_index].diameter), glass="AIR"))
-                glass_shift = _CUBE_THICKNESS_MM * (1.0 - 1.0 / _CUBE_INDEX)
+                    thickness=original_thickness - cube_thickness,
+                    diameter=float(bs_row.diameter), glass="AIR"))
+                glass_shift = cube_thickness * (1.0 - 1.0 / _CUBE_INDEX)
                 # IMAGE-AT-FOCUS (cf. bug 0093): the cube pushes the real focus +glass_shift PAST
                 # the prescription image, so the traced rays terminate ~glass_shift short of the
                 # detector ("Sensor and image plane detached"). Extend the IMAGE's preceding gap
