@@ -321,7 +321,10 @@ class SceneProjector2D:
                 if pts.shape[0] < 2:
                     continue
                 display_points = self.project_xyz_points(pts)
-                draw_behind_surfaces = False
+                # Two-arm display-fold rays ARE a fold (like folded_ray_display_paths) -- draw
+                # them BEHIND the surfaces (zorder ~18-22) so the optical elements stay visible,
+                # instead of on top (~42-52) where the dense beam hides the lenses.
+                draw_behind_surfaces = str(getattr(path, "branch_path", "") or "").startswith("twoarm/")
             events_2d = self._project_ray_events(path, np.asarray(display_points, dtype=float))
             projected.append(ProjectedRay2D(
                 ray_index=path.ray_index,

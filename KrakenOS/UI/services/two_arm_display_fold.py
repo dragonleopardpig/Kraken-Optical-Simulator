@@ -107,8 +107,8 @@ def build_two_arm_fold_parts(leaves, settings, wavelength: float, max_radius: fl
             leaf_radius = max(float(r.diameter) for r in ref_rows) / 2.0
             editor._trace_preview_rays(system, rays, wavelength, leaf_radius)
             bundle = editor._build_scene_bundle(system, rays, leaf_radius)
-        except Exception:
-            return None  # any leaf failure -> fall back to the ordinary trace
+        except Exception as exc:  # surfaced + logged + degraded gracefully by _two_arm_fold_parts
+            raise RuntimeError(f"two-arm leaf '{selector}' trace failed: {exc}") from exc
 
         for path in (getattr(bundle, "ray_paths", []) or []):
             pts = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)

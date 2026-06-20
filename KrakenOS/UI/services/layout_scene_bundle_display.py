@@ -579,7 +579,11 @@ class LayoutSceneBundleDisplayMixin:
             from KrakenOS.UI.services.two_arm_display_fold import build_two_arm_fold_parts
             max_radius = max(float(r.diameter) for r in self.rows) / 2.0
             parts = build_two_arm_fold_parts(leaves, settings, self._current_wavelength(), max_radius)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 -- degrade to the ordinary trace, but record why
+            try:
+                self.append_debug(f"[two-arm display-fold] disabled this refresh: {exc!r}")
+            except Exception:
+                pass
             parts = None
         self._two_arm_fold_cache = (sig, parts)
         return parts
