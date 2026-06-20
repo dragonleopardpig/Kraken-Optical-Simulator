@@ -549,6 +549,27 @@ class LayoutSceneBundleDisplayMixin:
             fold_paths, fold_targets = two_arm_parts
             bundle.ray_paths = fold_paths
             bundle.targets = [t for t in bundle.targets if not getattr(t, "is_detector", False)] + fold_targets
+            # The scene authored per-arm Detector surfaces (+ a global Image) at the PRESCRIPTION
+            # focus; the fold detectors now sit at the PHYSICAL focus (ray convergence) and
+            # supersede them. Drop the superseded terminal-plane curves so only ONE image plane
+            # shows per arm -- the user's "two image planes" (prescription 595.8 + physics 615.1)
+            # collapse to one at the physics focus.
+            def _is_superseded_terminal(curve) -> bool:
+                ri = getattr(curve, "row_index", None)
+                try:
+                    ri = int(ri)
+                except (TypeError, ValueError):
+                    return False
+                if not (0 <= ri < len(self.rows)):
+                    return False
+                row = self.rows[ri]
+                surface = str(getattr(row, "surface", "") or "").strip().lower()
+                name = str(getattr(row, "name", "") or "").strip().lower()
+                return surface == "image" or "detector" in name
+            bundle.surface_curves = [
+                c for c in (getattr(bundle, "surface_curves", None) or [])
+                if not _is_superseded_terminal(c)
+            ]
         return bundle
 
     def _settings_for_two_arm_leaf_trace(self) -> dict:
