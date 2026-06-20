@@ -139,6 +139,19 @@ def build_two_arm_fold_parts(leaves, settings, wavelength: float, max_radius: fl
             ray_paths.append(path)
 
         image_z = sum(float(r.thickness) for r in ref_rows[:-1]) + glass_shift
+        # Per-arm quick-estimation inputs (the leaf editor still holds THIS arm's straight,
+        # sequential state): its paraxial magnification + real-image-circle radius. The
+        # detector-coverage / object-FOV overlay otherwise reads the WHOLE folded scene --
+        # magnification is None (so no object FOV is drawn) and the image plane is the scene's
+        # last row, not this arm's folded detector.
+        try:
+            arm_magnification = editor._current_finite_paraxial_magnification()
+        except Exception:
+            arm_magnification = None
+        try:
+            arm_image_circle = float(editor._field_metrics_summary().get("max_real_image_height"))
+        except Exception:
+            arm_image_circle = None
         if fold:
             center = np.array([0.0, image_z - splitter_z, splitter_z], dtype=float)
             normal = np.array([0.0, 1.0, 0.0], dtype=float)
@@ -149,7 +162,12 @@ def build_two_arm_fold_parts(leaves, settings, wavelength: float, max_radius: fl
             target_id=f"twoarm_{selector}", name=f"{selector} detector", role="detector",
             is_detector=True, is_active_target=True,
             center_world=center, normal_world=normal, tangent_world=np.array([1.0, 0.0, 0.0]),
-            diameter=2.0 * max_radius, active_width_mm=2.0 * max_radius, active_height_mm=2.0 * max_radius))
+            diameter=2.0 * max_radius, active_width_mm=2.0 * max_radius, active_height_mm=2.0 * max_radius,
+            metadata={
+                "two_arm_selector": selector,
+                "two_arm_magnification": None if arm_magnification is None else float(arm_magnification),
+                "two_arm_image_circle_radius": arm_image_circle,
+            }))
 
     if not ray_paths:
         return None

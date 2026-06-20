@@ -144,16 +144,22 @@ def detector_coverage_overlay_specs(
     metrics: DetectorCoverageMetrics,
     *,
     object_mode_finite: bool = True,
+    object_axis=None,
+    image_axis=None,
 ) -> list[dict[str, Any]]:
     """Build the overlay polyline specs (pure geometry, no pyvista).
 
     Each spec is ``{"kind", "points", "color", "dashed", "line_width"}``. The
     object-plane FOV rectangle is emitted only for a finite object (it has no
-    finite size at infinity).
+    finite size at infinity). ``object_axis``/``image_axis`` let a folded scene
+    orient the object FOV by the OBJECT axis and the image circle by the detector
+    normal separately; both default to ``image_point - object_point`` (single axis).
     """
     obj_pt = np.asarray(object_point, dtype=float).reshape(3)
     img_pt = np.asarray(image_point, dtype=float).reshape(3)
-    u, v = _basis(img_pt - obj_pt)
+    default_axis = img_pt - obj_pt
+    ou, ov = _basis(default_axis if object_axis is None else np.asarray(object_axis, dtype=float).reshape(3))
+    iu, iv = _basis(default_axis if image_axis is None else np.asarray(image_axis, dtype=float).reshape(3))
     specs: list[dict[str, Any]] = []
 
     # Object plane: FOV rectangle sized sensor / |m| (matches the sensor shape).
@@ -163,7 +169,7 @@ def detector_coverage_overlay_specs(
         specs.append(
             {
                 "kind": "object_fov_rect",
-                "points": _rect_points(obj_pt, v, u, metrics.object_fov_half_width, metrics.object_fov_half_height),
+                "points": _rect_points(obj_pt, ov, ou, metrics.object_fov_half_width, metrics.object_fov_half_height),
                 "color": _OBJECT_FOV,
                 "dashed": False,
                 "line_width": 2.5,
@@ -175,7 +181,7 @@ def detector_coverage_overlay_specs(
         specs.append(
             {
                 "kind": "image_circle",
-                "points": _circle_points(img_pt, u, v, metrics.image_circle_radius),
+                "points": _circle_points(img_pt, iu, iv, metrics.image_circle_radius),
                 "color": _IMAGE_CIRCLE_COVERS if metrics.covers else _IMAGE_CIRCLE_SHORT,
                 "dashed": False,
                 "line_width": 2.5,
@@ -188,7 +194,7 @@ def detector_coverage_overlay_specs(
         specs.append(
             {
                 "kind": "required_image_circle",
-                "points": _circle_points(img_pt, u, v, metrics.sensor_half_diagonal),
+                "points": _circle_points(img_pt, iu, iv, metrics.sensor_half_diagonal),
                 "color": _REQUIRED_RING,
                 "dashed": True,
                 "line_width": 2.0,
@@ -203,6 +209,8 @@ def detector_coverage_label_specs(
     metrics: DetectorCoverageMetrics,
     *,
     object_mode_finite: bool = True,
+    object_axis=None,
+    image_axis=None,
 ) -> list[dict[str, Any]]:
     """Direct 3D labels for the coverage overlay (pure geometry, no VTK).
 
@@ -210,13 +218,16 @@ def detector_coverage_label_specs(
     outside each element on its plane, at distinct clock angles, so the labels
     never overlap each other or the drawn geometry. The image-plane labels share
     a plane and so are spread around the circle; the object FOV label sits on the
-    far object plane and never competes with them.
+    far object plane and never competes with them. ``object_axis``/``image_axis``
+    default to ``image_point - object_point`` (single axis); a fold passes both.
     """
     obj_pt = np.asarray(object_point, dtype=float).reshape(3)
     img_pt = np.asarray(image_point, dtype=float).reshape(3)
-    u, v = _basis(img_pt - obj_pt)
+    default_axis = img_pt - obj_pt
+    ou, ov = _basis(default_axis if object_axis is None else np.asarray(object_axis, dtype=float).reshape(3))
+    iu, iv = _basis(default_axis if image_axis is None else np.asarray(image_axis, dtype=float).reshape(3))
 
-    def place(center, radius, angle_deg, text, color):
+    def place(center, radius, angle_deg, text, color, u, v):
         a = np.radians(float(angle_deg))
         anchor = center + radius * (np.cos(a) * u + np.sin(a) * v)
         return {"text": str(text), "anchor": anchor, "color": tuple(color)}
@@ -232,6 +243,7 @@ def detector_coverage_label_specs(
                 35.0,
                 f"Sensor {2 * metrics.sensor_half_width:.1f}×{2 * metrics.sensor_half_height:.1f}",
                 _SENSOR_FOOTPRINT,
+                iu, iv,
             )
         )
     if metrics.image_circle_radius > 1e-9:
@@ -243,6 +255,7 @@ def detector_coverage_label_specs(
                 f"Image circle Ø{2 * metrics.image_circle_radius:.1f}"
                 + ("" if metrics.covers else " (short)"),
                 _IMAGE_CIRCLE_COVERS if metrics.covers else _IMAGE_CIRCLE_SHORT,
+                iu, iv,
             )
         )
     if not metrics.covers and metrics.sensor_half_diagonal > 1e-9:
@@ -253,6 +266,7 @@ def detector_coverage_label_specs(
                 275.0,
                 f"Needs Ø{2 * metrics.sensor_half_diagonal:.1f}",
                 _REQUIRED_RING,
+                iu, iv,
             )
         )
 
@@ -266,6 +280,7 @@ def detector_coverage_label_specs(
                 90.0,
                 f"FOV {2 * metrics.object_fov_half_width:.1f}×{2 * metrics.object_fov_half_height:.1f}",
                 _OBJECT_FOV,
+                ou, ov,
             )
         )
     return labels
@@ -407,62 +422,73 @@ class DetectorCoverageOverlayService:
     def add_overlays(self, system: Any, scene_bundle: Any = None) -> int:
         if scene_bundle is None:
             return 0
-        target = self._detector_target(scene_bundle)
-        if target is None:
+        detectors = [t for t in (getattr(scene_bundle, "targets", []) or []) if bool(getattr(t, "is_detector", False))]
+        if not detectors:
             return 0
-        sensor = self._sensor_dimensions(target)
-        image_radius = self._image_circle_radius()
-        if sensor is None or image_radius is None:
-            return 0
-        finite = self._is_finite_object()
-        mag = self._magnification() if finite else None
-        metrics = detector_coverage_metrics(sensor[0], sensor[1], image_radius, mag)
-
         rows = getattr(self.editor, "rows", None) or []
         if not rows:
             return 0
+        finite = self._is_finite_object()
         try:
-            obj_pt = self.editor._surface_reference_world_point(0, system=system)
-            img_pt = self.editor._surface_reference_world_point(len(rows) - 1, system=system)
+            obj_pt = np.asarray(self.editor._surface_reference_world_point(0, system=system), dtype=float).reshape(3)
+            # The object's optical axis = direction object -> first surface (shared by both arms).
+            first_pt = np.asarray(self.editor._surface_reference_world_point(1, system=system), dtype=float).reshape(3)
         except Exception as exc:
             self.editor.append_debug(f"Detector coverage overlay reference points unavailable: {exc}")
             return 0
-
-        specs = detector_coverage_overlay_specs(obj_pt, img_pt, metrics, object_mode_finite=finite)
-        count = 0
-        for spec in specs:
-            if self._line_actor(spec["points"], spec["color"], spec["line_width"], bool(spec["dashed"])):
-                count += 1
-
-        # bugs/0055 follow-up: give the Object and Image FOV planes a faint, filled,
-        # *pickable* square so they hover-highlight and accept the double-click FOV
-        # popup. Without it the coverage overlay drew only line actors and (with the
-        # detector on) the clear-aperture disk is suppressed to opacity 0, so the
-        # Object plane had no geometry to click. Mapped to the same rows the
-        # reference points use (row 0 = Object, terminal row = Image).
-        op = np.asarray(obj_pt, dtype=float).reshape(3)
-        ip = np.asarray(img_pt, dtype=float).reshape(3)
-        u, v = _basis(ip - op)
+        object_axis = first_pt - obj_pt
+        ou, ov = _basis(object_axis)
+        sys_mag = self._magnification() if finite else None
+        sys_image_radius = self._image_circle_radius()
         last_row = len(rows) - 1
-        if finite and metrics.object_fov_half_width > 1e-9 and metrics.object_fov_half_height > 1e-9:
-            if self._pick_fill_actor(op, u, v, metrics.object_fov_half_width, metrics.object_fov_half_height, _OBJECT_FOV, 0):
-                count += 1
-        img_half = max(metrics.image_circle_radius, metrics.sensor_half_diagonal)
-        if img_half > 1e-9:
-            if self._pick_fill_actor(ip, u, v, img_half, img_half, _IMAGE_CIRCLE_COVERS, last_row):
-                count += 1
+        count = 0
+        # One detector for single-axis scenes; one PER ARM for a two-arm splitter fold, each at
+        # its OWN folded position with its OWN magnification (stored in the target metadata).
+        for target in detectors:
+            sensor = self._sensor_dimensions(target)
+            if sensor is None:
+                continue
+            meta = getattr(target, "metadata", None) or {}
+            mag = meta["two_arm_magnification"] if "two_arm_magnification" in meta else sys_mag
+            image_radius = meta.get("two_arm_image_circle_radius") or sys_image_radius
+            if image_radius is None:
+                continue
+            metrics = detector_coverage_metrics(sensor[0], sensor[1], float(image_radius), mag if finite else None)
+            img_pt = np.asarray(getattr(target, "center_world"), dtype=float).reshape(3)   # the (folded) detector
+            image_axis = np.asarray(getattr(target, "normal_world"), dtype=float).reshape(3)
+            iu, iv = _basis(image_axis)
 
-        # Direct 3D labels so each element is self-explanatory (bug 0033).
-        for label in detector_coverage_label_specs(obj_pt, img_pt, metrics, object_mode_finite=finite):
-            if self._label_actor(label["anchor"], label["text"], label["color"]):
-                count += 1
+            for spec in detector_coverage_overlay_specs(
+                obj_pt, img_pt, metrics, object_mode_finite=finite,
+                object_axis=object_axis, image_axis=image_axis,
+            ):
+                if self._line_actor(spec["points"], spec["color"], spec["line_width"], bool(spec["dashed"])):
+                    count += 1
 
-        if not metrics.covers and metrics.image_circle_radius > 0.0:
-            self.editor.append_debug(
-                "Detector coverage: image circle "
-                f"Ø{2 * metrics.image_circle_radius:.4g} mm does not cover the "
-                f"{2 * metrics.sensor_half_width:.4g}×{2 * metrics.sensor_half_height:.4g} mm sensor "
-                f"(needs Ø{2 * metrics.sensor_half_diagonal:.4g}). "
-                f"Set Field Real Image Height to {metrics.required_real_image_height:.4g} mm."
-            )
+            # bugs/0055 follow-up: faint, filled, *pickable* squares for the Object FOV (object
+            # axis) and the Image FOV (this detector's axis) so they hover-highlight + accept the
+            # double-click FOV popup.
+            if finite and metrics.object_fov_half_width > 1e-9 and metrics.object_fov_half_height > 1e-9:
+                if self._pick_fill_actor(obj_pt, ou, ov, metrics.object_fov_half_width, metrics.object_fov_half_height, _OBJECT_FOV, 0):
+                    count += 1
+            img_half = max(metrics.image_circle_radius, metrics.sensor_half_diagonal)
+            if img_half > 1e-9:
+                row_index = int(getattr(target, "row_index", last_row) if getattr(target, "row_index", None) is not None else last_row)
+                if self._pick_fill_actor(img_pt, iu, iv, img_half, img_half, _IMAGE_CIRCLE_COVERS, row_index):
+                    count += 1
+
+            for label in detector_coverage_label_specs(
+                obj_pt, img_pt, metrics, object_mode_finite=finite,
+                object_axis=object_axis, image_axis=image_axis,
+            ):
+                if self._label_actor(label["anchor"], label["text"], label["color"]):
+                    count += 1
+
+            if not metrics.covers and metrics.image_circle_radius > 0.0:
+                self.editor.append_debug(
+                    f"Detector coverage ({meta.get('two_arm_selector', 'detector')}): image circle "
+                    f"Ø{2 * metrics.image_circle_radius:.4g} mm does not cover the "
+                    f"{2 * metrics.sensor_half_width:.4g}×{2 * metrics.sensor_half_height:.4g} mm sensor "
+                    f"(needs Ø{2 * metrics.sensor_half_diagonal:.4g})."
+                )
         return count
