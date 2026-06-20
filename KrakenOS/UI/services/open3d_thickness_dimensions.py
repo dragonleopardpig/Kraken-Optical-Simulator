@@ -167,6 +167,56 @@ class Open3DThicknessDimensionService:
             return np.asarray((1.0, 0.0, 0.0), dtype=float)
         return side / side_norm
 
+    @staticmethod
+    def _perp_label_orientation(axis, screen_right, screen_up) -> float:
+        """Billboard text angle so a label reads PERPENDICULAR to its arrow on screen.
+
+        The arrow runs along ``axis``; project it to the screen (right, up) and rotate the text
+        90 deg off it. A horizontal arrow (transmit) -> 90 (vertical text, as before); a vertical
+        arrow (the folded reflect arm) -> ~0 (horizontal text). The old hardcoded 90 made the
+        reflect labels run PARALLEL to their arrows (the user's "not perpendicular")."""
+        if screen_right is None or screen_up is None:
+            return 90.0
+        try:
+            a = np.asarray(axis, dtype=float).reshape(3)
+            sx = float(np.dot(a, np.asarray(screen_right, dtype=float).reshape(3)))
+            sy = float(np.dot(a, np.asarray(screen_up, dtype=float).reshape(3)))
+            if abs(sx) < 1e-9 and abs(sy) < 1e-9:
+                return 90.0
+            orient = float(np.degrees(np.arctan2(sy, sx))) + 90.0
+            while orient > 90.0:
+                orient -= 180.0
+            while orient < -90.0:
+                orient += 180.0
+            return orient
+        except Exception:
+            return 90.0
+
+    def _fold_detector_for_terminal_row(self, end_row_index: int, p1, scene_bundle):
+        """If gap ends at a superseded prescription Detector/Image row, return the FOLD detector
+        (physical focus) it was superseded by, so the thickness reads to where rays converge -- not
+        the stale prescription plane (0110 part 2). Else None (gap unchanged)."""
+        rows = getattr(self.editor, "rows", None) or []
+        if not (0 <= int(end_row_index) < len(rows)):
+            return None
+        row = rows[int(end_row_index)]
+        surface = str(getattr(row, "surface", "") or "").strip().lower()
+        name = str(getattr(row, "name", "") or "").strip().lower()
+        if not (surface == "image" or "detector" in name):
+            return None
+        centers = [
+            np.asarray(t.center_world, dtype=float).reshape(3)
+            for t in (getattr(scene_bundle, "targets", []) or [])
+            if bool(getattr(t, "is_detector", False)) and getattr(t, "center_world", None) is not None
+        ]
+        if not centers:
+            return None
+        p1 = np.asarray(p1, dtype=float).reshape(3)
+        best = min(centers, key=lambda c: float(np.linalg.norm(c - p1)))
+        # The physical focus shift off the prescription plane is ~20mm; guard against grabbing an
+        # unrelated arm's detector.
+        return best if float(np.linalg.norm(best - p1)) < 60.0 else None
+
     def _register_drag_actor(self, actor: Any, row_index: int, start: np.ndarray, end: np.ndarray) -> None:
         actor_key = self.inspector._actor_key(actor)
         if actor_key is None:
@@ -462,6 +512,7 @@ class Open3DThicknessDimensionService:
         except Exception:
             screen_axes = None
         screen_up = screen_axes[1] if screen_axes else None
+        screen_right = screen_axes[0] if screen_axes else None
         count = 0
         for row_index, row in enumerate(rows[:-1]):
             try:
@@ -486,6 +537,13 @@ class Open3DThicknessDimensionService:
                 continue
             if not (np.all(np.isfinite(p0)) and np.all(np.isfinite(p1))):
                 continue
+            # 0110 part 2: a gap ending at a superseded prescription Detector/Image is redirected to
+            # the FOLD detector (physical focus), so the last thickness reads to where the rays
+            # converge (615.1 / 411.0), not the removed prescription plane (595.8 / 390.9).
+            terminal_target = self._fold_detector_for_terminal_row(row_index + 1, p1, scene_bundle)
+            if terminal_target is not None:
+                p1 = terminal_target
+                thickness = float(np.linalg.norm(p1 - p0))
             # bugs/0093: a promoted optical solid's OWN thickness dimension. Its row
             # reference point is the desp_z body CENTRE, so S{row} started mid-body
             # and a 50 mm cube measured ~25 mm (recording flag_20260618_180621).
@@ -608,7 +666,7 @@ class Open3DThicknessDimensionService:
                     label=label,
                     drag_start=p0,
                     drag_end=p1,
-                    label_orientation_deg=90.0,
+                    label_orientation_deg=self._perp_label_orientation(axis, screen_right, screen_up),
                 )
         # bugs/0093: per-branch exit->detector distance overlays (transmit + reflect).
         count += self._branch_distance_overlays(

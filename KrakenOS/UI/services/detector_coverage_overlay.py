@@ -227,6 +227,17 @@ def detector_coverage_label_specs(
     ou, ov = _basis(default_axis if object_axis is None else np.asarray(object_axis, dtype=float).reshape(3))
     iu, iv = _basis(default_axis if image_axis is None else np.asarray(image_axis, dtype=float).reshape(3))
 
+    # Lift the image-plane labels OUTWARD along the detector normal (just past the focus, away from
+    # the optics) so they clear the detector. In an edge-on view -- the folded reflect arm in -YZ --
+    # the in-plane clock placement otherwise projects every label right onto the detector bar (user
+    # flag "text overlaps the detector"); a normal offset moves them off it without hiding geometry.
+    _inormal = np.asarray(image_axis if image_axis is not None else default_axis, dtype=float).reshape(3)
+    _nn = float(np.linalg.norm(_inormal))
+    img_label_center = (
+        img_pt + (_inormal / _nn) * (metrics.sensor_half_diagonal * (1.0 + _LABEL_MARGIN) + _LABEL_GAP)
+        if _nn > 1e-9 else img_pt
+    )
+
     def place(center, radius, angle_deg, text, color, u, v):
         a = np.radians(float(angle_deg))
         anchor = center + radius * (np.cos(a) * u + np.sin(a) * v)
@@ -238,7 +249,7 @@ def detector_coverage_label_specs(
     if metrics.sensor_half_diagonal > 1e-9:
         labels.append(
             place(
-                img_pt,
+                img_label_center,
                 metrics.sensor_half_diagonal * (1.0 + _LABEL_MARGIN) + _LABEL_GAP,
                 35.0,
                 f"Sensor {2 * metrics.sensor_half_width:.1f}×{2 * metrics.sensor_half_height:.1f}",
@@ -249,7 +260,7 @@ def detector_coverage_label_specs(
     if metrics.image_circle_radius > 1e-9:
         labels.append(
             place(
-                img_pt,
+                img_label_center,
                 metrics.image_circle_radius * (1.0 + _LABEL_MARGIN) + _LABEL_GAP,
                 150.0,
                 f"Image circle Ø{2 * metrics.image_circle_radius:.1f}"
@@ -261,7 +272,7 @@ def detector_coverage_label_specs(
     if not metrics.covers and metrics.sensor_half_diagonal > 1e-9:
         labels.append(
             place(
-                img_pt,
+                img_label_center,
                 metrics.sensor_half_diagonal * (1.0 + _LABEL_MARGIN) + _LABEL_GAP,
                 275.0,
                 f"Needs Ø{2 * metrics.sensor_half_diagonal:.1f}",
