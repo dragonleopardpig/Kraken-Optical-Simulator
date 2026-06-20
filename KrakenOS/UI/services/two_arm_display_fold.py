@@ -27,19 +27,37 @@ _CUBE_THICKNESS_MM = 50.0
 
 
 def fold_points(points: np.ndarray, splitter_z: float) -> np.ndarray:
-    """Bend a straight polyline 90 deg +Y at the splitter plane (display only).
+    """Bend a straight polyline 90 deg +Y at the splitter (display only), continuously.
 
-    A point past the splitter ``(x, y, z) -> (x, z - z_s, z_s + y)``: the along-arm distance
-    becomes +Y and the transverse becomes z (the splitter reflection). Points up to the
-    splitter (the shared object path) are unchanged.
+    A 45 deg splitter reflects about the TILTED plane ``z = splitter_z + y`` (not the flat
+    plane ``z = splitter_z``): a ray at height y hits it at ``z = splitter_z + y``. Reflecting
+    the portion past that plane -- ``(x, y, z) -> (x, z - z_s, z_s + y)`` -- is the identity ON
+    the plane, so the fold is continuous. We insert the exact crossing vertex on each segment
+    that straddles the plane so the ray bends right on it. Folding about the flat plane instead
+    (the old behavior) left the splitter-side ends at z=z_s while the lens-side ends spread in
+    z by their height, so top/bottom rays crossed -- the twist the user flagged.
     """
-    out = np.asarray(points, dtype=float).copy()
-    past = out[:, 2] > splitter_z
-    z = out[past, 2].copy()
-    y = out[past, 1].copy()
-    out[past, 1] = z - splitter_z
-    out[past, 2] = splitter_z + y
-    return out
+    pts = np.asarray(points, dtype=float)
+    if pts.shape[0] < 2:
+        return pts.copy()
+
+    def _side(p):                      # > 0 on the lens side of the tilted plane
+        return float(p[2] - (splitter_z + p[1]))
+
+    def _reflect(p):                   # reflection about z = splitter_z + y
+        return np.array([p[0], p[2] - splitter_z, splitter_z + p[1]], dtype=float)
+
+    out: list = []
+    prev = pts[0]
+    out.append(_reflect(prev) if _side(prev) > 0.0 else prev.copy())
+    for cur in pts[1:]:
+        sp, sc = _side(prev), _side(cur)
+        if sp * sc < 0.0:              # segment straddles the plane -> insert the crossing vertex
+            cross = prev + (sp / (sp - sc)) * (cur - prev)
+            out.append(cross)         # on the plane: _reflect(cross) == cross
+        out.append(_reflect(cur) if sc > 0.0 else cur.copy())
+        prev = cur
+    return np.asarray(out, dtype=float)
 
 
 def _leaf_folds(leaf_rows) -> bool:

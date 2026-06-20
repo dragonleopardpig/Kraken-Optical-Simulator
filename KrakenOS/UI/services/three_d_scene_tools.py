@@ -1035,6 +1035,21 @@ class ThreeDSceneToolsMixin:
             return None
         if not preview_trace_signature_matches(self._last_preview_trace_signature, self._preview_trace_signature()):
             return None
+        # Two-arm display-fold: a load-time analysis refresh (refresh_plot) caches the raw
+        # non-folded bundle in _last_scene_bundle. Reusing it for Open 3D shows the OLD rays
+        # until a manual Trace Now. If this is a >=2-imaging-arm splitter scene but the cached
+        # bundle carries no folded ('twoarm/...') paths, force a fresh build so the fold shows
+        # on open without the user clicking Trace Now.
+        try:
+            if len(self._imaging_branch_leaves()) >= 2:
+                cached_paths = getattr(self._last_scene_bundle, "ray_paths", []) or []
+                if not any(
+                    str(getattr(path, "branch_path", "") or "").startswith("twoarm/")
+                    for path in cached_paths
+                ):
+                    return None
+        except Exception:
+            pass
         return self.last_system, self.last_rays, self._last_scene_bundle
 
     def _build_preview_system_and_rays(self):
