@@ -173,6 +173,11 @@ class LayoutSettingsService:
             "nonseq_ns_limit": self.nonseq_ns_limit_var.get().strip() if hasattr(self, "nonseq_ns_limit_var") else "200",
             "nonseq_energy_probability": self._current_nonseq_energy_probability(),
             "camera_model": self.camera_model_var.get().strip() if hasattr(self, "camera_model_var") else CAMERA_NONE_LABEL,
+            # Per-branch (two-arm) camera registrations: {branch_path: camera_model}. Persisted so a
+            # registered STEP camera survives save/reload (item 1).
+            "branch_detector_camera_assignments": {
+                str(k): str(v) for k, v in (getattr(self, "branch_detector_camera_assignments", {}) or {}).items()
+            },
             "camera_step_path": _portable_step_path_text(self.imported_camera_step_path),
             "camera_step_rotation_x_deg": float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
             "camera_step_rotation_y_deg": float(getattr(self, "camera_step_rotation_y_deg", 0.0)),
@@ -499,6 +504,14 @@ class LayoutSettingsService:
                 self.camera_model_var.set(camera_model)
             else:
                 self.camera_model_var.set(CAMERA_NONE_LABEL)
+        # Per-branch (two-arm) camera registrations (item 1): restore only valid DB cameras.
+        branch_cams = settings.get("branch_detector_camera_assignments", None)
+        if isinstance(branch_cams, dict):
+            self.branch_detector_camera_assignments = {
+                str(k): str(v)
+                for k, v in branch_cams.items()
+                if str(v).strip() and camera_record(str(v)) is not None
+            }
         self.imported_camera_step_path = _path_setting("camera_step_path")
         self.imported_lens_step_path = _path_setting("lens_step_path")
         self.imported_optical_step_path = _path_setting("optical_step_path")
