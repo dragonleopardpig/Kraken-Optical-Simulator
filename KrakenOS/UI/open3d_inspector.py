@@ -12075,6 +12075,54 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if moved:
             self.refresh_from_editor(force_retrace=True)
 
+    def _add_image_plane_camera_menu(self, menu) -> None:
+        """Append a 'Register STEP camera (sensor size)' cascade for the single-axis detector,
+        mirroring the per-branch camera menu so single-axis + cascade arms are uniform (item 1)."""
+        try:
+            from KrakenOS.UI.camera_database import camera_names, CAMERA_NONE_LABEL
+            names = list(camera_names())
+        except Exception:
+            names, CAMERA_NONE_LABEL = [], "None"
+        try:
+            current = str(self.editor._current_camera_model() or "")
+        except Exception:
+            current = ""
+        has_cam = bool(current) and current != CAMERA_NONE_LABEL
+        menu.add_separator()
+        if has_cam:
+            menu.add_command(label=f"camera sensor: {current}", state="disabled")
+        if names:
+            cam_menu = tk.Menu(menu, tearoff=False)
+            for name in names:
+                mark = "● " if name == current else "    "
+                cam_menu.add_command(label=mark + name, command=lambda n=name: self._register_image_plane_camera(n))
+            menu.add_cascade(label="Register STEP camera (sensor size)…", menu=cam_menu)
+        else:
+            menu.add_command(label="Register STEP camera (no cameras in DB)", state="disabled")
+        if has_cam:
+            menu.add_command(label=f"Unregister camera ({current})", command=lambda: self._register_image_plane_camera(None))
+
+    def _register_image_plane_camera(self, camera_name) -> None:
+        """Assign/clear the vendor STEP camera (sensor size) on the single-axis detector from the
+        detector right-click, then retrace so the detector resizes to the sensor (item 1)."""
+        try:
+            from KrakenOS.UI.camera_database import CAMERA_NONE_LABEL
+        except Exception:
+            CAMERA_NONE_LABEL = "None"
+        try:
+            self.editor.camera_model_var.set(str(camera_name) if camera_name else CAMERA_NONE_LABEL)
+        except Exception as exc:
+            self.status_var.set(f"Register camera failed: {exc}")
+            return
+        self.status_var.set(
+            f"Registered {camera_name} sensor to the detector" if camera_name else "Unregistered detector camera"
+        )
+        try:
+            self.editor._invalidate_preview_scene_trace()
+        except Exception:
+            pass
+        self.refresh_from_editor(force_retrace=True)
+
     def _show_quick_estimation_role_menu(self, event, quantity: str, plane: str | None = None) -> None:
         from KrakenOS.UI.services.quick_estimation import (
             LABELS,
@@ -12109,6 +12157,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             menu.add_command(label="Set Field type…", command=self._quick_estimation_edit_field_type)
             menu.add_separator()
             menu.add_command(label="Snap detector to image plane (remove defocus)", command=self._snap_detector_to_image_plane)
+            # Per-detector camera STEP (vendor sensor): right-click the detector to assign a camera,
+            # mirroring the per-branch "Register STEP camera" so single-axis and cascade arms are
+            # uniform (item 1; user expects camera import from the detector right-click).
+            self._add_image_plane_camera_menu(menu)
         try:
             menu.tk_popup(int(event.x_root), int(event.y_root))
         finally:
