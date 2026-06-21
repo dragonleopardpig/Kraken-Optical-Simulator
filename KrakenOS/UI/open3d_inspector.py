@@ -11237,45 +11237,72 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.status_var.set("Measurements cleared.")
         self._update_mode_badge()
 
+    def _measure_row_z_positions(self):
+        # live per-row z-stations (recomputed each refresh) -- the anchor that makes measurements track.
+        for owner in (getattr(self, "editor", None), self):
+            fn = getattr(owner, "_row_z_positions", None)
+            if callable(fn):
+                try:
+                    z = fn()
+                    if z:
+                        return [float(v) for v in z]
+                except Exception:
+                    pass
+        return None
+
+    def _anchor_measure_point(self, point):
+        zpos = self._measure_row_z_positions()
+        if not zpos:
+            return None, 0.0
+        z = float(np.asarray(point, dtype=float).reshape(-1)[2])
+        r = int(min(range(len(zpos)), key=lambda i: abs(z - zpos[i])))
+        return r, z - zpos[r]
+
+    def _resolve_measure_point(self, p, r, dz):
+        out = np.asarray(p, dtype=float).reshape(3).copy()
+        if r is not None:
+            zpos = self._measure_row_z_positions()
+            if zpos and 0 <= int(r) < len(zpos):
+                out[2] = zpos[int(r)] + float(dz)
+        return out
+
     def _record_measure_point(self, world, normal=None) -> None:
         point = np.asarray(world, dtype=float).reshape(-1)[:3]
         if point.size < 3 or not np.all(np.isfinite(point)):
             self.status_var.set("Measure: the pick missed -- click ON an edge/surface.")
             return
+        # anchor each end to the nearest optical row's z-station so the dimension tracks geometry.
+        r, dz = self._anchor_measure_point(point)
         if getattr(self, "_measure_p0", None) is None:
-            self._measure_p0 = point
-            # remember the FIRST surface normal so the 2nd click measures the PERPENDICULAR
-            # (normal) distance to that surface, not the slant point-to-point distance.
-            self._measure_n0 = None
+            n0 = None
             if normal is not None:
                 n = np.asarray(normal, dtype=float).reshape(-1)[:3]
                 if n.size >= 3 and np.all(np.isfinite(n)) and float(np.linalg.norm(n)) > 1e-9:
-                    self._measure_n0 = n / float(np.linalg.norm(n))
+                    n0 = (n / float(np.linalg.norm(n))).tolist()
+            self._measure_p0 = {"p": point.tolist(), "r": r, "dz": float(dz), "n": n0}
             self.status_var.set("Measure: click the SECOND edge/surface.")
             return
-        p0 = np.asarray(self._measure_p0, dtype=float).reshape(3)
-        n0 = getattr(self, "_measure_n0", None)
-        if n0 is not None:
-            d = float(np.dot(point - p0, n0))  # signed perpendicular distance to the 2nd point's plane
-            start = p0
-            end = p0 + n0 * d
-        else:
-            start = p0
-            end = point
+        a0 = self._measure_p0
+        seg = {
+            "p0": list(a0["p"]), "r0": a0["r"], "dz0": a0["dz"], "n0": a0["n"],
+            "p1": point.tolist(), "r1": r, "dz1": float(dz),
+        }
         segs = list(getattr(self, "_measure_segments", []))
-        segs.append((start, end))
+        segs.append(seg)
         self._measure_segments = segs
         self._measure_p0 = None
-        self._measure_n0 = None
         self._measure_pick_mode = False
         try:
             self._set_axis_pick_cursor(False)
         except Exception:
             pass
-        dist = float(np.linalg.norm(np.asarray(end, dtype=float) - np.asarray(start, dtype=float)))
+        p0 = self._resolve_measure_point(seg["p0"], seg["r0"], seg["dz0"])
+        p1 = self._resolve_measure_point(seg["p1"], seg["r1"], seg["dz1"])
+        n0 = np.asarray(seg["n0"], dtype=float) if seg["n0"] else None
+        dist = abs(float(np.dot(p1 - p0, n0))) if n0 is not None else float(np.linalg.norm(p1 - p0))
         self._refresh_measure_overlays()
         kind = "normal" if n0 is not None else "point-to-point"
-        self.status_var.set(f"Measured {dist:.4g} mm ({kind}). Press 'Measure' for another, or 'Clear'.")
+        self.status_var.set(f"Measured {dist:.4g} mm ({kind}, live). Press 'Measure' for another, or 'Clear'.")
         self._update_mode_badge()
 
     def _refresh_measure_overlays(self) -> None:
@@ -11297,8 +11324,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 line_cls = mapper_cls = cone_cls = None
             for _seg in segments:
                 try:
-                    p0 = np.asarray(_seg[0], dtype=float).reshape(3)
-                    p1 = np.asarray(_seg[1], dtype=float).reshape(3)
+                    # resolve each end from its anchor so the dimension tracks moved geometry
+                    p0 = self._resolve_measure_point(_seg["p0"], _seg.get("r0"), _seg.get("dz0", 0.0))
+                    p1raw = self._resolve_measure_point(_seg["p1"], _seg.get("r1"), _seg.get("dz1", 0.0))
+                    _n0 = np.asarray(_seg["n0"], dtype=float) if _seg.get("n0") else None
+                    if _n0 is not None:
+                        p1 = p0 + _n0 * float(np.dot(p1raw - p0, _n0))
+                    else:
+                        p1 = p1raw
                     mid = (p0 + p1) * 0.5
                     dist = float(np.linalg.norm(p1 - p0))
                     if line_cls is not None and mapper_cls is not None and vtkActor is not None:
