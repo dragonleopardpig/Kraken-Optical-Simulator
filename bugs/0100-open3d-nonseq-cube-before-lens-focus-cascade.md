@@ -25,7 +25,16 @@ Confirmed by `bugs/diag_1x_cube.py` on the 150mm 1X datasheet:
 3. **Object Plane "missing"** — row 0 still has a drawn actor in `row_actor_bounds`, so it is not
    deleted; likely shoved off-screen by the broken scene scale. Verify in-app; should return once the
    focus is correct.
+3b. **Image Circle drawn at the wrong location** (`flag_..._154836`) — the analysis Image-Circle / FOV
+   ring is drawn up near the BS (the forward-pulled focus z≈78), not at the detector. Same wrong focus.
 4. **-YZ flag** — a second view angle of the same scene.
+5. **Severe slowness / apparent freeze** (2026-06-21, glued BS+LED + partial-reflecting face): applying
+   the partial-reflecting surface and each Show Rays toggle take *minutes*. Confirmed NOT hung —
+   pid burned ~49 s of CPU during one "freeze" (TIME 10:43→11:32), main thread state R. Root = the
+   per-arm **full-system rebuild per launch** ("Creating solid objects" spam, see
+   `project_nonseq_first_order_seam`) on a heavy scene (bundled lens+camera CADs + promoted BS cube +
+   LED STEP). The 0100 first-order-reference work should also cut this (aim once, no full rebuild per
+   arm). Interim workaround: edit with Show Rays OFF, enable once at the end.
 
 ## Fix (NEXT PRIORITY)
 The **universal first-order reference** for the non-seq trace is the documented root, and Phase 1
