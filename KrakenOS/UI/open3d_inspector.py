@@ -1901,7 +1901,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             row_index = int(row_index)
         except Exception:
             return None
-        if self.editor._file_backed_stl_row_at(row_index) is None:
+        if self.editor._file_backed_stl_row_at(row_index) is None and not self._is_detector_carry_row(row_index):
             return None
         if pick_world.size >= 3 and np.all(np.isfinite(pick_world[:3])):
             self._row_carry_hold_pick_world = tuple(float(value) for value in pick_world[:3])
@@ -1914,12 +1914,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             row_index = int(row_index)
         except Exception:
             return
-        if self.editor._file_backed_stl_row_at(row_index) is None:
+        is_detector = self._is_detector_carry_row(row_index)
+        if self.editor._file_backed_stl_row_at(row_index) is None and not is_detector:
             return
         self._cancel_row_carry_hold_timer()
         self._row_carry_hold_candidate_index = row_index
         self._row_carry_hold_press_xy = (int(press_xy[0]), int(press_xy[1]))
-        self.status_var.set(f"Hold S{row_index} briefly to lift the promoted optical solid; drag freely; release to drop.")
+        if is_detector:
+            self.status_var.set(f"Hold S{row_index} (detector) briefly to grab it; drag along the optical axis to defocus; release to drop.")
+        else:
+            self.status_var.set(f"Hold S{row_index} briefly to lift the promoted optical solid; drag freely; release to drop.")
         try:
             self._row_carry_hold_after_id = self._vtk_widget.after(
                 self._step_carry_hold_delay_ms(),
@@ -2051,10 +2055,50 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _new_row_carry_motion_state(self, row_index: int) -> dict[str, object] | None:
         center_world = self._row_actor_center_world(row_index)
         plane_normal = self._camera_view_normal()
+        if self._is_detector_carry_row(row_index):
+            # Detector (Image-row) drag handle: reuse the carry plumbing but motion is axial-only
+            # (+Z optical axis) and applied to the last gap, so the detector slides to defocus while
+            # the camera stays glued to it (item 1/2).
+            if center_world is not None:
+                center = np.asarray(center_world, dtype=float).reshape(-1)[:3]
+            else:
+                det_z = sum(float(r.thickness) for r in self.editor.rows[:-1])  # on-axis detector station
+                center = np.array([0.0, 0.0, float(det_z)], dtype=float)
+            if plane_normal is None:
+                return None
+            normal = np.asarray(plane_normal, dtype=float).reshape(-1)[:3]
+            if center.size < 3 or normal.size < 3 or not np.all(np.isfinite(center)) or not np.all(np.isfinite(normal)):
+                return None
+            return {
+                "row_index": int(row_index),
+                "detector_carry": True,
+                "center_world": tuple(float(v) for v in center[:3]),
+                "start_center_world": tuple(float(v) for v in center[:3]),
+                "drag_plane_origin": tuple(float(v) for v in center[:3]),
+                "drag_plane_normal": tuple(float(v) for v in normal[:3]),
+                "applied_steps": 0,
+                "history_started": False,
+            }
         return self.editor._open3d_step_state_service().row_carry_motion_state(
             row_index,
             center_world=center_world,
             plane_normal=plane_normal,
+        )
+
+    def _is_detector_carry_row(self, row_index) -> bool:
+        """The detector = the final on-axis Image row; eligible for the dedicated axial drag handle."""
+        try:
+            idx = int(row_index)
+        except Exception:
+            return False
+        rows = getattr(self.editor, "rows", None) or []
+        if len(rows) < 3 or idx != len(rows) - 1:
+            return False
+        last = rows[idx]
+        return (
+            str(getattr(last, "surface", "") or "") == "Image"
+            and abs(float(getattr(last, "desp_y", 0.0) or 0.0)) <= 1e-6
+            and abs(float(getattr(last, "desp_z", 0.0) or 0.0)) <= 1e-6
         )
 
     def _activate_row_carry_hold(self) -> None:
@@ -2070,6 +2114,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         state = self._new_row_carry_motion_state(int(row_index))
         if state is None:
             self.status_var.set(f"Carry S{int(row_index)}: selected row is not a movable promoted optical solid.")
+            return
+        if bool(state.get("detector_carry")):
+            self._activate_detector_carry_hold(state, press_xy)
             return
         center_world = np.asarray(state["center_world"], dtype=float).reshape(3)
         plane_normal = np.asarray(state["drag_plane_normal"], dtype=float).reshape(3)
@@ -2196,6 +2243,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 pass
         row_index = int(movement.row_index)
         delta = np.asarray(movement.delta_xyz, dtype=float).reshape(-1)[:3]
+        if bool(state.get("detector_carry")):
+            axial = float(delta[2])   # +Z optical axis -> the image-distance (last) gap
+            if abs(axial) > 1e-9:
+                self.editor.rows[-2].thickness = float(self.editor.rows[-2].thickness) + axial
+                axial_vec = np.array([0.0, 0.0, axial], dtype=float)
+                if self._translate_row_actors(row_index, axial_vec) <= 0:
+                    self.editor._invalidate_preview_scene_trace()
+                    self.refresh_from_editor()
+                self._open3d_carry_grip_service.update_after_delta(state, axial_vec)
+                c = np.asarray(state.get("center_world"), dtype=float).reshape(-1)[:3]
+                state["center_world"] = (float(c[0]), float(c[1]), float(c[2] + axial))
+                state["applied_steps"] = int(state.get("applied_steps", 0)) + 1
+            return
         try:
             self.editor.translate_scene_row_pose_vector(
                 row_index,
@@ -2213,6 +2273,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.editor._open3d_step_state_service().apply_row_carry_motion_delta(state, movement)
 
     def _finish_row_carry_drag(self, state: dict[str, object]) -> None:
+        if bool(state.get("detector_carry")):
+            self._finish_detector_carry_drag(state)
+            return
         transition = self.editor._open3d_step_state_service().row_carry_finish_transition(state)
         if transition is None:
             return
@@ -2244,6 +2307,67 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception as exc:
             self.editor.append_debug(f"Open 3D row carry final refresh failed: {exc}")
         self.status_var.set(transition.status)
+
+    def _activate_detector_carry_hold(self, state: dict[str, object], press_xy) -> None:
+        """Set up the detector (Image-row) axial carry: anchor the drag plane at the press point so
+        the subsequent motion slides the detector along the optical axis (item 1/2 detector handle)."""
+        center_world = np.asarray(state["center_world"], dtype=float).reshape(3)
+        plane_normal = np.asarray(state["drag_plane_normal"], dtype=float).reshape(3)
+        anchor_xy = self._left_drag_last_xy or press_xy
+        anchor_world = None
+        if anchor_xy is not None:
+            anchor_world = self._cursor_plane_point(anchor_xy, center_world[:3], plane_normal[:3])
+        if anchor_world is None:
+            anchor_world = center_world[:3]
+        state["drag_anchor_world"] = tuple(float(v) for v in np.asarray(anchor_world, dtype=float).reshape(-1)[:3])
+        self._row_carry_drag_state = state
+        self._step_carry_drag_state = None
+        self._step_carry_follow_state = None
+        self._set_step_hover_outline(None, None, render=False)
+        self._update_hover_status("", render=False)
+        self._set_step_carry_cursor(True)
+        try:
+            grip = np.asarray(state.get("center_world"), dtype=float).reshape(-1)[:3]
+            if grip.size >= 3 and np.all(np.isfinite(grip[:3])):
+                self._open3d_carry_grip_service.show(grip[:3])
+        except Exception:
+            pass
+        self._update_mode_badge()
+        self.status_var.set("Carrying the detector: drag along the optical axis to defocus; release to drop.")
+
+    def _finish_detector_carry_drag(self, state: dict[str, object]) -> None:
+        moved = int(state.get("applied_steps", 0)) > 0
+        if bool(state.get("history_started", False)):
+            try:
+                self.editor._commit_history_capture()
+            except Exception:
+                pass
+        self._row_carry_drag_state = None
+        self._set_step_carry_cursor(False)
+        self._set_step_hover_outline(None, None, render=False)
+        self._update_hover_status("", render=False)
+        self._open3d_carry_grip_service.clear(render=False)
+        self._update_mode_badge()
+        if not moved:
+            self.status_var.set("Detector drop: no movement.")
+            return
+        try:
+            self.editor._sync_table()
+        except Exception:
+            pass
+        try:
+            self.refresh_from_editor(force_retrace=True)
+        except Exception as exc:
+            self.editor.append_debug(f"Detector carry final refresh failed: {exc}")
+        try:
+            det_z = sum(float(r.thickness) for r in self.editor.rows[:-1])
+            img_z = self.editor._paraxial_image_plane_z()
+            if img_z is not None:
+                self.status_var.set(f"Detector at z={det_z:.4g} mm (defocus {det_z - float(img_z):+.4g} mm from best focus).")
+            else:
+                self.status_var.set(f"Detector at z={det_z:.4g} mm.")
+        except Exception:
+            self.status_var.set("Detector moved.")
 
     def _current_widget_pointer_xy(self) -> tuple[int, int] | None:
         if self._vtk_widget is not None:
