@@ -373,6 +373,34 @@ class DetectorCoverageOverlayService:
             self.editor.append_debug(f"Detector coverage overlay skipped: {exc}")
             return False
 
+    def _arrow_cone(self, tip, outward, color) -> bool:
+        # A cone arrowhead with its TIP at ``tip`` pointing along ``outward`` (the line direction
+        # away from the other end), so a dimension line reads with proper CAD arrowheads.
+        pv = self._pv
+        if pv is None:
+            return False
+        try:
+            tip = np.asarray(tip, dtype=float).reshape(3)
+            outward = np.asarray(outward, dtype=float).reshape(3)
+            length = float(np.linalg.norm(outward))
+            if length <= 1e-9 or not np.all(np.isfinite(tip)):
+                return False
+            d = outward / length
+            head = float(min(max(length * 0.14, 1.5), 6.0))
+            center = tip - d * (head * 0.5)
+            cone = pv.Cone(
+                center=tuple(float(v) for v in center),
+                direction=tuple(float(v) for v in d),
+                height=head,
+                radius=head * 0.4,
+                resolution=20,
+            )
+            self.inspector._add_mesh_actor(cone, color=tuple(color), opacity=1.0)
+            return True
+        except Exception as exc:  # pragma: no cover - defensive
+            self.editor.append_debug(f"defocus arrow skipped: {exc}")
+            return False
+
     def _pick_fill_actor(self, center, u, v, half_w, half_h, color, row_index) -> bool:
         """A faint, filled, *pickable* square at a plane so the Object/Image row
         can be hover-highlighted and double-clicked for the FOV popup (bugs/0055
@@ -528,9 +556,14 @@ class DetectorCoverageOverlayService:
             stand = radius * (1.0 + _LABEL_MARGIN) + _LABEL_GAP
             if abs(gap) > 0.5:
                 seg = np.array([[0.0, stand, det_z], [0.0, stand, float(image_plane_z)]], dtype=float)
-                if self._line_actor(seg, _IMAGE_PLANE, 2.5, True):
+                # solid dimension line + CAD arrowheads (was a bare dashed line)
+                if self._line_actor(seg, _IMAGE_PLANE, 2.5, False):
                     count += 1
-                if self._label_actor(0.5 * (seg[0] + seg[1]), f"defocus = {gap:+.4g} mm", _IMAGE_PLANE):
+                self._arrow_cone(seg[0], seg[0] - seg[1], _IMAGE_PLANE)
+                self._arrow_cone(seg[1], seg[1] - seg[0], _IMAGE_PLANE)
+                # push the label ABOVE the dimension line so it no longer overlaps the line/body
+                label_pos = 0.5 * (seg[0] + seg[1]) + np.array([0.0, radius * 0.7 + _LABEL_GAP, 0.0], dtype=float)
+                if self._label_actor(label_pos, f"defocus = {gap:+.4g} mm", _IMAGE_PLANE):
                     count += 1
             elif self._label_actor(ip + np.array([0.0, stand, 0.0]), "image plane (in focus)", _IMAGE_PLANE):
                 count += 1
