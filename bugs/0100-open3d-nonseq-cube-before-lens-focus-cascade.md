@@ -57,7 +57,20 @@ RAISES on the reflect arm of the split, so the world bundle silently falls back 
 cube) -> chief rays still cross at the cube, transmit Image circle still at the lens exit (~56.8mm, z~407
 not ~595).
 
-**REMAINING ROOT (the real 0100 fix):** the first-order reference must build for a single-imaging-arm
+### PART 2 FIXED (the actual root): reference skipped past an INTERMEDIATE Image plane
+Reproduced by promoting a real cube STEP: the promotion inserts an **intermediate `Image` plane right
+after the solid**, and `_paraxial_reference_rows_for_layout` **broke on the first `Image`** -> the
+downstream LENS was excluded -> the reference built only object->cube->Image (stop idx 1) -> the
+entrance pupil landed at the cube -> the world bundle aimed at the cube. (This spurious Image is also
+the "Image plane pulled forward" / "object plane disappears" the user saw.) Fix (commit pending): an
+intermediate Image plane has no paraxial power -> merge its gap into the previous kept plane and
+*continue* (not break), so the lens stays in the reference. Now the promoted-cube reference builds the
+full object->cube->lens->image path (stop idx 6) and the pupil is the lens pupil; `bugs/repro_0100.py`
+extended: EP = 336.3 with an intermediate Image. IN-APP verify pending. The earlier theory below was
+wrong (the whole-layout reference does NOT raise for the user's single-arm scene -- it silently
+truncated at the intermediate Image instead):
+
+**(superseded theory) REMAINING ROOT:** the first-order reference must build for a single-imaging-arm
 scene that has a promoted cube with a partial-reflecting FACE coating. Two sub-paths:
 (a) make the reference **strip the partial-reflecting/beam-splitter coating off the promoted mesh solid**
 (reduce the cube to a transmissive plate) so the WHOLE-layout reference builds (object -> cube-plate ->

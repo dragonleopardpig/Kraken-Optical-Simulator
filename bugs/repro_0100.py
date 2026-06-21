@@ -62,6 +62,29 @@ def main() -> int:
         ok = ok and hit
         print(f"  {name} bundle aim z = {aim:.1f}  -> aims at LENS not plate: {hit}" if aim is not None else f"  {name}: None")
     app.destroy()
+
+    # Part 2: a promoted-cube promotion inserts an INTERMEDIATE Image plane after the solid. The
+    # reference must SKIP it (no power), not break on it -- breaking excluded the downstream lens, so
+    # the entrance pupil landed at the cube and the world bundle aimed there.
+    from dataclasses import replace as _replace
+    r2 = [SurfaceRow(**{k: v for k, v in s.items() if k in SurfaceRow.__dataclass_fields__}) for s in SURFACES]
+    o2 = float(r2[0].thickness)
+    r2[0].thickness = 100.0
+    t2 = r2[1]
+    r2.insert(1, _replace(t2, glass="AIR", thickness=o2 - 100.0, rc=0.0, k=0.0, name="plate back"))
+    r2.insert(1, _replace(t2, glass="BK7", thickness=50.0, rc=0.0, k=0.0, name="plate front"))
+    r2.insert(3, _replace(t2, surface="Image", glass="AIR", thickness=0.0, rc=0.0, k=0.0, name="intermediate detector"))
+    app2 = KrakenLayoutEditor(headless=True)
+    app2.current_layout_file = LAYOUT
+    app2.rows = r2
+    app2._auto_assign_missing_elements(app2.rows)
+    app2._apply_layout_settings(SETTINGS)
+    ep2 = app2._launch_reference_entrance_pupil_z(_build_runtime_system(LAYOUT, app2.rows))
+    ok2 = ep2 is not None and ep2 > 250.0
+    app2.destroy()
+    print(f"with an intermediate Image plane: reference EP z = {ep2}  -> still the lens (not cube/None): {ok2}")
+    ok = ok and ok2
+
     print("repro_0100:", "PASS" if ok else "FAIL")
     return 0 if ok else 1
 

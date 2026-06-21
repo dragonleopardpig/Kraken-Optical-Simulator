@@ -262,7 +262,15 @@ class ParaxialToolsMixin:
         last_source_index: int | None = None
         for index, row in enumerate(source_rows[1:], start=1):
             if row.surface == "Image":
-                break
+                if index >= len(source_rows) - 1:
+                    break  # the terminal image -- stop here
+                # bugs/0100: an INTERMEDIATE Image plane (e.g. the detector plane a promoted-cube
+                # promotion inserts right after the solid) has no paraxial power. Breaking on it
+                # excluded the downstream LENS from the reference, so the entrance pupil landed at the
+                # cube and the world bundle aimed there ("beam focuses at the splitter"). Merge its gap
+                # into the previous kept plane and keep going so the lens stays in the reference.
+                reference_rows[-1].thickness += max(float(row.thickness), 0.0)
+                continue
             if row.surface == "Mirror":
                 # Mirrors fold the path but have no paraxial power.  Merge their
                 # path length into the previous kept plane so centered ABCD
