@@ -12060,6 +12060,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.refresh_from_editor(force_retrace=True)
         self.status_var.set(msg)
 
+    def _snap_detector_to_image_plane(self) -> None:
+        """Right-click 'Snap detector to image plane': move the detector (Image row) onto the
+        optics' best focus, removing the simulated defocus (item 2)."""
+        try:
+            moved = bool(self.editor.snap_detector_to_image_plane())
+        except Exception as exc:
+            self.status_var.set(f"Snap detector to image plane failed: {exc}")
+            return
+        try:
+            self.status_var.set(self.editor.status_var.get())
+        except Exception:
+            pass
+        if moved:
+            self.refresh_from_editor(force_retrace=True)
+
     def _show_quick_estimation_role_menu(self, event, quantity: str, plane: str | None = None) -> None:
         from KrakenOS.UI.services.quick_estimation import (
             LABELS,
@@ -12092,6 +12107,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             menu.add_separator()
             menu.add_command(label="Set sensor semi-height (Field value)…", command=self._quick_estimation_edit_field_value)
             menu.add_command(label="Set Field type…", command=self._quick_estimation_edit_field_type)
+            menu.add_separator()
+            menu.add_command(label="Snap detector to image plane (remove defocus)", command=self._snap_detector_to_image_plane)
         try:
             menu.tk_popup(int(event.x_root), int(event.y_root))
         finally:

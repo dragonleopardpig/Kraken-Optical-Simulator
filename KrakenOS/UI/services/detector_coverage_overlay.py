@@ -32,6 +32,7 @@ _IMAGE_CIRCLE_SHORT = (1.0, 0.55, 0.1)      # amber -- image circle too small
 _REQUIRED_RING = (1.0, 0.55, 0.1)           # amber dashed -- required image circle
 _OBJECT_FOV = (0.2, 0.9, 0.35)              # green -- object-plane FOV rectangle
 _SENSOR_FOOTPRINT = (0.98, 0.45, 0.05)      # amber -- vendor sensor square (bug 0031)
+_IMAGE_PLANE = (1.0, 0.0, 0.6)              # magenta -- best-focus image plane / defocus (item 2)
 
 # Direct 3D label placement. Each label is anchored just outside its element on
 # the plane, at a distinct clock angle so the (billboarded) labels never overlap
@@ -502,4 +503,35 @@ class DetectorCoverageOverlayService:
                     f"{2 * metrics.sensor_half_width:.4g}×{2 * metrics.sensor_half_height:.4g} mm sensor "
                     f"(needs Ø{2 * metrics.sensor_half_diagonal:.4g})."
                 )
+
+        # IMAGE PLANE (best focus) marker + DEFOCUS dimension (item 2): the detector above is the
+        # sensor/analysis surface; the image plane is where the optics focus. The gap between them
+        # is the simulated defocus. Single-axis only -- two-arm fold detectors already sit on their
+        # per-arm convergence.
+        try:
+            image_plane_z = self.editor._paraxial_image_plane_z()
+        except Exception:
+            image_plane_z = None
+        axis_dets = [
+            t for t in detectors
+            if abs(float(np.asarray(t.center_world, dtype=float)[0])) < 1e-3
+            and abs(float(np.asarray(t.center_world, dtype=float)[1])) < 1e-3
+        ]
+        if image_plane_z is not None and len(detectors) == 1 and axis_dets:
+            det_z = float(np.asarray(axis_dets[0].center_world, dtype=float)[2])
+            radius = float(sys_image_radius) if (sys_image_radius and sys_image_radius > 1e-6) else 6.0
+            mu, mv = _basis(np.array([0.0, 0.0, 1.0], dtype=float))
+            ip = np.array([0.0, 0.0, float(image_plane_z)], dtype=float)
+            if self._line_actor(_circle_points(ip, mu, mv, radius), _IMAGE_PLANE, 2.0, False):
+                count += 1
+            gap = det_z - float(image_plane_z)
+            stand = radius * (1.0 + _LABEL_MARGIN) + _LABEL_GAP
+            if abs(gap) > 0.5:
+                seg = np.array([[0.0, stand, det_z], [0.0, stand, float(image_plane_z)]], dtype=float)
+                if self._line_actor(seg, _IMAGE_PLANE, 2.5, True):
+                    count += 1
+                if self._label_actor(0.5 * (seg[0] + seg[1]), f"defocus = {gap:+.4g} mm", _IMAGE_PLANE):
+                    count += 1
+            elif self._label_actor(ip + np.array([0.0, stand, 0.0]), "image plane (in focus)", _IMAGE_PLANE):
+                count += 1
         return count
