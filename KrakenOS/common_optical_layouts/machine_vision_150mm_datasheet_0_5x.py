@@ -10,6 +10,22 @@ SETTINGS = {
     "aperture_type": "EPD",
     "aperture_value": 26.8,
     "wavelength": 0.546,
+    # Bundled vendor STEPs (same physical 15056 lens + HR25 camera as the measured preset) so the
+    # camera-glue / lens-datum glue / defocus / detector-handle features work out of the box.
+    "camera_model": "Allied Vision hr25MCX",
+    "camera_step_path": "attachment/Cameras/3D_CAD_HR25xCXP.STEP",
+    "camera_step_rotation_x_deg": 0.0,
+    "camera_step_rotation_y_deg": 0.0,
+    "camera_step_rotation_z_deg": 270.0,
+    "camera_step_axis_offset_xy": [0.0, 0.0],
+    "camera_step_placement_offset_xyz": [0.0, 0.0, 0.0],
+    "lens_step_path": "attachment/Lens/15056/15056.STEP",
+    "lens_step_largest_component_only": True,
+    "lens_step_rotation_x_deg": 0.0,
+    "lens_step_rotation_y_deg": 0.0,
+    "lens_step_rotation_z_deg": 0.0,
+    "lens_step_axis_offset_xy": [0.0, 0.0],
+    "lens_step_placement_offset_xyz": [0.0, 0.0, 0.0],
 }
 
 # Same paraxial blackbox equivalent as the 1X preset, refocused to the vendor
