@@ -16,7 +16,8 @@ class Open3DStepAdminPanel:
         ("layout", "Layout / Table Components", ()),
         ("optical", "Optical Element", ("optical",)),
         ("lens", "Imaging Lens", ("lens",)),
-        ("camera_detector", "Camera / Detector", ("camera", "led")),
+        ("camera_detector", "Camera / Detector", ("camera",)),
+        ("led", "LED (decoration)", ("led",)),
     )
 
     def _display_toggle_specs(self):
