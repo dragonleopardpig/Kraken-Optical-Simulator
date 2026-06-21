@@ -192,6 +192,40 @@ class LayoutSceneBundleDisplayMixin:
             pass
         return None
 
+    def _paraxial_image_plane_z(self) -> float | None:
+        """The axial z where the optics actually form the image (paraxial best focus), in the same
+        cumulative-z frame as the rows. This is the "image plane" the detector defocuses against --
+        a ROBUST Gaussian-conjugate value (no exit-pupil trap, unlike the ray-RMS focus diagnostic
+        which lands on the exit pupil for multi-field bundles). Returns None when not computable
+        (mirror/branched layouts -> caller falls back to the prescription Image z)."""
+        if len(self.rows) < 3:
+            return None
+        if any(getattr(row, "surface", "") == "Mirror" for row in self.rows):
+            return None  # folded/catadioptric: principal-plane conjugate not handled here
+        try:
+            _a, _b, _c, _d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(self.rows)
+            h1_vertex_z, h2_vertex_z = self._paraxial_vertex_zs(self.rows)
+            h1_z = float(h1_vertex_z) + float(ppa)   # front principal plane z
+            h2_z = float(h2_vertex_z) + float(ppp)   # rear principal plane z
+            f = float(effl)
+            if not np.isfinite(f) or abs(f) <= 1e-9:
+                return None
+            if self._current_object_mode() == "Infinity":
+                image_z = h2_z + f
+            else:
+                # Object row at z=0 -> object distance from the front principal is h1_z (positive).
+                # Gaussian conjugate from the rear principal: 1/s_i = 1/f - 1/s_o.
+                s_o = h1_z
+                if abs(s_o) <= 1e-9:
+                    return None
+                denom = (1.0 / f) - (1.0 / s_o)
+                if abs(denom) <= 1e-12:
+                    return None  # object at front focal point -> image at infinity
+                image_z = h2_z + (1.0 / denom)
+            return float(image_z) if np.isfinite(image_z) else None
+        except Exception:
+            return None
+
     def _schedule_refresh_plot(self, *_args) -> None:
         if not self.winfo_exists():
             return
