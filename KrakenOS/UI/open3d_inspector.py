@@ -11332,31 +11332,46 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                         p1 = p0 + _n0 * float(np.dot(p1raw - p0, _n0))
                     else:
                         p1 = p1raw
-                    mid = (p0 + p1) * 0.5
                     dist = float(np.linalg.norm(p1 - p0))
+                    # offset the dimension line perpendicular, clear of the geometry (CAD-style);
+                    # _seg["offset"] (a future drag) overrides the default standoff.
+                    _d = (p1 - p0) / dist if dist > 1e-9 else np.array([0.0, 0.0, 1.0])
+                    _od = np.array([0.0, 1.0, 0.0]) - float(np.dot([0.0, 1.0, 0.0], _d)) * _d
+                    if float(np.linalg.norm(_od)) < 1e-6:
+                        _od = np.array([1.0, 0.0, 0.0]) - float(np.dot([1.0, 0.0, 0.0], _d)) * _d
+                    _on = float(np.linalg.norm(_od))
+                    _amt = float(_seg.get("offset", max(dist * 0.12, 45.0)))
+                    _off = (_od / _on) * _amt if _on > 1e-6 else np.zeros(3)
+                    a0 = p0 + _off
+                    a1 = p1 + _off
+                    mid = (a0 + a1) * 0.5
                     if line_cls is not None and mapper_cls is not None and vtkActor is not None:
-                        src = line_cls()
-                        src.SetPoint1(float(p0[0]), float(p0[1]), float(p0[2]))
-                        src.SetPoint2(float(p1[0]), float(p1[1]), float(p1[2]))
-                        mp = mapper_cls()
-                        mp.SetInputConnection(src.GetOutputPort())
-                        la = vtkActor()
-                        la.SetMapper(mp)
-                        try:
-                            la.PickableOff()
-                            pr = la.GetProperty()
-                            pr.SetColor(0.95, 0.55, 0.1)
-                            pr.SetLineWidth(2.0)
-                        except Exception:
-                            pass
-                        self._add_renderer_view_prop(la)
-                        self._measure_actors.append(la)
-                        # CAD arrowheads (cones) at both ends, pointing outward
+                        def _meas_line(s, e, width, color):
+                            try:
+                                _s = line_cls()
+                                _s.SetPoint1(float(s[0]), float(s[1]), float(s[2]))
+                                _s.SetPoint2(float(e[0]), float(e[1]), float(e[2]))
+                                _m = mapper_cls()
+                                _m.SetInputConnection(_s.GetOutputPort())
+                                _act = vtkActor()
+                                _act.SetMapper(_m)
+                                _act.PickableOff()
+                                _p = _act.GetProperty()
+                                _p.SetColor(*color)
+                                _p.SetLineWidth(float(width))
+                                self._add_renderer_view_prop(_act)
+                                self._measure_actors.append(_act)
+                            except Exception:
+                                pass
+                        _meas_line(a0, a1, 2.0, (0.95, 0.55, 0.1))          # dimension line (offset)
+                        _meas_line(p0, a0, 1.0, (0.95, 0.7, 0.4))           # witness line 1
+                        _meas_line(p1, a1, 1.0, (0.95, 0.7, 0.4))           # witness line 2
+                        # CAD arrowheads (cones) at both ends of the dimension line, pointing outward
                         if cone_cls is not None and dist > 1e-6:
-                            ndir = (p1 - p0) / dist
+                            ndir = (a1 - a0) / dist
                             head = float(min(max(dist * 0.06, 2.0), 12.0))
                             crad = head * 0.4
-                            for _tip, _cd in ((p0, -ndir), (p1, ndir)):
+                            for _tip, _cd in ((a0, -ndir), (a1, ndir)):
                                 try:
                                     _ctr = np.asarray(_tip, dtype=float) - np.asarray(_cd, dtype=float) * (head * 0.5)
                                     _cn = cone_cls()
