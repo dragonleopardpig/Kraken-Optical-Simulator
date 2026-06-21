@@ -523,6 +523,34 @@ class TracePreviewSamplingMixin:
             return radius
         return max(min(radius, float(aperture_radius)), 1e-6)
 
+    def _launch_reference_entrance_pupil_z(self, system) -> float | None:
+        """bugs/0100: world z of the FIRST-ORDER TRANSMISSIVE reference's entrance pupil.
+
+        The correct aim point for finite-object WORLD bundles (envelope / cone / sparse). They aim
+        at ``_current_object_distance`` (= rows[0].thickness), which an in-path beam-splitter / plate
+        promotion shrinks from object->lens to object->cube -- so the bundle converged ON the splitter
+        ("beam focuses at the splitter") instead of filling the lens pupil. The reference (cube reduced
+        to its transmissive plate, mirrors folded out) lets the sequential PupilCalc find the true lens
+        entrance pupil (``PosPupInp`` z). The grid sampler already aims off this via
+        ``Kos.PupilCalc.Pattern2Field``; the world samplers did not. Returns None on failure (the caller
+        falls back to ``object_distance``)."""
+        if system is None:
+            return None
+        try:
+            pupil_system, _pupil_rows, pupil_index = self._pupil_model_inputs(system, build_reference=True)
+            pupil = Kos.PupilCalc(
+                pupil_system,
+                pupil_index,
+                self._current_wavelength(),
+                self._current_aperture_type(),
+                self._current_aperture_value(),
+            )
+            z = float(np.asarray(getattr(pupil, "PosPupInp", None), dtype=float).reshape(-1)[2])
+            return z if np.isfinite(z) else None
+        except Exception as exc:
+            self._note_pupil_launch_fallback(exc)
+            return None
+
     def _trace_preview_service(self) -> TracePreviewService:
         service = self.__dict__.get("_trace_preview_service_instance")
         if service is None:
@@ -913,6 +941,12 @@ class TracePreviewSamplingMixin:
                 bundles.append(bundle)
         else:
             object_distance = self._current_object_distance()
+            # bugs/0100: aim finite-object world bundles at the first-order REFERENCE entrance pupil,
+            # not rows[0].thickness -- an in-path beam-splitter/plate promotion shrinks it to
+            # object->cube, so the bundle converged ON the splitter instead of filling the lens pupil.
+            aim_z = self._launch_reference_entrance_pupil_z(system)
+            if aim_z is None or not np.isfinite(aim_z):
+                aim_z = object_distance
             pairs = (
                 field_pairs
                 if field_pairs is not None
@@ -927,7 +961,7 @@ class TracePreviewSamplingMixin:
                 m_vals: list[float] = []
                 n_vals: list[float] = []
                 for pupil_x, pupil_y in pupil_points[:, :2]:
-                    target = np.array([float(pupil_x), float(pupil_y), object_distance], dtype=float)
+                    target = np.array([float(pupil_x), float(pupil_y), aim_z], dtype=float)
                     direction = target - origin
                     norm = float(np.linalg.norm(direction))
                     if norm <= 1e-12:

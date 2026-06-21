@@ -36,7 +36,21 @@ Confirmed by `bugs/diag_1x_cube.py` on the 150mm 1X datasheet:
    LED STEP). The 0100 first-order-reference work should also cut this (aim once, no full rebuild per
    arm). Interim workaround: edit with Show Rays OFF, enable once at the end.
 
-## Fix (NEXT PRIORITY)
+## Fix — WORLD-SAMPLER AIM SHIPPED (commit pending)
+**Found + fixed the gap for the user's mode.** `sampling_diagnostics.active_preview_mode = "world_envelope"`
+was the tell: the Phase-1/2 reference aim was wired into the GRID sampler (`Kos.PupilCalc.Pattern2Field`)
+but NOT the WORLD samplers (envelope / cone / sparse). `_build_world_bundles_from_pupil_points` (finite
+branch) aimed every ray at `_current_object_distance()` = rows[0].thickness, which the in-path cube
+promotion shrinks to object->cube -> the bundle converged ON the cube. Fix: new
+`_launch_reference_entrance_pupil_z(system)` (`_pupil_model_inputs` reference -> `Kos.PupilCalc.PosPupInp`
+world z) + the finite world branch aims at it (falls back to object_distance when no reference).
+`bugs/repro_0100.py`: plate-before-lens, object_distance shrunk to 100, world_envelope + world_cone now
+aim at **336** (the lens), not 100 (the plate). IN-APP verify pending (the user's world_envelope scene:
+Show Rays -> rays pass broad through the cube + focus at the lens; transmit count / image circle / ghost
+highlight clear). NOTE: other launch paths (the `SOURCE_MODEL_DEFAULT` legacy cone, world_sections) are
+separate and not part of the user's world_envelope path; revisit if they show the same.
+
+## Background (the documented root)
 The **universal first-order reference** for the non-seq trace is the documented root, and Phase 1
 (one-arm reference) + Phase 2 (per-branch pupil + per-branch launch) are **already shipped**
 (`c86e23c`, `3b91f99`, `1188dd9`, `419e7df`, `0c3e0e2` …, see `project_nonseq_first_order_seam`) and
