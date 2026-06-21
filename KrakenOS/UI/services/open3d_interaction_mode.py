@@ -35,6 +35,7 @@ class InteractionMode(str, Enum):
     ROW_CARRY_HOLD = "row_carry_hold"
     AXIS_SLIDE = "axis_slide"
     CAD_AXIS_PICK = "cad_axis_pick"
+    MEASURE = "measure"  # CAD-style 2-point measure tool (pick two edges/surfaces -> draggable dimension)
 
 
 ModeObserver = Callable[["InteractionModeState"], None]
@@ -80,6 +81,8 @@ def derive_interaction_mode(inspector: Any) -> InteractionMode:
     recently entered. Today's call sites set/reset in a deterministic
     order, so the picks here mirror that order.
     """
+    if bool(getattr(inspector, "_measure_pick_mode", False)):
+        return InteractionMode.MEASURE
     if bool(getattr(inspector, "_step_normal_axis_pick_mode", False)):
         return InteractionMode.STEP_NORMAL_AXIS_PICK
     if bool(getattr(inspector, "_step_surface_center_axis_pick_mode", False)):
