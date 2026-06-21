@@ -11237,28 +11237,45 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.status_var.set("Measurements cleared.")
         self._update_mode_badge()
 
-    def _record_measure_point(self, world) -> None:
+    def _record_measure_point(self, world, normal=None) -> None:
         point = np.asarray(world, dtype=float).reshape(-1)[:3]
         if point.size < 3 or not np.all(np.isfinite(point)):
             self.status_var.set("Measure: the pick missed -- click ON an edge/surface.")
             return
         if getattr(self, "_measure_p0", None) is None:
             self._measure_p0 = point
+            # remember the FIRST surface normal so the 2nd click measures the PERPENDICULAR
+            # (normal) distance to that surface, not the slant point-to-point distance.
+            self._measure_n0 = None
+            if normal is not None:
+                n = np.asarray(normal, dtype=float).reshape(-1)[:3]
+                if n.size >= 3 and np.all(np.isfinite(n)) and float(np.linalg.norm(n)) > 1e-9:
+                    self._measure_n0 = n / float(np.linalg.norm(n))
             self.status_var.set("Measure: click the SECOND edge/surface.")
             return
         p0 = np.asarray(self._measure_p0, dtype=float).reshape(3)
+        n0 = getattr(self, "_measure_n0", None)
+        if n0 is not None:
+            d = float(np.dot(point - p0, n0))  # signed perpendicular distance to the 2nd point's plane
+            start = p0
+            end = p0 + n0 * d
+        else:
+            start = p0
+            end = point
         segs = list(getattr(self, "_measure_segments", []))
-        segs.append((p0, point))
+        segs.append((start, end))
         self._measure_segments = segs
         self._measure_p0 = None
+        self._measure_n0 = None
         self._measure_pick_mode = False
         try:
             self._set_axis_pick_cursor(False)
         except Exception:
             pass
-        dist = float(np.linalg.norm(point - p0))
+        dist = float(np.linalg.norm(np.asarray(end, dtype=float) - np.asarray(start, dtype=float)))
         self._refresh_measure_overlays()
-        self.status_var.set(f"Measured {dist:.4g} mm. Press 'Measure' for another, or 'Clear'.")
+        kind = "normal" if n0 is not None else "point-to-point"
+        self.status_var.set(f"Measured {dist:.4g} mm ({kind}). Press 'Measure' for another, or 'Clear'.")
         self._update_mode_badge()
 
     def _refresh_measure_overlays(self) -> None:
@@ -11271,12 +11288,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._measure_actors = []
         segments = getattr(self, "_measure_segments", [])
         if self._renderer is not None and segments:
-            line_cls = mapper_cls = None
+            line_cls = mapper_cls = cone_cls = None
             try:
                 from vtkmodules.vtkFiltersSources import vtkLineSource as line_cls  # noqa: F811
+                from vtkmodules.vtkFiltersSources import vtkConeSource as cone_cls  # noqa: F811
                 from vtkmodules.vtkRenderingCore import vtkPolyDataMapper as mapper_cls  # noqa: F811
             except Exception:
-                line_cls = mapper_cls = None
+                line_cls = mapper_cls = cone_cls = None
             for _seg in segments:
                 try:
                     p0 = np.asarray(_seg[0], dtype=float).reshape(3)
@@ -11300,6 +11318,33 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                             pass
                         self._add_renderer_view_prop(la)
                         self._measure_actors.append(la)
+                        # CAD arrowheads (cones) at both ends, pointing outward
+                        if cone_cls is not None and dist > 1e-6:
+                            ndir = (p1 - p0) / dist
+                            head = float(min(max(dist * 0.06, 2.0), 12.0))
+                            crad = head * 0.4
+                            for _tip, _cd in ((p0, -ndir), (p1, ndir)):
+                                try:
+                                    _ctr = np.asarray(_tip, dtype=float) - np.asarray(_cd, dtype=float) * (head * 0.5)
+                                    _cn = cone_cls()
+                                    _cn.SetCenter(float(_ctr[0]), float(_ctr[1]), float(_ctr[2]))
+                                    _cn.SetDirection(float(_cd[0]), float(_cd[1]), float(_cd[2]))
+                                    _cn.SetHeight(head)
+                                    _cn.SetRadius(crad)
+                                    _cn.SetResolution(20)
+                                    _cm = mapper_cls()
+                                    _cm.SetInputConnection(_cn.GetOutputPort())
+                                    _ca = vtkActor()
+                                    _ca.SetMapper(_cm)
+                                    try:
+                                        _ca.PickableOff()
+                                        _ca.GetProperty().SetColor(0.95, 0.55, 0.1)
+                                    except Exception:
+                                        pass
+                                    self._add_renderer_view_prop(_ca)
+                                    self._measure_actors.append(_ca)
+                                except Exception:
+                                    pass
                     if vtkBillboardTextActor3D is not None:
                         lbl = vtkBillboardTextActor3D()
                         lbl.SetInput(f"↔ {dist:.4g} mm")
@@ -13191,16 +13236,22 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         ):
             hit_actor = None
             world = None
+            normal = None
             try:
                 x, y = self._vtk_interactor.GetEventPosition()
                 self._picker.Pick(x, y, 0.0, self._renderer)
                 hit_actor = self._picker.GetActor()
                 world = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+                try:
+                    normal = np.asarray(self._picker.GetPickNormal(), dtype=float).reshape(-1)[:3]
+                except Exception:
+                    normal = None
             except Exception:
                 hit_actor = None
                 world = None
+                normal = None
             if hit_actor is not None and world is not None and world.size >= 3:
-                self._record_measure_point(world)
+                self._record_measure_point(world, normal)
             else:
                 self.status_var.set("Measure: click ON an edge/surface (the pick missed).")
             return
