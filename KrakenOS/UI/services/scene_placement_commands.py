@@ -2572,10 +2572,38 @@ class ScenePlacementMixin:
         if delta.size < 3 or not np.all(np.isfinite(delta[:3])):
             self.status_var.set(f"Invalid {label} STEP placement delta.")
             return
+        # CAMERA <-> DETECTOR GLUE (item 1): the camera sensor is glued to the Image-row detector.
+        # An AXIAL (+Z optical-axis) camera drag moves the DETECTOR -- the Image row, which is the
+        # actual trace/analysis surface -- so the detector FOLLOWS the camera and the rays propagate
+        # to it (the user's flag: "camera and detector not glued, rays not propagated after drag").
+        # Lateral drag still only centres the camera body. Single-axis (the on-axis Image row);
+        # folded/decentred axes are a follow-up.
+        axial_to_detector = 0.0
+        if (
+            label == "camera"
+            and len(self.rows) >= 3
+            and str(getattr(self.rows[-1], "surface", "") or "") == "Image"
+            and abs(float(getattr(self.rows[-1], "desp_y", 0.0) or 0.0)) <= 1e-6
+            and abs(float(getattr(self.rows[-1], "desp_z", 0.0) or 0.0)) <= 1e-6
+            and abs(float(delta[2])) > 1e-9
+        ):
+            axial_to_detector = float(delta[2])
+        applied = np.array(
+            [float(delta[0]), float(delta[1]), 0.0 if abs(axial_to_detector) > 1e-9 else float(delta[2])],
+            dtype=float,
+        )
         current = np.asarray(self._step_placement_offset_xyz(label), dtype=float)
-        next_offset = current + delta[:3]
+        next_offset = current + applied
         if record_history:
             self._begin_history_capture()
+        if abs(axial_to_detector) > 1e-9:
+            self.rows[-2].thickness = float(self.rows[-2].thickness) + axial_to_detector  # move the detector
+            if not bool(getattr(self, "headless", False)):
+                try:
+                    self._sync_table()
+                except Exception:
+                    pass
+            self._invalidate_preview_scene_trace()
         self._set_step_placement_offset_xyz(label, next_offset)
         self._selected_step_label = label
         if record_history:
