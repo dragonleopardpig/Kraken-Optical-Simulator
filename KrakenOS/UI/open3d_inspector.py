@@ -12103,8 +12103,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             menu.add_command(label=f"Unregister camera ({current})", command=lambda: self._register_image_plane_camera(None))
 
     def _register_image_plane_camera(self, camera_name) -> None:
-        """Assign/clear the vendor STEP camera (sensor size) on the single-axis detector from the
-        detector right-click, then retrace so the detector resizes to the sensor (item 1)."""
+        """Assign/clear the vendor camera on the single-axis detector from its right-click. COMBINED
+        (item 1): sets the sensor size (camera_model -> the detector resizes) AND imports + displays
+        the Camera STEP CAD body (the DB entry carries step_path), glued to the detector. Clearing
+        removes both."""
+        from pathlib import Path
         try:
             from KrakenOS.UI.camera_database import CAMERA_NONE_LABEL
         except Exception:
@@ -12114,9 +12117,24 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception as exc:
             self.status_var.set(f"Register camera failed: {exc}")
             return
-        self.status_var.set(
-            f"Registered {camera_name} sensor to the detector" if camera_name else "Unregistered detector camera"
-        )
+        body = None
+        if camera_name:
+            try:
+                record = self.editor._current_camera_record() or {}
+                step_path = record.get("step_path")
+                if step_path and Path(str(step_path)).exists():
+                    body = Path(str(step_path))
+            except Exception:
+                body = None
+        try:
+            self.editor.imported_camera_step_path = body   # display the camera CAD body (or clear it)
+        except Exception:
+            pass
+        if camera_name:
+            msg = f"Registered {camera_name}: sensor + Camera STEP body" if body else f"Registered {camera_name} sensor (no CAD body found)"
+        else:
+            msg = "Unregistered detector camera (sensor + body cleared)"
+        self.status_var.set(msg)
         try:
             self.editor._invalidate_preview_scene_trace()
         except Exception:
