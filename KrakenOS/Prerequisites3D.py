@@ -1,8 +1,33 @@
 
+import os as _os
+
 import numpy as np
 import pyvista as pv
 from .MeshRayTrace import raytrace_compatible_mesh
 from .UDA import *
+
+
+_STL_READ_CACHE: dict = {}
+
+
+def _cached_stl_read(source):
+    """Cache ``pv.read(path)`` by (path, mtime) so a heavy multi-CAD scene (e.g. a glued
+    BS-cube + LED + lens + camera STEPs) does NOT reload every STL from disk on every solid
+    rebuild -- the dominant cost behind the repeated "Creating solid objects" pass. Returns a
+    deep copy so the downstream rotate/translate cannot mutate the cached mesh; falls back to a
+    plain read on any error."""
+    try:
+        key = (str(source), _os.path.getmtime(source))
+    except Exception:
+        return pv.read(source)
+    mesh = _STL_READ_CACHE.get(key)
+    if mesh is None:
+        mesh = pv.read(source)
+        _STL_READ_CACHE[key] = mesh
+    try:
+        return mesh.copy(deep=True)
+    except Exception:
+        return mesh
 
 
 def interpolate_coordinates(x, y, num_points=362):
@@ -270,7 +295,7 @@ class Prerequisites():
         else:
             aaa = isinstance(self.SDT[j].Solid_3d_stl, pv.core.pointset.PolyData)
             if aaa == False:
-                L_te_h = pv.read(self.SDT[j].Solid_3d_stl)
+                L_te_h = _cached_stl_read(self.SDT[j].Solid_3d_stl)
             else:
                 L_te_h = self.SDT[j].Solid_3d_stl
 
