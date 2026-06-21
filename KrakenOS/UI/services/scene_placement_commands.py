@@ -2628,15 +2628,29 @@ class ScenePlacementMixin:
         if delta.size < 3 or not np.all(np.isfinite(delta[:3])):
             self.status_var.set(f"Invalid {label} STEP placement delta.")
             return
+        # The axial<->optical-distance glue below (camera->detector, lens->object gap) ONLY applies
+        # while the overlay sits in its GLUED, ON-AXIS pose. A body the user dropped OFF the rays
+        # (e.g. a beam splitter placed beside the axis) is a free placement -- its axial drag must
+        # just move the BODY, never drive the optical distance / ray path (flag_20260621_142758: an
+        # off-axis BS sitting in the lens slot was adjusting the gap + rays when dragged).
+        _cur_axis_off = np.asarray(self._step_axis_offset_xy(label), dtype=float).reshape(-1)
+        _cur_place_off = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(-1)
+        overlay_on_axis = (
+            _cur_axis_off.size >= 2
+            and _cur_place_off.size >= 2
+            and abs(float(_cur_axis_off[0])) <= 1e-3
+            and abs(float(_cur_axis_off[1])) <= 1e-3
+            and abs(float(_cur_place_off[0])) <= 1e-3
+            and abs(float(_cur_place_off[1])) <= 1e-3
+        )
         # CAMERA <-> DETECTOR GLUE (item 1): the camera sensor is glued to the Image-row detector.
         # An AXIAL (+Z optical-axis) camera drag moves the DETECTOR -- the Image row, which is the
         # actual trace/analysis surface -- so the detector FOLLOWS the camera and the rays propagate
-        # to it (the user's flag: "camera and detector not glued, rays not propagated after drag").
-        # Lateral drag still only centres the camera body. Single-axis (the on-axis Image row);
-        # folded/decentred axes are a follow-up.
+        # to it. Lateral drag still only centres the camera body. Single-axis (the on-axis Image row).
         axial_to_detector = 0.0
         if (
             label == "camera"
+            and overlay_on_axis
             and len(self.rows) >= 3
             and str(getattr(self.rows[-1], "surface", "") or "") == "Image"
             and abs(float(getattr(self.rows[-1], "desp_y", 0.0) or 0.0)) <= 1e-6
@@ -2651,7 +2665,7 @@ class ScenePlacementMixin:
         # respond to the new lens position). Lateral drag still only centres the body.
         axial_lens_slide = 0.0
         lens_front_idx = None
-        if label == "lens" and abs(float(delta[2])) > 1e-9:
+        if label == "lens" and overlay_on_axis and abs(float(delta[2])) > 1e-9:
             lens_front_idx = next(
                 (
                     i for i, r in enumerate(self.rows)
