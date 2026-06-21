@@ -2444,6 +2444,29 @@ class ScenePlacementMixin:
         )
         return True
 
+    def optical_led_glued(self) -> bool:
+        """Item 3: whether the optical (beam splitter) STEP and the LED STEP are glued (move as one)."""
+        return bool(getattr(self, "_optical_led_glued", False))
+
+    def set_optical_led_glue(self, glued: bool) -> bool:
+        """Item 3: glue/unglue the beam-splitter (optical) STEP to the LED STEP so they move as one
+        rigid unit -- a later drag of either carries the other by the same delta, preserving their
+        current relative pose. Requires both STEPs imported. Returns True when the state changed."""
+        glued = bool(glued)
+        if glued and (self._step_path_for_label("optical") is None or self._step_path_for_label("led") is None):
+            self.status_var.set("Glue BS to LED: import both the beam-splitter (optical) and the LED STEP first.")
+            return False
+        if bool(getattr(self, "_optical_led_glued", False)) == glued:
+            self.status_var.set("Beam splitter is already glued to the LED." if glued else "Beam splitter is not glued to the LED.")
+            return False
+        self._optical_led_glued = glued
+        self._invalidate_preview_scene_trace()
+        self.status_var.set(
+            "Beam splitter glued to the LED -- they now move together." if glued
+            else "Beam splitter unglued from the LED."
+        )
+        return True
+
     # --- imported-solid resize (drag a face to grow a dimension) ------------- #
     # The resize is stored as per-axis target extents in the solid's *native*
     # (base-mesh) frame and applied to the loaded mesh before optical-axis
@@ -2705,6 +2728,13 @@ class ScenePlacementMixin:
                     pass
             self._invalidate_preview_scene_trace()
         self._set_step_placement_offset_xyz(label, next_offset)
+        # Item 3: BS<->LED two-body glue -- the optical (beam splitter) + led overlays move as ONE
+        # rigid unit, so mirror this placement delta onto the glued partner (direct set, no recursion).
+        if label in ("optical", "led") and bool(getattr(self, "_optical_led_glued", False)):
+            partner = "led" if label == "optical" else "optical"
+            if self._step_path_for_label(partner) is not None:
+                p_next = np.asarray(self._step_placement_offset_xyz(partner), dtype=float).reshape(-1)[:3] + applied[:3]
+                self._set_step_placement_offset_xyz(partner, p_next)
         self._selected_step_label = label
         if record_history:
             self._commit_history_capture()

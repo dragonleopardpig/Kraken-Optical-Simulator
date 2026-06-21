@@ -257,6 +257,13 @@ class Open3DFaceAssignmentService:
                 label="Glue STEP to Surrogate",
                 command=lambda picked_label=step_label: self._glue_step_to_surrogate_from_context(picked_label),
             )
+            # Item 3: BS<->LED two-body glue -- on the optical (beam splitter) or led overlay, when both
+            # are imported, offer to glue them so they move together as one rigid unit.
+            if str(step_label).strip().lower() in ("optical", "led") and self._optical_led_glue_available():
+                if self.editor.optical_led_glued():
+                    menu.add_command(label="Unglue BS from LED", command=lambda: self._set_optical_led_glue(False))
+                else:
+                    menu.add_command(label="Glue BS to LED (move together)", command=lambda: self._set_optical_led_glue(True))
             menu.add_separator()
             menu.add_command(
                 label="Resize Solid...",
@@ -390,6 +397,34 @@ class Open3DFaceAssignmentService:
         self.editor.select_step_component(label)
         self._debug_trace("glue_step_to_surrogate_from_context", label=label)
         self.glue_selected_step_to_surrogate()
+
+    def _optical_led_glue_available(self) -> bool:
+        """Item 3: both the optical (beam splitter) and LED STEPs are imported (glue is meaningful)."""
+        try:
+            return (
+                self.editor._step_path_for_label("optical") is not None
+                and self.editor._step_path_for_label("led") is not None
+            )
+        except Exception:
+            return False
+
+    def _set_optical_led_glue(self, glued: bool) -> None:
+        """Right-click "Glue/Unglue BS to LED": glue the beam-splitter (optical) STEP to the LED STEP
+        so they move as one rigid unit (item 3)."""
+        try:
+            changed = bool(self.editor.set_optical_led_glue(bool(glued)))
+        except Exception as exc:
+            self.status_var.set(f"Glue BS to LED failed: {exc}")
+            return
+        try:
+            self.status_var.set(self.editor.status_var.get())
+        except Exception:
+            pass
+        if changed:
+            try:
+                self.refresh_from_editor()
+            except Exception:
+                pass
 
     def _snap_step_face_to_optical_axis_from_context(self, label: str, point_world, normal_world) -> None:
         """Right-click "Snap Picked Face -> Optical Axis": snap the clicked STEP

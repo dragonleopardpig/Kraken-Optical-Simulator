@@ -178,6 +178,8 @@ class LayoutSettingsService:
             "branch_detector_camera_assignments": {
                 str(k): str(v) for k, v in (getattr(self, "branch_detector_camera_assignments", {}) or {}).items()
             },
+            # Item 3: BS<->LED two-body glue flag (the optical + led overlays move together).
+            "optical_led_glued": bool(getattr(self, "_optical_led_glued", False)),
             "camera_step_path": _portable_step_path_text(self.imported_camera_step_path),
             "camera_step_rotation_x_deg": float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
             "camera_step_rotation_y_deg": float(getattr(self, "camera_step_rotation_y_deg", 0.0)),
@@ -512,6 +514,7 @@ class LayoutSettingsService:
                 for k, v in branch_cams.items()
                 if str(v).strip() and camera_record(str(v)) is not None
             }
+        self._optical_led_glued = bool(settings.get("optical_led_glued", False))  # item 3 BS<->LED glue
         self.imported_camera_step_path = _path_setting("camera_step_path")
         self.imported_lens_step_path = _path_setting("lens_step_path")
         self.imported_optical_step_path = _path_setting("optical_step_path")
