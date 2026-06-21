@@ -11207,6 +11207,129 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         )
         self._update_mode_badge()
 
+    def start_measure_pick(self) -> None:
+        # CAD-style 2-point measure (project_open3d_three_followups): the next two left-clicks
+        # on edges/surfaces drop a distance dimension between them.
+        self._measure_pick_mode = True
+        self._measure_p0 = None
+        for _flag in (
+            "_source_target_pick_mode", "_center_row_to_ray_mode", "_placement_target_pick_mode",
+            "_placement_orient_pick_mode", "_placement_orient_ray_mode", "_step_carry_snap_ray_mode",
+            "_step_carry_snap_target_mode", "_step_normal_axis_pick_mode", "_step_surface_center_axis_pick_mode",
+        ):
+            setattr(self, _flag, False)
+        try:
+            self._set_axis_pick_cursor(True)
+        except Exception:
+            pass
+        self.status_var.set("Measure: click the FIRST edge/surface.")
+        self._update_mode_badge()
+
+    def clear_measurements(self) -> None:
+        self._measure_pick_mode = False
+        self._measure_p0 = None
+        self._measure_segments = []
+        try:
+            self._set_axis_pick_cursor(False)
+        except Exception:
+            pass
+        self._refresh_measure_overlays()
+        self.status_var.set("Measurements cleared.")
+        self._update_mode_badge()
+
+    def _record_measure_point(self, world) -> None:
+        point = np.asarray(world, dtype=float).reshape(-1)[:3]
+        if point.size < 3 or not np.all(np.isfinite(point)):
+            self.status_var.set("Measure: the pick missed -- click ON an edge/surface.")
+            return
+        if getattr(self, "_measure_p0", None) is None:
+            self._measure_p0 = point
+            self.status_var.set("Measure: click the SECOND edge/surface.")
+            return
+        p0 = np.asarray(self._measure_p0, dtype=float).reshape(3)
+        segs = list(getattr(self, "_measure_segments", []))
+        segs.append((p0, point))
+        self._measure_segments = segs
+        self._measure_p0 = None
+        self._measure_pick_mode = False
+        try:
+            self._set_axis_pick_cursor(False)
+        except Exception:
+            pass
+        dist = float(np.linalg.norm(point - p0))
+        self._refresh_measure_overlays()
+        self.status_var.set(f"Measured {dist:.4g} mm. Press 'Measure' for another, or 'Clear'.")
+        self._update_mode_badge()
+
+    def _refresh_measure_overlays(self) -> None:
+        # Idempotent: remove current measure actors, redraw a line + distance label per segment.
+        for _actor in getattr(self, "_measure_actors", []):
+            try:
+                self._remove_renderer_view_prop(_actor)
+            except Exception:
+                pass
+        self._measure_actors = []
+        segments = getattr(self, "_measure_segments", [])
+        if self._renderer is not None and segments:
+            line_cls = mapper_cls = None
+            try:
+                from vtkmodules.vtkFiltersSources import vtkLineSource as line_cls  # noqa: F811
+                from vtkmodules.vtkRenderingCore import vtkPolyDataMapper as mapper_cls  # noqa: F811
+            except Exception:
+                line_cls = mapper_cls = None
+            for _seg in segments:
+                try:
+                    p0 = np.asarray(_seg[0], dtype=float).reshape(3)
+                    p1 = np.asarray(_seg[1], dtype=float).reshape(3)
+                    mid = (p0 + p1) * 0.5
+                    dist = float(np.linalg.norm(p1 - p0))
+                    if line_cls is not None and mapper_cls is not None and vtkActor is not None:
+                        src = line_cls()
+                        src.SetPoint1(float(p0[0]), float(p0[1]), float(p0[2]))
+                        src.SetPoint2(float(p1[0]), float(p1[1]), float(p1[2]))
+                        mp = mapper_cls()
+                        mp.SetInputConnection(src.GetOutputPort())
+                        la = vtkActor()
+                        la.SetMapper(mp)
+                        try:
+                            la.PickableOff()
+                            pr = la.GetProperty()
+                            pr.SetColor(0.95, 0.55, 0.1)
+                            pr.SetLineWidth(2.0)
+                        except Exception:
+                            pass
+                        self._add_renderer_view_prop(la)
+                        self._measure_actors.append(la)
+                    if vtkBillboardTextActor3D is not None:
+                        lbl = vtkBillboardTextActor3D()
+                        lbl.SetInput(f"↔ {dist:.4g} mm")
+                        lbl.SetPosition(float(mid[0]), float(mid[1]), float(mid[2]))
+                        try:
+                            lbl.PickableOff()
+                        except Exception:
+                            pass
+                        try:
+                            tp = lbl.GetTextProperty()
+                            tp.SetFontSize(14)
+                            tp.SetColor(0.25, 0.08, 0.0)
+                            tp.SetBackgroundColor(1.0, 0.93, 0.78)
+                            tp.SetBackgroundOpacity(0.9)
+                            tp.SetFrame(1)
+                            tp.SetFrameColor(0.95, 0.55, 0.1)
+                        except Exception:
+                            pass
+                        self._add_renderer_view_prop(lbl)
+                        self._measure_actors.append(lbl)
+                except Exception as _exc:
+                    try:
+                        self.editor.append_debug(f"measure overlay skipped: {_exc}")
+                    except Exception:
+                        pass
+        try:
+            self._vtk_widget.GetRenderWindow().Render()
+        except Exception:
+            pass
+
     def _apply_source_target_pick(self, row_index: int) -> None:
         self._source_target_pick_mode = False
         self._set_axis_pick_cursor(False)
@@ -13060,6 +13183,27 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         return service
 
     def _on_left_button_press(self, obj, _event) -> None:
+        if (
+            getattr(self, "_measure_pick_mode", False)
+            and self._picker is not None
+            and self._renderer is not None
+            and self._vtk_interactor is not None
+        ):
+            hit_actor = None
+            world = None
+            try:
+                x, y = self._vtk_interactor.GetEventPosition()
+                self._picker.Pick(x, y, 0.0, self._renderer)
+                hit_actor = self._picker.GetActor()
+                world = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+            except Exception:
+                hit_actor = None
+                world = None
+            if hit_actor is not None and world is not None and world.size >= 3:
+                self._record_measure_point(world)
+            else:
+                self.status_var.set("Measure: click ON an edge/surface (the pick missed).")
+            return
         return self._interaction_service()._on_left_button_press(obj, _event)
 
     def _on_mouse_move(self, obj, _event) -> None:

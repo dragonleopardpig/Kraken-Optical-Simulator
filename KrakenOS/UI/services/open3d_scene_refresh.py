@@ -1024,6 +1024,12 @@ class Open3DSceneRefreshService:
         # ``_step_actor_map``, draw the thickness dimensions so each row->row
         # span splits around any lens between its two surfaces.
         thickness_dimensions = self._add_thickness_dimension_overlays(system, scene_bundle)
+        # User Measure-tool dimensions persist across rebuilds (re-add the actors the
+        # scene clear removed). No-op when there are no measurements.
+        try:
+            self._refresh_measure_overlays()
+        except Exception:
+            pass
         # Quick Estimation FOV-circle / sensor-rectangle overlays (no-op unless
         # Quick Estimation is enabled).
         self._add_quick_estimation_overlays(system, scene_bundle)

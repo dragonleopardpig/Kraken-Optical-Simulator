@@ -94,6 +94,26 @@ class Open3DLiveControlsPanel:
         solve.grid(row=4, column=0, sticky="ew", pady=(8, 0))
         self.build_solve_controls(solve)
 
+        measure = ttk.LabelFrame(stack, text="Measure", padding=8)
+        measure.grid(row=5, column=0, sticky="ew", pady=(8, 0))
+        self.build_measure_controls(measure)
+
+    def build_measure_controls(self, parent: tk.Widget) -> None:
+        # CAD-style 2-point measure tool: click two edges/surfaces -> a dimension between them.
+        inspector = self.inspector
+        ttk.Button(parent, text="Measure (2 points)", command=inspector.start_measure_pick).grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Button(parent, text="Clear", command=inspector.clear_measurements).grid(
+            row=0, column=1, sticky="w", padx=(6, 0)
+        )
+        ttk.Label(
+            parent,
+            text="Click 2 edges/surfaces to drop a dimension between them.",
+            wraplength=250,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
     def build_quick_estimation_controls(self, parent: tk.Widget) -> None:
         from KrakenOS.UI.services.quick_estimation import (
             IMAGE_PLANE,
