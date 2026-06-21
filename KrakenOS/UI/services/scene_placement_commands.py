@@ -2388,6 +2388,62 @@ class ScenePlacementMixin:
         )
         return True
 
+    def improve_lens_surrogate_rear_to_step(self) -> bool:
+        """Item 4 ("vendor CAD is truth; improve the surrogate to fit it"): move the lens
+        surrogate's 'Lens Rear Datum' onto the imaging-lens STEP's rear face so the surrogate's
+        physical span matches the CAD. The front datum already pins the STEP front; this glues the
+        rear. The optics + image stay FIXED -- the gap BEFORE the rear datum grows by the shift and
+        the rear datum's own gap (to the image) shrinks by the same amount. Returns True when it
+        moved the datum."""
+        if self._step_path_for_label("lens") is None:
+            self.status_var.set("Improve surrogate: no lens STEP is imported.")
+            return False
+        rear_idx = next(
+            (i for i, r in enumerate(self.rows) if str(getattr(r, "name", "") or "") == "Lens Rear Datum"),
+            None,
+        )
+        if rear_idx is None or rear_idx < 1 or rear_idx >= len(self.rows) - 1:
+            self.status_var.set("Improve surrogate: layout has no 'Lens Rear Datum' row to glue.")
+            return False
+        mesh = self._transformed_imported_lens_step_mesh()
+        if mesh is None:
+            self.status_var.set("Improve surrogate: the lens STEP mesh is not available.")
+            return False
+        try:
+            bounds = np.asarray(mesh.bounds, dtype=float).reshape(-1)
+            zmin, zmax = float(bounds[4]), float(bounds[5])
+        except Exception:
+            self.status_var.set("Improve surrogate: could not read the STEP extent.")
+            return False
+        front_datum_z = float(self._lens_front_datum_z())
+        # the STEP rear face = the axial extreme farther from the (front-pinned) front datum
+        step_rear_z = zmax if abs(zmax - front_datum_z) >= abs(zmin - front_datum_z) else zmin
+        rear_datum_z = float(self._row_z_positions()[rear_idx])
+        delta = step_rear_z - rear_datum_z
+        if not np.isfinite(delta) or abs(delta) <= 1e-3:
+            self.status_var.set("Surrogate rear datum already on the STEP rear face (no change).")
+            return False
+        if float(self.rows[rear_idx].thickness) - delta < 0.0:
+            self.status_var.set("Improve surrogate: rear-datum shift would invert the image gap; skipped.")
+            return False
+        gui = not bool(getattr(self, "headless", False))
+        if gui:
+            self._begin_history_capture()
+        self.rows[rear_idx - 1].thickness = float(self.rows[rear_idx - 1].thickness) + delta  # rear datum -> STEP rear
+        self.rows[rear_idx].thickness = float(self.rows[rear_idx].thickness) - delta            # keep image + optics
+        if gui:
+            try:
+                self._sync_table()
+            except Exception:
+                pass
+            self._commit_history_capture()
+        self._invalidate_preview_scene_trace()
+        self.status_var.set(
+            f"Improved surrogate: rear datum glued to the lens STEP rear face "
+            f"(moved {delta:+.4g} mm; span now matches the CAD; optics + image unchanged)."
+        )
+        return True
+
     # --- imported-solid resize (drag a face to grow a dimension) ------------- #
     # The resize is stored as per-axis target extents in the solid's *native*
     # (base-mesh) frame and applied to the loaded mesh before optical-axis
@@ -2588,8 +2644,30 @@ class ScenePlacementMixin:
             and abs(float(delta[2])) > 1e-9
         ):
             axial_to_detector = float(delta[2])
+        # LENS surrogate <-> STEP glue (item 4): an AXIAL lens drag slides the whole lens UNIT along
+        # the optical axis. The 'Lens Front Datum' (which pins the STEP front), every lens row and the
+        # glued rear datum move together by redirecting the +Z drag to the gap BEFORE the front datum
+        # (the object-to-lens distance); the STEP follows and the rear datum stays glued (the optics
+        # respond to the new lens position). Lateral drag still only centres the body.
+        axial_lens_slide = 0.0
+        lens_front_idx = None
+        if label == "lens" and abs(float(delta[2])) > 1e-9:
+            lens_front_idx = next(
+                (
+                    i for i, r in enumerate(self.rows)
+                    if "front" in str(getattr(r, "name", "") or "").lower()
+                    and ("datum" in str(getattr(r, "name", "") or "").lower()
+                         or "edge" in str(getattr(r, "name", "") or "").lower())
+                ),
+                None,
+            )
+            if lens_front_idx is not None and lens_front_idx >= 1:
+                axial_lens_slide = float(delta[2])
+            else:
+                lens_front_idx = None
+        redirect_axial = abs(axial_to_detector) > 1e-9 or abs(axial_lens_slide) > 1e-9
         applied = np.array(
-            [float(delta[0]), float(delta[1]), 0.0 if abs(axial_to_detector) > 1e-9 else float(delta[2])],
+            [float(delta[0]), float(delta[1]), 0.0 if redirect_axial else float(delta[2])],
             dtype=float,
         )
         current = np.asarray(self._step_placement_offset_xyz(label), dtype=float)
@@ -2598,6 +2676,14 @@ class ScenePlacementMixin:
             self._begin_history_capture()
         if abs(axial_to_detector) > 1e-9:
             self.rows[-2].thickness = float(self.rows[-2].thickness) + axial_to_detector  # move the detector
+            if not bool(getattr(self, "headless", False)):
+                try:
+                    self._sync_table()
+                except Exception:
+                    pass
+            self._invalidate_preview_scene_trace()
+        if abs(axial_lens_slide) > 1e-9 and lens_front_idx is not None:
+            self.rows[lens_front_idx - 1].thickness = float(self.rows[lens_front_idx - 1].thickness) + axial_lens_slide
             if not bool(getattr(self, "headless", False)):
                 try:
                     self._sync_table()

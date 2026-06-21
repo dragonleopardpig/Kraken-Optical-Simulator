@@ -5897,6 +5897,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.status_var.set("Select or import a STEP overlay to glue to its optical surrogate.")
             return
         changed = self.editor.glue_step_overlay_to_surrogate(label)
+        # For the lens, also "improve the surrogate" (item 4): the front datum is pinned by the
+        # alignment; this glues the REAR datum onto the STEP rear face so the surrogate span matches
+        # the vendor CAD (optics + image preserved).
+        if str(label).strip().lower() == "lens":
+            try:
+                if self.editor.improve_lens_surrogate_rear_to_step():
+                    changed = True
+            except Exception as exc:
+                self.editor.append_debug(f"Improve lens surrogate rear datum failed: {exc}")
         self.status_var.set(self.editor.status_var.get())
         if changed:
             try:
