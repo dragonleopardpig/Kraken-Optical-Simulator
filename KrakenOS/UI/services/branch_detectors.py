@@ -302,7 +302,20 @@ def derive_branch_detectors(
                 # opposite: the convergence lands far FORWARD of the image (unreliable), so
                 # there we DO pin. Trust a reliable convergence that sits >1mm behind the image.
                 behind = float(np.dot(np.asarray(focus, dtype=float) - ri, mean_dir)) if converged else 0.0
-                if not (converged and focus_source == "converging_rays" and behind < -1.0):
+                to_image = float(np.dot(ri - mean_origin, mean_dir))
+                # bugs/0100: trust a forward convergence ONLY when it sits CLOSE to the reached image
+                # (a real per-branch focus -- the dual-lens reflect arm converges ~36mm, ~30% short). A
+                # cube-before-lens transmit leaf's display bundle converges WILDLY forward (live flag
+                # 20260621_181338: focus_z 361.9 vs image 612.8 = 251mm, ~85% short, source=converging_rays)
+                # -- an artifact, not a focus -- so pin to the designed Image rather than parking the
+                # transmit detector ~250mm forward of the real focus.
+                reliable_forward = (
+                    converged
+                    and focus_source == "converging_rays"
+                    and to_image > 1.0e-6
+                    and -0.5 * to_image < behind < -1.0
+                )
+                if not reliable_forward:
                     focus = ri
                     focus_source = "reached_image"
         # Size to the beam FOOTPRINT entering this branch (catches the whole beam

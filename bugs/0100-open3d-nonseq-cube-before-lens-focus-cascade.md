@@ -83,6 +83,22 @@ verification, not blind (cf. the 0095 wrong-path lesson).
 
 Also `flag_..._164515` "object plane disappears after promotion" = a SEPARATE display bug in the same scene.
 
+### PART 3 FIXED: transmit branch DETECTOR pinned to the real focus (`branch_detectors.py`)
+After parts 1+2 the launch aims correctly (live `flag_..._180111`: aim_z 277.78 = the lens, rays go broad
+through the cube) but the transmit branch DETECTOR was still parked ~250mm forward. `derive_branch_detectors`
+takes the exit-ray closest-approach as the focus; for a cube-before-lens transmit leaf the MULTI-FIELD
+display bundle converges far FORWARD of the image (live `flag_..._181338` via the `[0100diag]` log:
+focus_z 361.9 vs Image 612.8 = ~85% short, source=converging_rays). The bugs/0099 guard (trust ANY forward
+convergence, `behind < -1.0`) treated this artifact like the dual-lens reflect arm's reliable ~36mm-short
+focus and SKIPPED the 0093 pin. Fix: trust a forward convergence ONLY when it sits CLOSE to the reached
+Image -- within HALF the exit-origin->image distance (`-0.5*to_image < behind < -1.0`); the cube artifact
+(>half) pins to the designed Image, the reflect arm (~30% short) still trusts its own focus (no regression,
+confirmed arithmetically + repro_0099 PASS). **CONFIRMED IN-APP (`flag_..._182455`): transmit detector now
+at z=612.8 = the Image, rays reach + focus on it (broad through the cube, converge at the camera).** 0100
+FOCUS CASCADE RESOLVED. FOLLOW-UP: add a display-free two-arm branch-detector regression test + a penta
+validator phase. STILL OPEN: "object plane missing" (row 0 has an actor at z=0 but isn't visible) -- a
+separate display issue.
+
 ## Background (the documented root)
 The **universal first-order reference** for the non-seq trace is the documented root, and Phase 1
 (one-arm reference) + Phase 2 (per-branch pupil + per-branch launch) are **already shipped**
