@@ -44,11 +44,31 @@ branch) aimed every ray at `_current_object_distance()` = rows[0].thickness, whi
 promotion shrinks to object->cube -> the bundle converged ON the cube. Fix: new
 `_launch_reference_entrance_pupil_z(system)` (`_pupil_model_inputs` reference -> `Kos.PupilCalc.PosPupInp`
 world z) + the finite world branch aims at it (falls back to object_distance when no reference).
-`bugs/repro_0100.py`: plate-before-lens, object_distance shrunk to 100, world_envelope + world_cone now
-aim at **336** (the lens), not 100 (the plate). IN-APP verify pending (the user's world_envelope scene:
-Show Rays -> rays pass broad through the cube + focus at the lens; transmit count / image circle / ghost
-highlight clear). NOTE: other launch paths (the `SOURCE_MODEL_DEFAULT` legacy cone, world_sections) are
-separate and not part of the user's world_envelope path; revisit if they show the same.
+`bugs/repro_0100.py`: PLATE-before-lens (no split), object_distance shrunk to 100, world_envelope +
+world_cone now aim at **336** (the lens), not 100 (the plate). NOTE: other launch paths
+(`SOURCE_MODEL_DEFAULT` legacy cone, world_sections) are separate; revisit if flagged.
+
+### IN-APP RESULT 2026-06-21 (flags `_164515/_164559/_164628`, mode now `world_cone`): STILL pulled forward.
+The aim fix is the right mechanism but **does not engage on the user's scene** because it relies on the
+first-order reference, which **fails when there is a partial-reflecting SPLIT**. Confirmed with
+`_launch_reference_entrance_pupil_z`: bare lens -> EP z = 303.4; a beam-splitter scene
+(`beam_splitter_dual_mv_150_120`) -> **None**. The whole-layout `_paraxial_reference_rows_for_layout`
+RAISES on the reflect arm of the split, so the world bundle silently falls back to `object_distance` (the
+cube) -> chief rays still cross at the cube, transmit Image circle still at the lens exit (~56.8mm, z~407
+not ~595).
+
+**REMAINING ROOT (the real 0100 fix):** the first-order reference must build for a single-imaging-arm
+scene that has a promoted cube with a partial-reflecting FACE coating. Two sub-paths:
+(a) make the reference **strip the partial-reflecting/beam-splitter coating off the promoted mesh solid**
+(reduce the cube to a transmissive plate) so the WHOLE-layout reference builds (object -> cube-plate ->
+lens -> image, one un-folded path) -> `_launch_reference_entrance_pupil_z` returns the lens EP -> the
+shipped aim fix engages; or (b) wire `_launch_reference_entrance_pupil_z` to the per-branch leaf reference
+(`_branch_leaf_rows` + `unfold_branch_tilts`) of the imaging arm. (a) is cleaner for one imaging arm;
+the promoted-cube split is NOT branch_selector-tagged, so (b) needs the split recognised as a branch
+first. Verifying needs the user's promoted-cube-split scene (hard to build headless) -> do WITH in-app
+verification, not blind (cf. the 0095 wrong-path lesson).
+
+Also `flag_..._164515` "object plane disappears after promotion" = a SEPARATE display bug in the same scene.
 
 ## Background (the documented root)
 The **universal first-order reference** for the non-seq trace is the documented root, and Phase 1
