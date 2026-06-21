@@ -934,6 +934,10 @@ class Open3DSceneRefreshService:
             ("camera", self.editor._transformed_imported_camera_step_mesh, (0.28, 0.33, 0.42), 0.38),
         ):
             label_is_live_trace_row = label in current_live_trace_step_overlay_labels
+            # Skip the HEAVY mesh build for hidden decoration STEPs (e.g. a hidden LED): the user hides
+            # them precisely to declutter + speed promotes. Rebuilt on un-hide (set_step_label_hidden).
+            if self.is_step_label_hidden(label) and label != carry_label:
+                continue
             if (
                 label != carry_label
                 and self.editor._step_overlay_matches_promoted_row(label, promoted_step_source_keys)

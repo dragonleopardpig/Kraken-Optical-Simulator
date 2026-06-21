@@ -10619,13 +10619,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         label = str(label).strip().lower()
         if hidden:
             self._hidden_step_labels.add(label)
+            self._set_actor_keys_visible(self._all_actor_keys_for_step_label(label), False)
+            try:
+                self.render()
+            except Exception:
+                pass
         else:
             self._hidden_step_labels.discard(label)
-        self._set_actor_keys_visible(self._all_actor_keys_for_step_label(label), not hidden)
-        try:
-            self.render()
-        except Exception:
-            pass
+            # while hidden the step's heavy mesh was SKIPPED in the rebuild, so there is no actor to
+            # re-show -- rebuild the overlay now. Fall back to the show-actors path if that's unavailable.
+            try:
+                self.refresh_imported_step_overlay(label)
+            except Exception:
+                try:
+                    self._set_actor_keys_visible(self._all_actor_keys_for_step_label(label), True)
+                    self.render()
+                except Exception:
+                    pass
 
     @staticmethod
     def _scene_placement_translate_step(placement: ScenePlacement3D, spacing: float) -> float:
