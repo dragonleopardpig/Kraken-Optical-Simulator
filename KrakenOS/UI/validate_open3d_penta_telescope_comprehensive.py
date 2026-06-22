@@ -6805,6 +6805,35 @@ def phase_99_nonseq_branching_requirement_cache(
     return result
 
 
+def phase_100_face_editor_scrollable(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The Face Editor ("Assign CAD/STL Optical Faces") right-hand assignment form
+    is taller than the dialog, so it lives in a vertical scroll canvas (otherwise
+    the lower controls overflow off the bottom with no scrollbar). The wheel
+    scrolls it for both the mouse and the touchpad (``<MouseWheel>`` +
+    ``<Button-4>``/``<Button-5>``), bound recursively so hovering any field scrolls;
+    the Save/Close footer stays on the window. Guard
+    `validate_open3d_face_editor_scrollable` is a display-free source check (the
+    dialog needs a real Tk root + a promoted STL row, which the harness lacks).
+    """
+    result = PhaseResult(
+        name="Phase 100: Open 3D Face Editor right-hand panel scrolls (mouse + touchpad)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_face_editor_scrollable import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"face-editor-scrollable guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6950,6 +6979,7 @@ def main() -> int:
             phase_97_nonseq_mesh_normal_cache,
             phase_98_nonseq_decimated_trace_proxy,
             phase_99_nonseq_branching_requirement_cache,
+            phase_100_face_editor_scrollable,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

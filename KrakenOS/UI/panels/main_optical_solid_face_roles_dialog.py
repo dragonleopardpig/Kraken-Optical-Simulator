@@ -191,10 +191,72 @@ class MainOpticalSolidFaceRolesDialog:
         preview_status_var = tk.StringVar(master=window, value='3D face preview loading...')
         ttk.Label(preview_frame, textvariable=preview_status_var, foreground='#475569').grid(row=2, column=0, sticky='ew', pady=(4, 0))
         body.add(preview_frame, weight=4)
-        editor = ttk.Frame(body, padding=(12, 4, 4, 4))
+        # The assignment form below is taller than the dialog, so wrap it in a
+        # vertical scroll canvas -- otherwise the lower controls overflow off the
+        # bottom with no scrollbar. Both the mouse wheel and the touchpad scroll it
+        # (X11 sends <Button-4>/<Button-5>, Windows/macOS + hi-res touchpads send
+        # <MouseWheel> with a signed delta), bound recursively on every control so
+        # hovering any field scrolls (matches the Scene Components panel idiom).
+        editor_host = ttk.Frame(body)
+        editor_host.columnconfigure(0, weight=1)
+        editor_host.rowconfigure(0, weight=1)
+        body.add(editor_host, weight=2)
+        editor_canvas = tk.Canvas(editor_host, highlightthickness=0, width=348)
+        editor_vscroll = ttk.Scrollbar(editor_host, orient='vertical', command=editor_canvas.yview)
+        editor_canvas.configure(yscrollcommand=editor_vscroll.set)
+        editor_canvas.grid(row=0, column=0, sticky='nsew')
+        editor = ttk.Frame(editor_canvas, padding=(12, 4, 4, 4))
         for column in (1,):
             editor.columnconfigure(column, weight=1)
-        body.add(editor, weight=2)
+        editor_window = editor_canvas.create_window((0, 0), window=editor, anchor='nw')
+
+        def _update_editor_scroll() -> None:
+            try:
+                editor_canvas.configure(scrollregion=editor_canvas.bbox('all'))
+                overflow = editor.winfo_reqheight() > editor_canvas.winfo_height()
+                if overflow and not editor_vscroll.grid_info():
+                    editor_vscroll.grid(row=0, column=1, sticky='ns')
+                elif not overflow and editor_vscroll.grid_info():
+                    editor_vscroll.grid_remove()
+            except tk.TclError:
+                pass
+
+        def _on_editor_canvas_configure(event) -> None:
+            # Vertical-only scroll: the inner form fills the canvas width (so the
+            # column-1 stretch + label wraplengths lay out) and at least the canvas
+            # height (so a short form is not clipped).
+            fill_height = max(int(event.height), editor.winfo_reqheight())
+            editor_canvas.itemconfigure(editor_window, width=int(event.width), height=fill_height)
+            _update_editor_scroll()
+
+        def _on_editor_wheel(event) -> "str | None":
+            if editor.winfo_reqheight() <= editor_canvas.winfo_height():
+                return None  # nothing to scroll; let the event through
+            num = getattr(event, 'num', 0)
+            delta = getattr(event, 'delta', 0)
+            if num == 4 or delta > 0:
+                editor_canvas.yview_scroll(-1, 'units')
+            elif num == 5 or delta < 0:
+                editor_canvas.yview_scroll(1, 'units')
+            return 'break'
+
+        def _bind_editor_wheel(node) -> None:
+            for seq in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
+                try:
+                    node.bind(seq, _on_editor_wheel, add='+')
+                except Exception:
+                    pass
+            try:
+                children = node.winfo_children()
+            except Exception:
+                children = []
+            for child in children:
+                _bind_editor_wheel(child)
+
+        editor.bind('<Configure>', lambda _e: _update_editor_scroll(), add='+')
+        editor_canvas.bind('<Configure>', _on_editor_canvas_configure, add='+')
+        for seq in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
+            editor_canvas.bind(seq, _on_editor_wheel, add='+')
         side_var = tk.StringVar(master=window, value=le.OPTICAL_SOLID_FACE_SIDE_DEFAULT)
         function_var = tk.StringVar(master=window, value=le.OPTICAL_SOLID_FACE_FUNCTION_DEFAULT)
         port_var = tk.StringVar(master=window, value=le.OPTICAL_SOLID_FACE_PORT_DEFAULT)
@@ -1677,6 +1739,11 @@ class MainOpticalSolidFaceRolesDialog:
         ttk.Label(virtual_frame, textvariable=virtual_status_var, foreground='#475569', wraplength=330).grid(row=7, column=0, columnspan=2, sticky='ew', pady=(0, 4))
         ttk.Button(virtual_frame, text='Auto Cube Splitter Plane', command=build_virtual_cube_plane).grid(row=8, column=0, columnspan=2, sticky='ew', pady=(0, 2))
         ttk.Button(virtual_frame, text='Clear Virtual Planes', command=clear_virtual_planes).grid(row=9, column=0, columnspan=2, sticky='ew')
+        # The full assignment form is built; bind wheel/touchpad scroll recursively
+        # on every control now that they all exist, and size the scrollregion.
+        _bind_editor_wheel(editor)
+        editor.update_idletasks()
+        _update_editor_scroll()
         footer = ttk.Frame(window, padding=(10, 4, 10, 10))
         footer.grid(row=2, column=0, sticky='ew')
         ttk.Button(footer, text='Open 3D Placement', command=open_placement_view).pack(side='left')
