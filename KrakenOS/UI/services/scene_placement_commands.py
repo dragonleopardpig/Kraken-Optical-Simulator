@@ -3633,6 +3633,33 @@ class ScenePlacementMixin:
         except Exception:
             return ()
 
+    def _step_overlay_alignment_target_z(self, label: str):
+        """Image-plane-driven axial alignment target for a display-only overlay.
+
+        camera/led bodies are NOT moved by a translate/rotate gesture but by the
+        layout's image plane: ``_transformed_imported_camera_step_mesh`` aligns
+        the camera front to ``image_plane_z - front_to_sensor`` (the led to its
+        own z). The rendered mesh re-keys on this target, but the pose-blind face
+        metadata key did not -- so after the image plane moved (a solve,
+        image-at-focus shift, thickness edit, or camera/sensor reassignment) the
+        baked face geometry stayed at the body's former pose and the gold hover
+        outline floated ~17 mm off the drawn body (bugs/0109). Returns ``None``
+        for overlays whose pose is fully captured by the translate/rotate
+        signature (the alignment target is then irrelevant to the cache key).
+        """
+        label = str(label).strip().lower()
+        try:
+            if label == "camera":
+                return round(
+                    float(self._current_image_plane_z() - self._current_camera_front_to_sensor_mm()),
+                    6,
+                )
+            if label == "led":
+                return round(float(self._led_step_z_translation()), 6)
+        except Exception:
+            return None
+        return None
+
     def _step_overlay_face_metadata(self, label: str) -> dict[str, object]:
         label = str(label).strip().lower()
         if label not in _step_overlay_label_set() or self._step_path_for_label(label) is None:
@@ -3659,6 +3686,18 @@ class ScenePlacementMixin:
             cache_key = (label, self._step_overlay_stat_key(source_path_obj))
             if label not in self._DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC:
                 cache_key = cache_key + (self._step_overlay_pose_cache_signature(label),)
+            else:
+                # bugs/0109: the translate/rotate signature is folded for
+                # analytic labels above and invalidated explicitly for the
+                # display-only ones (bug 0050). What neither covered is the
+                # image-plane-driven axial alignment of camera/led bodies, whose
+                # rendered mesh re-keys on the target but whose pose-blind
+                # metadata did not -- folding the (cheap, subsecond-to-recompute)
+                # alignment target makes the baked hover-outline geometry track
+                # the body when the image plane moves.
+                align_target = self._step_overlay_alignment_target_z(label)
+                if align_target is not None:
+                    cache_key = cache_key + (("align_z", align_target),)
         except Exception:
             cache_key = None
         if cache_key is not None:

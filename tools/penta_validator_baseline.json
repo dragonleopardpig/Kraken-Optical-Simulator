@@ -96,7 +96,8 @@
     "91": "pass",
     "92": "pass",
     "93": "pass",
-    "94": "pass"
+    "94": "pass",
+    "95": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -193,6 +194,7 @@
     "91": "Open 3D promote clamps the forced retrace to a sparse 3-ray fan",
     "92": "Open 3D FOV thickness solve takes effect on a beam-splitter scene",
     "93": "Open 3D Thickness dimension per-row off + drag-to-point re-anchor",
-    "94": "Open 3D manual Measure delete/hide-by-selection + hover highlight"
+    "94": "Open 3D manual Measure delete/hide-by-selection + hover highlight",
+    "95": "Open 3D camera/LED STEP hover outline tracks the image-plane alignment"
   }
 }

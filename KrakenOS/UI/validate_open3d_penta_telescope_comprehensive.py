@@ -6647,6 +6647,36 @@ def phase_94_measure_overlay_visibility(
     return result
 
 
+def phase_95_camera_overlay_hover_alignment(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The camera/LED STEP face-hover outline tracks the rendered body when the
+    image plane moves (bugs/0109 -- "ghost/offset highlight").
+
+    The camera body is aligned to `image_plane_z - front_to_sensor`, which the
+    rendered mesh re-keys on but the pose-blind face-metadata cache did not -- so
+    after the image plane moved the gold hover outline stayed ~17 mm at the body's
+    former pose. The fix folds `_step_overlay_alignment_target_z` into the
+    metadata cache key for the image-plane-aligned display-only overlays. Guard
+    `validate_open3d_camera_overlay_hover_alignment` is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 95: Open 3D camera/LED STEP hover outline tracks the image-plane alignment"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_camera_overlay_hover_alignment import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"camera-overlay-hover-alignment guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6787,6 +6817,7 @@ def main() -> int:
             phase_92_fov_solve_after_promote,
             phase_93_thickness_dimension_visibility,
             phase_94_measure_overlay_visibility,
+            phase_95_camera_overlay_hover_alignment,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
