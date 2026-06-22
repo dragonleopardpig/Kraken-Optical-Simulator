@@ -6774,6 +6774,36 @@ def phase_98_nonseq_decimated_trace_proxy(
     return result
 
 
+def phase_99_nonseq_branching_requirement_cache(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The non-sequential branching-requirement (beam-splitter / diffuse presence)
+    is memoised per system instead of re-normalising every solid's full face
+    metadata once per ray (perf: that re-normalisation -- over the huge per-face
+    triangle_indices lists -- dominated the trace on a fine promoted solid).
+
+    `__NsTraceRequiresBranching` caches `_ns_requires_branching_cache`, cleared by
+    the prescription-change hooks `SetData` / `SetSolid`. The split still fires on a
+    beam-splitter scene and a plate still does not branch, so the optics are
+    unchanged. Guard `validate_nonseq_branching_requirement_cache` is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 99: Open 3D NS branching-requirement memoised per system (split still fires)"
+    )
+    try:
+        from KrakenOS.UI.validate_nonseq_branching_requirement_cache import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"nonseq-branching-requirement-cache guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6918,6 +6948,7 @@ def main() -> int:
             phase_96_step_body_promote_right_click,
             phase_97_nonseq_mesh_normal_cache,
             phase_98_nonseq_decimated_trace_proxy,
+            phase_99_nonseq_branching_requirement_cache,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

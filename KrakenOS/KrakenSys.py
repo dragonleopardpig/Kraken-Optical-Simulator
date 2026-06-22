@@ -399,6 +399,7 @@ class system():
         self._optical_solid_face_world_cache = {}
         self._optical_solid_face_world_signature_cache = {}
         self._optical_solid_mesh_face_id_cache = {}
+        self._ns_requires_branching_cache = None
         if not hasattr(self, "_scene_boundary_faces_by_surface"):
             self._scene_boundary_faces_by_surface = {}
         if not hasattr(self, "_scene_optical_volumes_by_surface"):
@@ -1746,6 +1747,7 @@ class system():
         self._optical_solid_face_world_cache = {}
         self._optical_solid_face_world_signature_cache = {}
         self._optical_solid_mesh_face_id_cache = {}
+        self._ns_requires_branching_cache = None
         self.SuTo = SUT(self.SDT)
         self.Object_Num = np.arange(0, self.n, 1)
         self.__SurFuncSuscrip()
@@ -1758,6 +1760,7 @@ class system():
         self._optical_solid_face_world_cache = {}
         self._optical_solid_face_world_signature_cache = {}
         self._optical_solid_mesh_face_id_cache = {}
+        self._ns_requires_branching_cache = None
         self.__SurFuncSuscrip()
         self.Pr3D.Prerequisites3SMath()
         self.Pr3D.Prerequisites3D_UDA()
@@ -2723,7 +2726,20 @@ class system():
         }
 
     def __NsTraceRequiresBranching(self):
-        return self.__NsTraceHasDeterministicBeamSplitter() or self.__NsTraceHasDiffuseScatter()
+        # Scene-level invariant (beam-splitter / diffuse-scatter presence): the
+        # deterministic-BS check re-normalises every solid's full face metadata
+        # (the huge per-face triangle_indices lists), and this is hit once per
+        # ray. Memoise it for the system's lifetime; SetData/SetSolid (the
+        # prescription-change hooks that already reset the optical-solid caches)
+        # clear it.
+        cached = getattr(self, "_ns_requires_branching_cache", None)
+        if cached is not None:
+            return cached
+        result = bool(
+            self.__NsTraceHasDeterministicBeamSplitter() or self.__NsTraceHasDiffuseScatter()
+        )
+        self._ns_requires_branching_cache = result
+        return result
 
     def __NsTraceHasDiffuseScatter(self):
         for j in range(0, self.n):
