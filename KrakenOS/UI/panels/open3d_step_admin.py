@@ -848,6 +848,25 @@ class Open3DStepAdminPanel:
         if name:
             menu.add_command(label=name.strip() or "Scene element", state="disabled")
             menu.add_separator()
+        # bugs/0102: offer the SAME element-level CAD actions as the 3D-canvas
+        # right-click (Promote / Glue / Resize / Unpromote / Open Face Editor /
+        # Row Actions), keyed off the tree's element identity. This needs no
+        # canvas face pick, so it is instant and reaches a body hidden under an
+        # overlapping one -- the two reasons the user asked for it.
+        added_actions = False
+        try:
+            service = self.inspector._face_assignment_service()
+            if label is not None:
+                added_actions = bool(service.append_element_context_actions(menu, step_label=label))
+            elif rows:
+                added_actions = bool(service.append_element_context_actions(menu, row_index=rows[0]))
+        except Exception as exc:
+            try:
+                self.inspector.append_debug(f"Scene-tree element actions failed: {exc}")
+            except Exception:
+                pass
+        if added_actions:
+            menu.add_separator()
         show_word = "Show" if display_key is not None else "Unhide"
         if hidden:
             menu.add_command(label=show_word, command=lambda: self._set_element_hidden(rows, label, False, display_key))

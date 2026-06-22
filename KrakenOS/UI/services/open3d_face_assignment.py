@@ -160,11 +160,7 @@ class Open3DFaceAssignmentService:
                     ),
                 )
             menu.add_separator()
-            menu.add_command(label="Open Face Editor...", command=lambda idx=int(row_index): self.editor.open_optical_solid_face_role_editor(idx))
-            if self._row_has_step_overlay_promotion(int(row_index)):
-                menu.add_command(label="Unpromote to STEP overlay", command=lambda idx=int(row_index): self._unpromote_step_solid_from_context(idx))
-            menu.add_separator()
-            self._build_row_actions_cascade(menu, int(row_index))
+            self.append_element_context_actions(menu, row_index=int(row_index))
         elif row_index is not None and self.editor._is_any_promoted_optical_solid_row(self.editor.rows[int(row_index)]):
             group = self.editor._lens_row_group_for_row(int(row_index))
             label_text = (
@@ -172,10 +168,7 @@ class Open3DFaceAssignmentService:
             )
             menu.add_command(label=f"Row Actions for {label_text}", state="disabled")
             menu.add_separator()
-            if self._row_has_step_overlay_promotion(int(row_index)):
-                menu.add_command(label="Unpromote to STEP overlay", command=lambda idx=int(row_index): self._unpromote_step_solid_from_context(idx))
-                menu.add_separator()
-            self._build_row_actions_cascade(menu, int(row_index))
+            self.append_element_context_actions(menu, row_index=int(row_index))
         elif step_label in STEP_OVERLAY_LABEL_SET:
             try:
                 feature_pick = self._step_feature_pick_for_display_xy(
@@ -269,24 +262,7 @@ class Open3DFaceAssignmentService:
                     picked_label, picked_point, picked_normal
                 ),
             )
-            menu.add_command(
-                label="Glue STEP to Surrogate",
-                command=lambda picked_label=step_label: self._glue_step_to_surrogate_from_context(picked_label),
-            )
-            # Item 3: BS<->LED two-body glue -- on the optical (beam splitter) or led overlay, when both
-            # are imported, offer to glue them so they move together as one rigid unit.
-            if str(step_label).strip().lower() in ("optical", "led") and self._optical_led_glue_available():
-                if self.editor.optical_led_glued():
-                    menu.add_command(label="Unglue BS from LED", command=lambda: self._set_optical_led_glue(False))
-                else:
-                    menu.add_command(label="Glue BS to LED (move together)", command=lambda: self._set_optical_led_glue(True))
-            menu.add_separator()
-            menu.add_command(
-                label="Resize Solid...",
-                command=lambda picked_label=step_label: self._open_step_overlay_resize_popup(picked_label),
-            )
-            if not decoration:
-                menu.add_command(label="Promote to Optical Element", command=lambda picked_label=step_label: self._promote_step_from_context(picked_label))
+            self.append_element_context_actions(menu, step_label=step_label)
         else:
             self.status_var.set("Right-click assignment requires a file-backed optical CAD/STL row.")
             return "break"
@@ -299,6 +275,73 @@ class Open3DFaceAssignmentService:
             except Exception:
                 pass
         return "break"
+
+    def append_element_context_actions(self, menu, *, row_index=None, step_label=None) -> bool:
+        """Append the *element-level* right-click actions -- the ones keyed only by
+        the element's identity (a row index or a STEP-overlay label), never by a
+        picked face. Shared by the 3D-canvas right-click menu and the Scene
+        Components tree right-click so the two stay in sync. The tree path uses it
+        to offer the same CAD actions without the canvas's per-pixel face pick
+        (which is slow and ambiguous when bodies overlap -- bugs/0102). Face-
+        specific actions ("Set {function}", "Snap Picked Face") stay canvas-only;
+        the tree reaches face assignment through "Open Face Editor...". Returns
+        True when it added at least one command."""
+        le = _layout_module()
+        if step_label is not None:
+            step_label = str(step_label).strip().lower()
+            if step_label not in le.STEP_OVERLAY_LABEL_SET:
+                return False
+            decoration = le.is_step_overlay_decoration(step_label)
+            menu.add_command(
+                label="Glue STEP to Surrogate",
+                command=lambda picked_label=step_label: self._glue_step_to_surrogate_from_context(picked_label),
+            )
+            # Item 3: BS<->LED two-body glue -- when both the beam-splitter (optical)
+            # and the LED STEP are imported, offer to glue/unglue them as one unit.
+            if step_label in ("optical", "led") and self._optical_led_glue_available():
+                if self.editor.optical_led_glued():
+                    menu.add_command(label="Unglue BS from LED", command=lambda: self._set_optical_led_glue(False))
+                else:
+                    menu.add_command(label="Glue BS to LED (move together)", command=lambda: self._set_optical_led_glue(True))
+            menu.add_separator()
+            menu.add_command(
+                label="Resize Solid...",
+                command=lambda picked_label=step_label: self._open_step_overlay_resize_popup(picked_label),
+            )
+            if not decoration:
+                menu.add_command(
+                    label="Promote to Optical Element",
+                    command=lambda picked_label=step_label: self._promote_step_from_context(picked_label),
+                )
+            return True
+        if row_index is not None:
+            row_index = int(row_index)
+            rows = list(getattr(self.editor, "rows", []) or [])
+            if not (0 <= row_index < len(rows)):
+                return False
+            if self.editor._file_backed_stl_row_at(row_index) is not None:
+                menu.add_command(
+                    label="Open Face Editor...",
+                    command=lambda idx=row_index: self.editor.open_optical_solid_face_role_editor(idx),
+                )
+                if self._row_has_step_overlay_promotion(row_index):
+                    menu.add_command(
+                        label="Unpromote to STEP overlay",
+                        command=lambda idx=row_index: self._unpromote_step_solid_from_context(idx),
+                    )
+                menu.add_separator()
+                self._build_row_actions_cascade(menu, row_index)
+                return True
+            if self.editor._is_any_promoted_optical_solid_row(rows[row_index]):
+                if self._row_has_step_overlay_promotion(row_index):
+                    menu.add_command(
+                        label="Unpromote to STEP overlay",
+                        command=lambda idx=row_index: self._unpromote_step_solid_from_context(idx),
+                    )
+                    menu.add_separator()
+                self._build_row_actions_cascade(menu, row_index)
+                return True
+        return False
 
     def _assign_row_face_function_from_context(
         self,

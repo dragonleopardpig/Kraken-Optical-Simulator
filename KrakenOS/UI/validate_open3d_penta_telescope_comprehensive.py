@@ -6423,6 +6423,38 @@ def phase_87_decoration_not_promotable(
     return result
 
 
+def phase_88_tree_element_context_menu(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The Scene Components tree right-click offers the SAME element-level CAD
+    actions as the 3D-canvas right-click, via one shared helper (bugs/0102).
+
+    The canvas right-click is slow (after the click it resolves the exact face
+    under the cursor: runtime mesh rebuild + brute-force ray-triangle pick +
+    traced-ray scan, ~12 s first click / ~1 s warm) and, when bodies overlap,
+    it can only reach the front-most actor. The tree menu is keyed by the
+    already-known element so it skips the face-pick pipeline (instant) and lists
+    every element by name (reach the one underneath directly). Both menus call
+    `append_element_context_actions` so the two never drift. Guard
+    `validate_open3d_tree_element_context_menu` is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 88: Open 3D Scene Components tree right-click mirrors the 3D-canvas element actions"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_tree_element_context_menu import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"tree-element-context-menu guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6556,6 +6588,7 @@ def main() -> int:
             phase_85_branch_detector_supersedes_image,
             phase_86_superseded_image_plane_hidden,
             phase_87_decoration_not_promotable,
+            phase_88_tree_element_context_menu,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
