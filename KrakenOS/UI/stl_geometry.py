@@ -46,12 +46,15 @@ def read_stl_triangle_vertices(path: Path) -> tuple[str, np.ndarray]:
         triangle_count = struct.unpack("<I", data[80:84])[0]
         expected_binary_size = 84 + int(triangle_count) * 50
         if triangle_count > 0 and expected_binary_size == len(data):
-            triangles = np.empty((int(triangle_count), 3, 3), dtype=float)
-            offset = 84
-            for index in range(int(triangle_count)):
-                offset += 12  # normal vector
-                triangles[index] = np.frombuffer(data, dtype="<f4", count=9, offset=offset).reshape(3, 3)
-                offset += 36 + 2  # vertices + attribute byte count
+            # Each 50-byte record is normal(3f) + verts(3x3f) + attr(u2). Read
+            # the whole block in one structured frombuffer rather than a
+            # per-triangle Python loop -- the loop cost ~1 s on a 0.6 M-triangle
+            # vendor body, paid on every face-metadata bake.
+            record_dtype = np.dtype(
+                [("normal", "<f4", (3,)), ("verts", "<f4", (3, 3)), ("attr", "<u2")]
+            )
+            records = np.frombuffer(data, dtype=record_dtype, count=int(triangle_count), offset=84)
+            triangles = np.ascontiguousarray(records["verts"], dtype=float)
             return "binary", triangles
 
     text = data.decode("utf-8", errors="ignore")

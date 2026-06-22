@@ -6834,6 +6834,38 @@ def phase_100_face_editor_scrollable(
     return result
 
 
+def phase_101_step_overlay_bake_vectorized(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A cold STEP-overlay face-metadata bake clusters every STL triangle into
+    planar face candidates. On a fine vendor body (~0.6 M-triangle camera STEP)
+    the former per-triangle Python loop ran ~90 s -- the dominant cost of
+    "Open 3D takes quite a while" on launch / first selection (bug 0111 caps the
+    bake to once per session, but every fresh launch re-paid it). The loop is now
+    a numpy batch (~30x faster) and bit-identical: guard
+    `validate_open3d_step_overlay_bake_vectorized` reimplements the original loop
+    as an independent reference and asserts the vectorised output matches
+    face-for-face (incl. the area-tie tie-break), the binary STL reader is
+    byte-identical, and the source carries no per-triangle Python loop.
+    """
+    result = PhaseResult(
+        name="Phase 101: Open 3D STEP-overlay face-metadata bake vectorised (lossless ~30x)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_step_overlay_bake_vectorized import run_checks
+        checks = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"bake-vectorised guard raised: {exc!r}")
+        return result
+    failed = [f"{name}: {detail}" for name, passed, detail in checks if not passed]
+    result.passed = not failed
+    result.detail["checks_failed"] = len(failed)
+    for note in failed:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6980,6 +7012,7 @@ def main() -> int:
             phase_98_nonseq_decimated_trace_proxy,
             phase_99_nonseq_branching_requirement_cache,
             phase_100_face_editor_scrollable,
+            phase_101_step_overlay_bake_vectorized,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

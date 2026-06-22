@@ -102,7 +102,8 @@
     "97": "pass",
     "98": "pass",
     "99": "pass",
-    "100": "pass"
+    "100": "pass",
+    "101": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -205,6 +206,7 @@
     "97": "Open 3D NS mesh trace caches solid cell normals (lossless speed-up)",
     "98": "Open 3D planar optical solid traces against a lossless decimated proxy",
     "99": "Open 3D NS branching-requirement memoised per system (split still fires)",
-    "100": "Open 3D Face Editor right-hand panel scrolls (mouse + touchpad)"
+    "100": "Open 3D Face Editor right-hand panel scrolls (mouse + touchpad)",
+    "101": "Open 3D STEP-overlay face-metadata bake vectorised (lossless ~30x)"
   }
 }

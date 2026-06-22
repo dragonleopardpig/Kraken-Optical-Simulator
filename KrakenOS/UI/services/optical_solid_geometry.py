@@ -275,67 +275,105 @@ def cluster_optical_solid_planar_faces(path: Path, *, max_faces: int = 160) -> l
     _file_format, triangles = _read_stl_triangle_vertices(Path(path).expanduser())
     if triangles.size == 0:
         return []
+    triangles = np.asarray(triangles, dtype=float)
     flat = triangles.reshape((-1, 3))
     extents = np.ptp(flat, axis=0)
     max_extent = max(float(np.max(extents)), 1.0)
     area_tol = max(max_extent * max_extent * 1e-18, 1e-24)
     plane_decimals = 4 if max_extent < 100.0 else 3
     normal_decimals = 4
-    groups: dict[tuple[tuple[float, float, float], float], dict[str, object]] = {}
-    for triangle_index, tri in enumerate(triangles):
-        v0, v1, v2 = (np.asarray(vertex, dtype=float) for vertex in tri)
-        cross = np.cross(v1 - v0, v2 - v0)
-        area = 0.5 * float(np.linalg.norm(cross))
-        if area <= area_tol or not np.isfinite(area):
-            continue
-        normal = cross / max(float(np.linalg.norm(cross)), 1e-12)
-        centroid = (v0 + v1 + v2) / 3.0
-        plane_offset = float(np.dot(normal, centroid))
-        canonical_normal, canonical_plane_offset = _canonical_optical_solid_plane(normal, plane_offset)
-        key = (
-            tuple(float(v) for v in np.round(canonical_normal, normal_decimals)),
-            float(np.round(canonical_plane_offset, plane_decimals)),
-        )
-        entry = groups.setdefault(
-            key,
-            {
-                "normal_weighted": np.zeros(3, dtype=float),
-                "centroid_weighted": np.zeros(3, dtype=float),
-                "area": 0.0,
-                "triangles": 0,
-                "plane_offset_weighted": 0.0,
-                "triangle_indices": [],
-                "reference_normal": np.asarray(normal, dtype=float),
-            },
-        )
-        reference_normal = np.asarray(entry.get("reference_normal", normal), dtype=float).reshape(3)
-        oriented_normal = np.asarray(normal, dtype=float)
-        if float(np.dot(oriented_normal, reference_normal)) < 0.0:
-            oriented_normal = -oriented_normal
-        oriented_plane_offset = float(np.dot(oriented_normal, centroid))
-        entry["normal_weighted"] = np.asarray(entry["normal_weighted"], dtype=float) + oriented_normal * area
-        entry["centroid_weighted"] = np.asarray(entry["centroid_weighted"], dtype=float) + centroid * area
-        entry["area"] = float(entry["area"]) + area
-        entry["triangles"] = int(entry["triangles"]) + 1
-        entry["plane_offset_weighted"] = float(entry["plane_offset_weighted"]) + oriented_plane_offset * area
-        entry["triangle_indices"].append(int(triangle_index))
+
+    # Vectorised equivalent of the former per-triangle Python loop. A fine
+    # vendor body (a ~0.6 M-triangle camera STL) spent ~90 s here -- np.cross /
+    # norm / round called once per triangle -- which is the dominant cost of a
+    # cold STEP-overlay face-metadata bake. Batching the geometry and grouping
+    # into numpy drops it to ~1 s. The result is bit-identical: the grouping key
+    # (rounded canonical plane) is unchanged, and the per-group area-weighted
+    # sums accumulate in ascending triangle-index order in both implementations
+    # (np.bincount walks the input in order), so the float reductions match.
+    v0 = triangles[:, 0, :]
+    v1 = triangles[:, 1, :]
+    v2 = triangles[:, 2, :]
+    cross = np.cross(v1 - v0, v2 - v0)
+    cross_norm = np.linalg.norm(cross, axis=1)
+    area = 0.5 * cross_norm
+    keep = np.isfinite(area) & (area > area_tol)
+    if not np.any(keep):
+        return []
+    keep_idx = np.nonzero(keep)[0]
+    cross = cross[keep]
+    cross_norm = cross_norm[keep]
+    area = area[keep]
+    normal = cross / np.maximum(cross_norm, 1e-12)[:, None]
+    centroid = (v0[keep] + v1[keep] + v2[keep]) / 3.0
+    plane_offset = np.einsum("ij,ij->i", normal, centroid)
+
+    # Canonical (sign-stable) plane for grouping: flip so the dominant normal
+    # component is non-negative -- matches _canonical_optical_solid_plane.
+    pivot = np.argmax(np.abs(normal), axis=1)
+    pivot_val = normal[np.arange(normal.shape[0]), pivot]
+    canon_sign = np.where(pivot_val < 0.0, -1.0, 1.0)
+    canonical_normal = normal * canon_sign[:, None]
+    canonical_offset = plane_offset * canon_sign
+
+    key = np.empty((normal.shape[0], 4), dtype=float)
+    key[:, :3] = np.round(canonical_normal, normal_decimals) + 0.0
+    key[:, 3] = np.round(canonical_offset, plane_decimals) + 0.0
+    _unique_keys, inverse = np.unique(key, axis=0, return_inverse=True)
+    inverse = np.asarray(inverse, dtype=np.int64).reshape(-1)
+    n_groups = int(_unique_keys.shape[0])
+
+    # First (lowest-index) triangle per group sets the reference orientation;
+    # each triangle's raw normal is flipped to align with it before the
+    # area-weighted accumulation (mirrors the loop's reference_normal logic).
+    order = np.argsort(inverse, kind="stable")
+    groups_sorted = inverse[order]
+    first_mask = np.empty(groups_sorted.shape[0], dtype=bool)
+    first_mask[0] = True
+    np.not_equal(groups_sorted[1:], groups_sorted[:-1], out=first_mask[1:])
+    first_positions = order[first_mask]  # length n_groups, in group-id order
+    reference_normal = normal[first_positions][inverse]
+    orient_sign = np.where(np.einsum("ij,ij->i", normal, reference_normal) < 0.0, -1.0, 1.0)
+    oriented_normal = normal * orient_sign[:, None]
+    oriented_plane_offset = np.einsum("ij,ij->i", oriented_normal, centroid)
+
+    area_sum = np.bincount(inverse, weights=area, minlength=n_groups)
+    tri_count = np.bincount(inverse, minlength=n_groups)
+    normal_weighted = np.stack(
+        [np.bincount(inverse, weights=oriented_normal[:, k] * area, minlength=n_groups) for k in range(3)],
+        axis=1,
+    )
+    centroid_weighted = np.stack(
+        [np.bincount(inverse, weights=centroid[:, k] * area, minlength=n_groups) for k in range(3)],
+        axis=1,
+    )
+    plane_offset_weighted = np.bincount(inverse, weights=oriented_plane_offset * area, minlength=n_groups)
+
+    # Original triangle indices per group, ascending (matches the append order).
+    split_points = np.flatnonzero(np.diff(groups_sorted)) + 1
+    index_chunks = np.split(keep_idx[order], split_points)
+
+    area_clamped = np.maximum(area_sum, 1e-12)
+    # Rank by descending area, breaking ties by ascending first-occurrence
+    # triangle index -- the loop built ``groups`` in first-appearance order and
+    # Python's stable ``sorted(reverse=True)`` kept that order among equal areas,
+    # so the F-number assignment must use the same tie-break.
+    first_tri_idx = keep_idx[first_positions]
+    selected_groups = np.lexsort((first_tri_idx, -area_sum))[: max(1, int(max_faces))]
 
     candidates: list[OpticalSolidFaceCandidate] = []
-    sorted_entries = sorted(groups.values(), key=lambda item: float(item["area"]), reverse=True)
-    for index, entry in enumerate(sorted_entries[: max(1, int(max_faces))], start=1):
-        area = max(float(entry["area"]), 1e-12)
-        normal = _unit_vector_tuple(np.asarray(entry["normal_weighted"], dtype=float) / area)
-        centroid = _point3_tuple(np.asarray(entry["centroid_weighted"], dtype=float) / area)
-        plane_offset = float(entry["plane_offset_weighted"]) / area
+    for rank, group in enumerate(selected_groups, start=1):
+        group = int(group)
+        denom = float(area_clamped[group])
         candidates.append(
             OpticalSolidFaceCandidate(
-                face_id=f"F{index:03d}",
-                normal=normal,
-                centroid=centroid,
-                area_mm2=float(area),
-                triangle_count=int(entry["triangles"]),
-                plane_offset_mm=float(plane_offset),
-                triangle_indices=tuple(int(value) for value in list(entry.get("triangle_indices", []) or [])),
+                face_id=f"F{rank:03d}",
+                normal=_unit_vector_tuple(normal_weighted[group] / denom),
+                centroid=_point3_tuple(centroid_weighted[group] / denom),
+                area_mm2=denom,
+                triangle_count=int(tri_count[group]),
+                plane_offset_mm=float(plane_offset_weighted[group] / denom),
+                triangle_indices=tuple(int(value) for value in index_chunks[group].tolist()),
             )
         )
     return candidates
