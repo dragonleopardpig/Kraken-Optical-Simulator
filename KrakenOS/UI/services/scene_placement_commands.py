@@ -3686,18 +3686,16 @@ class ScenePlacementMixin:
             cache_key = (label, self._step_overlay_stat_key(source_path_obj))
             if label not in self._DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC:
                 cache_key = cache_key + (self._step_overlay_pose_cache_signature(label),)
-            else:
-                # bugs/0109: the translate/rotate signature is folded for
-                # analytic labels above and invalidated explicitly for the
-                # display-only ones (bug 0050). What neither covered is the
-                # image-plane-driven axial alignment of camera/led bodies, whose
-                # rendered mesh re-keys on the target but whose pose-blind
-                # metadata did not -- folding the (cheap, subsecond-to-recompute)
-                # alignment target makes the baked hover-outline geometry track
-                # the body when the image plane moves.
-                align_target = self._step_overlay_alignment_target_z(label)
-                if align_target is not None:
-                    cache_key = cache_key + (("align_z", align_target),)
+            # bugs/0111 (reverts bugs/0109): the display-only camera/led labels keep
+            # the POSE-BLIND key, so the metadata is baked at most once per session.
+            # bugs/0109 folded the image-plane alignment target into the key on the
+            # mistaken belief that the recompute was "subsecond" -- but this is the
+            # full planar-clustering + affine-fit + snap-STL pipeline, ~18-35 s for
+            # the 228k-cell camera body (see the timing log + the comment above).
+            # Re-keying on the alignment made that bake re-run whenever the image
+            # plane moved OR on a deselect/refresh, freezing the UI for ~18 s. The
+            # cosmetic hover-outline offset 0109 chased is tracked separately and
+            # must be fixed without re-baking (apply the axial delta on read).
         except Exception:
             cache_key = None
         if cache_key is not None:

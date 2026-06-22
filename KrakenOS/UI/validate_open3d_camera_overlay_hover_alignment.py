@@ -1,30 +1,30 @@
 #!/usr/bin/env python3
-"""Display-free guard for the camera/LED STEP hover-outline alignment
-(bugs/0109: "ghost highlight" / "offset highlight").
+"""Display-free guard for the camera/LED STEP face-metadata caching cost
+(bugs/0111, which reverts bugs/0109).
 
-A camera STEP body is NOT moved by a translate/rotate gesture but by the
-layout's image plane: ``_transformed_imported_camera_step_mesh`` aligns the
-camera front face to ``image_plane_z - front_to_sensor`` (the LED to its own z).
-The rendered mesh re-keys on that target, but the face-metadata cache key for
-the display-only labels (camera/led/lens) was pose-blind -- so once the image
-plane moved (a solve, an image-at-focus shift, a thickness edit, or a
-camera/sensor reassignment) the baked face geometry stayed at the body's former
-pose and the gold hover outline floated ~17 mm off the drawn body.
+A camera STEP body is positioned by the layout's image plane
+(``_transformed_imported_camera_step_mesh`` aligns its front face to
+``image_plane_z - front_to_sensor``). bugs/0109 folded that alignment target into
+the face-metadata cache key so the gold hover outline would track the body after
+an image-plane move. That was a mistake: baking the display-only camera/led
+metadata is NOT subsecond -- it is the full planar-clustering + affine-fit +
+snap-STL pipeline, ~18-35 s for the 228k-cell camera body -- so re-keying made the
+bake re-run whenever the image plane moved (a solve / image-at-focus shift /
+thickness edit) OR on a deselect/refresh, freezing the UI for ~18 s.
 
-The fix folds ``_step_overlay_alignment_target_z(label)`` into the metadata
-cache key for the image-plane-aligned overlays, so the next hover recomputes the
-face geometry against the freshly-aligned mesh.
+The fix keeps the display-only labels POSE-BLIND, so the metadata is baked at most
+once per session (the proven pre-0109, freeze-free behaviour). The cosmetic
+hover-outline offset 0109 chased must be fixed without re-baking (apply the axial
+alignment delta to the cached geometry on read) -- that is tracked separately.
 
 What it checks:
-  A. ``_step_overlay_alignment_target_z`` returns ``image_plane_z -
-     front_to_sensor`` for the camera, the led z for the led, and ``None`` for
-     overlays whose pose is captured by the translate/rotate signature.
-  B. Functional cache: with the image plane fixed, a second metadata read is a
-     cache hit (no recompute); after the image plane MOVES, the read recomputes
-     and returns geometry baked at the NEW alignment target (never the stale
-     entry).
-  C. Source: the metadata cache key folds ``_step_overlay_alignment_target_z``
-     for the display-only labels.
+  A. ``_step_overlay_alignment_target_z`` still resolves the camera/led axial
+     targets (kept for the future delta-shift fix; ``None`` elsewhere).
+  B. Functional cache: an image-plane MOVE does NOT recompute the camera metadata
+     (it stays a cache hit) -- the freeze-free contract.
+  C. Source: the cache key for the display-only labels does NOT fold the alignment
+     target (it would re-trigger the 18-35 s bake), and the bugs/0111 rationale is
+     present.
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_camera_overlay_hover_alignment
@@ -47,12 +47,10 @@ class _FakeEditor:
         self._DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC = (
             ScenePlacementMixin._DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC
         )
-        # image-plane / sensor inputs the camera alignment derives from
         self.image_plane_z = 700.0
         self.front_to_sensor = 11.5
         self.led_z = 40.0
         self._compute_calls = 0
-        # bind the real methods under test
         self._step_overlay_alignment_target_z = types.MethodType(
             ScenePlacementMixin._step_overlay_alignment_target_z, self
         )
@@ -60,7 +58,6 @@ class _FakeEditor:
             ScenePlacementMixin._step_overlay_face_metadata, self
         )
 
-    # --- collaborators the metadata method touches (all stubbed cheap) ---
     def _step_path_for_label(self, label):
         return f"/tmp/{label}.step"
 
@@ -80,7 +77,7 @@ class _FakeEditor:
         return float(self.led_z)
 
     def _step_overlay_face_metadata_compute(self, label):
-        # Bake the current alignment target so a stale cache hit is detectable.
+        # Stand in for the real ~18-35 s bake; count calls so a recompute is visible.
         self._compute_calls += 1
         return {
             "label": label,
@@ -94,7 +91,7 @@ def run_checks() -> "tuple[bool, list[str]]":
 
     failures: list[str] = []
 
-    # A) alignment-target accessor.
+    # A) alignment-target accessor still resolves (kept for the delta-shift fix).
     ed = _FakeEditor()
     cam_target = ed._step_overlay_alignment_target_z("camera")
     expected_cam = round(ed.image_plane_z - ed.front_to_sensor, 6)
@@ -108,54 +105,39 @@ def run_checks() -> "tuple[bool, list[str]]":
             f"got {ed._step_overlay_alignment_target_z('led')}")
     for label in ("lens", "optical", "bogus"):
         if ed._step_overlay_alignment_target_z(label) is not None:
-            failures.append(
-                f"FAIL: {label} has no image-plane alignment target -> should be None, "
-                f"got {ed._step_overlay_alignment_target_z(label)}")
+            failures.append(f"FAIL: {label} should have no image-plane alignment target (None)")
 
-    # B) functional cache behaviour.
+    # B) freeze-free contract: an image-plane MOVE must NOT recompute the camera
+    #    metadata -- the expensive bake stays a cache hit (pose-blind).
     ed = _FakeEditor()
     first = ed._step_overlay_face_metadata("camera")
     calls_after_first = ed._compute_calls
-    second = ed._step_overlay_face_metadata("camera")  # image plane unchanged
+    ed._step_overlay_face_metadata("camera")  # unchanged -> hit
+    if ed._compute_calls != calls_after_first:
+        failures.append("FAIL: an unchanged-pose camera metadata read must be a cache hit")
+    ed.image_plane_z = 730.0  # an image-at-focus shift / solve moves the image plane
+    moved = ed._step_overlay_face_metadata("camera")
     if ed._compute_calls != calls_after_first:
         failures.append(
-            "FAIL: a second camera metadata read with the image plane unchanged must "
-            "be a cache hit (no recompute)")
-    if second is not first:
-        failures.append("FAIL: the unchanged-pose read should return the cached object")
+            "FAIL: moving the image plane must NOT recompute the camera face metadata "
+            "(bugs/0111: re-baking the 18-35 s display-only metadata froze the UI on "
+            "image-plane moves / deselect)")
+    if moved is not first:
+        failures.append("FAIL: the camera metadata must stay the one cached (pose-blind) object")
 
-    # Move the image plane -> the cached entry is now stale; the read must
-    # recompute against the new alignment target and never return the old bake.
-    ed.image_plane_z = 730.0  # +30 mm, like an image-at-focus shift / solve
-    moved = ed._step_overlay_face_metadata("camera")
-    if ed._compute_calls <= calls_after_first:
-        failures.append(
-            "FAIL: moving the image plane must invalidate the camera metadata "
-            "(recompute), but no recompute happened -> stale hover outline (bugs/0109)")
-    expected_moved = round(730.0 - ed.front_to_sensor, 6)
-    if moved.get("baked_align") != expected_moved:
-        failures.append(
-            f"FAIL: after the image plane moved, the metadata must be baked at the new "
-            f"alignment target ({expected_moved}), got {moved.get('baked_align')}")
-    if moved.get("baked_align") == first.get("baked_align"):
-        failures.append(
-            "FAIL: the post-move metadata must differ from the pre-move bake "
-            "(the stale entry must not be reused)")
+    # An analytic label still re-keys on its pose signature (only display-only is blind).
+    # (no further assertion needed; covered by the pose-signature path.)
 
-    # Moving back returns to the original target (and may reuse the warm entry).
-    ed.image_plane_z = 700.0
-    back = ed._step_overlay_face_metadata("camera")
-    if back.get("baked_align") != expected_cam:
-        failures.append(
-            f"FAIL: restoring the image plane must bake at the original target "
-            f"({expected_cam}), got {back.get('baked_align')}")
-
-    # C) source check: the cache key folds the alignment target for display-only.
+    # C) source: the cache key must NOT fold the alignment target for display-only
+    #    labels, and the bugs/0111 rationale must be present.
     meta_src = inspect.getsource(ScenePlacementMixin._step_overlay_face_metadata)
-    if "_step_overlay_alignment_target_z" not in meta_src:
+    display_only_block = meta_src.split("_DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC", 1)[-1]
+    if 'cache_key + (("align_z"' in meta_src or "+ ((\"align_z\"" in meta_src:
         failures.append(
-            "FAIL: _step_overlay_face_metadata must fold _step_overlay_alignment_target_z "
-            "into the cache key for the image-plane-aligned display-only overlays")
+            "FAIL: _step_overlay_face_metadata must NOT fold the alignment target into the "
+            "display-only cache key (it re-triggers the 18-35 s bake -> freeze)")
+    if "bugs/0111" not in meta_src:
+        failures.append("FAIL: the bugs/0111 pose-blind rationale is missing from the source")
 
     return (not failures), failures
 
@@ -163,12 +145,12 @@ def run_checks() -> "tuple[bool, list[str]]":
 def main() -> int:
     passed, failures = run_checks()
     if not passed:
-        print("[FAIL] camera/LED STEP hover-outline alignment tracks the image plane")
+        print("[FAIL] camera/LED STEP face metadata stays pose-blind cached (freeze-free)")
         for item in failures:
             print(f"  - {item}")
         return 1
-    print("[PASS] camera/LED STEP face metadata re-keys on its image-plane alignment "
-          "target -> the gold hover outline tracks the rendered body")
+    print("[PASS] camera/LED STEP face metadata is pose-blind cached -> no 18-35 s re-bake "
+          "on an image-plane move or deselect")
     return 0
 
 

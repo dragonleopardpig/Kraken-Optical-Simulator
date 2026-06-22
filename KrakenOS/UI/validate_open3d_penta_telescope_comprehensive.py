@@ -6650,18 +6650,19 @@ def phase_94_measure_overlay_visibility(
 def phase_95_camera_overlay_hover_alignment(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """The camera/LED STEP face-hover outline tracks the rendered body when the
-    image plane moves (bugs/0109 -- "ghost/offset highlight").
+    """The display-only camera/LED STEP face metadata stays POSE-BLIND cached, so
+    its ~18-35 s planar-clustering bake runs at most once (bugs/0111, reverting
+    bugs/0109).
 
-    The camera body is aligned to `image_plane_z - front_to_sensor`, which the
-    rendered mesh re-keys on but the pose-blind face-metadata cache did not -- so
-    after the image plane moved the gold hover outline stayed ~17 mm at the body's
-    former pose. The fix folds `_step_overlay_alignment_target_z` into the
-    metadata cache key for the image-plane-aligned display-only overlays. Guard
-    `validate_open3d_camera_overlay_hover_alignment` is display-free.
+    bugs/0109 folded the image-plane alignment target into the metadata cache key
+    to make the gold hover outline track the body -- but that bake is NOT
+    subsecond, so re-keying re-ran it on every image-plane move and on deselect,
+    freezing the UI ~18 s. The fix keeps the display-only labels pose-blind (baked
+    once); the cosmetic hover-outline offset is to be fixed without re-baking.
+    Guard `validate_open3d_camera_overlay_hover_alignment` is display-free.
     """
     result = PhaseResult(
-        name="Phase 95: Open 3D camera/LED STEP hover outline tracks the image-plane alignment"
+        name="Phase 95: Open 3D camera/LED STEP face metadata pose-blind cached (no re-bake freeze)"
     )
     try:
         from KrakenOS.UI.validate_open3d_camera_overlay_hover_alignment import run_checks
