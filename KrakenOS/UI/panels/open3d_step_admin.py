@@ -280,6 +280,23 @@ class Open3DStepAdminPanel:
         except Exception:
             return str(path)
 
+    def _glue_partner_suffix(self, label: str) -> str:
+        """bugs/0103: a persistent "glued" indicator on the BS<->LED pair, so the
+        rigid-glue state (item 3) is visible in the browser instead of only a
+        transient status line. Naming the partner tells the user what THIS element
+        is glued to (and which two bodies move together)."""
+        try:
+            if not self.editor.optical_led_glued():
+                return ""
+        except Exception:
+            return ""
+        key = str(label or "").strip().lower()
+        if key == "led":
+            return "  — glued to BS"
+        if key == "optical":
+            return "  — glued to LED"
+        return ""
+
     def _promoted_step_rows(self) -> list[tuple[int, str, str]]:
         rows = list(getattr(self.editor, "rows", []) or [])
         records: list[tuple[int, str, str]] = []
@@ -577,12 +594,14 @@ class Open3DStepAdminPanel:
                     display = self.editor._step_overlay_display_label(label)
                     name = self._step_path_name(label)
                     text = f"{display}: {name}" if name else f"{display} STEP"
+                    text += self._glue_partner_suffix(label)
                     tree.insert(category_iids[category], "end", iid=f"overlay:{label}", text=text,
                                 tags=self._item_hidden_tag(label=label))
                     category_counts[category] += 1
             for row_index, label, name in self._promoted_step_rows():
                 category = self._category_for_label(label)
-                tree.insert(category_iids[category], "end", iid=f"row:{row_index}", text=f"S{row_index}: {name}",
+                row_text = f"S{row_index}: {name}" + self._glue_partner_suffix(label)
+                tree.insert(category_iids[category], "end", iid=f"row:{row_index}", text=row_text,
                             tags=self._item_hidden_tag(rows=[row_index]))
                 category_counts[category] += 1
             rows = list(getattr(self.editor, "rows", []) or [])

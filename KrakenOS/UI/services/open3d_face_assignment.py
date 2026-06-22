@@ -296,12 +296,16 @@ class Open3DFaceAssignmentService:
                 label="Glue STEP to Surrogate",
                 command=lambda picked_label=step_label: self._glue_step_to_surrogate_from_context(picked_label),
             )
-            # Item 3: BS<->LED two-body glue -- when both the beam-splitter (optical)
-            # and the LED STEP are imported, offer to glue/unglue them as one unit.
-            if step_label in ("optical", "led") and self._optical_led_glue_available():
+            # Item 3: BS<->LED two-body glue. The UNGLUE control must stay reachable
+            # whenever a glue is ACTIVE -- including after the beam splitter ("optical")
+            # overlay was promoted away, which used to hide it and leave the glue stuck
+            # on (bugs/0103). The LED is a decoration (never promoted, bugs/0101), so its
+            # overlay is a stable anchor for unglue. Only the GLUE direction needs both
+            # overlays still imported as overlays.
+            if step_label in ("optical", "led"):
                 if self.editor.optical_led_glued():
                     menu.add_command(label="Unglue BS from LED", command=lambda: self._set_optical_led_glue(False))
-                else:
+                elif self._optical_led_glue_available():
                     menu.add_command(label="Glue BS to LED (move together)", command=lambda: self._set_optical_led_glue(True))
             menu.add_separator()
             menu.add_command(
@@ -329,6 +333,8 @@ class Open3DFaceAssignmentService:
                         label="Unpromote to STEP overlay",
                         command=lambda idx=row_index: self._unpromote_step_solid_from_context(idx),
                     )
+                if self._row_is_glued_optical_bs(row_index):
+                    menu.add_command(label="Unglue BS from LED", command=lambda: self._set_optical_led_glue(False))
                 menu.add_separator()
                 self._build_row_actions_cascade(menu, row_index)
                 return True
@@ -338,6 +344,9 @@ class Open3DFaceAssignmentService:
                         label="Unpromote to STEP overlay",
                         command=lambda idx=row_index: self._unpromote_step_solid_from_context(idx),
                     )
+                    menu.add_separator()
+                if self._row_is_glued_optical_bs(row_index):
+                    menu.add_command(label="Unglue BS from LED", command=lambda: self._set_optical_led_glue(False))
                     menu.add_separator()
                 self._build_row_actions_cascade(menu, row_index)
                 return True
@@ -489,6 +498,26 @@ class Open3DFaceAssignmentService:
                 self.editor._step_path_for_label("optical") is not None
                 and self.editor._step_path_for_label("led") is not None
             )
+        except Exception:
+            return False
+
+    def _row_is_glued_optical_bs(self, row_index: int) -> bool:
+        """bugs/0103: True when this promoted row IS the beam splitter (the 'optical'
+        overlay that was promoted) and it is currently glued to the LED. Lets the
+        promoted-row right-click offer "Unglue BS from LED" even though the 'optical'
+        overlay no longer exists -- the user looks for unglue where they last saw the
+        body (the promoted solid), not only on the LED overlay."""
+        try:
+            if not self.editor.optical_led_glued():
+                return False
+            rows = list(getattr(self.editor, "rows", []) or [])
+            if not (0 <= int(row_index) < len(rows)):
+                return False
+            row = rows[int(row_index)]
+            if not self.editor._is_open3d_promoted_optical_solid_row(row):
+                return False
+            label = str(self.editor._open3d_step_label_for_optical_solid_row(row) or "").strip().lower()
+            return label == "optical"
         except Exception:
             return False
 

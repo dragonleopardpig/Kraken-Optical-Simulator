@@ -90,7 +90,8 @@
     "85": "pass",
     "86": "pass",
     "87": "pass",
-    "88": "pass"
+    "88": "pass",
+    "89": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -181,6 +182,7 @@
     "85": "Open 3D branch detector supersedes the redundant sequential Image marker",
     "86": "Open 3D superseded sequential Image plane hidden behind the branch detector",
     "87": "Open 3D decoration STEP overlay (LED/camera) not promotable as optics",
-    "88": "Open 3D Scene Components tree right-click mirrors the 3D-canvas element actions"
+    "88": "Open 3D Scene Components tree right-click mirrors the 3D-canvas element actions",
+    "89": "Open 3D BS<->LED glue stays unglueable (LED anchor + promoted BS row) + browser indicator"
   }
 }

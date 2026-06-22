@@ -6455,6 +6455,41 @@ def phase_88_tree_element_context_menu(
     return result
 
 
+def phase_89_glue_unglue_indicator(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The persistent BS<->LED rigid glue stays UNGLUEable and shows a browser
+    indicator (bugs/0103).
+
+    The glue is a persistent editor flag (`_optical_led_glued`, saved to disk).
+    Its Unglue command used to be gated behind BOTH the "optical" and "led"
+    overlays still being imported AS overlays. Promoting the beam splitter
+    ("optical" overlay) into an optical solid removed that overlay, so Unglue
+    vanished from every menu while the glue stayed ON (and survived reload) --
+    stuck, with no indicator. Fix: when glued, Unglue is offered on the LED
+    overlay (a decoration, never promoted -> a stable anchor) AND on the promoted
+    BS row (`_row_is_glued_optical_bs`); only the Glue direction stays gated on
+    both overlays being present. A `_glue_partner_suffix` tags the led/optical
+    elements with "glued to BS/LED" in the Scene Components browser. Guard
+    `validate_open3d_glue_unglue_indicator` is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 89: Open 3D BS<->LED glue stays unglueable + shows a browser indicator"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_glue_unglue_indicator import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"glue-unglue-indicator guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6589,6 +6624,7 @@ def main() -> int:
             phase_86_superseded_image_plane_hidden,
             phase_87_decoration_not_promotable,
             phase_88_tree_element_context_menu,
+            phase_89_glue_unglue_indicator,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
