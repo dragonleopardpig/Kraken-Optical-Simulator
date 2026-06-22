@@ -729,7 +729,12 @@ class Open3DInteractionService:
         # generic VTK-side hover here so the two don't fight over highlights.
         if self._dimension_anchor_pick_mode:
             return
-        hover_critical = bool(self._center_row_to_ray_mode or self._step_normal_axis_pick_mode or self._step_surface_center_axis_pick_mode)
+        hover_critical = bool(
+            self._center_row_to_ray_mode
+            or self._step_normal_axis_pick_mode
+            or self._step_surface_center_axis_pick_mode
+            or getattr(self, "_measure_pick_mode", False)
+        )
         if (
             self._step_carry_drag_state is None
             and self._step_carry_follow_state is None
@@ -775,6 +780,13 @@ class Open3DInteractionService:
             self._update_hover_status("", render=False)
             self._set_axis_pick_cursor(True)
             self.status_var.set("Source Target: click a surface/CAD solid row.")
+            return
+        if getattr(self, "_measure_pick_mode", False):
+            # bugs/0108: hover-highlight the edge/surface under the cursor so the
+            # user sees what the next Measure click will pick.
+            self._set_rotation_handle_hover(None)
+            self._set_axis_pick_cursor(True)
+            self._update_measure_hover_highlight()
             return
         if self._center_row_to_ray_mode:
             self._set_rotation_handle_hover(None)

@@ -6617,6 +6617,36 @@ def phase_93_thickness_dimension_visibility(
     return result
 
 
+def phase_94_measure_overlay_visibility(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Each manual Measure-tool measurement can be deleted/hidden by selection,
+    and the edge/surface under the cursor highlights while measuring.
+
+    A right-click on a measurement opens a menu (Delete / Hide this / Show all);
+    the hidden set keys on a stable per-measurement id so a hide survives a delete
+    that shifts list indices, and `_refresh_measure_overlays` skips hidden ids.
+    A `_measure_pick_mode` branch in the interaction `_on_mouse_move` hover-
+    highlights the edge/surface under the cursor. Guard
+    `validate_open3d_measure_overlay_visibility` is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 94: Open 3D manual Measure delete/hide-by-selection + hover highlight"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_measure_overlay_visibility import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"measure-overlay-visibility guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6756,6 +6786,7 @@ def main() -> int:
             phase_91_promote_ray_clamp,
             phase_92_fov_solve_after_promote,
             phase_93_thickness_dimension_visibility,
+            phase_94_measure_overlay_visibility,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

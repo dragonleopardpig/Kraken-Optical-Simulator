@@ -55,6 +55,26 @@ def _sequential_paths(branch_path="primary", n=3):
     return paths
 
 
+def _absorbed_paths(branch_path, focus, *, n=3):
+    """bugs/0108: reflect-arm rays that are PRESENT (heading toward `focus`) but die
+    by absorption at a cube face -- a terminal event tagged termination_reason=absorbed.
+    Their last segment would extrapolate to a phantom focus if not dropped."""
+    from KrakenOS.UI.scene_geometry import RayPath3D, RayEvent3D
+
+    focus = np.asarray(focus, dtype=float)
+    paths = []
+    for k in range(n):
+        origin = focus + np.asarray((float(k - (n - 1) / 2.0) * 3.0, -55.0, 0.0), dtype=float)
+        direction = focus - origin
+        direction = direction / np.linalg.norm(direction)
+        prior = origin - direction * 5.0
+        tail = origin + direction * 300.0
+        pts = np.vstack((prior, origin, tail))
+        terminal = RayEvent3D(event_kind="terminal", termination_reason="absorbed")
+        paths.append(RayPath3D(branch_path=branch_path, reaches_image=False, points_world=pts, events=[terminal]))
+    return paths
+
+
 def run_checks() -> tuple[bool, list[str]]:
     from KrakenOS.UI.services.branch_detectors import (
         derive_branch_detectors,
@@ -114,6 +134,23 @@ def run_checks() -> tuple[bool, list[str]]:
     adets = derive_branch_detectors(absorbing, existing_targets=[], scene_radius=50.0)
     if adets:
         failures.append(f"FAIL: absorbing reflect output produced {len(adets)} detector(s), expected 0")
+
+    # 3b) bugs/0108: reflect rays PRESENT but absorbed inside the cube (the realistic
+    #     case the synthetic test #3 omitted). The absorbed leaf must be dropped, so
+    #     no phantom reflect detector floats beyond the cube -- and with the reflect
+    #     arm gone the transmit leaf reaches the sequential Image -> 0 branch detectors.
+    absorbed_arm = _sequential_paths("S4:BS/transmit") + _absorbed_paths(
+        "S4:BS/reflect", np.asarray((0.0, 80.0, 150.0))
+    )
+    abdets = derive_branch_detectors(absorbed_arm, existing_targets=[], scene_radius=50.0)
+    if any("reflect" in d.branch_path for d in abdets):
+        failures.append(
+            "FAIL: an ABSORBED reflect arm still produced a reflect branch detector "
+            f"(phantom image plane): {[d.branch_path for d in abdets]}")
+    if abdets:
+        failures.append(
+            f"FAIL: absorbing one arm of a splitter should collapse to the surviving "
+            f"transmit leaf (sequential Image), got {len(abdets)} branch detector(s)")
 
     # 4) no splitter: only the sequential leaf -> none.
     ndets = derive_branch_detectors(_sequential_paths("primary"), existing_targets=[], scene_radius=50.0)

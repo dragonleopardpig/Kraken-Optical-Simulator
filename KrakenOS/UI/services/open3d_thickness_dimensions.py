@@ -328,6 +328,14 @@ class Open3DThicknessDimensionService:
             meta = getattr(target, "metadata", None)
             if not (isinstance(meta, dict) and str(meta.get("target_source", "") or "") == "branch_detector"):
                 continue
+            # bugs/0108: a per-branch exit->detector overlay is hideable too (its
+            # synthetic detector row index keys the hidden set).
+            overlay_row = int(getattr(target, "row_index", 100000) or 100000)
+            try:
+                if self.editor._thickness_dimension_is_hidden(overlay_row):
+                    continue
+            except Exception:
+                pass
             exit_pt = meta.get("exit_point_world")
             if exit_pt is None:
                 continue

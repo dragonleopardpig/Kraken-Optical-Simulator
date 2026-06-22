@@ -138,6 +138,25 @@ def run_checks() -> "tuple[bool, list[str]]":
     if not hasattr(Kraken3DInspector, "_begin_dimension_anchor_pick_for_row"):
         failures.append("FAIL: Kraken3DInspector._begin_dimension_anchor_pick_for_row is missing")
 
+    # F) bugs/0108: a thin/arrow-less overlay's billboard label/leader can't be hit by
+    #    the cell picker, so the row-under-cursor resolver must fall back to a
+    #    screen-space proximity search ("some thickness overlay without arrow, can't
+    #    hide them"). And the per-branch exit->detector overlay honours the hidden set.
+    if not hasattr(Kraken3DInspector, "_thickness_dimension_row_near_display_xy"):
+        failures.append("FAIL: Kraken3DInspector._thickness_dimension_row_near_display_xy (proximity fallback) is missing")
+    cursor_src = inspect.getsource(Kraken3DInspector._thickness_dimension_row_under_cursor)
+    if "_thickness_dimension_row_near_display_xy" not in cursor_src:
+        failures.append(
+            "FAIL: _thickness_dimension_row_under_cursor must fall back to the proximity "
+            "search so an arrow-less overlay's label is still hideable")
+    from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService
+
+    branch_src = inspect.getsource(Open3DThicknessDimensionService._branch_distance_overlays)
+    if "_thickness_dimension_is_hidden" not in branch_src:
+        failures.append(
+            "FAIL: per-branch exit->detector overlays must also honour the hidden set "
+            "(_thickness_dimension_is_hidden) so they can be turned off")
+
     return (not failures), failures
 
 

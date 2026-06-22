@@ -13,8 +13,12 @@ planes computed from the traced rays; they do NOT add KrakenOS trace surfaces
 Cascading: leaves are identified from ``branch_path`` component prefixes (split on
 ``" -> "``; ``"primary"`` is the empty root), so N chained splitters get a detector
 only on each TERMINAL arm, never an intermediate arm that feeds the next splitter.
-Absorbing: an absorbed output face produces no exit rays -> that branch is absent
-from ``ray_paths`` -> no leaf -> no detector, automatically. Only genuine SPLITS
+Absorbing: an Absorber/Mechanical output face stops a branch. If it produces no
+exit rays the branch is simply absent. But when the reflect arm travels INTO the
+solid and is absorbed at an internal/exit face, those rays ARE present in
+``ray_paths`` (last segment = approach to the absorbing face) -> bugs/0108 drops a
+leaf whose rays are ALL absorbed so no phantom detector floats beyond the cube.
+Only genuine SPLITS
 create child ``branch_path``s; a plain fold (mirror/penta) stays ``"primary"`` and
 reaches the sequential Image, so sequential/folded scenes get no branch detector.
 
@@ -107,6 +111,33 @@ def _leaf_reaches_existing_detector(group: list) -> bool:
         except Exception:
             pass
     return False
+
+
+def _ray_is_absorbed(path) -> bool:
+    try:
+        if ray_path_terminal_status_from_events(path) == "absorbed":
+            return True
+    except Exception:
+        pass
+    reason = str(getattr(path, "termination_reason", "") or "").strip().lower()
+    return "absorb" in reason
+
+
+def _leaf_fully_absorbed(group: list) -> bool:
+    """A leaf whose every ray dies by absorption has no exit beam, so no detector.
+
+    bugs/0108: an Absorber/Mechanical output face stops the branch INSIDE the
+    solid (the reflect arm travels to that face and is absorbed there), yet the
+    ray is still PRESENT in ``ray_paths`` with a last segment -- ``_exit_rays_for_group``
+    would extrapolate that approach segment to a PHANTOM focus and draw a detector
+    floating beyond the cube. Drop such a leaf entirely. Conservative: any ray that
+    still converges/escapes (status != absorbed) keeps the detector."""
+    saw_ray = False
+    for path in group:
+        saw_ray = True
+        if not _ray_is_absorbed(path):
+            return False
+    return saw_ray
 
 
 def _reached_image_target(existing_targets: list | None):
@@ -236,6 +267,11 @@ def derive_branch_detectors(
         for bp, comp in comps.items()
         if not any(_is_proper_prefix(comp, other) for other in comp_values)
     ]
+    # bugs/0108: a leaf whose rays are ALL absorbed (an Absorber/Mechanical output
+    # face on the cube) is a dead-end, not a real arm -- drop it so no phantom
+    # detector/Image plane lingers in that branch. Absorbing one arm of a splitter
+    # then collapses the scene to its surviving arm(s) (re: multi_leaf below).
+    leaves = [bp for bp in leaves if not _leaf_fully_absorbed(groups[bp])]
     default_half = _existing_detector_half_dims(existing_targets)
     try:
         radius = float(scene_radius)

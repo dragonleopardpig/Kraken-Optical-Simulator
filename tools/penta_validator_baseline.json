@@ -95,7 +95,8 @@
     "90": "pass",
     "91": "pass",
     "92": "pass",
-    "93": "pass"
+    "93": "pass",
+    "94": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -191,6 +192,7 @@
     "90": "Open 3D object plane stays visible after a beam-splitter cube promotion",
     "91": "Open 3D promote clamps the forced retrace to a sparse 3-ray fan",
     "92": "Open 3D FOV thickness solve takes effect on a beam-splitter scene",
-    "93": "Open 3D Thickness dimension per-row off + drag-to-point re-anchor"
+    "93": "Open 3D Thickness dimension per-row off + drag-to-point re-anchor",
+    "94": "Open 3D manual Measure delete/hide-by-selection + hover highlight"
   }
 }

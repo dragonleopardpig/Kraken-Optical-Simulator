@@ -35,6 +35,14 @@ class Open3DFaceAssignmentService:
         STEP_OVERLAY_LABEL_SET = le.STEP_OVERLAY_LABEL_SET
         _short_error_message = le._short_error_message
         _optical_solid_face_function_display = le._optical_solid_face_function_display
+        # bugs/0108: right-clicking a manual measurement opens its menu (delete /
+        # hide this / show all). The measure overlays are PickableOff, so this
+        # resolves by screen-space proximity; claim it before the face menus.
+        try:
+            if self._maybe_show_measure_menu(event):
+                return "break"
+        except Exception:
+            pass
         # Right-clicking a blue Thickness dimension arrow opens its overlay menu
         # (turn off / re-anchor to a surface-edge / Quick Estimation role). This
         # claims the arrow before the QE-role menu, which still handles the

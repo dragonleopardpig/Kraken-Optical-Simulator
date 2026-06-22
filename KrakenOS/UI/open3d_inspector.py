@@ -11268,8 +11268,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._measure_pick_mode = False
         self._measure_p0 = None
         self._measure_segments = []
+        self._hidden_measure_segments = set()
         try:
             self._set_axis_pick_cursor(False)
+        except Exception:
+            pass
+        try:
+            self._clear_dimension_anchor_snap_highlight()
         except Exception:
             pass
         self._refresh_measure_overlays()
@@ -11327,12 +11332,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             "p1": point.tolist(), "r1": r, "dz1": float(dz),
         }
         segs = list(getattr(self, "_measure_segments", []))
+        # bugs/0108: a stable per-segment id so the hidden set survives deletes that
+        # would otherwise shift list indices ("can't delete or hide by selection").
+        seg["id"] = max((int(s.get("id", -1)) for s in segs), default=-1) + 1
         segs.append(seg)
         self._measure_segments = segs
         self._measure_p0 = None
         self._measure_pick_mode = False
         try:
             self._set_axis_pick_cursor(False)
+        except Exception:
+            pass
+        try:
+            self._clear_dimension_anchor_snap_highlight()
         except Exception:
             pass
         p0 = self._resolve_measure_point(seg["p0"], seg["r0"], seg["dz0"])
@@ -11361,29 +11373,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 from vtkmodules.vtkRenderingCore import vtkPolyDataMapper as mapper_cls  # noqa: F811
             except Exception:
                 line_cls = mapper_cls = cone_cls = None
+            hidden = getattr(self, "_hidden_measure_segments", None) or set()
             for _seg in segments:
                 try:
-                    # resolve each end from its anchor so the dimension tracks moved geometry
-                    p0 = self._resolve_measure_point(_seg["p0"], _seg.get("r0"), _seg.get("dz0", 0.0))
-                    p1raw = self._resolve_measure_point(_seg["p1"], _seg.get("r1"), _seg.get("dz1", 0.0))
-                    _n0 = np.asarray(_seg["n0"], dtype=float) if _seg.get("n0") else None
-                    if _n0 is not None:
-                        p1 = p0 + _n0 * float(np.dot(p1raw - p0, _n0))
-                    else:
-                        p1 = p1raw
-                    dist = float(np.linalg.norm(p1 - p0))
-                    # offset the dimension line perpendicular, clear of the geometry (CAD-style);
-                    # _seg["offset"] (a future drag) overrides the default standoff.
-                    _d = (p1 - p0) / dist if dist > 1e-9 else np.array([0.0, 0.0, 1.0])
-                    _od = np.array([0.0, 1.0, 0.0]) - float(np.dot([0.0, 1.0, 0.0], _d)) * _d
-                    if float(np.linalg.norm(_od)) < 1e-6:
-                        _od = np.array([1.0, 0.0, 0.0]) - float(np.dot([1.0, 0.0, 0.0], _d)) * _d
-                    _on = float(np.linalg.norm(_od))
-                    _amt = float(_seg.get("offset", max(dist * 0.12, 45.0)))
-                    _off = (_od / _on) * _amt if _on > 1e-6 else np.zeros(3)
-                    a0 = p0 + _off
-                    a1 = p1 + _off
-                    mid = (a0 + a1) * 0.5
+                    # bugs/0108: a per-measurement on/off ("can't delete or hide by selection").
+                    if int(_seg.get("id", -1)) in hidden:
+                        continue
+                    resolved = self._measure_segment_offset_endpoints(_seg)
+                    if resolved is None:
+                        continue
+                    p0, p1, a0, a1, mid, dist = resolved
                     if line_cls is not None and mapper_cls is not None and vtkActor is not None:
                         def _meas_line(s, e, width, color):
                             try:
@@ -11461,6 +11460,192 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._vtk_widget.GetRenderWindow().Render()
         except Exception:
             pass
+
+    def _update_measure_hover_highlight(self) -> None:
+        """While the Measure tool is armed, hover-highlight the edge/surface under
+        the cursor (the gold STEP-face outline / row highlight the re-anchor pick
+        uses) so the user sees what the next click measures (bugs/0108)."""
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return
+        hit_key = None
+        x = y = None
+        try:
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor = self._picker.GetActor()
+            if actor is None:
+                get_view_prop = getattr(self._picker, "GetViewProp", None)
+                if callable(get_view_prop):
+                    actor = get_view_prop()
+            hit_key = self._actor_key(actor)
+        except Exception:
+            hit_key = None
+            x = y = None
+        pickable = hit_key is not None and (
+            hit_key in (self._actor_step_map or {}) or hit_key in (self._actor_row_map or {})
+        )
+        if pickable and x is not None and y is not None:
+            self._set_dimension_anchor_snap_highlight(hit_key, int(x), int(y))
+            if getattr(self, "_measure_p0", None) is None:
+                self.status_var.set("Measure: click the FIRST edge/surface.")
+            else:
+                self.status_var.set("Measure: click the SECOND edge/surface.")
+        else:
+            self._clear_dimension_anchor_snap_highlight()
+        try:
+            self.render()
+        except Exception:
+            pass
+
+    def _measure_segment_offset_endpoints(self, seg):
+        """Resolve a measure segment to its rendered geometry: the two measured
+        points (p0, p1), the offset CAD dimension-line endpoints (a0, a1), the
+        dimension-line midpoint and the measured length. Returns ``None`` if the
+        segment can't be resolved. Shared by the draw loop and the right-click
+        proximity finder so a click lands on exactly what is drawn (bugs/0108)."""
+        try:
+            p0 = self._resolve_measure_point(seg["p0"], seg.get("r0"), seg.get("dz0", 0.0))
+            p1raw = self._resolve_measure_point(seg["p1"], seg.get("r1"), seg.get("dz1", 0.0))
+            n0 = np.asarray(seg["n0"], dtype=float) if seg.get("n0") else None
+            if n0 is not None:
+                p1 = p0 + n0 * float(np.dot(p1raw - p0, n0))
+            else:
+                p1 = p1raw
+            dist = float(np.linalg.norm(p1 - p0))
+            # offset the dimension line perpendicular, clear of the geometry (CAD-style);
+            # seg["offset"] (a future drag) overrides the default standoff.
+            d = (p1 - p0) / dist if dist > 1e-9 else np.array([0.0, 0.0, 1.0])
+            od = np.array([0.0, 1.0, 0.0]) - float(np.dot([0.0, 1.0, 0.0], d)) * d
+            if float(np.linalg.norm(od)) < 1e-6:
+                od = np.array([1.0, 0.0, 0.0]) - float(np.dot([1.0, 0.0, 0.0], d)) * d
+            on = float(np.linalg.norm(od))
+            amt = float(seg.get("offset", max(dist * 0.12, 45.0)))
+            off = (od / on) * amt if on > 1e-6 else np.zeros(3)
+            a0 = p0 + off
+            a1 = p1 + off
+            mid = (a0 + a1) * 0.5
+            return p0, p1, a0, a1, mid, dist
+        except Exception:
+            return None
+
+    def _measure_segment_index_near_display_xy(self, x: float, y: float, *, tolerance_px: float = 26.0) -> "int | None":
+        """List index of the visible measure segment whose dimension line/label is
+        closest (in screen pixels) to (x, y), within ``tolerance_px``. The measure
+        overlays are drawn ``PickableOff()`` (a click should not select them), so
+        the right-click resolves by screen-space proximity (bugs/0108)."""
+        segments = getattr(self, "_measure_segments", [])
+        if not segments:
+            return None
+        hidden = getattr(self, "_hidden_measure_segments", None) or set()
+        best: "tuple[float, int] | None" = None
+        click = np.asarray((x, y), dtype=float)
+        for idx, seg in enumerate(segments):
+            if int(seg.get("id", -1)) in hidden:
+                continue
+            resolved = self._measure_segment_offset_endpoints(seg)
+            if resolved is None:
+                continue
+            _p0, _p1, a0, a1, mid, _dist = resolved
+            distance: "float | None" = None
+            start = self._world_to_display_2d(a0)
+            end = self._world_to_display_2d(a1)
+            if start is not None and end is not None:
+                distance, _t = self._point_segment_distance_2d(click, start, end)
+            md = self._world_to_display_2d(mid)
+            if md is not None:
+                md_dist = float(np.hypot(md[0] - x, md[1] - y))
+                distance = md_dist if distance is None else min(distance, md_dist)
+            if distance is not None and distance <= tolerance_px and (best is None or distance < best[0]):
+                best = (distance, int(idx))
+        return best[1] if best is not None else None
+
+    def _measure_segment_index_under_cursor(self, event) -> "int | None":
+        """List index of the manual-measurement under the right-click, if any."""
+        if self._vtk_interactor is None:
+            return None
+        try:
+            self._vtk_interactor.SetEventInformationFlipY(int(event.x), int(event.y), 0, 0, chr(0), 0, None)
+            x, y = self._vtk_interactor.GetEventPosition()
+        except Exception:
+            return None
+        return self._measure_segment_index_near_display_xy(float(x), float(y))
+
+    def _maybe_show_measure_menu(self, event) -> bool:
+        """Right-click on a manual measurement opens its menu: delete it, hide it,
+        or show all hidden measurements ("can't delete or hide by selection")."""
+        idx = self._measure_segment_index_under_cursor(event)
+        if idx is None:
+            return False
+        self._show_measure_menu(event, int(idx))
+        return True
+
+    def _show_measure_menu(self, event, index: int) -> None:
+        segments = getattr(self, "_measure_segments", [])
+        if not (0 <= int(index) < len(segments)):
+            return
+        resolved = self._measure_segment_offset_endpoints(segments[int(index)])
+        dist = resolved[5] if resolved is not None else 0.0
+        menu = tk.Menu(self, tearoff=False)
+        menu.add_command(label=f"Measurement {dist:.4g} mm", state="disabled")
+        menu.add_separator()
+        menu.add_command(
+            label="Delete this measurement",
+            command=lambda i=int(index): self.delete_measure_segment(i),
+        )
+        menu.add_command(
+            label="Hide this measurement",
+            command=lambda i=int(index): self.toggle_measure_segment_hidden(i),
+        )
+        any_hidden = bool(getattr(self, "_hidden_measure_segments", None))
+        menu.add_separator()
+        menu.add_command(
+            label="Show all measurements",
+            state=("normal" if any_hidden else "disabled"),
+            command=self.show_all_measure_segments,
+        )
+        try:
+            menu.tk_popup(int(event.x_root), int(event.y_root))
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
+
+    def delete_measure_segment(self, index: int) -> None:
+        segments = list(getattr(self, "_measure_segments", []))
+        if not (0 <= int(index) < len(segments)):
+            return
+        removed = segments.pop(int(index))
+        self._measure_segments = segments
+        hidden = set(getattr(self, "_hidden_measure_segments", None) or set())
+        hidden.discard(int(removed.get("id", -1)))
+        self._hidden_measure_segments = hidden
+        self._refresh_measure_overlays()
+        self.status_var.set("Measurement deleted.")
+        self._update_mode_badge()
+
+    def toggle_measure_segment_hidden(self, index: int) -> None:
+        segments = getattr(self, "_measure_segments", [])
+        if not (0 <= int(index) < len(segments)):
+            return
+        seg_id = int(segments[int(index)].get("id", -1))
+        hidden = set(getattr(self, "_hidden_measure_segments", None) or set())
+        if seg_id in hidden:
+            hidden.discard(seg_id)
+            msg = "Measurement shown."
+        else:
+            hidden.add(seg_id)
+            msg = "Measurement hidden."
+        self._hidden_measure_segments = hidden
+        self._refresh_measure_overlays()
+        self.status_var.set(msg)
+        self._update_mode_badge()
+
+    def show_all_measure_segments(self) -> None:
+        self._hidden_measure_segments = set()
+        self._refresh_measure_overlays()
+        self.status_var.set("All measurements shown.")
+        self._update_mode_badge()
 
     def _apply_source_target_pick(self, row_index: int) -> None:
         self._source_target_pick_mode = False
@@ -12273,11 +12458,55 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     actor = get_view_prop()
             actor_key = self._actor_key(actor)
         except Exception:
+            actor_key = None
+            x = y = None
+        if actor_key is not None:
+            row_index = self._actor_thickness_dimension_map.get(actor_key)
+            if row_index is not None:
+                return int(row_index)
+        # bugs/0108: the cell picker can't hit a thin/arrow-less overlay's billboard
+        # label or hairline leader ("some thickness overlay without arrow, can't hide
+        # them"). Fall back to a screen-space proximity search so a right-click NEAR
+        # any registered thickness/distance overlay (arrow OR label) still resolves
+        # its row -- the user can hide it.
+        if x is None or y is None:
             return None
-        if actor_key is None:
-            return None
-        row_index = self._actor_thickness_dimension_map.get(actor_key)
-        return int(row_index) if row_index is not None else None
+        return self._thickness_dimension_row_near_display_xy(float(x), float(y))
+
+    def _thickness_dimension_row_near_display_xy(self, x: float, y: float, *, tolerance_px: float = 26.0) -> int | None:
+        """Row of the thickness/distance overlay whose arrow segment or label sits
+        closest (in screen pixels) to (x, y), within ``tolerance_px``. Used as a
+        pick fallback for overlays the cell picker can't hit (thin elements)."""
+        best: tuple[float, int] | None = None
+        click = np.asarray((x, y), dtype=float)
+        for row_index, actor_keys in (getattr(self, "_thickness_dimension_actor_map", {}) or {}).items():
+            for actor_key in list(actor_keys or []):
+                distance: float | None = None
+                record = self._thickness_dimension_drag_map.get(actor_key)
+                if isinstance(record, dict):
+                    start = self._world_to_display_2d(np.asarray(record.get("start"), dtype=float))
+                    end = self._world_to_display_2d(np.asarray(record.get("end"), dtype=float))
+                    if start is not None and end is not None:
+                        distance, _t = self._point_segment_distance_2d(click, start, end)
+                if distance is None:
+                    actor = (getattr(self, "_actor_by_key", {}) or {}).get(actor_key)
+                    if actor is None:
+                        continue
+                    try:
+                        bounds = actor.GetBounds()
+                    except Exception:
+                        continue
+                    center = np.asarray(
+                        ((bounds[0] + bounds[1]) / 2.0, (bounds[2] + bounds[3]) / 2.0, (bounds[4] + bounds[5]) / 2.0),
+                        dtype=float,
+                    )
+                    disp = self._world_to_display_2d(center)
+                    if disp is None:
+                        continue
+                    distance = float(np.hypot(disp[0] - x, disp[1] - y))
+                if distance is not None and distance <= tolerance_px and (best is None or distance < best[0]):
+                    best = (distance, int(row_index))
+        return best[1] if best is not None else None
 
     def _maybe_show_thickness_dimension_menu(self, event) -> bool:
         """Right-click on a blue Thickness dimension arrow opens its overlay menu:
