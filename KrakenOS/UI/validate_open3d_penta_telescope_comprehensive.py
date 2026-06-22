@@ -6490,6 +6490,41 @@ def phase_89_glue_unglue_indicator(
     return result
 
 
+def phase_90_object_plane_after_promote(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The OBJECT PLANE stays visible after a beam-splitter cube is promoted in a
+    finite-conjugate (machine-vision) scene (bugs/0104).
+
+    The user's scene is MV 150mm 1X with a 50mm beam-splitter cube BEFORE the single
+    lens; the TRANSMIT arm images through the lens, the REFLECT arm is a BARE pickoff.
+    That is ONE imaging arm, so it is not a two-arm display fold -- the detectors are
+    ray-tree branch detectors with no `two_arm_magnification`, and the object-FOV
+    rectangle (the visible object plane when the Det overlay is on) needs a finite
+    magnification from `_current_finite_paraxial_magnification()`. That method only
+    STRAIGHTENED the layout for a folding Mirror, so the conjugate solve threw on the
+    splitter and returned None -> object_fov_half_width == 0 -> the object plane
+    vanished. Fix: straighten whenever `_layout_needs_paraxial_reference()` is True
+    (mirror OR beam splitter OR promoted mesh solid). Guard
+    `validate_open3d_object_plane_after_promote` is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 90: Open 3D object plane stays visible after a beam-splitter cube promotion"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_object_plane_after_promote import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"object-plane-after-promote guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6625,6 +6660,7 @@ def main() -> int:
             phase_87_decoration_not_promotable,
             phase_88_tree_element_context_menu,
             phase_89_glue_unglue_indicator,
+            phase_90_object_plane_after_promote,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -161,7 +161,14 @@ class LayoutSceneBundleDisplayMixin:
             return None
         try:
             solve_rows = self.rows
-            if any(row.surface == "Mirror" for row in self.rows):
+            # A beam splitter / promoted mesh solid (not just a folding mirror) has no clean
+            # sequential paraxial form, so the direct conjugate solve throws on it. Straighten
+            # it to the transmissive (straight-through) reference -- the same one every other
+            # first-order consumer uses -- so a single-imaging-arm splitter scene still yields
+            # the imaging arm's magnification. Without this the conjugate solve returned None
+            # and the detector-coverage object-FOV rectangle (the visible "object plane" when
+            # the Det overlay is on) vanished after a cube promotion (bugs/0104).
+            if self._layout_needs_paraxial_reference(self.rows):
                 solve_rows, _last_source_index = self._paraxial_reference_rows_for_layout(self.rows)
             _a, _b, _c, _d, _effl, ppa, ppp = self._exact_paraxial_solution_for_rows(solve_rows)
             h1_vertex_z, h2_vertex_z = self._paraxial_vertex_zs(solve_rows)
