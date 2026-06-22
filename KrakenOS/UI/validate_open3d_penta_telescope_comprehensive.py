@@ -6525,6 +6525,36 @@ def phase_90_object_plane_after_promote(
     return result
 
 
+def phase_91_promote_ray_clamp(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Promoting a STEP overlay to an optical solid clamps the forced post-promote
+    retrace to a sparse 3-ray fan so the promote lands fast (bugs/0105).
+
+    A promoted optical-solid row makes `has_promoted_step_optical_solid_rows()`
+    permanently True, so every later refresh forces a full branched physics retrace
+    (~90s on a beam-splitter scene). The promote's own forced retrace is clamped to
+    3 rays/field via `_promote_preview_ray_count_override` (honoured by
+    `_current_ray_count`), cleared afterwards so the next explicit trace restores
+    full ray density. Guard `validate_open3d_promote_ray_clamp` is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 91: Open 3D promote clamps the forced retrace to a sparse 3-ray fan"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_promote_ray_clamp import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"promote-ray-clamp guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6661,6 +6691,7 @@ def main() -> int:
             phase_88_tree_element_context_menu,
             phase_89_glue_unglue_indicator,
             phase_90_object_plane_after_promote,
+            phase_91_promote_ray_clamp,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

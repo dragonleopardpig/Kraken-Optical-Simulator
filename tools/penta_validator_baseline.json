@@ -92,7 +92,8 @@
     "87": "pass",
     "88": "pass",
     "89": "pass",
-    "90": "pass"
+    "90": "pass",
+    "91": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -185,6 +186,7 @@
     "87": "Open 3D decoration STEP overlay (LED/camera) not promotable as optics",
     "88": "Open 3D Scene Components tree right-click mirrors the 3D-canvas element actions",
     "89": "Open 3D BS<->LED glue stays unglueable (LED anchor + promoted BS row) + browser indicator",
-    "90": "Open 3D object plane stays visible after a beam-splitter cube promotion"
+    "90": "Open 3D object plane stays visible after a beam-splitter cube promotion",
+    "91": "Open 3D promote clamps the forced retrace to a sparse 3-ray fan"
   }
 }

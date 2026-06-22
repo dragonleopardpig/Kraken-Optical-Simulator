@@ -5875,7 +5875,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._clear_step_overlay_interaction_state(transition.label)
         row_index = int(transition.row_index)
         try:
-            self.refresh_from_editor(force_retrace=True)
+            # bugs/0105: a promoted optical-solid row makes every later refresh
+            # force a full branched physics retrace (~90s on a beam-splitter
+            # scene). Clamp THIS forced retrace to a sparse 3-ray fan so the
+            # promote lands fast; the override is cleared below so the next
+            # explicit trace restores full ray density. Only the displayed ray
+            # COUNT changes -- geometry, branch detectors and the reconciled
+            # prescription are unaffected.
+            self.editor._promote_preview_ray_count_override = 3
+            try:
+                self.refresh_from_editor(force_retrace=True)
+            finally:
+                self.editor._promote_preview_ray_count_override = None
             if row_index >= 0:
                 self.highlight_row(row_index)
         except Exception as exc:

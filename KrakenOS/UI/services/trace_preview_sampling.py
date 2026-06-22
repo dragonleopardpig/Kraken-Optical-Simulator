@@ -1329,7 +1329,14 @@ class TracePreviewSamplingMixin:
         # __dict__.get, not getattr(): the editor is a Tk app whose __getattr__
         # recurses on a missing attribute (RecursionError), so getattr() with a
         # default is unsafe here.
-        override = self.__dict__.get("_drag_preview_ray_count_override")
+        # bugs/0105: the forced post-promote retrace honours the same kind of
+        # sparse-fan clamp so promoting a STEP solid (which permanently forces a
+        # full branched retrace on every refresh) lands fast instead of stalling
+        # ~90s on a beam-splitter scene. Cleared after the promote retrace, so
+        # the next explicit trace restores full ray density.
+        override = self.__dict__.get("_promote_preview_ray_count_override")
+        if override is None:
+            override = self.__dict__.get("_drag_preview_ray_count_override")
         if override is not None:
             try:
                 return max(1, int(override))
