@@ -233,19 +233,35 @@ class Open3DFaceAssignmentService:
             except Exception:
                 pass
             display = self.editor._step_overlay_display_label(step_label).upper()
+            decoration = le.is_step_overlay_decoration(step_label)
             title = f"{display} STEP {face_id or 'picked face'}"
             menu.add_command(label=title, state="disabled")
-            for label in self._open3d_surface_function_menu_items():
+            if decoration:
+                # A camera body / LED source is a decoration, not an optical
+                # element: promoting it or assigning a surface function would,
+                # e.g., turn the LED into a 160-face "beam splitter" and stall
+                # the non-seq trace. Offer Hide so the user can clear the
+                # decoration off the optical solid it overlaps before assigning.
                 menu.add_command(
-                    label=f"Promote and set {label}",
-                    command=lambda value=label, picked_label=step_label, picked_face_id=face_id, picked_point=point[:3].copy(), picked_normal=normal: self._promote_step_and_assign_face_function(
-                        picked_label,
-                        picked_point,
-                        picked_normal,
-                        value,
-                        face_id=picked_face_id,
-                    ),
+                    label=f"{display} STEP is a decoration (not an optical element)",
+                    state="disabled",
                 )
+                menu.add_command(
+                    label=f"Hide {display} STEP",
+                    command=lambda picked_label=step_label: self._hide_step_overlay_from_context(picked_label),
+                )
+            else:
+                for label in self._open3d_surface_function_menu_items():
+                    menu.add_command(
+                        label=f"Promote and set {label}",
+                        command=lambda value=label, picked_label=step_label, picked_face_id=face_id, picked_point=point[:3].copy(), picked_normal=normal: self._promote_step_and_assign_face_function(
+                            picked_label,
+                            picked_point,
+                            picked_normal,
+                            value,
+                            face_id=picked_face_id,
+                        ),
+                    )
             menu.add_separator()
             menu.add_command(
                 label="Snap Picked Face -> Optical Axis",
@@ -269,7 +285,8 @@ class Open3DFaceAssignmentService:
                 label="Resize Solid...",
                 command=lambda picked_label=step_label: self._open_step_overlay_resize_popup(picked_label),
             )
-            menu.add_command(label="Promote to Optical Element", command=lambda picked_label=step_label: self._promote_step_from_context(picked_label))
+            if not decoration:
+                menu.add_command(label="Promote to Optical Element", command=lambda picked_label=step_label: self._promote_step_from_context(picked_label))
         else:
             self.status_var.set("Right-click assignment requires a file-backed optical CAD/STL row.")
             return "break"
@@ -360,11 +377,35 @@ class Open3DFaceAssignmentService:
         )
         self.status_var.set(message)
 
+    def _hide_step_overlay_from_context(self, label: str) -> None:
+        """Hide a decoration STEP overlay (LED source / camera body) from the
+        right-click menu -- e.g. to clear it off an overlapping optical solid
+        before assigning faces. While hidden the heavy CAD is skipped in the
+        rebuild, so this also removes it from the trace/refresh cost."""
+        label = str(label).strip().lower()
+        display = self.editor._step_overlay_display_label(label).upper()
+        try:
+            self.set_step_label_hidden(label, True)
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D hide {label} STEP failed: {exc}")
+            self.status_var.set(f"Could not hide {display} STEP.")
+            return
+        self._debug_trace("hide_step_overlay_from_context", label=label)
+        self.status_var.set(f"Hid {display} STEP. Re-show it from the Scene Components panel.")
+
     def _promote_step_from_context(self, label: str) -> None:
         le = _layout_module()
         STEP_OVERLAY_LABEL_SET = le.STEP_OVERLAY_LABEL_SET
         _short_error_message = le._short_error_message
         _optical_solid_face_function_display = le._optical_solid_face_function_display
+        label = str(label).strip().lower()
+        if le.is_step_overlay_decoration(label):
+            display = self.editor._step_overlay_display_label(label).upper()
+            self.status_var.set(
+                f"{display} STEP is a decoration and cannot be promoted to an optical element."
+            )
+            self._debug_trace("promote_step_from_context_decoration_blocked", label=label)
+            return
         self.editor.select_step_component(label)
         self._debug_trace("promote_step_from_context", label=label, counts_before=self._debug_actor_counts())
         self.promote_selected_step_to_optical_solid_row()
@@ -475,6 +516,13 @@ class Open3DFaceAssignmentService:
         _optical_solid_face_function_display = le._optical_solid_face_function_display
         label = str(label).strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET:
+            return
+        if le.is_step_overlay_decoration(label):
+            display = self.editor._step_overlay_display_label(label).upper()
+            self.status_var.set(
+                f"{display} STEP is a decoration and cannot be assigned an optical surface function."
+            )
+            self._debug_trace("promote_step_face_assignment_decoration_blocked", label=label)
             return
         refresh_sampling_mode = self._active_refresh_sampling_mode()
         face_id = str(face_id or "").strip()

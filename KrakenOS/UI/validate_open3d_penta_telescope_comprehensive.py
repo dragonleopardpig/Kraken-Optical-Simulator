@@ -6392,6 +6392,37 @@ def phase_86_superseded_image_plane_hidden(
     return result
 
 
+def phase_87_decoration_not_promotable(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A decoration STEP overlay (LED source / camera body) cannot be promoted
+    into an optical solid or be assigned an optical face function (bugs/0101).
+
+    A beam-splitter cube dragged to overlap the LED made the right-click pick
+    resolve to the front-most actor = the LED; the menu then promoted the
+    160-face LED and assigned it a Beam-Splitter face -> minutes-long trace + the
+    cube no longer split. Decorations are not refracting/reflecting elements, so
+    the promote / face-assign paths reject them while the generic "optical"
+    overlay stays promotable. Guard `validate_open3d_decoration_not_promotable`
+    is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 87: Open 3D decoration STEP overlay (LED/camera) not promotable as optics"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_decoration_not_promotable import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"decoration-not-promotable guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6524,6 +6555,7 @@ def main() -> int:
             phase_84_qe_menu_skips_step_overlay,
             phase_85_branch_detector_supersedes_image,
             phase_86_superseded_image_plane_hidden,
+            phase_87_decoration_not_promotable,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

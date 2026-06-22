@@ -538,7 +538,12 @@ from KrakenOS.UI.services.row_spec_contracts import (
     _requires_scalar_trace,
     _row_specs_signature,
 )
-from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABELS, STEP_OVERLAY_LABEL_SET
+from KrakenOS.UI.services.step_overlay_labels import (
+    STEP_OVERLAY_LABELS,
+    STEP_OVERLAY_LABEL_SET,
+    STEP_OVERLAY_DECORATION_LABEL_SET,
+    is_step_overlay_decoration,
+)
 # Project-side scratch directory for ad-hoc screenshots and exports. Not used by
 # auto-save (which stays in ~/.cache); only as the *initial* directory for
 # user-triggered Save dialogs.

@@ -126,7 +126,11 @@ from KrakenOS.UI.source_trace_helpers import (
     SOURCE_DIRECTION_PRESET_VALUES,
     SOURCE_MODEL_VALUES,
 )
-from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABELS, STEP_OVERLAY_LABEL_SET
+from KrakenOS.UI.services.step_overlay_labels import (
+    STEP_OVERLAY_LABELS,
+    STEP_OVERLAY_LABEL_SET,
+    is_step_overlay_decoration,
+)
 from KrakenOS.UI.surface_table_model import SurfaceRow, surface_row_to_spec
 from KrakenOS.UI.services.offbeam_optical_solid import offbeam_neutralized_body_transform
 from KrakenOS.UI.nonseq_output_ports import optical_solid_output_port_runtime_transform_override
@@ -5821,6 +5825,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         action_label: str,
     ) -> dict[str, object] | None:
         label = str(label).strip().lower()
+        if is_step_overlay_decoration(label):
+            # LED source / camera body are decorations, not optical elements --
+            # never promote them into an optical mesh-solid (their heavy CAD
+            # would be ray-traced and stall the non-seq trace).
+            display = self.editor._step_overlay_display_label(label).upper()
+            self.status_var.set(
+                f"{display} STEP is a decoration and cannot be promoted to an optical element."
+            )
+            self._debug_trace(
+                "step_overlay_promote_to_row_decoration_blocked",
+                label=label,
+                action_label=action_label,
+            )
+            return None
         self._debug_trace(
             "step_overlay_promote_to_row",
             label=label,
