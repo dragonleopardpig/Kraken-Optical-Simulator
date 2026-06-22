@@ -294,8 +294,119 @@ def _exact_face_id_by_original_cell(world_faces):
     return face_by_original_cell, conflicts
 
 
-def assign_mesh_cell_face_ids(mesh, world_faces, context="mesh"):
-    """Attach direct face ids to mesh cells from face membership, then face planes."""
+def _world_face_planes(world_faces):
+    """(face_id, point_world, unit_normal) for each usable world face."""
+    planes = []
+    for face in list(world_faces or []):
+        if not isinstance(face, dict):
+            continue
+        face_id = str(face.get("face_id", "") or "").strip()
+        try:
+            centroid = np.asarray(
+                face.get("centroid_world", face.get("centroid", (0.0, 0.0, 0.0))),
+                dtype=float,
+            ).reshape(-1)[:3]
+        except Exception:
+            continue
+        if centroid.size < 3 or not np.all(np.isfinite(centroid[:3])):
+            continue
+        normal = _unit_vector(face.get("normal_world", face.get("normal", (0.0, 0.0, 1.0))))
+        planes.append((face_id, centroid[:3], normal))
+    return planes
+
+
+def decimate_optical_solid_trace_mesh(mesh, world_faces, *, context="mesh", min_cells=4000):
+    """Lossless-only decimated proxy of an optical-solid trace mesh.
+
+    Ray intersection does not need display resolution: a planar polyhedron (a
+    beam-splitter cube / prism -- the geometry that flips the trace onto the slow
+    NsTraceLoop) collapses from tens of thousands of triangles to a handful with
+    *identical* optics, while the display mesh keeps its resolution. The proxy is
+    accepted ONLY when every proxy cell still lies on an original optical-face
+    plane (centroid within tolerance, normal aligned); a curved surface cannot be
+    decimated without moving the surface, so it fails the check and the full mesh
+    is returned unchanged (it still benefits from the cell-normal cache).
+
+    The proxy's cells do not correspond to the original triangles, so its face ids
+    MUST be re-assigned by plane match (``assign_mesh_cell_face_ids(...,
+    prefer_plane_match=True)``); this stamps ``KRAKEN_ORIGINAL_CELL_ID = -1`` so
+    the exact-triangle-membership path can never alias a proxy cell to an original
+    triangle id.
+    """
+    try:
+        mesh = raytrace_compatible_mesh(mesh, context=context)
+        cell_count = int(getattr(mesh, "n_cells", 0))
+    except Exception:
+        return mesh
+    if cell_count < int(min_cells):
+        return mesh
+    planes = _world_face_planes(world_faces)
+    if not planes:
+        return mesh
+    try:
+        points = np.asarray(getattr(mesh, "points", ()), dtype=float)
+        extents = np.ptp(points[:, :3], axis=0) if points.ndim == 2 and points.shape[0] else np.zeros(3)
+    except Exception:
+        extents = np.zeros(3)
+    max_extent = max(float(np.max(extents)), 1.0)
+    plane_tolerance = max(max_extent * 2.0e-3, 0.08)
+    normal_tolerance = 0.985
+
+    target_cells = max(len(planes) * 2, 24)
+    reduction = max(0.0, min(0.98, 1.0 - target_cells / float(cell_count)))
+    proxy = None
+    try:
+        proxy = mesh.decimate_pro(reduction, feature_angle=30.0, preserve_topology=True)
+        proxy = proxy.triangulate()
+    except Exception:
+        proxy = None
+    if proxy is None:
+        try:
+            proxy = mesh.decimate(reduction).triangulate()
+        except Exception:
+            return mesh
+    try:
+        proxy_cells = int(getattr(proxy, "n_cells", 0))
+    except Exception:
+        return mesh
+    if proxy_cells < 4 or proxy_cells >= cell_count:
+        return mesh
+
+    centers = _cell_centers(proxy)
+    try:
+        normals = np.asarray(_with_cell_normals(proxy).cell_normals, dtype=float)
+    except Exception:
+        return mesh
+    if centers.shape[0] != proxy_cells or normals.shape[0] != proxy_cells:
+        return mesh
+    plane_pts = np.asarray([p[1] for p in planes], dtype=float)
+    plane_nrm = np.asarray([p[2] for p in planes], dtype=float)
+    for i in range(proxy_cells):
+        nl = normals[i]
+        nn = float(np.linalg.norm(nl))
+        if nn <= 1e-9:
+            return mesh
+        nl = nl / nn
+        dist = np.abs(np.einsum("kj,kj->k", centers[i][None, :] - plane_pts, plane_nrm))
+        align = np.abs(plane_nrm @ nl)
+        on_face = (dist <= plane_tolerance) & (align >= normal_tolerance)
+        if not bool(np.any(on_face)):
+            # a proxy cell drifted off every optical-face plane -> not lossless.
+            return mesh
+    try:
+        proxy.cell_data[KRAKEN_ORIGINAL_CELL_ID] = np.full(proxy_cells, -1, dtype=int)
+    except Exception:
+        pass
+    return proxy
+
+
+def assign_mesh_cell_face_ids(mesh, world_faces, context="mesh", *, prefer_plane_match=False):
+    """Attach direct face ids to mesh cells from face membership, then face planes.
+
+    ``prefer_plane_match`` skips the exact-triangle-membership path and assigns by
+    face plane only -- required for a decimated proxy whose cells no longer map to
+    the original triangle ids.
+    """
     mesh = raytrace_compatible_mesh(mesh, context=context)
     try:
         cell_count = int(getattr(mesh, "n_cells", 0))
@@ -308,7 +419,9 @@ def assign_mesh_cell_face_ids(mesh, world_faces, context="mesh"):
     match_scores = np.full(cell_count, np.inf, dtype=float)
     match_methods = np.full(cell_count, "", dtype=object)
     match_warnings = np.full(cell_count, "", dtype=object)
-    face_by_original_cell, _conflicts = _exact_face_id_by_original_cell(world_faces)
+    face_by_original_cell, _conflicts = (
+        ({}, set()) if prefer_plane_match else _exact_face_id_by_original_cell(world_faces)
+    )
     if face_by_original_cell:
         try:
             original_cell_ids = np.asarray(mesh.cell_data.get(KRAKEN_ORIGINAL_CELL_ID, []), dtype=int).reshape(-1)

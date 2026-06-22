@@ -6742,6 +6742,38 @@ def phase_97_nonseq_mesh_normal_cache(
     return result
 
 
+def phase_98_nonseq_decimated_trace_proxy(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A planar optical solid (beam-splitter cube / prism) traces against a
+    lossless decimated proxy instead of its display-resolution STL (perf: the NS
+    trace + per-hit face work is O(cells); a fine cube is ~50x finer than ray
+    intersection needs — ~9x on the production metadata-bearing cube).
+
+    `MeshRayTrace.decimate_optical_solid_trace_mesh` accepts the proxy only when
+    every proxy cell still lies on an original optical-face plane (a curved
+    surface fails and keeps its full mesh); `__SceneMeshWithFaceIds` assigns the
+    proxy's face ids by plane match. The optics are unchanged (transmit focus
+    matches the full-mesh trace; the BS split still fires). Guard
+    `validate_nonseq_decimated_trace_proxy` is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 98: Open 3D planar optical solid traces against a lossless decimated proxy"
+    )
+    try:
+        from KrakenOS.UI.validate_nonseq_decimated_trace_proxy import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"nonseq-decimated-trace-proxy guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6885,6 +6917,7 @@ def main() -> int:
             phase_95_camera_overlay_hover_alignment,
             phase_96_step_body_promote_right_click,
             phase_97_nonseq_mesh_normal_cache,
+            phase_98_nonseq_decimated_trace_proxy,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

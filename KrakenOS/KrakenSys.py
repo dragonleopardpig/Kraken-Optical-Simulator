@@ -9,7 +9,11 @@ from .Prerequisites3D import *
 from .Physics import *
 from .HitOnSurf import *
 from .InterNormalCalc import *
-from .MeshRayTrace import assign_mesh_cell_face_ids, trace_mesh_ray
+from .MeshRayTrace import (
+    assign_mesh_cell_face_ids,
+    decimate_optical_solid_trace_mesh,
+    trace_mesh_ray,
+)
 from .ParaxialMatrix import build_paraxial_matrix_trace
 from .gpu_backend import xp, to_cpu, to_gpu
 from .scatter_backend import normalize_pyscatmech_parameters, pyscatmech_scalar_brdf, pyscatmech_status
@@ -1263,10 +1267,21 @@ class system():
             cached = self._optical_solid_mesh_face_id_cache.get(cache_key)
             if cached is not None:
                 return cached
-            mesh = assign_mesh_cell_face_ids(
+            # Trace against a lossless decimated proxy when the solid is a planar
+            # polyhedron (beam-splitter cube / prism): ray intersection needs no
+            # display resolution, and the per-hit normal/face-id work is O(cells).
+            # A curved surface fails the proxy's planarity check and is returned
+            # unchanged. The proxy's face ids must be assigned by plane match.
+            proxy = decimate_optical_solid_trace_mesh(
                 mesh,
                 world_faces,
                 context=context,
+            )
+            mesh = assign_mesh_cell_face_ids(
+                proxy,
+                world_faces,
+                context=context,
+                prefer_plane_match=(proxy is not mesh),
             )
             self.__ReplaceSceneMesh(mesh_index, mesh)
             self._optical_solid_mesh_face_id_cache[cache_key] = mesh

@@ -99,7 +99,8 @@
     "94": "pass",
     "95": "pass",
     "96": "pass",
-    "97": "pass"
+    "97": "pass",
+    "98": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -199,6 +200,7 @@
     "94": "Open 3D manual Measure delete/hide-by-selection + hover highlight",
     "95": "Open 3D camera/LED STEP hover outline tracks the image-plane alignment",
     "96": "Open 3D right-click on an imported STEP body keeps the per-face promote menu",
-    "97": "Open 3D NS mesh trace caches solid cell normals (lossless speed-up)"
+    "97": "Open 3D NS mesh trace caches solid cell normals (lossless speed-up)",
+    "98": "Open 3D planar optical solid traces against a lossless decimated proxy"
   }
 }
