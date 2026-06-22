@@ -688,7 +688,10 @@ class LayoutSceneBundleDisplayMixin:
         (sensor_w_mm, sensor_h_mm))}`` from the per-branch camera registrations,
         resolved through the vendor camera DB. derive_branch_detectors blends each
         registered branch detector to its camera's active sensor."""
-        assignments = getattr(self, "branch_detector_camera_assignments", None) or {}
+        # Read via __dict__: on a Tk-widget subclass a missing attribute falls into
+        # tkinter's __getattr__, which here recurses (the 0082 trap) instead of
+        # raising AttributeError, so getattr(..., default) never returns the default.
+        assignments = self.__dict__.get("branch_detector_camera_assignments") or {}
         if not assignments:
             return None
         try:
