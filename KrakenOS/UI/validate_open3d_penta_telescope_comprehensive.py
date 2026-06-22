@@ -6711,6 +6711,37 @@ def phase_96_step_body_promote_right_click(
     return result
 
 
+def phase_97_nonseq_mesh_normal_cache(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The non-sequential mesh trace caches a promoted STL solid's cell normals
+    once instead of re-running PyVista `compute_normals` per ray-solid hit (perf:
+    that recompute was ~70% of the NsTraceLoop wall on a fine STL, the bulk of the
+    "promoted beam-splitter refresh takes minutes" cost).
+
+    `MeshRayTrace.mesh_cell_normals` computes the array once and caches it in the
+    mesh `cell_data`; `InterNormalCalc.__InterNormalSolidObject` reads it at the
+    per-hit normal lookup. The cached values are bit-identical to the property, so
+    the trace optics are unchanged (the transmit focus is invariant across mesh
+    tessellation). Guard `validate_nonseq_mesh_normal_cache` is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 97: Open 3D NS mesh trace caches solid cell normals (lossless speed-up)"
+    )
+    try:
+        from KrakenOS.UI.validate_nonseq_mesh_normal_cache import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"nonseq-mesh-normal-cache guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6853,6 +6884,7 @@ def main() -> int:
             phase_94_measure_overlay_visibility,
             phase_95_camera_overlay_hover_alignment,
             phase_96_step_body_promote_right_click,
+            phase_97_nonseq_mesh_normal_cache,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

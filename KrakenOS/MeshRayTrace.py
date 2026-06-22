@@ -4,6 +4,7 @@ import numpy as np
 
 
 KRAKEN_ORIGINAL_CELL_ID = "KrakenOriginalCellId"
+KRAKEN_CELL_NORMALS = "KrakenCellNormals"
 KRAKEN_FACE_ID = "KrakenFaceId"
 KRAKEN_FACE_MATCH_SCORE = "KrakenFaceMatchScore"
 KRAKEN_FACE_MATCH_METHOD = "KrakenFaceMatchMethod"
@@ -155,6 +156,42 @@ def _with_cell_normals(mesh):
             return mesh
     except Exception:
         return mesh
+
+
+def mesh_cell_normals(mesh):
+    """Cell normals as an ``(n_cells, 3)`` array, computed once and cached on the
+    mesh's ``cell_data``.
+
+    PyVista's ``mesh.cell_normals`` property re-runs the full ``compute_normals``
+    VTK pipeline on EVERY access. During a non-sequential trace the per-hit normal
+    lookup (``InterNormalCalc.__InterNormalSolidObject``) reads it once per
+    ray-solid intersection -- hundreds of times for a fine STL solid -- so the
+    recompute dominates the trace (~70% of wall on a 49 k-cell cube, measured).
+    The mesh geometry is static during a trace, and a resized / re-promoted solid
+    is a NEW object, so caching the array in ``cell_data`` (lives and dies with the
+    mesh) is safe and makes repeat access O(1). The values are bit-identical to the
+    property, so the trace result is unchanged.
+    """
+    n_cells = 0
+    try:
+        n_cells = int(getattr(mesh, "n_cells", 0))
+    except Exception:
+        n_cells = 0
+    try:
+        cached = mesh.cell_data.get(KRAKEN_CELL_NORMALS)
+        if cached is not None:
+            arr = np.asarray(cached, dtype=float)
+            if arr.ndim == 2 and arr.shape == (n_cells, 3):
+                return arr
+    except Exception:
+        pass
+    arr = np.asarray(mesh.cell_normals, dtype=float)
+    try:
+        if arr.ndim == 2 and arr.shape[0] == n_cells:
+            mesh.cell_data[KRAKEN_CELL_NORMALS] = arr
+    except Exception:
+        pass
+    return arr
 
 
 def _ensure_original_cell_ids(mesh):

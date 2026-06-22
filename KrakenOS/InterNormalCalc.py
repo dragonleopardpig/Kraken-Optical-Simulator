@@ -1,7 +1,7 @@
 
 import numpy as np
 import math
-from .MeshRayTrace import mesh_hit_cell_metadata, trace_mesh_ray
+from .MeshRayTrace import mesh_cell_normals, mesh_hit_cell_metadata, trace_mesh_ray
 from .SurfTools import surface_tools as SUT
 
 class InterNormalCalc():
@@ -439,7 +439,11 @@ class InterNormalCalc():
             index = np.argmin(distances)
             PTO_exit = inter[index]
             hit_cell_id = int(ind[index])
-            NOR = mesh.cell_normals
+            # Cached cell normals: ``mesh.cell_normals`` re-runs the full VTK
+            # compute_normals pipeline on every access, which dominated the
+            # non-sequential trace on fine STL solids (~70% of wall). The array is
+            # bit-identical, so the trace result is unchanged.
+            NOR = mesh_cell_normals(mesh)
             try:
                 norm = NOR[hit_cell_id]
             except Exception:
