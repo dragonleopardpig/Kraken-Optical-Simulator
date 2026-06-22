@@ -6555,6 +6555,37 @@ def phase_91_promote_ray_clamp(
     return result
 
 
+def phase_92_fov_solve_after_promote(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The click-on-plane FOV "Solve for Thickness" takes effect on a beam-splitter
+    (machine-vision) scene (bugs/0106).
+
+    Double-clicking the Object plane opens the FOV box; "Solve for Thickness" runs
+    `QuickEstimationService._paraxial_solution()`, which solved the RAW rows via
+    `_exact_paraxial_solution_for_rows` -- that raises on a beam splitter ("centered
+    refractive systems only") -> None -> the solve silently fails ("no real-image
+    conjugate") and the scene is unchanged. Sibling of bugs/0104, untouched by it.
+    Fix: straighten to the transmissive reference when `_layout_needs_paraxial_reference()`
+    is True. Guard `validate_open3d_fov_solve_after_promote` is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 92: Open 3D FOV thickness solve takes effect on a beam-splitter scene"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_fov_solve_after_promote import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"fov-solve-after-promote guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6692,6 +6723,7 @@ def main() -> int:
             phase_89_glue_unglue_indicator,
             phase_90_object_plane_after_promote,
             phase_91_promote_ray_clamp,
+            phase_92_fov_solve_after_promote,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

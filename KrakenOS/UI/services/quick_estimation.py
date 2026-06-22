@@ -258,7 +258,19 @@ class QuickEstimationService:
 
     def _paraxial_solution(self):
         try:
-            return self.editor._exact_paraxial_solution_for_rows(self.editor.rows)
+            rows = self.editor.rows
+            solve_rows = rows
+            # bugs/0106: a beam splitter / promoted mesh solid has no clean
+            # sequential paraxial form, so _exact_paraxial_solution_for_rows
+            # throws on the raw rows -> focal length, the conjugate solve and
+            # is_forbidden all return None, and the FOV "Solve for Thickness"
+            # silently fails ("no real-image conjugate") on a splitter scene.
+            # Straighten to the transmissive (straight-through) reference -- the
+            # same one the 0104 magnification fix and every other first-order
+            # consumer use -- so the single imaging arm's solve succeeds.
+            if self.editor._layout_needs_paraxial_reference(rows):
+                solve_rows, _last_source_index = self.editor._paraxial_reference_rows_for_layout(rows)
+            return self.editor._exact_paraxial_solution_for_rows(solve_rows)
         except Exception:
             return None
 
