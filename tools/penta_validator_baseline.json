@@ -94,7 +94,8 @@
     "89": "pass",
     "90": "pass",
     "91": "pass",
-    "92": "pass"
+    "92": "pass",
+    "93": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -189,6 +190,7 @@
     "89": "Open 3D BS<->LED glue stays unglueable (LED anchor + promoted BS row) + browser indicator",
     "90": "Open 3D object plane stays visible after a beam-splitter cube promotion",
     "91": "Open 3D promote clamps the forced retrace to a sparse 3-ray fan",
-    "92": "Open 3D FOV thickness solve takes effect on a beam-splitter scene"
+    "92": "Open 3D FOV thickness solve takes effect on a beam-splitter scene",
+    "93": "Open 3D Thickness dimension per-row off + drag-to-point re-anchor"
   }
 }

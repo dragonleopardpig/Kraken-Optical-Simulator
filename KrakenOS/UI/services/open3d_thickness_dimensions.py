@@ -521,6 +521,14 @@ class Open3DThicknessDimensionService:
                 continue
             if not np.isfinite(thickness) or abs(thickness) <= 1e-9:
                 continue
+            # Per-row visibility: the user can turn off an individual blue
+            # Thickness dimension via the right-click overlay menu. The model
+            # thickness is untouched; only this drawn arrow + label are skipped.
+            try:
+                if self.editor._thickness_dimension_is_hidden(row_index):
+                    continue
+            except Exception:
+                pass
             if self._is_cross_arm_gap(rows, row_index):
                 # bugs/0097: the surface table is one linear list but a beam splitter
                 # forks into two arms (branch_selector tags). The gap from the last

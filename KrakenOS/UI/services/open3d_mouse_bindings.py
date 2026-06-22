@@ -223,6 +223,7 @@ class Open3DMouseBindingsService:
             record_mouse("mouse_release", event, 1)
             set_event_info(event)
             should_pick = self._left_drag_active and not self._left_drag_moved
+            dimension_anchor_was_drag = self._left_drag_active and self._left_drag_moved
             ctrl_active = self._ctrl_left_camera_active or control_pressed(event)
             placement_drag_state = self._placement_drag_state
             thickness_drag_state = self._thickness_drag_state
@@ -250,6 +251,14 @@ class Open3DMouseBindingsService:
             # re-anchor must NOT commit on release -- the endpoint keeps following
             # the bare mouse until a plain (non-Ctrl) click commits it below.
             if self._dimension_anchor_pick_mode:
+                # A drag of the arrow endpoint onto a surface/edge commits on
+                # release -- the natural "drag the dimension to point at a face"
+                # gesture (Ctrl-drag to enter+move, or a drag after the menu
+                # entry). _commit_dimension_anchor_pick cancels cleanly when the
+                # release lands over empty space, so this is always safe.
+                if dimension_anchor_was_drag:
+                    self._commit_dimension_anchor_pick()
+                    return "break"
                 if dimension_anchor_drag_state is not None or ctrl_active:
                     return "break"
                 # A plain click while the mode is active commits the re-anchor.

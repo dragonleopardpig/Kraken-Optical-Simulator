@@ -35,6 +35,15 @@ class Open3DFaceAssignmentService:
         STEP_OVERLAY_LABEL_SET = le.STEP_OVERLAY_LABEL_SET
         _short_error_message = le._short_error_message
         _optical_solid_face_function_display = le._optical_solid_face_function_display
+        # Right-clicking a blue Thickness dimension arrow opens its overlay menu
+        # (turn off / re-anchor to a surface-edge / Quick Estimation role). This
+        # claims the arrow before the QE-role menu, which still handles the
+        # Object/Image plane bodies and branch detectors.
+        try:
+            if self._maybe_show_thickness_dimension_menu(event):
+                return "break"
+        except Exception:
+            pass
         # Quick Estimation: right-clicking a conjugate thickness handle assigns
         # its role (Independent / Dependent / Constant) instead of a CAD face.
         try:

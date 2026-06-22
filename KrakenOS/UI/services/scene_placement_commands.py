@@ -2033,6 +2033,58 @@ class ScenePlacementMixin:
             self.status_var.set(f"S{int(row_index)} dimension re-anchor cleared.")
             self._refresh_open_3d_views()
 
+    def _hidden_thickness_dimension_set(self) -> "set[int]":
+        hidden = getattr(self, "_hidden_thickness_dimension_rows", None)
+        if not isinstance(hidden, set):
+            hidden = set()
+            self._hidden_thickness_dimension_rows = hidden
+        return hidden
+
+    def _thickness_dimension_is_hidden(self, row_index: int) -> bool:
+        try:
+            return int(row_index) in self._hidden_thickness_dimension_set()
+        except Exception:
+            return False
+
+    def set_thickness_dimension_hidden(self, row_index: int, hidden: bool) -> None:
+        """Turn a single row's blue Thickness dimension overlay on/off. The model
+        thickness is untouched -- this only suppresses the drawn arrow + label."""
+        try:
+            row_index = int(row_index)
+        except Exception:
+            return
+        current = self._hidden_thickness_dimension_set()
+        if (row_index in current) == bool(hidden):
+            return
+        self._begin_history_capture()
+        if hidden:
+            current.add(row_index)
+        else:
+            current.discard(row_index)
+        self._hidden_thickness_dimension_rows = current
+        self._commit_history_capture()
+        self.status_var.set(
+            f"S{row_index} Thickness dimension {'hidden' if hidden else 'shown'}."
+        )
+        self._refresh_open_3d_views()
+
+    def toggle_thickness_dimension_hidden(self, row_index: int) -> None:
+        self.set_thickness_dimension_hidden(
+            row_index, not self._thickness_dimension_is_hidden(row_index)
+        )
+
+    def show_all_thickness_dimensions(self) -> None:
+        current = self._hidden_thickness_dimension_set()
+        if not current:
+            self.status_var.set("All Thickness dimensions are already shown.")
+            return
+        self._begin_history_capture()
+        current.clear()
+        self._hidden_thickness_dimension_rows = current
+        self._commit_history_capture()
+        self.status_var.set("All Thickness dimensions shown.")
+        self._refresh_open_3d_views()
+
     def _dimension_anchor_feature_label(self, feature_center_xyz) -> str:
         """Best-effort human label for a re-anchored measurement target."""
         try:

@@ -12279,6 +12279,137 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         row_index = self._actor_thickness_dimension_map.get(actor_key)
         return int(row_index) if row_index is not None else None
 
+    def _maybe_show_thickness_dimension_menu(self, event) -> bool:
+        """Right-click on a blue Thickness dimension arrow opens its overlay menu:
+        turn the dimension off, re-anchor what it measures to a surface/edge, or
+        (for conjugate gaps) set its Quick Estimation role."""
+        row_index = self._thickness_dimension_row_under_cursor(event)
+        if row_index is None:
+            return False
+        self._show_thickness_dimension_menu(event, int(row_index))
+        return True
+
+    def _show_thickness_dimension_menu(self, event, row_index: int) -> None:
+        menu = tk.Menu(self, tearoff=False)
+        menu.add_command(label=f"S{int(row_index)} Thickness dimension", state="disabled")
+        menu.add_separator()
+        # Conjugate object/image gaps keep their Quick Estimation role control.
+        qe = None
+        quantity = None
+        try:
+            qe = self._quick_estimation_service()
+            quantity = qe.quantity_for_thickness_row(int(row_index))
+        except Exception:
+            qe = None
+            quantity = None
+        if quantity is not None:
+            from KrakenOS.UI.services.quick_estimation import (
+                ROLE_CONSTANT,
+                ROLE_DEPENDENT,
+                ROLE_INDEPENDENT,
+            )
+
+            role_menu = tk.Menu(menu, tearoff=False)
+            role_menu.add_command(
+                label="Independent (drive)",
+                command=lambda: self._set_quick_estimation_role(quantity, ROLE_INDEPENDENT),
+            )
+            role_menu.add_command(
+                label="Dependent (solve for focus)",
+                command=lambda: self._set_quick_estimation_role(quantity, ROLE_DEPENDENT),
+            )
+            role_menu.add_command(
+                label="Constant (pin value)",
+                command=lambda: self._set_quick_estimation_role(quantity, ROLE_CONSTANT),
+            )
+            try:
+                role_label = qe.role(quantity)
+            except Exception:
+                role_label = ""
+            menu.add_cascade(label=f"Quick Estimation role ({role_label})", menu=role_menu)
+            menu.add_separator()
+        # Re-anchor what the arrow measures to a picked surface/edge (drag-to-point).
+        menu.add_command(
+            label="Re-anchor to a surface/edge…",
+            command=lambda idx=int(row_index): self._begin_dimension_anchor_pick_for_row(idx),
+        )
+        has_override = False
+        try:
+            has_override = self.editor._dimension_anchor_override_for_row(int(row_index)) is not None
+        except Exception:
+            has_override = False
+        menu.add_command(
+            label="Reset to model thickness",
+            state=("normal" if has_override else "disabled"),
+            command=lambda idx=int(row_index): self.editor.clear_dimension_anchor_override(idx),
+        )
+        menu.add_separator()
+        menu.add_command(
+            label="Hide this thickness dimension",
+            command=lambda idx=int(row_index): self.editor.toggle_thickness_dimension_hidden(idx),
+        )
+        any_hidden = bool(getattr(self.editor, "_hidden_thickness_dimension_rows", None))
+        menu.add_command(
+            label="Show all thickness dimensions",
+            state=("normal" if any_hidden else "disabled"),
+            command=self.editor.show_all_thickness_dimensions,
+        )
+        try:
+            menu.tk_popup(int(event.x_root), int(event.y_root))
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
+
+    def _begin_dimension_anchor_pick_for_row(self, row_index: int, endpoint: str = "end") -> bool:
+        """Enter the modal re-anchor for a specific dimension row (from the menu),
+        choosing the moving endpoint up front. The endpoint then follows the bare
+        mouse; a click -- or a drag onto a surface/edge and release -- commits."""
+        actor_keys = list(getattr(self, "_thickness_dimension_actor_map", {}).get(int(row_index), []) or [])
+        record = None
+        for key in actor_keys:
+            candidate = self._thickness_dimension_drag_map.get(key)
+            if isinstance(candidate, dict):
+                record = candidate
+                break
+        if record is None:
+            self.status_var.set("Re-anchor: this dimension has no draggable endpoints.")
+            return False
+        try:
+            start = np.asarray(record.get("start"), dtype=float).reshape(-1)[:3]
+            end = np.asarray(record.get("end"), dtype=float).reshape(-1)[:3]
+        except Exception:
+            return False
+        if start.size < 3 or end.size < 3 or not (np.all(np.isfinite(start)) and np.all(np.isfinite(end))):
+            return False
+        endpoint = "start" if str(endpoint).strip().lower() == "start" else "end"
+        moving = start if endpoint == "start" else end
+        fixed = end if endpoint == "start" else start
+        self._dimension_anchor_pick_mode = True
+        self._dimension_anchor_pick_state = {
+            "row_index": int(row_index),
+            "endpoint": endpoint,
+            "fixed_world": tuple(float(v) for v in fixed[:3]),
+            "moving_world": tuple(float(v) for v in moving[:3]),
+            "snapped_world": None,
+        }
+        label = self._dimension_anchor_display_label(int(row_index))
+        self.status_var.set(
+            f"Re-anchor {label} dimension ({endpoint}): move the mouse onto a surface/edge "
+            f"and click, or drag onto it and release. Esc cancels."
+        )
+        try:
+            self._set_axis_pick_cursor(True)
+        except Exception:
+            pass
+        self._apply_dimension_anchor_pick_motion()
+        try:
+            self._update_mode_badge()
+        except Exception:
+            pass
+        return True
+
     def _optical_surface_row_for_actor(self, actor_key) -> int | None:
         """Editor surface-row index for a picked actor, or None when the actor is
         a STEP overlay (incl. its transient live-trace row) (bugs/0091).

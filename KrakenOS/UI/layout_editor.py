@@ -2747,6 +2747,10 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         # instead of the adjacent surface; it never moves an optical surface. The
         # LED/object row uses led_step_object_edge_local_z instead of this map.
         self._dimension_anchor_overrides: dict[int, dict] = {}
+        # Per-row Thickness dimension visibility: row indices whose blue thickness
+        # overlay arrow is turned off individually (the global toggle is
+        # show_physical_distances_var). Persisted in layout_settings.
+        self._hidden_thickness_dimension_rows: set[int] = set()
         self.lens_step_axis_offset_xy = (0.0, 0.0)
         self.optical_step_axis_offset_xy = (0.0, 0.0)
         self.camera_step_axis_offset_xy = (0.0, 0.0)

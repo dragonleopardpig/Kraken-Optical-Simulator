@@ -219,6 +219,11 @@ class LayoutSettingsService:
                 for row, spec in (getattr(self.editor, "_dimension_anchor_overrides", {}) or {}).items()
                 if isinstance(spec, dict)
             },
+            # Per-row Thickness dimension visibility (rows turned off individually
+            # via the right-click overlay menu). Restored on load.
+            "hidden_thickness_dimension_rows": sorted(
+                int(row) for row in (getattr(self.editor, "_hidden_thickness_dimension_rows", set()) or set())
+            ),
             "led_step_axis_offset_xy": list(self._step_axis_offset_xy("led")),
             "led_step_placement_offset_xyz": list(self._step_placement_offset_xyz("led")),
             "analysis_mode": str(self.analysis_mode or "none").strip(),
@@ -752,3 +757,11 @@ class LayoutSettingsService:
         # (__setattr__), so an underscore attr must be written to self.editor
         # explicitly or it would land on the service instance instead.
         self.editor._dimension_anchor_overrides = restored_overrides
+
+        restored_hidden_dimensions: set[int] = set()
+        for row_key in (settings.get("hidden_thickness_dimension_rows", []) or []):
+            try:
+                restored_hidden_dimensions.add(int(row_key))
+            except Exception:
+                continue
+        self.editor._hidden_thickness_dimension_rows = restored_hidden_dimensions

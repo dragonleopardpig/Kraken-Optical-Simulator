@@ -6586,6 +6586,37 @@ def phase_92_fov_solve_after_promote(
     return result
 
 
+def phase_93_thickness_dimension_visibility(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Each blue Thickness dimension overlay can be turned off individually, and
+    each arrow can be dragged to re-anchor what it measures to a surface/edge.
+
+    Part 1: `editor._hidden_thickness_dimension_rows` (persisted) lets the
+    right-click overlay menu hide a single row's arrow; `add_overlays` skips it
+    without touching the model thickness. Part 2: the bugs/0053 re-anchor backend
+    (point an endpoint at a picked surface/edge, MEASUREMENT only) is exposed as a
+    drag -- a right-click "Re-anchor to a surface/edge…" enters the modal and a
+    drag-and-release onto a face commits. Guard
+    `validate_open3d_thickness_dimension_visibility` is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 93: Open 3D Thickness dimension per-row off + drag-to-point re-anchor"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_thickness_dimension_visibility import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"thickness-dimension-visibility guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6724,6 +6755,7 @@ def main() -> int:
             phase_90_object_plane_after_promote,
             phase_91_promote_ray_clamp,
             phase_92_fov_solve_after_promote,
+            phase_93_thickness_dimension_visibility,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
