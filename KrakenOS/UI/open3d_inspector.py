@@ -11559,9 +11559,43 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 best = (distance, int(idx))
         return best[1] if best is not None else None
 
+    def _right_click_hit_promotable_body(self, event) -> bool:
+        """bugs/0110: True if the right-click cell-picks a promotable optical body
+        -- an imported STEP overlay (`_actor_step_map`) or an optical/STL row
+        (`_actor_row_map`) -- rather than empty space. The PickableOff measure /
+        thickness proximity fallbacks must NOT steal a click that landed squarely
+        on a face the per-face promote menu owns just because an overlay's
+        line/label happens to sit within their screen-space tolerance."""
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return False
+        try:
+            self._vtk_interactor.SetEventInformationFlipY(int(event.x), int(event.y), 0, 0, chr(0), 0, None)
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor = self._picker.GetActor()
+            if actor is None:
+                get_view_prop = getattr(self._picker, "GetViewProp", None)
+                if callable(get_view_prop):
+                    actor = get_view_prop()
+            actor_key = self._actor_key(actor)
+        except Exception:
+            return False
+        if actor_key is None:
+            return False
+        if actor_key in (getattr(self, "_actor_thickness_dimension_map", {}) or {}):
+            return False
+        return actor_key in (getattr(self, "_actor_step_map", {}) or {}) or actor_key in (
+            getattr(self, "_actor_row_map", {}) or {}
+        )
+
     def _measure_segment_index_under_cursor(self, event) -> "int | None":
         """List index of the manual-measurement under the right-click, if any."""
         if self._vtk_interactor is None:
+            return None
+        # bugs/0110: a right-click squarely on a promotable optical body belongs to
+        # the face-promotion menu -- don't let the PickableOff proximity search
+        # claim it for the measure menu.
+        if self._right_click_hit_promotable_body(event):
             return None
         try:
             self._vtk_interactor.SetEventInformationFlipY(int(event.x), int(event.y), 0, 0, chr(0), 0, None)
@@ -12464,6 +12498,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             row_index = self._actor_thickness_dimension_map.get(actor_key)
             if row_index is not None:
                 return int(row_index)
+            # bugs/0110: a right-click that landed squarely on a promotable body
+            # (imported STEP overlay or optical/STL row) must defer to the
+            # face-promotion menu. Without this gate the 0108 proximity fallback
+            # below stole the click for the thickness-arrow menu whenever a
+            # dimension label/arrow happened to sit within tolerance of the face
+            # -- so the BS-cube's direct per-face "Promote and set ..." menu was
+            # lost. The proximity fallback is only for thin overlays the cell
+            # picker cannot hit (clicks that resolve to no body actor).
+            if actor_key in (getattr(self, "_actor_step_map", {}) or {}) or actor_key in (
+                getattr(self, "_actor_row_map", {}) or {}
+            ):
+                return None
         # bugs/0108: the cell picker can't hit a thin/arrow-less overlay's billboard
         # label or hairline leader ("some thickness overlay without arrow, can't hide
         # them"). Fall back to a screen-space proximity search so a right-click NEAR

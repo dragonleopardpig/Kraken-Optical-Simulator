@@ -6677,6 +6677,40 @@ def phase_95_camera_overlay_hover_alignment(
     return result
 
 
+def phase_96_step_body_promote_right_click(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A right-click that lands squarely on an imported STEP body (e.g. a
+    beam-splitter cube face) keeps its direct per-face "Promote and set ..." menu
+    (bugs/0110 -- "the direct promotion of each face is gone ... it is now giving
+    the Thickness arrow right click option").
+
+    The bugs/0108 screen-space proximity fallback in
+    `_thickness_dimension_row_under_cursor` was too greedy: it claimed a click
+    that hit a real optical body whenever a Thickness label/arrow sat within
+    tolerance, so the thickness menu pre-empted the promote menu. The fix gates
+    the fallback -- a cell-picker hit on a body registered in `_actor_step_map`
+    or `_actor_row_map` returns None so the dispatcher reaches the face menu; the
+    fallback still fires for clicks that resolve to no body. Guard
+    `validate_open3d_step_body_promote_right_click` is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 96: Open 3D right-click on an imported STEP body keeps the per-face promote menu"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_step_body_promote_right_click import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"step-body-promote-right-click guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks_failed"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -6818,6 +6852,7 @@ def main() -> int:
             phase_93_thickness_dimension_visibility,
             phase_94_measure_overlay_visibility,
             phase_95_camera_overlay_hover_alignment,
+            phase_96_step_body_promote_right_click,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

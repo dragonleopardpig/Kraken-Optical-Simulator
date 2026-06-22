@@ -97,7 +97,8 @@
     "92": "pass",
     "93": "pass",
     "94": "pass",
-    "95": "pass"
+    "95": "pass",
+    "96": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -195,6 +196,7 @@
     "92": "Open 3D FOV thickness solve takes effect on a beam-splitter scene",
     "93": "Open 3D Thickness dimension per-row off + drag-to-point re-anchor",
     "94": "Open 3D manual Measure delete/hide-by-selection + hover highlight",
-    "95": "Open 3D camera/LED STEP hover outline tracks the image-plane alignment"
+    "95": "Open 3D camera/LED STEP hover outline tracks the image-plane alignment",
+    "96": "Open 3D right-click on an imported STEP body keeps the per-face promote menu"
   }
 }
