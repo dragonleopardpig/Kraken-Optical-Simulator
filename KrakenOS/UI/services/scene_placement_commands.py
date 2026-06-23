@@ -3355,6 +3355,29 @@ class ScenePlacementMixin:
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
 
+    def _global_optical_axis_frame_near_point(self, reference_point) -> dict[str, object]:
+        """Frame on the GLOBAL dotted optical-axis guide (the design axis at
+        x=0, y=0) nearest the reference -- i.e. the projection (0, 0, z).
+
+        bugs/0120: the translate-only "Center Picked Face -> Optical Axis" must
+        target the GLOBAL axis, not the nearest *traced ray*. The nearest-ray
+        helper (``_step_optical_axis_frame_near_point``) reads the cached scene
+        bundle's ray paths even when rays are hidden, so for an off-axis body it
+        returned an outer marginal-ray point a few mm off (0, 0) -- the face slid
+        onto a ray, not onto the axis, and read as "still offset from the axis".
+        The global guide is always the x=0/y=0 line (see
+        ``_optical_axis_records_for_3d``), so the on-axis target is (0, 0, z)."""
+        reference = np.asarray(reference_point, dtype=float).reshape(-1)[:3]
+        if reference.size < 3 or not np.all(np.isfinite(reference[:3])):
+            raise RuntimeError("STEP face reference point is not finite.")
+        return {
+            "target_point": np.asarray((0.0, 0.0, float(reference[2])), dtype=float),
+            "direction": np.asarray((0.0, 0.0, 1.0), dtype=float),
+            "axis_label": "global optical axis",
+            "ray_index": -1,
+            "branch_path": "",
+        }
+
     def _step_optical_axis_frame_near_point(self, reference_point) -> dict[str, object]:
         reference = np.asarray(reference_point, dtype=float).reshape(-1)[:3]
         if reference.size < 3 or not np.all(np.isfinite(reference[:3])):
@@ -4203,9 +4226,14 @@ class ScenePlacementMixin:
         bugs/0119: the right-click face menu used to offer only the normal snap,
         which *rotates* the body to make the face perpendicular to the axis. A user
         who wanted to "center this window on the axis" got an unwanted tilt instead.
-        This moves the face centre onto the axis line and keeps the orientation
-        (with no traced rays the nearest-axis target is ``(0, 0, z)``, so x/y go to
-        the axis and the along-axis z is preserved)."""
+        This moves the face centre onto the axis line and keeps the orientation.
+
+        bugs/0120: the target is the GLOBAL optical axis (x=0, y=0, keep z), NOT
+        the nearest traced ray -- ``_step_optical_axis_frame_near_point`` reads the
+        cached ray bundle (alive even with rays hidden), so for an off-axis body it
+        landed the face on an outer marginal ray a few mm off the axis. Caller
+        passes the face *centroid* (not the raw click point) so the window's centre
+        -- not wherever the cursor landed -- is what comes to rest on the axis."""
         label = str(label).strip().lower()
         if label not in _step_overlay_label_set():
             return None
@@ -4216,7 +4244,7 @@ class ScenePlacementMixin:
         if feature_center.size < 3 or not np.all(np.isfinite(feature_center[:3])):
             self.status_var.set("Center Picked Face->Optical Axis needs a finite picked STEP face center.")
             return None
-        frame = dict(axis_frame) if isinstance(axis_frame, dict) else self._step_optical_axis_frame_near_point(feature_center[:3])
+        frame = dict(axis_frame) if isinstance(axis_frame, dict) else self._global_optical_axis_frame_near_point(feature_center[:3])
         target_point = np.asarray(frame["target_point"], dtype=float).reshape(-1)[:3]
         if target_point.size < 3 or not np.all(np.isfinite(target_point[:3])):
             self.status_var.set("Center Picked Face->Optical Axis: invalid axis target point.")

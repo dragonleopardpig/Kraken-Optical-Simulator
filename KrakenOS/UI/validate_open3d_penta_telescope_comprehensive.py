@@ -7209,6 +7209,87 @@ def phase_111_center_picked_face_to_optical_axis(
     return result
 
 
+def phase_112_center_picked_face_targets_global_axis(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0120: "Center Picked Face -> Optical Axis" must land the window CENTROID
+    on the GLOBAL optical axis (x=0, y=0), not on the nearest *traced ray*.
+
+    The first translate-only centre (bugs/0119) resolved its target with
+    `_step_optical_axis_frame_near_point`, which reads the cached ray bundle (alive
+    even with rays hidden). For an off-axis body that returned an outer marginal ray a
+    few mm off (0, 0), so the face slid onto a ray and read as "still offset from the
+    axis". The fix targets `_global_optical_axis_frame_near_point` (always (0, 0, z))
+    and centres the face centroid. This phase drives the REAL editor centre against a
+    fake whose nearest-traced-ray frame is deliberately OFF-axis and asserts the face
+    lands on the global axis anyway; the live right-click face pick is an in-app
+    eyeball.
+    """
+    import numpy as _np
+
+    result = PhaseResult(
+        name="Phase 112: Open 3D 'Center Picked Face -> Optical Axis' lands on the global axis (not a nearest traced ray)"
+    )
+    try:
+        from KrakenOS.UI.services.scene_placement_commands import ScenePlacementMixin
+        from KrakenOS.UI.validate_open3d_center_picked_face_to_axis import (
+            _FakeEditor,
+            _OFF_AXIS_RAY_TARGET_XY,
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"phase 112 import failed: {exc!r}")
+        return result
+
+    # An off-axis LED window face; current offset zero. A correct centre zeroes x/y.
+    off_axis_face_center = (21.4, 11.7, 274.4)
+    fake = _FakeEditor(current_offset=(0.0, 0.0, 0.0))
+    try:
+        outcome = ScenePlacementMixin.center_step_feature_on_optical_axis(
+            fake, "led", off_axis_face_center
+        )
+    except Exception as exc:
+        result.passed = False
+        result.notes.append(f"center_step_feature_on_optical_axis raised: {exc!r}")
+        return result
+
+    result.passed = True
+    if outcome is None:
+        result.passed = False
+        result.notes.append("FAIL: centre returned None for a valid off-axis LED face")
+    if not fake.set_offset_calls:
+        result.passed = False
+        result.notes.append("FAIL: centre never set a placement offset")
+    else:
+        landed = _np.asarray(off_axis_face_center, dtype=float) + fake.set_offset_calls[-1]
+        if not (abs(float(landed[0])) < 1e-6 and abs(float(landed[1])) < 1e-6):
+            result.passed = False
+            result.notes.append(
+                f"FAIL: centred face landed at {tuple(round(float(v), 4) for v in landed)}, "
+                f"expected the global axis (x=0, y=0). Off-axis ray sentinel was "
+                f"{_OFF_AXIS_RAY_TARGET_XY}."
+            )
+        if abs(float(landed[2]) - off_axis_face_center[2]) > 1e-6:
+            result.passed = False
+            result.notes.append(
+                f"FAIL: centring changed the along-axis z ({float(landed[2]):.4g} != {off_axis_face_center[2]:.4g})"
+            )
+    if not fake.global_frame_calls:
+        result.passed = False
+        result.notes.append("FAIL: centre did not resolve the GLOBAL optical-axis frame")
+    if fake.nearest_ray_frame_calls:
+        result.passed = False
+        result.notes.append(
+            f"FAIL: centre reached for the nearest-traced-ray frame "
+            f"({len(fake.nearest_ray_frame_calls)} call(s)); it must target the global axis"
+        )
+    if fake.rotation_calls:
+        result.passed = False
+        result.notes.append("FAIL: centring rotated the body; it must be translate-only")
+    result.detail["landed_on_global_axis"] = bool(result.passed)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7366,6 +7447,7 @@ def main() -> int:
             phase_109_carry_primed_gizmo_hover,
             phase_110_step_overlay_gizmo_overlay_removal,
             phase_111_center_picked_face_to_optical_axis,
+            phase_112_center_picked_face_targets_global_axis,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

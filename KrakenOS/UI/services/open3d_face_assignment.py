@@ -223,8 +223,27 @@ class Open3DFaceAssignmentService:
                 self.editor.append_debug(f"Open 3D imported STEP face lookup failed: {exc}")
                 face = None
                 face_lookup_method = "failed"
+            face_center = np.asarray(point, dtype=float).reshape(3)
             if face is not None:
                 face_id = str(face.get("face_id", "") or "").strip()
+                # bugs/0120: "Center Picked Face -> Optical Axis" must bring the
+                # window's CENTRE to the axis, not wherever the cursor happened to
+                # land on the face. Resolve the face centroid (world) from the pick;
+                # fall back to the raw click point if no centroid is available.
+                if through_pick is not None:
+                    try:
+                        face_center = np.asarray(
+                            self._surface_center_from_face_ray_pick(through_pick), dtype=float
+                        ).reshape(3)
+                    except Exception:
+                        face_center = np.asarray(point, dtype=float).reshape(3)
+                else:
+                    try:
+                        candidate = np.asarray(face.get("centroid_world"), dtype=float).reshape(-1)[:3]
+                    except Exception:
+                        candidate = np.asarray([], dtype=float)
+                    if candidate.size >= 3 and np.all(np.isfinite(candidate[:3])):
+                        face_center = candidate[:3]
             self._debug_trace(
                 "right_click_step_face_match",
                 label=step_label,
@@ -275,8 +294,8 @@ class Open3DFaceAssignmentService:
             menu.add_separator()
             menu.add_command(
                 label="Center Picked Face -> Optical Axis",
-                command=lambda picked_label=step_label, picked_point=point[:3].copy(): self._center_step_face_to_optical_axis_from_context(
-                    picked_label, picked_point
+                command=lambda picked_label=step_label, picked_center=face_center[:3].copy(): self._center_step_face_to_optical_axis_from_context(
+                    picked_label, picked_center
                 ),
             )
             self.append_element_context_actions(menu, step_label=step_label)
@@ -556,24 +575,29 @@ class Open3DFaceAssignmentService:
             except Exception:
                 pass
 
-    def _center_step_face_to_optical_axis_from_context(self, label: str, point_world) -> None:
-        """Right-click "Center Picked Face -> Optical Axis": translate the clicked
-        STEP face's centre onto the nearest optical axis -- one click, TRANSLATE-ONLY
-        (no rotation), so a "window" stays square while it slides onto the axis
-        (bugs/0119). The normal-aligning snap still lives in the top STEP menu;
-        users who right-clicked a face and reached for the only axis item kept
-        getting an unwanted tilt. Delegates to the tested editor centre
-        (axis_frame=None -> nearest axis)."""
+    def _center_step_face_to_optical_axis_from_context(self, label: str, face_center_world) -> None:
+        """Right-click "Center Picked Face -> Optical Axis": translate the picked
+        STEP face's CENTROID onto the GLOBAL optical axis -- one click,
+        TRANSLATE-ONLY (no rotation), so a "window" stays square while it slides
+        onto the axis (bugs/0119). The normal-aligning snap still lives in the top
+        STEP menu; users who right-clicked a face and reached for the only axis
+        item kept getting an unwanted tilt.
+
+        bugs/0120: the caller now hands us the face centroid (not the raw cursor
+        hit), and the editor centre targets the global x=0/y=0 axis (not the
+        nearest traced ray), so the window's centre actually comes to rest on the
+        axis. Delegates to the tested editor centre (axis_frame=None -> global
+        axis)."""
         le = _layout_module()
         _short_error_message = le._short_error_message
         label = str(label).strip().lower()
         self._debug_trace(
             "center_step_face_to_optical_axis_from_context",
             label=label,
-            point_world=self._debug_vector(point_world),
+            point_world=self._debug_vector(face_center_world),
         )
         try:
-            result = self.editor.center_step_feature_on_optical_axis(label, point_world)
+            result = self.editor.center_step_feature_on_optical_axis(label, face_center_world)
         except Exception as exc:
             self.status_var.set(f"Center face -> Optical Axis failed: {_short_error_message(exc)}")
             self.editor.append_debug(f"Open 3D right-click face->axis center failed: {exc}")

@@ -113,7 +113,8 @@
     "108": "pass",
     "109": "pass",
     "110": "pass",
-    "111": "pass"
+    "111": "pass",
+    "112": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -227,6 +228,7 @@
     "108": "Open 3D face-assign promote clamps its forced retrace to a sparse fan",
     "109": "Open 3D carry-primed STEP hover-highlights its gizmo (overlay-aware)",
     "110": "Open 3D partial STEP refresh clears gizmo handles from the overlay renderer",
-    "111": "Open 3D right-click 'Center Picked Face -> Optical Axis' is translate-only"
+    "111": "Open 3D right-click 'Center Picked Face -> Optical Axis' is translate-only",
+    "112": "Open 3D 'Center Picked Face -> Optical Axis' lands on the global axis (not a nearest traced ray)"
   }
 }
