@@ -7070,6 +7070,37 @@ def phase_107_measure_offset_adjust(
     return result
 
 
+def phase_108_face_assign_sparse_retrace(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Direct right-click face-assign promote clamps its forced retrace to a sparse
+    3-ray fan (bug 0116). The plain "Promote to Optical Element" path already wraps
+    its post-promote force_retrace in `editor._promote_preview_ray_count_override = 3`
+    (bug 0105) so a promote on a beam-splitter scene lands fast; the direct face-assign
+    path (`_promote_step_and_assign_face_function`) was missing that clamp, so a
+    right-click "Promote and set <function>" re-traced the full ~3600-ray fan and froze
+    the UI ~44 s. Guard `validate_open3d_face_assign_sparse_retrace.run_checks` asserts
+    the clamp is set/cleared-in-finally on the face-assign path and that the sampling
+    layer honours the override.
+    """
+    result = PhaseResult(
+        name="Phase 108: Open 3D face-assign promote clamps its forced retrace to a sparse fan"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_face_assign_sparse_retrace import run_checks
+        checks = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"face-assign sparse-retrace guard raised: {exc!r}")
+        return result
+    failed = [f"{name}: {detail}" for name, passed, detail in checks if not passed]
+    result.passed = not failed
+    result.detail["checks_failed"] = len(failed)
+    for note in failed:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7223,6 +7254,7 @@ def main() -> int:
             phase_105_measure_center_snap_lanes,
             phase_106_measure_preview_drag,
             phase_107_measure_offset_adjust,
+            phase_108_face_assign_sparse_retrace,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

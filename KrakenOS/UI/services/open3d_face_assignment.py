@@ -697,7 +697,19 @@ class Open3DFaceAssignmentService:
         self._clear_step_overlay_interaction_state(label)
         self.editor._select_table_row(row_index)
         try:
-            self.refresh_from_editor(sampling_mode=refresh_sampling_mode, force_retrace=True)
+            # bugs/0116: a direct right-click face assignment IS a promote of an
+            # in-path optical solid, so its forced retrace is the same ~44s full
+            # branched physics trace the plain promote already clamps (bugs/0105).
+            # Clamp THIS retrace to the same sparse 3-ray fan so face-assign lands
+            # fast instead of freezing the UI; cleared in finally so the next
+            # explicit trace restores full ray density. Only the displayed ray
+            # COUNT changes -- the assigned face, branch detectors and reconciled
+            # prescription are unaffected.
+            self.editor._promote_preview_ray_count_override = 3
+            try:
+                self.refresh_from_editor(sampling_mode=refresh_sampling_mode, force_retrace=True)
+            finally:
+                self.editor._promote_preview_ray_count_override = None
             self.highlight_row(row_index)
         except Exception as exc:
             self.editor.append_debug(f"Open 3D refresh after promoted STEP face assignment failed: {exc}")
