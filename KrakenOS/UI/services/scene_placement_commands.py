@@ -4188,6 +4188,73 @@ class ScenePlacementMixin:
             "branch_path": str(frame.get("branch_path", "") or ""),
         }
 
+    def center_step_feature_on_optical_axis(
+        self,
+        label: str,
+        feature_center_xyz,
+        *,
+        axis_frame: dict[str, object] | None = None,
+        face_id: str = "",
+    ) -> dict[str, object] | None:
+        """Translate a STEP overlay so the picked face centre lands on the nearest
+        optical axis -- a TRANSLATE-ONLY centre, the one-click sibling of
+        ``snap_step_feature_normal_to_optical_axis``.
+
+        bugs/0119: the right-click face menu used to offer only the normal snap,
+        which *rotates* the body to make the face perpendicular to the axis. A user
+        who wanted to "center this window on the axis" got an unwanted tilt instead.
+        This moves the face centre onto the axis line and keeps the orientation
+        (with no traced rays the nearest-axis target is ``(0, 0, z)``, so x/y go to
+        the axis and the along-axis z is preserved)."""
+        label = str(label).strip().lower()
+        if label not in _step_overlay_label_set():
+            return None
+        if self._step_path_for_label(label) is None:
+            self.status_var.set(f"No {label} STEP is imported.")
+            return None
+        feature_center = np.asarray(feature_center_xyz, dtype=float).reshape(-1)[:3]
+        if feature_center.size < 3 or not np.all(np.isfinite(feature_center[:3])):
+            self.status_var.set("Center Picked Face->Optical Axis needs a finite picked STEP face center.")
+            return None
+        frame = dict(axis_frame) if isinstance(axis_frame, dict) else self._step_optical_axis_frame_near_point(feature_center[:3])
+        target_point = np.asarray(frame["target_point"], dtype=float).reshape(-1)[:3]
+        if target_point.size < 3 or not np.all(np.isfinite(target_point[:3])):
+            self.status_var.set("Center Picked Face->Optical Axis: invalid axis target point.")
+            return None
+        current_offset = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
+        placement_delta = target_point[:3] - feature_center[:3]
+        next_offset = current_offset[:3] + placement_delta[:3]
+
+        self._begin_history_capture()
+        self._set_step_placement_offset_xyz(label, next_offset)
+        self._cad_axis_pick_label = None
+        self._cad_axis_pick_any = False
+        self._cad_led_object_edge_pick = False
+        self._selected_step_label = label
+        self._commit_history_capture()
+        axis_label = str(frame.get("axis_label", "optical axis"))
+        self.status_var.set(
+            f"{label.upper()} STEP face center moved onto {axis_label} at "
+            f"({target_point[0]:.6g}, {target_point[1]:.6g}, {target_point[2]:.6g}) mm (no rotation)."
+        )
+        self._record_step_overlay_axis_anchor(
+            label,
+            face_id=str(face_id or "").strip(),
+            target_point=target_point[:3],
+            anchor_mode="surface_center",
+            axis_frame=frame,
+            source="feature_center_axis_center",
+        )
+        self._refresh_open_3d_views(step_label=label)
+        return {
+            "label": label,
+            "axis_label": axis_label,
+            "target_point": tuple(float(value) for value in target_point[:3]),
+            "placement_offset_xyz": tuple(float(value) for value in next_offset[:3]),
+            "ray_index": int(frame.get("ray_index", -1)),
+            "branch_path": str(frame.get("branch_path", "") or ""),
+        }
+
     @staticmethod
     def _step_orientation_direction_vector(direction_label: object) -> np.ndarray | None:
         return StepFaceDirectionService.direction_vector(direction_label)

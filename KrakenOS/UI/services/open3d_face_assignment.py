@@ -274,9 +274,9 @@ class Open3DFaceAssignmentService:
                     )
             menu.add_separator()
             menu.add_command(
-                label="Snap Picked Face -> Optical Axis",
-                command=lambda picked_label=step_label, picked_point=point[:3].copy(), picked_normal=normal: self._snap_step_face_to_optical_axis_from_context(
-                    picked_label, picked_point, picked_normal
+                label="Center Picked Face -> Optical Axis",
+                command=lambda picked_label=step_label, picked_point=point[:3].copy(): self._center_step_face_to_optical_axis_from_context(
+                    picked_label, picked_point
                 ),
             )
             self.append_element_context_actions(menu, step_label=step_label)
@@ -300,7 +300,7 @@ class Open3DFaceAssignmentService:
         Components tree right-click so the two stay in sync. The tree path uses it
         to offer the same CAD actions without the canvas's per-pixel face pick
         (which is slow and ambiguous when bodies overlap -- bugs/0102). Face-
-        specific actions ("Set {function}", "Snap Picked Face") stay canvas-only;
+        specific actions ("Set {function}", "Center Picked Face") stay canvas-only;
         the tree reaches face assignment through "Open Face Editor...". Returns
         True when it added at least one command."""
         le = _layout_module()
@@ -556,31 +556,33 @@ class Open3DFaceAssignmentService:
             except Exception:
                 pass
 
-    def _snap_step_face_to_optical_axis_from_context(self, label: str, point_world, normal_world) -> None:
-        """Right-click "Snap Picked Face -> Optical Axis": snap the clicked STEP
-        face's centre + normal onto the nearest optical axis -- one click, using
-        the already-picked feature (the beam-splitter-on-LED-STEP glue workflow).
-        Delegates to the tested editor snap (axis_frame=None -> nearest axis)."""
+    def _center_step_face_to_optical_axis_from_context(self, label: str, point_world) -> None:
+        """Right-click "Center Picked Face -> Optical Axis": translate the clicked
+        STEP face's centre onto the nearest optical axis -- one click, TRANSLATE-ONLY
+        (no rotation), so a "window" stays square while it slides onto the axis
+        (bugs/0119). The normal-aligning snap still lives in the top STEP menu;
+        users who right-clicked a face and reached for the only axis item kept
+        getting an unwanted tilt. Delegates to the tested editor centre
+        (axis_frame=None -> nearest axis)."""
         le = _layout_module()
         _short_error_message = le._short_error_message
         label = str(label).strip().lower()
         self._debug_trace(
-            "snap_step_face_to_optical_axis_from_context",
+            "center_step_face_to_optical_axis_from_context",
             label=label,
             point_world=self._debug_vector(point_world),
-            normal_world=self._debug_vector(normal_world),
         )
         try:
-            result = self.editor.snap_step_feature_normal_to_optical_axis(label, point_world, normal_world)
+            result = self.editor.center_step_feature_on_optical_axis(label, point_world)
         except Exception as exc:
-            self.status_var.set(f"Snap face -> Optical Axis failed: {_short_error_message(exc)}")
-            self.editor.append_debug(f"Open 3D right-click face->axis snap failed: {exc}")
+            self.status_var.set(f"Center face -> Optical Axis failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D right-click face->axis center failed: {exc}")
             return
         if result is None:
             self.status_var.set(self.editor.status_var.get())
             return
-        # Clear the STEP selection so the post-snap refresh does not re-add the
-        # rotation handles (same guard as the menu snap path in open3d_inspector).
+        # Clear the STEP selection so the post-center refresh does not re-add the
+        # rotation handles (same guard as the snap path in open3d_inspector).
         try:
             self.editor._selected_step_label = None
         except Exception:
@@ -588,7 +590,7 @@ class Open3DFaceAssignmentService:
         try:
             self.refresh_from_editor(force_retrace=True)
         except Exception as exc:
-            self.editor.append_debug(f"Open 3D face->axis snap refresh failed: {exc}")
+            self.editor.append_debug(f"Open 3D face->axis center refresh failed: {exc}")
 
     def _promote_step_and_assign_face_function(
         self,

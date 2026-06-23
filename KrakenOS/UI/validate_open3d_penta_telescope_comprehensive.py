@@ -7174,6 +7174,41 @@ def phase_110_step_overlay_gizmo_overlay_removal(
     return result
 
 
+def phase_111_center_picked_face_to_optical_axis(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0119: the right-click face menu must offer a TRANSLATE-ONLY
+    "Center Picked Face -> Optical Axis", not the normal-aligning snap that rotates
+    the body.
+
+    "Snap Picked Face -> Optical Axis" rotates the STEP so the picked face's normal
+    is anti-parallel to the axis, then translates -- a user who wanted to *center* a
+    window on the axis got an unwanted tilt. The fix wires the right-click item to the
+    translate-only `center_step_feature_on_optical_axis` (normal snap stays in the top
+    STEP menu). The guard drives the real centre against a fake editor (face centre
+    lands on the axis line, z preserved, no rotation) + pins the menu wiring; the live
+    right-click face pick is an in-app eyeball.
+    """
+    result = PhaseResult(
+        name="Phase 111: Open 3D right-click 'Center Picked Face -> Optical Axis' is translate-only"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_center_picked_face_to_axis import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"center-picked-face guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("center-picked-face guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7330,6 +7365,7 @@ def main() -> int:
             phase_108_face_assign_sparse_retrace,
             phase_109_carry_primed_gizmo_hover,
             phase_110_step_overlay_gizmo_overlay_removal,
+            phase_111_center_picked_face_to_optical_axis,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -112,7 +112,8 @@
     "107": "pass",
     "108": "pass",
     "109": "pass",
-    "110": "pass"
+    "110": "pass",
+    "111": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -225,6 +226,7 @@
     "107": "Open 3D manual Measure auto offset-adjust after the 2nd click",
     "108": "Open 3D face-assign promote clamps its forced retrace to a sparse fan",
     "109": "Open 3D carry-primed STEP hover-highlights its gizmo (overlay-aware)",
-    "110": "Open 3D partial STEP refresh clears gizmo handles from the overlay renderer"
+    "110": "Open 3D partial STEP refresh clears gizmo handles from the overlay renderer",
+    "111": "Open 3D right-click 'Center Picked Face -> Optical Axis' is translate-only"
   }
 }
