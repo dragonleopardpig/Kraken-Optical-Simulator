@@ -223,6 +223,7 @@ class Open3DSceneRefreshService:
             )
         )
         mesh_collect_ms = (time.perf_counter() - mesh_collect_start) * 1000.0
+        prep_start = time.perf_counter()
         if show_launch_reference_surface and not show_reference_surfaces:
             mesh_items = [
                 mesh_item
@@ -349,6 +350,7 @@ class Open3DSceneRefreshService:
             camera_state = capture_camera_state(self._renderer)
 
         self._clear_galvo_scan_animation(cancel_timer=True, render=False)
+        prep_ms = (time.perf_counter() - prep_start) * 1000.0
         actor_clear_start = time.perf_counter()
         self._renderer.RemoveAllViewProps()
         # bugs/0112: gizmo handles live in the always-on-top overlay layer, which
@@ -900,6 +902,7 @@ class Open3DSceneRefreshService:
                 self._set_optical_axis_highlight(selected_axis_id)
         axis_ms = (time.perf_counter() - axis_start) * 1000.0
 
+        step_overlay_start = time.perf_counter()
         selected_step = getattr(self.editor, "_selected_step_label", None)
         step_rotation_handles = 0
         step_carry_active = 0
@@ -1029,10 +1032,15 @@ class Open3DSceneRefreshService:
                 flat_shading=True,
             )
 
+        step_overlay_ms = (time.perf_counter() - step_overlay_start) * 1000.0
+
         # bugs/0009: now that the imported STEP bodies are registered in
         # ``_step_actor_map``, draw the thickness dimensions so each row->row
         # span splits around any lens between its two surfaces.
+        thickness_dim_start = time.perf_counter()
         thickness_dimensions = self._add_thickness_dimension_overlays(system, scene_bundle)
+        thickness_dim_ms = (time.perf_counter() - thickness_dim_start) * 1000.0
+        detector_overlay_start = time.perf_counter()
         # User Measure-tool dimensions persist across rebuilds (re-add the actors the
         # scene clear removed). No-op when there are no measurements.
         try:
@@ -1046,6 +1054,9 @@ class Open3DSceneRefreshService:
         # FOV rectangle (gated on the "Det" detector overlay toggle).
         if self.show_detector_overlays_var.get():
             self._add_detector_coverage_overlays(system, scene_bundle)
+        detector_overlay_ms = (time.perf_counter() - detector_overlay_start) * 1000.0
+
+        finalize_start = time.perf_counter()
         # Re-apply browser hide/unhide (actors were rebuilt this refresh).
         self._apply_scene_element_visibility()
 
@@ -1122,15 +1133,21 @@ class Open3DSceneRefreshService:
         self.status_var.set(
             f"3D scene ready | surfaces={drew_surfaces} | rays={ray_count} | optical axes={optical_axis_overlays} | assigned face overlays={assigned_face_overlays} | face roles={face_role_markers} | virtual planes={virtual_plane_markers} | detector overlays={detector_overlay_lines} | thickness dimensions={thickness_dimensions} | placement grid={placement_grid_lines} | STEP carry active={step_carry_active} | STEP rotation handles={step_rotation_handles}"
         )
+        finalize_ms = (time.perf_counter() - finalize_start) * 1000.0
         self._debug_trace(
             "refresh_scene_done",
             duration_ms=round(float((time.perf_counter() - refresh_start) * 1000.0), 3),
             mesh_collect_ms=round(float(mesh_collect_ms), 3),
+            prep_ms=round(float(prep_ms), 3),
             actor_clear_ms=round(float(actor_clear_ms), 3),
             surface_actor_ms=round(float(surface_actor_ms), 3),
             overlay_ms=round(float(overlay_ms), 3),
             ray_actor_ms=round(float(ray_actor_ms), 3),
             axis_ms=round(float(axis_ms), 3),
+            step_overlay_ms=round(float(step_overlay_ms), 3),
+            thickness_dim_ms=round(float(thickness_dim_ms), 3),
+            detector_overlay_ms=round(float(detector_overlay_ms), 3),
+            finalize_ms=round(float(finalize_ms), 3),
             surfaces=drew_surfaces,
             rays=ray_count,
             optical_axes=optical_axis_overlays,
@@ -1148,11 +1165,16 @@ class Open3DSceneRefreshService:
             "refresh_scene_timing",
             duration_ms=round(float((time.perf_counter() - refresh_start) * 1000.0), 3),
             mesh_collect_ms=round(float(mesh_collect_ms), 3),
+            prep_ms=round(float(prep_ms), 3),
             actor_clear_ms=round(float(actor_clear_ms), 3),
             surface_actor_ms=round(float(surface_actor_ms), 3),
             overlay_ms=round(float(overlay_ms), 3),
             ray_actor_ms=round(float(ray_actor_ms), 3),
             axis_ms=round(float(axis_ms), 3),
+            step_overlay_ms=round(float(step_overlay_ms), 3),
+            thickness_dim_ms=round(float(thickness_dim_ms), 3),
+            detector_overlay_ms=round(float(detector_overlay_ms), 3),
+            finalize_ms=round(float(finalize_ms), 3),
             surfaces=drew_surfaces,
             rays=ray_count,
             optical_axes=optical_axis_overlays,

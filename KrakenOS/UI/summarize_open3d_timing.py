@@ -45,10 +45,21 @@ def summarize(path=None) -> None:
     # refresh_scene stage breakdown -- which part of a 3D refresh costs.
     ref = [r for r in rows if r.get("event") == "refresh_scene_timing"]
     if ref:
-        print(f"\nrefresh_scene stages ({len(ref)} refresh(es)):")
-        for k in ("mesh_collect_ms", "surface_actor_ms", "ray_actor_ms", "overlay_ms", "axis_ms"):
+        print(f"\nrefresh_scene stages ({len(ref)} refresh(es)), in execution order:")
+        stages = (
+            "mesh_collect_ms", "prep_ms", "actor_clear_ms", "surface_actor_ms",
+            "overlay_ms", "ray_actor_ms", "axis_ms", "step_overlay_ms",
+            "thickness_dim_ms", "detector_overlay_ms", "finalize_ms",
+        )
+        for k in stages:
             vals = [float(r.get(k, 0.0)) for r in ref]
-            print(f"  {k:18} total={sum(vals):8.0f}  mean={sum(vals) / len(vals):7.1f}  max={max(vals):7.0f}")
+            print(f"  {k:20} total={sum(vals):8.0f}  mean={sum(vals) / len(vals):7.1f}  max={max(vals):7.0f}")
+        # Whatever the named stages do not cover (inter-span slivers / un-instrumented work).
+        gaps = [
+            float(r.get("duration_ms", 0.0)) - sum(float(r.get(k, 0.0)) for k in stages)
+            for r in ref
+        ]
+        print(f"  {'(unaccounted)':20} total={sum(gaps):8.0f}  mean={sum(gaps) / len(gaps):7.1f}  max={max(gaps):7.0f}")
 
     # system builds split by build flag (build=1 runs the slow Prerequisites3D solids).
     builds = [r for r in rows if r.get("event") == "build_system_from_specs"]
