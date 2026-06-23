@@ -1082,7 +1082,18 @@ class Open3DInteractionService:
                         feature = feature_pick.get("feature") if feature_pick is not None else None
                         if feature is not None:
                             face_id = str(feature_pick.get("face_id", "") if feature_pick is not None else "").strip()
-                            hover_key = (actor_key, "passive", face_id or int(cell_id))
+                            # bugs/0124: lead the hover key with the RESOLVED step
+                            # label, not the raw VTK actor_key. When a beam splitter
+                            # is slid inside the LED the cell picker latches onto the
+                            # LED shell (or no actor at all), so step_label here comes
+                            # from the fallback feature pick while actor_key is None /
+                            # the LED's. A (actor_key, ...) head then resolves to None
+                            # or "led" at right-click time, so the bugs/0121
+                            # hovered-face override silently no-ops and the right-click
+                            # selects the LED instead of the highlighted BS face. A
+                            # ("step", label, ...) head is the form
+                            # _hovered_step_label_and_row_from_key recovers directly.
+                            hover_key = ("step", str(step_label).strip().lower(), face_id or int(cell_id))
                             outline = None
                             if hover_key != self._hover_step_cell_key:
                                 outline = self._hover_overlay_for_feature(feature[0], feature[1])

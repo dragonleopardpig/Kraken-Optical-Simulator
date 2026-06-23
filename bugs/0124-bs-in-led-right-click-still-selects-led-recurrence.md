@@ -1,66 +1,127 @@
-# 0124 — BS-inside-LED right-click STILL selects the LED edge (0121 recurrence) — diagnostic step
+# 0124 — BS-inside-LED right-click STILL selects the LED edge (0121 recurrence)
 
 ## Symptom
 
-`flag_20260623_211941_929`:
+`flag_20260623_211941_929` → re-recorded as `flag_20260624_073033_166`:
 
 > "after cube BS slide in overlapping the LED, not glued yet, mouse hover
 > highlight the splitting plane, right click, the selection changed to LED edge
 > instead."
 
 This is the **same** failure bugs/0121 was meant to fix (commit `c441ebb`,
-penta phase 113). The user has rebuilt (the 0122 / 0123 changes are live, so 0121
-is too), yet the bug recurs. bugs/0121 shipped with the live behaviour **in-app
-eyeball owed** (headless Xvfb can't drive the embedded-VTK hover + right-click),
-and the eyeball now shows the fix does not resolve the live case.
+penta phase 113). bugs/0121 shipped with the live behaviour **in-app eyeball
+owed** (headless Xvfb can't drive the embedded-VTK hover + right-click), and the
+eyeball showed the fix did not resolve the live case.
 
-`state.json` confirms the overlap is the 0121 class: `optical` (BS)
-x[-27.5, 27.5] y[-39, 39] z[205.8, 260.8] sits fully inside `led`
-x[-32.2, 78.0] y[-45, 45] z[191.7, 268.1].
+`step_actor_bounds` confirms the overlap is the 0121 class: `optical` (BS)
+x[-27.5, 27.5] y[-39, 39] z[207.7, 262.7] sits fully inside `led`
+x[-32.2, 78.0] y[-45, 45] z[192.0, 268.4].
 
-## Why the 0121 fix can silently miss
+## What the instrumentation revealed
 
-`_right_click_pick_context` only overrides to the hovered face when
+bugs/0124 first shipped **instrumentation, not a fix** (commit `6250b5f`):
+`_right_click_pick_context` records `self._last_right_click_debug` and the
+recorder carries it into `state.json` as
+`scene_state.right_click_diagnostics`. The re-recording pinned the branch:
 
-```python
-hovered_label, _ = self._hovered_step_label_and_row_from_key(prior_hover_key)
-if hovered_label is not None and hovered_label != vtk_step_label:
-    hovered_context = self._right_click_context_for_hovered_step(...)
-    if hovered_context is not None:
-        return hovered_context
+```json
+{
+  "cursor_xy": [456, 425],
+  "prior_hover_key": "(None, 'passive', 'S001/F001')",
+  "hovered_label": null,
+  "vtk_step_label": "led",
+  "override_eligible": false,
+  "override_fired": false
+}
 ```
 
-There are three independent ways this no-ops, and the static evidence can't
-distinguish them:
+So the gold outline **was** recorded (`prior_hover_key` is not None — the BS
+splitting face `S001/F001`), but `hovered_label` resolved to **null**, so the
+0121 override was never `override_eligible`. This is a **fourth** no-op path, not
+one of the three the diagnostic commit hypothesised: the hover key is present yet
+*unrecoverable*.
 
-1. **`prior_hover_key` is None** at right-click time — the gold splitting-face
-   highlight wasn't recorded in `_hover_step_cell_key`, or it was cleared before
-   the right-click resolves. (`state.json` shows `hover_step_cell_key: None`, but
-   that is captured *after* the right-click, so it is only suggestive.)
-2. **`hovered_label` already resolves to `"led"`** (== `vtk_step_label`) — then
-   the override is correctly skipped but for the wrong body.
-3. **`_right_click_context_for_hovered_step("optical", …)` returns None** — the
-   deterministic display-ray feature pick misses the BS at that pixel (occluded
-   by the LED shell), so the override is eligible but yields nothing.
+## Root cause
 
-A blind re-fix would again risk "guard passes, live still broken."
+The passive STEP hover key is built in
+`KrakenOS/UI/services/open3d_interaction.py` (idle-hover handler):
 
-## This commit — instrumentation, not a fix
+```python
+step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
+if step_label is None:
+    fallback_step_pick = self._step_feature_pick_any_for_display_xy((x, y))
+    if fallback_step_pick is not None:
+        step_label = str(fallback_step_pick.get("label"))   # resolves "optical"
+...
+hover_key = (actor_key, "passive", face_id or int(cell_id))  # <- BUG: actor_key head
+```
 
-Record what every right-click actually resolved so the next recording pins which
-branch fires:
+When the BS is buried in the LED, the VTK cell picker lands on the **LED shell**
+(or nothing), so `actor_key` is `None` / the LED's, and `step_label` ("optical")
+is recovered from the deterministic **fallback feature pick**. But the hover key
+still leads with the raw `actor_key`. At right-click,
+`_hovered_step_label_and_row_from_key` parses the head:
 
-- `Kraken3DInspector._right_click_pick_context` writes
-  `self._last_right_click_debug = {cursor_xy, prior_hover_key, hovered_label,
-  vtk_step_label, vtk_actor_key, override_eligible, override_context_label,
-  override_fired}` on every right-click (before returning).
-- `SceneSnapshot.right_click_diagnostics` (new field) carries it into the
-  bug-repro `state.json` via the existing `asdict` serialization; the recorder
-  populates it next to `hover_step_cell_key`.
+```python
+head = hover_key[0]                       # None  (this flag) — or the LED's actor key
+...
+if not isinstance(head, str):
+    return None, None                     # None head -> hovered_label is None
+label = self._actor_step_map.get(head)    # an actor key -> resolves "led" (WRONG body)
+```
 
-## Next step (owed by the user)
+Both broken heads defeat the override:
 
-Re-record the exact gesture: slide the BS into the LED, hover the splitting plane
-until the gold outline is on it, **right-click**, then flag. The new
-`right_click_diagnostics` block will show which of the three branches fired, and
-the real fix (with a display-free guard + penta phase) follows from that.
+- **`actor_key is None`** (this flag) → head is not a str → `hovered_label = None`
+  → `override_eligible = False`.
+- **`actor_key` = the LED shell** → `_actor_step_map[head] = "led"` →
+  `hovered_label == vtk_step_label == "led"` → override correctly skipped but for
+  the wrong body.
+
+Either way the gold outline sits on the BS while the right-click commits the LED.
+The resolved label was in hand at construction time and thrown away.
+
+## Fix
+
+Lead the passive STEP hover key with the **resolved** label, the form
+`_hovered_step_label_and_row_from_key` maps back directly (its `("step", label,
+…)` branch), independent of which actor the VTK picker latched onto:
+
+```python
+hover_key = ("step", str(step_label).strip().lower(), face_id or int(cell_id))
+```
+
+Now `("step", "optical", "S001/F001")` → `("optical", None)`, so with the LED
+under the VTK picker (`vtk_step_label == "led"`) the override is eligible
+(`"optical" != "led"`) and `_right_click_context_for_hovered_step("optical", …)`
+rebuilds the context on the BS splitting face — the same deterministic
+display-ray feature pick that drew the gold outline. The promoted-row hover
+branch already used a recoverable `("row", row_index, …)` head, so only the
+STEP-overlay branch needed the change.
+
+## Test
+
+`KrakenOS/UI/validate_open3d_hover_key_carries_step_label.py::run_checks` —
+display-free, drives the REAL `_hovered_step_label_and_row_from_key`:
+
+- the fixed `("step", "optical", "S001/F001")` key recovers `("optical", None)`;
+- both broken heads reproduce the live no-op — `(None, "passive", …)` →
+  `(None, None)` (unrecoverable), `("0xLED", "passive", …)` → `("led", None)`
+  (wrong body);
+- the 0121 override is `eligible` only with the fixed key (`optical != led`);
+- source contract — the passive STEP hover branch builds the key with the
+  `("step", label, …)` head and the buggy `(actor_key, "passive", …)` head is
+  gone.
+
+Penta **phase 116** runs the guard. (Mutation-tested: reverting the construction
+to the actor-key head flips the guard to FAIL.)
+
+## Note — in-app eyeball owed
+
+Headless Xvfb can't drive the embedded-VTK hover + right-click, so the live
+"right-click on the BS-in-LED splitting plane selects the BS, not the LED" is
+verified in-app. The guard pins the regression-critical invariant: the hover key
+carries the resolved label so the 0121 override can fire. If the live case still
+misses, the `right_click_diagnostics` block now shows `hovered_label: "optical"`
+and `override_eligible: true`, isolating any remaining miss to the override's
+re-pick (branch 3) rather than the hover key.

@@ -7398,6 +7398,45 @@ def phase_115_object_to_led_dimension(
     return result
 
 
+def phase_116_hover_key_carries_step_label(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0124: the passive STEP hover key must carry the RESOLVED step label.
+
+    A beam splitter slid inside the LED makes the VTK cell picker latch onto the
+    LED shell (or nothing), so the BS ("optical") label is recovered from the
+    fallback feature pick while the picked actor_key is None / the LED's. The old
+    hover key led with that actor_key, so at right-click
+    `_hovered_step_label_and_row_from_key` recovered None (or "led"), the
+    bugs/0121 hovered-face override was never eligible, and the right-click
+    selected the LED edge instead of the highlighted splitting plane (0121
+    recurrence, flag_20260624_073033_166). The fix leads the key with the
+    resolved label -- ("step", label, face) -- the form the resolver maps back
+    directly. This phase runs the display-free guard (resolver recovers the BS
+    label from the fixed key, both broken actor-key heads fail, the override
+    becomes eligible only with the fix, source contract). The live embedded-VTK
+    hover + right-click is an in-app eyeball.
+    """
+    result = PhaseResult(
+        name="Phase 116: Open 3D passive hover key carries the resolved STEP label (right-click override)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_hover_key_carries_step_label import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"hover-key label guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("hover-key label guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7559,6 +7598,7 @@ def main() -> int:
             phase_113_right_click_prefers_hovered_face,
             phase_114_decoration_does_not_carve_thickness,
             phase_115_object_to_led_dimension,
+            phase_116_hover_key_carries_step_label,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
