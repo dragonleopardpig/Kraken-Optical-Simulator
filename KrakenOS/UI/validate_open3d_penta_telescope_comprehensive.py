@@ -7290,6 +7290,43 @@ def phase_112_center_picked_face_targets_global_axis(
     return result
 
 
+def phase_113_right_click_prefers_hovered_face(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0121: a right-click must act on the HOVER-HIGHLIGHTED face, not on a
+    different overlapping body the flaky VTK cell picker latches onto.
+
+    A beam splitter slid into the LED enclosure overlaps the LED. The hover path
+    deterministically prefers the BS 45 deg INTERNAL coating, so the gold outline
+    lands on the splitter -- but `_right_click_pick_context` resolved which element
+    to act on from the raw VTK cell-picker actor, which for overlapping translucent
+    solids returns a pixel-varying shell face, so the right-click committed a LED
+    edge. The fix captures the live `_hover_step_cell_key` before re-picking and
+    rebuilds the context for that hovered STEP label. This phase runs the
+    display-free guard (key parse, hovered-context build, behavioural override,
+    source contract); the live embedded-VTK hover/right-click pick is an in-app
+    eyeball.
+    """
+    result = PhaseResult(
+        name="Phase 113: Open 3D right-click acts on the hovered face, not an overlapping body"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_right_click_prefers_hovered_face import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"right-click-hovered-face guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("right-click-hovered-face guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7448,6 +7485,7 @@ def main() -> int:
             phase_110_step_overlay_gizmo_overlay_removal,
             phase_111_center_picked_face_to_optical_axis,
             phase_112_center_picked_face_targets_global_axis,
+            phase_113_right_click_prefers_hovered_face,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

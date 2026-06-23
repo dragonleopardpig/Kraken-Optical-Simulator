@@ -1259,9 +1259,111 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 return str(live_label), None
         return step_label, row_index
 
+    def _hovered_step_label_and_row_from_key(self, hover_key) -> tuple[str | None, int | None]:
+        """Map the live hover-highlight key back to its (step_label, row_index).
+
+        ``_hover_step_cell_key`` is the single source of truth for the face the
+        user currently sees highlighted (gold outline). Its forms are
+        ``("step", label, ...)``, ``("row", row_index, ...)`` or
+        ``(actor_key, ...)`` -- the actor-key head covers every idle/mode hover
+        (``"passive"``/``"display"``/``"ray"``/cell-id tails). Resolve a STEP
+        label or a file-backed row from it so a right-click can act on the
+        highlighted element rather than re-deriving it from the flaky VTK cell
+        picker (bugs/0121).
+        """
+        if not isinstance(hover_key, tuple) or not hover_key:
+            return None, None
+        head = hover_key[0]
+        if head == "step" and len(hover_key) >= 2:
+            candidate = str(hover_key[1] or "").strip().lower()
+            return (candidate if candidate in STEP_OVERLAY_LABEL_SET else None), None
+        if head == "row" and len(hover_key) >= 2:
+            try:
+                return None, int(hover_key[1])
+            except (TypeError, ValueError):
+                return None, None
+        if not isinstance(head, str):
+            return None, None
+        label = self._actor_step_map.get(head)
+        if label:
+            label = str(label).strip().lower()
+            if label in STEP_OVERLAY_LABEL_SET:
+                return label, None
+        row_index = self._actor_row_map.get(head)
+        if row_index is not None:
+            try:
+                return None, int(row_index)
+            except (TypeError, ValueError):
+                return None, None
+        return None, None
+
+    def _right_click_context_for_hovered_step(self, label, display_xy, event=None) -> dict[str, object] | None:
+        """Build a right-click context for the *hovered* STEP overlay ``label``.
+
+        Re-derives the picked face from the deterministic display-ray feature
+        pick (which prefers a clean solid's internal face -- e.g. a beam
+        splitter's 45 deg coating -- over the pixel-varying VTK shell pick), so
+        the menu acts on exactly the face the gold hover outline shows. Returns
+        ``None`` when the label cannot yield a finite face point (caller then
+        falls back to the VTK-resolved context).
+        """
+        label = str(label or "").strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET:
+            return None
+        if self.is_step_label_hidden(label):
+            return None
+        try:
+            feature_pick = self._step_feature_pick_for_display_xy(
+                label, display_xy, actor=None, actor_key=None, cell_id=-1
+            )
+        except Exception:
+            feature_pick = None
+        if not isinstance(feature_pick, dict):
+            return None
+        feature = feature_pick.get("feature")
+        through_pick = feature_pick.get("through_pick")
+        point = np.asarray([], dtype=float)
+        normal = None
+        if through_pick is not None:
+            point = np.asarray(getattr(through_pick, "point_world", ()), dtype=float).reshape(-1)[:3]
+            normal_candidate = np.asarray(getattr(through_pick, "normal_world", ()), dtype=float).reshape(-1)[:3]
+        elif feature is not None:
+            try:
+                point = np.asarray(feature[0], dtype=float).reshape(-1)[:3]
+                normal_candidate = np.asarray(feature[2], dtype=float).reshape(-1)[:3]
+            except Exception:
+                return None
+        else:
+            return None
+        if point.size < 3 or not np.all(np.isfinite(point[:3])):
+            return None
+        if normal_candidate.size >= 3 and np.all(np.isfinite(normal_candidate[:3])):
+            norm = float(np.linalg.norm(normal_candidate[:3]))
+            if np.isfinite(norm) and norm > 1e-12:
+                normal = normal_candidate[:3] / norm
+        return {
+            "actor": None,
+            "actor_key": None,
+            "cell_id": -1,
+            "feature": feature,
+            "row_index": None,
+            "step_label": label,
+            "point_world": np.asarray(point[:3], dtype=float),
+            "normal_world": normal,
+            "display_xy": (float(display_xy[0]), float(display_xy[1])),
+            "event": event,
+        }
+
     def _right_click_pick_context(self, event) -> dict[str, object] | None:
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
             return None
+        # bugs/0121: capture the live hover highlight BEFORE re-picking. When a
+        # beam splitter is slid into the LED enclosure the two translucent bodies
+        # overlap; the VTK cell picker latches onto a pixel-varying shell face, so
+        # the right-click could resolve the LED even though the gold hover outline
+        # shows the BS 45 deg splitting face. The hover key is the source of truth
+        # for what the user sees highlighted -- prefer it below.
+        prior_hover_key = getattr(self, "_hover_step_cell_key", None)
         try:
             self._vtk_interactor.SetEventInformationFlipY(int(event.x), int(event.y), 0, 0, chr(0), 0, None)
         except Exception:
@@ -1275,6 +1377,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             cell_id = int(self._picker.GetCellId())
         except Exception:
             return None
+        vtk_step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
+        vtk_step_label, _vtk_row = self._resolve_picked_step_overlay(
+            vtk_step_label,
+            self._actor_row_map.get(actor_key) if actor_key is not None else None,
+        )
+        hovered_label, _hovered_row = self._hovered_step_label_and_row_from_key(prior_hover_key)
+        if hovered_label is not None and hovered_label != vtk_step_label:
+            hovered_context = self._right_click_context_for_hovered_step(
+                hovered_label, (float(x), float(y)), event=event
+            )
+            if hovered_context is not None:
+                return hovered_context
         if actor_key is None:
             return self._right_click_face_ray_context((float(x), float(y)), event=event)
         if pick_point.size < 3 or not np.all(np.isfinite(pick_point[:3])):
