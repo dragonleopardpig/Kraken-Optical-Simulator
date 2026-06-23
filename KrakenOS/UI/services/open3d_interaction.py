@@ -1087,6 +1087,39 @@ class Open3DInteractionService:
                             )
                             self._set_axis_pick_cursor(True)
                             return
+                    # bugs/0114: a promoted optical-solid row (e.g. a beam-splitter
+                    # cube) lives in _actor_row_map, not _actor_step_map, so the
+                    # STEP-overlay hover above never fires for it -- "mouse over each
+                    # surface does not highlight it." Mirror the per-face hover used
+                    # in Center Row mode (row_face ray pick + _hover_overlay_for_row_face)
+                    # so each face of a promoted CAD/STL body highlights on idle hover.
+                    if step_label is None:
+                        row_any = self._row_face_pick_any_for_display_xy((x, y))
+                        if isinstance(row_any, dict):
+                            row_index = int(row_any["row_index"])
+                            row_face_pick = row_any.get("row_face_pick")
+                            face = getattr(row_face_pick, "face", None) if row_face_pick is not None else None
+                            if isinstance(face, dict):
+                                face_id = str(face.get("face_id", "") or "").strip()
+                                hover_key = ("row", row_index, face_id or "passive")
+                                outline = None
+                                if hover_key != self._hover_step_cell_key:
+                                    outline = self._hover_overlay_for_row_face(row_index, face)
+                                self._set_step_hover_outline(outline, hover_key)
+                                row = (
+                                    self.editor.rows[row_index]
+                                    if 0 <= row_index < len(self.editor.rows)
+                                    else None
+                                )
+                                row_name = (row.name or row.surface or "CAD row") if row is not None else "CAD row"
+                                face_note = f" {face_id} face" if face_id else " face"
+                                self._update_hover_status(
+                                    f"S{row_index} {row_name}{face_note}",
+                                    display_xy=(x, y),
+                                    render=True,
+                                )
+                                self._set_axis_pick_cursor(True)
+                                return
                 except Exception:
                     actor = None
                     actor_key = None

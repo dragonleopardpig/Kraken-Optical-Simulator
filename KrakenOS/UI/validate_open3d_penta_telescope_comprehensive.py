@@ -6931,6 +6931,41 @@ def phase_103_ghost_hover_outline_alignment(
     return result
 
 
+def phase_104_promoted_solid_face_hover(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A promoted optical-solid row must hover-highlight each face (bug 0114).
+    After promoting a beam-splitter cube to an optical solid, hovering the body
+    drew no per-face gold outline -- the promoted body lives in `_actor_row_map`
+    (a CAD/STL row), but the idle-hover path only ran per-face hover for
+    `_actor_step_map` STEP overlays (camera/led). The fix mirrors Center-Row mode:
+    when no STEP overlay claims the cursor, the idle-hover path runs
+    `_row_face_pick_any_for_display_xy` over the file-backed rows and builds the
+    per-face outline with `_hover_overlay_for_row_face` (the same helpers Center-Row
+    already uses for promoted solids); the promoted body keeps its selection (pink)
+    and the gold face outline layers on top (hover does not deselect). Guard
+    `validate_open3d_promoted_solid_face_hover.run_checks` asserts the idle-hover
+    wiring, the helper methods, the file-backed row iteration, that the new branch
+    preserves the selection, and that a planar face's outline lands ON the body.
+    """
+    result = PhaseResult(
+        name="Phase 104: Open 3D promoted optical-solid row hover-highlights each face (idle hover)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_promoted_solid_face_hover import run_checks
+        checks = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"promoted-solid-face-hover guard raised: {exc!r}")
+        return result
+    failed = [f"{name}: {detail}" for name, passed, detail in checks if not passed]
+    result.passed = not failed
+    result.detail["checks_failed"] = len(failed)
+    for note in failed:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7080,6 +7115,7 @@ def main() -> int:
             phase_101_step_overlay_bake_vectorized,
             phase_102_gizmo_overlay_on_top,
             phase_103_ghost_hover_outline_alignment,
+            phase_104_promoted_solid_face_hover,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

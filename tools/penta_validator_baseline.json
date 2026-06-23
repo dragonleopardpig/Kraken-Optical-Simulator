@@ -105,7 +105,8 @@
     "100": "pass",
     "101": "pass",
     "102": "pass",
-    "103": "pass"
+    "103": "pass",
+    "104": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -211,6 +212,7 @@
     "100": "Open 3D Face Editor right-hand panel scrolls (mouse + touchpad)",
     "101": "Open 3D STEP-overlay face-metadata bake vectorised (lossless ~30x)",
     "102": "Open 3D selected-element move/rotate gizmo renders always-on-top (overlay layer)",
-    "103": "Open 3D display-only overlay hover outline tracks the re-aligned body (no ghost)"
+    "103": "Open 3D display-only overlay hover outline tracks the re-aligned body (no ghost)",
+    "104": "Open 3D promoted optical-solid row hover-highlights each face (idle hover)"
   }
 }
