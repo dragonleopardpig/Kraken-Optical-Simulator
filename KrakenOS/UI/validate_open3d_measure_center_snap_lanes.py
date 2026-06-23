@@ -7,12 +7,14 @@ surface points and overlapped each other.
 
 Fix (Commit 1):
 
-* **Centre snap (always-on, edge fallback)** -- a Measure click on a recognised
+* **Axis snap (always-on, edge fallback)** -- a Measure click on a recognised
   component (a STEP overlay camera/lens/LED body, or a CAD/STL/promoted
-  optical-solid row) snaps to that component's on-axis CENTRE via
-  ``_measure_center_for_actor``; a bare-edge pick (centre is None) keeps the raw
-  point-to-point click. Component centres all sit on the optical axis, so
-  centre-to-centre dimensions run parallel to the axis.
+  optical-solid row) is pulled onto the optical axis via
+  ``_measure_axis_snap_for_pick`` -> ``_project_world_onto_optical_axis``, KEEPING
+  the clicked feature's axial position: a lens FRONT edge snaps to the front (not
+  the body centre), the object plane to the on-axis FOV centre. A bare-edge pick on
+  nothing recognised (snap is None) keeps the raw point-to-point click. On-axis
+  points run parallel to the axis, so the dimensions line up side-by-side.
 * **Axis-aligned stacked lanes** -- ``_measure_segment_offsets`` assigns every
   VISIBLE segment a parallel lane (base 45 mm, +18 mm each, in id order) so the
   axis-aligned dimensions fan out in +Y instead of overlapping. A segment with an
@@ -40,46 +42,62 @@ def run_checks() -> list[tuple[str, bool, str]]:
 
     results: list[tuple[str, bool, str]] = []
 
-    # 1) centre snap is wired into the Measure click branch (always-on with the
-    #    raw-edge fallback: a recognised component overrides world with its centre
-    #    and drops the normal so it measures centre-to-centre point-to-point).
+    # 1) axis snap is wired into the Measure click branch (always-on with the
+    #    raw-edge fallback: a recognised component overrides world with the pick
+    #    projected onto the axis and drops the normal so it spans point-to-point).
     press_src = inspect.getsource(Kraken3DInspector._on_left_button_press)
     wiring_ok = (
         "bugs/0115" in press_src
-        and "_measure_center_for_actor(self._actor_key(hit_actor))" in press_src
-        and "world = center" in press_src
+        and "_measure_axis_snap_for_pick(self._actor_key(hit_actor), world)" in press_src
+        and "world = snapped" in press_src
         and "normal = None" in press_src
     )
     results.append(
-        ("Measure click branch snaps to the component centre (always-on, edge fallback)",
+        ("Measure click branch snaps the pick onto the optical axis (always-on, edge fallback)",
          wiring_ok, f"wired={wiring_ok}")
     )
 
-    # 2) _measure_center_for_actor returns the STEP-body / row centre, and None for
-    #    an unrecognised actor (the bare-edge fallback) or a missing key.
+    # 2) the axis snap KEEPS the clicked feature's axial position (the bug the user
+    #    reported: a lens FRONT edge must stay at the front, not collapse to the body
+    #    centre) and returns None for an unrecognised pick (the bare-edge fallback).
     fake = SimpleNamespace(
-        _actor_step_map={"cam": "camera"},
-        _actor_row_map={"row3": 3},
-        _live_step_body_world_bounds=(
-            lambda label: (-35.0, 35.0, -35.0, 35.0, 584.0, 658.0) if label == "camera" else None
-        ),
-        _row_actor_center_world=(
-            lambda idx: np.array([0.0, 0.0, 290.0]) if int(idx) == 3 else None
-        ),
+        _actor_step_map={"lens": "lens"},
+        _actor_row_map={"obj": 0},
+        _optical_axis_pick_records=[
+            {"points": [[0.0, 0.0, -100.0], [0.0, 0.0, 700.0]]},  # the dotted global guide
+        ],
     )
-    cam_c = Kraken3DInspector._measure_center_for_actor(fake, "cam")
-    row_c = Kraken3DInspector._measure_center_for_actor(fake, "row3")
-    miss_c = Kraken3DInspector._measure_center_for_actor(fake, "unknown")
-    none_c = Kraken3DInspector._measure_center_for_actor(fake, None)
-    center_ok = (
-        cam_c is not None and np.allclose(cam_c, [0.0, 0.0, 621.0])
-        and row_c is not None and np.allclose(row_c, [0.0, 0.0, 290.0])
-        and miss_c is None and none_c is None
+    fake._project_world_onto_optical_axis = (
+        lambda w: Kraken3DInspector._project_world_onto_optical_axis(fake, w)
+    )
+    front = Kraken3DInspector._measure_axis_snap_for_pick(fake, "lens", np.array([12.0, -8.0, 276.4]))
+    objp = Kraken3DInspector._measure_axis_snap_for_pick(fake, "obj", np.array([5.0, 3.0, -100.0]))
+    miss = Kraken3DInspector._measure_axis_snap_for_pick(fake, "stray", np.array([1.0, 2.0, 3.0]))
+    none = Kraken3DInspector._measure_axis_snap_for_pick(fake, None, np.array([1.0, 2.0, 3.0]))
+    snap_ok = (
+        front is not None and np.allclose(front, [0.0, 0.0, 276.4])   # front edge z KEPT
+        and objp is not None and np.allclose(objp, [0.0, 0.0, -100.0])  # object plane -> FOV centre
+        and miss is None and none is None
     )
     results.append(
-        ("_measure_center_for_actor returns STEP/row centres, None for an edge pick",
-         center_ok, f"cam={None if cam_c is None else cam_c.tolist()}, row={None if row_c is None else row_c.tolist()}, "
-                    f"miss={miss_c}, none={none_c}")
+        ("axis snap keeps the clicked feature's z (lens front stays at the front), None for an edge pick",
+         snap_ok, f"front={None if front is None else front.tolist()}, obj={None if objp is None else objp.tolist()}, "
+                  f"miss={miss}, none={none}")
+    )
+
+    # 2b) the projection lands on the NEAREST axis segment, so a folded reflect-branch
+    #    pick snaps onto that branch (not the global guide).
+    fake_fold = SimpleNamespace(
+        _optical_axis_pick_records=[
+            {"points": [[0.0, 0.0, -100.0], [0.0, 0.0, 700.0]]},   # global z-axis
+            {"points": [[0.0, 0.0, 400.0], [0.0, 120.0, 400.0]]},  # folded +y branch at z=400
+        ],
+    )
+    fold = Kraken3DInspector._project_world_onto_optical_axis(fake_fold, np.array([3.0, 66.0, 400.0]))
+    fold_ok = fold is not None and np.allclose(fold, [0.0, 66.0, 400.0], atol=1e-6)
+    results.append(
+        ("_project_world_onto_optical_axis lands on the nearest segment (folded branch)",
+         fold_ok, f"fold={None if fold is None else fold.tolist()}")
     )
 
     # 3) lane allocation: visible segments fan out base + lane*step in id order; a
@@ -106,9 +124,9 @@ def run_checks() -> list[tuple[str, bool, str]]:
          lanes_ok, f"offsets={offs}")
     )
 
-    # 4) the offset endpoints honour the assigned lane and produce a +Y axis-aligned
-    #    standoff for an axial (on-axis centre-to-centre) segment: the dimension line
-    #    is parallel to the axis, shifted clear in +Y, witness lines at the picks.
+    # 4) the offset endpoints honour the assigned lane and produce a +X standoff that
+    #    keeps the dimension line in the Y=0 plane for an axial (on-axis) segment: the
+    #    line is parallel to the axis, shifted clear in +X, and stays at y=0 (coplanar).
     fake3 = SimpleNamespace(
         _resolve_measure_point=lambda p, r, dz: np.asarray(p, dtype=float).reshape(3)
     )
@@ -121,13 +139,14 @@ def run_checks() -> list[tuple[str, bool, str]]:
     detail4 = "no result"
     if res is not None:
         p0, p1, a0, a1, mid, dist = res
-        parallel = abs(float(a1[2] - a0[2]) - 55.0) < 1e-6 and abs(float(a1[1] - a0[1])) < 1e-9
-        on_lane = abs(float(a0[1]) - 63.0) < 1e-6 and abs(float(mid[1]) - 63.0) < 1e-6
-        anchored = abs(float(a0[0])) < 1e-9 and abs(float(a0[2]) - 275.0) < 1e-9
-        endpoints_ok = abs(dist - 55.0) < 1e-6 and parallel and on_lane and anchored
-        detail4 = f"dist={dist:.3f}, a0={a0.tolist()}, mid_y={float(mid[1]):.3f}"
+        parallel = abs(float(a1[2] - a0[2]) - 55.0) < 1e-6 and abs(float(a1[0] - a0[0])) < 1e-9
+        on_lane = abs(float(a0[0]) - 63.0) < 1e-6 and abs(float(mid[0]) - 63.0) < 1e-6
+        in_plane = abs(float(a0[1])) < 1e-9 and abs(float(a1[1])) < 1e-9 and abs(float(mid[1])) < 1e-9
+        anchored = abs(float(a0[2]) - 275.0) < 1e-9
+        endpoints_ok = abs(dist - 55.0) < 1e-6 and parallel and on_lane and in_plane and anchored
+        detail4 = f"dist={dist:.3f}, a0={a0.tolist()}, mid_x={float(mid[0]):.3f}, y0={in_plane}"
     results.append(
-        ("_measure_segment_offset_endpoints honours offset_amt with a +Y axis-aligned standoff",
+        ("_measure_segment_offset_endpoints offsets in +X within the Y=0 plane (coplanar arrows)",
          endpoints_ok, detail4)
     )
 
@@ -150,9 +169,10 @@ def run_checks() -> list[tuple[str, bool, str]]:
 
 
 def geometry_lane_proof(png_path: str | None = None) -> tuple[bool, str]:
-    """Prove two axial centre-to-centre segments stack on distinct, parallel,
-    non-overlapping lanes (the "align side by side" guarantee). Writes a PNG of the
-    two stacked dimension lines beside the optical axis when GL is available."""
+    """Prove two axial segments stay COPLANAR in the Y=0 plane and stack on distinct,
+    parallel, non-overlapping lanes along +X (the "align in a plane, arrows adjacent"
+    guarantee). Writes a PNG of the two stacked dimension lines beside the optical
+    axis when GL is available."""
     import numpy as np
 
     from KrakenOS.UI.open3d_inspector import Kraken3DInspector
@@ -173,12 +193,13 @@ def geometry_lane_proof(png_path: str | None = None) -> tuple[bool, str]:
     if r0 is not None and r1 is not None:
         _p0a, _p1a, a0a, a1a, mid0, _d0 = r0
         _p0b, _p1b, a0b, a1b, mid1, _d1 = r1
-        lane0 = float(mid0[1])
-        lane1 = float(mid1[1])
-        parallel = abs(float(a1a[1] - a0a[1])) < 1e-9 and abs(float(a1b[1] - a0b[1])) < 1e-9
+        lane0 = float(mid0[0])
+        lane1 = float(mid1[0])
+        parallel = abs(float(a1a[0] - a0a[0])) < 1e-9 and abs(float(a1b[0] - a0b[0])) < 1e-9
+        coplanar = max(abs(float(a0a[1])), abs(float(a1a[1])), abs(float(a0b[1])), abs(float(a1b[1]))) < 1e-9
         separated = abs(lane1 - lane0 - 18.0) < 1e-6 and lane0 > 0.0
-        passed = parallel and separated
-        detail = f"lanes y=({lane0:.1f},{lane1:.1f}) gap={lane1 - lane0:.1f} mm, parallel={parallel}"
+        passed = parallel and coplanar and separated
+        detail = f"lanes x=({lane0:.1f},{lane1:.1f}) gap={lane1 - lane0:.1f} mm, y=0 coplanar={coplanar}"
 
         if png_path and os.environ.get("DISPLAY"):
             try:
@@ -188,7 +209,7 @@ def geometry_lane_proof(png_path: str | None = None) -> tuple[bool, str]:
                 pl.add_mesh(pv.Line((0, 0, 250), (0, 0, 450)), color=(0.4, 0.4, 0.4), line_width=2)
                 pl.add_mesh(pv.Line(tuple(a0a), tuple(a1a)), color=(0.95, 0.55, 0.1), line_width=4)
                 pl.add_mesh(pv.Line(tuple(a0b), tuple(a1b)), color=(0.95, 0.55, 0.1), line_width=4)
-                pl.view_vector((1.0, 0.0, 0.0), viewup=(0.0, 1.0, 0.0))
+                pl.view_vector((0.0, 1.0, 0.0), viewup=(0.0, 0.0, 1.0))
                 pl.screenshot(str(png_path))
                 pl.close()
             except Exception:

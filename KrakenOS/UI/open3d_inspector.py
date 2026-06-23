@@ -11389,36 +11389,58 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 out[2] = zpos[int(r)] + float(dz)
         return out
 
-    def _measure_center_for_actor(self, actor_key):
-        """bugs/0115: the on-axis CENTRE of the component the picked actor belongs to.
+    def _project_world_onto_optical_axis(self, world):
+        """Project a world point onto the nearest optical-axis polyline segment.
 
-        A Measure click that lands on a recognised component -- a STEP overlay
-        (camera / lens / LED body) or a CAD/STL/promoted optical-solid row -- snaps
-        to that component's centre instead of the raw surface point. Component
-        centres all sit on the optical axis, so centre-to-centre dimensions line up
+        Iterates the live axis records (`_optical_axis_pick_records`, which include
+        the dotted global guide and any folded-branch axes) and returns the closest
+        point on the closest segment. Falls back to the global z-axis at (0, 0) when
+        no axis geometry is available. Used by the Measure centre snap (bugs/0115):
+        it pulls a pick onto the axis while KEEPING the clicked feature's axial
+        position (e.g. a lens FRONT edge stays at the front, not the body centre)."""
+        p = np.asarray(world, dtype=float).reshape(-1)[:3]
+        if p.size < 3 or not np.all(np.isfinite(p)):
+            return None
+        best = None  # (dist, proj)
+        for record in list(getattr(self, "_optical_axis_pick_records", None) or []):
+            pts = np.asarray(record.get("points"), dtype=float)
+            if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+                continue
+            for i in range(pts.shape[0] - 1):
+                a = pts[i, :3]
+                b = pts[i + 1, :3]
+                ab = b - a
+                denom = float(np.dot(ab, ab))
+                t = float(np.dot(p - a, ab) / denom) if denom > 1e-12 else 0.0
+                t = min(1.0, max(0.0, t))
+                proj = a + t * ab
+                dist = float(np.linalg.norm(p - proj))
+                if best is None or dist < best[0]:
+                    best = (dist, np.asarray(proj, dtype=float).reshape(3))
+        if best is not None:
+            return best[1]
+        # No axis geometry rendered: the global guide is the z-axis at (0, 0).
+        return np.array([0.0, 0.0, float(p[2])], dtype=float)
+
+    def _measure_axis_snap_for_pick(self, actor_key, world):
+        """bugs/0115: snap a Measure pick onto the optical axis, KEEPING the clicked
+        feature's axial position.
+
+        A click that lands on a recognised component -- a STEP overlay (camera /
+        lens / LED body) or a CAD/STL/promoted optical-solid row -- is pulled onto
+        the optical axis at the clicked feature's z (a lens front edge snaps to the
+        front, not the body centre), so centre-to-centre style dimensions line up
         side-by-side along the axis ("align side by side adjacent to each other").
-        Returns a length-3 world point, or None for a bare-edge pick (the edge
-        fallback keeps the raw point-to-point click)."""
+        Returns a length-3 world point, or None for a bare-edge pick on nothing
+        recognised (the edge fallback keeps the raw point-to-point click)."""
         if not actor_key:
             return None
-        label = (getattr(self, "_actor_step_map", None) or {}).get(actor_key)
-        if label is not None:
-            bounds = self._live_step_body_world_bounds(label)
-            if bounds is None or len(bounds) < 6:
-                return None
-            xmin, xmax, ymin, ymax, zmin, zmax = (float(v) for v in bounds[:6])
-            if xmin > xmax or ymin > ymax or zmin > zmax:
-                return None
-            return np.array(
-                [(xmin + xmax) * 0.5, (ymin + ymax) * 0.5, (zmin + zmax) * 0.5],
-                dtype=float,
-            )
-        row_index = (getattr(self, "_actor_row_map", None) or {}).get(actor_key)
-        if row_index is not None:
-            center = self._row_actor_center_world(int(row_index))
-            if center is not None and center.size >= 3 and np.all(np.isfinite(center[:3])):
-                return np.asarray(center[:3], dtype=float).reshape(3)
-        return None
+        recognised = actor_key in (getattr(self, "_actor_step_map", None) or {}) or actor_key in (
+            getattr(self, "_actor_row_map", None) or {}
+        )
+        if not recognised:
+            return None
+        return self._project_world_onto_optical_axis(world)
 
     def _record_measure_point(self, world, normal=None) -> None:
         point = np.asarray(world, dtype=float).reshape(-1)[:3]
@@ -11615,7 +11637,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         axis-aligned dimensions stack side-by-side instead of overlapping. Returns
         ``{seg_id: offset_mm}``. A segment with an explicit ``seg['offset']`` (a user
         drag) keeps that standoff and is excluded from lane numbering; the rest take
-        ``base + lane*step`` in id order so they fan out in +Y off the optical axis."""
+        ``base + lane*step`` in id order so they fan out (in +X, within the Y=0 plane)
+        off the optical axis, coplanar and adjacent to each other."""
         segments = getattr(self, "_measure_segments", []) or []
         hidden = getattr(self, "_hidden_measure_segments", None) or set()
         base, step = 45.0, 18.0
@@ -11652,10 +11675,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             dist = float(np.linalg.norm(p1 - p0))
             # offset the dimension line perpendicular, clear of the geometry (CAD-style);
             # seg["offset"] (a future drag) overrides the default standoff.
+            # bugs/0115: offset within the Y=0 plane (+X) so every axis-aligned
+            # measurement stays COPLANAR and the arrows stack adjacent to each other;
+            # fall back to +Y only when the segment itself runs along X.
             d = (p1 - p0) / dist if dist > 1e-9 else np.array([0.0, 0.0, 1.0])
-            od = np.array([0.0, 1.0, 0.0]) - float(np.dot([0.0, 1.0, 0.0], d)) * d
+            od = np.array([1.0, 0.0, 0.0]) - float(np.dot([1.0, 0.0, 0.0], d)) * d
             if float(np.linalg.norm(od)) < 1e-6:
-                od = np.array([1.0, 0.0, 0.0]) - float(np.dot([1.0, 0.0, 0.0], d)) * d
+                od = np.array([0.0, 1.0, 0.0]) - float(np.dot([0.0, 1.0, 0.0], d)) * d
             on = float(np.linalg.norm(od))
             amt = float(
                 offset_amt
@@ -13889,14 +13915,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 world = None
                 normal = None
             if hit_actor is not None and world is not None and world.size >= 3:
-                # bugs/0115: always-on centre snap (with raw-edge fallback). A click on
-                # a recognised component measures from its on-axis centre so the
-                # dimensions align side-by-side along the optical axis; a bare-edge pick
-                # (centre is None) keeps the raw point-to-point click.
-                center = self._measure_center_for_actor(self._actor_key(hit_actor))
-                if center is not None:
-                    world = center
-                    normal = None  # centre-to-centre is a straight point-to-point span
+                # bugs/0115: always-on axis snap (with raw-edge fallback). A click on a
+                # recognised component is pulled onto the optical axis at the clicked
+                # feature's z -- a lens FRONT edge snaps to the front (not the body
+                # centre), the object plane to the on-axis FOV centre -- so the
+                # dimensions align side-by-side along the axis. A bare-edge pick on
+                # nothing recognised (snap is None) keeps the raw point-to-point click.
+                snapped = self._measure_axis_snap_for_pick(self._actor_key(hit_actor), world)
+                if snapped is not None:
+                    world = snapped
+                    normal = None  # on-axis points span point-to-point along the axis
                 self._record_measure_point(world, normal)
             else:
                 self.status_var.set("Measure: click ON an edge/surface (the pick missed).")
