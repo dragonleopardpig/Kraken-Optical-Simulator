@@ -87,6 +87,11 @@ class SceneSnapshot:
     # transient, cached-bundle mode, the 3D/2D mode the editor wants, and the
     # nonseq/folded/full-pupil flags that gate cone vs envelope).
     sampling_diagnostics: dict[str, Any] = field(default_factory=dict)
+    # bugs/0124: what the LAST right-click resolved -- the live hover key, the
+    # hovered STEP label, the flaky VTK cell-picker label, and whether the
+    # bugs/0121 hovered-face override fired. Pins why a BS-inside-LED right-click
+    # still lands on the LED edge despite the gold outline on the BS face.
+    right_click_diagnostics: dict[str, Any] = field(default_factory=dict)
     camera_position: list[float] = field(default_factory=list)
     camera_focal: list[float] = field(default_factory=list)
     camera_view_up: list[float] = field(default_factory=list)
@@ -581,6 +586,14 @@ class Open3DEventRecorder:
                     snapshot.hover_outline_bounds = [float(v) for v in b[:6]]
             key = getattr(inspector, "_hover_step_cell_key", None)
             snapshot.hover_step_cell_key = None if key is None else str(key)
+        except Exception:
+            pass
+        # bugs/0124: carry the last right-click resolution so a re-recorded
+        # BS-inside-LED right-click reveals why the hovered-face override (0121)
+        # didn't fire.
+        try:
+            rc = getattr(inspector, "_last_right_click_debug", None)
+            snapshot.right_click_diagnostics = dict(rc) if isinstance(rc, dict) else {}
         except Exception:
             pass
         try:

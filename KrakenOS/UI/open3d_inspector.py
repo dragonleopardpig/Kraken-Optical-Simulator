@@ -442,6 +442,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._hover_step_actor = None
         self._hover_step_outline_actor = None
         self._hover_step_cell_key = None
+        # bugs/0124: diagnostics for the last right-click resolution (recorded into
+        # the bug-repro state.json so a re-recorded BS-inside-LED right-click pins
+        # why the 0121 hovered-face override didn't fire).
+        self._last_right_click_debug = None
         self._mode_badge_actor = None
         self._trace_summary_actor = None
         self._placement_grid_status_actor = None
@@ -1383,12 +1387,32 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._actor_row_map.get(actor_key) if actor_key is not None else None,
         )
         hovered_label, _hovered_row = self._hovered_step_label_and_row_from_key(prior_hover_key)
-        if hovered_label is not None and hovered_label != vtk_step_label:
+        # bugs/0124: record what this right-click resolved so a re-recorded
+        # BS-inside-LED right-click reveals why the 0121 hovered-face override did
+        # or didn't fire (the gold outline can sit on the BS face while the flaky
+        # cell picker lands on the LED shell, or the hover key is gone by now).
+        rc_debug: dict[str, object] = {
+            "cursor_xy": [int(x), int(y)],
+            "prior_hover_key": None if prior_hover_key is None else str(prior_hover_key),
+            "hovered_label": hovered_label,
+            "vtk_step_label": vtk_step_label,
+            "vtk_actor_key": None if actor_key is None else str(actor_key),
+            "override_eligible": bool(hovered_label is not None and hovered_label != vtk_step_label),
+        }
+        if rc_debug["override_eligible"]:
             hovered_context = self._right_click_context_for_hovered_step(
                 hovered_label, (float(x), float(y)), event=event
             )
+            rc_debug["override_context_label"] = (
+                hovered_context.get("step_label") if isinstance(hovered_context, dict) else None
+            )
+            rc_debug["override_fired"] = hovered_context is not None
+            self._last_right_click_debug = rc_debug
             if hovered_context is not None:
                 return hovered_context
+        else:
+            rc_debug["override_fired"] = False
+            self._last_right_click_debug = rc_debug
         if actor_key is None:
             return self._right_click_face_ray_context((float(x), float(y)), event=event)
         if pick_point.size < 3 or not np.all(np.isfinite(pick_point[:3])):
