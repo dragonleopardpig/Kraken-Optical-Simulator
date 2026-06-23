@@ -11389,6 +11389,37 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 out[2] = zpos[int(r)] + float(dz)
         return out
 
+    def _measure_center_for_actor(self, actor_key):
+        """bugs/0115: the on-axis CENTRE of the component the picked actor belongs to.
+
+        A Measure click that lands on a recognised component -- a STEP overlay
+        (camera / lens / LED body) or a CAD/STL/promoted optical-solid row -- snaps
+        to that component's centre instead of the raw surface point. Component
+        centres all sit on the optical axis, so centre-to-centre dimensions line up
+        side-by-side along the axis ("align side by side adjacent to each other").
+        Returns a length-3 world point, or None for a bare-edge pick (the edge
+        fallback keeps the raw point-to-point click)."""
+        if not actor_key:
+            return None
+        label = (getattr(self, "_actor_step_map", None) or {}).get(actor_key)
+        if label is not None:
+            bounds = self._live_step_body_world_bounds(label)
+            if bounds is None or len(bounds) < 6:
+                return None
+            xmin, xmax, ymin, ymax, zmin, zmax = (float(v) for v in bounds[:6])
+            if xmin > xmax or ymin > ymax or zmin > zmax:
+                return None
+            return np.array(
+                [(xmin + xmax) * 0.5, (ymin + ymax) * 0.5, (zmin + zmax) * 0.5],
+                dtype=float,
+            )
+        row_index = (getattr(self, "_actor_row_map", None) or {}).get(actor_key)
+        if row_index is not None:
+            center = self._row_actor_center_world(int(row_index))
+            if center is not None and center.size >= 3 and np.all(np.isfinite(center[:3])):
+                return np.asarray(center[:3], dtype=float).reshape(3)
+        return None
+
     def _record_measure_point(self, world, normal=None) -> None:
         point = np.asarray(world, dtype=float).reshape(-1)[:3]
         if point.size < 3 or not np.all(np.isfinite(point)):
@@ -11453,12 +11484,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 line_cls = mapper_cls = cone_cls = None
             hidden = getattr(self, "_hidden_measure_segments", None) or set()
+            offsets = self._measure_segment_offsets()
             for _seg in segments:
                 try:
                     # bugs/0108: a per-measurement on/off ("can't delete or hide by selection").
                     if int(_seg.get("id", -1)) in hidden:
                         continue
-                    resolved = self._measure_segment_offset_endpoints(_seg)
+                    resolved = self._measure_segment_offset_endpoints(
+                        _seg, offsets.get(int(_seg.get("id", -1)))
+                    )
                     if resolved is None:
                         continue
                     p0, p1, a0, a1, mid, dist = resolved
@@ -11576,12 +11610,37 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
 
-    def _measure_segment_offset_endpoints(self, seg):
+    def _measure_segment_offsets(self) -> "dict[int, float]":
+        """bugs/0115: assign every VISIBLE measure segment a parallel lane so the
+        axis-aligned dimensions stack side-by-side instead of overlapping. Returns
+        ``{seg_id: offset_mm}``. A segment with an explicit ``seg['offset']`` (a user
+        drag) keeps that standoff and is excluded from lane numbering; the rest take
+        ``base + lane*step`` in id order so they fan out in +Y off the optical axis."""
+        segments = getattr(self, "_measure_segments", []) or []
+        hidden = getattr(self, "_hidden_measure_segments", None) or set()
+        base, step = 45.0, 18.0
+        offsets: "dict[int, float]" = {}
+        lane = 0
+        for seg in sorted(segments, key=lambda s: int(s.get("id", -1))):
+            sid = int(seg.get("id", -1))
+            if sid in hidden:
+                continue
+            explicit = seg.get("offset", None)
+            if explicit is not None:
+                offsets[sid] = float(explicit)
+                continue
+            offsets[sid] = base + lane * step
+            lane += 1
+        return offsets
+
+    def _measure_segment_offset_endpoints(self, seg, offset_amt=None):
         """Resolve a measure segment to its rendered geometry: the two measured
         points (p0, p1), the offset CAD dimension-line endpoints (a0, a1), the
         dimension-line midpoint and the measured length. Returns ``None`` if the
         segment can't be resolved. Shared by the draw loop and the right-click
-        proximity finder so a click lands on exactly what is drawn (bugs/0108)."""
+        proximity finder so a click lands on exactly what is drawn (bugs/0108).
+        ``offset_amt`` (bugs/0115) overrides the standoff with the segment's assigned
+        lane; when None the segment's own ``offset`` / default standoff is used."""
         try:
             p0 = self._resolve_measure_point(seg["p0"], seg.get("r0"), seg.get("dz0", 0.0))
             p1raw = self._resolve_measure_point(seg["p1"], seg.get("r1"), seg.get("dz1", 0.0))
@@ -11598,7 +11657,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if float(np.linalg.norm(od)) < 1e-6:
                 od = np.array([1.0, 0.0, 0.0]) - float(np.dot([1.0, 0.0, 0.0], d)) * d
             on = float(np.linalg.norm(od))
-            amt = float(seg.get("offset", max(dist * 0.12, 45.0)))
+            amt = float(
+                offset_amt
+                if offset_amt is not None
+                else seg.get("offset", max(dist * 0.12, 45.0))
+            )
             off = (od / on) * amt if on > 1e-6 else np.zeros(3)
             a0 = p0 + off
             a1 = p1 + off
@@ -11616,12 +11679,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if not segments:
             return None
         hidden = getattr(self, "_hidden_measure_segments", None) or set()
+        offsets = self._measure_segment_offsets()
         best: "tuple[float, int] | None" = None
         click = np.asarray((x, y), dtype=float)
         for idx, seg in enumerate(segments):
             if int(seg.get("id", -1)) in hidden:
                 continue
-            resolved = self._measure_segment_offset_endpoints(seg)
+            resolved = self._measure_segment_offset_endpoints(
+                seg, offsets.get(int(seg.get("id", -1)))
+            )
             if resolved is None:
                 continue
             _p0, _p1, a0, a1, mid, _dist = resolved
@@ -13823,6 +13889,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 world = None
                 normal = None
             if hit_actor is not None and world is not None and world.size >= 3:
+                # bugs/0115: always-on centre snap (with raw-edge fallback). A click on
+                # a recognised component measures from its on-axis centre so the
+                # dimensions align side-by-side along the optical axis; a bare-edge pick
+                # (centre is None) keeps the raw point-to-point click.
+                center = self._measure_center_for_actor(self._actor_key(hit_actor))
+                if center is not None:
+                    world = center
+                    normal = None  # centre-to-centre is a straight point-to-point span
                 self._record_measure_point(world, normal)
             else:
                 self.status_var.set("Measure: click ON an edge/surface (the pick missed).")

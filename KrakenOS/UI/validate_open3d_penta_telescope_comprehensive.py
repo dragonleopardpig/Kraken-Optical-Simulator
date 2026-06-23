@@ -6966,6 +6966,42 @@ def phase_104_promoted_solid_face_hover(
     return result
 
 
+def phase_105_measure_center_snap_lanes(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Manual Measure snaps to component centres and stacks axis-aligned lanes
+    (bug 0115). Measurements were raw point-to-point picks, so dimensions between
+    components landed at arbitrary surface points and overlapped. The fix snaps a
+    click on a recognised component (STEP overlay camera/lens/LED body or a
+    CAD/STL/promoted optical-solid row) to that component's on-axis centre via
+    `_measure_center_for_actor` (always-on, with a raw-edge fallback), and
+    `_measure_segment_offsets` assigns each visible segment a parallel lane
+    (base 45 mm, +18 mm each) so the axis-aligned dimensions fan out in +Y instead
+    of overlapping; an explicit `seg['offset']` (a future drag) is kept and skips
+    lane numbering, and both the draw loop and the right-click proximity finder
+    route through the same offsets. Guard
+    `validate_open3d_measure_center_snap_lanes.run_checks` asserts the centre-snap
+    wiring, the centre resolver, the lane allocator (incl. hidden-exclusion and
+    explicit-offset override), the +Y axis-aligned standoff, and the shared routing.
+    """
+    result = PhaseResult(
+        name="Phase 105: Open 3D manual Measure snaps to component centres + stacks axis-aligned lanes"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_measure_center_snap_lanes import run_checks
+        checks = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"measure-center-snap guard raised: {exc!r}")
+        return result
+    failed = [f"{name}: {detail}" for name, passed, detail in checks if not passed]
+    result.passed = not failed
+    result.detail["checks_failed"] = len(failed)
+    for note in failed:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7116,6 +7152,7 @@ def main() -> int:
             phase_102_gizmo_overlay_on_top,
             phase_103_ghost_hover_outline_alignment,
             phase_104_promoted_solid_face_hover,
+            phase_105_measure_center_snap_lanes,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
