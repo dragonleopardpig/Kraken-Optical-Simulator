@@ -6899,6 +6899,38 @@ def phase_102_gizmo_overlay_on_top(
     return result
 
 
+def phase_103_ghost_hover_outline_alignment(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A display-only overlay's hover outline must track its re-aligned body
+    (bug 0113). The camera/led face metadata is pose-blind cached (baked once
+    from a snap STL at the body's then-current pose), but the rendered body
+    re-aligns to the live image plane every refresh, so the cached-STL hover
+    outline floated at the bake-time pose -- a gold "ghost" edge stuck ~13 mm in
+    front of the camera body after a beam-splitter promote pushed the image plane
+    back. The fix stamps the alignment target at bake time and shifts the
+    cached-STL outline by `current_target - baked_target` on read (no re-bake).
+    Guard `validate_open3d_ghost_hover_outline_alignment.run_checks` asserts the
+    stamp, the delta accessor, the geometry-shift helpers, and the source wiring.
+    """
+    result = PhaseResult(
+        name="Phase 103: Open 3D display-only overlay hover outline tracks the re-aligned body (no ghost)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_ghost_hover_outline_alignment import run_checks
+        checks = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"ghost-hover-outline guard raised: {exc!r}")
+        return result
+    failed = [f"{name}: {detail}" for name, passed, detail in checks if not passed]
+    result.passed = not failed
+    result.detail["checks_failed"] = len(failed)
+    for note in failed:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7047,6 +7079,7 @@ def main() -> int:
             phase_100_face_editor_scrollable,
             phase_101_step_overlay_bake_vectorized,
             phase_102_gizmo_overlay_on_top,
+            phase_103_ghost_hover_outline_alignment,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

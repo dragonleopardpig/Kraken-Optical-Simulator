@@ -3706,6 +3706,14 @@ class ScenePlacementMixin:
 
         with _span("step_overlay_face_metadata", label=label):
             metadata = self._step_overlay_face_metadata_compute(label)
+        if isinstance(metadata, dict) and label in self._DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC:
+            # bugs/0113: the display-only camera/led metadata is pose-blind (baked
+            # once per session to dodge the 18-35 s freeze), but the rendered body
+            # is re-aligned to the live image plane every refresh. Stamp the
+            # alignment target at bake time so the hover path can shift the cached
+            # outline by the live axial delta (apply-on-read), instead of redrawing
+            # it at the body's former z (the "ghost highlight").
+            metadata["alignment_target_z_at_bake"] = self._step_overlay_alignment_target_z(label)
         if cache_key is not None and isinstance(metadata, dict):
             cache[cache_key] = metadata
         return metadata

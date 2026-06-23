@@ -14710,7 +14710,70 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
         outline = self._cad_scene_cache.face_outline(source_stl, face, _read_stl_triangle_vertices, build_outline)
         center = face.get("centroid_world", face.get("centroid", ()))
+        # bugs/0113: this cached-STL fallback builds the outline from the snap STL,
+        # which was saved at the body's BAKE-TIME pose. For a display-only overlay
+        # (camera/led) the metadata is pose-blind cached but the rendered body is
+        # re-aligned to the live image plane every refresh, so the snap-pose outline
+        # floats off the drawn body (the "ghost highlight" -- the camera front-face
+        # edge stuck ~13 mm in front of the body after a beam-splitter promote pushed
+        # the image plane back). Shift the produced outline + centre onto the live
+        # body by the alignment delta (apply-on-read; no re-bake).
+        delta_z = self._display_only_overlay_axial_delta(str(label).strip().lower(), metadata)
+        if delta_z:
+            outline = self._translate_hover_mesh(outline, (0.0, 0.0, float(delta_z)))
+            center = self._shift_center_z(center, float(delta_z))
         return self._hover_overlay_for_feature(center, outline)
+
+    def _display_only_overlay_axial_delta(self, label: str, metadata=None) -> float:
+        """Live axial shift between a display-only overlay's drawn body and its
+        pose-blind baked snap geometry (bugs/0113).
+
+        camera/led face metadata is baked once per session (pose-blind, to dodge an
+        18-35 s freeze) from a snap STL written at the body's then-current pose. The
+        rendered body, though, re-aligns to the live image plane each refresh
+        (``_transformed_imported_camera_step_mesh`` -> ``image_plane_z -
+        front_to_sensor``). After the image plane moves (a solve, image-at-focus
+        shift, thickness edit, beam-splitter promote push-back) the cached snap
+        outline stays at the bake-time z while the body moved. Returns the live
+        alignment target minus the value stamped at bake time; 0.0 when nothing
+        moved or ``label`` is not a pose-blind display-only overlay.
+        """
+        try:
+            label = str(label).strip().lower()
+            editor = self.editor
+            if label not in editor._DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC:
+                return 0.0
+            current = editor._step_overlay_alignment_target_z(label)
+            if current is None:
+                return 0.0
+            if not isinstance(metadata, dict):
+                metadata = editor._step_overlay_face_metadata(label)
+            baked = metadata.get("alignment_target_z_at_bake") if isinstance(metadata, dict) else None
+            if baked is None:
+                return 0.0
+            return float(current) - float(baked)
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def _translate_hover_mesh(mesh, shift):
+        if mesh is None:
+            return None
+        try:
+            return mesh.translate(tuple(float(v) for v in shift), inplace=False)
+        except Exception:
+            return mesh
+
+    @staticmethod
+    def _shift_center_z(center, delta_z: float):
+        try:
+            shifted = np.asarray(center, dtype=float).reshape(-1)[:3].copy()
+        except Exception:
+            return center
+        if shifted.size >= 3 and np.all(np.isfinite(shifted)):
+            shifted[2] += float(delta_z)
+            return shifted
+        return center
 
     def _feature_from_face_ray_pick(self, pick: FaceRayPick, outline_mesh=None):
         return (
