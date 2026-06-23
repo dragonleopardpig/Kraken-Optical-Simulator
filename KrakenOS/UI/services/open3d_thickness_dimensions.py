@@ -13,6 +13,8 @@ import numpy as np
 import tkinter as tk
 from tkinter import ttk
 
+from KrakenOS.UI.services.step_overlay_labels import is_step_overlay_decoration
+
 
 class Open3DThicknessDimensionService:
     """Render and edit Open 3D dimensions backed by table Thickness rows."""
@@ -706,7 +708,18 @@ class Open3DThicknessDimensionService:
         margin = max((hi - lo) * 1e-3, 1e-6)
         spans: list[tuple[float, float]] = []
         step_map = getattr(self.inspector, "_step_actor_map", {}) or {}
-        for actor_keys in list(step_map.values()):
+        for step_label, actor_keys in list(step_map.items()):
+            # bugs/0122: a decoration overlay (LED illuminator / camera body) is a
+            # visual prop, NOT an optical element in the beam path -- it must not
+            # carve an optical thickness dimension. An in-line LED placed in front
+            # of the lens straddles the axis and sits inside the object->lens span,
+            # so the bugs/0009 carve shortened the S0 arrow to END at the LED face
+            # (object->LED) while the single-remaining-gap branch kept the full-row
+            # label -- "object->lens = 275 mm" then read as a measure to the LED the
+            # user had placed at 200 mm. Only real optical bodies (lens / beam
+            # splitter) carve; the LED-in-front coupling is a separate later stage.
+            if is_step_overlay_decoration(step_label):
+                continue
             try:
                 extent = self.inspector._axial_extent_from_actor_keys(actor_keys, axis)
             except Exception:

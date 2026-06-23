@@ -7327,6 +7327,42 @@ def phase_113_right_click_prefers_hovered_face(
     return result
 
 
+def phase_114_decoration_does_not_carve_thickness(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0122: a DECORATION overlay (LED illuminator / camera body) must not
+    carve an optical thickness dimension; only real optical bodies (lens / beam
+    splitter) may.
+
+    An in-line LED placed in front of the lens straddles the axis and sits inside
+    the object->lens S0 span, so the bugs/0009 carve shortened the S0 arrow to END
+    at the LED face yet kept the full-row "S0 Thickness = 275 mm" label -- so the
+    object->lens working distance read as a measure to the LED the user had placed
+    at 200 mm. The fix skips decoration overlays in `_overlay_axial_spans_within`.
+    This phase runs the display-free guard (decoration does not carve, camera does
+    not carve, optical body still carves, mixed LED+BS carves only the BS, source
+    contract).
+    """
+    result = PhaseResult(
+        name="Phase 114: Open 3D decoration overlay does not carve an optical thickness dimension"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_decoration_does_not_carve_thickness import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"decoration-carve guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("decoration-carve guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7486,6 +7522,7 @@ def main() -> int:
             phase_111_center_picked_face_to_optical_axis,
             phase_112_center_picked_face_targets_global_axis,
             phase_113_right_click_prefers_hovered_face,
+            phase_114_decoration_does_not_carve_thickness,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
