@@ -154,3 +154,37 @@ In-app eyeball owed (Commit 2): with Measure armed, click the first feature — 
 dashed line + live distance should follow the cursor until the second click; then
 grab the midpoint handle of a finished dimension and drag it in ±Y — its standoff
 should follow the cursor while the other dimensions stay on their lanes.
+
+---
+
+## Commit 2 follow-up — two in-app defects (flags 101653 + 101729)
+
+First in-app trial of Commit 2 surfaced two defects in the grab-handle feature:
+
+- **flag_20260623_101653_687 — "Center Dot is block the measurement value."** The
+  midpoint grab sphere was drawn at `mid` and the `↔ … mm` value label was placed at
+  the *same* `mid`, so the dot covered the number. Fix: new
+  **`_measure_label_anchor(mid, p0, p1, handle_radius)`** pushes the label outward
+  along the lane offset direction (`mid − raw_midpoint`) by `radius + 6 mm`, staying
+  coplanar (x and z fixed), and the label is centre-justified — so it floats just
+  clear of the dot. `_hrad` is hoisted so the sphere and the label share one radius.
+- **flag_20260623_101729_598 — "click on the Center Dots moved the arrow section,
+  can't be dragged."** Root cause = a **y-flip coordinate mismatch**.
+  `_apply_measure_offset_drag_motion` received the raw Tk motion xy (top-left origin)
+  and passed it straight to `_measure_offset_amount_for_cursor` →
+  `_display_pick_ray`, which (like every other caller) expects VTK display coords
+  (bottom-left, flipped). The initial grab pick used `GetEventPosition()` (correct
+  VTK coords), but the motion used un-flipped Tk y, so the handle tracked a
+  vertically-mirrored cursor: the first nudge computed an offset at the 12 mm clamp
+  and the dimension jumped to the axis (exactly the screenshot). Fix: convert with
+  **`_tk_xy_to_vtk_display_xy`** before the ray. The Commit-2 guard missed it because
+  its check 1 faked `_display_pick_ray` directly, bypassing the conversion.
+
+`validate_open3d_measure_preview_drag.run_checks()` gained two checks (now 8): the
+drag flips Tk→VTK before the pick ray, and `_measure_label_anchor` pushes the label
+clear of the sphere (outward, coplanar). Penta phase 106 (same guard) still PASS — no
+new phase, no baseline change.
+
+In-app eyeball owed (follow-up): the value label should be fully readable beside the
+dot, and dragging the dot up/down should make the dimension follow the cursor
+smoothly instead of snapping to the axis.

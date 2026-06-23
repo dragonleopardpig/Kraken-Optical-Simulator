@@ -11536,6 +11536,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     if resolved is None:
                         continue
                     p0, p1, a0, a1, mid, dist = resolved
+                    _hrad = float(min(max(dist * 0.04, 2.5), 7.0))  # grab-handle radius (shared by sphere + label offset)
                     if line_cls is not None and mapper_cls is not None and vtkActor is not None:
                         def _meas_line(s, e, width, color):
                             try:
@@ -11562,7 +11563,6 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                         # this segment's lane standoff.
                         if sphere_cls is not None and mapper_cls is not None:
                             try:
-                                _hrad = float(min(max(dist * 0.04, 2.5), 7.0))
                                 _sp = sphere_cls()
                                 _sp.SetCenter(float(mid[0]), float(mid[1]), float(mid[2]))
                                 _sp.SetRadius(_hrad)
@@ -11611,7 +11611,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     if vtkBillboardTextActor3D is not None:
                         lbl = vtkBillboardTextActor3D()
                         lbl.SetInput(f"↔ {dist:.4g} mm")
-                        lbl.SetPosition(float(mid[0]), float(mid[1]), float(mid[2]))
+                        # bugs/0115 followup: anchor the value label clear of the
+                        # midpoint grab sphere so the "center dot" never covers the
+                        # number (push it outward along the lane offset, coplanar).
+                        _la = self._measure_label_anchor(mid, p0, p1, _hrad)
+                        lbl.SetPosition(float(_la[0]), float(_la[1]), float(_la[2]))
                         try:
                             lbl.PickableOff()
                         except Exception:
@@ -11624,6 +11628,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                             tp.SetBackgroundOpacity(0.9)
                             tp.SetFrame(1)
                             tp.SetFrameColor(0.95, 0.55, 0.1)
+                            tp.SetJustificationToCentered()
                         except Exception:
                             pass
                         self._add_renderer_view_prop(lbl)
@@ -11749,6 +11754,24 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             return None
 
+    @staticmethod
+    def _measure_label_anchor(mid, p0, p1, handle_radius):
+        """Push the dimension value label clear of the midpoint grab sphere so the
+        'center dot' never covers the number (bugs/0115 followup). ``mid`` is the
+        already-offset dimension-line midpoint; shifting it further along the lane
+        offset direction (``mid - rawmidpoint``) by the handle radius + a margin
+        keeps the label coplanar with the dimension and just outside the handle."""
+        mid = np.asarray(mid, dtype=float).reshape(-1)[:3]
+        raw_mid = (
+            np.asarray(p0, dtype=float).reshape(-1)[:3]
+            + np.asarray(p1, dtype=float).reshape(-1)[:3]
+        ) * 0.5
+        od = mid - raw_mid
+        n = float(np.linalg.norm(od))
+        if n < 1e-9:
+            return mid
+        return mid + (od / n) * (float(handle_radius) + 6.0)
+
     def _measure_segment_by_id(self, seg_id):
         """The measure-segment dict with the given stable id, or None."""
         for seg in getattr(self, "_measure_segments", []) or []:
@@ -11848,7 +11871,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         seg = self._measure_segment_by_id(int(state.get("seg_id", -1)))
         if seg is None:
             return
-        amt = self._measure_offset_amount_for_cursor(state, current_xy)
+        # The Tk motion event carries top-left-origin coords, but _display_pick_ray
+        # (inside _measure_offset_amount_for_cursor) wants VTK bottom-left display
+        # coords. Flip first or the handle tracks a vertically-mirrored cursor and
+        # the lane snaps to the axis instead of dragging (bugs/0115 followup).
+        display_xy = self._tk_xy_to_vtk_display_xy(current_xy)
+        if display_xy is None:
+            return
+        amt = self._measure_offset_amount_for_cursor(state, display_xy)
         if amt is None:
             return
         seg["offset"] = float(amt)

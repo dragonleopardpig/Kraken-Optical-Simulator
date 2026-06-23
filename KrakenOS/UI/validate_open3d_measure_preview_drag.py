@@ -67,6 +67,7 @@ def run_checks() -> list[tuple[str, bool, str]]:
         _measure_offset_drag_state={"seg_id": 0, "axis_mid": [0.0, 0.0, 302.5], "od": [0.0, 1.0, 0.0]},
         _resolve_measure_point=lambda p, r, dz: np.asarray(p, dtype=float).reshape(3),
         _display_pick_ray=lambda xy: (np.array([-100.0, 70.0, 302.5]), np.array([1.0, 0.0, 0.0])),
+        _tk_xy_to_vtk_display_xy=lambda xy: xy,  # followup: motion flips Tk->VTK before the ray
         _refresh_measure_overlays=lambda: None,
     )
     fake2._measure_segment_by_id = lambda sid: Kraken3DInspector._measure_segment_by_id(fake2, sid)
@@ -133,6 +134,36 @@ def run_checks() -> list[tuple[str, bool, str]]:
     results.append(
         ("lane-handle drag wired into the Tk mouse bindings (press/drag/release)",
          bindings_ok, f"wired={bindings_ok}")
+    )
+
+    # 7) the drag motion converts the Tk (top-left) event xy to VTK (bottom-left)
+    #    display xy before building the pick ray -- without this y-flip the handle
+    #    tracks a mirrored cursor and the lane jumps to the axis (flag 101729).
+    apply_src = inspect.getsource(Kraken3DInspector._apply_measure_offset_drag_motion)
+    yflip_ok = (
+        "_tk_xy_to_vtk_display_xy(" in apply_src
+        and "_measure_offset_amount_for_cursor(state, display_xy)" in apply_src
+    )
+    results.append(
+        ("handle drag flips Tk->VTK display xy before the pick ray (no mirrored drag)",
+         yflip_ok, f"wired={yflip_ok}")
+    )
+
+    # 8) the dimension value label is anchored clear of the midpoint grab sphere so
+    #    the "center dot" never covers the number (flag 101653): pushed outward
+    #    along the lane offset by radius+margin, staying coplanar (x and z fixed).
+    la = Kraken3DInspector._measure_label_anchor(
+        [0.0, 50.0, 300.0], [0.0, 0.0, 275.0], [0.0, 0.0, 325.0], 3.0
+    )
+    la = np.asarray(la, dtype=float).reshape(-1)[:3]
+    label_ok = (
+        abs(float(la[1]) - (50.0 + 3.0 + 6.0)) < 1e-6   # mid_y + radius + margin
+        and abs(float(la[0])) < 1e-6                     # stays in the X=0 plane
+        and abs(float(la[2]) - 300.0) < 1e-6             # same axial station
+    )
+    results.append(
+        ("value label anchored clear of the grab sphere (outward, coplanar)",
+         label_ok, f"label_anchor={la.tolist()}")
     )
 
     return results
