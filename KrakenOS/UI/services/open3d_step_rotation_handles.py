@@ -40,11 +40,8 @@ class Open3DStepRotationHandleService:
                 inspector._hover_rotation_handle_key = None
             if actor is None:
                 continue
-            try:
-                inspector._renderer.RemoveActor(actor)
-                removed = True
-            except Exception:
-                pass
+            inspector._remove_actor_from_renderers(actor)
+            removed = True
         return removed
 
     def _handle_keys_for_label(self, label: str) -> set[str]:
@@ -97,11 +94,8 @@ class Open3DStepRotationHandleService:
                 inspector._hover_rotation_handle_key = None
             if actor is None:
                 continue
-            try:
-                inspector._renderer.RemoveActor(actor)
-                removed = True
-            except Exception:
-                pass
+            inspector._remove_actor_from_renderers(actor)
+            removed = True
         return removed
 
     def reconcile_to_labels(self, labels) -> bool:
@@ -202,6 +196,7 @@ class Open3DStepRotationHandleService:
                     follow_step_label=label,
                     flat_shading=True,
                     backface_culling=False,
+                    overlay_on_top=True,
                 )
                 arc_key = inspector._actor_key(arc_actor)
                 if arc_key is not None:
@@ -225,6 +220,7 @@ class Open3DStepRotationHandleService:
                     follow_step_label=label,
                     flat_shading=True,
                     backface_culling=False,
+                    overlay_on_top=True,
                 )
                 if actor is not None:
                     count += 1
@@ -254,6 +250,7 @@ class Open3DStepRotationHandleService:
                 follow_step_label=label,
                 flat_shading=True,
                 backface_culling=False,
+                overlay_on_top=True,
             )
             if actor is not None:
                 count += 1

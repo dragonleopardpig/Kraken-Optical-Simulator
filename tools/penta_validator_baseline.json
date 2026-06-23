@@ -103,7 +103,8 @@
     "98": "pass",
     "99": "pass",
     "100": "pass",
-    "101": "pass"
+    "101": "pass",
+    "102": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -207,6 +208,7 @@
     "98": "Open 3D planar optical solid traces against a lossless decimated proxy",
     "99": "Open 3D NS branching-requirement memoised per system (split still fires)",
     "100": "Open 3D Face Editor right-hand panel scrolls (mouse + touchpad)",
-    "101": "Open 3D STEP-overlay face-metadata bake vectorised (lossless ~30x)"
+    "101": "Open 3D STEP-overlay face-metadata bake vectorised (lossless ~30x)",
+    "102": "Open 3D selected-element move/rotate gizmo renders always-on-top (overlay layer)"
   }
 }

@@ -351,6 +351,11 @@ class Open3DSceneRefreshService:
         self._clear_galvo_scan_animation(cancel_timer=True, render=False)
         actor_clear_start = time.perf_counter()
         self._renderer.RemoveAllViewProps()
+        # bugs/0112: gizmo handles live in the always-on-top overlay layer, which
+        # the main renderer's clear leaves untouched -- wipe it too so the next
+        # build's reconciled handles don't stack on stale ones.
+        if getattr(self, "_gizmo_overlay_renderer", None) is not None:
+            self._gizmo_overlay_renderer.RemoveAllViewProps()
         self._actor_row_map.clear()
         self._row_actor_map.clear()
         self._actor_ray_map.clear()

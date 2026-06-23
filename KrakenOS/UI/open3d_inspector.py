@@ -368,6 +368,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._renderer = None
+        # bugs/0112: move/rotate gizmo handles render in a dedicated overlay
+        # renderer (shares the camera, composites over the scene colour, clears
+        # its own depth buffer) so a selected element's gizmo is always drawn on
+        # top instead of being buried behind an adjacent body.
+        self._gizmo_overlay_renderer = None
         self._vtk_widget = None
         self._vtk_interactor = None
         self._orientation_widget = None
@@ -659,6 +664,27 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self._orientation_widget.SetViewport(0.0, 0.0, 0.18, 0.18)
                 self._orientation_widget.SetEnabled(1)
                 self._orientation_widget.InteractiveOff()
+
+            # bugs/0112: a dedicated always-on-top overlay layer for the
+            # move/rotate gizmo handles. Sharing the main camera keeps the
+            # gizmo aligned; PreserveColorBuffer composites it over the scene
+            # colour, and clearing its own depth buffer (PreserveDepthBuffer
+            # off) draws it in front of any occluding body. The orientation
+            # marker widget already claims layer 1, so the gizmo overlay sits
+            # on layer 2.
+            if vtkRenderer is not None:
+                try:
+                    self._gizmo_overlay_renderer = vtkRenderer()
+                    self._gizmo_overlay_renderer.SetLayer(2)
+                    self._gizmo_overlay_renderer.InteractiveOff()
+                    self._gizmo_overlay_renderer.SetActiveCamera(self._renderer.GetActiveCamera())
+                    self._gizmo_overlay_renderer.SetPreserveColorBuffer(True)
+                    self._gizmo_overlay_renderer.SetPreserveDepthBuffer(False)
+                    render_window.SetNumberOfLayers(3)
+                    render_window.AddRenderer(self._gizmo_overlay_renderer)
+                except Exception as exc:
+                    self._gizmo_overlay_renderer = None
+                    self.editor.append_debug(f"Open 3D gizmo overlay layer unavailable: {exc}")
 
             self._vtk_widget.Initialize()
             self._install_pick_only_left_click_bindings()
@@ -1536,8 +1562,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         try:
             x, y = self._vtk_interactor.GetEventPosition()
-            self._picker.Pick(x, y, 0.0, self._renderer)
-            actor = self._picker.GetActor()
+            actor = self._pick_actor_with_gizmo_overlay(x, y)
         except Exception:
             return None
         info = self._placement_handle_info_for_actor_key(self._actor_key(actor))
@@ -3188,8 +3213,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         try:
             x, y = self._vtk_interactor.GetEventPosition()
-            self._picker.Pick(x, y, 0.0, self._renderer)
-            actor = self._picker.GetActor()
+            actor = self._pick_actor_with_gizmo_overlay(x, y)
         except Exception:
             return None
         actor_key = self._actor_key(actor) if actor is not None else None
@@ -4904,6 +4928,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         flat_shading: bool = False,
         backface_culling: bool = True,
         glassy: bool = False,
+        overlay_on_top: bool = False,
     ):
         if self._renderer is None or vtkActor is None or vtkDataSetMapper is None:
             return None
@@ -5009,8 +5034,62 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self._actor_placement_rotate_map[actor_key] = (int(row_index), str(axis), float(delta_deg))
             if actor_key is not None and pick_thickness_dimension is not None:
                 self._register_thickness_dimension_actor(actor, int(pick_thickness_dimension))
-        self._renderer.AddActor(actor)
+        # bugs/0112: gizmo handles go to the always-on-top overlay layer so they
+        # are never buried behind an adjacent body; everything else renders in
+        # the main layer. When the overlay layer is unavailable (headless), fall
+        # back to the main renderer so behaviour is unchanged.
+        if overlay_on_top and self._gizmo_overlay_renderer is not None:
+            self._gizmo_overlay_renderer.AddActor(actor)
+        else:
+            self._renderer.AddActor(actor)
         return actor
+
+    def _remove_actor_from_renderers(self, actor) -> None:
+        """Remove an actor from both the main and gizmo-overlay renderers.
+
+        Gizmo handles (bugs/0112) live in the overlay renderer; everything else
+        in the main one. Removing from a renderer that doesn't hold the actor is
+        a harmless no-op, so callers can use this without tracking which layer
+        an actor went to.
+        """
+        if actor is None:
+            return
+        for renderer in (self._renderer, self._gizmo_overlay_renderer):
+            if renderer is None:
+                continue
+            try:
+                renderer.RemoveActor(actor)
+            except Exception:
+                pass
+
+    def _pick_actor_with_gizmo_overlay(self, x, y):
+        """Pick the always-on-top gizmo overlay layer first, then the main scene.
+
+        The move/rotate gizmo handles render in a dedicated overlay renderer
+        (bugs/0112), so picking the main renderer alone returns whatever body
+        occludes a buried handle. Picking the overlay first lets a handle that
+        is geometrically behind an adjacent body still be grabbed. Leaves
+        ``self._picker`` in the state of the returned hit so downstream
+        ``GetPickPosition()`` / ``GetCellId()`` reflect it.
+        """
+        if self._picker is None:
+            return None
+        overlay = self._gizmo_overlay_renderer
+        if overlay is not None:
+            try:
+                self._picker.Pick(x, y, 0.0, overlay)
+                actor = self._picker.GetActor()
+            except Exception:
+                actor = None
+            if actor is not None:
+                return actor
+        if self._renderer is None:
+            return None
+        try:
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            return self._picker.GetActor()
+        except Exception:
+            return None
 
     @staticmethod
     def _lens_rim_circle_polyline(mesh, *, segments: int = 144):
@@ -5247,11 +5326,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._actor_placement_move_visual_keys.discard(actor_key)
             if actor is None:
                 continue
-            try:
-                self._renderer.RemoveActor(actor)
-                removed = True
-            except Exception:
-                pass
+            self._remove_actor_from_renderers(actor)
+            removed = True
         return removed
 
     def _show_rotation_handles(self) -> bool:
@@ -10734,6 +10810,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     opacity=0.82 if sign > 0 else 0.55,
                     pick_placement_move=(row_index, axis, float(sign * step)),
                     flat_shading=True,
+                    overlay_on_top=True,
                 )
                 if actor is not None:
                     count += 1
@@ -10925,6 +11002,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 pick_placement_rotate=(row_index, axis, float(step)),
                 flat_shading=True,
                 backface_culling=False,
+                overlay_on_top=True,
             )
             if actor is not None:
                 count += 1
@@ -10949,6 +11027,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     pick_placement_rotate=(row_index, axis, float(delta_deg)),
                     flat_shading=True,
                     backface_culling=False,
+                    overlay_on_top=True,
                 )
                 if arrow_actor is not None:
                     count += 1

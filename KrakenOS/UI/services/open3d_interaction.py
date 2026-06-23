@@ -126,21 +126,6 @@ class Open3DInteractionService:
         except Exception:
             shift_additive = False
         x, y = self._vtk_interactor.GetEventPosition()
-        pick_start = self._timing_start("left_click_vtk_pick", x=int(x), y=int(y))
-        actor = None
-        try:
-            _traced_pick(self._picker, x, y, 0.0, self._renderer, site="left_click")
-            actor = self._picker.GetActor()
-            if actor is None:
-                get_view_prop = getattr(self._picker, "GetViewProp", None)
-                if callable(get_view_prop):
-                    try:
-                        actor = get_view_prop()
-                    except Exception:
-                        actor = None
-        finally:
-            self._timing_finish(pick_start, actor_found=actor is not None)
-        actor_key = self._actor_key(actor)
         active_pick_mode = bool(
             self._source_target_pick_mode
             or self._center_row_to_ray_mode
@@ -153,6 +138,30 @@ class Open3DInteractionService:
             or self._step_surface_center_axis_pick_mode
             or bool(getattr(self.editor, "_cad_axis_pick_any", False))
         )
+        pick_start = self._timing_start("left_click_vtk_pick", x=int(x), y=int(y))
+        actor = None
+        try:
+            # bugs/0112: outside an active target-pick mode, the always-on-top
+            # move/rotate gizmo overlay gets first crack so a handle buried
+            # behind an adjacent body is still grabbable. In a target-pick mode
+            # the gizmo is inert, so pick the scene directly.
+            overlay = getattr(self, "_gizmo_overlay_renderer", None)
+            if not active_pick_mode and overlay is not None:
+                _traced_pick(self._picker, x, y, 0.0, overlay, site="left_click_gizmo")
+                actor = self._picker.GetActor()
+            if actor is None:
+                _traced_pick(self._picker, x, y, 0.0, self._renderer, site="left_click")
+                actor = self._picker.GetActor()
+                if actor is None:
+                    get_view_prop = getattr(self._picker, "GetViewProp", None)
+                    if callable(get_view_prop):
+                        try:
+                            actor = get_view_prop()
+                        except Exception:
+                            actor = None
+        finally:
+            self._timing_finish(pick_start, actor_found=actor is not None)
+        actor_key = self._actor_key(actor)
         if active_pick_mode and actor_key is not None and (
             actor_key in self._actor_step_rotate_map
             or actor_key in self._actor_step_rotate_visual_keys
@@ -684,8 +693,11 @@ class Open3DInteractionService:
             picker.PickFromListOn()
         except Exception:
             return None, None, -1
+        # bugs/0112: gizmo handles render in the always-on-top overlay layer, so
+        # hover-pick them there (the pick list already restricts to handles).
+        hover_renderer = getattr(self, "_gizmo_overlay_renderer", None) or self._renderer
         try:
-            picker.Pick(float(x), float(y), 0.0, self._renderer)
+            picker.Pick(float(x), float(y), 0.0, hover_renderer)
             actor = picker.GetActor()
         except Exception:
             return None, None, -1

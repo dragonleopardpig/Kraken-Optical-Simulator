@@ -6866,6 +6866,39 @@ def phase_101_step_overlay_bake_vectorized(
     return result
 
 
+def phase_102_gizmo_overlay_on_top(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A selected element's move/rotate gizmo (rotation arcs + arrowheads +
+    translate arrows) could be buried behind an adjacent body -- the handle you
+    needed to grab was hidden behind, e.g., a camera body next to the selected
+    optical solid (bug 0112). VTK has no clean per-actor depth-test disable, so
+    the gizmo handles now render in a dedicated overlay renderer (own layer,
+    shared camera, `PreserveColorBuffer` on / `PreserveDepthBuffer` off) so they
+    always draw in front; per-renderer picking keeps a buried handle grabbable.
+    Guard `validate_open3d_gizmo_overlay_on_top.run_checks` asserts the overlay
+    renderer is built with the right flags, every gizmo-handle actor routes to
+    the overlay, the pick/remove helpers exist, the refresh clears the overlay,
+    and the interaction service picks the overlay first.
+    """
+    result = PhaseResult(
+        name="Phase 102: Open 3D selected-element move/rotate gizmo renders always-on-top (overlay layer)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_gizmo_overlay_on_top import run_checks
+        checks = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"gizmo-overlay guard raised: {exc!r}")
+        return result
+    failed = [f"{name}: {detail}" for name, passed, detail in checks if not passed]
+    result.passed = not failed
+    result.detail["checks_failed"] = len(failed)
+    for note in failed:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7013,6 +7046,7 @@ def main() -> int:
             phase_99_nonseq_branching_requirement_cache,
             phase_100_face_editor_scrollable,
             phase_101_step_overlay_bake_vectorized,
+            phase_102_gizmo_overlay_on_top,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
