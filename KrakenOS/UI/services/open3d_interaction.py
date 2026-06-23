@@ -1001,10 +1001,16 @@ class Open3DInteractionService:
         axis_pick_any = bool(getattr(self.editor, "_cad_axis_pick_any", False))
         led_edge_pick = bool(getattr(self.editor, "_cad_led_object_edge_pick", False))
         target_label = "led" if led_edge_pick else requested_label
+        # bugs/0117: track when target_label is set purely by carry-priming (a
+        # freshly imported/selected STEP) versus an explicit axis-pick / led-edge
+        # mode. Only the carry-primed case wants the overlay-aware gizmo hover
+        # added below; the explicit pick modes keep their prior hover behaviour.
+        carry_primed_target = False
         if target_label is None and not axis_pick_any:
             carry_label = self._step_carry_label()
             if carry_label is not None:
                 target_label = str(carry_label)
+                carry_primed_target = True
         if target_label is None and not axis_pick_any:
             if self._picker is not None and self._renderer is not None and self._vtk_interactor is not None:
                 try:
@@ -1139,13 +1145,26 @@ class Open3DInteractionService:
         except Exception:
             actor = None
         actor_key = self._actor_key(actor)
-        step_rotate = self._actor_step_rotate_map.get(actor_key) if actor_key is not None else None
-        step_translate = self._actor_step_translate_map.get(actor_key) if actor_key is not None else None
-        placement_rotate = self._actor_placement_rotate_map.get(actor_key) if actor_key is not None else None
-        placement_move = self._actor_placement_move_map.get(actor_key) if actor_key is not None else None
+        # bugs/0117: the move/rotate gizmo handles render in the always-on-top
+        # overlay layer (bugs/0112), so the main-renderer pick above never
+        # returns them. A carry-primed STEP (e.g. a freshly imported LED) routes
+        # through this branch because the carry block set target_label, so its
+        # handles could not hover-highlight even though its faces could ("can
+        # highlight LED edges, but not the gizmo"). Resolve the gizmo maps from an
+        # overlay-aware handle pick (it uses _prop_picker, leaving self._picker
+        # untouched for the face hover below); the main actor_key still drives the
+        # STEP face/feature hover. Gated to the carry-primed case so the explicit
+        # axis-pick / led-edge hover paths are unchanged.
+        handle_key = None
+        if carry_primed_target:
+            _handle_actor, handle_key, _handle_cell = self._passive_hover_pick_rotation_handle(x, y)
+        step_rotate = self._actor_step_rotate_map.get(handle_key) if handle_key is not None else None
+        step_translate = self._actor_step_translate_map.get(handle_key) if handle_key is not None else None
+        placement_rotate = self._actor_placement_rotate_map.get(handle_key) if handle_key is not None else None
+        placement_move = self._actor_placement_move_map.get(handle_key) if handle_key is not None else None
         if step_rotate is not None:
             self._set_step_hover_outline(None, None)
-            self._set_rotation_handle_hover(actor_key)
+            self._set_rotation_handle_hover(handle_key)
             self._update_hover_status("", render=False)
             label, axis, delta = step_rotate
             self._set_axis_pick_cursor(False)
@@ -1154,7 +1173,7 @@ class Open3DInteractionService:
             return
         if step_translate is not None:
             self._set_step_hover_outline(None, None)
-            self._set_rotation_handle_hover(actor_key)
+            self._set_rotation_handle_hover(handle_key)
             self._update_hover_status("", render=False)
             label, axis, _delta = step_translate
             self._set_axis_pick_cursor(False)
@@ -1163,7 +1182,7 @@ class Open3DInteractionService:
             return
         if placement_rotate is not None:
             self._set_step_hover_outline(None, None)
-            self._set_rotation_handle_hover(actor_key)
+            self._set_rotation_handle_hover(handle_key)
             self._update_hover_status("", render=False)
             row_index, axis, delta = placement_rotate
             self._set_axis_pick_cursor(False)
@@ -1171,7 +1190,7 @@ class Open3DInteractionService:
             return
         if placement_move is not None:
             self._set_step_hover_outline(None, None)
-            self._set_rotation_handle_hover(actor_key)
+            self._set_rotation_handle_hover(handle_key)
             self._update_hover_status("", render=False)
             row_index, axis, _delta = placement_move
             self._set_axis_pick_cursor(False)

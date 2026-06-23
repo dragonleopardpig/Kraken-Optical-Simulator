@@ -7101,6 +7101,44 @@ def phase_108_face_assign_sparse_retrace(
     return result
 
 
+def phase_109_carry_primed_gizmo_hover(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0117: a carry-primed STEP (a freshly imported LED) must hover-highlight
+    its move/rotate gizmo, not only its edges.
+
+    A freshly imported/selected STEP is carry-primed, so `_step_carry_label()` is
+    non-None and `_on_mouse_move` sets `target_label`, skipping the idle-hover
+    block -- the only one that hover-picks gizmo handles via the overlay-aware
+    `_passive_hover_pick_rotation_handle`. The carry-primed branch picked the MAIN
+    renderer instead, which is blind to the gizmo overlay layer (bugs/0112), so the
+    handle maps always returned None and the gizmo never hover-highlighted ("can
+    highlight LED edges, but not the gizmo"). The fix resolves the gizmo maps from
+    the overlay-aware handle pick (gated on a `carry_primed_target` flag so the
+    explicit axis-pick / led-edge hover paths are unchanged). The guard
+    (`validate_open3d_carry_primed_gizmo_hover`) is display-free source contracts;
+    the gold highlight itself is an in-app eyeball.
+    """
+    result = PhaseResult(
+        name="Phase 109: Open 3D carry-primed STEP hover-highlights its gizmo (overlay-aware)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_carry_primed_gizmo_hover import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"carry-primed gizmo-hover guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("carry-primed gizmo-hover guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7255,6 +7293,7 @@ def main() -> int:
             phase_106_measure_preview_drag,
             phase_107_measure_offset_adjust,
             phase_108_face_assign_sparse_retrace,
+            phase_109_carry_primed_gizmo_hover,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
