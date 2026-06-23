@@ -511,6 +511,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._measure_offset_drag_state: dict[str, object] | None = None
         self._actor_measure_handle_map: dict[str, int] = {}
         self._measure_preview_actors: list[Any] = []
+        # bugs/0115 (CAD-flow step 3): after the SECOND Measure click, control
+        # transfers straight to that dimension's offset -- the bare mouse moves the
+        # standoff (resize cursor) and a plain click finishes -- so the CAD gesture
+        # is click/click/move-offset/click without grabbing the midpoint handle.
+        self._measure_offset_adjust_mode = False
+        self._measure_offset_adjust_state: dict[str, object] | None = None
         # bugs/0053: re-anchor a thickness/distance dimension endpoint. Ctrl-click
         # a dimension arrow to enter a modal pick (the nearer endpoint then follows
         # the bare mouse, no button held); a plain click on a surface/edge commits.
@@ -11336,6 +11342,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # on edges/surfaces drop a distance dimension between them.
         self._measure_pick_mode = True
         self._measure_p0 = None
+        self._measure_offset_adjust_mode = False
+        self._measure_offset_adjust_state = None
         for _flag in (
             "_source_target_pick_mode", "_center_row_to_ray_mode", "_placement_target_pick_mode",
             "_placement_orient_pick_mode", "_placement_orient_ray_mode", "_step_carry_snap_ray_mode",
@@ -11352,6 +11360,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def clear_measurements(self) -> None:
         self._measure_pick_mode = False
         self._measure_p0 = None
+        self._measure_offset_adjust_mode = False
+        self._measure_offset_adjust_state = None
         self._measure_segments = []
         self._hidden_measure_segments = set()
         try:
@@ -11499,7 +11509,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         dist = abs(float(np.dot(p1 - p0, n0))) if n0 is not None else float(np.linalg.norm(p1 - p0))
         self._refresh_measure_overlays()
         kind = "normal" if n0 is not None else "point-to-point"
-        self.status_var.set(f"Measured {dist:.4g} mm ({kind}, live). Press 'Measure' for another, or 'Clear'.")
+        # bugs/0115 (CAD-flow step 3): hand control to the dimension's offset so the
+        # user nudges the standoff with the bare mouse (resize cursor) and a plain
+        # click finishes -- no need to hunt for the midpoint grab handle.
+        if self._begin_measure_offset_adjust(seg):
+            self.status_var.set(
+                f"Measured {dist:.4g} mm ({kind}). Move to set the dimension offset, click to finish."
+            )
+        else:
+            self.status_var.set(
+                f"Measured {dist:.4g} mm ({kind}, live). Press 'Measure' for another, or 'Clear'."
+            )
         self._update_mode_badge()
 
     def _refresh_measure_overlays(self) -> None:
@@ -11894,6 +11914,93 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._refresh_measure_overlays()
         try:
             self._update_mode_badge()
+        except Exception:
+            pass
+
+    def _begin_measure_offset_adjust(self, seg) -> bool:
+        """bugs/0115 (CAD-flow step 3): enter the modal offset-adjust after the
+        SECOND Measure pick. Seeds the segment's explicit standoff from its current
+        lane so the dimension starts where it was just drawn, then the bare mouse
+        drives it (``_apply_measure_offset_adjust_motion``) until a click finishes
+        (``_finish_measure_offset_adjust``). Returns False (mode not entered) when
+        the segment has no resolvable perpendicular direction."""
+        if seg is None:
+            return False
+        axis = self._measure_offset_direction(seg)
+        if axis is None:
+            return False
+        axis_mid, od_hat = axis
+        if seg.get("offset", None) is None:
+            offsets = self._measure_segment_offsets()
+            seg["offset"] = float(offsets.get(int(seg.get("id", -1)), 45.0))
+        self._measure_offset_adjust_state = {
+            "seg_id": int(seg.get("id", -1)),
+            "axis_mid": np.asarray(axis_mid, dtype=float).reshape(-1)[:3].tolist(),
+            "od": np.asarray(od_hat, dtype=float).reshape(-1)[:3].tolist(),
+        }
+        self._measure_offset_adjust_mode = True
+        try:
+            self._set_measure_offset_adjust_cursor()
+        except Exception:
+            pass
+        self._refresh_measure_overlays()
+        return True
+
+    def _apply_measure_offset_adjust_motion(self) -> None:
+        """Bare-mouse live update while adjusting the offset: the standoff follows
+        the cursor (line-to-line closest approach along the segment's +Y lane
+        direction) and the dimension redraws. The VTK interactor position is set by
+        the Tk binding (``set_event_info``) before this fires, so GetEventPosition
+        already returns flipped VTK display coords (no extra flip). bugs/0115."""
+        state = getattr(self, "_measure_offset_adjust_state", None)
+        if state is None or self._vtk_interactor is None:
+            return
+        try:
+            x, y = self._vtk_interactor.GetEventPosition()
+        except Exception:
+            return
+        amt = self._measure_offset_amount_for_cursor(state, (x, y))
+        if amt is None:
+            return
+        seg = self._measure_segment_by_id(int(state.get("seg_id", -1)))
+        if seg is None:
+            return
+        seg["offset"] = float(amt)
+        try:
+            self._set_measure_offset_adjust_cursor()
+        except Exception:
+            pass
+        self._refresh_measure_overlays()
+
+    def _finish_measure_offset_adjust(self) -> None:
+        """A click commits the offset-adjust: leave the modal, restore the cursor,
+        and keep the segment's explicit ``seg['offset']`` (out of lane numbering so
+        it never shifts the other auto-stacked dimensions). bugs/0115."""
+        state = getattr(self, "_measure_offset_adjust_state", None)
+        self._measure_offset_adjust_mode = False
+        self._measure_offset_adjust_state = None
+        seg = self._measure_segment_by_id(int(state.get("seg_id", -1))) if state else None
+        try:
+            self._set_axis_pick_cursor(False)
+        except Exception:
+            pass
+        if seg is not None:
+            self.status_var.set(
+                f"Dimension offset set to {float(seg.get('offset', 0.0)):.4g} mm. "
+                "Press 'Measure' for another, or 'Clear'."
+            )
+        self._refresh_measure_overlays()
+        try:
+            self._update_mode_badge()
+        except Exception:
+            pass
+
+    def _set_measure_offset_adjust_cursor(self) -> None:
+        """Resize cursor (vertical double-arrow) while the offset follows the mouse,
+        so the gesture reads as "drag the dimension spacing". bugs/0115."""
+        try:
+            if self._vtk_widget is not None:
+                self._vtk_widget.configure(cursor="sb_v_double_arrow")
         except Exception:
             pass
 

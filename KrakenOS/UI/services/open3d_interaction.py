@@ -739,7 +739,9 @@ class Open3DInteractionService:
         # bugs/0053: while re-anchoring a dimension, the Tk <Motion> binding
         # (hover_motion) drives the live arrow + snap highlight; suppress the
         # generic VTK-side hover here so the two don't fight over highlights.
-        if self._dimension_anchor_pick_mode:
+        # bugs/0115: the same holds while the offset-adjust modal owns the bare
+        # mouse (CAD-flow step 3) -- the Tk binding drives the live standoff.
+        if self._dimension_anchor_pick_mode or getattr(self, "_measure_offset_adjust_mode", False):
             return
         hover_critical = bool(
             self._center_row_to_ray_mode

@@ -7036,6 +7036,40 @@ def phase_106_measure_preview_drag(
     return result
 
 
+def phase_107_measure_offset_adjust(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Manual Measure auto offset-adjust after the 2nd click (bug 0115, CAD-flow
+    step 3). The CAD gesture is click / click / move-the-offset / click: once the
+    second Measure point lands, `_record_measure_point` hands control straight to
+    that dimension's offset via `_begin_measure_offset_adjust` (seeding the explicit
+    `seg['offset']` from its current lane). The bare mouse then drives
+    `_apply_measure_offset_adjust_motion` (resize cursor; reads the VTK interactor
+    position directly -- no Tk->VTK flip, since the bare-mouse pos is already flipped
+    by set_event_info) until a plain click runs `_finish_measure_offset_adjust`,
+    which keeps the explicit offset out of lane numbering so the other dimensions
+    never shift. Guard `validate_open3d_measure_offset_adjust.run_checks` asserts the
+    begin/motion/finish state transitions, the no-flip motion, the resize cursor, and
+    the Tk-binding + VTK-hover wiring.
+    """
+    result = PhaseResult(
+        name="Phase 107: Open 3D manual Measure auto offset-adjust after the 2nd click"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_measure_offset_adjust import run_checks
+        checks = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"measure-offset-adjust guard raised: {exc!r}")
+        return result
+    failed = [f"{name}: {detail}" for name, passed, detail in checks if not passed]
+    result.passed = not failed
+    result.detail["checks_failed"] = len(failed)
+    for note in failed:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7188,6 +7222,7 @@ def main() -> int:
             phase_104_promoted_solid_face_hover,
             phase_105_measure_center_snap_lanes,
             phase_106_measure_preview_drag,
+            phase_107_measure_offset_adjust,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

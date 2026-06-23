@@ -106,6 +106,19 @@ class Open3DMouseBindingsService:
                 self._step_carry_drag_state = None
                 self._row_carry_drag_state = None
                 self._measure_offset_drag_state = None
+            elif getattr(self, "_measure_offset_adjust_mode", False):
+                # bugs/0115 (CAD-flow step 3): a plain click while adjusting the
+                # offset commits it (handled in left_release). Don't arm any
+                # drag/carry detector -- the click must not select, carry, or grab
+                # the midpoint handle under it.
+                self._dimension_anchor_drag_state = None
+                self._step_translate_drag_state = None
+                self._axis_slide_drag_state = None
+                self._placement_drag_state = None
+                self._thickness_drag_state = None
+                self._step_carry_drag_state = None
+                self._row_carry_drag_state = None
+                self._measure_offset_drag_state = None
             else:
                 self._dimension_anchor_drag_state = None
                 # bugs/0115 (Commit 2): a left-press on a dimension midpoint handle
@@ -173,6 +186,15 @@ class Open3DMouseBindingsService:
                     # button down); this must not fall through to the orbit branch.
                     self._cancel_step_carry_hold_timer()
                     self._apply_dimension_anchor_pick_motion()
+                    self._left_drag_last_xy = current
+                    return "break"
+                if getattr(self, "_measure_offset_adjust_mode", False):
+                    # bugs/0115 (CAD-flow step 3): a held drag during offset-adjust
+                    # also live-moves the standoff (same as the bare mouse) and must
+                    # never fall through to the camera-orbit branch.
+                    self._cancel_step_carry_hold_timer()
+                    self._cancel_row_carry_hold_timer()
+                    self._apply_measure_offset_adjust_motion()
                     self._left_drag_last_xy = current
                     return "break"
                 if ctrl_pressed:
@@ -289,6 +311,12 @@ class Open3DMouseBindingsService:
                     self._commit_dimension_anchor_pick()
                     return "break"
                 return "break"
+            if getattr(self, "_measure_offset_adjust_mode", False):
+                # bugs/0115 (CAD-flow step 3): any release (a click, or the end of a
+                # drag-adjust) finishes the offset-adjust and keeps the standoff. The
+                # release must not also pick/select the surface under the cursor.
+                self._finish_measure_offset_adjust()
+                return "break"
             if step_carry_follow_state is not None:
                 if should_pick and not ctrl_active:
                     self.stop_step_carry()
@@ -373,6 +401,16 @@ class Open3DMouseBindingsService:
                 set_event_info(event)
                 try:
                     self._apply_dimension_anchor_pick_motion()
+                except Exception:
+                    pass
+                return
+            # bugs/0115 (CAD-flow step 3): after the 2nd Measure click the bare
+            # mouse moves the new dimension's offset (resize cursor) until a plain
+            # click finishes; drive it the same bare-mouse way as the re-anchor.
+            if getattr(self, "_measure_offset_adjust_mode", False):
+                set_event_info(event)
+                try:
+                    self._apply_measure_offset_adjust_motion()
                 except Exception:
                     pass
                 return

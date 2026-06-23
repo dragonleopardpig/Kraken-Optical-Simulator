@@ -188,3 +188,87 @@ new phase, no baseline change.
 In-app eyeball owed (follow-up): the value label should be fully readable beside the
 dot, and dragging the dot up/down should make the dimension follow the cursor
 smoothly instead of snapping to the axis.
+
+---
+
+## Commit 3 — CAD-flow step 3: auto offset-adjust after the 2nd click
+
+**Request (2026-06-23):**
+> "Perhaps implement usual CAD style: 1) click on one edge or surface, arrow
+> appeared, snap to the mouse pointer. 2) move the arrow live to another edge or
+> surface. 3) click snap the 2nd arrow to the edge or surface, automatically mouse
+> pointer snap to the segment center and let user to move the offset (mouse pointer
+> change to resize pointer of course)."
+
+Steps 1 & 2 are exactly Commit 2's live rubber-band preview (the dashed dimension +
+live label that follows the cursor after the first pick). Step 3 is new: instead of
+making the user hunt for the midpoint grab handle (Commit 2's `#4`), the **second
+Measure click hands control straight to that dimension's offset** — the bare mouse
+moves the standoff (resize cursor) and a plain click finishes. The gesture is now
+click / click / move-offset / click.
+
+This is modelled on the proven dimension-anchor re-pick modal (bugs/0053): a bare
+mouse drives the live update via the Tk `<Motion>` binding, a plain click commits,
+and the VTK-side hover is suppressed so the two don't fight.
+
+`KrakenOS/UI/open3d_inspector.py`:
+
+- **`_measure_offset_adjust_mode` / `_measure_offset_adjust_state`** (new init) — the
+  modal flag + `{seg_id, axis_mid, od}` state. Reset in `start_measure_pick` and
+  `clear_measurements`.
+- **`_record_measure_point` tail** — after the second point lands (and
+  `_measure_pick_mode` is cleared), calls **`_begin_measure_offset_adjust(seg)`**;
+  the status line becomes "Move to set the dimension offset, click to finish."
+- **`_begin_measure_offset_adjust(seg)`** — resolves the segment's +Y lane direction
+  (`_measure_offset_direction`), **seeds `seg['offset']` from its current auto lane**
+  (so the dimension starts exactly where it was just drawn), arms the modal, and
+  sets the resize cursor. Returns False (modal not entered) for a `None` segment or
+  one whose geometry can't resolve a perpendicular.
+- **`_apply_measure_offset_adjust_motion()`** — the bare-mouse live update: reads the
+  VTK interactor position **directly** (it is already flipped to VTK display coords
+  by `set_event_info`, so — unlike the Commit-2 handle drag — it must **not** call
+  `_tk_xy_to_vtk_display_xy`, or it would mirror), computes the standoff via the same
+  exact `_measure_offset_amount_for_cursor` closest-approach math, writes
+  `seg['offset']`, and redraws.
+- **`_finish_measure_offset_adjust()`** — a click leaves the modal, restores the
+  cursor, and keeps the explicit `seg['offset']` (still excluded from lane numbering,
+  so the other auto-stacked dimensions never shift).
+- **`_set_measure_offset_adjust_cursor()`** — the `sb_v_double_arrow` resize cursor
+  while adjusting ("mouse pointer change to resize pointer").
+
+`KrakenOS/UI/services/open3d_mouse_bindings.py`:
+
+- **`hover_motion`** — a new branch (after the dimension-anchor one): while the modal
+  is active, `set_event_info(event)` + `_apply_measure_offset_adjust_motion()`.
+- **`left_press`** — a new `elif` nulls every drag/carry detector while the modal is
+  active, so the commit click never selects, carries, or grabs the midpoint handle.
+- **`left_motion`** — a held drag during adjust also live-moves the standoff and
+  returns "break" so it never falls through to camera orbit.
+- **`left_release`** — any release (a click, or the end of a drag-adjust) runs
+  `_finish_measure_offset_adjust()` and returns "break" (no scene pick).
+
+`KrakenOS/UI/services/open3d_interaction.py`:
+
+- **`_on_mouse_move`** — the early-return guard now also fires for
+  `_measure_offset_adjust_mode`, so the generic VTK-side hover doesn't fight the
+  Tk-driven live standoff.
+
+Blast radius is tight: the modal only exists between the second Measure click and
+the next click; every other code path is untouched.
+
+### Tests (Commit 3)
+
+- `python -m KrakenOS.UI.validate_open3d_measure_offset_adjust` — display-free
+  `run_checks()` (8 assertions): the 2nd pick enters the modal (mode on, state seeded
+  from the lane); the bare-mouse motion sets the standoff (closest approach along +Y
+  → 70 mm); a click finishes the modal and keeps the explicit offset out of lane
+  numbering (the other segment keeps its base lane); an unresolvable / `None` segment
+  does not enter the modal; the motion reads VTK `GetEventPosition()` directly (no
+  Tk→VTK flip); the resize cursor is `sb_v_double_arrow`; `_record_measure_point`
+  arms the modal; the Tk bindings (motion/release) + VTK-hover suppression are wired.
+- Penta **phase 107** (new; baseline → 108 phases) runs `run_checks()` only.
+
+In-app eyeball owed (Commit 3): with Measure armed, click the first feature, move to
+the second and click — the cursor should turn into a vertical resize arrow and the
+dimension's offset should follow the bare mouse until a final click locks it in,
+without the other dimensions shifting.
