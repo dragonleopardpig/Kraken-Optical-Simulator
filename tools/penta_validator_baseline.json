@@ -107,7 +107,8 @@
     "102": "pass",
     "103": "pass",
     "104": "pass",
-    "105": "pass"
+    "105": "pass",
+    "106": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -215,6 +216,7 @@
     "102": "Open 3D selected-element move/rotate gizmo renders always-on-top (overlay layer)",
     "103": "Open 3D display-only overlay hover outline tracks the re-aligned body (no ghost)",
     "104": "Open 3D promoted optical-solid row hover-highlights each face (idle hover)",
-    "105": "Open 3D manual Measure snaps to component centres + stacks axis-aligned lanes"
+    "105": "Open 3D manual Measure snaps to component centres + stacks axis-aligned lanes",
+    "106": "Open 3D manual Measure live preview + draggable lane handle"
   }
 }

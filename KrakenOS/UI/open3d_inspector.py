@@ -505,6 +505,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._axis_slide_drag_state: dict[str, object] | None = None
         self._step_translate_drag_state: dict[str, object] | None = None
         self._step_translate_gap_actors: list[Any] = []
+        # bugs/0115 (Commit 2): drag a measure dimension's midpoint handle to
+        # override that segment's lane standoff (seg["offset"]); plus a live
+        # rubber-band preview while a measurement is half-placed.
+        self._measure_offset_drag_state: dict[str, object] | None = None
+        self._actor_measure_handle_map: dict[str, int] = {}
+        self._measure_preview_actors: list[Any] = []
         # bugs/0053: re-anchor a thickness/distance dimension endpoint. Ctrl-click
         # a dimension arrow to enter a modal pick (the nearer endpoint then follows
         # the bare mouse, no button held); a plain click on a surface/edge commits.
@@ -11356,6 +11362,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._clear_dimension_anchor_snap_highlight()
         except Exception:
             pass
+        try:
+            self._clear_measure_preview()
+        except Exception:
+            pass
         self._refresh_measure_overlays()
         self.status_var.set("Measurements cleared.")
         self._update_mode_badge()
@@ -11479,6 +11489,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._clear_dimension_anchor_snap_highlight()
         except Exception:
             pass
+        try:
+            self._clear_measure_preview()
+        except Exception:
+            pass
         p0 = self._resolve_measure_point(seg["p0"], seg["r0"], seg["dz0"])
         p1 = self._resolve_measure_point(seg["p1"], seg["r1"], seg["dz1"])
         n0 = np.asarray(seg["n0"], dtype=float) if seg["n0"] else None
@@ -11496,15 +11510,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 pass
         self._measure_actors = []
+        # bugs/0115 (Commit 2): rebuild the {handle actor_key -> seg id} map so a
+        # left-press on a dimension midpoint grabs that segment's lane handle.
+        self._actor_measure_handle_map = {}
         segments = getattr(self, "_measure_segments", [])
         if self._renderer is not None and segments:
-            line_cls = mapper_cls = cone_cls = None
+            line_cls = mapper_cls = cone_cls = sphere_cls = None
             try:
                 from vtkmodules.vtkFiltersSources import vtkLineSource as line_cls  # noqa: F811
                 from vtkmodules.vtkFiltersSources import vtkConeSource as cone_cls  # noqa: F811
+                from vtkmodules.vtkFiltersSources import vtkSphereSource as sphere_cls  # noqa: F811
                 from vtkmodules.vtkRenderingCore import vtkPolyDataMapper as mapper_cls  # noqa: F811
             except Exception:
-                line_cls = mapper_cls = cone_cls = None
+                line_cls = mapper_cls = cone_cls = sphere_cls = None
             hidden = getattr(self, "_hidden_measure_segments", None) or set()
             offsets = self._measure_segment_offsets()
             for _seg in segments:
@@ -11539,6 +11557,30 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                         _meas_line(a0, a1, 2.0, (0.95, 0.55, 0.1))          # dimension line (offset)
                         _meas_line(p0, a0, 1.0, (0.95, 0.7, 0.4))           # witness line 1
                         _meas_line(p1, a1, 1.0, (0.95, 0.7, 0.4))           # witness line 2
+                        # bugs/0115 (Commit 2): a pickable grab handle at the
+                        # dimension midpoint -- drag it perpendicular to override
+                        # this segment's lane standoff.
+                        if sphere_cls is not None and mapper_cls is not None:
+                            try:
+                                _hrad = float(min(max(dist * 0.04, 2.5), 7.0))
+                                _sp = sphere_cls()
+                                _sp.SetCenter(float(mid[0]), float(mid[1]), float(mid[2]))
+                                _sp.SetRadius(_hrad)
+                                _sp.SetThetaResolution(16)
+                                _sp.SetPhiResolution(16)
+                                _hm = mapper_cls()
+                                _hm.SetInputConnection(_sp.GetOutputPort())
+                                _ha = vtkActor()
+                                _ha.SetMapper(_hm)
+                                _ha.PickableOn()
+                                _ha.GetProperty().SetColor(0.98, 0.78, 0.35)
+                                self._add_renderer_view_prop(_ha)
+                                self._measure_actors.append(_ha)
+                                _hk = self._actor_key(_ha)
+                                if _hk is not None:
+                                    self._actor_measure_handle_map[_hk] = int(_seg.get("id", -1))
+                            except Exception:
+                                pass
                         # CAD arrowheads (cones) at both ends of the dimension line, pointing outward
                         if cone_cls is not None and dist > 1e-6:
                             ndir = (a1 - a0) / dist
@@ -11622,11 +11664,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if pickable and x is not None and y is not None:
             self._set_dimension_anchor_snap_highlight(hit_key, int(x), int(y))
             if getattr(self, "_measure_p0", None) is None:
+                self._clear_measure_preview()
                 self.status_var.set("Measure: click the FIRST edge/surface.")
             else:
+                # bugs/0115 (Commit 2): rubber-band the forming dimension from the
+                # first anchor to the snapped point under the cursor.
+                try:
+                    world = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+                    snapped = self._measure_axis_snap_for_pick(hit_key, world)
+                    self._refresh_measure_preview(snapped if snapped is not None else world)
+                except Exception:
+                    self._clear_measure_preview()
                 self.status_var.set("Measure: click the SECOND edge/surface.")
         else:
             self._clear_dimension_anchor_snap_highlight()
+            self._clear_measure_preview()
         try:
             self.render()
         except Exception:
@@ -11696,6 +11748,191 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return p0, p1, a0, a1, mid, dist
         except Exception:
             return None
+
+    def _measure_segment_by_id(self, seg_id):
+        """The measure-segment dict with the given stable id, or None."""
+        for seg in getattr(self, "_measure_segments", []) or []:
+            if int(seg.get("id", -1)) == int(seg_id):
+                return seg
+        return None
+
+    def _measure_offset_direction(self, seg):
+        """The unit perpendicular standoff direction for a segment's dimension line
+        (the +Y, in-X=0-plane lane direction of bugs/0115) plus the raw measured
+        midpoint. Returns ``(axis_mid, od_hat)`` or None. Shared by the lane drag
+        (Commit 2) so the handle drags along the same direction the lane stacks."""
+        try:
+            p0 = self._resolve_measure_point(seg["p0"], seg.get("r0"), seg.get("dz0", 0.0))
+            p1raw = self._resolve_measure_point(seg["p1"], seg.get("r1"), seg.get("dz1", 0.0))
+            n0 = np.asarray(seg["n0"], dtype=float) if seg.get("n0") else None
+            p1 = p0 + n0 * float(np.dot(p1raw - p0, n0)) if n0 is not None else p1raw
+            dist = float(np.linalg.norm(p1 - p0))
+            d = (p1 - p0) / dist if dist > 1e-9 else np.array([0.0, 0.0, 1.0])
+            od = np.array([0.0, 1.0, 0.0]) - float(np.dot([0.0, 1.0, 0.0], d)) * d
+            if float(np.linalg.norm(od)) < 1e-6:
+                od = np.array([1.0, 0.0, 0.0]) - float(np.dot([1.0, 0.0, 0.0], d)) * d
+            on = float(np.linalg.norm(od))
+            if on < 1e-6:
+                return None
+            return (p0 + p1) * 0.5, od / on
+        except Exception:
+            return None
+
+    def _measure_offset_drag_state_from_current_pick(self):
+        """bugs/0115 (Commit 2): if the current left-press landed on a measure
+        dimension's midpoint grab handle, return a drag state ``{seg_id, axis_mid,
+        od}`` so the handle can be dragged perpendicular to set that segment's lane
+        standoff (``seg['offset']``). Suppressed while the Measure tool is armed for
+        a fresh placement (so a placement click never grabs a handle)."""
+        if getattr(self, "_measure_pick_mode", False):
+            return None
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return None
+        handle_map = getattr(self, "_actor_measure_handle_map", None) or {}
+        if not handle_map:
+            return None
+        try:
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            hit = self._picker.GetActor()
+        except Exception:
+            return None
+        key = self._actor_key(hit)
+        if key is None or key not in handle_map:
+            return None
+        seg = self._measure_segment_by_id(int(handle_map[key]))
+        if seg is None:
+            return None
+        axis = self._measure_offset_direction(seg)
+        if axis is None:
+            return None
+        axis_mid, od_hat = axis
+        return {"seg_id": int(handle_map[key]), "axis_mid": axis_mid.tolist(), "od": od_hat.tolist()}
+
+    def _measure_offset_amount_for_cursor(self, state, current_xy):
+        """Standoff distance (mm) for a midpoint-handle drag: the closest approach
+        (along the segment's perpendicular offset direction) of the cursor's pick
+        ray. Clamped to a small minimum so the dragged dimension never collapses
+        onto the optical axis. Returns None if the ray is unavailable. The math is
+        the line-to-line closest point so it is exact for any view. bugs/0115."""
+        axis_mid = np.asarray(state.get("axis_mid"), dtype=float).reshape(-1)[:3]
+        od = np.asarray(state.get("od"), dtype=float).reshape(-1)[:3]
+        if axis_mid.size < 3 or od.size < 3:
+            return None
+        ray = self._display_pick_ray(current_xy)
+        if ray is None:
+            return None
+        origin, direction = ray
+        origin = np.asarray(origin, dtype=float).reshape(-1)[:3]
+        direction = np.asarray(direction, dtype=float).reshape(-1)[:3]
+        a = float(np.dot(od, od))
+        b = float(np.dot(od, direction))
+        c = float(np.dot(direction, direction))
+        w0 = axis_mid - origin
+        d = float(np.dot(od, w0))
+        e = float(np.dot(direction, w0))
+        denom = a * c - b * b
+        if abs(denom) < 1e-9:
+            return None
+        s = (b * e - c * d) / denom
+        return float(max(s, 12.0))
+
+    def _apply_measure_offset_drag_motion(self, current_xy) -> None:
+        """Live-drag a dimension's lane handle: set the segment's explicit standoff
+        from the cursor position and redraw. An explicit ``seg['offset']`` is kept
+        out of lane numbering (``_measure_segment_offsets``), so a dragged dimension
+        never shifts the auto-stacked lanes. bugs/0115 (Commit 2)."""
+        state = getattr(self, "_measure_offset_drag_state", None)
+        if state is None:
+            return
+        seg = self._measure_segment_by_id(int(state.get("seg_id", -1)))
+        if seg is None:
+            return
+        amt = self._measure_offset_amount_for_cursor(state, current_xy)
+        if amt is None:
+            return
+        seg["offset"] = float(amt)
+        self._refresh_measure_overlays()
+
+    def _finish_measure_offset_drag(self, state) -> None:
+        seg = self._measure_segment_by_id(int(state.get("seg_id", -1))) if state else None
+        if seg is not None:
+            self.status_var.set(
+                f"Measure lane standoff set to {float(seg.get('offset', 0.0)):.4g} mm "
+                "(drag the handle to adjust)."
+            )
+        self._refresh_measure_overlays()
+        try:
+            self._update_mode_badge()
+        except Exception:
+            pass
+
+    def _clear_measure_preview(self) -> None:
+        for _actor in getattr(self, "_measure_preview_actors", []) or []:
+            try:
+                self._remove_renderer_view_prop(_actor)
+            except Exception:
+                pass
+        self._measure_preview_actors = []
+
+    def _refresh_measure_preview(self, cursor_world) -> None:
+        """bugs/0115 (Commit 2): live rubber-band. After the FIRST Measure pick,
+        draw a dashed dimension line + live distance label from the anchored first
+        point to the snapped point under the cursor, so the dimension forms on the
+        mouse ("arrow on mouse") before the second click."""
+        self._clear_measure_preview()
+        a0 = getattr(self, "_measure_p0", None)
+        if a0 is None or cursor_world is None or self._renderer is None:
+            return
+        try:
+            p0 = self._resolve_measure_point(a0["p"], a0.get("r"), a0.get("dz", 0.0))
+            p1 = np.asarray(cursor_world, dtype=float).reshape(-1)[:3]
+            if p1.size < 3 or not np.all(np.isfinite(p1)):
+                return
+            dist = float(np.linalg.norm(p1 - p0))
+            line_cls = mapper_cls = None
+            try:
+                from vtkmodules.vtkFiltersSources import vtkLineSource as line_cls  # noqa: F811
+                from vtkmodules.vtkRenderingCore import vtkPolyDataMapper as mapper_cls  # noqa: F811
+            except Exception:
+                line_cls = mapper_cls = None
+            if line_cls is not None and mapper_cls is not None and vtkActor is not None:
+                _s = line_cls()
+                _s.SetPoint1(float(p0[0]), float(p0[1]), float(p0[2]))
+                _s.SetPoint2(float(p1[0]), float(p1[1]), float(p1[2]))
+                _m = mapper_cls()
+                _m.SetInputConnection(_s.GetOutputPort())
+                _act = vtkActor()
+                _act.SetMapper(_m)
+                _act.PickableOff()
+                _p = _act.GetProperty()
+                _p.SetColor(0.4, 0.85, 0.95)
+                _p.SetLineWidth(1.5)
+                try:
+                    _p.SetLineStipplePattern(0xF0F0)
+                    _p.SetLineStippleRepeatFactor(2)
+                except Exception:
+                    pass
+                self._add_renderer_view_prop(_act)
+                self._measure_preview_actors.append(_act)
+            if vtkBillboardTextActor3D is not None:
+                mid = (p0 + p1) * 0.5
+                lbl = vtkBillboardTextActor3D()
+                lbl.SetInput(f"↔ {dist:.4g} mm")
+                lbl.SetPosition(float(mid[0]), float(mid[1]), float(mid[2]))
+                try:
+                    lbl.PickableOff()
+                    tp = lbl.GetTextProperty()
+                    tp.SetFontSize(13)
+                    tp.SetColor(0.0, 0.2, 0.28)
+                    tp.SetBackgroundColor(0.82, 0.95, 1.0)
+                    tp.SetBackgroundOpacity(0.85)
+                except Exception:
+                    pass
+                self._add_renderer_view_prop(lbl)
+                self._measure_preview_actors.append(lbl)
+        except Exception:
+            pass
 
     def _measure_segment_index_near_display_xy(self, x: float, y: float, *, tolerance_px: float = 26.0) -> "int | None":
         """List index of the visible measure segment whose dimension line/label is

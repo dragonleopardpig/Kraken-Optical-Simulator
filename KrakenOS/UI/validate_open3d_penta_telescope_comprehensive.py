@@ -7002,6 +7002,40 @@ def phase_105_measure_center_snap_lanes(
     return result
 
 
+def phase_106_measure_preview_drag(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Manual Measure live rubber-band preview + draggable lane handle (bug 0115,
+    Commit 2). After the first Measure pick a dashed dimension line + live distance
+    label follows the snapped point under the cursor ("arrow on mouse") until the
+    second click (`_refresh_measure_preview`, driven from the Measure hover); and a
+    pickable grab handle at each dimension midpoint (registered in
+    `_actor_measure_handle_map`) can be dragged perpendicular to set that segment's
+    explicit `seg['offset']` lane standoff -- which is kept out of lane numbering so
+    a dragged dimension never shifts the auto-stacked lanes. Guard
+    `validate_open3d_measure_preview_drag.run_checks` asserts the exact drag standoff
+    math (line-to-line closest approach, clamped), that only the dragged segment's
+    offset is set, the preview build/teardown wiring, the per-segment handle, and the
+    Tk mouse-binding press/drag/release gesture.
+    """
+    result = PhaseResult(
+        name="Phase 106: Open 3D manual Measure live preview + draggable lane handle"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_measure_preview_drag import run_checks
+        checks = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"measure-preview-drag guard raised: {exc!r}")
+        return result
+    failed = [f"{name}: {detail}" for name, passed, detail in checks if not passed]
+    result.passed = not failed
+    result.detail["checks_failed"] = len(failed)
+    for note in failed:
+        result.notes.append(note)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7153,6 +7187,7 @@ def main() -> int:
             phase_103_ghost_hover_outline_alignment,
             phase_104_promoted_solid_face_hover,
             phase_105_measure_center_snap_lanes,
+            phase_106_measure_preview_drag,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
