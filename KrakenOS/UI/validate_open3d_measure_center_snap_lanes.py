@@ -124,9 +124,10 @@ def run_checks() -> list[tuple[str, bool, str]]:
          lanes_ok, f"offsets={offs}")
     )
 
-    # 4) the offset endpoints honour the assigned lane and produce a +X standoff that
-    #    keeps the dimension line in the Y=0 plane for an axial (on-axis) segment: the
-    #    line is parallel to the axis, shifted clear in +X, and stays at y=0 (coplanar).
+    # 4) the offset endpoints honour the assigned lane and produce a +Y standoff that
+    #    keeps the dimension line in the X=0 plane for an axial (on-axis) segment: the
+    #    line is parallel to the axis, shifted clear in +Y, and stays at x=0 (coplanar,
+    #    seen face-on in the user's -YZ view).
     fake3 = SimpleNamespace(
         _resolve_measure_point=lambda p, r, dz: np.asarray(p, dtype=float).reshape(3)
     )
@@ -139,14 +140,14 @@ def run_checks() -> list[tuple[str, bool, str]]:
     detail4 = "no result"
     if res is not None:
         p0, p1, a0, a1, mid, dist = res
-        parallel = abs(float(a1[2] - a0[2]) - 55.0) < 1e-6 and abs(float(a1[0] - a0[0])) < 1e-9
-        on_lane = abs(float(a0[0]) - 63.0) < 1e-6 and abs(float(mid[0]) - 63.0) < 1e-6
-        in_plane = abs(float(a0[1])) < 1e-9 and abs(float(a1[1])) < 1e-9 and abs(float(mid[1])) < 1e-9
+        parallel = abs(float(a1[2] - a0[2]) - 55.0) < 1e-6 and abs(float(a1[1] - a0[1])) < 1e-9
+        on_lane = abs(float(a0[1]) - 63.0) < 1e-6 and abs(float(mid[1]) - 63.0) < 1e-6
+        in_plane = abs(float(a0[0])) < 1e-9 and abs(float(a1[0])) < 1e-9 and abs(float(mid[0])) < 1e-9
         anchored = abs(float(a0[2]) - 275.0) < 1e-9
         endpoints_ok = abs(dist - 55.0) < 1e-6 and parallel and on_lane and in_plane and anchored
-        detail4 = f"dist={dist:.3f}, a0={a0.tolist()}, mid_x={float(mid[0]):.3f}, y0={in_plane}"
+        detail4 = f"dist={dist:.3f}, a0={a0.tolist()}, mid_y={float(mid[1]):.3f}, x0={in_plane}"
     results.append(
-        ("_measure_segment_offset_endpoints offsets in +X within the Y=0 plane (coplanar arrows)",
+        ("_measure_segment_offset_endpoints offsets in +Y within the X=0 plane (coplanar arrows)",
          endpoints_ok, detail4)
     )
 
@@ -169,10 +170,10 @@ def run_checks() -> list[tuple[str, bool, str]]:
 
 
 def geometry_lane_proof(png_path: str | None = None) -> tuple[bool, str]:
-    """Prove two axial segments stay COPLANAR in the Y=0 plane and stack on distinct,
-    parallel, non-overlapping lanes along +X (the "align in a plane, arrows adjacent"
-    guarantee). Writes a PNG of the two stacked dimension lines beside the optical
-    axis when GL is available."""
+    """Prove two axial segments stay COPLANAR in the X=0 plane and stack on distinct,
+    parallel, non-overlapping lanes along +Y (the "align in a plane, arrows adjacent"
+    guarantee, seen face-on in the user's -YZ view). Writes a PNG of the two stacked
+    dimension lines beside the optical axis when GL is available."""
     import numpy as np
 
     from KrakenOS.UI.open3d_inspector import Kraken3DInspector
@@ -193,13 +194,13 @@ def geometry_lane_proof(png_path: str | None = None) -> tuple[bool, str]:
     if r0 is not None and r1 is not None:
         _p0a, _p1a, a0a, a1a, mid0, _d0 = r0
         _p0b, _p1b, a0b, a1b, mid1, _d1 = r1
-        lane0 = float(mid0[0])
-        lane1 = float(mid1[0])
-        parallel = abs(float(a1a[0] - a0a[0])) < 1e-9 and abs(float(a1b[0] - a0b[0])) < 1e-9
-        coplanar = max(abs(float(a0a[1])), abs(float(a1a[1])), abs(float(a0b[1])), abs(float(a1b[1]))) < 1e-9
+        lane0 = float(mid0[1])
+        lane1 = float(mid1[1])
+        parallel = abs(float(a1a[1] - a0a[1])) < 1e-9 and abs(float(a1b[1] - a0b[1])) < 1e-9
+        coplanar = max(abs(float(a0a[0])), abs(float(a1a[0])), abs(float(a0b[0])), abs(float(a1b[0]))) < 1e-9
         separated = abs(lane1 - lane0 - 18.0) < 1e-6 and lane0 > 0.0
         passed = parallel and coplanar and separated
-        detail = f"lanes x=({lane0:.1f},{lane1:.1f}) gap={lane1 - lane0:.1f} mm, y=0 coplanar={coplanar}"
+        detail = f"lanes y=({lane0:.1f},{lane1:.1f}) gap={lane1 - lane0:.1f} mm, x=0 coplanar={coplanar}"
 
         if png_path and os.environ.get("DISPLAY"):
             try:
@@ -209,7 +210,7 @@ def geometry_lane_proof(png_path: str | None = None) -> tuple[bool, str]:
                 pl.add_mesh(pv.Line((0, 0, 250), (0, 0, 450)), color=(0.4, 0.4, 0.4), line_width=2)
                 pl.add_mesh(pv.Line(tuple(a0a), tuple(a1a)), color=(0.95, 0.55, 0.1), line_width=4)
                 pl.add_mesh(pv.Line(tuple(a0b), tuple(a1b)), color=(0.95, 0.55, 0.1), line_width=4)
-                pl.view_vector((0.0, 1.0, 0.0), viewup=(0.0, 0.0, 1.0))
+                pl.view_vector((1.0, 0.0, 0.0), viewup=(0.0, 0.0, 1.0))
                 pl.screenshot(str(png_path))
                 pl.close()
             except Exception:

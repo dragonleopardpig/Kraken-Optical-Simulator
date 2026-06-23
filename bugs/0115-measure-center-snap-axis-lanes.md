@@ -27,7 +27,7 @@ Four consolidated sub-features, built in two commits:
    edge snaps to the front, the object plane to the on-axis FOV centre); a bare-edge
    click keeps raw point-to-point.
 2. **Coplanar stacked lanes** — visible dimensions draw parallel to the axis, all
-   **within the Y=0 plane** (offset in +X), each auto-assigned a lane (45 mm base,
+   **within the X=0 plane** (offset in +Y), each auto-assigned a lane (45 mm base,
    +18 mm each) so the arrows sit adjacent to each other without overlapping.
 3. **Live rubber-band preview** — after the first pick a dimension line + live
    distance label follows the cursor until the second click (CAD "arrow on mouse").
@@ -44,9 +44,10 @@ Four consolidated sub-features, built in two commits:
   centre; it projects the **clicked point** onto the axis, keeping its z. The object
   plane (a flat disk) still resolves to the FOV centre because its only z is the
   plane's.
-- *"The whole point is to align the measurements in a plane (e.g. Y=0) so the arrow
-  segments go adjacent to each other."* → the lane offset is **+X within the Y=0
-  plane**, not +Y out of plane, so every axis-aligned dimension stays coplanar.
+- *"The whole point is to align the measurements in a plane (e.g. X=0) so the arrow
+  segments go adjacent to each other."* → the lane offset is **+Y within the X=0
+  plane**, not +X out of plane, so every axis-aligned dimension stays coplanar. (The
+  user works in the **-YZ view**, where the X=0 plane is seen face-on.)
 
 ---
 
@@ -74,9 +75,9 @@ Four consolidated sub-features, built in two commits:
   Commit 2) keeps that standoff and is **excluded from lane numbering** so a dragged
   dimension never shifts the rest.
 - **`_measure_segment_offset_endpoints(seg, offset_amt=None)`** — now takes the
-  assigned lane; the perpendicular standoff is **+X (within the Y=0 plane)** — it
-  falls back to +Y only when the segment itself runs along X — so the dimension lines
-  stay coplanar at y=0. The **draw loop** (`_refresh_measure_overlays`) and the
+  assigned lane; the perpendicular standoff is **+Y (within the X=0 plane)** — it
+  falls back to +X only when the segment itself runs along Y — so the dimension lines
+  stay coplanar at x=0. The **draw loop** (`_refresh_measure_overlays`) and the
   **right-click proximity finder** (`_measure_segment_index_near_display_xy`) both
   compute the offsets dict once and pass the per-segment amount, so a right-click
   lands on exactly the line that is drawn.
@@ -95,16 +96,16 @@ only changes the dimension-line standoff (the measured value is unchanged).
   the front) and returns `None` for an edge pick; `_project_world_onto_optical_axis`
   lands on the nearest segment (folded branch); `_measure_segment_offsets` stacks
   lanes 45/63, honours an explicit offset, skips hidden;
-  `_measure_segment_offset_endpoints` offsets in +X within the Y=0 plane (coplanar);
+  `_measure_segment_offset_endpoints` offsets in +Y within the X=0 plane (coplanar);
   the draw loop + proximity finder share the lane offsets. Plus
-  `geometry_lane_proof()`: two axial segments stay coplanar in Y=0 and stack on
-  distinct, parallel, non-overlapping lanes (x=45 / x=63, 18 mm gap).
+  `geometry_lane_proof()`: two axial segments stay coplanar in X=0 and stack on
+  distinct, parallel, non-overlapping lanes (y=45 / y=63, 18 mm gap).
 - Penta **phase 105** (new; baseline → 106 phases) runs `run_checks()` only.
 
 In-app eyeball owed (Commit 1): with Measure armed, click the object plane then the
 imaging-lens front edge — the dimension should snap each pick onto the optical axis
 at its own z (front edge stays at the front), run parallel to the axis within the
-Y=0 plane, and a second measurement should stack in an adjacent lane (also at y=0)
+X=0 plane, and a second measurement should stack in an adjacent lane (also at x=0)
 without overlapping the first.
 
 Commit 2 (live rubber-band preview + draggable offset) is the follow-up.

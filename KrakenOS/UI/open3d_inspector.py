@@ -11637,7 +11637,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         axis-aligned dimensions stack side-by-side instead of overlapping. Returns
         ``{seg_id: offset_mm}``. A segment with an explicit ``seg['offset']`` (a user
         drag) keeps that standoff and is excluded from lane numbering; the rest take
-        ``base + lane*step`` in id order so they fan out (in +X, within the Y=0 plane)
+        ``base + lane*step`` in id order so they fan out (in +Y, within the X=0 plane)
         off the optical axis, coplanar and adjacent to each other."""
         segments = getattr(self, "_measure_segments", []) or []
         hidden = getattr(self, "_hidden_measure_segments", None) or set()
@@ -11675,13 +11675,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             dist = float(np.linalg.norm(p1 - p0))
             # offset the dimension line perpendicular, clear of the geometry (CAD-style);
             # seg["offset"] (a future drag) overrides the default standoff.
-            # bugs/0115: offset within the Y=0 plane (+X) so every axis-aligned
-            # measurement stays COPLANAR and the arrows stack adjacent to each other;
-            # fall back to +Y only when the segment itself runs along X.
+            # bugs/0115: offset within the X=0 plane (+Y) so every axis-aligned
+            # measurement stays COPLANAR (the user works in the -YZ view) and the
+            # arrows stack adjacent to each other; fall back to +X only when the
+            # segment itself runs along Y.
             d = (p1 - p0) / dist if dist > 1e-9 else np.array([0.0, 0.0, 1.0])
-            od = np.array([1.0, 0.0, 0.0]) - float(np.dot([1.0, 0.0, 0.0], d)) * d
+            od = np.array([0.0, 1.0, 0.0]) - float(np.dot([0.0, 1.0, 0.0], d)) * d
             if float(np.linalg.norm(od)) < 1e-6:
-                od = np.array([0.0, 1.0, 0.0]) - float(np.dot([0.0, 1.0, 0.0], d)) * d
+                od = np.array([1.0, 0.0, 0.0]) - float(np.dot([1.0, 0.0, 0.0], d)) * d
             on = float(np.linalg.norm(od))
             amt = float(
                 offset_amt
