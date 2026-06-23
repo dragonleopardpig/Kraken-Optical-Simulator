@@ -36,6 +36,10 @@ class Open3DStepOverlayRefreshService:
         inspector._actor_step_follow_map.pop(actor_key, None)
         inspector._actor_step_rotate_map.pop(actor_key, None)
         inspector._actor_step_rotate_visual_keys.discard(actor_key)
+        # bugs/0118: sibling of the step-rotate pop above -- a torn-down translate
+        # arrow must drop its pick-map entry too, else it points at an overlay-
+        # orphaned actor.
+        inspector._actor_step_translate_map.pop(actor_key, None)
         inspector._actor_optical_axis_map.pop(actor_key, None)
         inspector._actor_placement_move_map.pop(actor_key, None)
         inspector._actor_placement_rotate_map.pop(actor_key, None)
@@ -90,7 +94,13 @@ class Open3DStepOverlayRefreshService:
             if actor is None:
                 continue
             try:
-                inspector._remove_renderer_view_prop(actor)
+                # bugs/0118: gizmo handles live ONLY in the always-on-top overlay
+                # renderer (bugs/0112). The main-only _remove_renderer_view_prop
+                # left them orphaned there -- visible but unpicked after their map
+                # entries were cleared -- so a rotated STEP grew a dead ghost gizmo
+                # ("rotate once, then can't select the gizmo"). Remove from both
+                # renderers; it is a harmless no-op for a main-only actor.
+                inspector._remove_actor_from_renderers(actor)
                 removed += 1
             except Exception:
                 pass

@@ -7139,6 +7139,41 @@ def phase_109_carry_primed_gizmo_hover(
     return result
 
 
+def phase_110_step_overlay_gizmo_overlay_removal(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0118: a partial STEP-overlay refresh must remove gizmo handle actors
+    from the gizmo OVERLAY renderer, not only the main renderer.
+
+    Gizmo handles live only in `_gizmo_overlay_renderer` (bugs/0112). The partial
+    refresh `refresh_imported_step_overlay` tore the old overlay down with the
+    main-only `_remove_renderer_view_prop`, orphaning the handles in the overlay
+    (still visible) while their pick-maps were cleared -- so a rotated STEP grew a
+    dead "ghost gizmo" ("rotate once, then can't select the gizmo"). The fix removes
+    via `_remove_actor_from_renderers` (main + overlay) and pops the sibling
+    `_actor_step_translate_map`. The guard drives the real teardown against fake
+    renderers; the live rotate->re-pick loop is an in-app eyeball.
+    """
+    result = PhaseResult(
+        name="Phase 110: Open 3D partial STEP refresh clears gizmo handles from the overlay renderer"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_step_overlay_removes_gizmo_from_overlay import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"overlay-orphan gizmo guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("overlay-orphan gizmo guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7294,6 +7329,7 @@ def main() -> int:
             phase_107_measure_offset_adjust,
             phase_108_face_assign_sparse_retrace,
             phase_109_carry_primed_gizmo_hover,
+            phase_110_step_overlay_gizmo_overlay_removal,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

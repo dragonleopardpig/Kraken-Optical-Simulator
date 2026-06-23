@@ -111,7 +111,8 @@
     "106": "pass",
     "107": "pass",
     "108": "pass",
-    "109": "pass"
+    "109": "pass",
+    "110": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -223,6 +224,7 @@
     "106": "Open 3D manual Measure live preview + draggable lane handle",
     "107": "Open 3D manual Measure auto offset-adjust after the 2nd click",
     "108": "Open 3D face-assign promote clamps its forced retrace to a sparse fan",
-    "109": "Open 3D carry-primed STEP hover-highlights its gizmo (overlay-aware)"
+    "109": "Open 3D carry-primed STEP hover-highlights its gizmo (overlay-aware)",
+    "110": "Open 3D partial STEP refresh clears gizmo handles from the overlay renderer"
   }
 }
