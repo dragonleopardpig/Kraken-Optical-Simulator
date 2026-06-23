@@ -691,6 +691,11 @@ class Open3DThicknessDimensionService:
             scene_bundle, scene_span=scene_span, base_offset=base_offset,
             view_normal=view_normal, screen_up=screen_up,
         )
+        # bugs/0123: the dedicated object->LED-edge measurement overlay (amber).
+        count += self._emit_led_object_edge_dimension(
+            system, base_offset=base_offset, scene_span=scene_span,
+            view_normal=view_normal, screen_up=screen_up, screen_right=screen_right,
+        )
         return count
 
     def _overlay_axial_spans_within(
@@ -794,6 +799,7 @@ class Open3DThicknessDimensionService:
         drag_start: np.ndarray,
         drag_end: np.ndarray,
         label_orientation_deg: float = 0.0,
+        register_drag: bool = True,
     ) -> int:
         """Draw one dimension (shaft + leaders + label) between ``base_lo`` and
         ``base_hi``, offset to ``side``.
@@ -819,7 +825,8 @@ class Open3DThicknessDimensionService:
         )
         if actor is None:
             return 0
-        self._register_drag_actor(actor, row_index, drag_start, drag_end)
+        if register_drag:
+            self._register_drag_actor(actor, row_index, drag_start, drag_end)
         count = 1
         try:
             for tip, anchor in ((base_lo, start), (base_hi, end)):
@@ -851,6 +858,14 @@ class Open3DThicknessDimensionService:
     # bugs/0053: warm magenta tone marks a re-anchored MEASUREMENT, distinct from
     # the blue model-thickness arrows and the green live-gap labels.
     REANCHOR_DIMENSION_COLOR = (0.62, 0.18, 0.58)
+
+    # bugs/0123: the dedicated object->LED-edge measurement overlay. A SENTINEL row
+    # id keeps it out of the table-row dimension dispatch -- a plain click routes to
+    # the LED edge-distance dialog (which MOVES the LED to the typed distance); a
+    # later increment adds drag-to-re-anchor (re-measure to a different LED edge,
+    # LED stays put). Amber, matching the legacy LED-edge arrow.
+    LED_OBJECT_EDGE_DIM_ROW = -7
+    LED_OBJECT_EDGE_DIMENSION_COLOR = (0.96, 0.62, 0.10)
 
     def reanchored_endpoints(
         self, p0: np.ndarray, p1: np.ndarray, override: dict
@@ -908,6 +923,72 @@ class Open3DThicknessDimensionService:
             label=label,
             drag_start=q0,
             drag_end=q1,
+        )
+
+    def _emit_led_object_edge_dimension(
+        self,
+        system: Any,
+        *,
+        base_offset: float,
+        scene_span: float,
+        view_normal,
+        screen_up,
+        screen_right,
+    ) -> int:
+        """bugs/0123: a dedicated object->LED-edge thickness overlay (amber),
+        separate from the optical S0 object->lens arrow. It shows the distance the
+        LED edge-distance dialog sets, and a plain click on it re-opens that dialog
+        (which moves the LED). Drawn only when an LED STEP is imported with a set
+        edge distance. The drag-to-re-anchor (re-measure to a different LED edge,
+        LED stays put) is a later increment, so this arrow registers no drag."""
+        editor = self.editor
+        if getattr(editor, "imported_led_step_path", None) is None:
+            return 0
+        try:
+            distance = float(getattr(editor, "led_object_edge_distance_mm", 0.0) or 0.0)
+        except Exception:
+            return 0
+        if not np.isfinite(distance) or distance <= 1e-6:
+            return 0
+        try:
+            p0 = np.asarray(
+                editor._surface_reference_world_point(0, system=system), dtype=float
+            ).reshape(3)
+        except Exception:
+            p0 = np.zeros(3, dtype=float)
+        if not np.all(np.isfinite(p0)):
+            p0 = np.zeros(3, dtype=float)
+        # The LED edge sits `distance` mm downstream of the object plane along the
+        # optical (+z) axis -- exactly the value the dialog sets, so the arrow always
+        # lands on the edge the distance refers to.
+        axis = np.array([0.0, 0.0, 1.0], dtype=float)
+        p1 = p0 + axis * distance
+        segment = p1 - p0
+        side = self.offset_direction(segment, view_normal=view_normal, screen_up=screen_up)
+        # Sit further off-axis than the blue S0 row arrow (band 1.0) so the two
+        # object-anchored arrows don't overlap.
+        offset = side * base_offset * 2.4
+        label = f"Object → LED = {distance:.4g} mm"
+        seg_norm = float(np.linalg.norm(segment))
+        axis_unit = segment / seg_norm if seg_norm > 1e-9 else axis
+        try:
+            orientation = self._perp_label_orientation(axis_unit, screen_right, screen_up)
+        except Exception:
+            orientation = 0.0
+        return self._emit_span_dimension(
+            row_index=self.LED_OBJECT_EDGE_DIM_ROW,
+            base_lo=p0,
+            base_hi=p1,
+            side=side,
+            offset=offset,
+            base_offset=base_offset,
+            scene_span=scene_span,
+            color=self.LED_OBJECT_EDGE_DIMENSION_COLOR,
+            label=label,
+            drag_start=p0,
+            drag_end=p1,
+            label_orientation_deg=orientation,
+            register_drag=False,
         )
 
     def _display_direction_for_drag(self, start: np.ndarray, end: np.ndarray) -> tuple[np.ndarray, float]:
@@ -1247,6 +1328,15 @@ class Open3DThicknessDimensionService:
 
     def edit_dimension(self, row_index: int) -> None:
         row_index = int(row_index)
+        # bugs/0123: the object->LED-edge overlay isn't a table row -- a click on it
+        # re-opens the LED edge-distance dialog, which moves the LED to the typed
+        # object-to-edge distance (re-using the proven set_led_edge_distance path).
+        if row_index == self.LED_OBJECT_EDGE_DIM_ROW:
+            try:
+                self.editor.set_led_edge_distance()
+            except Exception as exc:
+                self.inspector.status_var.set(f"LED edge distance edit failed: {exc}")
+            return
         if not (0 <= row_index < len(self.editor.rows) - 1):
             self.inspector.status_var.set("Thickness dimension: choose a non-terminal table row.")
             return

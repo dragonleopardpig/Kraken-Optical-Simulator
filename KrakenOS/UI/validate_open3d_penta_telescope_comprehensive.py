@@ -7363,6 +7363,41 @@ def phase_114_decoration_does_not_carve_thickness(
     return result
 
 
+def phase_115_object_to_led_dimension(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0123: a dedicated, clickable object->LED-edge thickness overlay.
+
+    After bugs/0122 made S0 a clean object->lens working distance, the user still
+    needs a SEPARATE object->LED-edge dimension (the LED is an independent
+    decoration). It is drawn amber from the object plane to the LED edge at the
+    set distance, carries a SENTINEL row id (so it stays out of the table-row
+    dispatch), registers NO drag yet, and a plain click on it re-opens the LED
+    edge-distance dialog (which MOVES the LED). This phase runs the display-free
+    guard (emit geometry/label/color, sentinel + register_drag=False, no overlay
+    without an LED, click routes to the LED dialog, source contract). The live
+    embedded-VTK click is an in-app eyeball.
+    """
+    result = PhaseResult(
+        name="Phase 115: Open 3D object->LED-edge dimension overlay (clickable, moves the LED)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_object_to_led_dimension import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"object->LED overlay guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("object->LED overlay guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7523,6 +7558,7 @@ def main() -> int:
             phase_112_center_picked_face_targets_global_axis,
             phase_113_right_click_prefers_hovered_face,
             phase_114_decoration_does_not_carve_thickness,
+            phase_115_object_to_led_dimension,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

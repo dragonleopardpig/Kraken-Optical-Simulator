@@ -116,7 +116,8 @@
     "111": "pass",
     "112": "pass",
     "113": "pass",
-    "114": "pass"
+    "114": "pass",
+    "115": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -233,6 +234,7 @@
     "111": "Open 3D right-click 'Center Picked Face -> Optical Axis' is translate-only",
     "112": "Open 3D 'Center Picked Face -> Optical Axis' lands on the global axis (not a nearest traced ray)",
     "113": "Open 3D right-click acts on the hovered face, not an overlapping body (BS slid into LED)",
-    "114": "Open 3D decoration overlay (LED/camera) does not carve an optical thickness dimension"
+    "114": "Open 3D decoration overlay (LED/camera) does not carve an optical thickness dimension",
+    "115": "Open 3D dedicated object->LED-edge dimension overlay (clickable, click re-opens the LED distance dialog)"
   }
 }
