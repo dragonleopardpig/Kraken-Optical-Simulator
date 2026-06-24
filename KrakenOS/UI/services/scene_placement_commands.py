@@ -97,6 +97,14 @@ class ScenePlacementMixin:
         row.desp_x = float(row.desp_x) + float(delta[0])
         row.desp_y = float(row.desp_y) + float(delta[1])
         row.desp_z = float(row.desp_z) + float(delta[2])
+        # BS<->LED two-body glue: a direct drag of the promoted beam-splitter row carries the
+        # glued LED overlay by the same vector (guarded against carry-back from the LED side).
+        if (
+            not getattr(self, "_optical_led_carry_active", False)
+            and bool(getattr(self, "_optical_led_glued", False))
+            and self._promoted_optical_solid_row_index("optical") == row_index
+        ):
+            self._carry_glued_optical_led("optical", delta[:3])
         row.advanced = dict(row.advanced or {})
         settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
         settings["last_translate_axis"] = "xyz"
@@ -2505,8 +2513,8 @@ class ScenePlacementMixin:
         rigid unit -- a later drag of either carries the other by the same delta, preserving their
         current relative pose. Requires both STEPs imported. Returns True when the state changed."""
         glued = bool(glued)
-        if glued and (self._step_path_for_label("optical") is None or self._step_path_for_label("led") is None):
-            self.status_var.set("Glue BS to LED: import both the beam-splitter (optical) and the LED STEP first.")
+        if glued and (not self._optical_bs_body_present() or self._step_path_for_label("led") is None):
+            self.status_var.set("Glue BS to LED: import the LED and import or promote the beam splitter first.")
             return False
         if bool(getattr(self, "_optical_led_glued", False)) == glued:
             self.status_var.set("Beam splitter is already glued to the LED." if glued else "Beam splitter is not glued to the LED.")
@@ -2518,6 +2526,69 @@ class ScenePlacementMixin:
             else "Beam splitter unglued from the LED."
         )
         return True
+
+    def _promoted_optical_solid_row_index(self, label: str = "optical") -> "int | None":
+        """Row index of the promoted optical solid that came from STEP overlay ``label``
+        (a beam splitter promoted from the "optical" overlay), or None.  Lets the BS<->LED
+        glue (item 3) keep working after the BS overlay is promoted away (bugs/0127)."""
+        label = str(label or "").strip().lower()
+        for index, row in enumerate(getattr(self, "rows", None) or []):
+            try:
+                if str(self._open3d_step_label_for_optical_solid_row(row) or "").strip().lower() == label:
+                    return index
+            except Exception:
+                continue
+        return None
+
+    def _optical_bs_body_present(self) -> bool:
+        """True when a beam-splitter body exists as EITHER the 'optical' STEP overlay or a
+        promoted optical solid, so BS<->LED glue is meaningful even post-promotion (0127)."""
+        try:
+            if self._step_path_for_label("optical") is not None:
+                return True
+        except Exception:
+            pass
+        return self._promoted_optical_solid_row_index("optical") is not None
+
+    def _carry_glued_optical_led(self, moved_label: str, applied) -> None:
+        """Item 3 carry: when the BS<->LED rigid glue is active, move the glued PARTNER of the
+        just-moved body by the same world delta, preserving their relative pose.  The beam
+        splitter may be EITHER the 'optical' overlay OR a promoted optical solid (bugs/0127);
+        the LED is always an overlay.  Re-entrancy guarded so the partner move never carries
+        back (the LED move sets only an overlay offset; the BS move calls the row primitive
+        with the guard up, which skips its own carry hook)."""
+        if getattr(self, "_optical_led_carry_active", False):
+            return
+        if not bool(getattr(self, "_optical_led_glued", False)):
+            return
+        moved = str(moved_label or "").strip().lower()
+        if moved not in ("optical", "led"):
+            return
+        try:
+            delta = np.asarray(applied, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return
+        if delta.size < 3 or not np.all(np.isfinite(delta)) or not np.any(np.abs(delta) > 1e-9):
+            return
+        partner = "led" if moved == "optical" else "optical"
+        self._optical_led_carry_active = True
+        try:
+            try:
+                partner_is_overlay = self._step_path_for_label(partner) is not None
+            except Exception:
+                partner_is_overlay = False
+            if partner_is_overlay:
+                cur = np.asarray(self._step_placement_offset_xyz(partner), dtype=float).reshape(-1)[:3]
+                self._set_step_placement_offset_xyz(partner, tuple(float(v) for v in (cur + delta)))
+                return
+            if partner == "optical":
+                row_index = self._promoted_optical_solid_row_index("optical")
+                if row_index is not None:
+                    self.translate_scene_row_pose_vector(
+                        row_index, delta, record_history=False, sync_table=False
+                    )
+        finally:
+            self._optical_led_carry_active = False
 
     # --- imported-solid resize (drag a face to grow a dimension) ------------- #
     # The resize is stored as per-axis target extents in the solid's *native*
@@ -2781,12 +2852,9 @@ class ScenePlacementMixin:
             self._invalidate_preview_scene_trace()
         self._set_step_placement_offset_xyz(label, next_offset)
         # Item 3: BS<->LED two-body glue -- the optical (beam splitter) + led overlays move as ONE
-        # rigid unit, so mirror this placement delta onto the glued partner (direct set, no recursion).
-        if label in ("optical", "led") and bool(getattr(self, "_optical_led_glued", False)):
-            partner = "led" if label == "optical" else "optical"
-            if self._step_path_for_label(partner) is not None:
-                p_next = np.asarray(self._step_placement_offset_xyz(partner), dtype=float).reshape(-1)[:3] + applied[:3]
-                self._set_step_placement_offset_xyz(partner, p_next)
+        # rigid unit. The partner may be a STEP overlay OR a promoted solid row (after the BS is
+        # promoted), so _carry_glued_optical_led handles both and guards against carry-back.
+        self._carry_glued_optical_led(label, applied)
         self._selected_step_label = label
         if record_history:
             self._commit_history_capture()

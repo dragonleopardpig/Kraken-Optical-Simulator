@@ -81,7 +81,7 @@ def run_checks() -> "tuple[bool, list[str]]":
     added = svc.append_element_context_actions(m, step_label="optical")
     if not added:
         failures.append("FAIL: optical overlay added no element actions")
-    for need in ("Promote to Optical Element", "Glue STEP to Surrogate"):
+    for need in ("Promote to Optical Element", "Reset BS to Auto Placement"):
         if need not in m.labels:
             failures.append(f"FAIL: optical overlay menu missing {need!r} (labels={m.labels})")
     if not any("Resize" in lbl for lbl in m.labels):
@@ -92,8 +92,8 @@ def run_checks() -> "tuple[bool, list[str]]":
     svc.append_element_context_actions(m2, step_label="led")
     if "Promote to Optical Element" in m2.labels:
         failures.append(f"FAIL: led decoration must NOT offer Promote (labels={m2.labels})")
-    if "Glue STEP to Surrogate" not in m2.labels:
-        failures.append(f"FAIL: led decoration should still offer Glue to Surrogate (labels={m2.labels})")
+    if "Reset LED to Object Station" not in m2.labels:
+        failures.append(f"FAIL: led decoration should still offer the surrogate reset (labels={m2.labels})")
 
     # A) Unknown label adds nothing.
     m3 = _FakeMenu()

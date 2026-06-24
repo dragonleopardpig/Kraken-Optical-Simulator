@@ -963,6 +963,15 @@ class LayoutOpticalSolidWorkflowMixin:
             except Exception:
                 history_started = False
         setattr(row, attr, before + delta)
+        # BS<->LED two-body glue: a direct per-axis drag of the promoted beam-splitter row carries
+        # the glued LED overlay by the same vector (guarded against carry-back from the LED side).
+        if (
+            not getattr(self, "_optical_led_carry_active", False)
+            and bool(getattr(self, "_optical_led_glued", False))
+            and self._promoted_optical_solid_row_index("optical") == row_index
+        ):
+            vec = {"x": (delta, 0.0, 0.0), "y": (0.0, delta, 0.0), "z": (0.0, 0.0, delta)}[axis_key]
+            self._carry_glued_optical_led("optical", vec)
         row.advanced = dict(row.advanced or {})
         settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
         settings["last_translate_axis"] = axis_key

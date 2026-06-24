@@ -329,7 +329,7 @@ class Open3DFaceAssignmentService:
                 return False
             decoration = le.is_step_overlay_decoration(step_label)
             menu.add_command(
-                label="Glue STEP to Surrogate",
+                label=self._step_surrogate_reset_label(step_label),
                 command=lambda picked_label=step_label: self._glue_step_to_surrogate_from_context(picked_label),
             )
             # Item 3: BS<->LED two-body glue. The UNGLUE control must stay reachable
@@ -371,6 +371,8 @@ class Open3DFaceAssignmentService:
                     )
                 if self._row_is_glued_optical_bs(row_index):
                     menu.add_command(label="Unglue BS from LED", command=lambda: self._set_optical_led_glue(False))
+                elif self._row_is_glueable_optical_bs(row_index):
+                    menu.add_command(label="Glue BS to LED (move together)", command=lambda: self._set_optical_led_glue(True))
                 menu.add_separator()
                 self._build_row_actions_cascade(menu, row_index)
                 return True
@@ -383,6 +385,9 @@ class Open3DFaceAssignmentService:
                     menu.add_separator()
                 if self._row_is_glued_optical_bs(row_index):
                     menu.add_command(label="Unglue BS from LED", command=lambda: self._set_optical_led_glue(False))
+                    menu.add_separator()
+                elif self._row_is_glueable_optical_bs(row_index):
+                    menu.add_command(label="Glue BS to LED (move together)", command=lambda: self._set_optical_led_glue(True))
                     menu.add_separator()
                 self._build_row_actions_cascade(menu, row_index)
                 return True
@@ -519,21 +524,37 @@ class Open3DFaceAssignmentService:
             except Exception:
                 pass
 
+    @staticmethod
+    def _step_surrogate_reset_label(step_label: str) -> str:
+        """The "Glue STEP to Surrogate" action actually RESETS an overlay to its
+        automatic optical station (zeroes the drag offsets); it is NOT the two-body
+        BS<->LED glue. Give it an action-accurate, per-element label so it never reads
+        as a second "Glue ..." item beside "Glue BS to LED" (bugs/0127)."""
+        return {
+            "led": "Reset LED to Object Station",
+            "camera": "Reset Camera to Image Plane",
+            "optical": "Reset BS to Auto Placement",
+        }.get(str(step_label or "").strip().lower(), "Glue STEP to Surrogate")
+
     def _glue_step_to_surrogate_from_context(self, label: str) -> None:
-        """Right-click "Glue STEP to Surrogate": select the clicked overlay and
-        re-apply its automatic optical-surrogate placement (bugs/0077 lens
-        centring etc.)."""
+        """Right-click surrogate reset: select the clicked overlay and re-apply its
+        automatic optical-surrogate placement (bugs/0077 lens centring etc.)."""
         self.editor.select_step_component(label)
         self._debug_trace("glue_step_to_surrogate_from_context", label=label)
         self.glue_selected_step_to_surrogate()
 
     def _optical_led_glue_available(self) -> bool:
-        """Item 3: both the optical (beam splitter) and LED STEPs are imported (glue is meaningful)."""
+        """Item 3: the LED overlay plus a beam-splitter BODY (the 'optical' overlay OR a
+        promoted optical solid) are present, so the two-body glue is meaningful. After the
+        BS is promoted its overlay is gone, but the promoted solid row is still a valid glue
+        partner -- without this the glue item vanished and the user got funnelled into the
+        misnamed surrogate reset (bugs/0127)."""
         try:
-            return (
-                self.editor._step_path_for_label("optical") is not None
-                and self.editor._step_path_for_label("led") is not None
-            )
+            if self.editor._step_path_for_label("led") is None:
+                return False
+            if self.editor._step_path_for_label("optical") is not None:
+                return True
+            return self.editor._promoted_optical_solid_row_index("optical") is not None
         except Exception:
             return False
 
@@ -554,6 +575,20 @@ class Open3DFaceAssignmentService:
                 return False
             label = str(self.editor._open3d_step_label_for_optical_solid_row(row) or "").strip().lower()
             return label == "optical"
+        except Exception:
+            return False
+
+    def _row_is_glueable_optical_bs(self, row_index: int) -> bool:
+        """bugs/0127: True when this promoted row IS the beam splitter and an LED overlay
+        is present to glue it to, but they are not glued yet -- so the promoted-row
+        right-click can offer "Glue BS to LED" where the user sees the body, not only on
+        the LED overlay."""
+        try:
+            if self.editor.optical_led_glued():
+                return False
+            if self.editor._promoted_optical_solid_row_index("optical") != int(row_index):
+                return False
+            return self.editor._step_path_for_label("led") is not None
         except Exception:
             return False
 

@@ -7481,6 +7481,41 @@ def phase_117_ray_count_respects_nonbranching(
     return result
 
 
+def phase_118_led_bs_glue_promoted(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0127: the LED<->beam-splitter glue must stay reachable + hold after promote.
+
+    Promoting the beam splitter turns its "optical" STEP overlay into a promoted
+    solid ROW, which used to hide the "Glue BS to LED" item (the gate required BOTH
+    overlays) and funnelled the user into the misnamed "Glue STEP to Surrogate" reset
+    (flags flag_20260624_085546_724 + flag_20260624_085743_911). The fix gates glue +
+    menu availability on a BS *body* (overlay OR promoted row), carries the glued
+    partner on every drag primitive (`_carry_glued_optical_led`, the row primitives
+    behind a re-entrancy guard so the carry never doubles back), and relabels the
+    surrogate reset per element. The guard binds the real ScenePlacementMixin glue/
+    carry methods onto a light fake editor and is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 118: Open 3D LED<->promoted-BS glue stays reachable and carries both bodies"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_bs_glue_promoted import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-bs-glue-promoted guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("led-bs-glue-promoted guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7644,6 +7679,7 @@ def main() -> int:
             phase_115_object_to_led_dimension,
             phase_116_hover_key_carries_step_label,
             phase_117_ray_count_respects_nonbranching,
+            phase_118_led_bs_glue_promoted,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

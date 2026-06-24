@@ -92,8 +92,8 @@ def run_checks() -> "tuple[bool, list[str]]":
     svc.append_element_context_actions(m, step_label="led")
     if "Unglue BS from LED" not in m.labels:
         failures.append(f"FAIL: glued LED overlay must offer Unglue even when BS is promoted (labels={m.labels})")
-    if "Glue STEP to Surrogate" not in m.labels:
-        failures.append(f"FAIL: LED overlay lost the unrelated 'Glue STEP to Surrogate' reset (labels={m.labels})")
+    if "Reset LED to Object Station" not in m.labels:
+        failures.append(f"FAIL: LED overlay lost the unrelated surrogate reset (labels={m.labels})")
 
     # B) Not glued, both overlays imported -> offer Glue (not Unglue).
     svc2 = _make_service(
@@ -108,7 +108,7 @@ def run_checks() -> "tuple[bool, list[str]]":
         failures.append(f"FAIL: not-glued must NOT offer Unglue (labels={m2.labels})")
 
     # B') Not glued, only the optical overlay imported -> no BS<->LED item at all,
-    #     but the "Glue STEP to Surrogate" reset is still present.
+    #     but the surrogate reset is still present.
     svc3 = _make_service(
         optical_led_glued=lambda: False,
         _step_path_for_label=lambda lbl: "/optical.step" if lbl == "optical" else None,
@@ -117,8 +117,8 @@ def run_checks() -> "tuple[bool, list[str]]":
     svc3.append_element_context_actions(m3, step_label="optical")
     if any("BS to LED" in lbl or "Unglue BS" in lbl for lbl in m3.labels):
         failures.append(f"FAIL: a lone overlay should offer no BS<->LED glue/unglue (labels={m3.labels})")
-    if "Glue STEP to Surrogate" not in m3.labels:
-        failures.append(f"FAIL: lone overlay lost 'Glue STEP to Surrogate' (labels={m3.labels})")
+    if "Reset BS to Auto Placement" not in m3.labels:
+        failures.append(f"FAIL: lone overlay lost the surrogate reset (labels={m3.labels})")
 
     # C) The promoted beam-splitter ROW is recognised as the glued BS.
     bs_row = SimpleNamespace(name="S1 BS", advanced={"StepOverlayPromotion": {"step_label": "optical"}})

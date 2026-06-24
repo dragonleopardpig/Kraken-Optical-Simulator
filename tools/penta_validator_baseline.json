@@ -119,7 +119,8 @@
     "114": "pass",
     "115": "pass",
     "116": "pass",
-    "117": "pass"
+    "117": "pass",
+    "118": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -239,6 +240,7 @@
     "114": "Open 3D decoration overlay (LED/camera) does not carve an optical thickness dimension",
     "115": "Open 3D object->LED-edge dimension overlay tracks the LIVE LED edge (clickable; LED drag updates the measurement)",
     "116": "Open 3D passive hover key carries the resolved STEP label (BS-in-LED right-click override fires)",
-    "117": "Open 3D Ray Count respects a non-branching non-seq scene (no 20 -> 201 cone explosion)"
+    "117": "Open 3D Ray Count respects a non-branching non-seq scene (no 20 -> 201 cone explosion)",
+    "118": "Open 3D LED<->promoted-BS glue stays reachable and carries both bodies"
   }
 }
