@@ -252,6 +252,7 @@ class Open3DThicknessDimensionService:
         drag_start: np.ndarray | None = None,
         drag_end: np.ndarray | None = None,
         orientation_deg: float = 0.0,
+        perp_axis: np.ndarray | None = None,
     ) -> bool:
         actor_cls = self.billboard_text_actor_cls
         if self.inspector._renderer is None or actor_cls is None:
@@ -284,11 +285,36 @@ class Open3DThicknessDimensionService:
             self.inspector._register_thickness_dimension_actor(actor, int(row_index))
             if drag_start is not None and drag_end is not None:
                 self._register_drag_actor(actor, int(row_index), drag_start, drag_end)
+            # bugs/0128: remember the world-space arrow axis so the inspector can
+            # re-derive this label's perpendicular billboard angle for the live
+            # camera on every orbit (else the once-baked SetOrientation goes stale).
+            if perp_axis is not None:
+                self._register_perp_label_axis(actor, perp_axis)
             self.inspector._add_renderer_view_prop(actor)
             return True
         except Exception as exc:
             self.editor.append_debug(f"3D thickness label skipped: {exc}")
             return False
+
+    def _register_perp_label_axis(self, actor: Any, perp_axis: np.ndarray) -> None:
+        """bugs/0128: record actor_key -> world arrow axis on the inspector so an
+        orbit can re-derive the perpendicular billboard angle for the live camera."""
+        try:
+            axis = np.asarray(perp_axis, dtype=float).reshape(3)
+        except Exception:
+            return
+        norm = float(np.linalg.norm(axis))
+        if not np.isfinite(norm) or norm <= 1e-12:
+            return
+        axis = axis / norm
+        actor_key = self.inspector._actor_key(actor)
+        if actor_key is None:
+            return
+        axis_map = getattr(self.inspector, "_perp_label_axis_map", None)
+        if axis_map is None:
+            axis_map = {}
+            self.inspector._perp_label_axis_map = axis_map
+        axis_map[actor_key] = (float(axis[0]), float(axis[1]), float(axis[2]))
 
     @staticmethod
     def _dimension_runs_to_superseded_image(rows, row_index, *, has_branch_detector) -> bool:
@@ -577,7 +603,9 @@ class Open3DThicknessDimensionService:
                         front, back = (np.asarray(v, dtype=float).reshape(3) for v in span)
                         extent = float(np.linalg.norm(back - front))
                         if np.isfinite(extent) and extent > 1e-6:
-                            side_s = self.offset_direction(back - front, view_normal=view_normal, screen_up=screen_up)
+                            seg_dir = back - front
+                            side_s = self.offset_direction(seg_dir, view_normal=view_normal, screen_up=screen_up)
+                            axis_s = seg_dir / float(np.linalg.norm(seg_dir))
                             count += self._emit_span_dimension(
                                 row_index=row_index,
                                 base_lo=front,
@@ -590,7 +618,8 @@ class Open3DThicknessDimensionService:
                                 label=f"S{row_index} Thickness = {extent:.4g} mm",
                                 drag_start=front,
                                 drag_end=back,
-                                label_orientation_deg=90.0,
+                                label_orientation_deg=self._perp_label_orientation(axis_s, screen_right, screen_up),
+                                perp_axis=axis_s,
                             )
                             continue
             # bugs/0093: skip the sequential dimension that would run out to a
@@ -685,6 +714,7 @@ class Open3DThicknessDimensionService:
                     drag_start=p0,
                     drag_end=p1,
                     label_orientation_deg=self._perp_label_orientation(axis, screen_right, screen_up),
+                    perp_axis=axis,
                 )
         # bugs/0093: per-branch exit->detector distance overlays (transmit + reflect).
         count += self._branch_distance_overlays(
@@ -799,6 +829,7 @@ class Open3DThicknessDimensionService:
         drag_start: np.ndarray,
         drag_end: np.ndarray,
         label_orientation_deg: float = 0.0,
+        perp_axis: np.ndarray | None = None,
         register_drag: bool = True,
     ) -> int:
         """Draw one dimension (shaft + leaders + label) between ``base_lo`` and
@@ -851,6 +882,7 @@ class Open3DThicknessDimensionService:
             row_index, label_position, label,
             drag_start=drag_start, drag_end=drag_end,
             orientation_deg=label_orientation_deg,
+            perp_axis=perp_axis,
         ):
             count += 1
         return count
@@ -1001,6 +1033,7 @@ class Open3DThicknessDimensionService:
             drag_start=p0,
             drag_end=p1,
             label_orientation_deg=orientation,
+            perp_axis=axis_unit,
             register_drag=False,
         )
 

@@ -380,6 +380,9 @@ class Open3DSceneRefreshService:
         self._actor_thickness_dimension_map.clear()
         self._thickness_dimension_actor_map.clear()
         self._thickness_dimension_drag_map.clear()
+        # bugs/0128: drop stale perpendicular-label axes with the actors they keyed.
+        if hasattr(self, "_perp_label_axis_map"):
+            self._perp_label_axis_map.clear()
         self._thickness_drag_state = None
         self._step_feature_cache.clear()
         self._hover_rotation_handle_key = None

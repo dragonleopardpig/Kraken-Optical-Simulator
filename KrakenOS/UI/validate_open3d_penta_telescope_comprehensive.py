@@ -7516,6 +7516,37 @@ def phase_118_led_bs_glue_promoted(
     return result
 
 
+def phase_119_perp_label_camera_track(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0128: perpendicular thickness labels must stay square to their arrows on orbit.
+
+    The billboard text angle was baked once at label creation, so a label drifted
+    off its arrow when the scene rotated (flag_20260623_213541_579). The fix records
+    each label's world arrow axis (`_register_perp_label_axis` -> inspector
+    `_perp_label_axis_map`) and re-derives the angle for the LIVE camera on every
+    `_on_camera_interaction` (`_reorient_thickness_labels_for_camera`). The guard
+    binds the real inspector reorient method onto a fake inspector and is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 119: Open 3D perpendicular thickness labels track the camera on orbit"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_perp_label_camera_track import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"perp-label-camera-track guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("perp-label-camera-track guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7680,6 +7711,7 @@ def main() -> int:
             phase_116_hover_key_carries_step_label,
             phase_117_ray_count_respects_nonbranching,
             phase_118_led_bs_glue_promoted,
+            phase_119_perp_label_camera_track,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

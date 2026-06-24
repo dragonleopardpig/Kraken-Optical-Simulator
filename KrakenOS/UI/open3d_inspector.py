@@ -426,6 +426,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._actor_thickness_dimension_map: dict[str, int] = {}
         self._thickness_dimension_actor_map: dict[int, list[str]] = {}
         self._thickness_dimension_drag_map: dict[str, dict[str, object]] = {}
+        # bugs/0128: world-space arrow axis per perpendicular thickness label, so
+        # the billboard text angle can be RE-derived for the live camera basis on
+        # every orbit (the baked SetOrientation goes stale when the scene rotates).
+        self._perp_label_axis_map: dict[str, tuple[float, float, float]] = {}
         self._step_feature_cache: dict[tuple[str, int], tuple[np.ndarray, object | None, np.ndarray | None] | None] = {}
         self._cad_scene_cache = CadSceneCache()
         self._current_scene_bundle: SceneBundle | None = None
@@ -9712,8 +9716,43 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._reset_camera_clipping_range_for_scene()
         except Exception:
             pass
+        # bugs/0128: keep every perpendicular thickness label square to its arrow as
+        # the scene rotates -- the billboard angle was baked once at creation, so it
+        # drifted off-perpendicular on orbit until re-derived for the live camera.
+        try:
+            if self._reorient_thickness_labels_for_camera():
+                moved = True
+        except Exception:
+            pass
         if moved:
             self.render()
+
+    def _reorient_thickness_labels_for_camera(self) -> bool:
+        """Re-derive each perpendicular thickness label's billboard angle for the
+        current camera basis (bugs/0128). Returns True if any label was re-angled,
+        so the caller can re-render. Cheap: a dot product + SetOrientation per
+        registered label, no geometry rebuild."""
+        axis_map = getattr(self, "_perp_label_axis_map", None)
+        if not axis_map or self._renderer is None:
+            return False
+        axes = self._camera_screen_world_axes()
+        if axes is None:
+            return False
+        screen_right, screen_up = axes
+        changed = False
+        for actor_key, axis in list(axis_map.items()):
+            actor = self._actor_by_key.get(actor_key)
+            if actor is None:
+                continue
+            try:
+                orientation = Open3DThicknessDimensionService._perp_label_orientation(
+                    axis, screen_right, screen_up
+                )
+                actor.GetTextProperty().SetOrientation(float(orientation))
+                changed = True
+            except Exception:
+                continue
+        return changed
 
     def _row_scene_bounds(self) -> tuple[np.ndarray, float]:
         if self._renderer is None:
