@@ -899,6 +899,47 @@ class Open3DThicknessDimensionService:
     LED_OBJECT_EDGE_DIM_ROW = -7
     LED_OBJECT_EDGE_DIMENSION_COLOR = (0.96, 0.62, 0.10)
 
+    @staticmethod
+    def led_edge_override_endpoint(p0, current_offset_z, override):
+        """bugs/0130: resolve the amber object->LED arrow's LED-side endpoint when
+        the user has re-anchored it onto a picked LED face/edge (right-click ->
+        "Re-anchor to a surface/edge...").
+
+        The pick is MEASUREMENT-ONLY -- the LED does not move -- so the arrow simply
+        measures object -> picked-face instead of object -> typed-distance. The
+        picked face sits on the LED body, so it rides any later axial carry-drag:
+        ``effective_z = ref_z + (current_offset - pick_time_offset)``. With the LED
+        undragged since the pick (current == pick) it stays exactly at ``ref_z``.
+
+        Returns ``(p1, live_distance)`` (endpoint on the optical axis, signed length
+        from ``p0``) or ``None`` when there is no usable override.
+        """
+        if not isinstance(override, dict):
+            return None
+        try:
+            ref_z = float(override.get("ref_z"))
+        except (TypeError, ValueError):
+            return None
+        if not np.isfinite(ref_z):
+            return None
+        try:
+            pick_offset = float(override.get("led_offset_z", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            pick_offset = 0.0
+        try:
+            cur = float(current_offset_z)
+        except (TypeError, ValueError):
+            cur = 0.0
+        if not np.isfinite(cur):
+            cur = 0.0
+        effective_z = ref_z + (cur - pick_offset)
+        base = np.asarray(p0, dtype=float).reshape(-1)[:3]
+        if base.size < 3 or not np.all(np.isfinite(base)):
+            base = np.zeros(3, dtype=float)
+        p1 = np.array([base[0], base[1], effective_z], dtype=float)
+        live_distance = float(abs(effective_z - base[2]))
+        return p1, live_distance
+
     def reanchored_endpoints(
         self, p0: np.ndarray, p1: np.ndarray, override: dict
     ) -> tuple[np.ndarray, np.ndarray, float] | None:
@@ -971,8 +1012,15 @@ class Open3DThicknessDimensionService:
         separate from the optical S0 object->lens arrow. It shows the distance the
         LED edge-distance dialog sets, and a plain click on it re-opens that dialog
         (which moves the LED). Drawn only when an LED STEP is imported with a set
-        edge distance. The drag-to-re-anchor (re-measure to a different LED edge,
-        LED stays put) is a later increment, so this arrow registers no drag."""
+        edge distance.
+
+        bugs/0130: a right-click -> "Re-anchor to a surface/edge..." re-measures the
+        arrow to a picked LED face/edge (MEASUREMENT-ONLY: the LED stays put). The
+        override is honoured here via ``led_edge_override_endpoint`` so the arrow
+        points at the chosen face instead of the typed distance (which could land on
+        a cable or other extremum), and the arrow registers a drag record so the
+        re-anchor handle exists (a value-drag is harmless -- the sentinel row is
+        rejected by ``drag_state_from_current_pick``)."""
         editor = self.editor
         if getattr(editor, "imported_led_step_path", None) is None:
             return 0
@@ -1003,17 +1051,36 @@ class Open3DThicknessDimensionService:
             offset_z = float(editor._step_placement_offset_xyz("led")[2])
         except Exception:
             offset_z = 0.0
-        live_distance = distance + offset_z
+        axis = np.array([0.0, 0.0, 1.0], dtype=float)
+        # bugs/0130: a re-anchor override (right-click "Re-anchor to a surface/edge")
+        # repoints the arrow at a picked LED face/edge, measurement-only. The face
+        # rides the LED's axial carry-drag (tracked inside led_edge_override_endpoint
+        # via the captured pick-time offset). With no override, fall back to the
+        # typed dialog distance plus any live carry-drag (bugs/0125).
+        ref_label = ""
+        reanchored = None
+        try:
+            override = editor._dimension_anchor_override_for_row(self.LED_OBJECT_EDGE_DIM_ROW)
+        except Exception:
+            override = None
+        if isinstance(override, dict):
+            reanchored = self.led_edge_override_endpoint(p0, offset_z, override)
+            ref_label = str(override.get("ref_label", "") or "")
+        if reanchored is not None:
+            p1, live_distance = reanchored
+        else:
+            live_distance = distance + offset_z
+            p1 = p0 + axis * live_distance
         if not np.isfinite(live_distance) or live_distance <= 1e-6:
             return 0
-        axis = np.array([0.0, 0.0, 1.0], dtype=float)
-        p1 = p0 + axis * live_distance
         segment = p1 - p0
         side = self.offset_direction(segment, view_normal=view_normal, screen_up=screen_up)
         # Sit further off-axis than the blue S0 row arrow (band 1.0) so the two
         # object-anchored arrows don't overlap.
         offset = side * base_offset * 2.4
         label = f"Object → LED = {live_distance:.4g} mm"
+        if ref_label:
+            label += f"  [{ref_label}]"
         seg_norm = float(np.linalg.norm(segment))
         axis_unit = segment / seg_norm if seg_norm > 1e-9 else axis
         try:
@@ -1034,7 +1101,7 @@ class Open3DThicknessDimensionService:
             drag_end=p1,
             label_orientation_deg=orientation,
             perp_axis=axis_unit,
-            register_drag=False,
+            register_drag=True,
         )
 
     def _display_direction_for_drag(self, start: np.ndarray, end: np.ndarray) -> tuple[np.ndarray, float]:

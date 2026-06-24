@@ -1706,6 +1706,7 @@ class ScenePlacementMixin:
             return
         self._begin_history_capture()
         self.led_object_edge_distance_mm = float(value)
+        self._clear_led_edge_dimension_override()
         self._commit_history_capture()
         self.status_var.set(f"LED edge distance: {self.led_object_edge_distance_mm:.3g} mm")
         self._refresh_open_3d_views(step_label="led")
@@ -1790,6 +1791,7 @@ class ScenePlacementMixin:
         local_z = float(feature_center[2]) - self._led_step_z_translation()
         self._begin_history_capture()
         self.led_step_object_edge_local_z = local_z
+        self._clear_led_edge_dimension_override()
         self._cad_led_object_edge_pick = False
         self._cad_axis_pick_label = None
         self._cad_axis_pick_any = False
@@ -1816,6 +1818,18 @@ class ScenePlacementMixin:
             return None
         spec = overrides.get(int(row_index))
         return spec if isinstance(spec, dict) else None
+
+    def _clear_led_edge_dimension_override(self) -> None:
+        """bugs/0130: a re-anchored object->LED arrow override pins to a world z
+        (plus the LED's pick-time carry-drag offset). Re-seating the LED -- via the
+        edge-distance dialog or the object-edge pick -- moves the body in a way the
+        override cannot track, so drop it and fall back to the typed-distance
+        measurement (the user can re-anchor again on the new pose)."""
+        overrides = getattr(self, "_dimension_anchor_overrides", None)
+        if isinstance(overrides, dict) and -7 in overrides:
+            overrides = dict(overrides)
+            overrides.pop(-7, None)
+            self._dimension_anchor_overrides = overrides
 
     def _dimension_row_is_object_led(self, row_index: int, endpoint: str) -> bool:
         """The S0 object-side endpoint is the LED object edge (reuses the LED ref)."""
@@ -1855,6 +1869,15 @@ class ScenePlacementMixin:
                 spec["fixed_z"] = float(fixed_z)
         except Exception:
             pass
+        # bugs/0130: the amber object->LED arrow (sentinel row -7) re-anchored onto an
+        # LED face is measurement-only AND must ride the LED's later axial carry-drag.
+        # Capture the LED's axial offset at pick time so the render adds the
+        # (current - pick) delta and the arrow tracks the moving face.
+        if row_index == -7:
+            try:
+                spec["led_offset_z"] = float(self._step_placement_offset_xyz("led")[2])
+            except Exception:
+                spec["led_offset_z"] = 0.0
         self._begin_history_capture()
         overrides = dict(getattr(self, "_dimension_anchor_overrides", {}) or {})
         overrides[row_index] = spec

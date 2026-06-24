@@ -7547,6 +7547,39 @@ def phase_119_perp_label_camera_track(
     return result
 
 
+def phase_120_led_edge_reanchor(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0130: the amber object->LED arrow must re-anchor to a picked LED face.
+
+    The overlay drew its LED-side endpoint at the typed dialog distance and ignored
+    any stored re-anchor override, so a right-click "Re-anchor to a surface/edge" had
+    no visible effect -- the arrow kept measuring whatever the typed distance landed
+    on (a cable, not the body face) (flag_20260624_083930_719). The fix honours
+    `_dimension_anchor_override_for_row(-7)` via the pure `led_edge_override_endpoint`
+    helper (measurement-only: the LED never moves; the picked face rides the LED's
+    later axial carry-drag). The guard binds the real re-anchor commands onto a fake
+    editor and is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 120: Open 3D object->LED arrow re-anchors to a picked LED face"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_edge_reanchor import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-edge-reanchor guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("led-edge-reanchor guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7712,6 +7745,7 @@ def main() -> int:
             phase_117_ray_count_respects_nonbranching,
             phase_118_led_bs_glue_promoted,
             phase_119_perp_label_camera_track,
+            phase_120_led_edge_reanchor,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -121,7 +121,8 @@
     "116": "pass",
     "117": "pass",
     "118": "pass",
-    "119": "pass"
+    "119": "pass",
+    "120": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -243,6 +244,7 @@
     "116": "Open 3D passive hover key carries the resolved STEP label (BS-in-LED right-click override fires)",
     "117": "Open 3D Ray Count respects a non-branching non-seq scene (no 20 -> 201 cone explosion)",
     "118": "Open 3D LED<->promoted-BS glue stays reachable and carries both bodies",
-    "119": "Open 3D perpendicular thickness labels track the camera on orbit"
+    "119": "Open 3D perpendicular thickness labels track the camera on orbit",
+    "120": "Open 3D object->LED arrow re-anchors to a picked LED face"
   }
 }
