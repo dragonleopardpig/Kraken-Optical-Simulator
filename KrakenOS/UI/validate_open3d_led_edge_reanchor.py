@@ -1,34 +1,42 @@
 #!/usr/bin/env python3
-"""Display-free guard for bugs/0130: the amber "Object -> LED" arrow must be
-re-anchorable to a picked LED face/edge -- measurement only, the LED stays put.
+"""Display-free guard for bugs/0132: re-anchoring the amber "Object -> LED" arrow
+must PERSIST and drive the LED's own object-edge reference -- editing the LED
+edge-distance afterwards MOVES the LED with the arrow staying on the chosen face.
 
-Why it exists (user flagged it, flag_20260624_083930_719):
-  "dragging the LED does change the value, but I can't reposition the arrow to point
-   to the LED correct edge ... it is measuring the cable, not the LED edge, I need to
-   be able to drag the arrow to point to the correct LED edge/face."
+Why it exists (user flagged it, flag_20260624_115328_911 + flag_20260624_115350_660):
+  "reanchor the Object LED distance." then -- after editing the dialog value --
+  "the segment arrow ... point to the wrong location just like before anchor, and
+   the LED is not moving."
 
-Root cause: the overlay drew its LED-side endpoint at the typed dialog distance and
-ignored any stored re-anchor override, so a right-click "Re-anchor to a surface/edge"
-pick had no visible effect (the arrow snapped back to the typed point, which could
-land on a cable instead of the body face).
+Root cause (a regression I shipped in bugs/0130): the row -7 re-anchor stored a
+MEASUREMENT-ONLY override that ``set_led_edge_distance`` cleared on any value-change,
+so the arrow reverted to the typed endpoint (a cable extremum) and the body never
+moved.
 
-The fix honours ``_dimension_anchor_override_for_row(-7)`` inside
-``_emit_led_object_edge_dimension`` via the pure ``led_edge_override_endpoint``
-helper. The pick is measurement-only (row -7 is NOT the object/LED placement row, so
-``apply_dimension_anchor_override`` does not move the LED), and the picked face rides
-the LED's later axial carry-drag through the captured pick-time offset.
+The fix routes the row -7 re-anchor to ``apply_led_object_edge_reanchor``, which sets
+the LED's object-edge reference (``led_step_object_edge_local_z``) AND the typed edge
+distance to the picked face's CURRENT object distance. So the LED does not jump on the
+pick, the dialog now reads that face's distance, and a later edit slides the LED so the
+chosen face tracks the value -- the arrow IS the LED's distance handle.
+
+The placement model (see ``apply_led_object_edge_pick``): the edge stored in
+``led_step_object_edge_local_z`` lands at world z ``led_object_edge_distance_mm``,
+via ``_led_step_z_translation() = distance - reference``. So a picked face at native z
+``L`` lands at world ``L + translation``.
 
 What it checks:
-  A. ``led_edge_override_endpoint`` returns None for a missing / malformed override.
-  B. A re-anchor override repoints the endpoint onto the picked face (ref_z), NOT the
-     typed distance -- with the LED undragged the endpoint sits exactly at ref_z.
-  C. After the LED is carry-dragged axially, the endpoint TRACKS the moving face
-     (effective_z = ref_z + (current_offset - pick_offset)).
-  D. Measurement-only invariant: re-anchoring row -7 stores ref_z + the pick-time LED
-     offset and NEVER calls ``apply_led_object_edge_pick`` (which would move the LED),
-     whereas the S0 object-side endpoint (row 0 start) IS the LED placement edge.
-  E. Source contract -- the overlay honours the override + registers a drag handle;
-     the commit captures ``led_offset_z``; both LED re-placement paths clear it.
+  A. ``_led_reanchor_reference(face_z, T)`` == ``(face_z - T, face_z)`` (the pure math).
+  B. NO-MOVE invariant: re-anchoring does not jump the body -- the LED's axial
+     translation is identical before and after the pick (for ref=None and ref=set).
+  C. MOVE-ON-EDIT invariant: after the re-anchor, setting the edge distance to V slides
+     the LED so the picked face lands exactly at world z == V (for several V).
+  D. Routing: ``apply_dimension_anchor_override(-7, ...)`` runs the re-anchor (sets the
+     reference + distance) and stores NO measurement override; it never calls
+     ``apply_led_object_edge_pick``. Row 0 'start' still IS the legacy LED placement edge.
+  E. Source contracts -- the commit routes -7 to ``apply_led_object_edge_reanchor`` and
+     no longer captures ``led_offset_z``; the overlay no longer honours a removed
+     ``led_edge_override_endpoint`` but still registers a drag handle; the re-anchor sets
+     both the reference and the distance; all LED re-placement paths clear a stale override.
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_led_edge_reanchor
@@ -45,7 +53,7 @@ from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDime
 from KrakenOS.UI.services.scene_placement_commands import ScenePlacementMixin
 
 _ROW = Open3DThicknessDimensionService.LED_OBJECT_EDGE_DIM_ROW  # sentinel -7
-_endpoint = Open3DThicknessDimensionService.led_edge_override_endpoint
+_reference = ScenePlacementMixin._led_reanchor_reference
 
 
 class _FakeStatus:
@@ -54,21 +62,31 @@ class _FakeStatus:
 
 
 class _FakeEditor:
-    """tk-free stand-in carrying the REAL re-anchor commands so the test exercises
-    production code, not a paraphrase of it."""
+    """tk-free stand-in carrying the REAL re-anchor + placement commands so the test
+    exercises production code, not a paraphrase of it. ``apply_led_object_edge_pick`` is
+    overridden with a recorder so we can prove the -7 path does NOT move the LED via the
+    legacy edge pick (and the row-0 path DOES route to it)."""
 
     apply_dimension_anchor_override = ScenePlacementMixin.apply_dimension_anchor_override
+    apply_led_object_edge_reanchor = ScenePlacementMixin.apply_led_object_edge_reanchor
+    _led_reanchor_reference = staticmethod(ScenePlacementMixin._led_reanchor_reference)
+    _led_step_z_translation = ScenePlacementMixin._led_step_z_translation
+    _clear_led_edge_dimension_override = ScenePlacementMixin._clear_led_edge_dimension_override
     _dimension_anchor_override_for_row = ScenePlacementMixin._dimension_anchor_override_for_row
     _dimension_row_is_object_led = ScenePlacementMixin._dimension_row_is_object_led
     _dimension_anchor_feature_label = ScenePlacementMixin._dimension_anchor_feature_label
-    _clear_led_edge_dimension_override = ScenePlacementMixin._clear_led_edge_dimension_override
 
-    def __init__(self, led_offset_z: float = 0.0) -> None:
+    def __init__(self, *, distance: float = 0.0, ref=None) -> None:
         self.imported_led_step_path = "led.step"  # an LED IS imported
+        self.led_object_edge_distance_mm = float(distance)
+        self.led_step_object_edge_local_z = ref  # None or float
         self._dimension_anchor_overrides: dict[int, dict] = {}
-        self._led_offset_z = float(led_offset_z)
-        self.led_pick_calls: list[np.ndarray] = []
+        self._cad_led_object_edge_pick = False
+        self._cad_axis_pick_label = None
+        self._cad_axis_pick_any = False
+        self._selected_step_label = None
         self.status_var = _FakeStatus()
+        self.led_pick_calls: list[np.ndarray] = []
 
     # stubs -----------------------------------------------------------------
     def _begin_history_capture(self) -> None:
@@ -80,99 +98,110 @@ class _FakeEditor:
     def _refresh_open_3d_views(self, *args, **kwargs) -> None:
         pass
 
-    def _step_placement_offset_xyz(self, _label):
-        return (0.0, 0.0, self._led_offset_z)
-
     def apply_led_object_edge_pick(self, feature_center_xyz) -> None:
-        # If this ever fires for row -7 the "measurement only" contract is broken.
+        # If this fires for row -7 the re-anchor wrongly used the JUMP path.
         self.led_pick_calls.append(np.asarray(feature_center_xyz, dtype=float))
+
+    # helper ----------------------------------------------------------------
+    def _picked_face_world_z(self) -> float:
+        """Where the re-anchored face currently sits = native ref + translation."""
+        return float(self.led_step_object_edge_local_z) + float(self._led_step_z_translation())
 
 
 def run_checks() -> tuple[bool, list[str]]:
     failures: list[str] = []
-    p0 = np.zeros(3, dtype=float)  # object reference on the axis
 
-    # --- A: no / malformed override -> None ---------------------------------
-    if _endpoint(p0, 0.0, None) is not None:
-        failures.append("A FAIL: a missing override should yield no endpoint")
-    if _endpoint(p0, 0.0, {}) is not None:
-        failures.append("A FAIL: an override without ref_z should yield no endpoint")
-    if _endpoint(p0, 0.0, {"ref_z": float("nan")}) is not None:
-        failures.append("A FAIL: a non-finite ref_z should yield no endpoint")
+    # --- A: the pure reference math -----------------------------------------
+    for face_z, trans in ((213.2, 200.0), (60.0, 0.0), (190.0, 175.0), (-3.0, 10.0)):
+        local_z, edge = _reference(face_z, trans)
+        if abs(local_z - (face_z - trans)) > 1e-9:
+            failures.append(f"A FAIL: local_z for face={face_z},T={trans} should be {face_z - trans}, got {local_z}")
+        if abs(edge - face_z) > 1e-9:
+            failures.append(f"A FAIL: edge distance should equal the face world z {face_z}, got {edge}")
 
-    # --- B: re-anchor repoints to the picked face (not the typed distance) ---
-    # The dialog distance is 50 (the "cable"); the user picks the body face at 60.
-    override = {"ref_z": 60.0, "led_offset_z": 0.0}
-    result = _endpoint(p0, 0.0, override)
-    if result is None:
-        failures.append("B FAIL: a valid override produced no endpoint")
-    else:
-        p1, live = result
-        if abs(float(p1[2]) - 60.0) > 1e-9:
-            failures.append(f"B FAIL: endpoint z should sit on the picked face 60, got {p1[2]}")
-        if abs(live - 60.0) > 1e-9:
-            failures.append(f"B FAIL: measured distance should be 60 (object->face), got {live}")
-        if abs(live - 50.0) < 1e-9:
-            failures.append("B FAIL: arrow still measures the typed distance 50, not the picked face")
-        if abs(float(p1[0])) > 1e-9 or abs(float(p1[1])) > 1e-9:
-            failures.append("B FAIL: re-anchored endpoint must stay on the optical axis")
+    # --- B + C: no-move on pick, move-on-edit afterwards --------------------
+    # Two starting poses: a fresh LED (no reference yet) and one already referenced.
+    for distance, ref, face_z in ((200.0, None, 213.2), (180.0, 5.0, 190.0)):
+        ed = _FakeEditor(distance=distance, ref=ref)
+        translation_before = float(ed._led_step_z_translation())
+        ed.apply_led_object_edge_reanchor(np.asarray([0.0, 0.0, face_z]))
 
-    # --- C: the picked face tracks the LED's later axial carry-drag ----------
-    # pick captured offset 0; the LED is then dragged +12 along the axis.
-    dragged = _endpoint(p0, 12.0, {"ref_z": 60.0, "led_offset_z": 0.0})
-    if dragged is None:
-        failures.append("C FAIL: tracking override produced no endpoint")
-    else:
-        p1d, lived = dragged
-        if abs(float(p1d[2]) - 72.0) > 1e-9:
-            failures.append(f"C FAIL: dragged face should ride to 60+12=72, got {p1d[2]}")
-        if abs(lived - 72.0) > 1e-9:
-            failures.append(f"C FAIL: tracked distance should be 72, got {lived}")
-    # and with the captured offset == current offset, no spurious shift.
-    held = _endpoint(p0, 9.0, {"ref_z": 60.0, "led_offset_z": 9.0})
-    if held is None:
-        failures.append("C FAIL: held-offset override produced no endpoint")
-    elif abs(float(held[1]) - 60.0) > 1e-9:
-        failures.append(f"C FAIL: equal pick/current offset must stay at ref_z=60, got {held[1]}")
+        # B: the LED must NOT jump -- its axial translation is unchanged, so the
+        # picked face still sits exactly where it was picked.
+        translation_after = float(ed._led_step_z_translation())
+        if abs(translation_after - translation_before) > 1e-6:
+            failures.append(
+                f"B FAIL: re-anchor jumped the LED (translation {translation_before} -> "
+                f"{translation_after}) for distance={distance}, ref={ref}"
+            )
+        if abs(ed._picked_face_world_z() - face_z) > 1e-6:
+            failures.append(
+                f"B FAIL: picked face slid off its pick point (got {ed._picked_face_world_z()}, want {face_z})"
+            )
+        # the dialog now reflects the picked face's object distance.
+        if abs(float(ed.led_object_edge_distance_mm) - face_z) > 1e-6:
+            failures.append(
+                f"B FAIL: edge distance should read the picked face {face_z}, got {ed.led_object_edge_distance_mm}"
+            )
+        if ed.led_step_object_edge_local_z is None:
+            failures.append("B FAIL: re-anchor must set led_step_object_edge_local_z (the LED reference)")
+        if ed.led_pick_calls:
+            failures.append("B FAIL: re-anchor used the legacy JUMP path (apply_led_object_edge_pick)")
 
-    # --- D: measurement-only invariant; the LED does NOT move ----------------
-    ed = _FakeEditor(led_offset_z=7.0)
-    ed.apply_dimension_anchor_override(_ROW, "end", np.asarray([0.0, 0.0, 60.0]), fixed_z=0.0)
-    spec = ed._dimension_anchor_override_for_row(_ROW)
-    if not isinstance(spec, dict):
-        failures.append("D FAIL: re-anchoring row -7 stored no override")
-    else:
-        if abs(float(spec.get("ref_z", -1)) - 60.0) > 1e-9:
-            failures.append(f"D FAIL: stored ref_z should be 60, got {spec.get('ref_z')}")
-        if abs(float(spec.get("led_offset_z", -1)) - 7.0) > 1e-9:
-            failures.append(f"D FAIL: should capture the pick-time LED offset 7, got {spec.get('led_offset_z')}")
-        if str(spec.get("endpoint")) != "end":
-            failures.append(f"D FAIL: re-anchored endpoint should be 'end', got {spec.get('endpoint')}")
+        # C: editing the edge distance to V slides the LED so the face lands at V.
+        for v in (150.0, 240.0, 213.2):
+            ed.led_object_edge_distance_mm = float(v)  # what set_led_edge_distance writes
+            landed = ed._picked_face_world_z()
+            if abs(landed - v) > 1e-6:
+                failures.append(
+                    f"C FAIL: after editing distance to {v}, the picked face landed at {landed} (want {v})"
+                )
+
+    # --- D: routing through apply_dimension_anchor_override ------------------
+    ed = _FakeEditor(distance=200.0, ref=None)
+    ed.apply_dimension_anchor_override(_ROW, "end", np.asarray([0.0, 0.0, 213.2]), fixed_z=0.0)
+    if ed.led_step_object_edge_local_z is None:
+        failures.append("D FAIL: routing row -7 must run the re-anchor (set the LED reference)")
+    if abs(float(ed.led_object_edge_distance_mm) - 213.2) > 1e-6:
+        failures.append(f"D FAIL: routing row -7 must set the edge distance to 213.2, got {ed.led_object_edge_distance_mm}")
+    if ed._dimension_anchor_override_for_row(_ROW) is not None:
+        failures.append("D FAIL: row -7 re-anchor must NOT store a measurement-only override anymore")
     if ed.led_pick_calls:
-        failures.append("D FAIL: re-anchoring the amber arrow (row -7) MOVED the LED (measurement-only broken)")
-    # the S0 object-side endpoint IS the LED placement edge, but row -7 is not.
+        failures.append("D FAIL: row -7 must not route to the legacy LED edge pick")
+    # the S0 object-side endpoint IS the LED placement edge; row -7 is not.
     if not ed._dimension_row_is_object_led(0, "start"):
         failures.append("D FAIL: row 0 'start' should be the object/LED placement edge")
     if ed._dimension_row_is_object_led(_ROW, "end"):
-        failures.append("D FAIL: sentinel row -7 must NOT be treated as the LED placement edge")
-
-    # clearing on re-placement drops the override.
-    ed._clear_led_edge_dimension_override()
-    if ed._dimension_anchor_override_for_row(_ROW) is not None:
-        failures.append("D FAIL: _clear_led_edge_dimension_override left the override in place")
+        failures.append("D FAIL: sentinel row -7 must NOT be treated as the row-0 LED placement edge")
+    ed_row0 = _FakeEditor(distance=200.0, ref=None)
+    ed_row0.apply_dimension_anchor_override(0, "start", np.asarray([0.0, 0.0, 60.0]))
+    if len(ed_row0.led_pick_calls) != 1:
+        failures.append("D FAIL: row 0 'start' must still route to apply_led_object_edge_pick")
 
     # --- E: source contracts ------------------------------------------------
+    commit_src = inspect.getsource(ScenePlacementMixin.apply_dimension_anchor_override)
+    if "apply_led_object_edge_reanchor" not in commit_src:
+        failures.append("E FAIL: the commit must route the sentinel row to apply_led_object_edge_reanchor")
+    if "led_offset_z" in commit_src:
+        failures.append("E FAIL: the commit must no longer capture led_offset_z (measurement-only path removed)")
+
+    reanchor_src = inspect.getsource(ScenePlacementMixin.apply_led_object_edge_reanchor)
+    if "led_step_object_edge_local_z" not in reanchor_src:
+        failures.append("E FAIL: the re-anchor must set the LED object-edge reference")
+    if "led_object_edge_distance_mm" not in reanchor_src:
+        failures.append("E FAIL: the re-anchor must set the typed edge distance (so the LED does not jump)")
+    if "_clear_led_edge_dimension_override" not in reanchor_src:
+        failures.append("E FAIL: the re-anchor must clear any stale override")
+
     emit_src = inspect.getsource(Open3DThicknessDimensionService._emit_led_object_edge_dimension)
-    if "led_edge_override_endpoint" not in emit_src:
-        failures.append("E FAIL: the overlay must honour the override via led_edge_override_endpoint")
-    if "_dimension_anchor_override_for_row" not in emit_src:
-        failures.append("E FAIL: the overlay must look up _dimension_anchor_override_for_row")
+    if "led_edge_override_endpoint" in emit_src:
+        failures.append("E FAIL: the overlay must no longer honour the removed measurement-only override")
     if "register_drag=True" not in emit_src:
         failures.append("E FAIL: the overlay must register a drag handle so re-anchor can begin")
-    commit_src = inspect.getsource(ScenePlacementMixin.apply_dimension_anchor_override)
-    if "led_offset_z" not in commit_src:
-        failures.append("E FAIL: the commit must capture led_offset_z for the sentinel row")
-    for name in ("set_led_edge_distance", "apply_led_object_edge_pick"):
+    if hasattr(Open3DThicknessDimensionService, "led_edge_override_endpoint"):
+        failures.append("E FAIL: the dead led_edge_override_endpoint helper should be removed")
+
+    for name in ("set_led_edge_distance", "apply_led_object_edge_pick", "apply_led_object_edge_reanchor"):
         src = inspect.getsource(getattr(ScenePlacementMixin, name))
         if "_clear_led_edge_dimension_override" not in src:
             failures.append(f"E FAIL: {name} must clear a stale re-anchor override on LED re-placement")
@@ -183,11 +212,11 @@ def run_checks() -> tuple[bool, list[str]]:
 def main() -> int:
     passed, failures = run_checks()
     if not passed:
-        print("[FAIL] bugs/0130 object->LED arrow must re-anchor to the picked LED face")
+        print("[FAIL] bugs/0132 object->LED arrow re-anchor must persist + drive the LED")
         for item in failures:
             print(f"  - {item}")
         return 1
-    print("[PASS] object->LED arrow re-anchors to a picked LED face, LED unmoved (bugs/0130)")
+    print("[PASS] object->LED re-anchor persists; editing the distance moves the LED (bugs/0132)")
     return 0
 
 

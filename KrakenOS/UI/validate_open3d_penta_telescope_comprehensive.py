@@ -7550,19 +7550,22 @@ def phase_119_perp_label_camera_track(
 def phase_120_led_edge_reanchor(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """bugs/0130: the amber object->LED arrow must re-anchor to a picked LED face.
+    """bugs/0132: re-anchoring the amber object->LED arrow must PERSIST and drive the
+    LED's own object-edge reference.
 
-    The overlay drew its LED-side endpoint at the typed dialog distance and ignored
-    any stored re-anchor override, so a right-click "Re-anchor to a surface/edge" had
-    no visible effect -- the arrow kept measuring whatever the typed distance landed
-    on (a cable, not the body face) (flag_20260624_083930_719). The fix honours
-    `_dimension_anchor_override_for_row(-7)` via the pure `led_edge_override_endpoint`
-    helper (measurement-only: the LED never moves; the picked face rides the LED's
-    later axial carry-drag). The guard binds the real re-anchor commands onto a fake
-    editor and is display-free.
+    bugs/0130 (now reversed) made the row -7 re-anchor a measurement-only override that
+    `set_led_edge_distance` cleared on any value-change, so editing the dialog reverted
+    the arrow to the typed front extremum (a cable) and the body sat frozen
+    (flag_20260624_115350_660: "the arrow point to the wrong location ... and the LED is
+    not moving"). The fix routes the pick to `apply_led_object_edge_reanchor`, which sets
+    `led_step_object_edge_local_z` + the typed distance to the picked face's CURRENT
+    object distance -- so the body does not jump on the pick (via the pure
+    `_led_reanchor_reference`), the dialog reads that face's distance, and a later edit
+    slides the LED so the chosen face tracks the value. The guard binds the real re-anchor
+    + placement commands onto a fake editor and is display-free.
     """
     result = PhaseResult(
-        name="Phase 120: Open 3D object->LED arrow re-anchors to a picked LED face"
+        name="Phase 120: Open 3D object->LED arrow re-anchor persists + drives the LED"
     )
     try:
         from KrakenOS.UI.validate_open3d_led_edge_reanchor import run_checks
@@ -7610,6 +7613,37 @@ def phase_121_camera_live_gap(
         result.notes.append(note)
     if not result.passed and not result.notes:
         result.notes.append("camera-live-gap guard reported failure without detail")
+    return result
+
+
+def phase_122_led_reanchor_moves_led(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0132 (flag_115350 repro): editing the LED edge-distance after a re-anchor
+    must MOVE the LED, with the chosen face tracking the typed value.
+
+    The literal user scenario: an LED whose typed object distance is 200 (front extremum)
+    is re-anchored onto a body face at z=213.2; the pick must not move the body, then a
+    dialog edit must translate the LED so the face lands exactly at the new value (it used
+    to sit frozen -- "the LED is not moving"). The guard exercises the real re-anchor +
+    axial-placement commands on a fake editor and is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 122: Open 3D LED edge-distance edit moves the LED after re-anchor"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_reanchor_moves import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-reanchor-moves guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("led-reanchor-moves guard reported failure without detail")
     return result
 
 
@@ -7780,6 +7814,7 @@ def main() -> int:
             phase_119_perp_label_camera_track,
             phase_120_led_edge_reanchor,
             phase_121_camera_live_gap,
+            phase_122_led_reanchor_moves_led,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

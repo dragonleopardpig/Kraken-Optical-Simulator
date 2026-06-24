@@ -1803,6 +1803,56 @@ class ScenePlacementMixin:
         )
         self._refresh_open_3d_views(step_label="led")
 
+    @staticmethod
+    def _led_reanchor_reference(face_world_z: float, current_translation: float):
+        """bugs/0132: re-anchoring the amber object->LED arrow onto a picked LED face
+        records that face as the LED's object-edge reference. Return
+        ``(local_z, edge_distance)`` such that:
+
+          * the LED does NOT jump now -- ``edge_distance`` is the face's *current*
+            world z, so the recomputed translation equals the current one; and
+          * a later edge-distance edit to ``V`` slides the LED so the picked face
+            lands at ``V`` (translation = V - local_z  =>  face world == V).
+
+        ``local_z`` is the face in the LED's pre-translation frame
+        (``face_world_z - current_translation``)."""
+        fz = float(face_world_z)
+        return fz - float(current_translation), fz
+
+    def apply_led_object_edge_reanchor(self, feature_center_xyz) -> None:
+        """bugs/0132: re-anchor the amber object->LED arrow (sentinel row -7) onto a
+        picked LED face/edge and make it the LED's PERSISTENT object-edge reference.
+
+        Unlike the legacy object-edge pick (``apply_led_object_edge_pick``, which jumps
+        the LED so the face lands at the *current* typed distance), this keeps the body
+        put: it sets the typed edge distance to the picked face's current object
+        distance. The amber arrow then points at the chosen face, the LED edge-distance
+        dialog reflects that distance, and editing the value MOVES the LED so the chosen
+        face tracks the new distance. Reverses bugs/0130's measurement-only behaviour
+        (which, on a value-change, reverted to the typed endpoint -- a cable extremum --
+        and left the LED parked)."""
+        feature_center = np.asarray(feature_center_xyz, dtype=float).reshape(-1)
+        if feature_center.size < 3 or not np.all(np.isfinite(feature_center[:3])):
+            self.status_var.set("Invalid LED object-edge re-anchor pick.")
+            return
+        local_z, edge_distance = self._led_reanchor_reference(
+            float(feature_center[2]), self._led_step_z_translation()
+        )
+        self._begin_history_capture()
+        self.led_step_object_edge_local_z = float(local_z)
+        self.led_object_edge_distance_mm = max(float(edge_distance), 0.0)
+        self._clear_led_edge_dimension_override()
+        self._cad_led_object_edge_pick = False
+        self._cad_axis_pick_label = None
+        self._cad_axis_pick_any = False
+        self._selected_step_label = "led"
+        self._commit_history_capture()
+        self.status_var.set(
+            f"Object→LED edge re-anchored. Distance={self.led_object_edge_distance_mm:.4g} mm; "
+            "editing it now moves the LED."
+        )
+        self._refresh_open_3d_views(step_label="led")
+
     # ------------------------------------------------------------------
     # bugs/0053: thickness/distance dimension measurement re-anchoring.
     # A re-anchored dimension endpoint reports the distance to a picked
@@ -1820,11 +1870,10 @@ class ScenePlacementMixin:
         return spec if isinstance(spec, dict) else None
 
     def _clear_led_edge_dimension_override(self) -> None:
-        """bugs/0130: a re-anchored object->LED arrow override pins to a world z
-        (plus the LED's pick-time carry-drag offset). Re-seating the LED -- via the
-        edge-distance dialog or the object-edge pick -- moves the body in a way the
-        override cannot track, so drop it and fall back to the typed-distance
-        measurement (the user can re-anchor again on the new pose)."""
+        """Drop any stale sentinel (-7) re-anchor override. bugs/0132 re-anchors the
+        LED's object-edge reference directly (no measurement-only override is created
+        anymore), but a prior-session / undo-history override could linger -- clear it on
+        LED re-placement so the amber arrow measures to the live object-edge."""
         overrides = getattr(self, "_dimension_anchor_overrides", None)
         if isinstance(overrides, dict) and -7 in overrides:
             overrides = dict(overrides)
@@ -1856,6 +1905,13 @@ class ScenePlacementMixin:
         if self._dimension_row_is_object_led(row_index, endpoint):
             self.apply_led_object_edge_pick(feature[:3])
             return
+        # bugs/0132: the amber object->LED arrow (sentinel row -7) re-anchors the LED's
+        # OWN object-edge reference so a later edge-distance edit MOVES the LED with the
+        # arrow staying on the chosen face. (0130 stored a measurement-only override that
+        # cleared on value-change, reverting the arrow to the typed cable extremum.)
+        if int(row_index) == -7:  # Open3DThicknessDimensionService.LED_OBJECT_EDGE_DIM_ROW
+            self.apply_led_object_edge_reanchor(feature[:3])
+            return
         # General row: store the measured-to reference (axial z of the picked
         # feature). The drawn distance recomputes to it; the model is untouched.
         # ``fixed_z`` (the un-moved endpoint's axial z) is stored so a later value
@@ -1869,15 +1925,6 @@ class ScenePlacementMixin:
                 spec["fixed_z"] = float(fixed_z)
         except Exception:
             pass
-        # bugs/0130: the amber object->LED arrow (sentinel row -7) re-anchored onto an
-        # LED face is measurement-only AND must ride the LED's later axial carry-drag.
-        # Capture the LED's axial offset at pick time so the render adds the
-        # (current - pick) delta and the arrow tracks the moving face.
-        if row_index == -7:
-            try:
-                spec["led_offset_z"] = float(self._step_placement_offset_xyz("led")[2])
-            except Exception:
-                spec["led_offset_z"] = 0.0
         self._begin_history_capture()
         overrides = dict(getattr(self, "_dimension_anchor_overrides", {}) or {})
         overrides[row_index] = spec
