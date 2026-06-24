@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-06-24T00:00:00+00:00",
+  "generated_at": "2026-06-24T05:23:05+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -124,7 +124,8 @@
     "119": "pass",
     "120": "pass",
     "121": "pass",
-    "122": "pass"
+    "122": "pass",
+    "123": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -249,6 +250,7 @@
     "119": "Open 3D perpendicular thickness labels track the camera on orbit",
     "120": "Open 3D object->LED arrow re-anchor persists + drives the LED",
     "121": "Open 3D camera live edge-gap survives the LED->camera placement",
-    "122": "Open 3D LED edge-distance edit moves the LED after re-anchor"
+    "122": "Open 3D LED edge-distance edit moves the LED after re-anchor",
+    "123": "Open 3D LED distance edit carries the BS<->LED glue"
   }
 }

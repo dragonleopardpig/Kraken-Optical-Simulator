@@ -1705,8 +1705,10 @@ class ScenePlacementMixin:
         if value is None:
             return
         self._begin_history_capture()
+        before_translation = self._led_step_z_translation()
         self.led_object_edge_distance_mm = float(value)
         self._clear_led_edge_dimension_override()
+        self._carry_led_glue_over_translation_change(before_translation)  # bugs/0133
         self._commit_history_capture()
         self.status_var.set(f"LED edge distance: {self.led_object_edge_distance_mm:.3g} mm")
         self._refresh_open_3d_views(step_label="led")
@@ -1788,7 +1790,8 @@ class ScenePlacementMixin:
         # Store the picked edge in the LED's transformed local Z frame. Future
         # placement shifts the whole STEP so this edge, not a cable extremum,
         # lands at the Object-to-LED distance.
-        local_z = float(feature_center[2]) - self._led_step_z_translation()
+        before_translation = self._led_step_z_translation()
+        local_z = float(feature_center[2]) - before_translation
         self._begin_history_capture()
         self.led_step_object_edge_local_z = local_z
         self._clear_led_edge_dimension_override()
@@ -1796,6 +1799,7 @@ class ScenePlacementMixin:
         self._cad_axis_pick_label = None
         self._cad_axis_pick_any = False
         self._selected_step_label = "led"
+        self._carry_led_glue_over_translation_change(before_translation)  # bugs/0133
         self._commit_history_capture()
         self.status_var.set(
             f"LED object edge locked. Local Z={local_z:.3g} mm; "
@@ -1838,6 +1842,9 @@ class ScenePlacementMixin:
         local_z, edge_distance = self._led_reanchor_reference(
             float(feature_center[2]), self._led_step_z_translation()
         )
+        # bugs/0133: no glue carry here -- re-anchor sets the typed distance to the picked
+        # face's CURRENT object distance, so the LED translation is unchanged (the body
+        # stays put). The carry fires on the later edge-distance edit that actually moves it.
         self._begin_history_capture()
         self.led_step_object_edge_local_z = float(local_z)
         self.led_object_edge_distance_mm = max(float(edge_distance), 0.0)
@@ -2087,9 +2094,11 @@ class ScenePlacementMixin:
         new_spec = dict(spec)
         new_spec["ref_z"] = float(new_ref)
         self._begin_history_capture()
+        before_translation = self._led_step_z_translation()
         self.led_object_edge_distance_mm = float(new_distance)
         overrides[int(row_index)] = new_spec
         self._dimension_anchor_overrides = overrides
+        self._carry_led_glue_over_translation_change(before_translation)  # bugs/0133
         self._commit_history_capture()
         try:
             self._refresh_open_3d_views(step_label="led")
@@ -2659,6 +2668,28 @@ class ScenePlacementMixin:
                     )
         finally:
             self._optical_led_carry_active = False
+
+    def _carry_led_glue_over_translation_change(self, before_translation) -> None:
+        """bugs/0133: carry the BS<->LED glue across an LED object-edge *distance* move.
+
+        The drag primitives carry the glue by handing ``_carry_glued_optical_led`` a
+        world delta, but the LED object-edge *distance* paths -- the edge-distance
+        dialog (``set_led_edge_distance``), the object->LED dimension re-anchor value
+        edit (``_move_led_for_reanchored_value``), and the legacy object-edge pick
+        (``apply_led_object_edge_pick``) -- reposition the LED by REWRITING
+        ``led_object_edge_distance_mm`` / ``led_step_object_edge_local_z`` and letting
+        ``_led_step_z_translation()`` recompute.  They never issue a delta, so a glued
+        beam splitter was left behind: it detached from the LED and the blue
+        object->solid gap stopped tracking the LED (flag_20260624_130423_829).  Derive
+        the LED's net world z-shift from the translation change and shove the glued
+        partner by it.  A no-op when nothing is glued or the LED did not move (so the
+        zero-shift re-anchor path stays inert)."""
+        try:
+            dz = float(self._led_step_z_translation()) - float(before_translation)
+        except Exception:
+            return
+        if np.isfinite(dz) and abs(dz) > 1e-9:
+            self._carry_glued_optical_led("led", (0.0, 0.0, dz))
 
     # --- imported-solid resize (drag a face to grow a dimension) ------------- #
     # The resize is stored as per-axis target extents in the solid's *native*

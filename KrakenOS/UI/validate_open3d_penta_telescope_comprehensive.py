@@ -7647,6 +7647,41 @@ def phase_122_led_reanchor_moves_led(
     return result
 
 
+def phase_123_led_distance_glue_carry(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0133: editing the Object->LED distance must CARRY a glued beam splitter.
+
+    bugs/0132 made the Object->LED distance edit move the LED, but the distance paths
+    reposition the LED by rewriting `led_object_edge_distance_mm` /
+    `led_step_object_edge_local_z` and letting `_led_step_z_translation()` recompute --
+    they never hand a world delta to `_carry_glued_optical_led` the way the drag
+    primitives do (bugs/0127). So a glued BS was left behind: it detached and the blue
+    object->solid gap stopped tracking the LED (flag_20260624_130423_829 +
+    flag_20260624_130325_946). The fix adds `_carry_led_glue_over_translation_change`
+    (derives the LED's net world z-shift and shoves the glued partner by it) and calls it
+    from every LED-distance writer that moves the body. The guard binds the real distance/
+    glue/carry methods onto a fake editor and is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 123: Open 3D LED distance edit carries the BS<->LED glue"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_distance_glue_carry import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-distance-glue-carry guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("led-distance-glue-carry guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7815,6 +7850,7 @@ def main() -> int:
             phase_120_led_edge_reanchor,
             phase_121_camera_live_gap,
             phase_122_led_reanchor_moves_led,
+            phase_123_led_distance_glue_carry,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
