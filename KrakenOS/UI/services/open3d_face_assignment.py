@@ -298,6 +298,23 @@ class Open3DFaceAssignmentService:
                     picked_label, picked_center
                 ),
             )
+            # bugs/0134: a dedicated clear-aperture pick. The coarse face pick above
+            # grabs whatever planar cluster the cursor lands on (often a housing
+            # face, not the CA window); this arms a one-click fine-face pick whose
+            # hover highlights the CA edge precisely, then persists it.
+            menu.add_command(
+                label="Set Clear Aperture (pick window face)...",
+                command=lambda picked_label=step_label: self.start_step_clear_aperture_pick(picked_label),
+            )
+            if self.editor.step_clear_aperture(step_label) is not None:
+                menu.add_command(
+                    label="Center Clear Aperture -> Optical Axis",
+                    command=lambda picked_label=step_label: self._center_clear_aperture_from_context(picked_label),
+                )
+                menu.add_command(
+                    label="Forget Clear Aperture",
+                    command=lambda picked_label=step_label: self._clear_clear_aperture_from_context(picked_label),
+                )
             self.append_element_context_actions(menu, step_label=step_label)
         else:
             self.status_var.set("Right-click assignment requires a file-backed optical CAD/STL row.")
@@ -650,6 +667,51 @@ class Open3DFaceAssignmentService:
             self.refresh_from_editor(force_retrace=True)
         except Exception as exc:
             self.editor.append_debug(f"Open 3D face->axis center refresh failed: {exc}")
+
+    def _center_clear_aperture_from_context(self, label: str) -> None:
+        """Right-click "Center Clear Aperture -> Optical Axis": translate the body
+        so its PERSISTED clear-aperture window centre lands on the global optical
+        axis. Translate-only, reusing the same tested centre as the picked-face
+        path -- the difference is the centre comes from the stored CA face, so the
+        user need not re-pick the window every time (bugs/0134)."""
+        le = _layout_module()
+        _short_error_message = le._short_error_message
+        label = str(label).strip().lower()
+        try:
+            result = self.editor.center_clear_aperture_on_optical_axis(label)
+        except Exception as exc:
+            self.status_var.set(f"Center Clear Aperture -> Optical Axis failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D clear-aperture center failed: {exc}")
+            return
+        if result is None:
+            self.status_var.set(self.editor.status_var.get())
+            return
+        try:
+            self.editor._selected_step_label = None
+        except Exception:
+            pass
+        try:
+            self.refresh_from_editor(force_retrace=True)
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D clear-aperture center refresh failed: {exc}")
+        self.status_var.set(f"{label.upper()} clear aperture centred on the optical axis.")
+
+    def _clear_clear_aperture_from_context(self, label: str) -> None:
+        """Right-click "Forget Clear Aperture": drop the persisted CA record."""
+        label = str(label).strip().lower()
+        removed = None
+        try:
+            removed = self.editor.clear_step_clear_aperture(label)
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D clear-aperture forget failed: {exc}")
+        try:
+            self.refresh_from_editor()
+        except Exception:
+            pass
+        if removed is not None:
+            self.status_var.set(f"{label.upper()} clear aperture forgotten.")
+        else:
+            self.status_var.set(f"No clear aperture was set for the {label.upper()} STEP.")
 
     def _promote_step_and_assign_face_function(
         self,

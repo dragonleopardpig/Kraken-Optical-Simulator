@@ -178,6 +178,13 @@ class LayoutSettingsService:
             "branch_detector_camera_assignments": {
                 str(k): str(v) for k, v in (getattr(self, "branch_detector_camera_assignments", {}) or {}).items()
             },
+            # bugs/0134: per-STEP-overlay clear aperture {label: {"face_index": int, ...}}.
+            # Persisted so the recorded CA window survives save/reload.
+            "step_clear_aperture_by_label": {
+                str(k): {"face_index": int(v.get("face_index", -1)), "area_mm2": float(v.get("area_mm2", 0.0))}
+                for k, v in (getattr(self, "_step_clear_aperture_by_label", {}) or {}).items()
+                if isinstance(v, dict) and int(v.get("face_index", -1)) >= 0
+            },
             # Item 3: BS<->LED two-body glue flag (the optical + led overlays move together).
             "optical_led_glued": bool(getattr(self, "_optical_led_glued", False)),
             "camera_step_path": _portable_step_path_text(self.imported_camera_step_path),
@@ -519,6 +526,26 @@ class LayoutSettingsService:
                 for k, v in branch_cams.items()
                 if str(v).strip() and camera_record(str(v)) is not None
             }
+        # bugs/0134: restore each STEP overlay's recorded clear aperture.
+        clear_apertures = settings.get("step_clear_aperture_by_label", None)
+        restored_ca: dict[str, dict[str, object]] = {}
+        if isinstance(clear_apertures, dict):
+            for k, v in clear_apertures.items():
+                if not isinstance(v, dict):
+                    continue
+                try:
+                    fid = int(v.get("face_index", -1))
+                except Exception:
+                    continue
+                if fid < 0:
+                    continue
+                record: dict[str, object] = {"face_index": fid}
+                try:
+                    record["area_mm2"] = float(v.get("area_mm2", 0.0))
+                except Exception:
+                    pass
+                restored_ca[str(k).strip().lower()] = record
+        self._step_clear_aperture_by_label = restored_ca
         self._optical_led_glued = bool(settings.get("optical_led_glued", False))  # item 3 BS<->LED glue
         self.imported_camera_step_path = _path_setting("camera_step_path")
         self.imported_lens_step_path = _path_setting("lens_step_path")

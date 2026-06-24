@@ -7682,6 +7682,41 @@ def phase_123_led_distance_glue_carry(
     return result
 
 
+def phase_124_clear_aperture_pick(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0134: a dedicated clear-aperture (CA) pick + persisted CA.
+
+    The LED's square CA window could no longer be highlighted: stray VTK_LINE cells in
+    the analytic vtp shifted the poly-only face-index array versus the picker, so a
+    cell pick resolved the wrong face, and the LED's coarse planar clustering grabbed a
+    housing face for "Center Picked Face -> Optical Axis". The fix adds the
+    picker-aligned `face_index_for_display_cell`, a one-click CA pick mode that hover-
+    highlights the fine window face and persists it, right-click "Center Clear Aperture
+    -> Optical Axis" / "Forget Clear Aperture", a persistent cyan CA outline in both
+    refresh paths, and save/reload of the recorded CA. The guard reproduces the
+    14-stray-line cell ordering on a synthetic mesh and exercises the real editor CA
+    methods; it is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 124: Open 3D clear-aperture pick + persisted CA"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_clear_aperture import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"clear-aperture guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("clear-aperture guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7851,6 +7886,7 @@ def main() -> int:
             phase_121_camera_live_gap,
             phase_122_led_reanchor_moves_led,
             phase_123_led_distance_glue_carry,
+            phase_124_clear_aperture_pick,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

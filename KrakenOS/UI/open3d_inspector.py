@@ -356,6 +356,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _step_surface_center_axis_pick_mode(self, value: bool) -> None:
         self._set_pick_mode_flag(InteractionMode.STEP_SURFACE_CENTER_AXIS_PICK, value)
 
+    @property
+    def _step_clear_aperture_pick_mode(self) -> bool:
+        return self._interaction_mode_state.mode == InteractionMode.STEP_CLEAR_APERTURE_PICK
+
+    @_step_clear_aperture_pick_mode.setter
+    def _step_clear_aperture_pick_mode(self, value: bool) -> None:
+        self._set_pick_mode_flag(InteractionMode.STEP_CLEAR_APERTURE_PICK, value)
+
     def __init__(self, editor: "KrakenLayoutEditor") -> None:
         _load_3d_backends()
         super().__init__(editor)
@@ -499,6 +507,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_normal_axis_pick_mode = False
         self._step_normal_axis_anchor_mode = "body_center"
         self._step_surface_center_axis_pick_mode = False
+        self._step_clear_aperture_pick_mode = False
+        self._step_clear_aperture_pick_label = ""
         self._step_carry_grid_label: str | None = None
         self._step_carry_grid_spacing_mm: float | None = None
         self._step_carry_hold_after_id: str | None = None
@@ -7002,6 +7012,128 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             "Use 'Step rotation handles' in the toolbar if you need to flip."
         )
 
+    def start_step_clear_aperture_pick(self, label: str | None = None) -> None:
+        """Arm the single-click pick that records a STEP overlay's clear aperture.
+
+        Unlike the axis snaps this is a one-shot body pick: the next click on the
+        named overlay resolves the fine analytic face under the cursor (via the
+        picker-aligned ``clear_aperture_face_index_for_display_cell``) and persists
+        it as the component's clear aperture.
+        """
+        service = self.editor._open3d_step_state_service()
+        label = service.selected_import_label(
+            (label, self._selected_step_feature_label, getattr(self.editor, "_selected_step_label", None))
+        )
+        if not label:
+            self.status_var.set("Set Clear Aperture: select or import a STEP component first.")
+            return
+        self._step_clear_aperture_pick_mode = True
+        self._step_clear_aperture_pick_label = label
+        self._step_normal_axis_pick_mode = False
+        self._step_surface_center_axis_pick_mode = False
+        self._step_carry_follow_state = None
+        self._step_carry_drag_state = None
+        self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
+        self._source_target_pick_mode = False
+        self._center_row_to_ray_mode = False
+        self._center_row_to_ray_face_id = ""
+        self._placement_target_pick_mode = False
+        self._placement_orient_pick_mode = False
+        self._placement_orient_ray_mode = False
+        self._set_step_carry_cursor(False)
+        self._set_axis_pick_cursor(True)
+        self._update_mode_badge()
+        self.status_var.set(
+            f"Set {label.upper()} clear aperture: click the clear-aperture window face on the body."
+        )
+
+    def _apply_step_clear_aperture_pick(self, step_label: str, cell_id: int) -> bool:
+        label = str(step_label or "").strip().lower()
+        wanted = str(self._step_clear_aperture_pick_label or "").strip().lower()
+        if not label or (wanted and label != wanted):
+            self.status_var.set(
+                f"Set Clear Aperture: click the {(wanted or 'STEP').upper()} body's clear-aperture window face."
+            )
+            return False
+        try:
+            fid = self.editor.clear_aperture_face_index_for_display_cell(label, int(cell_id))
+        except Exception as exc:
+            self.status_var.set(f"Set Clear Aperture failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"3D clear-aperture pick resolve failed: {exc}")
+            return False
+        if fid is None or int(fid) < 0:
+            self.status_var.set("Set Clear Aperture: click directly on the clear-aperture window face.")
+            return False
+        record = self.editor.set_step_clear_aperture(label, int(fid))
+        if record is None:
+            self.status_var.set("Set Clear Aperture: could not persist the picked face.")
+            return False
+        self._step_clear_aperture_pick_mode = False
+        self._step_clear_aperture_pick_label = ""
+        self._set_axis_pick_cursor(False)
+        self._set_step_hover_outline(None, None)
+        self._update_mode_badge()
+        try:
+            self.refresh_from_editor()
+        except Exception as exc:
+            self.editor.append_debug(f"3D clear-aperture refresh failed: {exc}")
+        area = record.get("area_mm2")
+        area_text = f" (area {float(area):.0f} mm^2)" if isinstance(area, (int, float)) else ""
+        self.status_var.set(
+            f"{label.upper()} clear aperture set to face {int(fid)}{area_text}. "
+            "Right-click the body -> 'Center Clear Aperture -> Optical Axis' to centre it."
+        )
+        return True
+
+    def _clear_aperture_outline(self, label: str, face_index):
+        """Edge polyline of a STEP overlay's clear-aperture face in world frame."""
+        try:
+            mesh = self.editor._transformed_imported_step_mesh_for_label(
+                str(label or "").strip().lower()
+            )
+        except Exception:
+            mesh = None
+        if mesh is None:
+            return None
+        try:
+            return face_outline_from_face_indices(mesh, (int(face_index),))
+        except Exception:
+            return None
+
+    def _add_clear_aperture_highlight_actor(self, label: str) -> None:
+        """Persistently outline a STEP overlay's recorded clear aperture so the user
+        always sees which window is the component's CA (bugs/0134). Cyan so it reads
+        apart from the gold hover and pink selection. Shared by the partial overlay
+        refresh and the full scene rebuild."""
+        label = str(label or "").strip().lower()
+        try:
+            record = self.editor.step_clear_aperture(label)
+        except Exception:
+            record = None
+        if not isinstance(record, dict):
+            return
+        try:
+            fid = int(record.get("face_index", -1))
+        except Exception:
+            return
+        if fid < 0:
+            return
+        outline = self._clear_aperture_outline(label, fid)
+        if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
+            return
+        try:
+            self._add_mesh_actor(
+                outline,
+                color=(0.16, 0.86, 0.94),
+                opacity=0.96,
+                line_width=5.0,
+                follow_step_label=label,
+                backface_culling=False,
+            )
+        except Exception:
+            pass
+
     def _center_row_axis_pick_message(self) -> str:
         if self._center_row_to_ray_index is None:
             return "Center Row->Optical Axis: click the surface/CAD row to move first."
@@ -7464,6 +7596,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             labels.append("STEP normal axis pick")
         if self._step_surface_center_axis_pick_mode:
             labels.append("STEP surface center axis pick")
+        if self._step_clear_aperture_pick_mode:
+            labels.append("STEP clear-aperture pick")
         if self._step_carry_hold_after_id is not None:
             labels.append("STEP carry hold")
         if self._row_carry_hold_after_id is not None:
@@ -8111,6 +8245,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_carry_snap_target_mode = False
         self._step_normal_axis_pick_mode = False
         self._step_surface_center_axis_pick_mode = False
+        self._step_clear_aperture_pick_mode = False
+        self._step_clear_aperture_pick_label = ""
         if self._dimension_anchor_pick_mode:
             self._exit_dimension_anchor_pick_mode(render=False)
         self._step_carry_grid_label = None
@@ -10227,6 +10363,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             state = self._dimension_anchor_pick_state if isinstance(self._dimension_anchor_pick_state, dict) else {}
             label = self._dimension_anchor_display_label(int(state.get("row_index", -1)))
             return f"RE-ANCHOR {label} DIMENSION\nMove onto a surface/edge, click to set. Esc cancels."
+        if self._step_clear_aperture_pick_mode:
+            label = str(self._step_clear_aperture_pick_label or "STEP").upper()
+            return f"SET {label} CLEAR APERTURE\nClick the clear-aperture window face on the body."
         if self._step_normal_axis_pick_mode:
             label = str(self._selected_step_feature_label or self.editor._selected_step_label or "STEP").upper()
             mode_text = str(getattr(self, "_step_normal_axis_anchor_mode", "body_center")).strip().lower()
@@ -11918,6 +12057,51 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         else:
             self._clear_dimension_anchor_snap_highlight()
             self._clear_measure_preview()
+        try:
+            self.render()
+        except Exception:
+            pass
+
+    def _update_clear_aperture_hover_highlight(self) -> None:
+        """While Set-Clear-Aperture is armed, hover-highlight the fine analytic
+        face under the cursor so the user sees exactly which window the next click
+        records (bugs/0134). Mirrors the Measure hover-pick but resolves the
+        picker-aligned face index instead of an edge."""
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return
+        wanted = str(self._step_clear_aperture_pick_label or "").strip().lower()
+        hit_label = None
+        cell_id = -1
+        try:
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor = self._picker.GetActor()
+            if actor is None:
+                get_view_prop = getattr(self._picker, "GetViewProp", None)
+                if callable(get_view_prop):
+                    actor = get_view_prop()
+            hit_key = self._actor_key(actor)
+            hit_label = self._actor_step_map.get(hit_key) if hit_key is not None else None
+            try:
+                cell_id = int(self._picker.GetCellId())
+            except Exception:
+                cell_id = -1
+        except Exception:
+            hit_label = None
+            cell_id = -1
+        outline = None
+        if hit_label is not None and str(hit_label).strip().lower() == wanted and cell_id >= 0:
+            try:
+                fid = self.editor.clear_aperture_face_index_for_display_cell(wanted, cell_id)
+            except Exception:
+                fid = None
+            if fid is not None and int(fid) >= 0:
+                outline = self._clear_aperture_outline(wanted, int(fid))
+        self._set_step_hover_outline(outline, ("clear_aperture", wanted, int(cell_id)))
+        if outline is not None:
+            self.status_var.set(f"Set {wanted.upper()} clear aperture: click to record this window face.")
+        else:
+            self.status_var.set(f"Set {wanted.upper()} clear aperture: hover the clear-aperture window face.")
         try:
             self.render()
         except Exception:

@@ -1015,6 +1015,7 @@ class Open3DSceneRefreshService:
                         )
                 except Exception:
                     pass
+                self._add_clear_aperture_highlight_actor(label)
                 if str(selected_step) == label and not self.is_step_label_hidden(label):
                     if carry_label == label:
                         step_carry_active, step_carry_grid_summary = self._add_step_carry_grid_overlay(label, cad_mesh)

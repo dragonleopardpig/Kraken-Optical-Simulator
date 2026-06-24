@@ -124,7 +124,48 @@ def _surface_triangles_and_face_index(mesh):
     return result
 
 
+def _triangle_only_surface_with_face_index(mesh):
+    """Return a triangle-only surface when stray non-triangle cells misalign the
+    per-cell face index.
+
+    The analytic STEP display cache occasionally carries a handful of degenerate
+    ``VTK_LINE`` cells (a ``clean()`` artifact). VTK numbers the per-cell
+    ``kraken_step_face_index`` over *every* cell, so once a line sneaks in the
+    polygon count disagrees with the cell-data length and the triangle/
+    face-index zip below drops the whole body -- which silently disabled fine
+    STEP face hover/pick + outline (the LED clear-aperture window could no longer
+    be highlighted). Extracting just the triangle cells, carrying their cell
+    data, restores the 1:1 polygon<->face-index alignment. Returns ``None`` when
+    there is nothing to repair so the healthy fast path is untouched."""
+    if pv is None or mesh is None:
+        return None
+    try:
+        surface = pv.wrap(mesh)
+        n_cells = int(getattr(surface, "n_cells", 0))
+        if n_cells <= 0:
+            return None
+        if int(surface.GetNumberOfPolys()) == n_cells:
+            return None  # no stray cells -- alignment already holds
+        if _cell_face_index_values(surface, n_cells).size != n_cells:
+            return None  # face index isn't per-cell here; nothing to realign
+        grid = surface.cast_to_unstructured_grid()
+        tri_mask = np.asarray(grid.celltypes) == int(pv.CellType.TRIANGLE)
+        if not bool(np.any(tri_mask)):
+            return None
+        extracted = grid.extract_cells(np.flatnonzero(tri_mask)).extract_surface(
+            algorithm="dataset_surface"
+        )
+        if int(getattr(extracted, "n_points", 0)) <= 0:
+            return None
+        return extracted
+    except Exception:
+        return None
+
+
 def _surface_triangles_and_face_index_compute(mesh):
+    repaired = _triangle_only_surface_with_face_index(mesh)
+    if repaired is not None:
+        mesh = repaired
     try:
         surface = pv.wrap(mesh)
         faces = np.asarray(surface.faces, dtype=np.int64).reshape((-1, 4))
@@ -403,6 +444,49 @@ def face_pick_from_display_mesh(editor, label: str, faces, origin, direction):
     return None
 
 
+def face_index_for_display_cell(mesh, cell_id: int) -> int | None:
+    """Resolve a VTK-picker cell id straight to its per-cell analytic face index.
+
+    The picker reports ids in the FULL vtkPolyData cell space (verts, then lines,
+    then polys) and the ``kraken_step_*face_index`` cell-data arrays are stored in
+    that same order, so a direct ``cell_data[cell_id]`` read is picker-aligned even
+    when a few stray ``VTK_LINE`` cells (a ``clean()`` artifact) precede the
+    polygons. Going through the poly-only triangle array instead would shift every
+    id by the stray-line count (the LED clear-aperture window's 14 lines), so the
+    cell pick must NOT index the reindexed triangle array. Returns the grouped
+    selection face index when present, else the raw face index, else ``None``."""
+    if pv is None or mesh is None:
+        return None
+    try:
+        cell_id = int(cell_id)
+    except Exception:
+        return None
+    if cell_id < 0:
+        return None
+    try:
+        surface = pv.wrap(mesh)
+        n_cells = int(getattr(surface, "n_cells", 0))
+        if cell_id >= n_cells:
+            return None
+        values = _cell_face_index_values(surface, n_cells)
+        if values.shape[0] != n_cells:
+            return None
+        face_id = int(values[cell_id])
+    except Exception:
+        return None
+    return face_id if face_id >= 0 else None
+
+
+def _display_cell_centroid(mesh, cell_id: int):
+    try:
+        points = np.asarray(pv.wrap(mesh).cell_points(int(cell_id)), dtype=float).reshape((-1, 3))
+        if points.shape[0] >= 1:
+            return np.mean(points, axis=0)
+    except Exception:
+        return None
+    return None
+
+
 def face_pick_from_display_cell(editor, label: str, faces, cell_id: int, *, pick_point=None) -> FaceRayPick | None:
     """Resolve a VTK-picked displayed cell to its grouped analytic STEP face."""
     try:
@@ -413,21 +497,10 @@ def face_pick_from_display_cell(editor, label: str, faces, cell_id: int, *, pick
         return None
     try:
         display_mesh = editor._transformed_imported_step_mesh_for_label(str(label).strip().lower())
-        triangles, face_index = triangle_array_and_face_index(display_mesh)
     except Exception:
         return None
-    if (
-        triangles.ndim != 3
-        or triangles.shape[1:] != (3, 3)
-        or triangles.shape[0] <= cell_id
-        or face_index.shape[0] != triangles.shape[0]
-    ):
-        return None
-    try:
-        target_face_index = int(face_index[cell_id])
-    except Exception:
-        return None
-    if target_face_index < 0:
+    target_face_index = face_index_for_display_cell(display_mesh, cell_id)
+    if target_face_index is None:
         return None
     face_record = None
     for face in list(faces or []):
@@ -438,6 +511,7 @@ def face_pick_from_display_cell(editor, label: str, faces, cell_id: int, *, pick
             break
     if face_record is None:
         return None
+    cell_centroid = _display_cell_centroid(display_mesh, cell_id)
     point = None
     try:
         point_candidate = np.asarray(pick_point, dtype=float).reshape(-1)[:3]
@@ -446,16 +520,21 @@ def face_pick_from_display_cell(editor, label: str, faces, cell_id: int, *, pick
     except Exception:
         point = None
     if point is None:
-        point = np.mean(np.asarray(triangles[cell_id], dtype=float).reshape((3, 3)), axis=0)
+        if cell_centroid is None:
+            return None
+        point = cell_centroid
     try:
         normal = np.asarray(face_record.get("normal_world", face_record.get("normal", ())), dtype=float).reshape(-1)[:3]
     except Exception:
         normal = np.asarray([], dtype=float)
     norm = float(np.linalg.norm(normal[:3])) if normal.size >= 3 else 0.0
     if normal.size < 3 or norm <= 1.0e-12 or not np.isfinite(norm):
-        triangle = np.asarray(triangles[cell_id], dtype=float).reshape((3, 3))
-        normal = np.cross(triangle[1] - triangle[0], triangle[2] - triangle[0])
-        norm = float(np.linalg.norm(normal[:3]))
+        try:
+            triangle = np.asarray(pv.wrap(display_mesh).cell_points(int(cell_id)), dtype=float).reshape((-1, 3))[:3]
+            normal = np.cross(triangle[1] - triangle[0], triangle[2] - triangle[0])
+            norm = float(np.linalg.norm(normal[:3]))
+        except Exception:
+            norm = 0.0
     if norm <= 1.0e-12 or not np.isfinite(norm):
         return None
     normal = normal[:3] / norm

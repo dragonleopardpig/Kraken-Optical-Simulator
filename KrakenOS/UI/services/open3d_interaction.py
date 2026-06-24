@@ -382,11 +382,25 @@ class Open3DInteractionService:
         if self._step_carry_snap_target_mode and step_label is not None:
             self.status_var.set("Snap STEP->Target: click a detector/object/active target row or CAD/STL face anchor.")
             return
+        if self._step_clear_aperture_pick_mode and (
+            step_label is None
+            or str(step_label).strip().lower() != str(self._step_clear_aperture_pick_label or "").strip().lower()
+        ):
+            self.status_var.set(
+                f"Set Clear Aperture: click the {str(self._step_clear_aperture_pick_label or 'STEP').upper()} "
+                "body's clear-aperture window face."
+            )
+            self.render()
+            return
         if step_label is not None:
             try:
                 step_cell_id = int(self._picker.GetCellId()) if self._picker is not None else -1
             except Exception:
                 step_cell_id = -1
+            if self._step_clear_aperture_pick_mode:
+                self._apply_step_clear_aperture_pick(str(step_label), step_cell_id)
+                self.render()
+                return
             if self.editor._cad_led_object_edge_pick:
                 if step_label != "led":
                     self.status_var.set("Pick an edge on the LED STEP for Object-to-LED distance.")
@@ -747,6 +761,7 @@ class Open3DInteractionService:
             self._center_row_to_ray_mode
             or self._step_normal_axis_pick_mode
             or self._step_surface_center_axis_pick_mode
+            or self._step_clear_aperture_pick_mode
             or getattr(self, "_measure_pick_mode", False)
         )
         if (
@@ -801,6 +816,13 @@ class Open3DInteractionService:
             self._set_rotation_handle_hover(None)
             self._set_axis_pick_cursor(True)
             self._update_measure_hover_highlight()
+            return
+        if self._step_clear_aperture_pick_mode:
+            # bugs/0134: hover-highlight the fine clear-aperture face under the
+            # cursor so the user sees which window the next click records.
+            self._set_rotation_handle_hover(None)
+            self._set_axis_pick_cursor(True)
+            self._update_clear_aperture_hover_highlight()
             return
         if self._center_row_to_ray_mode:
             self._set_rotation_handle_hover(None)

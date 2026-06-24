@@ -35,6 +35,10 @@ from KrakenOS.UI.services.optical_solid_geometry import (
     select_optical_solid_anchor_face,
     transformed_stl_bounds,
 )
+from KrakenOS.UI.services.open3d_face_index_edges import (
+    face_index_for_display_cell,
+    triangle_array_and_face_index,
+)
 from KrakenOS.UI.services.step_face_direction import StepFaceDirectionService
 from KrakenOS.UI.services.step_native_reconstruction import axisymmetric_step_selection_face_records
 from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABEL_SET
@@ -4451,6 +4455,148 @@ class ScenePlacementMixin:
             "ray_index": int(frame.get("ray_index", -1)),
             "branch_path": str(frame.get("branch_path", "") or ""),
         }
+
+    # ---- LED clear-aperture (CA) fine-face selection + persistence (bugs/0134) ----
+    # The user selects the square rounded-corner CLEAR-APERTURE window on the front
+    # of the LED's vendor STEP and persists it as the component's clear aperture: a
+    # single analytic *selection* face index, recomputed live so the highlight +
+    # axis-centring track every move/resize. This is distinct from the coarse
+    # right-click face pick (which clusters planar facets and could not reliably grab
+    # the CA -- the regression the user flagged): the CA pick resolves the precise
+    # per-cell ``kraken_step_selection_face_index`` straight off the displayed cell.
+
+    def _clear_aperture_store(self) -> dict:
+        store = self.__dict__.get("_step_clear_aperture_by_label")
+        if not isinstance(store, dict):
+            store = {}
+            self._step_clear_aperture_by_label = store
+        return store
+
+    def step_clear_aperture(self, label: str) -> dict[str, object] | None:
+        """Return the persisted clear-aperture record for a STEP overlay, or None."""
+        record = self._clear_aperture_store().get(str(label or "").strip().lower())
+        return dict(record) if isinstance(record, dict) else None
+
+    def _step_overlay_fine_face_centroid_normal(self, label: str, face_index):
+        """World-frame (area-weighted centroid, unit normal, area_mm2) of one
+        analytic selection face on the *transformed* STEP overlay, or None.
+
+        The transformed mesh already carries the placement offset baked into its
+        points, so the centroid is true world -- exactly what
+        ``center_step_feature_on_optical_axis`` expects."""
+        label = str(label or "").strip().lower()
+        try:
+            mesh = self._transformed_imported_step_mesh_for_label(label)
+        except Exception:
+            mesh = None
+        if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+            return None
+        try:
+            target = int(face_index)
+        except Exception:
+            return None
+        if target < 0:
+            return None
+        try:
+            triangles, face_idx = triangle_array_and_face_index(mesh)
+        except Exception:
+            return None
+        if (
+            triangles.ndim != 3
+            or triangles.shape[1:] != (3, 3)
+            or face_idx.shape[0] != triangles.shape[0]
+            or triangles.shape[0] == 0
+        ):
+            return None
+        selected = triangles[np.asarray(face_idx, dtype=int) == target]
+        if selected.shape[0] == 0:
+            return None
+        v0, v1, v2 = selected[:, 0], selected[:, 1], selected[:, 2]
+        cross = np.cross(v1 - v0, v2 - v0)
+        areas = 0.5 * np.linalg.norm(cross, axis=1)
+        total = float(areas.sum())
+        if not np.isfinite(total) or total <= 0.0:
+            return None
+        tri_centroids = selected.mean(axis=1)
+        centroid = (tri_centroids * areas[:, None]).sum(axis=0) / total
+        normal_vector = cross.sum(axis=0)
+        normal_length = float(np.linalg.norm(normal_vector))
+        normal = (
+            normal_vector / normal_length
+            if normal_length > 1.0e-12
+            else np.asarray([0.0, 0.0, 1.0], dtype=float)
+        )
+        if not np.all(np.isfinite(centroid)):
+            return None
+        return np.asarray(centroid, dtype=float), np.asarray(normal, dtype=float), total
+
+    def clear_aperture_face_index_for_display_cell(self, label: str, cell_id: int):
+        """Resolve a VTK-picked displayed cell to its analytic selection face index.
+
+        Picker cell ids are in the FULL cell space (stray ``VTK_LINE`` cells, then
+        polygons), and ``face_index_for_display_cell`` reads the picker-aligned
+        per-cell data -- so this returns the *fine* CA face under the cursor, not a
+        coarse planar cluster."""
+        label = str(label or "").strip().lower()
+        try:
+            mesh = self._transformed_imported_step_mesh_for_label(label)
+        except Exception:
+            mesh = None
+        if mesh is None:
+            return None
+        return face_index_for_display_cell(mesh, int(cell_id))
+
+    def set_step_clear_aperture(self, label: str, face_index) -> dict[str, object] | None:
+        """Persist a STEP overlay's clear aperture as a single analytic face index."""
+        label = str(label or "").strip().lower()
+        if not label:
+            return None
+        try:
+            fid = int(face_index)
+        except Exception:
+            return None
+        if fid < 0:
+            return None
+        record: dict[str, object] = {"face_index": fid}
+        resolved = self._step_overlay_fine_face_centroid_normal(label, fid)
+        if resolved is not None:
+            _centroid, _normal, area = resolved
+            record["area_mm2"] = float(area)
+        self._clear_aperture_store()[label] = dict(record)
+        try:
+            self._mark_plot_update_pending()
+        except Exception:
+            pass
+        return dict(record)
+
+    def clear_step_clear_aperture(self, label: str) -> dict[str, object] | None:
+        """Forget a STEP overlay's persisted clear aperture."""
+        removed = self._clear_aperture_store().pop(str(label or "").strip().lower(), None)
+        if removed is not None:
+            try:
+                self._mark_plot_update_pending()
+            except Exception:
+                pass
+        return removed
+
+    def center_clear_aperture_on_optical_axis(self, label: str) -> dict[str, object] | None:
+        """Translate a STEP overlay so its persisted clear-aperture centre lands on
+        the optical axis (reuses the proven translate-only feature centre)."""
+        label = str(label or "").strip().lower()
+        record = self.step_clear_aperture(label)
+        if record is None:
+            self.status_var.set(f"No clear aperture is set for the {label.upper()} STEP.")
+            return None
+        resolved = self._step_overlay_fine_face_centroid_normal(label, record.get("face_index"))
+        if resolved is None:
+            self.status_var.set("Clear aperture face could not be resolved on the current body.")
+            return None
+        centroid_world, _normal, _area = resolved
+        return self.center_step_feature_on_optical_axis(
+            label,
+            centroid_world,
+            face_id=f"clear_aperture:{int(record.get('face_index', -1))}",
+        )
 
     @staticmethod
     def _step_orientation_direction_vector(direction_label: object) -> np.ndarray | None:

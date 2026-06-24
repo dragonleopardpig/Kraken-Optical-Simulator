@@ -31,6 +31,7 @@ class InteractionMode(str, Enum):
     STEP_CARRY_SNAP_TARGET = "step_carry_snap_target"
     STEP_NORMAL_AXIS_PICK = "step_normal_axis_pick"
     STEP_SURFACE_CENTER_AXIS_PICK = "step_surface_center_axis_pick"
+    STEP_CLEAR_APERTURE_PICK = "step_clear_aperture_pick"  # pick a STEP body's clear-aperture window (bugs/0134)
     STEP_CARRY_HOLD = "step_carry_hold"
     ROW_CARRY_HOLD = "row_carry_hold"
     AXIS_SLIDE = "axis_slide"
@@ -87,6 +88,8 @@ def derive_interaction_mode(inspector: Any) -> InteractionMode:
         return InteractionMode.STEP_NORMAL_AXIS_PICK
     if bool(getattr(inspector, "_step_surface_center_axis_pick_mode", False)):
         return InteractionMode.STEP_SURFACE_CENTER_AXIS_PICK
+    if bool(getattr(inspector, "_step_clear_aperture_pick_mode", False)):
+        return InteractionMode.STEP_CLEAR_APERTURE_PICK
     if bool(getattr(inspector, "_step_carry_snap_ray_mode", False)):
         return InteractionMode.STEP_CARRY_SNAP_RAY
     if bool(getattr(inspector, "_step_carry_snap_target_mode", False)):

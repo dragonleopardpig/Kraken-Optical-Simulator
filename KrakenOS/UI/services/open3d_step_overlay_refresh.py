@@ -219,6 +219,7 @@ class Open3DStepOverlayRefreshService:
                     )
             except Exception:
                 pass
+            inspector._add_clear_aperture_highlight_actor(label)
             if str(self.editor._selected_step_label or "").strip().lower() == label:
                 if inspector._step_carry_label() == label:
                     inspector._add_step_carry_grid_overlay(label, cad_mesh)
