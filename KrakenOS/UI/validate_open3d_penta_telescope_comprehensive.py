@@ -7442,6 +7442,45 @@ def phase_116_hover_key_carries_step_label(
     return result
 
 
+def phase_117_ray_count_respects_nonbranching(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0126: a non-branching non-seq scene must respect the Ray Count.
+
+    A scene forced non-sequential ONLY by an in-line refractive mesh solid (a
+    promoted STEP slid along the axis) stays a single rotationally-symmetric
+    converging cone -- it never branches or folds. The launch pupil used to hand
+    every `use_nonseq` / `use_folded` scene the area-filling disk, which revolved
+    Ray Count 20 into `1 + (20//2)*20 = 201` pupil samples; each is a slow non-seq
+    mesh trace, so "Show rays" ignored the ray count and "Trace Now" ran for ~70 s
+    (flags flag_20260624_084750_167 + flag_20260624_085043_656). The fix collapses
+    such a scene back to the uniform Ray-Count fan (exactly `count` rays) while
+    still handing the disk to anything that genuinely branches (beam splitter /
+    probabilistic split / diffuse scatter), folds (mirror), or runs through a
+    tilted / transversely-decentred element -- and an axial-only `desp_z` must NOT
+    force the disk. The guard binds the real `TracePreviewSamplingMixin` methods
+    onto a light fake editor (no display) and is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 117: Open 3D Ray Count respects a non-branching non-seq scene (no 20 -> 201 cone explosion)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_ray_count_respects_nonbranching import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"ray-count-respects-nonbranching guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        if note.startswith("FAIL") or note.startswith("SKIP"):
+            result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("ray-count-respects-nonbranching guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7604,6 +7643,7 @@ def main() -> int:
             phase_114_decoration_does_not_carve_thickness,
             phase_115_object_to_led_dimension,
             phase_116_hover_key_carries_step_label,
+            phase_117_ray_count_respects_nonbranching,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

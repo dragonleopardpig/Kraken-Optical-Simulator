@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-06-12T04:06:04+00:00",
+  "generated_at": "2026-06-24T00:00:00+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -118,7 +118,8 @@
     "113": "pass",
     "114": "pass",
     "115": "pass",
-    "116": "pass"
+    "116": "pass",
+    "117": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -237,6 +238,7 @@
     "113": "Open 3D right-click acts on the hovered face, not an overlapping body (BS slid into LED)",
     "114": "Open 3D decoration overlay (LED/camera) does not carve an optical thickness dimension",
     "115": "Open 3D object->LED-edge dimension overlay tracks the LIVE LED edge (clickable; LED drag updates the measurement)",
-    "116": "Open 3D passive hover key carries the resolved STEP label (BS-in-LED right-click override fires)"
+    "116": "Open 3D passive hover key carries the resolved STEP label (BS-in-LED right-click override fires)",
+    "117": "Open 3D Ray Count respects a non-branching non-seq scene (no 20 -> 201 cone explosion)"
   }
 }

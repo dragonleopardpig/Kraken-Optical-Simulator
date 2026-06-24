@@ -698,20 +698,65 @@ class TracePreviewSamplingMixin:
         rim = np.column_stack((radius * np.cos(angles), radius * np.sin(angles))).astype(float)
         return np.vstack((np.asarray([[0.0, 0.0]], dtype=float), rim))
 
+    def _scene_breaks_rotational_symmetry(self) -> bool:
+        """True if any element tilts, transversely decentres, or folds the path.
+
+        An element rotated (any tilt) or slid OFF the optical axis
+        (``desp_x`` / ``desp_y``) -- or a reflective fold (``Mirror``) -- destroys
+        the rotational symmetry that lets a non-sequential scene be sampled by a
+        flat meridional fan; such a scene must keep the area-filling disk so the
+        off-axis / folded deflection is captured. An axial slide (``desp_z`` only,
+        an element moved ALONG the axis) preserves the symmetry and must NOT trip
+        this -- unlike ``has_nonseq_geometry``, which counts any ``desp_z`` too.
+        """
+        for row in getattr(self, "rows", None) or []:
+            if str(getattr(row, "surface", "") or "").strip().lower() == "mirror":
+                return True
+            for attr in ("tilt_x", "tilt_y", "tilt_z", "desp_x", "desp_y"):
+                try:
+                    if abs(float(getattr(row, attr, 0.0) or 0.0)) > 1e-9:
+                        return True
+                except (TypeError, ValueError):
+                    continue
+        return False
+
     def _launch_pupil_prefers_meridional_fan(self) -> bool:
         """Return whether the ``Ray Count`` pupil should be a uniform fan.
 
-        Sequential, non-folded scenes draw a uniformly spaced meridional ray
-        fan (Zemax-style tangential fan) so the 2D layout shows even gaps
-        between the rays launched from a single object point. Nonsequential /
-        folded scenes keep the area-filling disk so the 3D envelope retains
-        sagittal width for branched (beam-splitter / mirror) paths.
+        Sequential, non-folded scenes draw a uniformly spaced meridional ray fan
+        (Zemax-style tangential fan) so the 2D layout shows even gaps between the
+        rays launched from a single object point.
+
+        A non-sequential / folded scene keeps the area-filling disk when it can
+        branch (beam splitter / probabilistic split / diffuse scatter), folds
+        (mirror), or breaks rotational symmetry (a tilted / transversely
+        decentred element) -- the disk preserves the sagittal width those paths
+        need, so rays never silently vanish from a split or off-axis branch. Only
+        a provably non-branching, rotationally-symmetric non-seq scene -- an
+        in-line refractive solid slid along the axis -- collapses back to the
+        cheap uniform Ray-Count fan. bugs/0126: that scene used to revolve Ray
+        Count 20 into ``1 + (20//2)*20 = 201`` slow non-seq mesh traces, so
+        "Show rays" ignored the ray count and "Trace Now" ran for ~70 s.
         """
         try:
             trace_state = self._resolved_trace_mode(system=self.__dict__.get("last_system"))
         except Exception:
             trace_state = {}
-        if bool(trace_state.get("use_nonseq")) or bool(trace_state.get("use_folded")):
+        if not (bool(trace_state.get("use_nonseq")) or bool(trace_state.get("use_folded"))):
+            return True
+        if bool(trace_state.get("use_folded")):
+            return False
+        if bool(trace_state.get("has_beam_splitter")):
+            return False
+        if bool(trace_state.get("has_probabilistic_nonseq")):
+            return False
+        if bool(trace_state.get("has_diffuse_scatter")):
+            return False
+        if self._scene_breaks_rotational_symmetry():
+            return False
+        # An unexplained ``use_nonseq`` fails toward the disk: only collapse to
+        # the fan when the non-seq is positively a non-branching refractive solid.
+        if not bool(trace_state.get("has_optical_stl_solid")):
             return False
         return True
 
