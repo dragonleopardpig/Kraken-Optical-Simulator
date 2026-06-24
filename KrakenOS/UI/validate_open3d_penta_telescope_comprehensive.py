@@ -7366,20 +7366,25 @@ def phase_114_decoration_does_not_carve_thickness(
 def phase_115_object_to_led_dimension(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """bugs/0123: a dedicated, clickable object->LED-edge thickness overlay.
+    """bugs/0123 + bugs/0125: a clickable object->LED-edge thickness overlay that
+    tracks the LED's LIVE edge.
 
     After bugs/0122 made S0 a clean object->lens working distance, the user still
     needs a SEPARATE object->LED-edge dimension (the LED is an independent
     decoration). It is drawn amber from the object plane to the LED edge at the
     set distance, carries a SENTINEL row id (so it stays out of the table-row
     dispatch), registers NO drag yet, and a plain click on it re-opens the LED
-    edge-distance dialog (which MOVES the LED). This phase runs the display-free
-    guard (emit geometry/label/color, sentinel + register_drag=False, no overlay
-    without an LED, click routes to the LED dialog, source contract). The live
-    embedded-VTK click is an in-app eyeball.
+    edge-distance dialog (which MOVES the LED). bugs/0125: a free carry-drag of the
+    LED adds led_step_placement_offset_xyz WITHOUT updating the typed distance, so
+    the arrow used to freeze at the typed value while the LED moved
+    (flag_20260624_075900_372); the overlay now measures the LIVE object->edge
+    distance (typed + placement_offset_z). This phase runs the display-free guard
+    (emit geometry/label/color, sentinel + register_drag=False, no overlay without
+    an LED, live-edge tracking after a drag, click routes to the LED dialog, source
+    contract). The live embedded-VTK click/drag is an in-app eyeball.
     """
     result = PhaseResult(
-        name="Phase 115: Open 3D object->LED-edge dimension overlay (clickable, moves the LED)"
+        name="Phase 115: Open 3D object->LED-edge dimension overlay (clickable, tracks the LIVE LED edge)"
     )
     try:
         from KrakenOS.UI.validate_open3d_object_to_led_dimension import run_checks

@@ -958,17 +958,30 @@ class Open3DThicknessDimensionService:
             p0 = np.zeros(3, dtype=float)
         if not np.all(np.isfinite(p0)):
             p0 = np.zeros(3, dtype=float)
-        # The LED edge sits `distance` mm downstream of the object plane along the
-        # optical (+z) axis -- exactly the value the dialog sets, so the arrow always
-        # lands on the edge the distance refers to.
+        # bugs/0125: measure to the LED's LIVE object-side edge, not the stale
+        # typed distance. The dialog pins the chosen LED edge at object+distance,
+        # but a free carry-drag of the LED adds led_step_placement_offset_xyz on
+        # top WITHOUT updating led_object_edge_distance_mm -- so the arrow used to
+        # stay frozen at the typed value while the dragged LED moved away from it
+        # (flag_20260624_075900_372). The drag's axial (+z) component is exactly
+        # how far the chosen edge slid, so the live object->edge distance is
+        # distance + placement_offset_z (and == distance when undragged, so the
+        # first render still matches the value the user typed).
+        try:
+            offset_z = float(editor._step_placement_offset_xyz("led")[2])
+        except Exception:
+            offset_z = 0.0
+        live_distance = distance + offset_z
+        if not np.isfinite(live_distance) or live_distance <= 1e-6:
+            return 0
         axis = np.array([0.0, 0.0, 1.0], dtype=float)
-        p1 = p0 + axis * distance
+        p1 = p0 + axis * live_distance
         segment = p1 - p0
         side = self.offset_direction(segment, view_normal=view_normal, screen_up=screen_up)
         # Sit further off-axis than the blue S0 row arrow (band 1.0) so the two
         # object-anchored arrows don't overlap.
         offset = side * base_offset * 2.4
-        label = f"Object → LED = {distance:.4g} mm"
+        label = f"Object → LED = {live_distance:.4g} mm"
         seg_norm = float(np.linalg.norm(segment))
         axis_unit = segment / seg_norm if seg_norm > 1e-9 else axis
         try:

@@ -1,5 +1,5 @@
-"""Guard for bugs/0123 -- a dedicated, clickable object->LED-edge thickness
-overlay in Open 3D.
+"""Guard for bugs/0123 + bugs/0125 -- a dedicated, clickable object->LED-edge
+thickness overlay in Open 3D that tracks the LED's LIVE edge.
 
 Feature
 -------
@@ -11,6 +11,13 @@ re-opens that dialog (which MOVES the LED). It carries a SENTINEL row id so it
 stays out of the table-row dimension dispatch, and registers NO drag yet (the
 drag-to-re-anchor "re-measure to a different LED edge, LED stays put" is a later
 increment).
+
+bugs/0125: the dialog pins the chosen LED edge at object+distance, but a free
+carry-drag of the LED adds led_step_placement_offset_xyz on top WITHOUT updating
+led_object_edge_distance_mm. The arrow used to stay frozen at the typed value
+while the dragged LED moved away (flag_20260624_075900_372). The overlay now
+measures the LIVE object->edge distance = typed distance + placement_offset_z, so
+the arrow + label follow the LED and still equal the typed value when undragged.
 
 This guard is display-free: it drives the real `_emit_led_object_edge_dimension`
 with `_emit_span_dimension` monkeypatched to capture the emitted geometry, and
@@ -37,14 +44,23 @@ class _FakeStatus:
 
 
 class _FakeEditor:
-    def __init__(self, *, led: bool = True, distance: float = 191.7) -> None:
+    def __init__(
+        self, *, led: bool = True, distance: float = 191.7, led_offset_z: float = 0.0
+    ) -> None:
         self.imported_led_step_path = "led.step" if led else None
         self.led_object_edge_distance_mm = float(distance)
+        # bugs/0125: a free carry-drag of the LED records its axial slide here; the
+        # live overlay reads it so the arrow tracks the dragged edge.
+        self.led_step_placement_offset_xyz = (0.0, 0.0, float(led_offset_z))
         self.rows = [object(), object(), object()]  # >= 2 rows
         self.led_dialog_calls = 0
 
     def _surface_reference_world_point(self, idx, system=None):
         return (0.0, 0.0, 0.0)  # object plane at the origin
+
+    def _step_placement_offset_xyz(self, label):
+        value = getattr(self, f"{label}_step_placement_offset_xyz", (0.0, 0.0, 0.0))
+        return (float(value[0]), float(value[1]), float(value[2]))
 
     def set_led_edge_distance(self) -> None:
         self.led_dialog_calls += 1
@@ -136,6 +152,49 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         notes.append("FAIL: a zero LED edge distance must draw no overlay")
         passed = False
 
+    # F. bugs/0125: after a free LED carry-drag the overlay tracks the LED's LIVE
+    #    object-side edge, not the stale typed distance. flag_20260624_075900_372:
+    #    the LED was dragged -36.1658 mm toward the object, so the arrow endpoint and
+    #    label must follow to object+(distance-36.1658), and must NOT still read the
+    #    typed 191.7.
+    DRAG_Z = -36.1658
+    live = 191.7 + DRAG_Z  # 155.5342 mm
+    editor_f = _FakeEditor(led=True, distance=191.7, led_offset_z=DRAG_Z)
+    svc_f = _service(editor_f)
+    cap_f: dict = {}
+    svc_f._emit_span_dimension = lambda **k: cap_f.update(k) or 1  # type: ignore[assignment]
+    nf = svc_f._emit_led_object_edge_dimension(
+        None, base_offset=10.0, scene_span=100.0, view_normal=vn, screen_up=su, screen_right=sr
+    )
+    if nf != 1 or not cap_f:
+        notes.append("FAIL: a dragged-LED object->LED overlay did not emit a dimension")
+        passed = False
+    else:
+        bhi = np.asarray(cap_f.get("base_hi", ()), dtype=float).reshape(-1)
+        if bhi.size < 3 or not np.allclose(bhi[:3], (0.0, 0.0, live)):
+            notes.append(
+                f"FAIL: dragged overlay base_hi={tuple(bhi)} must track the LIVE edge "
+                f"(0,0,{live:.6g}), not the stale typed 191.7"
+            )
+            passed = False
+        lab_f = str(cap_f.get("label", ""))
+        if "191.7" in lab_f:
+            notes.append(f"FAIL: dragged overlay label {lab_f!r} still shows the STALE typed 191.7 mm")
+            passed = False
+        if f"{live:.4g}" not in lab_f:
+            notes.append(f"FAIL: dragged overlay label {lab_f!r} should show the LIVE {live:.4g} mm")
+            passed = False
+
+    # G. A drag that pushes the LED edge to/behind the object draws no degenerate
+    #    (zero/negative-length) arrow.
+    editor_g = _FakeEditor(led=True, distance=191.7, led_offset_z=-200.0)
+    svc_g = _service(editor_g)
+    cap_g: dict = {}
+    svc_g._emit_span_dimension = lambda **k: cap_g.update(k) or 1  # type: ignore[assignment]
+    if svc_g._emit_led_object_edge_dimension(None, base_offset=10.0, scene_span=100.0, view_normal=vn, screen_up=su, screen_right=sr) != 0 or cap_g:
+        notes.append("FAIL: an LED dragged to/behind the object must draw no degenerate object->LED arrow")
+        passed = False
+
     # D. A click on the overlay (edit_dimension at the sentinel row) routes to the
     #    LED edge-distance dialog -- NOT the table-row edit guard.
     editor_d = _FakeEditor(led=True, distance=191.7)
@@ -162,6 +221,7 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     try:
         emit_src = inspect.getsource(Svc._emit_span_dimension)
         add_src = inspect.getsource(Svc.add_overlays)
+        led_emit_src = inspect.getsource(Svc._emit_led_object_edge_dimension)
     except Exception as exc:
         notes.append(f"FAIL: cannot read service source: {exc!r}")
         return False, notes
@@ -170,6 +230,14 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         passed = False
     if "_emit_led_object_edge_dimension" not in add_src:
         notes.append("FAIL: add_overlays no longer draws the object->LED overlay")
+        passed = False
+    # bugs/0125 source contract: the overlay measures the LIVE edge (typed distance
+    # + LED placement offset) and no longer draws to the stale typed distance.
+    if "_step_placement_offset_xyz" not in led_emit_src or "live_distance" not in led_emit_src:
+        notes.append("FAIL: object->LED overlay no longer measures the LIVE edge (placement-offset-aware)")
+        passed = False
+    if "axis * distance" in led_emit_src:
+        notes.append("FAIL: object->LED overlay still draws to the STALE typed distance (axis * distance)")
         passed = False
 
     if verbose:
