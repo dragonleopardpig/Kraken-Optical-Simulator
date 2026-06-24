@@ -3954,6 +3954,42 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 extents.append(extent)
         return extents
 
+    @staticmethod
+    def _previous_axial_component(
+        me_near: float,
+        extents,
+        *,
+        overlap_eps: float = 1e-6,
+    ) -> dict[str, object] | None:
+        """Pick the component immediately *before* a dragged body along the axis.
+
+        ``extents`` are the candidate components' axial extents (each a dict with
+        a ``proj_max`` far-edge projection); ``me_near`` is the dragged body's
+        near-edge projection. The chosen previous must end at or behind
+        ``me_near`` -- a glued companion that sits INSIDE the dragged body (the
+        camera's detector / image plane / sensor, bugs/0131) far-overlaps the
+        body and is rejected, so it can't masquerade as the preceding optic and
+        report a bogus negative gap. Among the cleanly-preceding candidates the
+        nearest one (largest ``proj_max``) wins. Returns the extent dict or None.
+        """
+        try:
+            near = float(me_near)
+        except (TypeError, ValueError):
+            return None
+        previous: dict[str, object] | None = None
+        for extent in extents or ():
+            try:
+                far = float(extent["proj_max"])
+            except (TypeError, KeyError, ValueError, IndexError):
+                continue
+            if not np.isfinite(far):
+                continue
+            if far > near + float(overlap_eps):
+                continue
+            if previous is None or far > float(previous["proj_max"]):
+                previous = extent
+        return previous
+
     def _step_overlay_axial_gap(
         self, label: str, axis_unit=None
     ) -> tuple[np.ndarray, np.ndarray, float] | None:
@@ -3964,6 +4000,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         dragged component's lateral center line so the dimension reads as a pure
         axial distance. Kept as a clean, side-effect-free seam so a future
         focus/collimation quick-solve can query spacing while sweeping position.
+
+        bugs/0131: the "previous" component is chosen by far-edge, not center, so
+        a glued companion buried inside the dragged body (a camera's detector /
+        image plane after an LED becomes a camera) can't win the search and kill
+        the live gap; it measures to the genuine preceding element instead.
         """
         label = str(label or "").strip().lower()
         if not label:
@@ -3974,18 +4015,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if me is None:
             return None
         axis = me["axis"]
-        me_center = float(me["proj_center"])
-        previous: dict[str, object] | None = None
-        for extent in self._scene_component_axial_extents(axis, exclude_step=label):
-            if float(extent["proj_center"]) >= me_center:
-                continue
-            if previous is None or float(extent["proj_max"]) > float(previous["proj_max"]):
-                previous = extent
+        me_near = float(me["proj_min"])
+        extents = self._scene_component_axial_extents(axis, exclude_step=label)
+        previous = self._previous_axial_component(me_near, extents)
         if previous is None:
             return None
         base = np.asarray(me["centroid"], dtype=float).reshape(3)
         base_axial = float(np.dot(base, axis))
-        near_axial = float(me["proj_min"])
+        near_axial = me_near
         far_axial = float(previous["proj_max"])
         near_point = base + axis * (near_axial - base_axial)
         prev_far_point = base + axis * (far_axial - base_axial)

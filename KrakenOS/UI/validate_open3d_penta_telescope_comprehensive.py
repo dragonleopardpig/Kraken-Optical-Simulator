@@ -7580,6 +7580,39 @@ def phase_120_led_edge_reanchor(
     return result
 
 
+def phase_121_camera_live_gap(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0131: the live edge-gap overlay must survive the LED->camera placement.
+
+    Once a dragged LED is placed and becomes a camera it gains a glued detector /
+    image plane that sits INSIDE the camera body. `_step_overlay_axial_gap` picked
+    the "previous" component by axial center, so that buried companion won the
+    search and produced a bogus negative gap -- the live spacing read silently
+    vanished on the next drag (flag_20260624_083154_091). The fix selects the
+    previous by FAR EDGE (a genuine previous ends at/behind the dragged near edge)
+    via the pure `_previous_axial_component` helper, so the gap measures to the
+    real preceding element. The guard exercises that helper and is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 121: Open 3D camera live edge-gap survives the LED->camera placement"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_camera_live_gap import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"camera-live-gap guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("camera-live-gap guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7746,6 +7779,7 @@ def main() -> int:
             phase_118_led_bs_glue_promoted,
             phase_119_perp_label_camera_track,
             phase_120_led_edge_reanchor,
+            phase_121_camera_live_gap,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
