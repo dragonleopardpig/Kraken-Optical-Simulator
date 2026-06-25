@@ -143,7 +143,8 @@
     "138": "pass",
     "139": "pass",
     "140": "pass",
-    "141": "pass"
+    "141": "pass",
+    "142": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -287,6 +288,7 @@
     "138": "Open 3D re-anchored dimension endpoints track their feature",
     "139": "Open 3D Object->LED distance dialog edits the live distance",
     "140": "Open 3D thickness dimension side re-derives on orbit",
-    "141": "Open 3D right-click re-anchor menu moves the endpoint nearest the click"
+    "141": "Open 3D right-click re-anchor menu moves the endpoint nearest the click",
+    "142": "Quick Estimation design-mode solve-for-EFL + DOF accountant"
   }
 }

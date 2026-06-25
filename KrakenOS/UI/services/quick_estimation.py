@@ -68,6 +68,149 @@ def _nearest_sensor_format(diagonal: float) -> tuple[str, float]:
     return min(SENSOR_FORMATS, key=lambda fmt: abs(fmt[1] - float(diagonal)))
 
 
+# ----------------------------------------------------------------- design solve
+# "What lens do I need?" -- invert the finite-conjugate relations for the FOCAL
+# LENGTH given a set of pinned first-order constraints (design mode). Unlike the
+# placement solve (fixed lens, 1 DOF, _conjugate_pair forward), design mode treats
+# the lens as UNKNOWN, so it is a THIN-LENS first-order target (principal planes
+# ppa = ppp = 0, since they belong to a lens not yet chosen) and the answer is
+# advisory -- "pick a ~73 mm EFL". The conjugate geometry is 2 DOF:
+#
+#     s_o = f (1 + 1/m)      s_i = f (1 + m)      T = s_o + s_i      (m = |mag| > 0)
+#
+# determined by a "magnification" constraint (magnification OR object FOV via the
+# fixed sensor) plus a "scale" constraint (one of object/image distance or total
+# track); or by two length constraints (which jointly fix m AND the scale).
+DESIGN_OBJECT_DISTANCE = "object_distance"
+DESIGN_IMAGE_DISTANCE = "image_distance"
+DESIGN_MAGNIFICATION = "magnification"
+DESIGN_TOTAL_TRACK = "total_track"
+DESIGN_OBJECT_FOV_SEMI = "object_fov_semi"
+DESIGN_QUANTITIES = (
+    DESIGN_OBJECT_DISTANCE,
+    DESIGN_IMAGE_DISTANCE,
+    DESIGN_MAGNIFICATION,
+    DESIGN_TOTAL_TRACK,
+    DESIGN_OBJECT_FOV_SEMI,
+)
+_DESIGN_LENGTHS = (DESIGN_OBJECT_DISTANCE, DESIGN_IMAGE_DISTANCE, DESIGN_TOTAL_TRACK)
+DESIGN_FOCAL_LENGTH = "focal_length"
+
+
+def _coerce_design_pins(pins: Any) -> dict[str, float]:
+    out: dict[str, float] = {}
+    if not isinstance(pins, dict):
+        return out
+    for q in DESIGN_QUANTITIES:
+        if q not in pins:
+            continue
+        try:
+            v = float(pins[q])
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(v):
+            out[q] = v
+    return out
+
+
+def resolve_design_system(pins: Any, sensor_semi: Any = None, *, rel_tol: float = 1e-4) -> dict[str, Any]:
+    """Solve the thin-lens first-order system for the FOCAL LENGTH from a set of
+    pinned constraints (design mode -- "what lens do I need?").
+
+    ``pins`` -- ``{quantity: value}`` over ``DESIGN_QUANTITIES`` (magnitudes;
+    ``magnification`` is ``|m| > 0``). ``sensor_semi`` -- terminal image-circle
+    radius (mm); needed only to fold an ``object_fov_semi`` pin into a
+    magnification.
+
+    Returns a dict with ``status`` in {"balanced", "under", "over", "invalid"} and
+    a ``message``; when ``balanced`` it also carries ``focal_length``,
+    ``object_distance``, ``image_distance``, ``magnification``, ``total_track`` and
+    (if a sensor is known) ``object_fov_semi``. The DOF accountant (under/over) is
+    the same code path as the solve, so the UI's "balanced / pin one more / release
+    one" indicator and the computed lens never disagree.
+    """
+    p = _coerce_design_pins(pins)
+    try:
+        sensor_semi = float(sensor_semi) if sensor_semi is not None else None
+    except (TypeError, ValueError):
+        sensor_semi = None
+
+    def fail(status: str, message: str) -> dict[str, Any]:
+        return {"status": status, "message": message}
+
+    # 1) fold an object-FOV pin into a magnification (needs the fixed sensor).
+    mag = p.get(DESIGN_MAGNIFICATION)
+    if mag is not None and mag <= 0:
+        return fail("invalid", "Magnification must be > 0.")
+    if DESIGN_OBJECT_FOV_SEMI in p:
+        fov = p[DESIGN_OBJECT_FOV_SEMI]
+        if fov <= 0:
+            return fail("invalid", "Object FOV must be > 0.")
+        if sensor_semi is None or sensor_semi <= 0:
+            return fail("invalid", "Object FOV needs a sensor size to set magnification.")
+        mag_fov = sensor_semi / fov
+        if mag is not None and abs(mag - mag_fov) > rel_tol * max(mag, mag_fov, 1.0):
+            return fail("over", "Magnification and Object FOV conflict -- pin only one.")
+        mag = mag_fov
+    has_m = mag is not None
+
+    lengths = [q for q in _DESIGN_LENGTHS if q in p]
+    n_len = len(lengths)
+
+    # 2) DOF accounting (design = 2 DOF: a magnification constraint + a scale one).
+    if has_m:
+        if n_len == 0:
+            return fail("under", "Pin a distance (object or image) or the total track.")
+        if n_len >= 2:
+            return fail("over", "Too many lengths -- with a magnification, pin exactly one length.")
+    else:
+        if n_len < 2:
+            return fail("under", "Pin two of {object distance, image distance, total track}, or a magnification + one length.")
+        if n_len > 2:
+            return fail("over", "Three lengths over-constrain the system -- release one.")
+
+    # 3) solve thin-lens (ppa = ppp = 0).
+    if has_m:
+        m = float(mag)
+        if DESIGN_OBJECT_DISTANCE in p:
+            s_o = p[DESIGN_OBJECT_DISTANCE]; f = s_o * m / (m + 1.0); s_i = f * (1.0 + m)
+        elif DESIGN_IMAGE_DISTANCE in p:
+            s_i = p[DESIGN_IMAGE_DISTANCE]; f = s_i / (1.0 + m); s_o = f * (1.0 + 1.0 / m)
+        else:  # total_track + m
+            tt = p[DESIGN_TOTAL_TRACK]; f = tt / (2.0 + m + 1.0 / m); s_o = f * (1.0 + 1.0 / m); s_i = f * (1.0 + m)
+    else:
+        if DESIGN_OBJECT_DISTANCE in p and DESIGN_IMAGE_DISTANCE in p:
+            s_o = p[DESIGN_OBJECT_DISTANCE]; s_i = p[DESIGN_IMAGE_DISTANCE]
+        elif DESIGN_OBJECT_DISTANCE in p and DESIGN_TOTAL_TRACK in p:
+            s_o = p[DESIGN_OBJECT_DISTANCE]; s_i = p[DESIGN_TOTAL_TRACK] - s_o
+        else:  # image_distance + total_track
+            s_i = p[DESIGN_IMAGE_DISTANCE]; s_o = p[DESIGN_TOTAL_TRACK] - s_i
+        if s_o <= 1e-9 or s_i <= 1e-9:
+            return fail("invalid", "Those lengths give a non-physical conjugate (check the total track).")
+        m = s_i / s_o
+        f = s_i / (1.0 + m)
+
+    if not (np.isfinite(f) and f > 1e-9 and s_o > 1e-9 and s_i > 1e-9 and m > 1e-9):
+        return fail("invalid", "No real-image solution for those constraints.")
+
+    total_track = s_o + s_i
+    result: dict[str, Any] = {
+        "status": "balanced",
+        "message": (
+            f"Need EFL ~ {f:.4g} mm  (object {s_o:.4g} mm, image {s_i:.4g} mm, "
+            f"|m| {m:.4g}, track {total_track:.4g} mm)."
+        ),
+        DESIGN_FOCAL_LENGTH: float(f),
+        DESIGN_OBJECT_DISTANCE: float(s_o),
+        DESIGN_IMAGE_DISTANCE: float(s_i),
+        DESIGN_MAGNIFICATION: float(m),
+        DESIGN_TOTAL_TRACK: float(total_track),
+    }
+    if sensor_semi is not None and sensor_semi > 0:
+        result[DESIGN_OBJECT_FOV_SEMI] = sensor_semi / m
+    return result
+
+
 class QuickEstimationService:
     """Object/image conjugate + FOV solver wired to the 3D thickness handles."""
 
@@ -213,6 +356,16 @@ class QuickEstimationService:
             return False, "Quick Estimation: conjugate out of range (near focal point)."
         self.editor.rows[dep_row].thickness = float(solved)
         return True, f"{LABELS[dep_q]} solved -> {solved:.6g} mm for focus."
+
+    # -------------------------------------------------------- design solve (EFL)
+    def solve_design(self, pins: dict[str, Any]) -> dict[str, Any]:
+        """Design-mode "what lens do I need?": invert the first-order system for the
+        focal length from the pinned constraints. Reads the (vendor-fixed) sensor
+        semi-height from the layout so an object-FOV pin folds to a magnification.
+        Advisory only -- returns the required EFL + conjugates, does NOT mutate the
+        layout (the lens isn't chosen yet). See module ``resolve_design_system``.
+        """
+        return resolve_design_system(pins, sensor_semi=self._sensor_semi())
 
     def preview_state(self, independent_row_index: int, pending_value: float) -> dict[str, Any] | None:
         """Conjugate state for a *pending* (uncommitted) thickness drag.

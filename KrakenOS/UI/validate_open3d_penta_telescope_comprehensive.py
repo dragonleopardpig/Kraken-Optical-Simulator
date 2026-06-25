@@ -8325,6 +8325,36 @@ def phase_141_reanchor_menu_endpoint(
     return result
 
 
+def phase_142_quick_estimation_focal_solve(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Quick Estimation DESIGN mode ("what lens do I need?"): invert the first-order
+    conjugate relations for the FOCAL LENGTH from pinned constraints, with a DOF
+    accountant. Thin-lens (ppa=ppp=0) advisory target; 2 DOF (a magnification
+    constraint -- magnification or object FOV via the fixed sensor -- plus a scale
+    constraint, or two lengths). The accountant (under/over) shares the solve path so
+    the UI's balance indicator and the computed lens never disagree. The guard drives
+    the pure ``resolve_design_system`` function; display-free.
+    """
+    result = PhaseResult(
+        name="Phase 142: Quick Estimation design-mode solve-for-EFL + DOF accountant"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_quick_estimation_focal_solve import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"quick-estimation focal-solve guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("quick-estimation focal-solve guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8512,6 +8542,7 @@ def main() -> int:
             phase_139_object_led_distance_dialog,
             phase_140_dimension_side_orbit,
             phase_141_reanchor_menu_endpoint,
+            phase_142_quick_estimation_focal_solve,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
