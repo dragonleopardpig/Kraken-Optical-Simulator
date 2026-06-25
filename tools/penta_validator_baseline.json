@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-06-24T05:23:05+00:00",
+  "generated_at": "2026-06-25T08:15:10",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -128,7 +128,8 @@
     "123": "pass",
     "124": "pass",
     "125": "pass",
-    "126": "pass"
+    "126": "pass",
+    "127": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -257,6 +258,7 @@
     "123": "Open 3D LED distance edit carries the BS<->LED glue",
     "124": "Open 3D clear-aperture pick + persisted CA",
     "125": "Open 3D clear-aperture pick empty-click cancel",
-    "126": "Open 3D hidden STEP element drops its gizmo"
+    "126": "Open 3D hidden STEP element drops its gizmo",
+    "127": "Open 3D glued beam splitter follows the LED live"
   }
 }

@@ -2345,7 +2345,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if transition.status:
             self.status_var.set(transition.status)
 
-    def _translate_row_actors(self, row_index: int, delta_xyz) -> int:
+    def _translate_row_actors(self, row_index: int, delta_xyz, *, render: bool = True) -> int:
         try:
             delta = np.asarray(delta_xyz, dtype=float).reshape(-1)[:3]
         except Exception:
@@ -2367,7 +2367,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self._reset_camera_clipping_range_for_scene()
             except Exception:
                 pass
-            self.render()
+            if render:
+                self.render()
         return moved
 
     def _translate_placement_handle_actors(self, row_index: int, delta_xyz) -> int:
@@ -2733,7 +2734,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.refresh_from_editor()
         self.status_var.set(f"Carry {label.upper()} STEP: free movement; hold-drag STEP to move.")
 
-    def _translate_step_overlay_actors(self, label: str, delta_xyz) -> int:
+    def _translate_step_overlay_actors(
+        self, label: str, delta_xyz, *, carry_glue: bool = True, render: bool = True
+    ) -> int:
         label = str(label).strip().lower()
         try:
             delta = np.asarray(delta_xyz, dtype=float).reshape(-1)[:3]
@@ -2763,8 +2766,52 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self._reset_camera_clipping_range_for_scene()
             except Exception:
                 pass
-            self.render()
+            # bugs/0137: the BS<->LED data carry (_carry_glued_optical_led) moves the
+            # glued partner's DATA each frame but not its ACTORS, so the partner lagged
+            # behind during the live drag ("moving the LED, BS is not following live").
+            # Mirror the same world delta onto the partner's actors here, deferring its
+            # render so the single render below repaints both together.
+            if carry_glue:
+                self._mirror_glued_partner_actors(label, delta)
+            if render:
+                self.render()
         return moved
+
+    def _mirror_glued_partner_actors(self, moved_label: str, delta_xyz) -> None:
+        """bugs/0137: when the BS<->LED rigid glue is active, move the glued PARTNER's
+        ACTORS by the same world delta as the just-dragged body, so the partner tracks
+        the drag live. Mirrors the partner resolution in ``_carry_glued_optical_led``
+        (which carries the partner DATA): the beam splitter may be the 'optical' overlay
+        OR a promoted optical solid row; the LED is always an overlay. The partner move
+        is render-deferred and glue-suppressed so it neither double-renders nor carries
+        back onto the dragged body."""
+        editor = self.editor
+        if not bool(getattr(editor, "_optical_led_glued", False)):
+            return
+        moved = str(moved_label or "").strip().lower()
+        if moved not in ("optical", "led"):
+            return
+        try:
+            delta = np.asarray(delta_xyz, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return
+        if delta.size < 3 or not np.all(np.isfinite(delta[:3])):
+            return
+        partner = "led" if moved == "optical" else "optical"
+        try:
+            partner_is_overlay = editor._step_path_for_label(partner) is not None
+        except Exception:
+            partner_is_overlay = False
+        if partner_is_overlay:
+            self._translate_step_overlay_actors(partner, delta, carry_glue=False, render=False)
+            return
+        if partner == "optical":
+            try:
+                row_index = editor._promoted_optical_solid_row_index("optical")
+            except Exception:
+                row_index = None
+            if row_index is not None:
+                self._translate_row_actors(int(row_index), delta, render=False)
 
     def _remove_step_overlay_actors(self, label: str) -> int:
         return self._open3d_step_overlay_refresh_service()._remove_step_overlay_actors(label)

@@ -7784,6 +7784,39 @@ def phase_126_hidden_step_drops_gizmo(
     return result
 
 
+def phase_127_glue_live_actor_carry(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0137: a glued beam splitter follows the LED during a LIVE drag.
+
+    With the BS<->LED glue active, dragging the LED moved the LED body but left the
+    glued beam splitter frozen until mouse-up ("after glued, moving the LED, BS is not
+    following live."). Each frame carried the partner's DATA but the actor carry only
+    moved the dragged label's actors, so the partner lagged a whole drag behind. The fix
+    adds _mirror_glued_partner_actors at the actor chokepoint: it mirrors the same world
+    delta onto the glued partner's actors (BS overlay or promoted row), glue-suppressed
+    and render-deferred. The guard runs the real mirror against a stub and pins the
+    actor-carry + row-carry source contracts; it is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 127: Open 3D glued beam splitter follows the LED live"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_glue_live_actor_carry import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"glue live-follow guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("glue live-follow guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7956,6 +7989,7 @@ def main() -> int:
             phase_124_clear_aperture_pick,
             phase_125_clear_aperture_pick_cancel,
             phase_126_hidden_step_drops_gizmo,
+            phase_127_glue_live_actor_carry,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
