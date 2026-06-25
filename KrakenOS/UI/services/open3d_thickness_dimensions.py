@@ -903,7 +903,8 @@ class Open3DThicknessDimensionService:
         self, p0: np.ndarray, p1: np.ndarray, override: dict
     ) -> tuple[np.ndarray, np.ndarray, float] | None:
         """Apply an endpoint override to (p0, p1): move the chosen end's axial z
-        to the picked reference. Returns (q0, q1, measured_mm) or None."""
+        to the picked reference, and pin the OTHER end to the axial z it was
+        anchored against. Returns (q0, q1, measured_mm) or None."""
         try:
             ref_z = float(override.get("ref_z"))
         except Exception:
@@ -913,10 +914,29 @@ class Open3DThicknessDimensionService:
         endpoint = "start" if str(override.get("endpoint", "end")) == "start" else "end"
         q0 = np.asarray(p0, dtype=float).reshape(3).copy()
         q1 = np.asarray(p1, dtype=float).reshape(3).copy()
+        # bugs/0147: pin the FIXED endpoint to the axial z it was anchored against
+        # (stored ``fixed_z``), not the live model surface. A re-anchored dimension
+        # is an absolute-z MEASUREMENT whose spec stores only the MOVED end's
+        # ref_z; drawing the other end from the live p0/p1 meant re-anchoring one
+        # end and then the OTHER reverted the first end to its model station
+        # ("left arrow reanchor moved the right arrow"). fixed_z already records
+        # where the user left that end -- it is what the value-edit path uses -- so
+        # honour it here too. Absent (legacy spec / LED sentinel) -> keep live end.
+        fixed_z = None
+        try:
+            raw_fixed = override.get("fixed_z")
+            if raw_fixed is not None and np.isfinite(float(raw_fixed)):
+                fixed_z = float(raw_fixed)
+        except Exception:
+            fixed_z = None
         if endpoint == "start":
             q0[2] = ref_z
+            if fixed_z is not None:
+                q1[2] = fixed_z
         else:
             q1[2] = ref_z
+            if fixed_z is not None:
+                q0[2] = fixed_z
         measured = abs(float(q1[2] - q0[2]))
         return q0, q1, measured
 

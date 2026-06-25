@@ -137,7 +137,8 @@
     "132": "pass",
     "133": "pass",
     "134": "pass",
-    "135": "pass"
+    "135": "pass",
+    "136": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -275,6 +276,7 @@
     "132": "Open 3D unchanged STEP-overlay re-apply skips face-metadata re-bake",
     "133": "Open 3D single-label STEP-overlay refresh keeps other labels' actors",
     "134": "Open 3D promote suppresses the stale table-selection 3-D highlight",
-    "135": "Open 3D fast int-key STEP silhouette is identical to the walk"
+    "135": "Open 3D fast int-key STEP silhouette is identical to the walk",
+    "136": "Open 3D re-anchored dimension pins its fixed end to fixed_z"
   }
 }

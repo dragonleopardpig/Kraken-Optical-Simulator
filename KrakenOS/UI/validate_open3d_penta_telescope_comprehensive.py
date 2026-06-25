@@ -8108,6 +8108,43 @@ def phase_135_boundary_pairs_fast_int_key(
     return result
 
 
+def phase_136_dimension_reanchor_fixed_end(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0147: a re-anchored dimension pins its FIXED end to the stored fixed_z.
+
+    A thickness/distance dimension can be Ctrl-click re-anchored (bugs/0053): the end
+    nearer the cursor follows the mouse to a picked surface/edge and a plain click commits
+    a MEASUREMENT-ONLY override storing the moved end (ref_z + which endpoint) plus the
+    other end's axial z (fixed_z). The drawing path ``reanchored_endpoints`` applied ref_z
+    to the moved end but read the FIXED end from the LIVE model surface, ignoring fixed_z;
+    for a fresh single re-anchor that coincides, but re-anchoring one end and then the OTHER
+    redrew the first end from the live surface -- discarding where the user put it ("left
+    arrow reanchor moved the right arrow"). The fix pins the fixed end to fixed_z (the
+    value-edit path already used it). The guard pins (display-free) that fixed_z overrides a
+    drifted live end for both endpoints, the measured value, the reported right->left
+    sequence keeping the right end put, the no-fixed_z back-compat fallback, a non-finite
+    fixed_z falling back, and a source marker that fixed_z is consulted.
+    """
+    result = PhaseResult(
+        name="Phase 136: Open 3D re-anchored dimension pins its fixed end to fixed_z"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_dimension_reanchor_fixed_end import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"dimension re-anchor fixed-end guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("dimension re-anchor fixed-end guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8289,6 +8326,7 @@ def main() -> int:
             phase_133_step_overlay_refresh_keeps_other_labels,
             phase_134_promote_suppresses_table_selection_sync,
             phase_135_boundary_pairs_fast_int_key,
+            phase_136_dimension_reanchor_fixed_end,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
