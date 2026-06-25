@@ -8221,6 +8221,42 @@ def phase_138_dimension_reanchor_feature_track(
     return result
 
 
+def phase_139_object_led_distance_dialog(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0151 (re-applied from M90aPro-local bugs/0135): the Object->LED distance dialog
+    must edit the LIVE distance.
+
+    The live "Object -> LED" dimension is `led_object_edge_distance_mm + placement_offset_z`
+    (a free carry-drag adds the axial offset on top of the typed knob without rewriting it,
+    bugs/0125). The edge-distance dialog prefilled and wrote the RAW knob, so after a drag of
+    -71.34 it showed the stale knob (200) not the live 128.7, and typing V landed the LED's
+    edge at V + offset_z, not V (flag_20260624_203712_059 "changing the Object LED distance
+    via dialog is not working"). The fix prefills the live distance and writes
+    `knob = typed - offset_z`, leaving placement_offset untouched so the bugs/0133 glue-carry
+    (which tracks _led_step_z_translation, excluding offset_z) shoves the glued BS by the SAME
+    net z-shift as the LED edge. The guard drives the real set_led_edge_distance on a fake
+    editor with the Tk prompt stubbed; it is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 139: Open 3D Object->LED distance dialog edits the live distance"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_object_led_distance_dialog import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"object-led-distance-dialog guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("object-led-distance-dialog guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8405,6 +8441,7 @@ def main() -> int:
             phase_136_dimension_reanchor_fixed_end,
             phase_137_face_outline_fast,
             phase_138_dimension_reanchor_feature_track,
+            phase_139_object_led_distance_dialog,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

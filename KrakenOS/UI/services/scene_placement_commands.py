@@ -1702,7 +1702,19 @@ class ScenePlacementMixin:
         return max(0.0, min(lens_front_z * 0.25, lens_front_z - 1.0))
 
     def set_led_edge_distance(self) -> None:
-        current = max(float(getattr(self, "led_object_edge_distance_mm", 0.0)), 0.0)
+        # bugs/0151: the LIVE "Object -> LED" dimension the user sees and clicks is
+        # ``led_object_edge_distance_mm + placement_offset_z`` (a free carry-drag adds
+        # the axial offset on top of the typed knob WITHOUT rewriting it -- see the
+        # live_distance derivation in open3d_thickness_dimensions). The dialog used to
+        # prefill and write the RAW knob, so after a drag it showed the stale knob
+        # (e.g. 200) instead of the live 128.7, and typing V landed the LED at
+        # V + offset_z, not V ("changing the Object LED distance is not working").
+        # Prefill the live distance and fold the offset back out on commit so the
+        # typed value IS the live distance; leave placement_offset untouched so the
+        # bugs/0133 glue-carry (which tracks _led_step_z_translation, excluding
+        # offset_z) shoves the glued beam splitter by the SAME net z-shift as the LED.
+        offset_z = float(self._step_placement_offset_xyz("led")[2])
+        current = max(float(getattr(self, "led_object_edge_distance_mm", 0.0)) + offset_z, 0.0)
         if current <= 0.0:
             current = self._default_led_object_edge_distance()
         value = self._ask_led_edge_distance(current)
@@ -1710,11 +1722,11 @@ class ScenePlacementMixin:
             return
         self._begin_history_capture()
         before_translation = self._led_step_z_translation()
-        self.led_object_edge_distance_mm = float(value)
+        self.led_object_edge_distance_mm = float(value) - offset_z
         self._clear_led_edge_dimension_override()
         self._carry_led_glue_over_translation_change(before_translation)  # bugs/0133
         self._commit_history_capture()
-        self.status_var.set(f"LED edge distance: {self.led_object_edge_distance_mm:.3g} mm")
+        self.status_var.set(f"LED edge distance: {float(value):.3g} mm")
         self._refresh_open_3d_views(step_label="led")
 
     def _ask_led_edge_distance(self, initial_value: float, *, parent: tk.Misc | None = None) -> float | None:
