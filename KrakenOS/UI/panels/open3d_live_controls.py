@@ -223,11 +223,29 @@ class Open3DLiveControlsPanel:
                 pass
 
     def build_design_constraint_controls(self, parent: tk.Widget, start_row: int) -> None:
-        """Embed the reusable design-mode constraint/solve block in the QE panel."""
+        """Embed the reusable constraint/solve block in the QE panel with a
+        Design / Placement mode toggle (design = solve for the lens; placement =
+        fixed lens, solve + focus)."""
         from KrakenOS.UI.panels.design_constraint_controls import DesignConstraintControls
 
-        self._design_constraint_controls = DesignConstraintControls(self.inspector)
-        self._design_constraint_controls.build(parent, start_row=start_row)
+        ttk.Separator(parent, orient="horizontal").grid(
+            row=start_row, column=0, columnspan=2, sticky="ew", pady=4
+        )
+        mode_row = ttk.Frame(parent)
+        mode_row.grid(row=start_row + 1, column=0, columnspan=2, sticky="w")
+        self._design_mode_var = tk.StringVar(value="design")
+        ttk.Label(mode_row, text="Solve:").grid(row=0, column=0, sticky="w")
+        controls = self._design_constraint_controls = DesignConstraintControls(
+            self.inspector, mode_getter=lambda: self._design_mode_var.get()
+        )
+        for col, (value, label) in enumerate(
+            (("design", "Design (find lens)"), ("placement", "Placement (fixed lens)")), start=1
+        ):
+            ttk.Radiobutton(
+                mode_row, text=label, value=value, variable=self._design_mode_var,
+                command=controls.recompute,
+            ).grid(row=0, column=col, sticky="w", padx=(6, 0))
+        controls.build(parent, start_row=start_row + 2, show_separator=False)
 
     def build_solve_controls(self, parent: tk.Widget) -> None:
         """Mark thickness gaps Variable, then solve them for best focus / best

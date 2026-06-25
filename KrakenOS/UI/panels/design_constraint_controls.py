@@ -59,8 +59,17 @@ class DesignConstraintControls:
     double-clicked). In ``compact`` builds those rows are hidden and shown as a note.
     """
 
-    def __init__(self, inspector: Any, *, context_provider: Callable[[], dict] | None = None) -> None:
+    def __init__(
+        self,
+        inspector: Any,
+        *,
+        mode: str = "design",
+        mode_getter: Callable[[], str] | None = None,
+        context_provider: Callable[[], dict] | None = None,
+    ) -> None:
         self.inspector = inspector
+        self.mode = mode
+        self.mode_getter = mode_getter
         self.context_provider = context_provider
         self._fix: dict[str, tk.BooleanVar] = {}
         self._val: dict[str, tk.StringVar] = {}
@@ -69,6 +78,25 @@ class DesignConstraintControls:
         self._result_var: tk.StringVar | None = None
         self._result_label: ttk.Label | None = None
         self._context_var: tk.StringVar | None = None
+        self._header_var: tk.StringVar | None = None
+
+    def _mode(self) -> str:
+        if self.mode_getter is not None:
+            try:
+                m = str(self.mode_getter() or "").strip().lower()
+                if m in ("design", "placement"):
+                    return m
+            except Exception:
+                pass
+        return "placement" if str(self.mode).strip().lower() == "placement" else "design"
+
+    @staticmethod
+    def _header_text(mode: str) -> str:
+        return (
+            "Placement (fixed lens) -- pin one, solve & focus"
+            if mode == "placement"
+            else "Design lens -- pin knowns, solve for the EFL"
+        )
 
     def _context(self) -> dict[str, float]:
         if self.context_provider is None:
@@ -94,9 +122,10 @@ class DesignConstraintControls:
                 row=row, column=0, columnspan=2, sticky="ew", pady=4
             )
             row += 1
+        self._header_var = tk.StringVar(value=self._header_text(self._mode()))
         ttk.Label(
             parent,
-            text="Design lens -- pin knowns, solve for the EFL",
+            textvariable=self._header_var,
             foreground="#555555",
             justify="left",
         ).grid(row=row, column=0, columnspan=2, sticky="w")
@@ -179,10 +208,14 @@ class DesignConstraintControls:
     def recompute(self) -> None:
         if not self._fix and self.context_provider is None:
             return
+        mode = self._mode()
+        if self._header_var is not None:
+            self._header_var.set(self._header_text(mode))
         context = self._context()
         pins = {**context, **self._collect_pins()}
         try:
-            view = self.inspector._quick_estimation_service().design_constraint_view(pins)
+            svc = self.inspector._quick_estimation_service()
+            view = svc.placement_constraint_view(pins) if mode == "placement" else svc.design_constraint_view(pins)
         except Exception:
             return
         states = view.get("states", {}) or {}
@@ -227,7 +260,10 @@ class DesignConstraintControls:
             return
         pins = {**self._context(), **self._collect_pins()}
         try:
-            self.inspector._apply_design_constraints(pins)
+            if self._mode() == "placement":
+                self.inspector._apply_placement_constraints(pins)
+            else:
+                self.inspector._apply_design_constraints(pins)
         except Exception:
             return
         self.recompute()

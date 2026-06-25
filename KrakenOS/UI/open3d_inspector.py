@@ -14652,6 +14652,35 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor._commit_history_capture()
         self.status_var.set(msg)
 
+    def _apply_placement_constraints(self, pins: dict) -> None:
+        """Apply the placement-mode (fixed-lens) constraint solve to the LAYOUT -- write
+        the solved object/image distances into the conjugate gaps and retrace. The lens
+        is fixed so the result is in focus (no lens swap). Same history+retrace path as
+        the design apply / FOV solve."""
+        qe = self._quick_estimation_service()
+        self.editor._begin_history_capture()
+        ok, msg = qe.apply_placement(pins or {})
+        if ok:
+            try:
+                self.editor._sync_table()
+            except Exception:
+                pass
+            try:
+                self.editor._sync_object_controls()
+            except Exception:
+                pass
+            self.editor._commit_history_capture()
+            try:
+                self.editor._invalidate_preview_scene_trace()
+                self.editor._sync_trace_state_badge()
+            except Exception:
+                pass
+            self.refresh_from_editor(force_retrace=True)
+            qe.update_readout()
+        else:
+            self.editor._commit_history_capture()
+        self.status_var.set(msg)
+
     def _open_step_overlay_resize_popup(self, step_label: str) -> None:
         """Resize an imported STEP solid by typing its target dimensions.
 
