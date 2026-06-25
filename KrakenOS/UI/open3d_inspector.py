@@ -3705,6 +3705,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # Keep the arrow on the optical axis (matching the committed overlay): only
         # the snapped Z moves the moving endpoint; X/Y stay on the axis.
         moving_q = np.array([float(moving[0]), float(moving[1]), float(snapped[2])], dtype=float)
+        # bugs/0149: capture the optical-surface row this endpoint snapped onto so the
+        # committed anchor can re-derive its live z (track the model on an FOV/layout
+        # change). An empty-space / non-row pick leaves it None -> frozen absolute z.
+        snap_feature = None
+        if hit_key is not None:
+            row_for_snap = self._actor_row_map.get(hit_key)
+            if row_for_snap is not None:
+                snap_feature = {"row": int(row_for_snap)}
+        state["snap_feature"] = snap_feature
         state["snapped_world"] = tuple(float(v) for v in snapped[:3])
         state["moving_axial_world"] = tuple(float(v) for v in moving_q[:3])
         measured = abs(float(snapped[2] - fixed[2]))
@@ -3910,6 +3919,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             fixed_z = float(np.asarray(fixed_world, dtype=float).reshape(-1)[2])
         except Exception:
             fixed_z = None
+        feature_ref = state.get("snap_feature") if isinstance(state, dict) else None
         self._exit_dimension_anchor_pick_mode(render=False)
         try:
             self.editor.apply_dimension_anchor_override(
@@ -3917,6 +3927,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 endpoint,
                 np.asarray(snapped, dtype=float).reshape(-1)[:3],
                 fixed_z=fixed_z,
+                feature_ref=feature_ref,
             )
         except Exception as exc:
             self.editor.append_debug(f"dimension re-anchor commit failed: {exc}")

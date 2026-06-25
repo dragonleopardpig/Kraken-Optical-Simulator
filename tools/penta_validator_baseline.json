@@ -139,7 +139,8 @@
     "134": "pass",
     "135": "pass",
     "136": "pass",
-    "137": "pass"
+    "137": "pass",
+    "138": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -279,6 +280,7 @@
     "134": "Open 3D promote suppresses the stale table-selection 3-D highlight",
     "135": "Open 3D fast int-key STEP silhouette is identical to the walk",
     "136": "Open 3D re-anchored dimension pins its fixed end to fixed_z",
-    "137": "Open 3D STEP hover face-outline is vectorised + cached"
+    "137": "Open 3D STEP hover face-outline is vectorised + cached",
+    "138": "Open 3D re-anchored dimension endpoints track their feature"
   }
 }

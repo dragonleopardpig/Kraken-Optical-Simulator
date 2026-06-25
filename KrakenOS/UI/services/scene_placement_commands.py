@@ -1900,7 +1900,7 @@ class ScenePlacementMixin:
         )
 
     def apply_dimension_anchor_override(
-        self, row_index: int, endpoint: str, feature_center_xyz, fixed_z=None
+        self, row_index: int, endpoint: str, feature_center_xyz, fixed_z=None, feature_ref=None
     ) -> None:
         feature = np.asarray(feature_center_xyz, dtype=float).reshape(-1)
         if feature.size < 3 or not np.all(np.isfinite(feature[:3])):
@@ -1930,23 +1930,86 @@ class ScenePlacementMixin:
         # thickness (bugs/0053 #6 -- editing used to move the wrong element).
         ref_z = float(feature[2])
         ref_label = str(self._dimension_anchor_feature_label(feature[:3]))
-        spec = {"endpoint": endpoint, "ref_z": ref_z, "ref_label": ref_label}
+        # bugs/0149: keep ONE independent anchor PER ENDPOINT. Re-anchoring the start
+        # must not discard a previously re-anchored end (and vice versa), and each end
+        # re-derives its live z from the feature it was pinned to so it TRACKS the
+        # model on an FOV/layout change. The legacy mirror keys
+        # (endpoint/ref_z/ref_label/fixed_z) are still written for the value-edit path
+        # and pre-0149 readers.
+        anchor = self._dimension_endpoint_anchor_from_feature(feature[:3], feature_ref)
+        self._begin_history_capture()
+        overrides = dict(getattr(self, "_dimension_anchor_overrides", {}) or {})
+        spec = dict(overrides.get(row_index) or {})
+        # Migrate a prior legacy frozen other-end z into an absolute anchor, so a
+        # pre-0149 (or value-edit) override does not lose the other end when this end
+        # is re-anchored. Skip if that end already carries a real anchor.
+        other = "start" if endpoint == "end" else "end"
+        if not isinstance(spec.get(other), dict):
+            legacy_other_z = spec.get("fixed_z")
+            try:
+                if legacy_other_z is not None and np.isfinite(float(legacy_other_z)):
+                    spec[other] = {
+                        "kind": "absolute",
+                        "abs_z": float(legacy_other_z),
+                        "label": "",
+                    }
+            except Exception:
+                pass
+        spec[endpoint] = anchor
+        spec["endpoint"] = endpoint
+        spec["ref_z"] = ref_z
+        spec["ref_label"] = ref_label
         try:
             if fixed_z is not None and np.isfinite(float(fixed_z)):
                 spec["fixed_z"] = float(fixed_z)
         except Exception:
             pass
-        self._begin_history_capture()
-        overrides = dict(getattr(self, "_dimension_anchor_overrides", {}) or {})
         overrides[row_index] = spec
         self._dimension_anchor_overrides = overrides
         self._commit_history_capture()
+        tracked = " (tracks the model)" if str(anchor.get("kind")) == "surface" else ""
         self.status_var.set(
             f"S{row_index} dimension re-anchored ({endpoint}) to z={ref_z:.4g} mm"
             + (f" [{ref_label}]" if ref_label else "")
+            + tracked
             + " -- measurement only; optical thickness unchanged."
         )
         self._refresh_open_3d_views()
+
+    def _dimension_endpoint_anchor_from_feature(self, feature_xyz, feature_ref) -> dict:
+        """bugs/0149: build one re-anchored ENDPOINT anchor. A pick that resolved to
+        an optical surface row stores a ``surface`` anchor that re-derives its live
+        axial z every redraw (tracks the model on an FOV/layout change); an
+        empty-space / unresolved pick stores an ``absolute`` anchor frozen at the
+        picked z (the pre-0149 behaviour, kept as the fallback)."""
+        feat = np.asarray(feature_xyz, dtype=float).reshape(-1)[:3]
+        abs_z = float(feat[2])
+        label = str(self._dimension_anchor_feature_label(feat))
+        row = None
+        face_id = ""
+        if isinstance(feature_ref, dict):
+            raw_row = feature_ref.get("row")
+            if raw_row is not None:
+                try:
+                    row = int(raw_row)
+                except Exception:
+                    row = None
+            face_id = str(feature_ref.get("face_id") or "")
+        if row is not None and 0 <= row < len(self.rows):
+            anchor = {"kind": "surface", "row": int(row), "abs_z": abs_z, "label": label}
+            if face_id:
+                anchor["face_id"] = face_id
+            # Anchor the frozen fallback to the surface's CURRENT station so the
+            # committed draw matches the live resolve at pick time (no visible jump).
+            try:
+                pt = self._surface_reference_world_point(int(row), face_id=face_id)
+                z = float(np.asarray(pt, dtype=float).reshape(-1)[:3][2])
+                if np.isfinite(z):
+                    anchor["abs_z"] = z
+            except Exception:
+                pass
+            return anchor
+        return {"kind": "absolute", "abs_z": abs_z, "label": label}
 
     def apply_reanchored_dimension_value(self, row_index: int, value: float) -> bool:
         """Edit a re-anchored dimension's value by MOVING the downstream element so

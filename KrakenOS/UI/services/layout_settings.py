@@ -12,6 +12,54 @@ def _layout_module():
     return layout_editor_module
 
 
+def _json_safe_dim_endpoint_anchor(anchor: Any) -> dict | None:
+    """bugs/0149: sanitise one re-anchored ENDPOINT anchor for JSON persistence."""
+    if not isinstance(anchor, dict):
+        return None
+    out: dict[str, Any] = {"kind": str(anchor.get("kind", "absolute"))}
+    try:
+        out["abs_z"] = float(anchor.get("abs_z", 0.0))
+    except Exception:
+        out["abs_z"] = 0.0
+    if anchor.get("row") is not None:
+        try:
+            out["row"] = int(anchor.get("row"))
+        except Exception:
+            pass
+    if anchor.get("face_id"):
+        out["face_id"] = str(anchor.get("face_id"))
+    out["label"] = str(anchor.get("label", ""))
+    return out
+
+
+def _sanitise_dimension_anchor_override(spec: Any) -> dict | None:
+    """bugs/0053/0147/0149: normalise one row's re-anchor override for JSON
+    round-trip -- the legacy mirror (endpoint/ref_z/ref_label/fixed_z) PLUS the
+    per-endpoint feature-tracking anchors (start/end). Used on BOTH save and load
+    (the values are already JSON-native, so one pass serves both directions)."""
+    if not isinstance(spec, dict):
+        return None
+    out: dict[str, Any] = {
+        "endpoint": str(spec.get("endpoint", "end")),
+        "ref_label": str(spec.get("ref_label", "")),
+    }
+    try:
+        out["ref_z"] = float(spec.get("ref_z", 0.0))
+    except Exception:
+        out["ref_z"] = 0.0
+    try:
+        fz = float(spec.get("fixed_z"))
+        if fz == fz and fz not in (float("inf"), float("-inf")):
+            out["fixed_z"] = fz
+    except Exception:
+        pass
+    for end_key in ("start", "end"):
+        anchor = _json_safe_dim_endpoint_anchor(spec.get(end_key))
+        if anchor is not None:
+            out[end_key] = anchor
+    return out
+
+
 class LayoutSettingsService:
     """Collect and apply persisted layout settings while delegating state to the editor."""
 
@@ -214,15 +262,12 @@ class LayoutSettingsService:
             "led_step_object_edge_local_z": (
                 "" if getattr(self, "led_step_object_edge_local_z", None) is None else float(self.led_step_object_edge_local_z)
             ),
-            # bugs/0053: thickness-dimension measurement re-anchor overrides
-            # (row index -> {"endpoint","ref_z","ref_label"}). JSON keys must be
+            # bugs/0053/0149: thickness-dimension measurement re-anchor overrides
+            # (row index -> legacy mirror {endpoint,ref_z,ref_label,fixed_z} PLUS the
+            # per-endpoint feature-tracking anchors {start,end}). JSON keys must be
             # strings; restored back to int row keys on load.
             "dimension_anchor_overrides": {
-                str(int(row)): {
-                    "endpoint": str(spec.get("endpoint", "end")),
-                    "ref_z": float(spec.get("ref_z", 0.0)),
-                    "ref_label": str(spec.get("ref_label", "")),
-                }
+                str(int(row)): _sanitise_dimension_anchor_override(spec)
                 for row, spec in (getattr(self.editor, "_dimension_anchor_overrides", {}) or {}).items()
                 if isinstance(spec, dict)
             },
@@ -770,14 +815,11 @@ class LayoutSettingsService:
         # restore must run after all of it or the loaded overrides are wiped.
         restored_overrides: dict[int, dict] = {}
         for row_key, spec in (settings.get("dimension_anchor_overrides", {}) or {}).items():
-            if not isinstance(spec, dict):
+            sanitised = _sanitise_dimension_anchor_override(spec)
+            if sanitised is None:
                 continue
             try:
-                restored_overrides[int(row_key)] = {
-                    "endpoint": str(spec.get("endpoint", "end")),
-                    "ref_z": float(spec.get("ref_z", 0.0)),
-                    "ref_label": str(spec.get("ref_label", "")),
-                }
+                restored_overrides[int(row_key)] = sanitised
             except Exception:
                 continue
         # NOTE: this service proxies only non-underscore attrs to the editor

@@ -8183,6 +8183,44 @@ def phase_137_face_outline_fast(
     return result
 
 
+def phase_138_dimension_reanchor_feature_track(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0149: re-anchored dimension endpoints are independent per-endpoint anchors that track.
+
+    bugs/0147 stored a SINGLE spec per row (the moved end ref_z + the other end frozen at
+    fixed_z), so both ends were ABSOLUTE z. That made the re-anchored arrow go stale when the
+    FOV/layout moved a surface ("I changed the FOV, the last re-anchored arrow stay where it
+    was"), and re-anchoring one end overwrote the other ("only the right arrow can be
+    reanchored ... can make both arrow independent anchor?"). The fix keeps ONE independent
+    anchor PER ENDPOINT (override start/end): a ``surface`` anchor re-derives its live axial z
+    from ``_surface_reference_world_point`` every redraw (so it FOLLOWS the model), an
+    empty-space pick stores an ``absolute`` anchor frozen at the picked z (fallback), and an
+    end with no anchor keeps the live p0/p1. The legacy single-spec form still draws frozen.
+    The guard pins (display-free) feature-tracking after a simulated FOV move, both-end
+    independence, the absolute fallback, failed-resolve / editor=None safety, the storage
+    keeping both anchors, the legacy-fixed_z migration, settings round-trip, legacy back-compat,
+    and source markers across the draw/resolve/store/pick chain.
+    """
+    result = PhaseResult(
+        name="Phase 138: Open 3D re-anchored dimension endpoints track their feature"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_dimension_reanchor_feature_track import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"dimension re-anchor feature-track guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("dimension re-anchor feature-track guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8366,6 +8404,7 @@ def main() -> int:
             phase_135_boundary_pairs_fast_int_key,
             phase_136_dimension_reanchor_fixed_end,
             phase_137_face_outline_fast,
+            phase_138_dimension_reanchor_feature_track,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

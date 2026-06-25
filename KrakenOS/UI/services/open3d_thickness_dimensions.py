@@ -902,9 +902,40 @@ class Open3DThicknessDimensionService:
     def reanchored_endpoints(
         self, p0: np.ndarray, p1: np.ndarray, override: dict
     ) -> tuple[np.ndarray, np.ndarray, float] | None:
-        """Apply an endpoint override to (p0, p1): move the chosen end's axial z
-        to the picked reference, and pin the OTHER end to the axial z it was
-        anchored against. Returns (q0, q1, measured_mm) or None."""
+        """Apply an endpoint override to (p0, p1) and return (q0, q1, measured_mm).
+
+        Two override forms are supported:
+
+        * bugs/0149 PER-ENDPOINT form -- ``override["start"]`` and/or
+          ``override["end"]`` each hold an *anchor* dict that re-derives its axial z
+          from the LIVE model every redraw, so a re-anchored end FOLLOWS its feature
+          when the FOV/layout shifts and EACH end has an independent slot
+          (re-anchoring one end never discards the other -- the bugs/0147 sequence
+          done right, no ``fixed_z`` snapshot needed). A ``kind=="surface"`` anchor
+          resolves to ``editor._surface_reference_world_point``; any other kind (or a
+          failed resolve) falls back to the stored ``abs_z``. An endpoint with no
+          anchor keeps its live ``p0``/``p1`` z.
+        * bugs/0053/0147 LEGACY single-spec form -- ``{endpoint, ref_z, fixed_z}``
+          freezes both ends to absolute z (unchanged; old saved layouts and the
+          value-edit mirror still rely on it).
+        """
+        if not isinstance(override, dict):
+            return None
+        q0 = np.asarray(p0, dtype=float).reshape(3).copy()
+        q1 = np.asarray(p1, dtype=float).reshape(3).copy()
+        # bugs/0149: per-endpoint feature-tracking anchors take precedence. Each
+        # present anchor re-derives its live axial z; the absent end stays on the
+        # live model endpoint (p0/p1).
+        start_anchor = override.get("start")
+        end_anchor = override.get("end")
+        if isinstance(start_anchor, dict) or isinstance(end_anchor, dict):
+            if isinstance(start_anchor, dict):
+                q0[2] = self._resolve_endpoint_anchor_z(start_anchor, float(q0[2]))
+            if isinstance(end_anchor, dict):
+                q1[2] = self._resolve_endpoint_anchor_z(end_anchor, float(q1[2]))
+            measured = abs(float(q1[2] - q0[2]))
+            return q0, q1, measured
+        # ---- bugs/0053/0147 LEGACY single-spec form ----
         try:
             ref_z = float(override.get("ref_z"))
         except Exception:
@@ -912,8 +943,6 @@ class Open3DThicknessDimensionService:
         if not np.isfinite(ref_z):
             return None
         endpoint = "start" if str(override.get("endpoint", "end")) == "start" else "end"
-        q0 = np.asarray(p0, dtype=float).reshape(3).copy()
-        q1 = np.asarray(p1, dtype=float).reshape(3).copy()
         # bugs/0147: pin the FIXED endpoint to the axial z it was anchored against
         # (stored ``fixed_z``), not the live model surface. A re-anchored dimension
         # is an absolute-z MEASUREMENT whose spec stores only the MOVED end's
@@ -939,6 +968,34 @@ class Open3DThicknessDimensionService:
                 q0[2] = fixed_z
         measured = abs(float(q1[2] - q0[2]))
         return q0, q1, measured
+
+    def _resolve_endpoint_anchor_z(self, anchor: dict, fallback_z: float) -> float:
+        """bugs/0149: live axial z for one re-anchored endpoint. A ``surface`` anchor
+        re-derives from the editor's live surface station (so it TRACKS the model on
+        an FOV/layout change); any other kind, or a failed resolve, falls back to the
+        stored absolute ``abs_z``, and finally to ``fallback_z`` (the live p0/p1)."""
+        if not isinstance(anchor, dict):
+            return float(fallback_z)
+        if str(anchor.get("kind", "absolute")) == "surface":
+            editor = getattr(self, "editor", None)
+            row = anchor.get("row")
+            if editor is not None and row is not None:
+                try:
+                    pt = editor._surface_reference_world_point(
+                        int(row), face_id=str(anchor.get("face_id", ""))
+                    )
+                    z = float(np.asarray(pt, dtype=float).reshape(3)[2])
+                    if np.isfinite(z):
+                        return z
+                except Exception:
+                    pass
+        try:
+            abs_z = float(anchor.get("abs_z"))
+            if np.isfinite(abs_z):
+                return abs_z
+        except Exception:
+            pass
+        return float(fallback_z)
 
     def _emit_reanchored_dimension(
         self,
