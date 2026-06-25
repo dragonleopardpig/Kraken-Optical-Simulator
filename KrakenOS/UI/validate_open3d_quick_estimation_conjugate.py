@@ -34,7 +34,7 @@ LAYOUTS = [
     "machine_vision_150mm_datasheet_1x.py",
     "machine_vision_150mm_datasheet_0_5x.py",
     "machine_vision_120mm_pyrite_datasheet_1x.py",
-    "machine_vision_85mm_pyrite_datasheet_1x.py",
+    "machine_vision_85mm_pyrite_datasheet_05x_20x.py",
     "machine_vision_150mm_measured.py",
 ]
 

@@ -11,7 +11,7 @@ from KrakenOS.UI.layout_library import discover_layouts, load_python_data
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-LAYOUT_PATH = PROJECT_ROOT / "KrakenOS" / "common_optical_layouts" / "machine_vision_85mm_pyrite_datasheet_1x.py"
+LAYOUT_PATH = PROJECT_ROOT / "KrakenOS" / "common_optical_layouts" / "machine_vision_85mm_pyrite_datasheet_05x_20x.py"
 REFERENCE_LAYOUT_PATH = PROJECT_ROOT / "KrakenOS" / "common_optical_layouts" / "machine_vision_150mm_measured.py"
 DOC_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "machine_vision_pyrite_85_surrogate.rst"
 INDEX_PATH = PROJECT_ROOT / "docs" / "source" / "tutorials" / "index.rst"
@@ -73,7 +73,7 @@ def _require(condition: bool, message: str) -> None:
 
 
 def main() -> int:
-    module = importlib.import_module("KrakenOS.common_optical_layouts.machine_vision_85mm_pyrite_datasheet_1x")
+    module = importlib.import_module("KrakenOS.common_optical_layouts.machine_vision_85mm_pyrite_datasheet_05x_20x")
     info = load_python_data(LAYOUT_PATH)
     reference_info = load_python_data(REFERENCE_LAYOUT_PATH)
     layouts = discover_layouts(PROJECT_ROOT / "KrakenOS" / "common_optical_layouts")

@@ -1,4 +1,4 @@
-TITLE = "Machine Vision 85 mm Pyrite (Datasheet 1X)"
+TITLE = "Machine Vision 85 mm Pyrite (Datasheet 0.5X-2.0X)"
 
 # Schneider-Kreuznach PYRITE 4.5/85/0.5x-2.0x V38, ID 1072517.
 # Source document used for this surrogate:

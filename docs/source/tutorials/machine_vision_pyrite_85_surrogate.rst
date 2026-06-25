@@ -2,7 +2,7 @@ Case Study 3: PYRITE 85 mm Machine-Vision Surrogate
 ===================================================
 
 This page documents the surrogate layout
-``Machine Vision 85 mm Pyrite (Datasheet 1X)``.  It is based on the local
+``Machine Vision 85 mm Pyrite (Datasheet 0.5X-2.0X)``.  It is based on the local
 datasheet:
 
 .. code-block:: text
