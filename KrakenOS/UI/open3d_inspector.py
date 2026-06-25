@@ -10131,6 +10131,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
         self._reset_camera_clipping_range_for_scene()
+        # bugs/0140: a preset-view button jumps the camera WITHOUT a mouse
+        # InteractionEvent, so the orbit backstop (_on_camera_interaction) never
+        # fires -- the perpendicular thickness labels would keep the angle baked
+        # against the PREVIOUS (e.g. Iso) camera and read slanted instead of
+        # square to their arrows in the new YZ/-YZ view. Re-derive them here for
+        # the just-set preset basis, exactly as an orbit does (bugs/0128).
+        try:
+            self._reorient_thickness_labels_for_camera()
+        except Exception:
+            pass
         self.render()
 
     def render(self) -> None:

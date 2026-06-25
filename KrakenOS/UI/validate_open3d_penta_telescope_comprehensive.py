@@ -7886,6 +7886,40 @@ def phase_129_promote_no_stale_highlight(
     return result
 
 
+def phase_130_preset_view_squares_labels(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0140: switching to a preset view re-squares the thickness labels.
+
+    bugs/0128 made the perpendicular thickness labels track the camera, but only via
+    the mouse-orbit backstop (_on_camera_interaction). A preset-view button calls
+    set_camera_preset, which JUMPS the camera with no mouse interaction, so the labels
+    kept the angle baked against the previous (Iso) camera and read slanted in the new
+    YZ/-YZ view ("the thickness overlay text should changed to perpendicular to the
+    arrow segments"). The fix calls _reorient_thickness_labels_for_camera at the end of
+    set_camera_preset. The guard drives the real set_camera_preset against a fake
+    camera and pins that a world-Z label ends up square (90 deg) to its horizontal
+    arrow; display-free.
+    """
+    result = PhaseResult(
+        name="Phase 130: Open 3D preset-view jump re-squares thickness labels"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_preset_view_squares_labels import run_checks
+        passed, failures = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"preset-view label-square guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["failures"] = len(failures)
+    for item in failures:
+        result.notes.append(item)
+    if not result.passed and not result.notes:
+        result.notes.append("preset-view label-square guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8061,6 +8095,7 @@ def main() -> int:
             phase_127_glue_live_actor_carry,
             phase_128_clear_aperture_hover_render,
             phase_129_promote_no_stale_highlight,
+            phase_130_preset_view_squares_labels,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
