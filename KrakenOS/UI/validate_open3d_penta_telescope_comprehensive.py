@@ -7817,6 +7817,40 @@ def phase_127_glue_live_actor_carry(
     return result
 
 
+def phase_128_clear_aperture_hover_render(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0138: Set-Clear-Aperture hover renders only on face transitions.
+
+    While the clear-aperture pick was armed, sweeping the cursor over the body was
+    sluggish ("significantly slow down after previous actions."):
+    _update_clear_aperture_hover_highlight ran every mouse-move and called self.render()
+    unconditionally (a full scene render per pixel) while keying the hover on the per-pixel
+    cell_id (so _set_step_hover_outline's change-gate never tripped). The fix keys on the
+    resolved face id (stable None off any window) and drops the unconditional render,
+    leaving the change-gate to render only on a real face transition. The guard runs the
+    real change-gate against a probe and pins the hover + gate source contracts; it is
+    display-free.
+    """
+    result = PhaseResult(
+        name="Phase 128: Open 3D clear-aperture hover render storm"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_clear_aperture_hover_render import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"CA hover render guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("CA hover render guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7990,6 +8024,7 @@ def main() -> int:
             phase_125_clear_aperture_pick_cancel,
             phase_126_hidden_step_drops_gizmo,
             phase_127_glue_live_actor_carry,
+            phase_128_clear_aperture_hover_render,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

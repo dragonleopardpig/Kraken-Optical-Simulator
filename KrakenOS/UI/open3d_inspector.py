@@ -12146,6 +12146,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             hit_label = None
             cell_id = -1
         outline = None
+        face_id = None
         if hit_label is not None and str(hit_label).strip().lower() == wanted and cell_id >= 0:
             try:
                 fid = self.editor.clear_aperture_face_index_for_display_cell(wanted, cell_id)
@@ -12153,15 +12154,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 fid = None
             if fid is not None and int(fid) >= 0:
                 outline = self._clear_aperture_outline(wanted, int(fid))
-        self._set_step_hover_outline(outline, ("clear_aperture", wanted, int(cell_id)))
+                if outline is not None:
+                    face_id = int(fid)
+        # bugs/0138: key the hover on the RESOLVED face id (a stable None whenever the
+        # cursor is off any clear-aperture window), not the per-pixel cell id, and let
+        # _set_step_hover_outline's change-gate own the render. The old code keyed on
+        # cell_id -- which differs every pixel even when nothing is highlighted -- then
+        # rendered unconditionally, so every mouse move forced a full scene render while
+        # the pick stayed armed ("significantly slow down after previous actions").
+        self._set_step_hover_outline(outline, ("clear_aperture", wanted, face_id))
         if outline is not None:
             self.status_var.set(f"Set {wanted.upper()} clear aperture: click to record this window face.")
         else:
             self.status_var.set(f"Set {wanted.upper()} clear aperture: hover the clear-aperture window face.")
-        try:
-            self.render()
-        except Exception:
-            pass
 
     def _measure_segment_offsets(self) -> "dict[int, float]":
         """bugs/0115: assign every VISIBLE measure segment a parallel lane so the
