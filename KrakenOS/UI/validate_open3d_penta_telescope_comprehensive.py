@@ -8292,6 +8292,39 @@ def phase_140_dimension_side_orbit(
     return result
 
 
+def phase_141_reanchor_menu_endpoint(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0150: the right-click "Re-anchor to a surface/edge..." menu must move the
+    dimension endpoint the user clicked NEAREST, not always the right ("end") endpoint.
+
+    The menu wired its re-anchor command as `_begin_dimension_anchor_pick_for_row(idx)` with
+    no endpoint, so it defaulted to "end" -- right-clicking the LEFT arrowhead still grabbed
+    the right end (which then snapped to the cursor and collapsed the span before sliding).
+    The Ctrl-click path already picks the nearer endpoint by display-space proximity. The fix
+    adds `_nearer_dimension_endpoint_for_event` (mirroring that proximity test) and the menu
+    forwards its result as `endpoint=`. The guard binds the real method onto a fake inspector
+    with a stubbed interactor + projection; it is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 141: Open 3D right-click re-anchor menu moves the endpoint nearest the click"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_reanchor_menu_endpoint import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"reanchor-menu-endpoint guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("reanchor-menu-endpoint guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8478,6 +8511,7 @@ def main() -> int:
             phase_138_dimension_reanchor_feature_track,
             phase_139_object_led_distance_dialog,
             phase_140_dimension_side_orbit,
+            phase_141_reanchor_menu_endpoint,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

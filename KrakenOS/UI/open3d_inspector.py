@@ -13758,9 +13758,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             menu.add_cascade(label=f"Quick Estimation role ({role_label})", menu=role_menu)
             menu.add_separator()
         # Re-anchor what the arrow measures to a picked surface/edge (drag-to-point).
+        # bugs/0150: re-anchor the endpoint the user right-clicked NEAREST -- the menu
+        # used to call _begin_dimension_anchor_pick_for_row(idx) with no endpoint, so it
+        # always defaulted to "end" and the left arrowhead could not be re-anchored from
+        # the menu (the Ctrl-click path already chooses by cursor proximity).
+        reanchor_endpoint = self._nearer_dimension_endpoint_for_event(event, int(row_index))
         menu.add_command(
             label="Re-anchor to a surface/edge…",
-            command=lambda idx=int(row_index): self._begin_dimension_anchor_pick_for_row(idx),
+            command=lambda idx=int(row_index), ep=reanchor_endpoint: (
+                self._begin_dimension_anchor_pick_for_row(idx, endpoint=ep)
+            ),
         )
         has_override = False
         try:
@@ -13790,6 +13797,38 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 menu.grab_release()
             except Exception:
                 pass
+
+    def _nearer_dimension_endpoint_for_event(self, event, row_index: int) -> str:
+        """bugs/0150: which dimension endpoint ('start'|'end') a right-click landed
+        NEAREST, so the menu re-anchor moves the arrowhead the user pointed at. The
+        Ctrl-click path already does this in `_dimension_anchor_state_from_current_pick`
+        (the nearer endpoint in display space); this mirrors that exact proximity test
+        for the menu. Falls back to "start" when the click position or an endpoint
+        projection is unavailable -- matching the Ctrl-click default."""
+        try:
+            self._vtk_interactor.SetEventInformationFlipY(int(event.x), int(event.y), 0, 0, chr(0), 0, None)
+            x, y = self._vtk_interactor.GetEventPosition()
+            cursor = np.asarray((float(x), float(y)), dtype=float)
+        except Exception:
+            return "start"
+        record = None
+        for key in list(getattr(self, "_thickness_dimension_actor_map", {}).get(int(row_index), []) or []):
+            candidate = self._thickness_dimension_drag_map.get(key)
+            if isinstance(candidate, dict):
+                record = candidate
+                break
+        if not isinstance(record, dict):
+            return "start"
+        try:
+            start_2d = self._world_to_display_2d(np.asarray(record.get("start"), dtype=float))
+            end_2d = self._world_to_display_2d(np.asarray(record.get("end"), dtype=float))
+        except Exception:
+            return "start"
+        if start_2d is None or end_2d is None:
+            return "start"
+        d_start = float(np.linalg.norm(np.asarray(start_2d, dtype=float)[:2] - cursor))
+        d_end = float(np.linalg.norm(np.asarray(end_2d, dtype=float)[:2] - cursor))
+        return "start" if d_start <= d_end else "end"
 
     def _begin_dimension_anchor_pick_for_row(self, row_index: int, endpoint: str = "end") -> bool:
         """Enter the modal re-anchor for a specific dimension row (from the menu),

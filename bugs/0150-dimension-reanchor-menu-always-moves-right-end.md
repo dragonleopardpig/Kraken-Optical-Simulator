@@ -2,8 +2,9 @@
 
 ## Status
 
-DOCUMENTED, fix not yet applied (logged as the next fix; in-app-only repro). Found
-while eyeballing bugs/0149.
+FIXED — penta phase **141**, guard `validate_open3d_reanchor_menu_endpoint`. Found
+while eyeballing bugs/0149. In-app eyeball still owed (the embedded-VTK right-click +
+modal pick can't be driven headless).
 
 ## Symptom
 
@@ -51,47 +52,49 @@ pick_for_row` immediately calls `_apply_dimension_anchor_pick_motion()`
 toward the cursor — and the cursor is on the LEFT arrow — so the right end jumps left
 and the span collapses before the user moves the mouse.
 
-## Fix (proposed — not yet applied)
+## Fix
 
-Make the menu path match the Ctrl-click path: derive the endpoint from the
+The menu path now matches the Ctrl-click path: it derives the endpoint from the
 right-click position instead of defaulting to `"end"`.
 
-`_show_thickness_dimension_menu(event, row_index)` already has the click `event`
-(it uses `event.x_root`/`event.y_root` for the popup) and the inspector already has
-the proximity helpers (`_world_to_display_2d`, and `_point_segment_distance_2d` /
-the `_dimension_anchor_state_from_current_pick` proximity block). Compute the nearer
-endpoint at menu-build time and forward it:
+New `Kraken3DInspector._nearer_dimension_endpoint_for_event(event, row_index)`
+(`open3d_inspector.py`) maps the right-click to VTK display coords the SAME way
+`_thickness_dimension_row_under_cursor` does (`_vtk_interactor.SetEventInformationFlipY`
+→ `GetEventPosition`), looks up the row's drag record
+(`_thickness_dimension_actor_map` → `_thickness_dimension_drag_map`), projects
+`start`/`end` with `_world_to_display_2d`, and returns `"start" if d_start <= d_end
+else "end"` — the **same** proximity rule as `_dimension_anchor_state_from_current_pick`,
+including the `"start"` default when the cursor or a projection is unavailable.
+
+`_show_thickness_dimension_menu` computes that endpoint at menu-build time and
+forwards it:
 
 ```python
-endpoint = self._nearer_dimension_endpoint_for_event(event, int(row_index))  # "start"|"end"
+reanchor_endpoint = self._nearer_dimension_endpoint_for_event(event, int(row_index))
 menu.add_command(
     label="Re-anchor to a surface/edge…",
-    command=lambda idx=int(row_index), ep=endpoint:
-        self._begin_dimension_anchor_pick_for_row(idx, endpoint=ep),
+    command=lambda idx=int(row_index), ep=reanchor_endpoint: (
+        self._begin_dimension_anchor_pick_for_row(idx, endpoint=ep)
+    ),
 )
 ```
 
-where the new `_nearer_dimension_endpoint_for_event` reuses the **same** 2-D
-proximity logic as `_dimension_anchor_state_from_current_pick` (look up the row's
-drag record via `_thickness_dimension_actor_map` → `_thickness_dimension_drag_map`,
-project `start`/`end` with `_world_to_display_2d`, compare to the click `(x, y)`,
-default `"start"` when a projection is unavailable — matching line 3600). No change
-to `_begin_dimension_anchor_pick_for_row` itself; it already honours the passed
-endpoint and feeds the bugs/0149 per-endpoint store.
+`_begin_dimension_anchor_pick_for_row` is unchanged — it already honours the passed
+endpoint and feeds the bugs/0149 per-endpoint store, so independent per-endpoint
+anchoring + feature tracking come for free.
 
-Alternative (more explicit UX): replace the single menu item with two —
-"Re-anchor left end…" / "Re-anchor right end…" — each passing its endpoint. The
-proximity approach is preferred because it matches the Ctrl-click feel.
+## Guard
 
-## Guard (to add with the fix)
-
-Display-free `run_checks()`: drive a fake inspector carrying a row drag record
-(known `start`/`end` world points) + a stubbed `_world_to_display_2d`, then assert
-the menu's chosen endpoint == `"start"` for a click near the left projection and
-`"end"` near the right (and the default when a projection is None). Pin the menu
-command actually forwards that endpoint into `_begin_dimension_anchor_pick_for_row`
-(source marker that the call is no longer the bare `(idx)` form). Add as the next
-penta phase (139) + hand-edit the baseline.
+`KrakenOS/UI/validate_open3d_reanchor_menu_endpoint.py` (display-free `run_checks`):
+binds the REAL `_nearer_dimension_endpoint_for_event` onto a fake inspector with a
+stubbed interactor + projection. **A** a click near the start projection returns
+`"start"`; **B** near the end returns `"end"`; **C** an equidistant click ties to
+`"start"`; **D** a row with no drag record falls back; **E** an unavailable
+projection falls back; **F** an interactor that can't report the cursor falls back;
+**G** source contract — `_show_thickness_dimension_menu` derives the endpoint via
+`_nearer_dimension_endpoint_for_event` and forwards `endpoint=` (no longer the bare
+`self._begin_dimension_anchor_pick_for_row(idx)` form; proven non-vacuous — a revert
+trips G). Penta phase **141**; baseline hand-edited.
 
 ## Note
 
