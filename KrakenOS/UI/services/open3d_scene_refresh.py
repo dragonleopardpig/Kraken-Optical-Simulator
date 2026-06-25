@@ -383,6 +383,10 @@ class Open3DSceneRefreshService:
         # bugs/0128: drop stale perpendicular-label axes with the actors they keyed.
         if hasattr(self, "_perp_label_axis_map"):
             self._perp_label_axis_map.clear()
+        # bugs/0152: drop stale view-relative dimension groups -- the scene clear has
+        # already removed their arrow/leader/label actors; the rebuild re-registers them.
+        if hasattr(self, "_view_relative_dimension_groups"):
+            self._view_relative_dimension_groups.clear()
         self._thickness_drag_state = None
         self._step_feature_cache.clear()
         self._hover_rotation_handle_key = None

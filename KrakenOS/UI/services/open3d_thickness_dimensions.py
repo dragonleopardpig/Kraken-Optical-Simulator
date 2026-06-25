@@ -253,10 +253,13 @@ class Open3DThicknessDimensionService:
         drag_end: np.ndarray | None = None,
         orientation_deg: float = 0.0,
         perp_axis: np.ndarray | None = None,
-    ) -> bool:
+    ):
+        """Returns the billboard label actor (truthy) on success, else None.
+        bugs/0152 needs the actor so an orbit can re-position the label to the
+        recomputed view-relative side."""
         actor_cls = self.billboard_text_actor_cls
         if self.inspector._renderer is None or actor_cls is None:
-            return False
+            return None
         try:
             actor = actor_cls()
             actor.SetInput(str(text))
@@ -291,10 +294,10 @@ class Open3DThicknessDimensionService:
             if perp_axis is not None:
                 self._register_perp_label_axis(actor, perp_axis)
             self.inspector._add_renderer_view_prop(actor)
-            return True
+            return actor
         except Exception as exc:
             self.editor.append_debug(f"3D thickness label skipped: {exc}")
-            return False
+            return None
 
     def _register_perp_label_axis(self, actor: Any, perp_axis: np.ndarray) -> None:
         """bugs/0128: record actor_key -> world arrow axis on the inspector so an
@@ -859,9 +862,10 @@ class Open3DThicknessDimensionService:
         if register_drag:
             self._register_drag_actor(actor, row_index, drag_start, drag_end)
         count = 1
+        leader_actors: list = []
         try:
             for tip, anchor in ((base_lo, start), (base_hi, end)):
-                self.inspector._add_mesh_actor(
+                leader_actor = self.inspector._add_mesh_actor(
                     pv.Line(
                         tuple(float(value) for value in tip),
                         tuple(float(value) for value in anchor),
@@ -871,20 +875,42 @@ class Open3DThicknessDimensionService:
                     line_width=self.DIMENSION_LEADER_LINE_WIDTH,
                     backface_culling=False,
                 )
+                if leader_actor is not None:
+                    leader_actors.append(leader_actor)
         except Exception:
             pass
         # bugs/0093: label centred on the segment but pushed well CLEAR of the arrow
         # row (the perpendicular labels are tall, so a small offset let them cross
         # the arrows). `start`/`end` already sit `base_offset` off the axis, so this
         # drops the label most of another `base_offset` past the arrow line.
-        label_position = 0.5 * (start + end) + side * max(base_offset * 0.85, 5.0)
-        if self.add_label_actor(
+        label_extra = max(base_offset * 0.85, 5.0)
+        label_position = 0.5 * (start + end) + side * label_extra
+        label_actor = self.add_label_actor(
             row_index, label_position, label,
             drag_start=drag_start, drag_end=drag_end,
             orientation_deg=label_orientation_deg,
             perp_axis=perp_axis,
-        ):
+        )
+        if label_actor is not None:
             count += 1
+        # bugs/0152: register this dimension's actors + un-offset anchors so an orbit
+        # can re-compute the view-relative side and re-place it for the live camera
+        # (the side is baked here; without this the arrow stayed on the pre-orbit side
+        # until the next scene refresh -- "thickness overlays changed to opposite side"
+        # / "correct again after glue [=a refresh]"). Cheap rigid re-place of the arrow
+        # + label, with the two short leaders rebuilt; the costly trace is untouched.
+        try:
+            self.inspector._register_view_relative_dimension(
+                arrow_actor=actor,
+                label_actor=label_actor,
+                leader_actors=leader_actors,
+                base_lo=np.asarray(base_lo, dtype=float).reshape(3),
+                base_hi=np.asarray(base_hi, dtype=float).reshape(3),
+                offset=np.asarray(offset, dtype=float).reshape(3),
+                label_extra=float(label_extra),
+            )
+        except Exception:
+            pass
         return count
 
     # bugs/0053: warm magenta tone marks a re-anchored MEASUREMENT, distinct from

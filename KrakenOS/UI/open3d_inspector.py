@@ -439,6 +439,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # the billboard text angle can be RE-derived for the live camera basis on
         # every orbit (the baked SetOrientation goes stale when the scene rotates).
         self._perp_label_axis_map: dict[str, tuple[float, float, float]] = {}
+        # bugs/0152: per-thickness-dimension actor group + un-offset anchors, so the
+        # view-relative OFFSET SIDE (not just the label angle) can be re-derived for
+        # the live camera on orbit -- else the arrow stayed on the pre-orbit side
+        # until the next scene refresh ("thickness overlays changed to opposite side").
+        self._view_relative_dimension_groups: list[dict] = []
         self._step_feature_cache: dict[tuple[str, int], tuple[np.ndarray, object | None, np.ndarray | None] | None] = {}
         self._cad_scene_cache = CadSceneCache()
         self._current_scene_bundle: SceneBundle | None = None
@@ -9956,6 +9961,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 moved = True
         except Exception:
             pass
+        # bugs/0152: once the orbit SETTLES, re-derive each thickness dimension's
+        # view-relative offset side and re-place it for the live camera. Gated to
+        # EndInteractionEvent (not per-frame) so the leader rebuild only runs on
+        # release; the cheap label re-angle above still tracks during the drag.
+        try:
+            event_name = str(_args[1]) if len(_args) > 1 else ""
+        except Exception:
+            event_name = ""
+        if "End" in event_name:
+            try:
+                if self._reposition_dimensions_for_camera():
+                    moved = True
+            except Exception:
+                pass
         if moved:
             self.render()
 
@@ -9981,6 +10000,109 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     axis, screen_right, screen_up
                 )
                 actor.GetTextProperty().SetOrientation(float(orientation))
+                changed = True
+            except Exception:
+                continue
+        return changed
+
+    def _register_view_relative_dimension(
+        self, *, arrow_actor, label_actor, leader_actors, base_lo, base_hi, offset, label_extra
+    ) -> None:
+        """bugs/0152: remember a thickness dimension's actors + its UN-offset anchors so
+        an orbit can re-derive the view-relative offset side for the live camera and
+        re-place the dimension. The offset side is otherwise baked at draw time and
+        stayed on the pre-orbit side until the next scene refresh."""
+        try:
+            offset_arr = np.asarray(offset, dtype=float).reshape(3)
+        except Exception:
+            return
+        if not np.all(np.isfinite(offset_arr)) or float(np.linalg.norm(offset_arr)) <= 1e-9:
+            return
+        try:
+            self._view_relative_dimension_groups.append(
+                {
+                    "arrow": arrow_actor,
+                    "label": label_actor,
+                    "leaders": list(leader_actors or []),
+                    "base_lo": np.asarray(base_lo, dtype=float).reshape(3),
+                    "base_hi": np.asarray(base_hi, dtype=float).reshape(3),
+                    "offset": offset_arr,
+                    "label_extra": float(label_extra),
+                }
+            )
+        except Exception:
+            pass
+
+    def _reposition_dimensions_for_camera(self) -> bool:
+        """bugs/0152: re-derive each thickness dimension's view-relative offset SIDE for
+        the live camera and cheaply re-place it -- AddPosition the rigid arrow,
+        SetPosition the billboard label, rebuild the two short leaders (one end pinned to
+        the surface, so not a rigid translate). No scene rebuild, no re-trace. The
+        companion bugs/0128 re-derivation only re-angled the LABELS, leaving the side
+        stale on orbit ("thickness overlays changed to opposite side")."""
+        groups = getattr(self, "_view_relative_dimension_groups", None)
+        if not groups or self._renderer is None:
+            return False
+        axes = self._camera_screen_world_axes()
+        view = self._camera_view_normal()
+        if axes is None or view is None:
+            return False
+        _screen_right, screen_up = axes
+        svc = self._open3d_thickness_dimension_service()
+        pv = getattr(svc, "pv", None)
+        changed = False
+        for group in groups:
+            try:
+                base_lo = group["base_lo"]
+                base_hi = group["base_hi"]
+                offset = group["offset"]
+                seg = base_hi - base_lo
+                if float(np.linalg.norm(seg)) <= 1e-9:
+                    continue
+                offset_mag = float(np.linalg.norm(offset))
+                if offset_mag <= 1e-9:
+                    continue
+                new_side = np.asarray(
+                    svc.offset_direction(seg, view_normal=view, screen_up=screen_up),
+                    dtype=float,
+                ).reshape(3)
+                new_offset = new_side * offset_mag
+                delta = new_offset - offset
+                if float(np.linalg.norm(delta)) <= 1e-6:
+                    continue  # this dimension's side is unchanged for the live view
+                arrow = group.get("arrow")
+                if arrow is not None:
+                    arrow.AddPosition(float(delta[0]), float(delta[1]), float(delta[2]))
+                label = group.get("label")
+                if label is not None:
+                    pos = 0.5 * (base_lo + base_hi) + new_offset + new_side * float(group.get("label_extra", 0.0))
+                    label.SetPosition(float(pos[0]), float(pos[1]), float(pos[2]))
+                if pv is not None:
+                    for leader in group.get("leaders", []) or []:
+                        self._remove_actor_from_renderers(leader)
+                        key = self._actor_key(leader)
+                        if key is not None:
+                            self._actor_by_key.pop(key, None)
+                    new_leaders = []
+                    for tip in (base_lo, base_hi):
+                        anchor = tip + new_offset
+                        try:
+                            leader_actor = self._add_mesh_actor(
+                                pv.Line(
+                                    tuple(float(v) for v in tip),
+                                    tuple(float(v) for v in anchor),
+                                ),
+                                color=(0.62, 0.72, 0.80),
+                                opacity=0.52,
+                                line_width=svc.DIMENSION_LEADER_LINE_WIDTH,
+                                backface_culling=False,
+                            )
+                        except Exception:
+                            leader_actor = None
+                        if leader_actor is not None:
+                            new_leaders.append(leader_actor)
+                    group["leaders"] = new_leaders
+                group["offset"] = new_offset
                 changed = True
             except Exception:
                 continue

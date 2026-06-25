@@ -141,7 +141,8 @@
     "136": "pass",
     "137": "pass",
     "138": "pass",
-    "139": "pass"
+    "139": "pass",
+    "140": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -283,6 +284,7 @@
     "136": "Open 3D re-anchored dimension pins its fixed end to fixed_z",
     "137": "Open 3D STEP hover face-outline is vectorised + cached",
     "138": "Open 3D re-anchored dimension endpoints track their feature",
-    "139": "Open 3D Object->LED distance dialog edits the live distance"
+    "139": "Open 3D Object->LED distance dialog edits the live distance",
+    "140": "Open 3D thickness dimension side re-derives on orbit"
   }
 }

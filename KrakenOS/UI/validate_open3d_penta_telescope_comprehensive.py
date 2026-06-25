@@ -8257,6 +8257,41 @@ def phase_139_object_led_distance_dialog(
     return result
 
 
+def phase_140_dimension_side_orbit(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0152 (re-applied from M90aPro-local bugs/0136): a thickness dimension's
+    view-relative offset SIDE must re-derive for the live camera on orbit.
+
+    The side = `offset_direction(segment, view, screen_up)` is baked at draw time. On orbit,
+    `_reorient_thickness_labels_for_camera` re-derived only the LABEL angle (bugs/0128), never
+    the SIDE -- so the arrow stayed on the pre-orbit side until the next scene refresh (e.g.
+    gluing the BS) recomputed `add_overlays` (flag_20260624_203423_975 "thickness overlays
+    changed to opposite side" / flag_20260624_203516_116 "correct again after glue"). The fix
+    registers each dimension's actors + un-offset anchors and, on EndInteractionEvent,
+    `_reposition_dimensions_for_camera` re-derives the side and cheaply re-places the arrow
+    (AddPosition) + label (SetPosition) + rebuilds the two leaders -- no retrace. The guard
+    binds the real reposition router onto a fake inspector; display-free.
+    """
+    result = PhaseResult(
+        name="Phase 140: Open 3D thickness dimension side re-derives on orbit"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_dimension_side_orbit import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"dimension-side-orbit guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("dimension-side-orbit guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8442,6 +8477,7 @@ def main() -> int:
             phase_137_face_outline_fast,
             phase_138_dimension_reanchor_feature_track,
             phase_139_object_led_distance_dialog,
+            phase_140_dimension_side_orbit,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
