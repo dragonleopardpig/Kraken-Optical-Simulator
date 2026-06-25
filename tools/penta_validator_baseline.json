@@ -130,7 +130,8 @@
     "125": "pass",
     "126": "pass",
     "127": "pass",
-    "128": "pass"
+    "128": "pass",
+    "129": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -261,6 +262,7 @@
     "125": "Open 3D clear-aperture pick empty-click cancel",
     "126": "Open 3D hidden STEP element drops its gizmo",
     "127": "Open 3D glued beam splitter follows the LED live",
-    "128": "Open 3D clear-aperture hover render storm"
+    "128": "Open 3D clear-aperture hover render storm",
+    "129": "Open 3D promote does not flash a distant element pink"
   }
 }

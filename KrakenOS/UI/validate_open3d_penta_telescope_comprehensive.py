@@ -7851,6 +7851,41 @@ def phase_128_clear_aperture_hover_render(
     return result
 
 
+def phase_129_promote_no_stale_highlight(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0139: promoting a STEP solid must not flash a distant element pink.
+
+    Promoting an imported STEP overlay briefly highlighted a separate, upstream element --
+    the imaging lens's "Lens Front Datum" -- pink during promotion ("the lens surrogate
+    front datum highlight pink as well during BS promotion ... why there is a link?"). The
+    promote-and-assign inserts the new solid with refresh_open_3d=False (stale 3-D actor
+    map) and then called _select_table_row(row_index), which SYNCHRONOUSLY highlights
+    against that stale map -- and the new row's index belonged to the upstream datum before
+    the insert. The fix selects via the quiet _select_table_indices (no synchronous 3-D
+    highlight); the rebuild + highlight_row paint the real solid against the fresh map. The
+    guard pins the promote-and-assign selector swap + the two selectors' contracts; it is
+    display-free.
+    """
+    result = PhaseResult(
+        name="Phase 129: Open 3D promote does not flash a distant element pink"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_promote_no_stale_highlight import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"promote stale-highlight guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("promote stale-highlight guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8025,6 +8060,7 @@ def main() -> int:
             phase_126_hidden_step_drops_gizmo,
             phase_127_glue_live_actor_carry,
             phase_128_clear_aperture_hover_render,
+            phase_129_promote_no_stale_highlight,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

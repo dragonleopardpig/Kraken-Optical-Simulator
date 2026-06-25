@@ -818,7 +818,17 @@ class Open3DFaceAssignmentService:
             metadata=self._debug_face_metadata_summary(assigned.get("metadata")),
         )
         self._clear_step_overlay_interaction_state(label)
-        self.editor._select_table_row(row_index)
+        # bugs/0139: select the new solid in the TABLE only -- do NOT eagerly
+        # highlight it in 3D here. ``_select_table_row`` would synchronously call
+        # ``highlight_row`` against the 3D actor map that is still STALE (the
+        # promote ran with refresh_open_3d=False), so the index of the just-inserted
+        # row maps to whatever actor occupied that index in the PRE-promote scene --
+        # the upstream lens "Lens Front Datum" -- flashing a distant, unrelated
+        # element pink during promotion. ``_select_table_indices`` sets the same
+        # table selection without the synchronous stale-map highlight; the rebuild
+        # below (and ``highlight_row`` after it) repaint the real solid against the
+        # FRESH map.
+        self.editor._select_table_indices([row_index], focus_index=row_index)
         try:
             # bugs/0116: a direct right-click face assignment IS a promote of an
             # in-path optical solid, so its forced retrace is the same ~44s full
