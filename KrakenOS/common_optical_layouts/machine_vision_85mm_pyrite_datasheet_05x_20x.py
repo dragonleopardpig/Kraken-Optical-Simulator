@@ -137,7 +137,9 @@ SETTINGS = {
     "lens_step_path": STEP_PATH,
     "lens_step_largest_component_only": True,
     "lens_step_rotation_x_deg": 0.0,
-    "lens_step_rotation_y_deg": 0.0,
+    # Vendor STEP authors the barrel facing -Z (object side), so it loads
+    # reversed; spin 180 deg about the (vertical) Y axis to face the sensor.
+    "lens_step_rotation_y_deg": 180.0,
     "lens_step_rotation_z_deg": 0.0,
     "lens_step_axis_offset_xy": [0.0, 0.0],
     "lens_step_placement_offset_xyz": [0.0, 0.0, STEP_GLASS_ALIGNMENT_Z_OFFSET_MM],
