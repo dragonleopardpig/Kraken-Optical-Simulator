@@ -40,6 +40,7 @@ from KrakenOS.UI.services.quick_estimation import (
     DESIGN_OBJECT_FOV_SEMI,
     DESIGN_TOTAL_TRACK,
     QuickEstimationService,
+    design_quantity_states,
     resolve_design_system,
 )
 
@@ -116,6 +117,38 @@ def run_checks():
     # P: service contract.
     if not hasattr(QuickEstimationService, "solve_design"):
         failures.append("P FAIL: QuickEstimationService must expose solve_design")
+
+    # Q-T: gray-out states (design_quantity_states) -- the UI disables the
+    # constraints the user can no longer change once enough are pinned.
+    def state_of(states, q):
+        return (states.get(q) or {}).get("state")
+
+    # Q: a lone magnification pin locks its FOV twin, leaves the lengths available.
+    sQ = design_quantity_states({DESIGN_MAGNIFICATION: 0.5}, sensor_semi=5.5)
+    if state_of(sQ, DESIGN_MAGNIFICATION) != "pinned":
+        failures.append(f"Q FAIL: magnification should read pinned, got {state_of(sQ, DESIGN_MAGNIFICATION)}")
+    if state_of(sQ, DESIGN_OBJECT_FOV_SEMI) != "locked":
+        failures.append(f"Q FAIL: object FOV should lock when magnification is pinned (same DOF), got {state_of(sQ, DESIGN_OBJECT_FOV_SEMI)}")
+    if any(state_of(sQ, q) != "available" for q in (DESIGN_OBJECT_DISTANCE, DESIGN_IMAGE_DISTANCE, DESIGN_TOTAL_TRACK)):
+        failures.append("Q FAIL: the three lengths should stay available with only a magnification pinned")
+
+    # R: a balanced system locks every unpinned quantity AND carries its solved value.
+    sR = design_quantity_states({DESIGN_MAGNIFICATION: 0.5, DESIGN_OBJECT_DISTANCE: 150.0}, sensor_semi=None)
+    for q in (DESIGN_IMAGE_DISTANCE, DESIGN_TOTAL_TRACK, DESIGN_OBJECT_FOV_SEMI):
+        if state_of(sR, q) != "locked":
+            failures.append(f"R FAIL: {q} should lock once the system is balanced, got {state_of(sR, q)}")
+    if not _approx((sR.get(DESIGN_IMAGE_DISTANCE) or {}).get("value"), 75.0, tol=1e-4):
+        failures.append("R FAIL: a locked quantity in a balanced system must carry its solved value (image_distance=75)")
+
+    # S: a lone length pin leaves everything else available (nothing determined yet).
+    sS = design_quantity_states({DESIGN_OBJECT_DISTANCE: 150.0}, sensor_semi=5.5)
+    if any(state_of(sS, q) != "available" for q in (DESIGN_MAGNIFICATION, DESIGN_IMAGE_DISTANCE, DESIGN_TOTAL_TRACK, DESIGN_OBJECT_FOV_SEMI)):
+        failures.append("S FAIL: with one length pinned, every other quantity should still be available")
+
+    # T: an object-FOV pin locks the magnification twin.
+    sT = design_quantity_states({DESIGN_OBJECT_FOV_SEMI: 11.0}, sensor_semi=5.5)
+    if state_of(sT, DESIGN_OBJECT_FOV_SEMI) != "pinned" or state_of(sT, DESIGN_MAGNIFICATION) != "locked":
+        failures.append("T FAIL: pinning object FOV must lock magnification (same DOF)")
 
     return (not failures), failures
 

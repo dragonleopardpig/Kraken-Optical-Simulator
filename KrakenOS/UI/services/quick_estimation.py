@@ -211,6 +211,45 @@ def resolve_design_system(pins: Any, sensor_semi: Any = None, *, rel_tol: float 
     return result
 
 
+def design_quantity_states(pins: Any, sensor_semi: Any = None) -> dict[str, dict[str, Any]]:
+    """Per-quantity checkbox state for the design dialog, so the UI can GRAY OUT
+    the constraints the user can no longer change once enough are pinned.
+
+    For each ``DESIGN_QUANTITIES`` entry returns ``{"state": ...}`` where state is:
+
+    * ``"pinned"``   -- the user fixed it (carries ``value``);
+    * ``"locked"``   -- determined by the current pins, so it must NOT be pinned
+      (grayed). When the system is balanced it carries the solved ``value`` to show
+      as the result; it is also locked when its magnification twin is pinned
+      (magnification and object FOV are the SAME degree of freedom), or when the
+      pins already over-constrain;
+    * ``"available"`` -- still free to pin (its checkbox stays enabled).
+    """
+    p = _coerce_design_pins(pins)
+    res = resolve_design_system(p, sensor_semi=sensor_semi)
+    status = res.get("status")
+    settled = status in ("balanced", "over")  # no further pins should be added
+    twin = {
+        DESIGN_MAGNIFICATION: DESIGN_OBJECT_FOV_SEMI,
+        DESIGN_OBJECT_FOV_SEMI: DESIGN_MAGNIFICATION,
+    }
+    states: dict[str, dict[str, Any]] = {}
+    for q in DESIGN_QUANTITIES:
+        if q in p:
+            states[q] = {"state": "pinned", "value": p[q]}
+        elif settled:
+            entry: dict[str, Any] = {"state": "locked"}
+            if status == "balanced" and q in res:
+                entry["value"] = res[q]
+            states[q] = entry
+        elif q in twin and twin[q] in p:
+            # magnification and object FOV are one DOF -- pinning one locks the other.
+            states[q] = {"state": "locked"}
+        else:
+            states[q] = {"state": "available"}
+    return states
+
+
 class QuickEstimationService:
     """Object/image conjugate + FOV solver wired to the 3D thickness handles."""
 
