@@ -202,6 +202,9 @@ class Open3DLiveControlsPanel:
             self._quick_estimation_role_combos = getattr(self, "_quick_estimation_role_combos", {})
             self._quick_estimation_role_combos[quantity] = combo
 
+        # Design-mode constraints: pin first-order knowns, solve for the lens (EFL).
+        self.build_design_constraint_controls(parent, 17)
+
         inspector._quick_estimation_readout_vars = readout_vars
         try:
             inspector._quick_estimation_service().update_readout()
@@ -218,6 +221,13 @@ class Open3DLiveControlsPanel:
                 combo.set(svc.role(quantity))
             except Exception:
                 pass
+
+    def build_design_constraint_controls(self, parent: tk.Widget, start_row: int) -> None:
+        """Embed the reusable design-mode constraint/solve block in the QE panel."""
+        from KrakenOS.UI.panels.design_constraint_controls import DesignConstraintControls
+
+        self._design_constraint_controls = DesignConstraintControls(self.inspector)
+        self._design_constraint_controls.build(parent, start_row=start_row)
 
     def build_solve_controls(self, parent: tk.Widget) -> None:
         """Mark thickness gaps Variable, then solve them for best focus / best

@@ -406,6 +406,45 @@ class QuickEstimationService:
         """
         return resolve_design_system(pins, sensor_semi=self._sensor_semi())
 
+    def design_constraint_view(self, pins: dict[str, Any]) -> dict[str, Any]:
+        """One call for the design-constraint panel: per-quantity checkbox
+        ``states`` (so the UI grays the spent-DOF constraints) plus the solve
+        ``result`` (the advisory EFL + conjugates), both with the vendor sensor
+        semi-height injected. Pure/read-only -- never mutates the layout."""
+        sensor_semi = self._sensor_semi()
+        return {
+            "states": design_quantity_states(pins, sensor_semi=sensor_semi),
+            "result": resolve_design_system(pins, sensor_semi=sensor_semi),
+        }
+
+    def apply_design(self, pins: dict[str, Any]) -> tuple[bool, str]:
+        """Apply a balanced design solve to the LAYOUT: write the solved object and
+        image distances into the conjugate gaps so the 3D/2D update -- not just a text
+        readout. The EFL stays advisory (you cannot change an existing lens's focal
+        length; fit a lens of the reported EFL for focus). Mutates rows in place; the
+        caller owns history + retrace (mirrors the FOV solve)."""
+        result = resolve_design_system(pins, sensor_semi=self._sensor_semi())
+        if result.get("status") != "balanced":
+            return False, result.get("message", "Design constraints are not solvable yet.")
+        obj_row = self.object_thickness_row()
+        img_row = self.image_thickness_row()
+        if obj_row is None or img_row is None or obj_row == img_row:
+            return False, "Layout has no object/image gap to apply to."
+        try:
+            obj_distance = float(result[DESIGN_OBJECT_DISTANCE])
+            img_distance = float(result[DESIGN_IMAGE_DISTANCE])
+            focal = float(result[DESIGN_FOCAL_LENGTH])
+        except (KeyError, TypeError, ValueError):
+            return False, "Design solve produced no finite conjugates."
+        if not (np.isfinite(obj_distance) and np.isfinite(img_distance) and obj_distance > 0 and img_distance > 0):
+            return False, "Design solve produced a non-physical conjugate."
+        self.editor.rows[obj_row].thickness = obj_distance
+        self.editor.rows[img_row].thickness = img_distance
+        return True, (
+            f"Applied object {obj_distance:.4g} / image {img_distance:.4g} mm -- "
+            f"fit a ~{focal:.4g} mm EFL lens for focus."
+        )
+
     def preview_state(self, independent_row_index: int, pending_value: float) -> dict[str, Any] | None:
         """Conjugate state for a *pending* (uncommitted) thickness drag.
 

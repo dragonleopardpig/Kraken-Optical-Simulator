@@ -150,6 +150,37 @@ def run_checks():
     if state_of(sT, DESIGN_OBJECT_FOV_SEMI) != "pinned" or state_of(sT, DESIGN_MAGNIFICATION) != "locked":
         failures.append("T FAIL: pinning object FOV must lock magnification (same DOF)")
 
+    # U: UI contract -- the reusable widget + the one-call service view the left panel
+    # and the FOV / detector popups all bind to, plus the apply-to-layout path.
+    for method in ("design_constraint_view", "apply_design"):
+        if not hasattr(QuickEstimationService, method):
+            failures.append(f"U FAIL: QuickEstimationService must expose {method}")
+    try:
+        from KrakenOS.UI.panels.design_constraint_controls import DesignConstraintControls
+        for method in ("build", "recompute", "apply"):
+            if not hasattr(DesignConstraintControls, method):
+                failures.append(f"U FAIL: DesignConstraintControls must expose {method}")
+    except Exception as exc:
+        failures.append(f"U FAIL: DesignConstraintControls must import (got {exc!r})")
+
+    # V: apply_design writes the solved conjugates into the layout rows (mutation, not
+    # just text). Drives the real service against a stub editor.
+    import types as _types
+
+    rows = [_types.SimpleNamespace(thickness=10.0, diameter=11.0),
+            _types.SimpleNamespace(thickness=0.0, diameter=11.0),
+            _types.SimpleNamespace(thickness=10.0, diameter=11.0)]
+    stub_ed = _types.SimpleNamespace(rows=rows)
+    svc = QuickEstimationService(_types.SimpleNamespace(editor=stub_ed))
+    ok, _msg = svc.apply_design({DESIGN_MAGNIFICATION: 0.5, DESIGN_OBJECT_DISTANCE: 150.0})
+    if not ok:
+        failures.append("V FAIL: apply_design should succeed on a balanced design")
+    elif not (_approx(rows[0].thickness, 150.0, tol=1e-4) and _approx(rows[-2].thickness, 75.0, tol=1e-4)):
+        failures.append(f"V FAIL: apply_design must write object=150 / image=75 (got {rows[0].thickness}/{rows[-2].thickness})")
+    ok_bad, _ = svc.apply_design({DESIGN_MAGNIFICATION: 0.5})  # under-constrained
+    if ok_bad:
+        failures.append("V FAIL: apply_design must refuse an under-constrained design")
+
     return (not failures), failures
 
 

@@ -14359,6 +14359,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         (bugs/0055). Single click still just selects the row."""
         if getattr(self, "_dimension_anchor_pick_mode", False):
             return False
+        # Double-click a branch detector -> the quick design-mode constraint/solve box.
+        try:
+            branch_path = self._branch_detector_under_cursor(event)
+        except Exception:
+            branch_path = None
+        if branch_path is not None:
+            self.after(1, lambda bp=str(branch_path): self._open_detector_design_popup(bp))
+            return True
         srow = self._surface_row_under_cursor(event)
         if srow is None or not (0 <= srow < len(self.editor.rows)):
             return False
@@ -14467,6 +14475,42 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         ttk.Button(dialog, text="Cancel", command=dialog.destroy).grid(
             row=button_row + 1, column=0, columnspan=2, padx=12, pady=(0, 12)
         )
+        # Streamlined design block: the OBJECT plane already fixes the object field, so
+        # the FOV is pinned from the Width box above (the magnification DOF); the user
+        # adds one length and the EFL solves. Object plane only -- the image popup is the
+        # sensor-sizing tool. Same block as the left QE panel.
+        if plane == "object":
+            from KrakenOS.UI.services.quick_estimation import DESIGN_OBJECT_FOV_SEMI as _fov_key
+
+            def _fov_context():
+                raw = (width_var.get() or "").strip()
+                if not raw:
+                    return {}
+                try:
+                    w = float(raw)
+                except ValueError:
+                    return {}
+                if w <= 0:
+                    return {}
+                try:
+                    semi = float(qe.horizontal_to_diagonal(w)) / 2.0
+                except Exception:
+                    return {}
+                return {_fov_key: semi} if semi > 0 else {}
+
+            design_frame = ttk.Frame(dialog)
+            design_frame.grid(row=button_row + 2, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 10))
+            design_frame.columnconfigure(1, weight=1)
+            try:
+                from KrakenOS.UI.panels.design_constraint_controls import DesignConstraintControls
+
+                _design = DesignConstraintControls(self, context_provider=_fov_context)
+                _design.build(design_frame, start_row=0, compact=True)
+                # live-update as the FOV box is typed
+                width_var.trace_add("write", lambda *_a: _design.recompute())
+                height_var.trace_add("write", lambda *_a: _design.recompute())
+            except Exception:
+                pass
         dialog.bind("<Escape>", lambda _e: dialog.destroy())
         try:
             dialog.grab_set()
@@ -14483,6 +14527,70 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         self.wait_window(dialog)
 
+    def _open_detector_design_popup(self, branch_path: str) -> None:
+        """Double-click a branch detector -> a quick design-mode constraint/solve box
+        ("what lens do I need?" for that arm), the same block as the left QE panel.
+        Advisory only -- it never moves the layout (modeless so it can sit open)."""
+        qe = self._quick_estimation_service()
+        try:
+            if not qe.is_enabled():
+                self.quick_estimation_var.set(True)
+        except Exception:
+            pass
+        dialog = tk.Toplevel(self)
+        try:
+            dialog.withdraw()
+            dialog.title("Detector — Design Lens (Quick Estimation)")
+            dialog.transient(self.winfo_toplevel())
+            dialog.resizable(False, False)
+        except Exception:
+            pass
+        ttk.Label(
+            dialog,
+            text="Pin first-order knowns; solve for the lens (EFL).\nAdvisory -- does not move the layout.",
+            foreground="#555555",
+            justify="left",
+            wraplength=300,
+        ).grid(row=0, column=0, columnspan=2, padx=12, pady=(12, 4), sticky="w")
+        # Streamlined design block: a detector sits at the image side, so the image
+        # distance is pinned from the current image gap (the user adds one more known
+        # -- magnification, object distance or total track -- and the EFL solves).
+        from KrakenOS.UI.services.quick_estimation import DESIGN_IMAGE_DISTANCE as _img_key
+
+        def _detector_context():
+            try:
+                svc = self._quick_estimation_service()
+                img_row = svc.image_thickness_row()
+                if img_row is None:
+                    return {}
+                thickness = float(self.editor.rows[img_row].thickness)
+            except Exception:
+                return {}
+            return {_img_key: thickness} if thickness > 0 else {}
+
+        design_frame = ttk.Frame(dialog)
+        design_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 8))
+        design_frame.columnconfigure(1, weight=1)
+        try:
+            from KrakenOS.UI.panels.design_constraint_controls import DesignConstraintControls
+
+            DesignConstraintControls(self, context_provider=_detector_context).build(
+                design_frame, start_row=0, show_separator=False, compact=True
+            )
+        except Exception:
+            pass
+        ttk.Button(dialog, text="Close", command=dialog.destroy).grid(
+            row=2, column=0, columnspan=2, padx=12, pady=(0, 12)
+        )
+        dialog.bind("<Escape>", lambda _e: dialog.destroy())
+        try:
+            self.editor._show_centered_dialog(dialog)
+        except Exception:
+            try:
+                dialog.deiconify()
+            except Exception:
+                pass
+
     def _apply_quick_estimation_fov_solve(
         self,
         plane: str,
@@ -14494,6 +14602,35 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         qe = self._quick_estimation_service()
         self.editor._begin_history_capture()
         ok, msg = qe.fov_solve(plane, mode, width, height, aspect)
+        if ok:
+            try:
+                self.editor._sync_table()
+            except Exception:
+                pass
+            try:
+                self.editor._sync_object_controls()
+            except Exception:
+                pass
+            self.editor._commit_history_capture()
+            try:
+                self.editor._invalidate_preview_scene_trace()
+                self.editor._sync_trace_state_badge()
+            except Exception:
+                pass
+            self.refresh_from_editor(force_retrace=True)
+            qe.update_readout()
+        else:
+            self.editor._commit_history_capture()
+        self.status_var.set(msg)
+
+    def _apply_design_constraints(self, pins: dict) -> None:
+        """Apply the design-mode constraint solve to the LAYOUT -- write the solved
+        object/image distances into the conjugate gaps and retrace, so the 3D/2D
+        update (not just a text readout). Mirrors _apply_quick_estimation_fov_solve's
+        history + sync + retrace; the EFL itself stays advisory."""
+        qe = self._quick_estimation_service()
+        self.editor._begin_history_capture()
+        ok, msg = qe.apply_design(pins or {})
         if ok:
             try:
                 self.editor._sync_table()
