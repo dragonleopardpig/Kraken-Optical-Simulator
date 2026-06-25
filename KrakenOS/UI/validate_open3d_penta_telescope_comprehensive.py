@@ -8145,6 +8145,44 @@ def phase_136_dimension_reanchor_fixed_end(
     return result
 
 
+def phase_137_face_outline_fast(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0148: the STEP hover/pick face-outline is vectorised + cached (no per-hover walk).
+
+    ``face_outline_from_face_indices`` drives the hover/pick face-outline highlight. It
+    rebuilt the whole body's per-point-ROUNDED triangle-edge dictionary (``_edge_records``
+    -> ``_point_key`` -> scalar ``np.round``) on EVERY mouse-move, so hovering a heavy vendor
+    STEP body (the 591k-cell camera; the 55k-triangle 85mm lens) froze the GUI 30-56 s per
+    hover (py-spy caught the main thread pegged in ``_point_key``). The fix gives this path
+    bug 0146's treatment: a target-independent, pose-stable edge topology (coordinate-id +
+    packed int64 edge key) computed once per body and cached, then each hover selects one
+    face group's outline with a boolean mask -- edge-for-edge identical to the scalar walk.
+    The guard pins (display-free, on a synthetic mesh with coincident duplicate seam
+    vertices) vectorised == scalar for every target group, the shared seam kept on each
+    single face but dropped from the group, outer edges kept / interior diagonals never
+    drawn, a cache build without a real mesh handle, and a source marker that the fast path
+    is wired into ``face_outline_from_face_indices``.
+    """
+    result = PhaseResult(
+        name="Phase 137: Open 3D STEP hover face-outline is vectorised + cached"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_face_outline_fast import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"fast face-outline guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("fast face-outline guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8327,6 +8365,7 @@ def main() -> int:
             phase_134_promote_suppresses_table_selection_sync,
             phase_135_boundary_pairs_fast_int_key,
             phase_136_dimension_reanchor_fixed_end,
+            phase_137_face_outline_fast,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

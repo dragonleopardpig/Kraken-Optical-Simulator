@@ -543,6 +543,126 @@ def face_indices_for_record(mesh, face: dict[str, object]) -> tuple[int, ...]:
     return tuple(int(face_id) for face_id, _count in Counter(indices).most_common())
 
 
+# bugs/0148: the hover/pick face-outline below rebuilt a per-point-ROUNDED edge
+# dict (``_edge_records`` -> ``_point_key`` -> scalar ``np.round``) over the WHOLE
+# body on every mouse-move, so sweeping the cursor across the 591k-triangle vendor
+# camera froze the GUI 30-56 s per hover (the same scalar walk bug 0146 already
+# replaced for the silhouette path). The edge TOPOLOGY -- which triangle-edges
+# share a vertex, and each edge's face id -- is target-independent and pose-stable,
+# so it is computed once per body (vectorised, like ``_boundary_edge_index_pairs``)
+# and cached; each hover then selects one face group's outline with a cheap boolean
+# mask. Keyed on mesh identity + content token, exactly like the surface/edge
+# caches above, so a genuine re-mesh (token bump) recomputes and a re-placement
+# (new mesh object) misses cleanly.
+_FACE_OUTLINE_TOPOLOGY_CACHE: dict[int, tuple] = {}
+_FACE_OUTLINE_TOPOLOGY_CACHE_ORDER: list[int] = []
+_FACE_OUTLINE_TOPOLOGY_CACHE_MAX = 8
+
+
+def _face_outline_edge_topology(surface, face_index):
+    """Target-independent edge topology for fast face-group outlines.
+
+    Mirrors the rounded-coordinate vertex identity + canonical int64 edge key of
+    :func:`_boundary_edge_index_pairs`, but keeps every triangle-edge's face id and
+    point indices so an arbitrary target face GROUP's outline can later be selected
+    by masking, not by another full walk. Returns
+    ``(inv, counts, fids, rep0, rep1, n_uniq)`` or ``None`` to signal the caller to
+    fall back to the scalar :func:`_edge_records` walk:
+
+      * ``inv``    ``(3T,)``  unique-edge index of each triangle-edge
+      * ``counts`` ``(E,)``   triangle-edges sharing each unique edge
+      * ``fids``   ``(3T,)``  per-triangle-edge analytic face id
+      * ``rep0/1`` ``(3T,)``  canonical point-index pair of each triangle-edge
+      * ``n_uniq`` ``int``    number of unique edges ``E``
+    """
+    try:
+        faces = np.asarray(surface.faces, dtype=np.int64).reshape((-1, 4))
+    except Exception:
+        return None
+    n = int(faces.shape[0])
+    fid = np.asarray(face_index, dtype=np.int64).reshape(-1)
+    if n <= 0 or fid.shape[0] != n or not np.all(faces[:, 0] == 3):
+        return None
+    point_idx = faces[:, 1:4]
+    local = np.asarray([[0, 1], [1, 2], [2, 0]], dtype=np.int64)
+    e0i = point_idx[:, local[:, 0]].reshape(-1)
+    e1i = point_idx[:, local[:, 1]].reshape(-1)
+    fids = np.repeat(fid, 3)
+    try:
+        points = np.round(np.asarray(surface.points, dtype=float), 8)
+        _, coord_id = np.unique(points, axis=0, return_inverse=True)
+    except Exception:
+        return None
+    coord_id = np.asarray(coord_id).reshape(-1)
+    if coord_id.shape[0] <= int(max(int(e0i.max(initial=-1)), int(e1i.max(initial=-1)))):
+        return None
+    a = coord_id[e0i]
+    b = coord_id[e1i]
+    swap = a > b
+    lo = np.where(swap, b, a).astype(np.int64)
+    hi = np.where(swap, a, b).astype(np.int64)
+    rep0 = np.where(swap, e1i, e0i).astype(np.int64)
+    rep1 = np.where(swap, e0i, e1i).astype(np.int64)
+    stride = np.int64(int(coord_id.max()) + 1) if coord_id.size else np.int64(1)
+    edge_key = lo * stride + hi
+    uniq_key, inv, counts = np.unique(edge_key, return_inverse=True, return_counts=True)
+    inv = np.asarray(inv).reshape(-1).astype(np.int64)
+    return inv, counts.astype(np.int64), fids, rep0, rep1, int(uniq_key.shape[0])
+
+
+def _cached_face_outline_edge_topology(mesh, surface, face_index):
+    """Memoise :func:`_face_outline_edge_topology` on mesh identity + content."""
+    if mesh is None:
+        return _face_outline_edge_topology(surface, face_index)
+    key = id(mesh)
+    token = _mesh_cache_token(mesh)
+    cached = _FACE_OUTLINE_TOPOLOGY_CACHE.get(key)
+    if cached is not None and cached[0] == token:
+        return cached[1]
+    topo = _face_outline_edge_topology(surface, face_index)
+    _FACE_OUTLINE_TOPOLOGY_CACHE[key] = (token, topo)
+    if key in _FACE_OUTLINE_TOPOLOGY_CACHE_ORDER:
+        _FACE_OUTLINE_TOPOLOGY_CACHE_ORDER.remove(key)
+    _FACE_OUTLINE_TOPOLOGY_CACHE_ORDER.append(key)
+    while len(_FACE_OUTLINE_TOPOLOGY_CACHE_ORDER) > _FACE_OUTLINE_TOPOLOGY_CACHE_MAX:
+        evicted = _FACE_OUTLINE_TOPOLOGY_CACHE_ORDER.pop(0)
+        if evicted != key:
+            _FACE_OUTLINE_TOPOLOGY_CACHE.pop(evicted, None)
+    return topo
+
+
+def _face_group_outline_pairs_from_topology(topo, targets):
+    """Select the boundary of the ``targets`` face group as point-index pairs.
+
+    Vectorised equivalent of the scalar selection in
+    :func:`face_outline_from_face_indices`: an edge is on the group outline when at
+    least one triangle-edge with that edge is a target AND it is not fully interior
+    to the group (a mesh-boundary edge, or shared with a non-target triangle). The
+    representative point-index pair is the FIRST target triangle-edge for that edge,
+    matching the scalar walk's ``next(record for record in records if face_id in
+    targets)`` -- the ``(3T,)`` arrays flatten cell-major then edge (0,1)/(1,2)/(2,0),
+    the same order ``_edge_records`` inserts.
+    """
+    inv, counts, fids, rep0, rep1, n_uniq = topo
+    if n_uniq <= 0:
+        return np.empty((0, 2), dtype=np.int64)
+    target_arr = np.fromiter((int(t) for t in targets), dtype=np.int64, count=len(targets))
+    is_target = np.isin(fids, target_arr)
+    if not np.any(is_target):
+        return np.empty((0, 2), dtype=np.int64)
+    target_per_edge = np.bincount(inv[is_target], minlength=n_uniq).astype(np.int64)
+    select = (target_per_edge > 0) & ((counts == 1) | (target_per_edge < counts))
+    if not np.any(select):
+        return np.empty((0, 2), dtype=np.int64)
+    order = np.arange(inv.shape[0], dtype=np.int64)
+    sentinel = np.int64(inv.shape[0])
+    cand = np.where(is_target, order, sentinel)
+    first_target = np.full(n_uniq, sentinel, dtype=np.int64)
+    np.minimum.at(first_target, inv, cand)
+    idx = first_target[np.nonzero(select)[0]]
+    return np.stack([rep0[idx], rep1[idx]], axis=1).astype(np.int64)
+
+
 def face_outline_from_face_index(mesh, target_face_index: int):
     """Return only the selected analytic STEP face boundary."""
     return face_outline_from_face_indices(mesh, (target_face_index,))
@@ -556,9 +676,23 @@ def face_outline_from_face_indices(mesh, target_face_indices):
         return None
     if not targets:
         return None
-    _surface, triangles, face_index = _surface_triangles_and_face_index(mesh)
+    surface, triangles, face_index = _surface_triangles_and_face_index(mesh)
     if triangles.size == 0 or face_index.size != triangles.shape[0]:
         return None
+    # bugs/0148: fast path -- pick the group outline from the cached, pose-stable
+    # edge topology instead of rebuilding a per-point-rounded edge dict over the
+    # whole body on every hover (the scalar walk below, kept as the fallback for
+    # non-analytic / odd meshes and any vectorised mismatch).
+    topo = _cached_face_outline_edge_topology(mesh, surface, face_index)
+    if topo is not None:
+        try:
+            pairs = _face_group_outline_pairs_from_topology(topo, targets)
+            if pairs is not None:
+                if pairs.shape[0] == 0:
+                    return None
+                return _line_polydata_from_index_pairs(surface.points, pairs)
+        except Exception:
+            pass
     selected_edges: list[tuple[np.ndarray, np.ndarray]] = []
     for records in _edge_records(triangles, face_index).values():
         selected_count = sum(1 for face_id, _p0, _p1 in records if int(face_id) in targets)
