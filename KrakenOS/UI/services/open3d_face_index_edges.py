@@ -390,18 +390,6 @@ def _mesh_is_analytic_step(mesh) -> bool:
         return False
 
 
-def _coord_rows_gt(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Per-row lexicographic ``a > b`` over (M, 3) coordinate arrays."""
-    gt = np.zeros(a.shape[0], dtype=bool)
-    tie = np.ones(a.shape[0], dtype=bool)
-    for k in range(3):
-        ak = a[:, k]
-        bk = b[:, k]
-        gt |= tie & (ak > bk)
-        tie &= ak == bk
-    return gt
-
-
 def _boundary_edge_index_pairs(surface, triangles, face_index, *, include_open_boundaries: bool):
     """Selected analytic-face boundary edges as ``(M, 2)`` point-index pairs.
 
@@ -409,6 +397,14 @@ def _boundary_edge_index_pairs(surface, triangles, face_index, *, include_open_b
     selection (verified edge-for-edge identical at the ``_point_key`` precision),
     but returning indices into ``surface.points`` rather than baked coordinates,
     so the result survives any rigid/uniform re-placement of the body.
+
+    An analytic STEP body has many coincident points with distinct indices along
+    shared face seams, so an edge's identity is its *unordered pair of rounded
+    coordinates*.  Resolving each point to a coordinate-ID once and packing the
+    canonical pair into a single int64 lets all three dedup passes run as 1-D
+    ``np.unique`` calls instead of ``axis=0`` lexsorts over ~1.8 M six-float
+    rows -- ~5x faster on the 591 k-cell camera body (5.6 s -> 1.2 s cold),
+    edge-for-edge identical to the old coordinate-row key (bug 0146).
     """
     n = int(triangles.shape[0])
     if n <= 0:
@@ -421,26 +417,33 @@ def _boundary_edge_index_pairs(surface, triangles, face_index, *, include_open_b
         return np.empty((0, 2), dtype=np.int64)
     point_idx = faces[:, 1:4]
     local = np.asarray([[0, 1], [1, 2], [2, 0]], dtype=np.int64)
-    coords = np.round(np.asarray(triangles, dtype=float), 8)
-    e0c = coords[:, local[:, 0], :].reshape((-1, 3))
-    e1c = coords[:, local[:, 1], :].reshape((-1, 3))
     e0i = point_idx[:, local[:, 0]].reshape(-1)
     e1i = point_idx[:, local[:, 1]].reshape(-1)
     fids = np.repeat(np.asarray(face_index, dtype=np.int64), 3)
     keep = fids >= 0
     if not np.any(keep):
         return np.empty((0, 2), dtype=np.int64)
-    e0c, e1c, e0i, e1i, fids = e0c[keep], e1c[keep], e0i[keep], e1i[keep], fids[keep]
-    swap = _coord_rows_gt(e0c, e1c)
-    keyc = np.where(swap[:, None], np.hstack([e1c, e0c]), np.hstack([e0c, e1c]))
+    e0i, e1i, fids = e0i[keep], e1i[keep], fids[keep]
+    points = np.round(np.asarray(surface.points, dtype=float), 8)
+    _, coord_id = np.unique(points, axis=0, return_inverse=True)
+    coord_id = np.asarray(coord_id).reshape(-1)
+    a = coord_id[e0i]
+    b = coord_id[e1i]
+    swap = a > b
+    lo = np.where(swap, b, a).astype(np.int64)
+    hi = np.where(swap, a, b).astype(np.int64)
     rep0 = np.where(swap, e1i, e0i)
     rep1 = np.where(swap, e0i, e1i)
-    uniq, first_idx, inv, counts = np.unique(
-        keyc, axis=0, return_index=True, return_inverse=True, return_counts=True
+    stride = np.int64(int(coord_id.max()) + 1) if coord_id.size else np.int64(1)
+    edge_key = lo * stride + hi
+    uniq_key, first_idx, inv, counts = np.unique(
+        edge_key, return_index=True, return_inverse=True, return_counts=True
     )
-    inv = inv.reshape(-1)
-    group_face = np.unique(np.stack([inv, fids], axis=1), axis=0)
-    distinct_faces = np.bincount(group_face[:, 0], minlength=int(uniq.shape[0]))
+    inv = np.asarray(inv).reshape(-1)
+    n_uniq = int(uniq_key.shape[0])
+    face_stride = np.int64(int(fids.max()) + 1) if fids.size else np.int64(1)
+    combo = np.unique(inv.astype(np.int64) * face_stride + fids.astype(np.int64))
+    distinct_faces = np.bincount((combo // face_stride).astype(np.int64), minlength=n_uniq)
     select = distinct_faces > 1
     if include_open_boundaries:
         select = select | ((counts == 1) & (distinct_faces >= 1))

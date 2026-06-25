@@ -8070,6 +8070,44 @@ def phase_134_promote_suppresses_table_selection_sync(
     return result
 
 
+def phase_135_boundary_pairs_fast_int_key(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0146: the cold STEP-silhouette boundary-edge selection is fast and identical.
+
+    The silhouette of a heavy analytic STEP overlay is its analytic-face boundary edges,
+    selected by ``_boundary_edge_index_pairs``. Bug 0142 stopped a re-placed body re-walking
+    that selection, but the COLD first build still deduplicated the body's triangle-edge soup
+    with two ``np.unique(..., axis=0)`` lexsorts over ~1.77 M six-float rows for the 591k-cell
+    camera -- ~5 s on the UI thread, the residual freeze ("super lagging, I can't even use it
+    for anything useful now"). Bug 0146 keeps the exact selection but resolves each point to a
+    coordinate-ID once (coincident seam duplicates collapse) and packs the canonical edge pair
+    into one int64, so every dedup pass is a cheap 1-D unique: camera 5.1 s -> 1.2 s, lens
+    0.31 s -> 0.05 s, edge-for-edge identical. The guard pins (on an unwelded analytic soup with
+    coincident duplicate vertices) edge-for-edge identity to the reference walk for both
+    include_open flags, the False-subset-of-True relation, a clean cube's 12 edges, empty results
+    for degenerate inputs, and source markers that the integer key is present and the old 6-float
+    lexsort is gone; display-free.
+    """
+    result = PhaseResult(
+        name="Phase 135: Open 3D fast int-key STEP silhouette is identical to the walk"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_boundary_pairs_fast import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"fast boundary-pairs guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("fast boundary-pairs guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8250,6 +8288,7 @@ def main() -> int:
             phase_132_step_overlay_unchanged_pose_no_rebake,
             phase_133_step_overlay_refresh_keeps_other_labels,
             phase_134_promote_suppresses_table_selection_sync,
+            phase_135_boundary_pairs_fast_int_key,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
