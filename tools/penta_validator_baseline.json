@@ -132,7 +132,8 @@
     "127": "pass",
     "128": "pass",
     "129": "pass",
-    "130": "pass"
+    "130": "pass",
+    "131": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -265,6 +266,7 @@
     "127": "Open 3D glued beam splitter follows the LED live",
     "128": "Open 3D clear-aperture hover render storm",
     "129": "Open 3D promote does not flash a distant element pink",
-    "130": "Open 3D preset-view jump re-squares thickness labels"
+    "130": "Open 3D preset-view jump re-squares thickness labels",
+    "131": "Open 3D re-placed STEP overlay reuses pose-invariant silhouette"
   }
 }

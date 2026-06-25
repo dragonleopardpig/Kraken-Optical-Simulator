@@ -7920,6 +7920,44 @@ def phase_130_preset_view_squares_labels(
     return result
 
 
+def phase_131_pose_invariant_step_edges(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0142: a re-placed analytic STEP overlay rebuilds its silhouette cheaply.
+
+    A heavy imported STEP overlay (the 591k-triangle camera body, the LED plate, the
+    beam-splitter) draws its silhouette as analytic-face boundary edges, but that
+    selection was keyed on id(mesh) -- so every re-placement (a glued LED following its
+    partner, the camera tracking the image plane, any drag / rotate / resize) built a
+    brand-new mesh object that missed the cache and re-ran the full per-triangle boundary
+    walk cold (~31 s on the camera, ~3 s on the LED), paid on essentially every editing
+    action ("Open 3D seems takes longer ... still very lag"). A rigid/uniform re-placement
+    only moves the vertices, so pose_invariant_feature_edges caches the boundary selection
+    as point-index PAIRS keyed on the body's intrinsic identity and rebuilds a re-placed
+    silhouette with a vectorised coordinate gather instead of the walk. The guard pins:
+    same-pose faithfulness to the production loop and the old cached path, a clean cube's
+    12 edges, a re-placement hitting the cache WITHOUT re-walking (0 drift), the
+    non-analytic fallback, and the inspector wiring; display-free.
+    """
+    result = PhaseResult(
+        name="Phase 131: Open 3D re-placed STEP overlay reuses pose-invariant silhouette"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_pose_invariant_edges import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"pose-invariant STEP-edge guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("pose-invariant STEP-edge guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8096,6 +8134,7 @@ def main() -> int:
             phase_128_clear_aperture_hover_render,
             phase_129_promote_no_stale_highlight,
             phase_130_preset_view_squares_labels,
+            phase_131_pose_invariant_step_edges,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

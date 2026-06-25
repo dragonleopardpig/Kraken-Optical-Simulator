@@ -362,6 +362,160 @@ def display_feature_edges(mesh, *, feature_angle: float = 24.0, boundary_edges: 
         return None
 
 
+# A re-placed analytic STEP overlay (a glued LED following its partner, the
+# camera tracking the image plane, any drag/rotate/resize) is a brand-new mesh
+# object, so the id()-keyed caches above all miss and the boundary walk reruns
+# cold -- 31 s on the 591k-triangle camera body, ~3 s on the LED, paid on every
+# editing action (bug 0142). But a rigid/uniform re-placement only moves the
+# vertices: the triangle connectivity, the per-cell face index, and therefore
+# the SELECTION of which edges are analytic-face boundaries are all invariant.
+# Cache that selection as POINT-INDEX PAIRS keyed on the body's intrinsic
+# identity (face-index fingerprint + structure), then a re-placement rebuilds
+# the silhouette with a vectorised coordinate gather (~15 ms) instead of the
+# full walk. Scoped to analytic-STEP display meshes (kraken_step_analytic), the
+# only meshes whose connectivity is a fixed CAD tessellation that re-placement
+# never re-meshes.
+_BOUNDARY_INDEX_CACHE: dict[object, np.ndarray] = {}
+_BOUNDARY_INDEX_CACHE_ORDER: list[object] = []
+_BOUNDARY_INDEX_CACHE_MAX = 8
+
+
+def _mesh_is_analytic_step(mesh) -> bool:
+    if pv is None or mesh is None:
+        return False
+    try:
+        values = np.asarray(pv.wrap(mesh).field_data.get("kraken_step_analytic", ()), dtype=int)
+        return bool(values.size and int(values.flat[0]) == 1)
+    except Exception:
+        return False
+
+
+def _coord_rows_gt(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Per-row lexicographic ``a > b`` over (M, 3) coordinate arrays."""
+    gt = np.zeros(a.shape[0], dtype=bool)
+    tie = np.ones(a.shape[0], dtype=bool)
+    for k in range(3):
+        ak = a[:, k]
+        bk = b[:, k]
+        gt |= tie & (ak > bk)
+        tie &= ak == bk
+    return gt
+
+
+def _boundary_edge_index_pairs(surface, triangles, face_index, *, include_open_boundaries: bool):
+    """Selected analytic-face boundary edges as ``(M, 2)`` point-index pairs.
+
+    Vectorised equivalent of :func:`face_boundary_edges_from_face_index`'s edge
+    selection (verified edge-for-edge identical at the ``_point_key`` precision),
+    but returning indices into ``surface.points`` rather than baked coordinates,
+    so the result survives any rigid/uniform re-placement of the body.
+    """
+    n = int(triangles.shape[0])
+    if n <= 0:
+        return np.empty((0, 2), dtype=np.int64)
+    try:
+        faces = np.asarray(surface.faces, dtype=np.int64).reshape((-1, 4))
+    except Exception:
+        return np.empty((0, 2), dtype=np.int64)
+    if faces.shape[0] != n or not np.all(faces[:, 0] == 3):
+        return np.empty((0, 2), dtype=np.int64)
+    point_idx = faces[:, 1:4]
+    local = np.asarray([[0, 1], [1, 2], [2, 0]], dtype=np.int64)
+    coords = np.round(np.asarray(triangles, dtype=float), 8)
+    e0c = coords[:, local[:, 0], :].reshape((-1, 3))
+    e1c = coords[:, local[:, 1], :].reshape((-1, 3))
+    e0i = point_idx[:, local[:, 0]].reshape(-1)
+    e1i = point_idx[:, local[:, 1]].reshape(-1)
+    fids = np.repeat(np.asarray(face_index, dtype=np.int64), 3)
+    keep = fids >= 0
+    if not np.any(keep):
+        return np.empty((0, 2), dtype=np.int64)
+    e0c, e1c, e0i, e1i, fids = e0c[keep], e1c[keep], e0i[keep], e1i[keep], fids[keep]
+    swap = _coord_rows_gt(e0c, e1c)
+    keyc = np.where(swap[:, None], np.hstack([e1c, e0c]), np.hstack([e0c, e1c]))
+    rep0 = np.where(swap, e1i, e0i)
+    rep1 = np.where(swap, e0i, e1i)
+    uniq, first_idx, inv, counts = np.unique(
+        keyc, axis=0, return_index=True, return_inverse=True, return_counts=True
+    )
+    inv = inv.reshape(-1)
+    group_face = np.unique(np.stack([inv, fids], axis=1), axis=0)
+    distinct_faces = np.bincount(group_face[:, 0], minlength=int(uniq.shape[0]))
+    select = distinct_faces > 1
+    if include_open_boundaries:
+        select = select | ((counts == 1) & (distinct_faces >= 1))
+    chosen = first_idx[select]
+    return np.stack([rep0[chosen], rep1[chosen]], axis=1).astype(np.int64)
+
+
+def _line_polydata_from_index_pairs(points, pairs):
+    """Build a line polydata from selected edges given as point-index pairs."""
+    if pv is None or pairs is None:
+        return None
+    pairs = np.asarray(pairs, dtype=np.int64)
+    if pairs.ndim != 2 or pairs.shape[1] != 2 or pairs.shape[0] == 0:
+        return None
+    pts = np.asarray(points, dtype=float)
+    flat = pairs.reshape(-1)
+    if pts.shape[0] == 0 or int(flat.max(initial=-1)) >= pts.shape[0]:
+        return None
+    coords = pts[flat]
+    m = int(pairs.shape[0])
+    connectivity = np.empty((m, 3), dtype=np.int64)
+    connectivity[:, 0] = 2
+    connectivity[:, 1] = np.arange(0, 2 * m, 2, dtype=np.int64)
+    connectivity[:, 2] = np.arange(1, 2 * m, 2, dtype=np.int64)
+    try:
+        return pv.PolyData(coords, lines=connectivity.reshape(-1))
+    except Exception:
+        return None
+
+
+def pose_invariant_feature_edges(mesh, *, feature_angle: float = 24.0, boundary_edges: bool = True):
+    """Pose-invariant display feature edges for analytic STEP overlays.
+
+    For an analytic STEP body the boundary-edge selection is cached as point
+    indices, so a re-placed copy rebuilds its silhouette with a coordinate
+    gather rather than the full edge walk (bug 0142). Non-analytic meshes (row
+    glass, computed surfaces) and the no-boundary fallback defer to
+    :func:`cached_display_feature_edges` unchanged.
+    """
+    if pv is None or mesh is None:
+        return None
+    if not _mesh_is_analytic_step(mesh):
+        return cached_display_feature_edges(mesh, feature_angle=feature_angle, boundary_edges=boundary_edges)
+    surface, triangles, face_index = _surface_triangles_and_face_index(mesh)
+    if triangles.size == 0 or face_index.size != triangles.shape[0] or not np.any(face_index >= 0):
+        return cached_display_feature_edges(mesh, feature_angle=feature_angle, boundary_edges=boundary_edges)
+    include_open = bool(boundary_edges)
+    try:
+        n_points = int(getattr(surface, "n_points", -1))
+        fingerprint = hash(np.ascontiguousarray(face_index, dtype=np.int64).tobytes())
+        key = (fingerprint, n_points, int(triangles.shape[0]), include_open)
+    except Exception:
+        key = None
+    pairs = _BOUNDARY_INDEX_CACHE.get(key) if key is not None else None
+    if pairs is None:
+        pairs = _boundary_edge_index_pairs(
+            surface, triangles, face_index, include_open_boundaries=include_open
+        )
+        if key is not None and pairs is not None and pairs.size:
+            _BOUNDARY_INDEX_CACHE[key] = pairs
+            if key in _BOUNDARY_INDEX_CACHE_ORDER:
+                _BOUNDARY_INDEX_CACHE_ORDER.remove(key)
+            _BOUNDARY_INDEX_CACHE_ORDER.append(key)
+            while len(_BOUNDARY_INDEX_CACHE_ORDER) > _BOUNDARY_INDEX_CACHE_MAX:
+                evicted = _BOUNDARY_INDEX_CACHE_ORDER.pop(0)
+                if evicted != key:
+                    _BOUNDARY_INDEX_CACHE.pop(evicted, None)
+    elif key in _BOUNDARY_INDEX_CACHE_ORDER:
+        _BOUNDARY_INDEX_CACHE_ORDER.remove(key)
+        _BOUNDARY_INDEX_CACHE_ORDER.append(key)
+    if pairs is None or pairs.size == 0:
+        return cached_display_feature_edges(mesh, feature_angle=feature_angle, boundary_edges=boundary_edges)
+    return _line_polydata_from_index_pairs(surface.points, pairs)
+
+
 def face_index_for_record(mesh, face: dict[str, object]) -> int | None:
     """Resolve a normalized face record to its displayed analytic face index."""
     indices = face_indices_for_record(mesh, face)

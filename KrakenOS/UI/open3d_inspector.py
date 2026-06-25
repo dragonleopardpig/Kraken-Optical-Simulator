@@ -37,6 +37,7 @@ from KrakenOS.UI.services.open3d_debug_tools import Open3DDebugToolsMixin
 from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
 from KrakenOS.UI.services.open3d_face_index_edges import (
     cached_display_feature_edges as _display_feature_edges_mesh,
+    pose_invariant_feature_edges as _pose_invariant_feature_edges_mesh,
     face_pick_from_display_mesh,
     face_indices_for_record,
     face_outline_from_face_indices,
@@ -11681,7 +11682,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
     @staticmethod
     def _display_feature_edges(mesh, *, feature_angle: float = 24.0, boundary_edges: bool = True):
-        return _display_feature_edges_mesh(mesh, feature_angle=feature_angle, boundary_edges=boundary_edges)
+        # Analytic STEP overlays take the pose-invariant index-pair cache so a
+        # re-placed body (glued LED follow, camera image-plane track, drag /
+        # rotate / resize) rebuilds its silhouette in tens of ms instead of the
+        # cold 3-31 s boundary walk (bug 0142). Every other mesh transparently
+        # falls back to the id()-keyed cache inside this helper.
+        return _pose_invariant_feature_edges_mesh(mesh, feature_angle=feature_angle, boundary_edges=boundary_edges)
 
     def _normalize_sampling_mode_label(self, sampling_mode: object) -> str | None:
         return Open3DTraceRefreshService.normalize_sampling_mode_label(sampling_mode)
