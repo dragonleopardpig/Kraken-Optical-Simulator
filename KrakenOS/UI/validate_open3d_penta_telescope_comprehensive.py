@@ -7958,6 +7958,43 @@ def phase_131_pose_invariant_step_edges(
     return result
 
 
+def phase_132_step_overlay_unchanged_pose_no_rebake(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0143: an unchanged STEP-overlay placement re-apply skips the face-metadata re-bake.
+
+    Every imported-CAD overlay placement setter (axis offset, placement offset, resize,
+    rotation) used to unconditionally pop the hover face-metadata cache, clear the live
+    trace-plan cache and invalidate the preview trace -- even when re-applied with a value
+    identical to the one already stored (a zero-delta drag-release, a glue carry netting to
+    zero, an orient onto the already-current face, a refresh re-applying the saved pose).
+    The next hover then cold-rebaked the planar-clustering face metadata (~0.2 s led /
+    ~1.9 s camera) for no actual change -- the per-action lag the user felt. The setters now
+    guard those side-effects on a before/after mutation signature (pose + resize + anchor):
+    an unchanged re-apply keeps the cache and trace, a genuine change still invalidates (so
+    the bugs/0050 / bugs/0010 ghost-highlight fixes stay intact). The guard pins, for all
+    four setters, that an unchanged re-apply is quiet and a genuine change still fires, and
+    that the bug-0050 invalidation now lives only inside the guarded helper; display-free.
+    """
+    result = PhaseResult(
+        name="Phase 132: Open 3D unchanged STEP-overlay re-apply skips face-metadata re-bake"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_step_overlay_unchanged_pose_no_rebake import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"unchanged-pose re-bake guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("unchanged-pose re-bake guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8135,6 +8172,7 @@ def main() -> int:
             phase_129_promote_no_stale_highlight,
             phase_130_preset_view_squares_labels,
             phase_131_pose_invariant_step_edges,
+            phase_132_step_overlay_unchanged_pose_no_rebake,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

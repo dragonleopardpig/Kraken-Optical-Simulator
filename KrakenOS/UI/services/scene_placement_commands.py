@@ -2435,13 +2435,58 @@ class ScenePlacementMixin:
         except Exception:
             return (0.0, 0.0)
 
-    def _set_step_axis_offset_xy(self, label: str, offset_xy: tuple[float, float]) -> None:
-        if label not in _step_overlay_label_set():
+    def _step_overlay_mutation_signature(self, label: str) -> tuple:
+        """World-pose + shape signature of an overlay: everything a placement
+        setter can mutate that moves or reshapes the body in world space
+        (rotation, axis offset, placement offset, resize, axis anchor).
+
+        bugs/0143: a placement setter re-applied with an *identical* value -- a
+        zero-delta drag-release (a click that registers as a drag), a glue carry
+        that nets to zero, an orient onto a face already at that pose, or a
+        refresh re-applying the saved pose -- still popped the face-metadata
+        cache and cleared the trace plan, so the next hover cold-rebaked the
+        ~0.2 s (led) / ~1.9 s (camera) planar-clustering face metadata for no
+        actual change. Comparing this signature before and after the mutation
+        lets the setter skip the invalidation when nothing moved, while a genuine
+        change still invalidates (so the bugs/0050 / bugs/0010 ghost-highlight
+        fixes stay intact).
+        """
+        label = str(label).strip().lower()
+        try:
+            pose = self._step_overlay_pose_cache_signature(label)
+        except Exception:
+            pose = ()
+        try:
+            resize = self._step_resize_signature(label)
+        except Exception:
+            resize = None
+        try:
+            anchors = getattr(self, "_step_overlay_axis_anchor_by_label", {}) or {}
+            # repr() keeps the comparison robust whatever the anchor value type
+            # is (dict / tuple); an absent anchor and a present one never collide.
+            anchor_key = repr(anchors.get(label)) if label in anchors else None
+        except Exception:
+            anchor_key = None
+        return (pose, resize, anchor_key)
+
+    def _invalidate_step_overlay_after_mutation(self, label: str, before_signature: tuple) -> None:
+        """Run the placement-setter side-effects (face-metadata cache
+        invalidate, trace-plan clear, preview-trace invalidate) only when the
+        overlay's world pose/shape actually changed since ``before_signature``
+        was captured (bugs/0143). An unchanged re-apply keeps the cached
+        metadata and trace, sparing the cold face-metadata re-bake."""
+        if self._step_overlay_mutation_signature(label) == before_signature:
             return
-        setattr(self, f"{label}_step_axis_offset_xy", (float(offset_xy[0]), float(offset_xy[1])))
         self._invalidate_step_overlay_face_metadata_cache(label)  # bugs/0050
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
+
+    def _set_step_axis_offset_xy(self, label: str, offset_xy: tuple[float, float]) -> None:
+        if label not in _step_overlay_label_set():
+            return
+        before_signature = self._step_overlay_mutation_signature(label)
+        setattr(self, f"{label}_step_axis_offset_xy", (float(offset_xy[0]), float(offset_xy[1])))
+        self._invalidate_step_overlay_after_mutation(label, before_signature)  # bugs/0143
 
     def _step_placement_offset_xyz(self, label: str) -> tuple[float, float, float]:
         value = getattr(self, f"{label}_step_placement_offset_xyz", (0.0, 0.0, 0.0))
@@ -2456,11 +2501,10 @@ class ScenePlacementMixin:
         values = np.asarray(offset_xyz, dtype=float).reshape(-1)
         if values.size < 3 or not np.all(np.isfinite(values[:3])):
             return
+        before_signature = self._step_overlay_mutation_signature(label)
         setattr(self, f"{label}_step_placement_offset_xyz", (float(values[0]), float(values[1]), float(values[2])))
         self._clear_step_overlay_axis_anchor(label)
-        self._invalidate_step_overlay_face_metadata_cache(label)  # bugs/0050
-        self._live_step_overlay_trace_plan_cache = {}
-        self._invalidate_preview_scene_trace()
+        self._invalidate_step_overlay_after_mutation(label, before_signature)  # bugs/0143
 
     def snap_detector_to_image_plane(self) -> bool:
         """Move the detector (the final ``Image`` row) onto the optics' paraxial best-focus image
@@ -2730,6 +2774,7 @@ class ScenePlacementMixin:
         label = str(label).strip().lower()
         if label not in _step_overlay_label_set():
             return
+        before_signature = self._step_overlay_mutation_signature(label)
         if target_extents is None:
             setattr(self, f"{label}_step_resize", None)
         else:
@@ -2750,9 +2795,7 @@ class ScenePlacementMixin:
                     "coupled": bool(coupled),
                 },
             )
-        self._invalidate_step_overlay_face_metadata_cache(label)  # bugs/0050
-        self._live_step_overlay_trace_plan_cache = {}
-        self._invalidate_preview_scene_trace()
+        self._invalidate_step_overlay_after_mutation(label, before_signature)  # bugs/0143
 
     def _step_resize_signature(self, label: str):
         spec = self._step_resize_for_label(label)
@@ -3519,14 +3562,13 @@ class ScenePlacementMixin:
         label = str(label).strip().lower()
         if label not in _step_overlay_label_set():
             return
+        before_signature = self._step_overlay_mutation_signature(label)
         x_deg, y_deg, z_deg = (float(value) % 360.0 for value in angles)
         setattr(self, f"{label}_step_rotation_x_deg", x_deg)
         setattr(self, f"{label}_step_rotation_y_deg", y_deg)
         setattr(self, f"{label}_step_rotation_z_deg", z_deg)
         self._clear_step_overlay_axis_anchor(label)
-        self._invalidate_step_overlay_face_metadata_cache(label)  # bugs/0050
-        self._live_step_overlay_trace_plan_cache = {}
-        self._invalidate_preview_scene_trace()
+        self._invalidate_step_overlay_after_mutation(label, before_signature)  # bugs/0143
 
     def _global_optical_axis_frame_near_point(self, reference_point) -> dict[str, object]:
         """Frame on the GLOBAL dotted optical-axis guide (the design axis at
