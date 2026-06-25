@@ -11090,6 +11090,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if hidden:
             self._hidden_step_labels.add(label)
             self._set_actor_keys_visible(self._all_actor_keys_for_step_label(label), False)
+            # bugs/0136: the body hide leaves the selection move/rotate gizmo behind.
+            # _all_actor_keys_for_step_label sweeps only the rotate-RING handles -- the
+            # translate arrows (_actor_step_translate_map) and the ring visual stay
+            # visible, and the handle objects survive a mere visibility-off either way.
+            # Reconcile the rotation handles to the selection (which already excludes
+            # hidden labels) so the just-hidden label's gizmo is torn down with its body.
+            # The unhide path's overlay refresh rebuilds the gizmo when the label is the
+            # selected one, so this stays symmetric.
+            self._reconcile_step_rotation_handles(self._selected_step_labels)
             try:
                 self.render()
             except Exception:

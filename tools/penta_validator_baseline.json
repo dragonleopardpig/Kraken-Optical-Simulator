@@ -127,7 +127,8 @@
     "122": "pass",
     "123": "pass",
     "124": "pass",
-    "125": "pass"
+    "125": "pass",
+    "126": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -255,6 +256,7 @@
     "122": "Open 3D LED edge-distance edit moves the LED after re-anchor",
     "123": "Open 3D LED distance edit carries the BS<->LED glue",
     "124": "Open 3D clear-aperture pick + persisted CA",
-    "125": "Open 3D clear-aperture pick empty-click cancel"
+    "125": "Open 3D clear-aperture pick empty-click cancel",
+    "126": "Open 3D hidden STEP element drops its gizmo"
   }
 }

@@ -7750,6 +7750,40 @@ def phase_125_clear_aperture_pick_cancel(
     return result
 
 
+def phase_126_hidden_step_drops_gizmo(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0136: hiding a STEP element tears down its move/rotate gizmo.
+
+    Hiding the LED left its selection gizmo -- the rotate ring + translate arrows --
+    floating on screen ("Hiding LED leave the gizmo visible."). set_step_label_hidden
+    hid the body via _all_actor_keys_for_step_label, but that sweep misses the translate
+    arrows and ring visual and only turns the rotate-ring handles invisible. The fix
+    reconciles the rotation handles in the hide branch
+    (_reconcile_step_rotation_handles, which already excludes hidden labels), so the
+    just-hidden label's full gizmo is removed; the unhide overlay refresh rebuilds it
+    for a selected label. The guard runs the real reconcile against a stub and pins the
+    hide-branch + remover contracts; it is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 126: Open 3D hidden STEP element drops its gizmo"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_hidden_step_drops_gizmo import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"hidden-step gizmo guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("hidden-step gizmo guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7921,6 +7955,7 @@ def main() -> int:
             phase_123_led_distance_glue_carry,
             phase_124_clear_aperture_pick,
             phase_125_clear_aperture_pick_cancel,
+            phase_126_hidden_step_drops_gizmo,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
