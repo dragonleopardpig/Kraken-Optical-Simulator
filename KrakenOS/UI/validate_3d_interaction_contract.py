@@ -240,7 +240,7 @@ def main() -> int:
     scene_visibility_changed = inspect.getsource(Kraken3DInspector._on_scene_visibility_changed)
     surface_menu = inspect.getsource(Open3DFaceAssignmentService._show_surface_function_context_menu)
     context_assign = inspect.getsource(Open3DFaceAssignmentService._assign_row_face_function_from_context)
-    context_promote_assign = inspect.getsource(Open3DFaceAssignmentService._promote_step_and_assign_face_function)
+    context_promote_assign = inspect.getsource(Open3DFaceAssignmentService._promote_step_and_assign_face_function_inner)
     face_assignment_factory = inspect.getsource(Kraken3DInspector._face_assignment_service)
     right_click_context = inspect.getsource(Kraken3DInspector._right_click_pick_context)
     right_click_face_ray_context = inspect.getsource(Kraken3DInspector._right_click_face_ray_context)

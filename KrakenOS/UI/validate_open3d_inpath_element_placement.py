@@ -140,7 +140,7 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
             from KrakenOS.UI.services.open3d_round_lens_pick import step_feature_pick_for_display_xy
 
-            assign_src = inspect.getsource(Open3DFaceAssignmentService._promote_step_and_assign_face_function)
+            assign_src = inspect.getsource(Open3DFaceAssignmentService._promote_step_and_assign_face_function_inner)
             pick_src = inspect.getsource(step_feature_pick_for_display_xy)
         except Exception as exc:  # pragma: no cover - env skip
             notes.append(f"SKIP: direct-assign / face-pick source unavailable ({type(exc).__name__}: {exc})")

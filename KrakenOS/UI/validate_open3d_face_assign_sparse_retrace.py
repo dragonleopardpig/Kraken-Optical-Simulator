@@ -38,7 +38,7 @@ def run_checks() -> list[tuple[str, bool, str]]:
     #    override is set BEFORE the refresh, the refresh runs while it is active,
     #    and the clear sits in a finally that follows the set.
     src = inspect.getsource(
-        Open3DFaceAssignmentService._promote_step_and_assign_face_function
+        Open3DFaceAssignmentService._promote_step_and_assign_face_function_inner
     )
     set_idx = src.find("_promote_preview_ray_count_override = 3")
     finally_idx = src.find("finally:", set_idx if set_idx >= 0 else 0)

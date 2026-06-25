@@ -247,7 +247,19 @@ class LayoutTableWorkbenchMixin:
 
     def _sync_surface_selection(self, row_index: int | None, *, from_table: bool = False) -> None:
         self._layout_selected_ray_index = None
-        if self._three_d_inspector is not None:
+        # bugs/0145: a table-selection change drives the Open 3D row highlight
+        # through here. During a promote the inspector's actor map is mid-rebuild
+        # (the retrace+refresh hasn't repopulated `_actor_row_map` yet), so a
+        # table-event highlight against that STALE map pinks whatever actor sat at
+        # the new solid's index BEFORE it -- the upstream imaging-lens "Lens Front
+        # Datum". 0139 killed the SYNCHRONOUS `_select_table_row` trigger, but the
+        # deferred `<<TreeviewSelect>>` sync still fires while the map is stale. The
+        # promote does its OWN authoritative highlight against the FRESH map (the
+        # scene rebuild's re-apply + an explicit `highlight_row`), both via direct
+        # `inspector.highlight_row` that bypasses this path -- so suppressing the
+        # table-event 3-D sync for the promote window drops only the stale flash.
+        suppress_3d_sync = bool(getattr(self, "_suppress_3d_row_selection_sync", False))
+        if self._three_d_inspector is not None and not suppress_3d_sync:
             try:
                 if self._three_d_inspector.winfo_exists() and self._three_d_inspector.available:
                     self._three_d_inspector.highlight_row(row_index)

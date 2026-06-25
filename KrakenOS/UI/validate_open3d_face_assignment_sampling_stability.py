@@ -267,7 +267,7 @@ def _validate_trace_now_rejects_world_sections_mode() -> None:
 
 def _validate_face_assignment_handlers_capture_mode_before_mutation() -> None:
     assign_source = inspect.getsource(Open3DFaceAssignmentService._assign_row_face_function_from_context)
-    promote_assign_source = inspect.getsource(Open3DFaceAssignmentService._promote_step_and_assign_face_function)
+    promote_assign_source = inspect.getsource(Open3DFaceAssignmentService._promote_step_and_assign_face_function_inner)
     for name, source in (
         ("row face assignment", assign_source),
         ("STEP promote-and-assign", promote_assign_source),

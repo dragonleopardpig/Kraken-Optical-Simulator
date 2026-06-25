@@ -8033,6 +8033,43 @@ def phase_133_step_overlay_refresh_keeps_other_labels(
     return result
 
 
+def phase_134_promote_suppresses_table_selection_sync(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0145: a promote must not pink a distant element via a stale-map table sync.
+
+    The Open 3D row highlight pinks every actor whose ``_actor_row_map[key]`` equals the
+    selected row index. A table-selection change drives that highlight through
+    ``_sync_surface_selection``; during a promote the inspector's actor map is mid-rebuild
+    (the retrace+refresh has not repopulated ``_actor_row_map`` yet), so a deferred
+    ``<<TreeviewSelect>>`` sync against the STALE map pinks whatever actor sat at the new
+    solid's index before it -- the upstream imaging-lens "Lens Front Datum" -- for the whole
+    frozen beam-splitter promote. (0139 killed only the SYNCHRONOUS trigger.) The fix gates
+    the table-event 3-D highlight on ``_suppress_3d_row_selection_sync``, which the promote
+    wrapper sets across the whole promote+refresh and clears in ``finally``; the promote's own
+    authoritative highlights are direct ``inspector.highlight_row`` calls that bypass the gate,
+    so only the stale flash is dropped and the 2-D overlay + status sync are untouched. The
+    guard drives the REAL methods with fake selves; display-free.
+    """
+    result = PhaseResult(
+        name="Phase 134: Open 3D promote suppresses the stale table-selection 3-D highlight"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_promote_suppresses_table_selection_sync import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"promote stale-highlight guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("promote stale-highlight guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8212,6 +8249,7 @@ def main() -> int:
             phase_131_pose_invariant_step_edges,
             phase_132_step_overlay_unchanged_pose_no_rebake,
             phase_133_step_overlay_refresh_keeps_other_labels,
+            phase_134_promote_suppresses_table_selection_sync,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

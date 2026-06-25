@@ -722,6 +722,37 @@ class Open3DFaceAssignmentService:
         *,
         face_id: str = "",
     ) -> None:
+        # bugs/0145: hold the table-event-driven Open 3D row highlight off for the
+        # whole promote+refresh. The inner body inserts the new solid row, fires
+        # `_sync_table`/`_select_table_indices` and runs the heavy retrace -- all
+        # while the inspector's actor map still describes the PRE-promote scene, so
+        # a deferred `<<TreeviewSelect>>` sync landing in that window would pink the
+        # upstream imaging-lens datum (see `_sync_surface_selection`). The inner
+        # body does its own authoritative highlight against the rebuilt map, so the
+        # suppressed sync is purely the stale flash. ``finally`` guarantees the flag
+        # is cleared on every exit path -- a stuck flag would mute ALL later
+        # selection highlighting.
+        self.editor._suppress_3d_row_selection_sync = True
+        try:
+            self._promote_step_and_assign_face_function_inner(
+                label,
+                point_world,
+                normal_world,
+                function_label,
+                face_id=face_id,
+            )
+        finally:
+            self.editor._suppress_3d_row_selection_sync = False
+
+    def _promote_step_and_assign_face_function_inner(
+        self,
+        label: str,
+        point_world,
+        normal_world,
+        function_label: str,
+        *,
+        face_id: str = "",
+    ) -> None:
         le = _layout_module()
         STEP_OVERLAY_LABEL_SET = le.STEP_OVERLAY_LABEL_SET
         _short_error_message = le._short_error_message

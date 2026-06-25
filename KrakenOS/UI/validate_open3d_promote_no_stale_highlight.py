@@ -53,9 +53,11 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         return False, notes
 
     # A. The promote-and-assign selects the new solid with the QUIET selector.
+    #    bugs/0145 split the method into a suppression wrapper + the
+    #    ``_inner`` body that holds the actual selection logic, so read the body.
     try:
         promote_src = inspect.getsource(
-            Open3DFaceAssignmentService._promote_step_and_assign_face_function
+            Open3DFaceAssignmentService._promote_step_and_assign_face_function_inner
         )
     except Exception as exc:
         notes.append(f"FAIL: could not read _promote_step_and_assign_face_function source: {exc!r}")
