@@ -14504,8 +14504,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             try:
                 from KrakenOS.UI.panels.design_constraint_controls import DesignConstraintControls
 
-                _design = DesignConstraintControls(self, context_provider=_fov_context)
-                _design.build(design_frame, start_row=0, compact=True)
+                fov_mode_var = tk.StringVar(value="design")
+                mode_bar = ttk.Frame(design_frame)
+                mode_bar.grid(row=0, column=0, columnspan=2, sticky="w")
+                ttk.Label(mode_bar, text="Solve:").grid(row=0, column=0, sticky="w")
+                _design = DesignConstraintControls(
+                    self, mode_getter=lambda: fov_mode_var.get(), context_provider=_fov_context
+                )
+                for col, (val, lbl) in enumerate((("design", "Design"), ("placement", "Placement")), start=1):
+                    ttk.Radiobutton(
+                        mode_bar, text=lbl, value=val, variable=fov_mode_var, command=_design.recompute
+                    ).grid(row=0, column=col, sticky="w", padx=(6, 0))
+                _design.build(design_frame, start_row=1, show_separator=False, compact=True)
                 # live-update as the FOV box is typed
                 width_var.trace_add("write", lambda *_a: _design.recompute())
                 height_var.trace_add("write", lambda *_a: _design.recompute())
@@ -14574,9 +14584,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         try:
             from KrakenOS.UI.panels.design_constraint_controls import DesignConstraintControls
 
-            DesignConstraintControls(self, context_provider=_detector_context).build(
-                design_frame, start_row=0, show_separator=False, compact=True
+            det_mode_var = tk.StringVar(value="placement")
+            mode_bar = ttk.Frame(design_frame)
+            mode_bar.grid(row=0, column=0, columnspan=2, sticky="w")
+            ttk.Label(mode_bar, text="Solve:").grid(row=0, column=0, sticky="w")
+            _det_design = DesignConstraintControls(
+                self, mode_getter=lambda: det_mode_var.get(), context_provider=_detector_context
             )
+            for col, (val, lbl) in enumerate((("placement", "Placement"), ("design", "Design")), start=1):
+                ttk.Radiobutton(
+                    mode_bar, text=lbl, value=val, variable=det_mode_var, command=_det_design.recompute
+                ).grid(row=0, column=col, sticky="w", padx=(6, 0))
+            _det_design.build(design_frame, start_row=1, show_separator=False, compact=True)
         except Exception:
             pass
         ttk.Button(dialog, text="Close", command=dialog.destroy).grid(
