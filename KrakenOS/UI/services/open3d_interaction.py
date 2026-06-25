@@ -386,6 +386,13 @@ class Open3DInteractionService:
             step_label is None
             or str(step_label).strip().lower() != str(self._step_clear_aperture_pick_label or "").strip().lower()
         ):
+            # bugs/0135: a click in EMPTY SPACE cancels the armed CA pick (and
+            # clears the selection) so the user is never trapped in the modal --
+            # mirrors the Center-Row->Optical-Axis precedent above. A click that
+            # lands on the WRONG body still just nudges, because they are aiming
+            # at the scene rather than bailing out of the pick.
+            if actor_key is None and self.cancel_active_3d_operation():
+                return
             self.status_var.set(
                 f"Set Clear Aperture: click the {str(self._step_clear_aperture_pick_label or 'STEP').upper()} "
                 "body's clear-aperture window face."

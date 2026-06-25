@@ -126,7 +126,8 @@
     "121": "pass",
     "122": "pass",
     "123": "pass",
-    "124": "pass"
+    "124": "pass",
+    "125": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -253,6 +254,7 @@
     "121": "Open 3D camera live edge-gap survives the LED->camera placement",
     "122": "Open 3D LED edge-distance edit moves the LED after re-anchor",
     "123": "Open 3D LED distance edit carries the BS<->LED glue",
-    "124": "Open 3D clear-aperture pick + persisted CA"
+    "124": "Open 3D clear-aperture pick + persisted CA",
+    "125": "Open 3D clear-aperture pick empty-click cancel"
   }
 }

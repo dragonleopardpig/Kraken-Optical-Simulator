@@ -7717,6 +7717,39 @@ def phase_124_clear_aperture_pick(
     return result
 
 
+def phase_125_clear_aperture_pick_cancel(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0135: an empty-space click cancels the armed clear-aperture pick.
+
+    Once Set-Clear-Aperture (bugs/0134) was armed, the one-shot pick mode trapped the
+    user -- a click on empty canvas only re-printed the nag and Escape rarely reaches
+    the embedded-VTK handler ("unable to deselect components"). The fix gives the
+    CA-pick block in _on_left_button_press the same empty-space escape every other
+    modal pick already has: `if actor_key is None and self.cancel_active_3d_operation():
+    return`. The guard pins that cancel_active_3d_operation resets the CA-pick flag and
+    is reported as an active op, and that the escape sits before the nag gated on an
+    empty pick; it is display-free.
+    """
+    result = PhaseResult(
+        name="Phase 125: Open 3D clear-aperture pick empty-click cancel"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_clear_aperture_pick_cancel import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"CA-pick cancel guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("CA-pick cancel guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -7887,6 +7920,7 @@ def main() -> int:
             phase_122_led_reanchor_moves_led,
             phase_123_led_distance_glue_carry,
             phase_124_clear_aperture_pick,
+            phase_125_clear_aperture_pick_cancel,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
