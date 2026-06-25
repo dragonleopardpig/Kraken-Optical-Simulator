@@ -8355,6 +8355,35 @@ def phase_142_quick_estimation_focal_solve(
     return result
 
 
+def phase_143_quick_estimation_placement_solve(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Quick Estimation PLACEMENT mode (fixed lens, 1 DOF): pin ONE of {object distance,
+    image distance, magnification, object FOV} and the rest are determined AND in focus,
+    using the lens's REAL cardinal points (ppa/ppp), not thin-lens. Total track is an
+    output (a fixed-lens track has two conjugate positions). Apply is focus-consistent
+    (no lens swap). The guard drives the pure ``resolve_placement_system`` /
+    ``placement_quantity_states`` + a stubbed-lens ``apply_placement``; display-free.
+    """
+    result = PhaseResult(
+        name="Phase 143: Quick Estimation placement-mode solve (fixed lens, 1 DOF)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_quick_estimation_placement_solve import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"quick-estimation placement-solve guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("quick-estimation placement-solve guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8543,6 +8572,7 @@ def main() -> int:
             phase_140_dimension_side_orbit,
             phase_141_reanchor_menu_endpoint,
             phase_142_quick_estimation_focal_solve,
+            phase_143_quick_estimation_placement_solve,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

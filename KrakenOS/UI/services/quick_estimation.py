@@ -250,6 +250,140 @@ def design_quantity_states(pins: Any, sensor_semi: Any = None) -> dict[str, dict
     return states
 
 
+# -------------------------------------------------------------- placement solve
+# Placement mode: the lens is FIXED (known focal length + real cardinal points), so
+# the conjugate is 1 DOF -- pin ONE of {object distance, image distance, magnification,
+# object FOV} and the rest are determined AND in focus. Unlike design mode this uses the
+# lens's real ppa/ppp (not thin-lens), and Apply is focus-consistent with no lens swap.
+# Total track is NOT a placement pin (with the lens fixed a track has two conjugate
+# positions -- ambiguous); it is an output only.
+_PLACEMENT_PINNABLE = (
+    DESIGN_OBJECT_DISTANCE,
+    DESIGN_IMAGE_DISTANCE,
+    DESIGN_MAGNIFICATION,
+    DESIGN_OBJECT_FOV_SEMI,
+)
+
+
+def resolve_placement_system(
+    pins: Any, *, focal_length: Any, ppa: float = 0.0, ppp: float = 0.0,
+    sensor_semi: Any = None, rel_tol: float = 1e-4,
+) -> dict[str, Any]:
+    """Solve the FIXED-lens (placement) first-order system from a single pinned
+    constraint. ``focal_length``/``ppa``/``ppp`` are the lens cardinals (real, not
+    thin-lens). Returns the same dict shape as ``resolve_design_system``; the solved
+    conjugates are in focus for this lens. 1 DOF -> exactly one pin balances."""
+    try:
+        f = float(focal_length)
+    except (TypeError, ValueError):
+        f = float("nan")
+    if not np.isfinite(f) or abs(f) < 1e-9:
+        return {"status": "invalid", "message": "No focal length -- load or define a lens first."}
+    try:
+        ppa = float(ppa); ppp = float(ppp)
+    except (TypeError, ValueError):
+        ppa = ppp = 0.0
+    p = _coerce_design_pins(pins)
+    try:
+        sensor_semi = float(sensor_semi) if sensor_semi is not None else None
+    except (TypeError, ValueError):
+        sensor_semi = None
+
+    def fail(status: str, message: str) -> dict[str, Any]:
+        return {"status": status, "message": message}
+
+    if DESIGN_TOTAL_TRACK in p:
+        return fail("over", "Total track is not a placement pin (lens fixed) -- pin object/image distance, magnification or FOV.")
+    mag = p.get(DESIGN_MAGNIFICATION)
+    if mag is not None and mag <= 0:
+        return fail("invalid", "Magnification must be > 0.")
+    if DESIGN_OBJECT_FOV_SEMI in p:
+        fov = p[DESIGN_OBJECT_FOV_SEMI]
+        if fov <= 0:
+            return fail("invalid", "Object FOV must be > 0.")
+        if sensor_semi is None or sensor_semi <= 0:
+            return fail("invalid", "Object FOV needs a sensor size to set magnification.")
+        mag_fov = sensor_semi / fov
+        if mag is not None and abs(mag - mag_fov) > rel_tol * max(mag, mag_fov, 1.0):
+            return fail("over", "Magnification and Object FOV conflict -- pin only one.")
+        mag = mag_fov
+    has_m = mag is not None
+
+    lengths = [q for q in (DESIGN_OBJECT_DISTANCE, DESIGN_IMAGE_DISTANCE) if q in p]
+    n = (1 if has_m else 0) + len(lengths)
+    if n == 0:
+        return fail("under", "Pin one: object distance, image distance, magnification or FOV.")
+    if n > 1:
+        return fail("over", "The lens is fixed (1 DOF) -- pin exactly one constraint.")
+
+    if has_m:
+        m = float(mag)
+    elif DESIGN_OBJECT_DISTANCE in p:
+        denom = p[DESIGN_OBJECT_DISTANCE] + ppa - f
+        if denom <= 1e-9:
+            return fail("invalid", "Object is inside the front focal point -- no real image.")
+        m = f / denom
+    else:  # image_distance
+        m = (p[DESIGN_IMAGE_DISTANCE] - ppp - f) / f
+        if m <= 1e-9:
+            return fail("invalid", "Image is inside the rear focal point -- no real image.")
+
+    s_o = f * (1.0 + 1.0 / m) - ppa
+    s_i = f * (1.0 + m) + ppp
+    if not (np.isfinite(s_o) and np.isfinite(s_i) and s_o > 1e-9 and s_i > 1e-9 and m > 1e-9):
+        return fail("invalid", "No real-image conjugate for that constraint.")
+    total_track = s_o + s_i
+    result: dict[str, Any] = {
+        "status": "balanced",
+        "message": (
+            f"Object {s_o:.4g} / image {s_i:.4g} mm at |m| {m:.4g}  "
+            f"(EFL {f:.4g}, track {total_track:.4g} mm)."
+        ),
+        DESIGN_OBJECT_DISTANCE: float(s_o),
+        DESIGN_IMAGE_DISTANCE: float(s_i),
+        DESIGN_MAGNIFICATION: float(m),
+        DESIGN_TOTAL_TRACK: float(total_track),
+        DESIGN_FOCAL_LENGTH: float(f),
+    }
+    if sensor_semi is not None and sensor_semi > 0:
+        result[DESIGN_OBJECT_FOV_SEMI] = sensor_semi / m
+    return result
+
+
+def placement_quantity_states(
+    pins: Any, *, focal_length: Any, ppa: float = 0.0, ppp: float = 0.0, sensor_semi: Any = None,
+) -> dict[str, dict[str, Any]]:
+    """Per-quantity checkbox state for the placement dialog (1 DOF). Total track is
+    always ``locked`` (an output, never a placement pin); pinning one constraint locks
+    the rest. Mirrors ``design_quantity_states`` but for the fixed-lens 1-DOF system."""
+    p = _coerce_design_pins(pins)
+    res = resolve_placement_system(
+        p, focal_length=focal_length, ppa=ppa, ppp=ppp, sensor_semi=sensor_semi
+    )
+    status = res.get("status")
+    settled = status in ("balanced", "over")
+    twin = {DESIGN_MAGNIFICATION: DESIGN_OBJECT_FOV_SEMI, DESIGN_OBJECT_FOV_SEMI: DESIGN_MAGNIFICATION}
+    states: dict[str, dict[str, Any]] = {}
+    for q in DESIGN_QUANTITIES:
+        if q == DESIGN_TOTAL_TRACK:
+            entry: dict[str, Any] = {"state": "locked"}
+            if status == "balanced" and q in res:
+                entry["value"] = res[q]
+            states[q] = entry
+        elif q in p:
+            states[q] = {"state": "pinned", "value": p[q]}
+        elif settled:
+            entry = {"state": "locked"}
+            if status == "balanced" and q in res:
+                entry["value"] = res[q]
+            states[q] = entry
+        elif q in twin and twin[q] in p:
+            states[q] = {"state": "locked"}
+        else:
+            states[q] = {"state": "available"}
+    return states
+
+
 class QuickEstimationService:
     """Object/image conjugate + FOV solver wired to the 3D thickness handles."""
 
@@ -444,6 +578,60 @@ class QuickEstimationService:
             f"Applied object {obj_distance:.4g} / image {img_distance:.4g} mm -- "
             f"fit a ~{focal:.4g} mm EFL lens for focus."
         )
+
+    # ------------------------------------------------------ placement solve (fixed lens)
+    def _placement_lens_cardinals(self):
+        """(f, ppa, ppp) of the live fixed lens, or None when there is no clean
+        first-order form (e.g. a beam splitter with no paraxial reference)."""
+        sol = self._paraxial_solution()
+        if sol is None:
+            return None
+        try:
+            f = float(sol[4]); ppa = float(sol[5]); ppp = float(sol[6])
+        except (TypeError, ValueError, IndexError):
+            return None
+        if not np.isfinite(f) or abs(f) < 1e-9:
+            return None
+        return f, ppa, ppp
+
+    def placement_constraint_view(self, pins: dict[str, Any]) -> dict[str, Any]:
+        """One call for the placement panel/popups: per-quantity ``states`` + the solve
+        ``result`` for the FIXED lens (1 DOF). Read-only; never mutates the layout."""
+        cardinals = self._placement_lens_cardinals()
+        sensor_semi = self._sensor_semi()
+        if cardinals is None:
+            states = {q: {"state": "available"} for q in DESIGN_QUANTITIES}
+            return {"states": states, "result": {"status": "invalid", "message": "No focal length -- load or define a lens first."}}
+        f, ppa, ppp = cardinals
+        return {
+            "states": placement_quantity_states(pins, focal_length=f, ppa=ppa, ppp=ppp, sensor_semi=sensor_semi),
+            "result": resolve_placement_system(pins, focal_length=f, ppa=ppa, ppp=ppp, sensor_semi=sensor_semi),
+        }
+
+    def apply_placement(self, pins: dict[str, Any]) -> tuple[bool, str]:
+        """Apply a balanced placement solve to the LAYOUT: write the solved object/image
+        distances into the conjugate gaps. The lens is FIXED so the result is in focus --
+        no lens swap. Mutates rows in place; the caller owns history + retrace."""
+        cardinals = self._placement_lens_cardinals()
+        if cardinals is None:
+            return False, "No focal length -- load or define a lens first."
+        f, ppa, ppp = cardinals
+        result = resolve_placement_system(pins, focal_length=f, ppa=ppa, ppp=ppp, sensor_semi=self._sensor_semi())
+        if result.get("status") != "balanced":
+            return False, result.get("message", "Placement constraint is not solvable yet.")
+        obj_row = self.object_thickness_row()
+        img_row = self.image_thickness_row()
+        if obj_row is None or img_row is None or obj_row == img_row:
+            return False, "Layout has no object/image gap to apply to."
+        try:
+            obj_distance = float(result[DESIGN_OBJECT_DISTANCE])
+            img_distance = float(result[DESIGN_IMAGE_DISTANCE])
+            mag = float(result[DESIGN_MAGNIFICATION])
+        except (KeyError, TypeError, ValueError):
+            return False, "Placement solve produced no finite conjugates."
+        self.editor.rows[obj_row].thickness = obj_distance
+        self.editor.rows[img_row].thickness = img_distance
+        return True, f"Placed object {obj_distance:.4g} / image {img_distance:.4g} mm at |m|={mag:.4g} (in focus)."
 
     def preview_state(self, independent_row_index: int, pending_value: float) -> dict[str, Any] | None:
         """Conjugate state for a *pending* (uncommitted) thickness drag.
