@@ -66,6 +66,31 @@ class Open3DStepOverlayRefreshService:
             inspector._hover_rotation_handle_key = None
         return actor
 
+    def _step_overlay_actor_owner_label(self, actor_key: str) -> str | None:
+        """The label that CURRENTLY owns ``actor_key`` per the reverse maps.
+
+        The reverse maps (``_actor_step_*_map``, keyed by VTK address) are dicts
+        that ``_add_mesh_actor`` OVERWRITES on every (re-)registration, so they
+        always reflect the live owner. The forward per-label lists
+        (``_step_follow_actor_map[label]`` etc.) are only pruned by
+        ``_remove_actor_registration``; a teardown that frees an actor by another
+        path leaves its address behind in the forward list, and VTK recycles that
+        address for the next actor -- which can be a DIFFERENT overlay label. So a
+        forward-list entry can name an address now owned by another body; this
+        resolves the live owner so the removal below can refuse to touch it.
+        """
+        inspector = self.inspector
+        follow_label = inspector._actor_step_follow_map.get(actor_key)
+        if follow_label:
+            return str(follow_label).strip().lower()
+        step_label = inspector._actor_step_map.get(actor_key)
+        if step_label:
+            return str(step_label).strip().lower()
+        rotate_info = inspector._actor_step_rotate_map.get(actor_key)
+        if rotate_info:
+            return str(rotate_info[0]).strip().lower()
+        return None
+
     def _remove_step_overlay_actors(self, label: str) -> int:
         inspector = self.inspector
         label = str(label or "").strip().lower()
@@ -88,6 +113,16 @@ class Open3DStepOverlayRefreshService:
             for actor_key, rotate_info in list(inspector._actor_step_rotate_map.items())
             if rotate_info and str(rotate_info[0]).strip().lower() == label
         )
+        # bugs/0144: a stale address in this label's forward list can name an
+        # actor VTK has since recycled for ANOTHER overlay (the lens vanished
+        # when an "optical" refresh swept up a recycled lens-body address). Only
+        # tear down keys whose LIVE owner is this label (or unclaimed); a key now
+        # owned by a different label is the recycled-address collision -- skip it.
+        actor_keys = {
+            actor_key
+            for actor_key in actor_keys
+            if self._step_overlay_actor_owner_label(actor_key) in (None, label)
+        }
         removed = 0
         for actor_key in list(actor_keys):
             actor = self._remove_actor_registration(actor_key)

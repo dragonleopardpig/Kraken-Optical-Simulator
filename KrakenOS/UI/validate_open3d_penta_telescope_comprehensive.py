@@ -7995,6 +7995,44 @@ def phase_132_step_overlay_unchanged_pose_no_rebake(
     return result
 
 
+def phase_133_step_overlay_refresh_keeps_other_labels(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0144: a single-label STEP-overlay refresh must not drop another label's actors.
+
+    Actor keys are VTK addresses, which VTK recycles after an actor is freed. The reverse
+    maps (keyed by address) are overwritten on every registration and so name the live
+    owner, but the forward per-label lists are only pruned by ``_remove_actor_registration``;
+    a teardown that frees an actor by another path leaves its address lingering in the
+    forward list. When VTK then recycles that address for a DIFFERENT overlay label's body,
+    ``_remove_step_overlay_actors`` swept up the recycled address and tore down the live
+    foreign body -- the imaging-lens STEP overlay "suddenly lost its face" (gone for minutes,
+    until the next full scene refresh rebuilt every overlay) after a left-click refreshed the
+    beam-splitter overlay. The removal set is now filtered through
+    ``_step_overlay_actor_owner_label``: an actor is torn down only when its LIVE owner is
+    this label (or unclaimed). The guard reproduces the recycled-address collision both ways,
+    pins the foreign body survives while the genuine one is still removed, and checks a
+    no-collision refresh stays label-scoped; display-free.
+    """
+    result = PhaseResult(
+        name="Phase 133: Open 3D single-label STEP-overlay refresh keeps other labels' actors"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_step_overlay_refresh_keeps_other_labels import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"cross-label refresh guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("cross-label refresh guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8173,6 +8211,7 @@ def main() -> int:
             phase_130_preset_view_squares_labels,
             phase_131_pose_invariant_step_edges,
             phase_132_step_overlay_unchanged_pose_no_rebake,
+            phase_133_step_overlay_refresh_keeps_other_labels,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
