@@ -10321,6 +10321,42 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         self.render()
 
+    def rotate_camera_azimuth(self, angle_deg: float) -> None:
+        """Swing the camera ``angle_deg`` degrees around the scene -- a turntable
+        rotation about the view-up vector, centred on the focal point.
+
+        bugs/0158: the rotate-view toolbar buttons call this with +-90, so each
+        click spins the whole scene 90 degrees and two clicks (180) views it from
+        the OPPOSITE side -- an object at NW facing SE ends up at SE facing NW with
+        the image plane taking its former spot. This is the FreeCAD navigation-cube
+        "rotate" arrow behaviour; the interactive cube (bugs/0156/0157) only SNAPS
+        to a face/edge/corner orthographic view, it never sweeps between them.
+
+        The jump is treated like a SETTLED orbit -- _on_camera_interaction re-fits
+        the clip range (bugs/0048), re-squares the perpendicular thickness labels
+        (bugs/0128/0140) and re-places the view-relative dimensions (bugs/0152) for
+        the new basis -- then a render is forced because a button press, unlike a
+        mouse orbit, has no VTK interaction event to trigger one.
+        """
+        renderer = self._renderer
+        camera = renderer.GetActiveCamera() if renderer is not None else None
+        if camera is None:
+            return
+        try:
+            # Azimuth spins the camera about the view-up vector. Do NOT
+            # OrthogonalizeViewUp afterwards: that would re-tilt the view-up onto
+            # the new (slanted) sight line, so each click would rotate about a
+            # drifting axis and four 90 clicks would not return to the start.
+            # Leaving the view-up fixed makes this a true turntable.
+            camera.Azimuth(float(angle_deg))
+        except Exception:
+            return
+        try:
+            self._on_camera_interaction(None, "EndInteractionEvent")
+        except Exception:
+            pass
+        self.render()
+
     def render(self) -> None:
         if self._vtk_widget is None:
             return

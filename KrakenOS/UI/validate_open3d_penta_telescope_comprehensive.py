@@ -8678,6 +8678,98 @@ def phase_148_navigation_cube_click(
     return result
 
 
+def phase_149_navigation_cube_rotate(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The rotate-view buttons swing the whole view 90 about the scene (bugs/0158).
+    Follow-up to the user's clarification: the interactive cube (0156/0157) only
+    SNAPS to a face; they want FreeCAD's rotate ARROWS that sweep 90 per click,
+    forward and reverse, so two clicks (180) views the scene from the opposite side
+    (object NW-facing-SE ends SE-facing-NW). The fix adds rotate_camera_azimuth via
+    vtkCamera.Azimuth (deliberately NO OrthogonalizeViewUp, which would drift the
+    turntable axis). The display-free guard pins the forwarding contract. This phase
+    ALSO drives the LIVE inspector: from an Iso reset, four 90 rotations must return
+    the sight line EXACTLY to the start; two (180) must negate the horizontal (X,Z)
+    and preserve the vertical (view-up Y) -- the opposite side -- and each click must
+    move the view.
+    """
+    result = PhaseResult(
+        name="Phase 149: rotate-view buttons swing the camera 90 (azimuth turntable)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_navigation_cube_rotate import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"navigation-cube rotate guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+
+    renderer = getattr(inspector, "_renderer", None)
+    if renderer is None or renderer.GetActiveCamera() is None:
+        result.passed = False
+        result.notes.append("live inspector missing renderer/camera for the rotate test")
+        return result
+
+    try:
+        cam = renderer.GetActiveCamera()
+
+        def direction() -> "np.ndarray":
+            vec = np.array(cam.GetPosition(), float) - np.array(cam.GetFocalPoint(), float)
+            norm = float(np.linalg.norm(vec))
+            return vec / norm if norm else vec
+
+        inspector.set_camera_preset("iso")
+        base = direction()
+        dirs = [base]
+        for _ in range(4):
+            inspector.rotate_camera_azimuth(90)
+            dirs.append(direction())
+
+        back = float(np.linalg.norm(dirs[4] - dirs[0]))
+        d2, d0 = dirs[2], dirs[0]
+        horiz_flip = float(abs(d2[0] + d0[0]) + abs(d2[2] + d0[2]))
+        vert_keep = float(abs(d2[1] - d0[1]))
+        per_click = min(float(np.linalg.norm(dirs[k + 1] - dirs[k])) for k in range(4))
+
+        result.detail["four_clicks_return_delta"] = round(back, 4)
+        result.detail["opposite_side_residual"] = round(horiz_flip + vert_keep, 4)
+        result.detail["min_per_click_move"] = round(per_click, 4)
+
+        # 4x90 == identity: the turntable axis must not drift (the OrthogonalizeViewUp
+        # trap, bugs/0158). 2x90 == the opposite side: the horizontal (X,Z) sight-line
+        # components negate while the vertical (view-up Y) is preserved. Each click
+        # must move the sight line (the button actually rotates the scene).
+        if back > 1e-2:
+            result.passed = False
+            result.notes.append(
+                f"four 90 rotations did not return to the start (delta {back:.4f}) -- the "
+                "turntable axis is drifting (OrthogonalizeViewUp re-added?)"
+            )
+        if horiz_flip > 1e-2 or vert_keep > 1e-2:
+            result.passed = False
+            result.notes.append(
+                "two 90 rotations did not view from the opposite side "
+                f"(horizontal-flip {horiz_flip:.4f}, vertical-keep {vert_keep:.4f})"
+            )
+        if per_click < 1e-2:
+            result.passed = False
+            result.notes.append(
+                f"a rotate click barely moved the view (min {per_click:.4f}) -- the button "
+                "does not rotate the scene"
+            )
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"navigation cube rotate live drive raised: {exc!r}")
+
+    if not result.passed and not result.notes:
+        result.notes.append("navigation cube rotate phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8872,6 +8964,7 @@ def main() -> int:
             phase_146_imaging_lens_decoration,
             phase_147_navigation_cube,
             phase_148_navigation_cube_click,
+            phase_149_navigation_cube_rotate,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
