@@ -269,6 +269,17 @@ def _check_source_contracts(failures: list[str]) -> None:
     for forbidden in ("build_system(", "_build_preview_system_rays_bundle("):
         if forbidden in add_src:
             failures.append(f"CONTRACT: _add_best_focus_surface_overlays references {forbidden!r} -- not render-only")
+    # The render method reads the pyvista/np module globals; a local of the same name
+    # makes the whole method treat them as unassigned locals (the 0167 `pv = P-V`
+    # UnboundLocalError that crashed the app). Headless can't drive the renderer, so
+    # pin it on the bytecode: none of these globals may appear as a local.
+    add_code = Kraken3DInspector._add_best_focus_surface_overlays.__code__
+    shadowed = [g for g in ("pv", "np", "vtkBillboardTextActor3D") if g in add_code.co_varnames]
+    if shadowed:
+        failures.append(
+            f"CONTRACT: _add_best_focus_surface_overlays shadows module globals {shadowed} "
+            "with same-named locals (UnboundLocalError at runtime)"
+        )
 
     handler_src = inspect.getsource(Kraken3DInspector._on_scene_visibility_changed)
     if "can_reuse_current_scene_for_display_toggle" not in handler_src:

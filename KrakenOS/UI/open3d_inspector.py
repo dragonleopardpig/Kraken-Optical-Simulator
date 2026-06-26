@@ -11473,7 +11473,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         try:
             if vtkBillboardTextActor3D is not None and int(spec.get("n_rings", 0)) >= 2:
                 ring_dz = np.asarray(spec.get("ring_dz", []), dtype=float)
-                pv = float(np.ptp(ring_dz)) if ring_dz.size else 0.0
+                peak_valley = float(np.ptp(ring_dz)) if ring_dz.size else 0.0
                 factor = float(spec.get("exaggeration", 1.0))
                 points = np.asarray(spec["points"], dtype=float)
                 n_az = int(spec["n_az"])
@@ -11488,7 +11488,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 anchor = anchor + np.asarray(spec["normal"], dtype=float) * max(float(scene_radius) * 0.01, 0.4)
                 factor_text = f"  (×{factor:.0f})" if factor >= 1.5 else ""
                 actor = vtkBillboardTextActor3D()
-                actor.SetInput(f"Best-focus surface · field curv P-V {pv:.3g} mm{factor_text}")
+                actor.SetInput(f"Best-focus surface · field curv P-V {peak_valley:.3g} mm{factor_text}")
                 actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
                 try:
                     actor.PickableOff()
