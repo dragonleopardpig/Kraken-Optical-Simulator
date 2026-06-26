@@ -445,6 +445,7 @@ pv = None
 vtkTkRenderWindowInteractor = None
 vtkTubeFilter = None
 vtkOrientationMarkerWidget = None
+vtkCameraOrientationWidget = None
 vtkAxesActor = None
 vtkActor = None
 vtkCellPicker = None
@@ -1547,7 +1548,7 @@ def _install_nonfatal_x_error_handler() -> None:
 def _load_3d_backends() -> None:
     """Load PyVista/VTK only when the user opens 3D or CAD overlays."""
     global _3D_BACKENDS_ATTEMPTED
-    global pv, vtkTkRenderWindowInteractor, vtkTubeFilter, vtkOrientationMarkerWidget
+    global pv, vtkTkRenderWindowInteractor, vtkTubeFilter, vtkOrientationMarkerWidget, vtkCameraOrientationWidget
     global vtkAxesActor, vtkActor, vtkCellPicker, vtkPropPicker, vtkDataSetMapper, vtkRenderer, vtkTextActor, vtkBillboardTextActor3D
     global _VTK_TK_UNAVAILABLE_REASON
     if _3D_BACKENDS_ATTEMPTED:
@@ -1564,6 +1565,10 @@ def _load_3d_backends() -> None:
     try:
         from vtkmodules.vtkFiltersCore import vtkTubeFilter as _vtk_tube
         from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget as _vtk_marker
+        try:
+            from vtkmodules.vtkInteractionWidgets import vtkCameraOrientationWidget as _vtk_camera_orient
+        except Exception:
+            _vtk_camera_orient = None
         from vtkmodules.vtkRenderingAnnotation import vtkAxesActor as _vtk_axes
         from vtkmodules.vtkRenderingCore import (
             vtkActor as _vtk_actor,
@@ -1596,6 +1601,7 @@ def _load_3d_backends() -> None:
         vtkTkRenderWindowInteractor = _vtk_tk
         vtkTubeFilter = _vtk_tube
         vtkOrientationMarkerWidget = _vtk_marker
+        vtkCameraOrientationWidget = _vtk_camera_orient
         vtkAxesActor = _vtk_axes
         vtkActor = _vtk_actor
         vtkCellPicker = _vtk_picker
@@ -1608,6 +1614,7 @@ def _load_3d_backends() -> None:
         vtkTkRenderWindowInteractor = None
         vtkTubeFilter = None
         vtkOrientationMarkerWidget = None
+        vtkCameraOrientationWidget = None
         vtkAxesActor = None
         vtkActor = None
         vtkCellPicker = None

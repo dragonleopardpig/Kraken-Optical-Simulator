@@ -150,6 +150,7 @@ FIELD_TYPE_CANONICAL_VALUES = (
 pv = None
 vtkTkRenderWindowInteractor = None
 vtkOrientationMarkerWidget = None
+vtkCameraOrientationWidget = None
 vtkAxesActor = None
 vtkActor = None
 vtkCellPicker = None
@@ -172,7 +173,7 @@ def _layout_editor_class():
 
 
 def _load_3d_backends() -> None:
-    global pv, vtkTkRenderWindowInteractor, vtkOrientationMarkerWidget
+    global pv, vtkTkRenderWindowInteractor, vtkOrientationMarkerWidget, vtkCameraOrientationWidget
     global vtkAxesActor, vtkActor, vtkCellPicker, vtkPropPicker, vtkDataSetMapper, vtkRenderer, vtkTextActor, vtkBillboardTextActor3D
     global _VTK_TK_UNAVAILABLE_REASON
     layout_editor_module = _layout_module()
@@ -180,6 +181,7 @@ def _load_3d_backends() -> None:
     pv = layout_editor_module.pv
     vtkTkRenderWindowInteractor = layout_editor_module.vtkTkRenderWindowInteractor
     vtkOrientationMarkerWidget = layout_editor_module.vtkOrientationMarkerWidget
+    vtkCameraOrientationWidget = layout_editor_module.vtkCameraOrientationWidget
     vtkAxesActor = layout_editor_module.vtkAxesActor
     vtkActor = layout_editor_module.vtkActor
     vtkCellPicker = layout_editor_module.vtkCellPicker
@@ -385,6 +387,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._vtk_widget = None
         self._vtk_interactor = None
         self._orientation_widget = None
+        self._camera_orientation_widget = None
         self._picker = None
         self._prop_picker = None
         self._selection_model = SelectionModel()
@@ -723,6 +726,44 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     self.editor.append_debug(f"Open 3D gizmo overlay layer unavailable: {exc}")
 
             self._vtk_widget.Initialize()
+
+            # bugs/0156: a FreeCAD-style interactive navigation cube in the
+            # upper-right corner. Clicking a face/edge/corner handle snaps the
+            # camera to that orthographic/iso view -- the opposite handle reverses
+            # the look direction -- giving a general "rotate the canvas view"
+            # control on top of the fixed Iso/+-YZ/+-XY preset buttons. It is
+            # created AFTER Initialize() so the interactor is live when On() wires
+            # the handle observers (the path verified under Xvfb). The widget parks
+            # its own renderer in the upper-right; the passive axes marker keeps the
+            # lower-left, so they share a layer without overlapping, and the widget
+            # auto-bumps the render window layer count past the gizmo overlay.
+            # Animation is left OFF so the snap is instantaneous and never leans on
+            # the embedded-Tk timer loop -- matching the instant preset buttons.
+            # Each snap routes through the existing orbit backstop
+            # _on_camera_interaction, so the clip range re-fits and the
+            # perpendicular thickness labels re-square for the new basis exactly as
+            # a mouse orbit / preset button does (bugs/0048, 0128, 0140, 0152).
+            if (
+                vtkCameraOrientationWidget is not None
+                and self._renderer is not None
+                and self._vtk_interactor is not None
+            ):
+                try:
+                    self._camera_orientation_widget = vtkCameraOrientationWidget()
+                    self._camera_orientation_widget.SetParentRenderer(self._renderer)
+                    self._camera_orientation_widget.GetRepresentation().AnchorToUpperRight()
+                    self._camera_orientation_widget.SetAnimate(False)
+                    self._camera_orientation_widget.On()
+                    self._camera_orientation_widget.AddObserver(
+                        "InteractionEvent", self._on_camera_interaction
+                    )
+                    self._camera_orientation_widget.AddObserver(
+                        "EndInteractionEvent", self._on_camera_interaction
+                    )
+                except Exception as exc:
+                    self._camera_orientation_widget = None
+                    self.editor.append_debug(f"Open 3D navigation cube unavailable: {exc}")
+
             self._install_pick_only_left_click_bindings()
             self.bind("<Escape>", self._cancel_active_3d_operation_event)
             self._vtk_widget.bind("<Escape>", self._cancel_active_3d_operation_event, add="+")

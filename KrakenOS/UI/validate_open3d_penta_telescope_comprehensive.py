@@ -8479,6 +8479,69 @@ def phase_146_imaging_lens_decoration(
     return result
 
 
+def phase_147_navigation_cube(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The Open 3D canvas carries a FreeCAD-style interactive navigation cube
+    (vtkCameraOrientationWidget) so the user can rotate/reverse the canvas view by
+    clicking a face/edge/corner handle (bugs/0156). The display-free guard checks the
+    lazy-import wiring, the __init__ build/enable/observe contract, that a snap routes
+    through _on_camera_interaction (re-fit clip + re-square labels like an orbit), and
+    the construction API. This phase ALSO drives the LIVE inspector: the real widget
+    must exist, be enabled, anchored upper-right (clear of the lower-left axes marker),
+    with animation OFF (instant snap, no embedded-Tk timer dependency).
+    """
+    result = PhaseResult(
+        name="Phase 147: Open 3D navigation cube (interactive, upper-right, snap re-squares labels)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_navigation_cube import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"navigation-cube guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+
+    # Live inspector: the real widget must be present + enabled + anchored + no-animate.
+    widget = getattr(inspector, "_camera_orientation_widget", None)
+    if widget is None:
+        result.passed = False
+        result.notes.append("live inspector did not create _camera_orientation_widget")
+    else:
+        try:
+            if not bool(widget.GetEnabled()):
+                result.passed = False
+                result.notes.append("navigation cube widget is present but not enabled")
+            if bool(widget.GetAnimate()):
+                result.passed = False
+                result.notes.append("navigation cube animation must be OFF for an instant snap")
+            rep = widget.GetRepresentation()
+            renderer = rep.GetRenderer() if rep is not None else None
+            if renderer is not None:
+                vx0, vy0, vx1, vy1 = renderer.GetViewport()
+                # upper-right: viewport origin in the right + top half of the canvas,
+                # so it never overlaps the lower-left passive axes marker.
+                if not (vx0 >= 0.5 and vy0 >= 0.5):
+                    result.passed = False
+                    result.notes.append(
+                        "navigation cube viewport "
+                        f"{tuple(round(float(v), 2) for v in (vx0, vy0, vx1, vy1))} "
+                        "is not anchored upper-right (would overlap the lower-left axes marker)"
+                    )
+                result.detail["viewport"] = tuple(round(float(v), 3) for v in (vx0, vy0, vx1, vy1))
+        except Exception as exc:
+            result.passed = False
+            result.notes.append(f"navigation cube live introspection raised: {exc!r}")
+
+    if not result.passed and not result.notes:
+        result.notes.append("navigation cube phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8671,6 +8734,7 @@ def main() -> int:
             phase_144_quick_estimation_live_sensor_prefill,
             phase_145_target_fov_button_rectangle_sync,
             phase_146_imaging_lens_decoration,
+            phase_147_navigation_cube,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
