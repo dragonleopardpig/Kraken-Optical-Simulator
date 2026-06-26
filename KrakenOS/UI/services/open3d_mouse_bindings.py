@@ -20,6 +20,93 @@ class Open3DMouseBindingsService:
             return
         setattr(self._inspector, name, value)
 
+    # ------------------------------------------------------------------
+    # bugs/0157: forward clicks to the FreeCAD-style navigation cube.
+    #
+    # The app owns every left-click at the Tk level -- _install_pick_only_left_
+    # click_bindings REPLACES the vtkTkRenderWindowInteractor's own button
+    # bindings, and a plain click is dispatched by calling _on_left_button_press
+    # directly, so the interactor's LeftButtonPressEvent is never invoked. The
+    # navigation cube (vtkCameraOrientationWidget, bugs/0156) listens for exactly
+    # that event, so it renders but never receives a click -- "I click the view
+    # never change". These helpers forward the press/move/release to the cube
+    # when the cursor is over its upper-right gizmo, so clicking a face/edge/
+    # corner handle snaps the camera (and the opposite handle reverses the look
+    # direction -- the user's NW-facing-SE -> SE-facing-NW ask).
+    # ------------------------------------------------------------------
+    def _enabled_navigation_cube(self) -> Any:
+        """The enabled navigation cube widget, or None when it is unavailable."""
+        widget = getattr(self._inspector, "_camera_orientation_widget", None)
+        if widget is None or self._vtk_interactor is None:
+            return None
+        try:
+            if not widget.GetEnabled():
+                return None
+        except Exception:
+            return None
+        return widget
+
+    def _navigation_cube_state_under_cursor(self, widget: Any) -> int:
+        """Let the cube evaluate the handle under the cursor WITHOUT moving the
+        camera (a MouseMoveEvent drives its hover machinery; a plain
+        ComputeInteractionState call does not resolve the handle), then report
+        its interaction state: 0 == Outside the gizmo, non-zero == over it. The
+        interactor's event position must already be set (set_event_info)."""
+        rep = widget.GetRepresentation()
+        if rep is None:
+            return 0
+        try:
+            self._vtk_interactor.MouseMoveEvent()
+            return int(rep.GetInteractionState())
+        except Exception:
+            return 0
+
+    def _press_navigation_cube_if_hit(self) -> bool:
+        """Forward a left press to the cube when the cursor is over its gizmo.
+        Returns True (the cube owns the click, so the caller skips the scene
+        pick/drag); a press on a handle snaps the view on release. Ctrl is the
+        camera-orbit modifier, so a Ctrl-press is left to orbit even over the
+        cube."""
+        widget = self._enabled_navigation_cube()
+        if widget is None:
+            return False
+        try:
+            if int(self._vtk_interactor.GetControlKey()):
+                return False
+        except Exception:
+            pass
+        if self._navigation_cube_state_under_cursor(widget) == 0:
+            return False
+        try:
+            self._vtk_interactor.LeftButtonPressEvent()
+        except Exception:
+            return False
+        self._nav_cube_press_active = True
+        return True
+
+    def _drag_navigation_cube_if_active(self) -> bool:
+        """Forward a button-held move so the cube can drag-rotate / re-highlight
+        the hovered handle. Returns True while a cube press is active."""
+        if not getattr(self._inspector, "_nav_cube_press_active", False):
+            return False
+        try:
+            self._vtk_interactor.MouseMoveEvent()
+        except Exception:
+            pass
+        return True
+
+    def _release_navigation_cube_if_active(self) -> bool:
+        """Forward the release that snaps the camera to the picked handle, then
+        end the cube press. Returns True if a cube press was active."""
+        if not getattr(self._inspector, "_nav_cube_press_active", False):
+            return False
+        try:
+            self._vtk_interactor.LeftButtonReleaseEvent()
+        except Exception:
+            pass
+        self._nav_cube_press_active = False
+        return True
+
     def _install_pick_only_left_click_bindings(self) -> None:
         """Left click selects; left drag rotates; middle (or Shift+Left) drag pans the camera."""
         if self._vtk_widget is None:
@@ -63,6 +150,10 @@ class Open3DMouseBindingsService:
         def left_press(event):
             record_mouse("mouse_press", event, 1)
             set_event_info(event)
+            # bugs/0157: a click on the navigation cube snaps/reverses the view.
+            # The cube owns the click, so skip the scene pick/drag entirely.
+            if self._press_navigation_cube_if_hit():
+                return "break"
             self._cancel_step_carry_hold_timer()
             ctrl_pressed = control_pressed(event)
             if self._step_carry_follow_state is not None and not ctrl_pressed:
@@ -167,6 +258,9 @@ class Open3DMouseBindingsService:
         def left_motion(event):
             record_mouse("mouse_move", event, 1)
             set_event_info(event)
+            # bugs/0157: a button-held move over the cube drag-rotates it.
+            if self._drag_navigation_cube_if_active():
+                return "break"
             if not self._left_drag_active:
                 return "break"
             current = (int(event.x), int(event.y))
@@ -265,6 +359,10 @@ class Open3DMouseBindingsService:
         def left_release(event):
             record_mouse("mouse_release", event, 1)
             set_event_info(event)
+            # bugs/0157: the release snaps the camera to the cube handle picked
+            # on press; end the cube interaction before the scene release logic.
+            if self._release_navigation_cube_if_active():
+                return "break"
             should_pick = self._left_drag_active and not self._left_drag_moved
             dimension_anchor_was_drag = self._left_drag_active and self._left_drag_moved
             ctrl_active = self._ctrl_left_camera_active or control_pressed(event)

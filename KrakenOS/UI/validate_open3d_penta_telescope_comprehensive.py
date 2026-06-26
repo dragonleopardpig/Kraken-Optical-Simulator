@@ -8542,6 +8542,142 @@ def phase_147_navigation_cube(
     return result
 
 
+def phase_148_navigation_cube_click(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A click on the navigation cube actually snaps/rotates the camera (bugs/0157).
+    The cube (bugs/0156) rendered but was deaf: the canvas's pick-only Tk bindings
+    replace the interactor's button bindings and dispatch a plain pick directly, so
+    the interactor button events the cube observes are never fired ("I click the view
+    never change"). The fix forwards press/move/release to the cube from the Tk
+    closures when the cursor is over its gizmo. The display-free guard pins the
+    forwarding contract (gate on the cube's interaction state; Ctrl reaches orbit;
+    flag bookkeeping). This phase ALSO drives the LIVE inspector: from a top-down
+    reset, forwarding a press+release over a cube handle via the exact helper path the
+    closures use must snap the camera to a distinct standard view -- several handles
+    reach distinct directions including a reversal pair (the user's reverse-the-view
+    ask) -- and the press flag must be left clean.
+    """
+    result = PhaseResult(
+        name="Phase 148: navigation cube click forwards to the camera (snap + reverse)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_navigation_cube_click import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"navigation-cube click guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+
+    widget = getattr(inspector, "_camera_orientation_widget", None)
+    vtk_widget = getattr(inspector, "_vtk_widget", None)
+    render_window = vtk_widget.GetRenderWindow() if vtk_widget is not None else None
+    renderer = getattr(inspector, "_renderer", None)
+    interactor = getattr(inspector, "_vtk_interactor", None)
+    if widget is None or render_window is None or renderer is None or interactor is None:
+        result.passed = False
+        result.notes.append(
+            "live inspector missing widget/renderer/interactor for the click test"
+        )
+        return result
+
+    try:
+        rep = widget.GetRepresentation()
+        service = inspector._mouse_bindings_service()
+        render_window.Render()
+        inspector.update()
+        width, height = render_window.GetSize()
+        vx0, vy0, vx1, vy1 = rep.GetRenderer().GetViewport()
+        tk_x0, tk_x1 = int(vx0 * width), int(vx1 * width)
+        tk_y0, tk_y1 = int(height - 1 - vy1 * height), int(height - 1 - vy0 * height)
+
+        def camera_direction() -> "np.ndarray":
+            cam = renderer.GetActiveCamera()
+            vec = np.array(cam.GetFocalPoint()) - np.array(cam.GetPosition())
+            norm = float(np.linalg.norm(vec))
+            return vec / norm if norm else vec
+
+        def reset_iso() -> None:
+            # An oblique start so a click on the dominant (top) face snaps to a
+            # different, visible direction (a top-down start makes a +Z-face click a
+            # no-op). The exact basis is irrelevant -- only that no standard snap
+            # equals it, so any handle click is a measurable change.
+            cam = renderer.GetActiveCamera()
+            cam.SetPosition(130, 110, 90)
+            cam.SetFocalPoint(0, 0, 0)
+            cam.SetViewUp(0, 0, 1)
+            render_window.Render()
+            inspector.update()
+
+        def helper_click(tx: int, ty: int) -> None:
+            # Exactly what the Tk closures do: set the event position, then forward
+            # press-if-hit and release-if-active through the service helpers.
+            interactor.SetEventInformationFlipY(tx, ty, 0, 0, chr(0), 0, None)
+            service._press_navigation_cube_if_hit()
+            interactor.SetEventInformationFlipY(tx, ty, 0, 0, chr(0), 0, None)
+            service._release_navigation_cube_if_active()
+
+        def reversal_in(keys: set) -> bool:
+            return any(tuple(-np.array(k)) in keys and any(k) for k in keys)
+
+        # A dense pixel scan would be minutes of (segfault-prone) llvmpipe renders;
+        # the handles are large, so a coarse fixed grid lands several, and we stop as
+        # soon as the contract is met (>= 2 distinct snaps, ideally a reversal pair).
+        seen: dict[tuple, tuple] = {}
+        grid_x = np.linspace(tk_x0 + 4, tk_x1 - 4, 7).astype(int)
+        grid_y = np.linspace(tk_y0 + 4, tk_y1 - 4, 5).astype(int)
+        for tx in grid_x:
+            for ty in grid_y:
+                reset_iso()
+                base = camera_direction()
+                helper_click(int(tx), int(ty))
+                snapped = camera_direction()
+                if float(np.linalg.norm(snapped - base)) > 1e-3:
+                    seen[tuple(np.round(snapped, 2).tolist())] = (int(tx), int(ty))
+            keys_now = set(seen.keys())
+            if len(seen) >= 2 and reversal_in(keys_now):
+                break
+            if len(seen) >= 4:
+                break
+
+        keys = set(seen.keys())
+        has_reversal = reversal_in(keys)
+        result.detail["distinct_snap_dirs"] = len(seen)
+        result.detail["reversal_pair"] = bool(has_reversal)
+        # Hard gate: clicking the cube must reach >= 2 distinct standard views (the
+        # user's "I click the view never change"). The reversal pair (the NW<->SE ask)
+        # is reported -- it is pinned exhaustively by the standalone dense probe
+        # (bugs/0157: 5 dirs + 2 reversal pairs); here a coarse grid may not always
+        # land an exact opposite pair, so it is a note, not a failure.
+        if len(seen) < 2:
+            result.passed = False
+            result.notes.append(
+                f"clicking the cube reached only {len(seen)} snap direction(s) -- the "
+                "view does not change on click (bugs/0157 regressed)"
+            )
+        if not has_reversal:
+            result.notes.append(
+                "note: the coarse live grid did not land an exact reversal pair "
+                "(reversal is pinned by the standalone dense probe, not this phase)"
+            )
+        if getattr(inspector, "_nav_cube_press_active", False):
+            result.passed = False
+            result.notes.append(
+                "_nav_cube_press_active left True after a click (stuck cube press)"
+            )
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"navigation cube live click drive raised: {exc!r}")
+
+    if not result.passed and not result.notes:
+        result.notes.append("navigation cube click phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8735,6 +8871,7 @@ def main() -> int:
             phase_145_target_fov_button_rectangle_sync,
             phase_146_imaging_lens_decoration,
             phase_147_navigation_cube,
+            phase_148_navigation_cube_click,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

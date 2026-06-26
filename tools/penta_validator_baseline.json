@@ -149,7 +149,8 @@
     "144": "pass",
     "145": "pass",
     "146": "pass",
-    "147": "pass"
+    "147": "pass",
+    "148": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -299,6 +300,7 @@
     "144": "Quick Estimation FOV/sensor popup reads the live camera sensor",
     "145": "Set Target FOV button syncs to the rectangle-side object FOV",
     "146": "Imaging Lens STEP is a decoration (no Promote; surrogate datum glue kept)",
-    "147": "Open 3D navigation cube (interactive, upper-right, snap re-squares labels)"
+    "147": "Open 3D navigation cube (interactive, upper-right, snap re-squares labels)",
+    "148": "navigation cube click forwards to the camera (snap + reverse)"
   }
 }

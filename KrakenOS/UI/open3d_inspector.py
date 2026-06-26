@@ -388,6 +388,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._vtk_interactor = None
         self._orientation_widget = None
         self._camera_orientation_widget = None
+        # bugs/0157: True while a left-press is being forwarded to the navigation
+        # cube, so the button-held move/release route to the cube, not the scene.
+        self._nav_cube_press_active = False
         self._picker = None
         self._prop_picker = None
         self._selection_model = SelectionModel()
