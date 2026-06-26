@@ -9198,6 +9198,38 @@ def phase_157_overlay_toggle_no_rebuild(
     return result
 
 
+def phase_158_best_focus_surface(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The 3D field-curvature viz (idea #2): a translucent CURVED best-focus surface
+    lofted over the flat detector, so the Petzval/field curvature -- and the
+    field-dependent gap to the flat sensor -- reads in 3D. It reuses the same
+    tangential/sagittal best-focus offsets the 2D Field Curvature analysis computes,
+    revolved into a surface at the image plane, gated behind a new "Focus surf"
+    overlay toggle (a render-only refresh per bugs/0166). The display-free guard pins
+    the lofted geometry (apex/rim/axial offsets), a real double-gauss deviation from
+    the flat plane, the lazy-scan caching, the branch-scene skip, and the render-only
+    + display-toggle contracts.
+    """
+    result = PhaseResult(
+        name="Phase 158: curved best-focus surface lofts field curvature over the flat detector (idea #2)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_best_focus_surface import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"best-focus surface guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("best-focus surface phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9401,6 +9433,7 @@ def main() -> int:
             phase_155_fov_label_edge_on_clearance,
             phase_156_inpath_spacer_flag_survives_reload,
             phase_157_overlay_toggle_no_rebuild,
+            phase_158_best_focus_surface,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

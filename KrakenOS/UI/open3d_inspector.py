@@ -601,6 +601,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.show_detector_overlays_var = tk.BooleanVar(value=False)
         self.show_terminal_diagnostics_var = tk.BooleanVar(value=False)
         self.show_placement_handles_var = tk.BooleanVar(value=False)
+        # 3D field-curvature viz (idea #2): translucent curved best-focus surface
+        # lofted over the flat detector. Off by default; the field-curvature scan is
+        # lazy + cached, computed only when this is on.
+        self.show_best_focus_surface_var = tk.BooleanVar(value=False)
         self.slide_along_axis_mode_var = tk.BooleanVar(value=False)
         self.show_live_controls_panel_var = tk.BooleanVar(value=True)
         self.show_scene_components_panel_var = tk.BooleanVar(value=True)
@@ -1679,6 +1683,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             show_terminal_diagnostics=bool(self.show_terminal_diagnostics_var.get()),
             show_placement_handles=bool(self.show_placement_handles_var.get()),
             show_thickness_dimensions=bool(self.editor.show_physical_distances_var.get()),
+            show_best_focus_surface=bool(self.show_best_focus_surface_var.get()),
             counts=self._debug_actor_counts(),
         )
         # bugs/0166: reference-surface / detector / thickness / terminal-diagnostic /
@@ -11407,6 +11412,57 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     opacity=float(spec["opacity"]),
                     pick_row_index=spec.get("row_index") if spec.get("pickable", False) else None,
                     line_width=float(spec["line_width"]),
+                )
+                count += 1
+            except Exception:
+                continue
+        return count
+
+    def _add_best_focus_surface_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
+        """Draw the translucent curved best-focus surface over the flat detector
+        (3D field-curvature viz, idea #2). Render-only: the geometry + the lazy,
+        cached field-curvature scan live on the editor
+        (``best_focus_surface_overlay_spec``)."""
+        if self._renderer is None or pv is None or scene_bundle is None:
+            return 0
+        try:
+            spec = self.editor.best_focus_surface_overlay_spec(system, scene_bundle)
+        except Exception as exc:
+            self.editor.append_debug(f"Best-focus surface overlay failed: {exc}")
+            return 0
+        if not spec:
+            return 0
+        count = 0
+        color = tuple(spec["color"])
+        opacity = float(spec["opacity"])
+        try:
+            points = np.asarray(spec["points"], dtype=float)
+            faces = np.asarray(spec["faces"], dtype=np.int64)
+            if points.ndim == 2 and points.shape[0] >= 3 and faces.size >= 5:
+                mesh = pv.PolyData(points[:, :3], faces)
+                self._add_mesh_actor(
+                    mesh,
+                    color=color,
+                    opacity=opacity,
+                    flat_shading=True,
+                    backface_culling=False,
+                )
+                count += 1
+        except Exception as exc:
+            self.editor.append_debug(f"Best-focus surface fill failed: {exc}")
+        # Latitude ring outlines so the bowl reads through the translucent fill.
+        line_color = tuple(min(1.0, c + 0.05) for c in color)
+        for ring in spec.get("ring_polylines", []) or []:
+            try:
+                ring_pts = np.asarray(ring, dtype=float)
+                if ring_pts.ndim != 2 or ring_pts.shape[0] < 3:
+                    continue
+                line_mesh = pv.lines_from_points(ring_pts[:, :3])
+                self._add_mesh_actor(
+                    line_mesh,
+                    color=line_color,
+                    opacity=min(0.9, opacity + 0.5),
+                    line_width=1.4,
                 )
                 count += 1
             except Exception:

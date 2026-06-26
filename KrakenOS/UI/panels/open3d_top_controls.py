@@ -110,6 +110,9 @@ class Open3DTopControlsPanel:
                 # stay in sync both ways (bugs/0061).
                 MenuCheckbutton("Clipped", self.inspector._editor_var("show_clipped_rays_var"), self.inspector._on_clipped_rays_changed),
                 MenuCheckbutton("Thickness", self.editor.show_physical_distances_var, self.inspector._on_scene_visibility_changed),
+                # 3D field-curvature viz (idea #2): translucent curved best-focus
+                # surface lofted over the flat detector.
+                MenuCheckbutton("Focus surf", self.inspector.show_best_focus_surface_var, self.inspector._on_scene_visibility_changed),
             ),
         )
         pack_menubutton(view_toolbar, "Overlays", overlay_menu, padx=(8, 0))

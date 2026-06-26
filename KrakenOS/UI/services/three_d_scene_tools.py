@@ -51,6 +51,11 @@ from KrakenOS.UI.nonseq_output_ports import (
     optical_solid_output_port_pose_overrides,
     optical_solid_output_port_runtime_transform_override,
 )
+from KrakenOS.UI.services.best_focus_surface import (
+    best_focus_surface_faces,
+    best_focus_surface_ring_polylines,
+    build_best_focus_surface,
+)
 from KrakenOS.UI.services.legacy_3d_scene import Legacy3DSceneService
 from KrakenOS.UI.services.missing_assets_scan import (
     MISSING_RESOURCE_STATE_ATTR,
@@ -2489,6 +2494,125 @@ class ThreeDSceneToolsMixin:
                         }
                     )
         return specs
+
+    # ------------------------------------------------------------------
+    # Curved best-focus surface overlay (3D field-curvature visualization, idea #2)
+
+    def _best_focus_surface_anchor_target(self, scene_bundle: SceneBundle | None):
+        """Pick the flat image-plane target the curved best-focus surface floats over.
+
+        First deliverable = the centered, single-image-plane case: the primary
+        sequential image (the highest real-row target). A scene with beam-splitter
+        branch detectors (each arm images its own field) is SKIPPED for now -- a
+        per-branch best-focus surface is a follow-up.
+        """
+        if scene_bundle is None:
+            return None
+        anchor = None
+        anchor_row = -1
+        has_branch_detector = False
+        for target in list(getattr(scene_bundle, "targets", []) or []):
+            metadata = getattr(target, "metadata", None)
+            source = str(metadata.get("target_source", "")) if isinstance(metadata, dict) else ""
+            if source == "branch_detector":
+                has_branch_detector = True
+                continue
+            try:
+                row_index = int(getattr(target, "row_index", -1))
+            except Exception:
+                row_index = -1
+            if row_index >= 100000:  # synthetic branch-detector row
+                continue
+            if row_index >= anchor_row:
+                anchor_row = row_index
+                anchor = target
+        if has_branch_detector:
+            return None
+        return anchor
+
+    @staticmethod
+    def _best_focus_surface_radius(target) -> float:
+        """Rim radius for the surface = the image / detector half-extent."""
+        width = float(getattr(target, "active_width_mm", 0.0) or 0.0)
+        height = float(getattr(target, "active_height_mm", 0.0) or 0.0)
+        if width > 1e-6 and height > 1e-6:
+            return 0.5 * min(width, height)
+        diameter = float(getattr(target, "diameter", 0.0) or 0.0)
+        if diameter > 1e-6:
+            return 0.5 * diameter
+        return 0.0
+
+    def best_focus_surface_overlay_spec(self, system, scene_bundle, *, wavelength=None):
+        """Build the translucent curved best-focus surface spec, or None.
+
+        Lazy + cached by the preview-trace signature: the field-curvature scan
+        (`_sample_field_curvature_distortion`) traces dense meridional/sagittal fans,
+        so it must NOT recompute on every render-only refresh (the bugs/0166 overlay
+        toggles re-render the cached scene). Returns None for branch / fieldless /
+        sizeless scenes so nothing draws there.
+        """
+        if system is None or scene_bundle is None:
+            return None
+        target = self._best_focus_surface_anchor_target(scene_bundle)
+        if target is None:
+            return None
+        if wavelength is None:
+            try:
+                wavelength = float(self._current_wavelength())
+            except Exception:
+                return None
+        radius = self._best_focus_surface_radius(target)
+        if radius <= 1e-6:
+            return None
+        try:
+            signature = (
+                self._preview_trace_signature(),
+                round(float(wavelength), 6),
+                int(getattr(target, "row_index", -1)),
+                round(float(radius), 6),
+            )
+        except Exception:
+            signature = None
+        cache = self.__dict__.get("_best_focus_surface_cache")
+        if signature is not None and isinstance(cache, tuple) and len(cache) == 2 and cache[0] == signature:
+            return cache[1]
+        spec = self._compute_best_focus_surface_spec(system, target, float(wavelength), radius)
+        if signature is not None:
+            self._best_focus_surface_cache = (signature, spec)
+        return spec
+
+    def _compute_best_focus_surface_spec(self, system, target, wavelength: float, radius: float):
+        try:
+            # The field-curvature scan lives on the composed AnalysisPlotService
+            # (reached via the editor's accessor), not directly on the editor.
+            sampled = self._analysis_plot_service()._sample_field_curvature_distortion(system, wavelength)
+        except Exception as exc:  # pragma: no cover - defensive
+            try:
+                self.append_debug(f"Best-focus surface: field-curvature scan failed: {exc}")
+            except Exception:
+                pass
+            return None
+        if not sampled:
+            return None
+        axis_results, _field_type, field_limit = sampled
+        y_result = axis_results.get("Y") if isinstance(axis_results, dict) else None
+        x_result = axis_results.get("X") if isinstance(axis_results, dict) else None
+        if not isinstance(y_result, dict) or not isinstance(x_result, dict):
+            return None
+        spec = build_best_focus_surface(
+            y_result.get("fields"),
+            y_result.get("focus"),
+            x_result.get("focus"),
+            float(field_limit),
+            center=np.asarray(getattr(target, "center_world"), dtype=float),
+            normal=np.asarray(getattr(target, "normal_world"), dtype=float),
+            tangent=np.asarray(getattr(target, "tangent_world"), dtype=float),
+            radius=float(radius),
+        )
+        if spec is not None:
+            spec["faces"] = best_focus_surface_faces(spec["n_rings"], spec["n_az"])
+            spec["ring_polylines"] = best_focus_surface_ring_polylines(spec)
+        return spec
 
     def _iter_3d_scene_rays(
         self,

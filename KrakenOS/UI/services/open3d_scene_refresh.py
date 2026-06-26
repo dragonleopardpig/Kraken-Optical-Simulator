@@ -792,6 +792,12 @@ class Open3DSceneRefreshService:
             include_footprints=bool(self.show_detector_overlays_var.get()),
             include_miss_crosshairs=bool(self.show_terminal_diagnostics_var.get()),
         )
+        # 3D field-curvature viz (idea #2): the translucent curved best-focus surface.
+        # Read live here so its toggle is a render-only refresh (bugs/0166); the scan
+        # behind it is lazy + cached on the editor.
+        best_focus_surface_actors = 0
+        if bool(getattr(self, "show_best_focus_surface_var", None) is not None and self.show_best_focus_surface_var.get()):
+            best_focus_surface_actors = self._add_best_focus_surface_overlays(system, scene_bundle)
         # bugs/0009: the thickness dimensions must be added *after* the imported
         # STEP overlay loop below registers the optical body into
         # ``_step_actor_map`` -- otherwise ``add_overlays`` measures against an
