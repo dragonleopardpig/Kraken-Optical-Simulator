@@ -169,6 +169,54 @@ CAMERA_DATABASE: dict[str, dict[str, object]] = {
             Path.home() / "cameras" / "BC-GMC65M12X4-M42.STEP",
         ),
     },
+    "Japan Bopixel BC-GN25M12X4": {
+        "manufacturer": "Japan Bopixel",
+        "model": "BC-GN25M12X4",
+        "product_code": "BC-GN25M12X4",
+        "product_series": "BC-G CoaXPress",
+        "status": "Available",
+        # The Mono (BC-GM), Color (BC-GC) and NIR (BC-GN) variants share this
+        # spec sheet + body; this entry is the NIR variant (the 'X' in the file
+        # names is the M/C/N chroma letter).
+        "datasheet": _preferred_existing_path(
+            ATTACHMENT_CAMERA_DIR / "BC-Gx25M12X4_Spec_EN_ver02_bopixel.pdf",
+            Path.home() / "cameras" / "BC-Gx25M12X4_Spec_EN_ver02_bopixel.pdf",
+        ),
+        "sensor_type": "Area scan",
+        "chroma": "NIR",
+        "spectrum": "Visible + NIR",
+        "spectral_range_nm": (300.0, 1100.0),
+        "resolution_px": (5120, 5120),
+        "megapixels": 25.0,
+        "sensor_model": "Gpixel GMAX0505",
+        "sensor_architecture": "CMOS",
+        "shutter": "Global shutter",
+        "sensor_width_mm": 12.80,
+        "sensor_height_mm": 12.80,
+        "sensor_diagonal_mm": 18.10,
+        "image_diameter_mm": 12.80,
+        "pixel_size_um": (2.5, 2.5),
+        "sensor_bit_depths": (8, 10),
+        "pixel_formats": ("mono8", "mono10"),
+        "max_frame_rate_fps": 150.3,
+        "exposure_time_us_min": 3.0,
+        "exposure_time_s_max": 2.0,
+        "digital_interface": "CoaXPress CXP-12, 4 connections",
+        "interface_connector": "micro-BNC",
+        "power_supply": "PoCXP / External 24 VDC",
+        "power_consumption_w_typ": 7.4,
+        "operating_temperature_housing_c": (0.0, 60.0),
+        "body_dimensions_lwh_mm": (45.5, 70.0, 70.0),
+        "lens_mount": "C Mount",
+        "weight_g": 455.0,
+        # C-mount flange focal distance: the sensor sits 17.526 mm behind the
+        # C-mount reference flange.
+        "camera_front_to_sensor_mm": 17.526,
+        "step_path": _preferred_existing_path(
+            ATTACHMENT_CAMERA_DIR / "BC-GM(C)25M12X4.STEP",
+            Path.home() / "cameras" / "BC-GM(C)25M12X4.STEP",
+        ),
+    },
 }
 
 
