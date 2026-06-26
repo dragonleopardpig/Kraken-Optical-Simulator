@@ -8414,6 +8414,39 @@ def phase_144_quick_estimation_live_sensor_prefill(
     return result
 
 
+def phase_145_target_fov_button_rectangle_sync(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The left-panel "Set Target FOV" / "Snap to FOV" button treats the typed Object
+    Height as a sensor-RECTANGLE side -- like the canvas + the double-click Object-plane
+    FOV popup (the correct reference) -- not the image-circle DIAGONAL (bugs/0154). On the
+    flag's square 23.04 sensor at |m|=1.671 the old disk model stored 19.5/2=9.75 and
+    snap solved |m|=16.29/9.75=1.671 (a no-op: object plane stuck at 13.8). Now
+    height_to_diagonal folds 19.5 -> diagonal 27.58 -> semi 13.789 via the LIVE aspect, so
+    snap reaches |m|=1.181 -> object plane 19.5 x 19.5; recommended_sensor follows the live
+    square aspect, not 4:3 APS-C. No-camera scenes keep the 4:3 disk model. The guard drives
+    the pure ``height_to_diagonal`` / ``snap_to_fov`` / ``recommended_sensor`` on a tk-free
+    fake editor with a stubbed thin lens; display-free.
+    """
+    result = PhaseResult(
+        name="Phase 145: Set Target FOV button syncs to the rectangle-side object FOV"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_target_fov_button_sync import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"target-FOV button-sync guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("target-FOV button-sync guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8604,6 +8637,7 @@ def main() -> int:
             phase_142_quick_estimation_focal_solve,
             phase_143_quick_estimation_placement_solve,
             phase_144_quick_estimation_live_sensor_prefill,
+            phase_145_target_fov_button_rectangle_sync,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

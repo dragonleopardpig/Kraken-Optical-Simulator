@@ -802,7 +802,8 @@ class QuickEstimationService:
         self.editor.rows[obj_row].thickness = float(object_distance)
         self.editor.rows[img_row].thickness = float(image_distance)
         return True, (
-            f"Snapped to FOV {2 * float(target):.6g} mm: object {object_distance:.6g} mm, "
+            f"Snapped to FOV {self.diagonal_to_height(2 * float(target)):.6g} mm: "
+            f"object {object_distance:.6g} mm, "
             f"image {image_distance:.6g} mm (|m|={mag:.4g})."
         )
 
@@ -830,6 +831,29 @@ class QuickEstimationService:
 
     def diagonal_to_horizontal(self, diagonal: float) -> float:
         return float(diagonal) * self._aspect_horizontal_fraction()
+
+    def _aspect_vertical_fraction(self) -> float:
+        """Sensor HEIGHT / diagonal for the live sensor (a square 23.04 -> 1/sqrt2),
+        falling back to the 4:3 working sensor (-> 0.6) only when none is known.
+        The vertical mirror of ``_aspect_horizontal_fraction`` -- so a typed object
+        *side* (the canvas + popup speak in Height) maps to the image-circle diagonal
+        the disk model and ``snap_to_fov`` use."""
+        dims = self.sensor_active_dimensions()
+        if dims:
+            w, h = dims
+            diag = (float(w) * float(w) + float(h) * float(h)) ** 0.5
+            if diag > 1e-9 and float(h) > 1e-9:
+                return float(h) / diag
+        aw, ah = SENSOR_ASPECT
+        norm = (aw * aw + ah * ah) ** 0.5 or 1.0
+        return float(ah) / norm
+
+    def height_to_diagonal(self, height: float) -> float:
+        frac = self._aspect_vertical_fraction()
+        return float(height) / frac if frac > 1e-9 else float(height)
+
+    def diagonal_to_height(self, diagonal: float) -> float:
+        return float(diagonal) * self._aspect_vertical_fraction()
 
     def object_fov_horizontal(self) -> float | None:
         """Current object-side field width (horizontal, mm), or None."""
@@ -1138,14 +1162,18 @@ class QuickEstimationService:
                 return ok, msg
         return False, "Unknown FOV solve request."
 
-    def recommended_sensor(self, aspect: tuple[float, float] = SENSOR_ASPECT) -> dict[str, Any] | None:
+    def recommended_sensor(self, aspect: tuple[float, float] | None = None) -> dict[str, Any] | None:
         """The rectangular sensor whose diagonal matches the image footprint of
         the object being imaged (the target Object Height, else the current FOV).
 
         Returns image-circle diameter, recommended sensor width/height/diagonal
         for ``aspect``, and the nearest standard format -- so the user can size /
-        source a camera that the image circle perfectly covers.
+        source a camera that the image circle perfectly covers. ``aspect`` defaults
+        to the LIVE sensor shape (a registered square 23.04x23.04 -> a square
+        recommendation), folding 4:3 only when no sensor shape is known (bugs/0154).
         """
+        if aspect is None:
+            aspect = self._live_sensor_active_dimensions() or SENSOR_ASPECT
         try:
             mag = self.editor._current_finite_paraxial_magnification()
         except Exception:
@@ -1272,6 +1300,28 @@ class QuickEstimationService:
             out["target_fov"] = tline
         else:
             out["target_fov"] = "(fills sensor)"
+        # When a real rectangular/square sensor is live (a registered camera or
+        # explicit detector dims), report Sensor / FOV / Target in sensor-RECTANGLE
+        # terms -- the Height the canvas + double-click popup show -- not the
+        # image-circle DIAGONAL the internal disk model (current_state) keeps. The
+        # "(Image H)" / "(Object H)" labels finally read true. No-camera (penta)
+        # scenes keep the diagonal strings verbatim (bugs/0154).
+        live_dims = self._live_sensor_active_dimensions()
+        if live_dims is not None:
+            sw, sh = live_dims
+            out["sensor"] = f"{sh:.6g} mm (H) / {sw:.6g} mm (W)"
+            mag_abs = abs(mag) if mag else None
+            if mag_abs and mag_abs > 1e-9:
+                fov_h = sh / mag_abs
+                out["fov"] = f"{0.5 * fov_h:.6g} mm semi / {fov_h:.6g} mm full"
+            if target:
+                target_h = self.diagonal_to_height(2.0 * float(target))
+                tline = f"{target_h:.6g} mm full"
+                if fill is not None:
+                    pct = 100.0 * float(fill)
+                    tag = "fills" if abs(pct - 100.0) < 1.0 else ("OVERFILLS" if pct > 100.0 else "underfills")
+                    tline += f" -> {pct:.1f}% ({tag})"
+                out["target_fov"] = tline
         rec = state.get("recommended_sensor")
         if rec:
             out["recommended_sensor"] = (

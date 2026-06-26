@@ -14266,7 +14266,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if not qe.is_enabled():
             self.quick_estimation_var.set(True)
         cur = qe.target_object_semi()
-        cur_full = f"{2 * cur:.6g}" if cur else ""
+        cur_full = f"{qe.diagonal_to_height(2 * cur):.6g}" if cur else ""
         value = self._centered_input_dialog(
             "Target FOV / Object Height",
             "Object size to image (full Object Height) [mm]; blank = fill the sensor:",
@@ -14284,7 +14284,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except (TypeError, ValueError):
             self.status_var.set("Object Height must be a number.")
             return
-        qe.set_target_fov(full / 2.0)
+        # The typed value is the object-rectangle HEIGHT (a side, like the canvas +
+        # double-click popup), NOT the image-circle diameter. Convert the side to the
+        # object diagonal via the live sensor aspect so Snap reaches FOV Height = full
+        # (square sensor: 19.5 -> object plane 19.5 x 19.5, not 13.8) -- bugs/0154.
+        qe.set_target_fov(qe.height_to_diagonal(full) / 2.0)
         qe.update_readout()
         state = qe.current_state()
         fill = state.get("fill_factor")
