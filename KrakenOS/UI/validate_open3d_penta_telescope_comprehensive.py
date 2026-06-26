@@ -8685,9 +8685,10 @@ def phase_149_navigation_cube_rotate(
     Follow-up to the user's clarification: the interactive cube (0156/0157) only
     SNAPS to a face; they want FreeCAD's rotate ARROWS that sweep 90 per click,
     forward and reverse, so two clicks (180) views the scene from the opposite side
-    (object NW-facing-SE ends SE-facing-NW). The fix adds rotate_camera_azimuth via
+    (object NW-facing-SE ends SE-facing-NW). The fix adds rotate_camera_view via
     vtkCamera.Azimuth (deliberately NO OrthogonalizeViewUp, which would drift the
-    turntable axis). The display-free guard pins the forwarding contract. This phase
+    turntable axis); the plane-view ROLL refinement (bugs/0159) is phase 150. The
+    display-free guard pins the forwarding contract. This phase
     ALSO drives the LIVE inspector: from an Iso reset, four 90 rotations must return
     the sight line EXACTLY to the start; two (180) must negate the horizontal (X,Z)
     and preserve the vertical (view-up Y) -- the opposite side -- and each click must
@@ -8726,7 +8727,7 @@ def phase_149_navigation_cube_rotate(
         base = direction()
         dirs = [base]
         for _ in range(4):
-            inspector.rotate_camera_azimuth(90)
+            inspector.rotate_camera_view(90)
             dirs.append(direction())
 
         back = float(np.linalg.norm(dirs[4] - dirs[0]))
@@ -8767,6 +8768,93 @@ def phase_149_navigation_cube_rotate(
 
     if not result.passed and not result.notes:
         result.notes.append("navigation cube rotate phase failed without detail")
+    return result
+
+
+def phase_150_navigation_cube_plane_roll(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """In a face-on plane view the rotate-view buttons ROLL about the sight line
+    (bugs/0159). The user accepted the ISO azimuth (phase 149) but reported that in
+    a YZ/plane view the rotate must "spin around the perpendicular axis ... the axis
+    that go into the center of the Monitor" -- an azimuth there swings the camera
+    OFF the plane onto a neighbouring face. rotate_camera_view detects the axis-
+    aligned sight line and calls vtkCamera.Roll instead. This phase drives the LIVE
+    inspector: from the +yz plane preset, rotate_camera_view(90) four times must keep
+    the sight line FIXED (a roll never moves the camera position, so it did NOT
+    azimuth off the plane), move the view-up a real amount each click, and return the
+    view-up EXACTLY to the start after 4x90.
+    """
+    result = PhaseResult(
+        name="Phase 150: rotate-view rolls about the sight line in a plane view (0159)"
+    )
+    renderer = getattr(inspector, "_renderer", None)
+    if renderer is None or renderer.GetActiveCamera() is None:
+        result.passed = False
+        result.notes.append("live inspector missing renderer/camera for the plane-roll test")
+        return result
+
+    try:
+        cam = renderer.GetActiveCamera()
+
+        def sight() -> "np.ndarray":
+            vec = np.array(cam.GetFocalPoint(), float) - np.array(cam.GetPosition(), float)
+            norm = float(np.linalg.norm(vec))
+            return vec / norm if norm else vec
+
+        inspector.set_camera_preset("+yz")
+        s0 = sight()
+        u0 = np.array(cam.GetViewUp(), float)
+        # The preset must be face-on for the plane-view detector to engage.
+        axis_aligned = float(np.max(np.abs(s0))) >= 1.0 - 1e-3
+
+        sights = [s0]
+        ups = [u0]
+        for _ in range(4):
+            inspector.rotate_camera_view(90)
+            sights.append(sight())
+            ups.append(np.array(cam.GetViewUp(), float))
+
+        sight_drift = max(float(np.linalg.norm(sights[k] - s0)) for k in range(1, 5))
+        up_return = float(np.linalg.norm(ups[4] - ups[0]))
+        per_click_up = min(float(np.linalg.norm(ups[k + 1] - ups[k])) for k in range(4))
+
+        result.detail["plane_view_axis_aligned"] = bool(axis_aligned)
+        result.detail["sight_line_drift"] = round(sight_drift, 4)
+        result.detail["viewup_return_delta"] = round(up_return, 4)
+        result.detail["min_per_click_viewup_move"] = round(per_click_up, 4)
+
+        if not axis_aligned:
+            result.passed = False
+            result.notes.append(
+                f"the +yz preset sight line {s0.round(3).tolist()} is not axis-aligned -- "
+                "the plane-view detector would not engage"
+            )
+        # A roll never moves the camera position, so the sight line into the screen
+        # is invariant; an azimuth would swing it OFF the plane (drift ~ sqrt(2)).
+        if sight_drift > 1e-3:
+            result.passed = False
+            result.notes.append(
+                f"the sight line moved (drift {sight_drift:.4f}) -- the rotate azimuthed off "
+                "the plane instead of rolling about the axis into the monitor (0159)"
+            )
+        if up_return > 1e-2:
+            result.passed = False
+            result.notes.append(
+                f"four 90 rolls did not return the view-up to the start (delta {up_return:.4f})"
+            )
+        if per_click_up < 1e-2:
+            result.passed = False
+            result.notes.append(
+                f"a rotate click barely moved the view-up (min {per_click_up:.4f}) -- the "
+                "button does not roll the view"
+            )
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"navigation cube plane-roll live drive raised: {exc!r}")
+
+    if not result.passed and not result.notes:
+        result.notes.append("navigation cube plane-roll phase failed without detail")
     return result
 
 
@@ -8965,6 +9053,7 @@ def main() -> int:
             phase_147_navigation_cube,
             phase_148_navigation_cube_click,
             phase_149_navigation_cube_rotate,
+            phase_150_navigation_cube_plane_roll,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

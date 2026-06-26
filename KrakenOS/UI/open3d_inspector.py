@@ -10321,16 +10321,40 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         self.render()
 
-    def rotate_camera_azimuth(self, angle_deg: float) -> None:
-        """Swing the camera ``angle_deg`` degrees around the scene -- a turntable
-        rotation about the view-up vector, centred on the focal point.
+    def _camera_sight_line_is_axis_aligned(self, camera, tol: float = 1.0e-3) -> bool:
+        """True when the camera looks straight down a principal axis -- a face-on
+        plane view (the YZ/XY/XZ presets, whose sight line is +-X/+-Y/+-Z).
 
-        bugs/0158: the rotate-view toolbar buttons call this with +-90, so each
-        click spins the whole scene 90 degrees and two clicks (180) views it from
-        the OPPOSITE side -- an object at NW facing SE ends up at SE facing NW with
-        the image plane taking its former spot. This is the FreeCAD navigation-cube
-        "rotate" arrow behaviour; the interactive cube (bugs/0156/0157) only SNAPS
-        to a face/edge/corner orthographic view, it never sweeps between them.
+        bugs/0159: the rotate-view buttons ROLL about the sight line in this case
+        instead of azimuthing -- an azimuth would swing the camera OFF the plane
+        onto a neighbouring face. A normalised sight line is axis-aligned when its
+        largest component is ~1 (so the other two are ~0).
+        """
+        try:
+            pos = np.asarray(camera.GetPosition(), dtype=float)
+            foc = np.asarray(camera.GetFocalPoint(), dtype=float)
+        except Exception:
+            return False
+        sight = foc - pos
+        norm = float(np.linalg.norm(sight))
+        if norm <= 0.0:
+            return False
+        return float(np.max(np.abs(sight / norm))) >= 1.0 - tol
+
+    def rotate_camera_view(self, angle_deg: float) -> None:
+        """Swing the whole view ``angle_deg`` degrees per click -- the rotate-view
+        toolbar buttons (bugs/0158, refined by bugs/0159). The axis depends on the
+        view, matching the FreeCAD navigation-cube "rotate" arrows:
+
+        * **Oblique / Iso** -- a turntable about the view-up vector, centred on the
+          focal point (``vtkCamera.Azimuth``). Two clicks (180) views the scene
+          from the OPPOSITE side: an object at NW facing SE ends at SE facing NW
+          with the image plane taking its former spot.
+        * **Face-on plane view** (the sight line is along a principal axis, e.g.
+          the YZ/XY/XZ presets) -- a ROLL about the sight line, the axis going
+          straight INTO the screen (``vtkCamera.Roll``). Azimuth there would swing
+          the camera OFF the plane onto a different face; the user wants the plane
+          to spin in place about the perpendicular-to-the-monitor axis (bugs/0159).
 
         The jump is treated like a SETTLED orbit -- _on_camera_interaction re-fits
         the clip range (bugs/0048), re-squares the perpendicular thickness labels
@@ -10343,12 +10367,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if camera is None:
             return
         try:
-            # Azimuth spins the camera about the view-up vector. Do NOT
-            # OrthogonalizeViewUp afterwards: that would re-tilt the view-up onto
-            # the new (slanted) sight line, so each click would rotate about a
-            # drifting axis and four 90 clicks would not return to the start.
-            # Leaving the view-up fixed makes this a true turntable.
-            camera.Azimuth(float(angle_deg))
+            if self._camera_sight_line_is_axis_aligned(camera):
+                # Face-on plane view: spin about the sight line (the axis into the
+                # monitor) so the plane stays face-on and rotates in place.
+                camera.Roll(float(angle_deg))
+            else:
+                # Oblique / Iso: turntable about the view-up. Do NOT
+                # OrthogonalizeViewUp afterwards -- that would re-tilt the view-up
+                # onto the new (slanted) sight line, so each click would rotate
+                # about a drifting axis and four 90 clicks would not return to the
+                # start. Leaving the view-up fixed makes this a true turntable.
+                camera.Azimuth(float(angle_deg))
         except Exception:
             return
         try:

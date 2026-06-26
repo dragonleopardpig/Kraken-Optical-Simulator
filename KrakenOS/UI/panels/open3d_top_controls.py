@@ -66,18 +66,18 @@ class Open3DTopControlsPanel:
                 command=lambda value=preset: self.inspector.set_camera_preset(value),
                 padx=(2, 0),
             )
-        # bugs/0158: swing the whole view 90 degrees about the scene (turntable /
-        # azimuth) -- two clicks (180) views it from the OPPOSITE side, so an object
-        # at NW facing SE ends at SE facing NW with the image plane taking its spot.
-        # These are FreeCAD's navigation-cube "rotate" arrows; the interactive cube
-        # only snaps to a face, it never sweeps between views.
+        # bugs/0158/0159: swing the whole view 90 degrees per click -- FreeCAD's
+        # navigation-cube "rotate" arrows. The axis is view-aware (rotate_camera_view):
+        # an oblique/Iso view turntables about the view-up (two clicks views it from
+        # the OPPOSITE side, NW-facing-SE -> SE-facing-NW); a face-on plane view rolls
+        # about the sight line (the axis into the monitor) so the plane spins in place.
         ttk.Label(view_toolbar, text="Rotate").pack(side="left", padx=(10, 4))
         for label, angle in (("↺", -90), ("↻", 90)):
             pack_command_button(
                 view_toolbar,
                 label,
                 width=3,
-                command=lambda value=angle: self.inspector.rotate_camera_azimuth(value),
+                command=lambda value=angle: self.inspector.rotate_camera_view(value),
                 padx=(2, 0),
             )
         pack_commit_checkbutton(
