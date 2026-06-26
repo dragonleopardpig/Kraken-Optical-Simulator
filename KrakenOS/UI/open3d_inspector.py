@@ -11486,9 +11486,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 )
                 _c, scene_radius = self._scene_bounds()
                 anchor = anchor + np.asarray(spec["normal"], dtype=float) * max(float(scene_radius) * 0.01, 0.4)
-                factor_text = f"  (×{factor:.0f})" if factor >= 1.5 else ""
+                # Make the exaggeration explicit beside the bowl so the user never
+                # mistakes the magnified dish for the literal sag.
+                if factor >= 1.5:
+                    label_text = (
+                        f"Best-focus surface (field curvature)\n"
+                        f"true depth {peak_valley:.3g} mm P-V — shape exaggerated ×{factor:.0f} to show"
+                    )
+                else:
+                    label_text = f"Best-focus surface (field curvature)\ntrue depth {peak_valley:.3g} mm P-V (true scale)"
                 actor = vtkBillboardTextActor3D()
-                actor.SetInput(f"Best-focus surface · field curv P-V {peak_valley:.3g} mm{factor_text}")
+                actor.SetInput(label_text)
                 actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
                 try:
                     actor.PickableOff()
