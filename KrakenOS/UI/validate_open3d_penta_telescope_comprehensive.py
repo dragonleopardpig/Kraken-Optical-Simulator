@@ -9103,6 +9103,37 @@ def phase_154_inscribed_sensor_recommendation(
     return result
 
 
+def phase_155_fov_label_edge_on_clearance(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The object FOV label must stand clear of the object plane + ray bundle in the
+    -YZ view the user works in (bugs/0164). The old code offset the label purely
+    in-plane (-X for the +Z object axis), which projects to nothing edge-on, so the
+    label landed on the object disc + rays. The fix lifts it along the object normal
+    behind the object plus a +Y component. The display-free guard checks the label is
+    carried behind the object, projects clear of the FOV box edge-on, keeps its text,
+    leaves the image-plane labels lifted, and still emits nothing for an infinite
+    object.
+    """
+    result = PhaseResult(
+        name="Phase 155: object FOV label lifts clear of the object plane + rays in -YZ (0164)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_fov_label_edge_on_clearance import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"FOV-label clearance guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("FOV-label clearance phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9303,6 +9334,7 @@ def main() -> int:
             phase_152_sequential_cone_is_cone,
             phase_153_launch_within_camera_fov,
             phase_154_inscribed_sensor_recommendation,
+            phase_155_fov_label_edge_on_clearance,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -254,11 +254,13 @@ def detector_coverage_label_specs(
     """Direct 3D labels for the coverage overlay (pure geometry, no VTK).
 
     Each spec is ``{"text", "anchor", "color"}``. Anchors are placed just
-    outside each element on its plane, at distinct clock angles, so the labels
-    never overlap each other or the drawn geometry. The image-plane labels share
-    a plane and so are spread around the circle; the object FOV label sits on the
-    far object plane and never competes with them. ``object_axis``/``image_axis``
-    default to ``image_point - object_point`` (single axis); a fold passes both.
+    outside each element, at distinct clock angles, so the labels never overlap
+    each other or the drawn geometry. The image-plane labels share a plane and so
+    are spread around the circle; both the image labels and the object FOV label
+    are lifted off their plane along the normal (away from the optics) so an
+    edge-on view -- the -YZ the user works in -- does not project them onto the
+    plane + ray bundle. ``object_axis``/``image_axis`` default to
+    ``image_point - object_point`` (single axis); a fold passes both.
     """
     obj_pt = np.asarray(object_point, dtype=float).reshape(3)
     img_pt = np.asarray(image_point, dtype=float).reshape(3)
@@ -324,14 +326,24 @@ def detector_coverage_label_specs(
             )
         )
 
-    # Object plane: the FOV rectangle label (finite object only).
+    # Object plane: the FOV rectangle label (finite object only). Lift it OUTWARD
+    # along the object-plane normal, AWAY from the optics -- the same trick the
+    # image-plane labels use above. The in-plane offset here is along X, which an
+    # edge-on view (the -YZ the user works in) projects to nothing, so without the
+    # lift the label sat right on the object plane + ray bundle; the normal lift
+    # carries it into the empty space behind the object, and the 0deg angle adds a
+    # vertical component so it also clears the dotted optical axis.
     if object_mode_finite and metrics.object_fov_half_width > 1e-9 and metrics.object_fov_half_height > 1e-9:
         fov_diag = float((metrics.object_fov_half_width ** 2 + metrics.object_fov_half_height ** 2) ** 0.5)
+        fov_reach = fov_diag * (1.0 + _LABEL_MARGIN) + _LABEL_GAP
+        _onormal = np.asarray(object_axis if object_axis is not None else default_axis, dtype=float).reshape(3)
+        _on = float(np.linalg.norm(_onormal))
+        obj_label_center = obj_pt - (_onormal / _on) * fov_reach if _on > 1e-9 else obj_pt
         labels.append(
             place(
-                obj_pt,
-                fov_diag * (1.0 + _LABEL_MARGIN) + _LABEL_GAP,
-                90.0,
+                obj_label_center,
+                fov_reach,
+                0.0,
                 f"FOV {2 * metrics.object_fov_half_width:.1f}×{2 * metrics.object_fov_half_height:.1f}",
                 _OBJECT_FOV,
                 ou, ov,

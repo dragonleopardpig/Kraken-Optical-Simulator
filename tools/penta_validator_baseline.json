@@ -156,7 +156,8 @@
     "151": "pass",
     "152": "pass",
     "153": "pass",
-    "154": "pass"
+    "154": "pass",
+    "155": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -313,6 +314,7 @@
     "151": "navigation-cube snap zooms-to-extent like the preset buttons (0160)",
     "152": "sequential point source revolves into a cone; odd-N slice is the even fan (0161)",
     "153": "registered-camera rays launch within the object FOV box (0162)",
-    "154": "bare lens recommends the inscribed sensor, no fabricated square (0163)"
+    "154": "bare lens recommends the inscribed sensor, no fabricated square (0163)",
+    "155": "object FOV label lifts clear of the object plane + rays in -YZ (0164)"
   }
 }
