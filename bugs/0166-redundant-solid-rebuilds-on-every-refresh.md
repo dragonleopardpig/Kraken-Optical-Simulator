@@ -1,8 +1,11 @@
 # 0166 — Open 3D: the optical solids re-mesh many times per refresh ("Creating solid objects for optical elements" prints ~46×)
 
-> Status: **DOCUMENTED — fix deferred (next-priority perf fix).** No code change
-> yet. This is a performance/redundancy issue, not a correctness bug — the optics
-> are right, the solids are just rebuilt far more often than necessary.
+> Status: **FIXED (primary + secondary wins shipped).** Performance/redundancy
+> issue, not a correctness bug — the optics are right, the solids were just rebuilt
+> far more often than necessary. Measured on `machine_vision_150mm_GN.py`:
+> **overlay toggle rebuild → 0 solid builds** (re-render only), and **one genuine
+> refresh 4 → 1 solid mesh.** Tertiary levers (broader `force_rebuild` relaxation,
+> 2D/3D build sharing, NS bbox cull) are listed at the bottom as deferred.
 
 ## Symptom (user's words)
 
@@ -70,31 +73,76 @@ is fully explained.
    (`refresh_from_editor` → `build_inspector_refresh`) that rebuilds the optical
    solids from zero.
 
-## Recommended fix (in priority order)
+## Fix — shipped
 
-1. **Primary win — overlay toggles must not re-mesh solids.** Detector / Refs /
-   Thickness are *display overlays*; the geometry is unchanged. The toggle handlers
-   should reuse the cached built `system` + `_last_scene_bundle` and only
-   re-derive the overlay layer, instead of going through a full
-   `_build_preview_system_rays_bundle`. This removes ~3 refreshes' worth of builds
-   (roughly half of the 46).
-2. **Secondary — share one built system across the per-refresh passes.** Within a
-   single refresh, the display build (`build_system`), the paraxial reference
-   (`paraxial_tools.py:44`), and the per-branch analysis pupils
-   (`analysis_compute_workflow.py:50`) each construct their own `KrakenSys`. They
-   could share one geometry-built system (the prescription is identical), or the
-   paraxial/pupil passes could build with `build=0` (no solids) since they don't
-   need the meshes.
-3. **Tertiary — don't blanket-`force_rebuild` for saved promoted-STEP rows.** The
-   `force_rebuild` at `three_d_scene_tools.py:505` exists so live/edited STEP
-   overlays re-trace, but a *saved, unchanged* promoted solid does not need a
-   re-mesh on every refresh. Gate `force_rebuild` on the native rows having
-   actually changed (signature) rather than merely being present.
+### Primary: overlay toggles re-render the cached scene (0 builds)
 
-## When implemented (workflow reminder)
+The three checkboxes (`Refs` → `show_reference_surfaces_var`, `Det` →
+`show_detector_overlays_var`, `Thickness` → `show_physical_distances_var`, plus
+terminal-diagnostics and placement-handles) all fire
+`Kraken3DInspector._on_scene_visibility_changed`
+(`open3d_inspector.py`). It used to call `refresh_from_editor()`
+**unconditionally** — and on a saved promoted beam-splitter scene that forces a
+full retrace (`has_promoted_step_optical_solid_rows` →
+`requires_open3d_retrace = True` in `build_inspector_refresh`), which re-meshes
+every solid.
 
-This is a perf optimization with **no optics behavior change**. Add a display-free
-guard that pins the rebuild count: instrument `Prerequisites3DSolids` and assert
-that toggling an overlay on an already-open scene performs **0** additional solid
-builds, and that a single refresh stays within an expected small bound. Then a
-penta phase + baseline entry as usual.
+`refresh_scene` (`open3d_scene_refresh.py`) reads each of those visibility vars
+**live at render time** from the passed `system`/`rays`/`scene_bundle` — toggling
+one only changes which actors draw, never the geometry or the trace. So the handler
+now mirrors the Show Rays fast toggle:
+
+  * new gate `Open3DTraceRefreshService.can_reuse_current_scene_for_display_toggle`
+    (`open3d_trace_refresh.py`) — reuse whenever the inspector holds a valid,
+    non-dirty cached scene. Unlike `can_reuse_current_scene_for_show_rays` it has
+    **no** show-rays / live-step-overlay coupling (that coupling would force a
+    rebuild on the user's promoted-BS scene);
+  * `_on_scene_visibility_changed` re-renders via `refresh_scene(_current_system,
+    _current_rays, _current_row_names, scene_bundle=_current_scene_bundle)` when the
+    gate passes, and only falls back to `refresh_from_editor()` when there is no
+    cached scene yet or a geometry edit dirtied the preview trace.
+
+### Secondary: paraxial-only systems skip the output-port force-mesh (4 → 1)
+
+The real culprit behind the per-refresh multi-build was **not** separate `build=1`
+constructions — it was `apply_optical_solid_output_port_system_overrides`
+(`nonseq_output_ports.py:1494`, the `needs_build` path) **force-meshing every
+system that lacks solids**, including the `build=0` paraxial systems that only run
+`PupilCalc` / `Parax` and never NS-trace the meshes. On the BS scene that
+force-meshed the cube once per branch pupil + once for the magnification solve.
+
+`_build_system_from_specs` (`layout_editor.py`) gained
+`apply_optical_solid_output_ports: bool = True`; the overrides are skipped when
+False. The two paraxial-only callers pass False (threaded through the
+`paraxial_tools` / `analysis_compute_workflow` wrappers):
+
+  * `analysis_compute_workflow._pupil_model_inputs` (per-branch entrance pupil);
+  * `paraxial_tools._exact_paraxial_solution_for_rows` (finite paraxial mag / EFL /
+    cardinals).
+
+The default stays True so the worker analysis trace (`_build_cached_system_from_specs`,
+`build=0`) still force-meshes — it genuinely NS-traces through the solids.
+
+### Verified (display-free)
+
+`validate_open3d_overlay_toggle_no_rebuild`: a real refresh of the scene builds
+solids (baseline), the display-toggle gate is reusable immediately after (toggle =
+0 builds), dirtying the trace flips it back to rebuild, a missing cache → rebuild,
+and `_on_scene_visibility_changed` + `refresh_scene` are render-only. The
+`tools/probe_refresh_builds.py` solid counter shows one refresh **4 → 1** build.
+Regression-clean: per-branch pupil, first-order reference, two-arm fold, camera-FOV
+launch, aperture-stop NS vignette, inscribed-sensor, cooke-triplet / double-gauss
+cardinals all still pass. Penta phase 157 + baseline added. The rendered scene
+itself still needs an in-app eyeball (headless has no VTK).
+
+## Deferred (further levers, not yet done)
+
+* **Broader `force_rebuild` relaxation.** `_build_preview_system_rays_bundle`
+  still sets `force_rebuild=True` whenever the scene merely *has* saved promoted
+  solids (`three_d_scene_tools.py:505`), bypassing the `build_system` signature
+  cache even when nothing changed — so two genuine refreshes (2D plot + 3D
+  inspector) on open each rebuild. Gating it on the native rows actually changing
+  would let them share one build. Riskier (the bugs/0085–0093 promoted/live-STEP
+  desync history), so left for a focused follow-up.
+* **NS broad-phase bbox cull** and the other trace-time levers in
+  `reference_open3d_perf_profiling` remain open.

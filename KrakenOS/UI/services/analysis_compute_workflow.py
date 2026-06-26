@@ -46,8 +46,19 @@ def _layout_module():
     return layout_editor_module
 
 
-def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=None) -> object:
-    return _layout_module()._build_system_from_specs(row_specs, build=build, setup=setup)
+def _build_system_from_specs(
+    row_specs: list[dict],
+    *,
+    build: int = 0,
+    setup=None,
+    apply_optical_solid_output_ports: bool = True,
+) -> object:
+    return _layout_module()._build_system_from_specs(
+        row_specs,
+        build=build,
+        setup=setup,
+        apply_optical_solid_output_ports=apply_optical_solid_output_ports,
+    )
 
 
 def _optional_cupy():
@@ -802,7 +813,14 @@ class AnalysisComputeWorkflowMixin:
             pupil_rows, _last_source_index = self._paraxial_reference_rows_for_layout(
                 source_rows, unfold_branch_tilts=(rows is not None)
             )
-            pupil_system = _build_system_from_specs(self._serializable_specs_for_rows(pupil_rows), build=0)
+            # bugs/0166: this build=0 system only feeds PupilCalc (paraxial first-order
+            # math); it never NS-traces through the solid meshes. Skip the output-port
+            # overrides so the beam-splitter solid is NOT force-meshed once per branch.
+            pupil_system = _build_system_from_specs(
+                self._serializable_specs_for_rows(pupil_rows),
+                build=0,
+                apply_optical_solid_output_ports=False,
+            )
         pupil_surface_index = self._pupil_surface_index_for_rows(pupil_rows)
         return pupil_system, pupil_rows, pupil_surface_index
 

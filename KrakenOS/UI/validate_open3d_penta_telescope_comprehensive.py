@@ -9165,6 +9165,39 @@ def phase_156_inpath_spacer_flag_survives_reload(
     return result
 
 
+def phase_157_overlay_toggle_no_rebuild(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Toggling a display-layer overlay (Refs / Det / Thickness) must RE-RENDER the
+    cached scene, never rebuild the optical solids + re-trace (bugs/0166). The three
+    checkboxes all fire ``_on_scene_visibility_changed``, which used to call
+    ``refresh_from_editor()`` unconditionally -- on a saved promoted beam-splitter
+    scene that forces a full retrace and re-meshes every solid (the user's ~46x
+    "Creating solid objects" prints). The handler now routes through
+    ``can_reuse_current_scene_for_display_toggle`` + a render-only ``refresh_scene``.
+    The display-free guard pins: a full refresh builds solids (baseline), the gate is
+    reusable immediately after (toggle = 0 builds), a dirtied trace flips it back to a
+    rebuild, and the handler + ``refresh_scene`` are render-only.
+    """
+    result = PhaseResult(
+        name="Phase 157: overlay toggles re-render the cached scene -- no solid rebuild (0166)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_overlay_toggle_no_rebuild import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"overlay-toggle no-rebuild guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("overlay-toggle no-rebuild phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9367,6 +9400,7 @@ def main() -> int:
             phase_154_inscribed_sensor_recommendation,
             phase_155_fov_label_edge_on_clearance,
             phase_156_inpath_spacer_flag_survives_reload,
+            phase_157_overlay_toggle_no_rebuild,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

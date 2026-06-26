@@ -227,6 +227,33 @@ class Open3DTraceRefreshService:
                 return False
         return True
 
+    def can_reuse_current_scene_for_display_toggle(self, inspector: Any) -> bool:
+        """Return True when a pure display-layer toggle can re-render the cached scene.
+
+        bugs/0166: the reference-surface / detector-overlay / thickness-dimension /
+        terminal-diagnostic / placement-handle visibility flags are read LIVE by
+        ``refresh_scene`` at render time from the passed system/rays/bundle --
+        toggling one only changes which actors are drawn, never the optical
+        geometry or the ray trace. So whenever the inspector still holds a valid,
+        non-dirty cached scene the toggle must be a render-only refresh.
+
+        Unlike ``can_reuse_current_scene_for_show_rays`` this has NO show-rays /
+        live-step-overlay coupling: a saved promoted beam-splitter scene sets
+        ``has_promoted_step_optical_solid_rows`` -> ``build_inspector_refresh``
+        forces a full retrace, which (via the output-port overrides) re-meshes
+        every solid on EVERY overlay toggle. The only reasons not to reuse are a
+        missing cached scene (nothing rendered yet) or a geometry edit that
+        dirtied the preview trace -- both fall through to a full rebuild.
+        """
+        for attr_name in ("_current_system", "_current_rays", "_current_scene_bundle"):
+            if getattr(inspector, attr_name, None) is None:
+                return False
+        if not list(getattr(inspector, "_current_row_names", []) or []):
+            return False
+        if bool(getattr(self.editor, "_preview_scene_trace_dirty", False)):
+            return False
+        return True
+
     def has_promoted_step_optical_solid_rows(self) -> bool:
         """Return True when saved row-backed STEP solids need an Open 3D trace."""
         try:

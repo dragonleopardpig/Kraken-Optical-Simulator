@@ -1951,7 +1951,13 @@ def _shared_setup(metal_catalogs=None):
     return setup
 
 
-def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=None) -> object:
+def _build_system_from_specs(
+    row_specs: list[dict],
+    *,
+    build: int = 0,
+    setup=None,
+    apply_optical_solid_output_ports: bool = True,
+) -> object:
     # bugs/0065: a promoted optical SOLID parked clear of the beam is a
     # display-only scene body, not an optical element. Its lateral decenter
     # would otherwise propagate as a surface.DespX/DespY coordinate break and
@@ -2065,7 +2071,15 @@ def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=Non
         )
     except Exception:
         pass
-    apply_optical_solid_output_port_system_overrides(system, row_specs)
+    # bugs/0166: the output-port overrides force a full build=1 pyVista solid mesh
+    # when the system has none (the ``needs_build`` path in nonseq_output_ports) so
+    # the non-seq trace can intersect the solids. A paraxial-only consumer (the
+    # per-branch pupil / first-order reference built with build=0) never NS-traces
+    # through the meshes -- it only runs PupilCalc -- so applying the overrides
+    # there force-meshes the beam-splitter solid once PER BRANCH for nothing. Such
+    # callers pass ``apply_optical_solid_output_ports=False`` to skip the force build.
+    if apply_optical_solid_output_ports:
+        apply_optical_solid_output_port_system_overrides(system, row_specs)
     return system
 
 

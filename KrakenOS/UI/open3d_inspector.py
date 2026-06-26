@@ -1681,6 +1681,27 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             show_thickness_dimensions=bool(self.editor.show_physical_distances_var.get()),
             counts=self._debug_actor_counts(),
         )
+        # bugs/0166: reference-surface / detector / thickness / terminal-diagnostic /
+        # placement-handle visibility is read live by refresh_scene at RENDER time,
+        # so toggling one must re-render the cached scene -- NOT rebuild the optical
+        # solids + re-trace. On a saved promoted beam-splitter scene refresh_from_editor
+        # forces a full retrace (has_promoted_step_optical_solid_rows) that re-meshes
+        # every solid (~4 builds/toggle). Reuse the cached scene when it is still valid
+        # (mirrors the Show Rays fast toggle); fall back to a rebuild only when there is
+        # no cached scene yet or a geometry edit dirtied the preview trace.
+        if self.editor._open3d_trace_refresh_service().can_reuse_current_scene_for_display_toggle(self):
+            self._debug_trace(
+                "scene_visibility_fast_toggle_refresh",
+                counts=self._debug_actor_counts(),
+            )
+            self.refresh_scene(
+                self.__dict__.get("_current_system"),
+                self.__dict__.get("_current_rays"),
+                list(self.__dict__.get("_current_row_names", []) or []),
+                scene_bundle=self.__dict__.get("_current_scene_bundle"),
+                reset_camera=False,
+            )
+            return
         self.refresh_from_editor()
 
     def _on_clipped_rays_changed(self) -> None:

@@ -40,8 +40,19 @@ def _layout_module():
     return layout_editor_module
 
 
-def _build_system_from_specs(row_specs: list[dict], *, build: int = 0, setup=None) -> object:
-    return _layout_module()._build_system_from_specs(row_specs, build=build, setup=setup)
+def _build_system_from_specs(
+    row_specs: list[dict],
+    *,
+    build: int = 0,
+    setup=None,
+    apply_optical_solid_output_ports: bool = True,
+) -> object:
+    return _layout_module()._build_system_from_specs(
+        row_specs,
+        build=build,
+        setup=setup,
+        apply_optical_solid_output_ports=apply_optical_solid_output_ports,
+    )
 
 
 def _short_error_message(exc: Exception, limit: int = 220) -> str:
@@ -583,7 +594,11 @@ class ParaxialToolsMixin:
             warnings.simplefilter("ignore", RuntimeWarning)
             with io.StringIO() as stdout_buf, io.StringIO() as stderr_buf:
                 with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
-                    solve_system = _build_system_from_specs(solve_specs, build=0)
+                    # bugs/0166: paraxial-only solve (Parax); never NS-traces the
+                    # meshes, so skip the output-port overrides' per-branch force-mesh.
+                    solve_system = _build_system_from_specs(
+                        solve_specs, build=0, apply_optical_solid_output_ports=False
+                    )
                     _, _, _, a, b, c, d, effl, ppa, ppp, *_rest = solve_system.Parax(solve_wavelength)
         result = (float(a), float(b), float(c), float(d), float(effl), float(ppa), float(ppp))
         self._paraxial_cache_signature = signature

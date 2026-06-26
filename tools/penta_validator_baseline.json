@@ -158,7 +158,8 @@
     "153": "pass",
     "154": "pass",
     "155": "pass",
-    "156": "pass"
+    "156": "pass",
+    "157": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -317,6 +318,7 @@
     "153": "registered-camera rays launch within the object FOV box (0162)",
     "154": "bare lens recommends the inscribed sensor, no fabricated square (0163)",
     "155": "object FOV label lifts clear of the object plane + rays in -YZ (0164)",
-    "156": "in-path trailing-spacer flag survives reload, big circle stays gone (0165)"
+    "156": "in-path trailing-spacer flag survives reload, big circle stays gone (0165)",
+    "157": "overlay toggles re-render the cached scene -- no solid rebuild (0166)"
   }
 }
