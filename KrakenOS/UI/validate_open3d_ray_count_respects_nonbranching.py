@@ -64,6 +64,9 @@ class _FakeEditor:
     _sample_ray_count_cone_points = TracePreviewSamplingMixin._sample_ray_count_cone_points
     _sample_ray_count_pupil_points = TracePreviewSamplingMixin._sample_ray_count_pupil_points
     _cone_azimuth_count = TracePreviewSamplingMixin._cone_azimuth_count
+    # bugs/0161: the cone sampler now gates on _launch_cone_prefers_flat_fan
+    # (flat only for the 0126 non-seq inline solid; sequential scenes revolve).
+    _launch_cone_prefers_flat_fan = TracePreviewSamplingMixin._launch_cone_prefers_flat_fan
 
     def __init__(self, trace_state: dict, rows: list, ray_count: int = 20) -> None:
         self._trace_state = dict(trace_state)

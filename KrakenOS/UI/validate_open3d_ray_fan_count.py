@@ -96,25 +96,31 @@ def run_checks() -> tuple[bool, list[str]]:
         if any(b < a for a, b in zip(samps, samps[1:])):
             failures.append(f"FAIL: Samp inversion for {pattern} is not monotone in N")
 
-    # 5) bugs/0096: the WORLD_CONE sampler (the path "Pupil / field" scenes use,
-    #    not the grid bundles above) must honor a meridional fan as a FLAT N-ray
-    #    fan -- it previously revolved it into 1 + (N//2)*azimuth rays (N=5 -> 33)
-    #    in 3D and a ring-slice in 2D. A flat fan sits entirely at X=0, so the 3D
-    #    bundle and the 2D X=0 slice both show exactly N. Non-seq/folded scenes
-    #    (prefers_meridional_fan False) still revolve into a filled cone.
+    # 5) bugs/0096 + 0126 + 0161: the WORLD_CONE sampler (the path "Pupil / field"
+    #    scenes use, not the grid bundles above) keeps a FLAT N-ray fan ONLY for
+    #    the 0126 carve-out -- a scene forced non-sequential by an in-line
+    #    refractive mesh solid, whose 1 + (N//2)*azimuth mesh traces (N=20 -> 201)
+    #    ran ~70 s. bugs/0161: a plain SEQUENTIAL point source now revolves into a
+    #    real cone (cheap sequential traces); its X=0 slice still shows exactly N
+    #    for an odd Ray Count. Branching / folded scenes revolve into the disk.
     from KrakenOS.UI.services.trace_preview_sampling import TracePreviewSamplingMixin
 
     class _ConeStub:
         rows: list = []
+        # Bind the real cone gate so the guard exercises production logic.
+        _launch_cone_prefers_flat_fan = TracePreviewSamplingMixin._launch_cone_prefers_flat_fan
 
-        def __init__(self, prefers: bool, count: int) -> None:
-            self._prefers, self._count = prefers, count
+        def __init__(self, prefers: bool, count: int, *, use_nonseq: bool = False) -> None:
+            self._prefers, self._count, self._use_nonseq = prefers, count, use_nonseq
 
         def _current_ray_count(self) -> int:
             return self._count
 
         def _launch_pupil_prefers_meridional_fan(self) -> bool:
             return self._prefers
+
+        def _resolved_trace_mode(self, *, system=None) -> dict:
+            return {"use_nonseq": self._use_nonseq}
 
         def _current_display_slice_axis(self) -> str:
             return "y"
@@ -123,14 +129,24 @@ def run_checks() -> tuple[bool, list[str]]:
             return 16
 
     cone = TracePreviewSamplingMixin._sample_ray_count_cone_points
+    # 0126 carve-out: a non-seq in-line refractive solid keeps the FLAT N-ray fan.
     for n in (3, 5, 7, 11):
-        pts = np.asarray(cone(_ConeStub(True, n), 25.0), dtype=float)
+        pts = np.asarray(cone(_ConeStub(True, n, use_nonseq=True), 25.0), dtype=float)
         if pts.shape[0] != n:
-            failures.append(f"FAIL: world_cone meridional fan N={n} drew {pts.shape[0]} rays, expected {n}")
+            failures.append(f"FAIL: 0126 carve-out fan N={n} drew {pts.shape[0]} rays, expected {n}")
         elif float(np.max(np.abs(pts[:, 0]))) > 1e-9:
-            failures.append(f"FAIL: world_cone meridional fan N={n} is not meridional (X != 0)")
+            failures.append(f"FAIL: 0126 carve-out fan N={n} is not meridional (X != 0)")
         elif len(set(np.round(pts[:, 1], 6))) != n:
-            failures.append(f"FAIL: world_cone meridional fan N={n} has duplicate heights")
+            failures.append(f"FAIL: 0126 carve-out fan N={n} has duplicate heights")
+    # 0161: a plain sequential point source revolves into a real cone (not a fan).
+    seq_cone = np.asarray(cone(_ConeStub(True, 5, use_nonseq=False), 25.0), dtype=float)
+    if seq_cone.shape[0] <= 5:
+        failures.append(
+            f"FAIL: sequential world_cone should revolve into a cone (bugs/0161), got {seq_cone.shape[0]} rays"
+        )
+    elif not bool(np.any((np.abs(seq_cone[:, 0]) > 1e-9) & (np.abs(seq_cone[:, 1]) > 1e-9))):
+        failures.append("FAIL: sequential world_cone has no off-meridian spokes (still a flat fan, bugs/0161)")
+    # Branching / non-seq scenes revolve into the area-filling disk.
     revolved = np.asarray(cone(_ConeStub(False, 5), 25.0), dtype=float)
     if revolved.shape[0] <= 5:
         failures.append(f"FAIL: non-seq world_cone should revolve into a filled cone, got {revolved.shape[0]} rays")

@@ -7,6 +7,10 @@ from collections.abc import Sequence
 from tkinter import ttk
 from typing import Any
 
+from KrakenOS.UI.source_trace_helpers import (
+    RAY_FAN_COUNT_DEFAULT,
+    RAY_FAN_COUNT_VALUES,
+)
 from KrakenOS.UI.widgets import (
     grid_commit_checkbutton,
     grid_labeled_commit_combobox,
@@ -110,13 +114,14 @@ class MainTraceDisplayControlsPanel:
             width=12,
         )
 
-        self.ray_count_var = tk.StringVar(value="31")
-        ray_count_entry = grid_labeled_commit_entry(
+        self.ray_count_var = tk.StringVar(value=RAY_FAN_COUNT_DEFAULT)
+        ray_count_entry = grid_labeled_commit_combobox(
             parent,
             2,
             0,
             "Ray fan count",
             self.ray_count_var,
+            values=RAY_FAN_COUNT_VALUES,
             on_commit=self._commit_trace_controls,
             on_focus_in=self._begin_history_capture,
             width=12,
@@ -391,6 +396,7 @@ class MainTraceDisplayControlsPanel:
             "ray_count_var",
             ray_count_entry,
             lambda: True,
+            normal_state="readonly",
         )
         self._register_left_mode_control(
             "ray_height_factor_var",

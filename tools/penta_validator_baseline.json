@@ -153,7 +153,8 @@
     "148": "pass",
     "149": "pass",
     "150": "pass",
-    "151": "pass"
+    "151": "pass",
+    "152": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -307,6 +308,7 @@
     "148": "navigation cube click forwards to the camera (snap + reverse)",
     "149": "rotate-view buttons swing the camera 90 (azimuth turntable)",
     "150": "rotate-view rolls about the sight line in a plane view (0159)",
-    "151": "navigation-cube snap zooms-to-extent like the preset buttons (0160)"
+    "151": "navigation-cube snap zooms-to-extent like the preset buttons (0160)",
+    "152": "sequential point source revolves into a cone; odd-N slice is the even fan (0161)"
   }
 }

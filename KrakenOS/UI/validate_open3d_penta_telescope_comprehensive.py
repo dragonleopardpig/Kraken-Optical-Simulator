@@ -9009,6 +9009,38 @@ def phase_151_navigation_cube_zoom_fit(
     return result
 
 
+def phase_152_sequential_cone_is_cone(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A plain SEQUENTIAL point source (object illumination) must revolve into a
+    real 3D cone, not collapse to a flat meridional fan (bugs/0161). The flat fan
+    is kept ONLY for the bug-0126 carve-out (a scene forced non-seq by an in-line
+    refractive mesh solid, whose revolved mesh traces are too slow). The cone's
+    X=0 slice stays the even Ray-Count fan, and for an ODD Ray Count it is exactly
+    linspace(-R, R, N) -- hence the Ray Count control is discretised to odd steps.
+    The display-free guard binds the real cone sampler/gate and checks the cone
+    geometry, the slice, the 0126 carve-out, the odd discrete steps, and that the
+    cone totals stay under the draw budget.
+    """
+    result = PhaseResult(
+        name="Phase 152: sequential point source revolves into a cone; odd-N slice is the even fan (0161)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_sequential_cone_is_cone import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"sequential-cone guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("sequential-cone phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9206,6 +9238,7 @@ def main() -> int:
             phase_149_navigation_cube_rotate,
             phase_150_navigation_cube_plane_roll,
             phase_151_navigation_cube_zoom_fit,
+            phase_152_sequential_cone_is_cone,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

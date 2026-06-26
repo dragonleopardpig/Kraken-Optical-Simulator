@@ -760,6 +760,31 @@ class TracePreviewSamplingMixin:
             return False
         return True
 
+    def _launch_cone_prefers_flat_fan(self) -> bool:
+        """Whether the 3D launch CONE stays a flat meridional fan (vs revolving).
+
+        bugs/0161: a plain sequential point source revolves into a real 3D cone
+        (cheap sequential traces) so it reads as a cone, while its X=0 meridional
+        slice stays the even Ray-Count fan -- an odd Ray Count makes that slice
+        exactly N rays (hence the discrete odd Ray-Count steps). The flat fan is
+        kept ONLY for the bug-0126 carve-out: a scene forced non-sequential by an
+        in-line refractive mesh solid, whose mesh traces are too slow to revolve
+        (Ray Count 20 -> 201 traces -> ~70 s). The 2D pupil
+        (``_sample_ray_count_pupil_points``) still follows
+        ``_launch_pupil_prefers_meridional_fan`` and stays a flat fan either way.
+        """
+        if not self._launch_pupil_prefers_meridional_fan():
+            # Branching / folded / tilted scene: the area-filling revolved disk.
+            return False
+        # ``_launch_pupil_prefers_meridional_fan`` is True for BOTH a plain
+        # sequential scene and the 0126 non-seq inline-solid carve-out. Revolve
+        # the cheap sequential scene; keep the flat fan only for the non-seq solid.
+        try:
+            trace_state = self._resolved_trace_mode(system=self.__dict__.get("last_system"))
+        except Exception:
+            trace_state = {}
+        return bool(trace_state.get("use_nonseq"))
+
     def _sample_ray_count_pupil_points(self, max_radius: float) -> np.ndarray:
         """Generate exactly ``Ray Count`` deterministic 3D pupil samples."""
         radius = float(max_radius) if np.isfinite(float(max_radius)) else 0.0
@@ -826,14 +851,16 @@ class TracePreviewSamplingMixin:
         count = max(1, int(self._current_ray_count()))
         if count == 1:
             return np.asarray([[0.0, 0.0]], dtype=float)
-        if self._launch_pupil_prefers_meridional_fan():
-            # bugs/0096: a Meridional fan (sequential, non-folded scene) stays a
-            # FLAT fan of exactly N rays in the cone preview too. Revolving it
-            # (below) drew 1 + (count//2)*azimuth rays in 3D (N=5 -> 33) and only a
-            # ring-slice in the 2D layout. Mirror _sample_ray_count_pupil_points so
-            # the 3D bundle and its 2D X=0 slice both show exactly N. Non-seq /
-            # folded scenes (prefers_meridional_fan False) still revolve into the
-            # area-filling disk the branched-path 3D envelope needs.
+        if self._launch_cone_prefers_flat_fan():
+            # bugs/0096 + 0126: a non-seq scene forced off-sequential ONLY by an
+            # in-line refractive mesh solid keeps a FLAT fan of exactly N rays --
+            # revolving it into 1 + (count//2)*azimuth slow mesh traces (N=20 ->
+            # 201) ran ~70 s. bugs/0161: a plain SEQUENTIAL point source no longer
+            # collapses here -- it revolves (below) into a real cone (cheap
+            # sequential traces), and its X=0 slice stays the even N-ray fan
+            # because an odd Ray Count lands the meridional spokes on
+            # linspace(-radius, radius, count). Branching / folded scenes also
+            # revolve into the area-filling disk the 3D envelope needs.
             heights = np.linspace(-radius, radius, count)
             zeros = np.zeros(count, dtype=float)
             if self._current_display_slice_axis() == "x":

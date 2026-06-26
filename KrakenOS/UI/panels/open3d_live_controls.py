@@ -7,6 +7,7 @@ from collections.abc import Callable, Sequence
 from tkinter import ttk
 from typing import Any
 
+from KrakenOS.UI.source_trace_helpers import RAY_FAN_COUNT_VALUES
 from KrakenOS.UI.widgets import bind_combobox_commit, bind_mousewheel_scroll, grid_labeled_commit_entry
 
 
@@ -328,6 +329,7 @@ class Open3DLiveControlsPanel:
         values,
         *,
         handler=None,
+        sync_fields: bool = False,
         width: int = 12,
     ) -> ttk.Combobox:
         ttk.Label(parent, text=label).grid(row=row, column=column, sticky="w", pady=(0, 2), padx=(8 if column else 0, 0))
@@ -341,7 +343,7 @@ class Open3DLiveControlsPanel:
         combo.grid(row=row + 1, column=column, sticky="ew", pady=(0, 8), padx=(8 if column else 0, 0))
         bind_combobox_commit(
             combo,
-            lambda _event: self.inspector._commit_live_control_update(handler=handler),
+            lambda _event: self.inspector._commit_live_control_update(handler=handler, sync_fields=sync_fields),
             on_focus_in=self.editor._begin_history_capture,
         )
         return combo
@@ -369,7 +371,7 @@ class Open3DLiveControlsPanel:
             handler=self.editor._on_source_model_changed,
             width=14,
         )
-        self.live_labeled_entry(parent, 2, 0, "Ray count", "ray_count_var", sync_fields=True)
+        self.live_labeled_combo(parent, 2, 0, "Ray count", "ray_count_var", RAY_FAN_COUNT_VALUES, sync_fields=True)
         self.live_labeled_entry(parent, 2, 1, "Cone [deg]", "source_cone_angle_var")
         self.live_labeled_entry(parent, 4, 0, "Source radius", "source_radius_var")
         self.live_labeled_entry(parent, 4, 1, "Power", "source_power_var")

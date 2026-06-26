@@ -62,6 +62,12 @@ GAUSSIAN_WAIST_SIDE_VALUES = (
     GAUSSIAN_WAIST_SIDE_DEFAULT,
     "Waist after source",
 )
+# bugs/0161: Ray fan count is a discrete ODD set. A sequential point source's
+# launch cone is the meridional fan revolved about the axis; with an odd N the
+# cone's n_rings = (N-1)/2 lands the 90/270 deg spokes on linspace(-R, R, N), so
+# the 2D X=0 slice stays exactly the N-ray fan with even gaps while 3D fills in.
+RAY_FAN_COUNT_DEFAULT = "31"
+RAY_FAN_COUNT_VALUES = ("5", "9", "13", "21", "31", "41")
 PUPIL_PATTERN_DEFAULT = "Meridional fan"
 PUPIL_PATTERN_VALUES = (
     PUPIL_PATTERN_DEFAULT,
