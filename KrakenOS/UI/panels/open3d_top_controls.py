@@ -147,7 +147,7 @@ class Open3DTopControlsPanel:
             import_step_menu,
             (
                 MenuCommand("Import Optical STEP...", self.inspector.import_optical_step_overlay),
-                MenuCommand("Import Lens STEP...", lambda: self.inspector.import_step_overlay("lens")),
+                MenuCommand("Import Imaging Lens STEP...", lambda: self.inspector.import_step_overlay("lens")),
                 MenuCommand("Import Camera STEP...", lambda: self.inspector.import_step_overlay("camera")),
                 MenuCommand("Import LED STEP...", lambda: self.inspector.import_step_overlay("led")),
             ),

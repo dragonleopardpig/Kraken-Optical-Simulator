@@ -66,8 +66,8 @@ class StepOverlayImportService:
         self,
         dialog_parent: tk.Misc | None = None,
         *,
-        title: str = "Import lens STEP",
-        display_label: str = "Lens STEP",
+        title: str = "Import Imaging Lens STEP",
+        display_label: str = "Imaging Lens STEP",
         largest_component_only: bool = True,
         refresh_open_3d: bool = True,
     ) -> Path | None:
@@ -270,7 +270,7 @@ class StepOverlayImportService:
     def _step_overlay_display_label(label: str) -> str:
         label = str(label).strip().lower()
         if label == "lens":
-            return "Lens"
+            return "Imaging Lens"
         return {
             "optical": "Optical",
             "led": "LED",

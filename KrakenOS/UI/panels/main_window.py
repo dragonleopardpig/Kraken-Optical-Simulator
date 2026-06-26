@@ -52,7 +52,7 @@ class MainWindowBuilder:
         file_menu.add_command(label="Save", command=self.save_layout)
         file_menu.add_command(label="Save As", command=self.save_layout_as)
         file_menu.add_separator()
-        file_menu.add_command(label="Import Lens STEP...", command=self.import_lens_step)
+        file_menu.add_command(label="Import Imaging Lens STEP...", command=self.import_lens_step)
         file_menu.add_command(label="Import Camera STEP...", command=self.import_camera_step)
         file_menu.add_command(label="Import LED STEP...", command=self.import_led_step)
         file_menu.add_command(label="Clear CAD Axis Offsets", command=self.clear_step_axis_offsets)

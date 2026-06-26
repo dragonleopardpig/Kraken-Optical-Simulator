@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Display-free guard for bugs/0101: a decoration STEP overlay (LED source /
-camera body) must never be promoted into an optical mesh-solid or be assigned an
-optical surface function.
+"""Display-free guard for bugs/0101 + bugs/0155: a decoration STEP overlay (LED
+source / camera body / imaging lens) must never be promoted into an optical
+mesh-solid or be assigned an optical surface function.
 
 Root cause it locks down: a beam-splitter cube dragged to overlap the LED made
 the right-click pick resolve to the LED; the menu then promoted the 160-face LED
 and assigned it a Beam-Splitter face -> minutes-long trace + the cube no longer
 split. Decorations are not optical elements, so those actions are blocked.
+
+bugs/0155 folds the imaging lens into the same rule: it is vendor CAD whose optics
+we model with a native KrakenOS surrogate (NOT by tracing the STEP mesh), so it is
+a decoration with one synchronization -- the surrogate's Front/Rear Datum tracking
+the STEP front/rear faces via "Glue STEP to Surrogate" (a reset, not a promote).
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_decoration_not_promotable
@@ -61,12 +66,14 @@ def run_checks() -> "tuple[bool, list[str]]":
         STEP_OVERLAY_DECORATION_LABEL_SET,
     )
 
-    if STEP_OVERLAY_DECORATION_LABEL_SET != {"led", "camera"}:
+    if STEP_OVERLAY_DECORATION_LABEL_SET != {"led", "camera", "lens"}:
         failures.append(f"FAIL: decoration set drifted: {STEP_OVERLAY_DECORATION_LABEL_SET}")
-    for lbl in ("led", "camera", "LED", "Camera"):
+    # bugs/0155: the imaging lens joined the decoration set -- it is vendor CAD whose
+    # optics live in a native surrogate, never the traced STEP mesh.
+    for lbl in ("led", "camera", "lens", "LED", "Camera", "Lens"):
         if not is_step_overlay_decoration(lbl):
             failures.append(f"FAIL: {lbl!r} should be a decoration")
-    for lbl in ("optical", "lens"):
+    for lbl in ("optical",):
         if is_step_overlay_decoration(lbl):
             failures.append(f"FAIL: {lbl!r} must remain a promotable optical overlay")
 
@@ -85,6 +92,16 @@ def run_checks() -> "tuple[bool, list[str]]":
         failures.append(f"FAIL: camera 'Promote to Optical Element' was NOT blocked (calls={calls2})")
     if not any("decoration" in s.lower() for s in status2):
         failures.append(f"FAIL: no 'decoration' status for blocked camera promote (status={status2})")
+
+    # 3c) Behavioral (bugs/0155): the imaging lens is a decoration now -- "Promote to
+    #     Optical Element" must reject it just like the LED/camera. Its only sync is the
+    #     surrogate front/rear datum glue, which is NOT a promote.
+    svc_lens, calls_lens, status_lens = _build_service()
+    svc_lens._promote_step_from_context("lens")
+    if "select:lens" in calls_lens or "promote_selected" in calls_lens:
+        failures.append(f"FAIL: lens 'Promote to Optical Element' was NOT blocked (calls={calls_lens})")
+    if not any("decoration" in s.lower() for s in status_lens):
+        failures.append(f"FAIL: no 'decoration' status for blocked lens promote (status={status_lens})")
 
     # 4) Guard does NOT over-block: the genuine "optical" overlay still promotes.
     svc3, calls3, _status3 = _build_service()
@@ -109,11 +126,11 @@ def run_checks() -> "tuple[bool, list[str]]":
 def main() -> int:
     passed, failures = run_checks()
     if not passed:
-        print("[FAIL] bugs/0101 decoration overlay must not be promotable as optics")
+        print("[FAIL] bugs/0101+0155 decoration overlay must not be promotable as optics")
         for item in failures:
             print(f"  - {item}")
         return 1
-    print("[PASS] LED/camera decorations cannot be promoted/face-assigned as optics; optical overlay still promotes (bugs/0101)")
+    print("[PASS] LED/camera/lens decorations cannot be promoted/face-assigned as optics; optical overlay still promotes (bugs/0101+0155)")
     return 0
 
 

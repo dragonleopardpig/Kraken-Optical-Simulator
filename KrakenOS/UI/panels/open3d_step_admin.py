@@ -133,7 +133,7 @@ class Open3DStepAdminPanel:
         import_frame.columnconfigure(0, weight=1)
         import_frame.columnconfigure(1, weight=1)
         self._grid_button(import_frame, 0, 0, "Optical", lambda: self._import_step("optical"))
-        self._grid_button(import_frame, 0, 1, "Lens", lambda: self._import_step("lens"))
+        self._grid_button(import_frame, 0, 1, "Imaging Lens", lambda: self._import_step("lens"))
         self._grid_button(import_frame, 1, 0, "Camera", lambda: self._import_step("camera"))
         self._grid_button(import_frame, 1, 1, "LED", lambda: self._import_step("led"))
 

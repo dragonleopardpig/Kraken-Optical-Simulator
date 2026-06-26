@@ -8447,6 +8447,38 @@ def phase_145_target_fov_button_rectangle_sync(
     return result
 
 
+def phase_146_imaging_lens_decoration(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The imported Imaging Lens STEP is a pure decoration whose right-click menu now
+    matches the LED and Camera decorations -- it no longer offers "Promote to Optical
+    Element" or any optical face assignment (bugs/0155). The lone synchronization kept:
+    "Glue STEP to Surrogate" re-pins the native surrogate's Front Datum (via
+    glue_step_overlay_to_surrogate) AND Rear Datum (via improve_lens_surrogate_rear_to_step)
+    onto the STEP front/rear faces, so the surrogate span tracks the vendor CAD. The guard
+    drives the real append_element_context_actions menu builder on a tk-free fake editor,
+    asserts the lens/LED/camera menus lack Promote while 'optical' keeps it, checks the
+    "Imaging Lens" display label, and source-pins the surrogate datum wiring; display-free.
+    """
+    result = PhaseResult(
+        name="Phase 146: Imaging Lens STEP is a decoration (no Promote; surrogate datum glue kept)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_imaging_lens_decoration import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"imaging-lens decoration guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("imaging-lens decoration guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8638,6 +8670,7 @@ def main() -> int:
             phase_143_quick_estimation_placement_solve,
             phase_144_quick_estimation_live_sensor_prefill,
             phase_145_target_fov_button_rectangle_sync,
+            phase_146_imaging_lens_decoration,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

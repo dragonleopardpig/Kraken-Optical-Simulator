@@ -147,7 +147,8 @@
     "142": "pass",
     "143": "pass",
     "144": "pass",
-    "145": "pass"
+    "145": "pass",
+    "146": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -295,6 +296,7 @@
     "142": "Quick Estimation design-mode solve-for-EFL + DOF accountant",
     "143": "Quick Estimation placement-mode solve (fixed lens, 1 DOF)",
     "144": "Quick Estimation FOV/sensor popup reads the live camera sensor",
-    "145": "Set Target FOV button syncs to the rectangle-side object FOV"
+    "145": "Set Target FOV button syncs to the rectangle-side object FOV",
+    "146": "Imaging Lens STEP is a decoration (no Promote; surrogate datum glue kept)"
   }
 }

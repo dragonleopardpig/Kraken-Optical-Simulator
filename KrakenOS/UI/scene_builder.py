@@ -4114,7 +4114,7 @@ def _compact_key_optic_label_text(row_index: int, row: Any, curve_kind: str, lab
     if str(curve_kind or "") == "stl_solid" or is_optical_solid:
         if isinstance(advanced, dict) and isinstance(advanced.get("StepOverlayPromotion"), dict):
             step_label = str(advanced.get("StepOverlayPromotion", {}).get("step_label", "") or "").strip()
-            step_names = {"optical": "Optical", "lens": "Lens", "camera": "Camera", "led": "LED"}
+            step_names = {"optical": "Optical", "lens": "Imaging Lens", "camera": "Camera", "led": "LED"}
             source_name = step_names.get(step_label.lower(), step_label.title()) if step_label else "Optical"
             source = f"{source_name} STEP"
             return f"S{int(row_index)} {source}"
