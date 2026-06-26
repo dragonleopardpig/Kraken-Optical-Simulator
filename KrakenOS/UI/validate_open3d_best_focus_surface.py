@@ -69,54 +69,62 @@ def _check_pure_geometry(failures: list[str]) -> None:
     center = np.array([0.0, 0.0, 100.0])
     normal = np.array([0.0, 0.0, 1.0])
     tangent = np.array([1.0, 0.0, 0.0])
-    radius = 12.0
-    field_limit = 10.0
-    fields = np.linspace(0.0, field_limit, 6)
-    # Typical inward-curving field with astigmatism (T != S).
-    focus_t = -0.02 * fields**2
-    focus_s = -0.01 * fields**2
+    rim_radius = 12.0
+    # Rings sized to the REAL image height per field (rim = max image height).
+    image_heights = np.linspace(0.0, rim_radius, 6)
+    # Tiny inward-curving field with astigmatism (T != S) -- like a corrected lens.
+    focus_t = -0.0006 * image_heights**2
+    focus_s = -0.0003 * image_heights**2
     medial = 0.5 * (focus_t + focus_s)
 
-    spec = build_best_focus_surface(
-        fields, focus_t, focus_s, field_limit,
-        center=center, normal=normal, tangent=tangent, radius=radius,
+    # 1) TRUE scale (exaggeration=1): geometry matches the raw offsets.
+    true_spec = build_best_focus_surface(
+        image_heights, focus_t, focus_s,
+        center=center, normal=normal, tangent=tangent, exaggeration=1.0,
     )
-    if spec is None:
+    if true_spec is None:
         failures.append("PURE: build_best_focus_surface returned None for valid input")
         return
-
-    n_rings = int(spec["n_rings"])
-    n_az = int(spec["n_az"])
-    points = np.asarray(spec["points"], dtype=float)
+    n_rings = int(true_spec["n_rings"])
+    n_az = int(true_spec["n_az"])
+    points = np.asarray(true_spec["points"], dtype=float)
     if points.shape != (n_rings * n_az, 3):
         failures.append(f"PURE: points shape {points.shape} != ({n_rings * n_az}, 3)")
         return
-
-    # Apex ring (field 0, radius 0) collapses to one point at the image centre.
     apex = points[:n_az]
-    if not np.allclose(apex, apex[0], atol=1e-9):
-        failures.append("PURE: apex ring (radius 0) points do not coincide")
-    if not np.allclose(apex[0], center, atol=1e-6):
-        failures.append(f"PURE: apex is not at the image centre (got {apex[0]}, want {center})")
-
-    # Rim ring reaches the image radius.
+    if not np.allclose(apex, apex[0], atol=1e-9) or not np.allclose(apex[0], center, atol=1e-6):
+        failures.append("PURE: apex ring does not collapse to the image centre")
     rim = points[(n_rings - 1) * n_az:n_rings * n_az]
     rim_radial = _radial_distances(rim, center, normal)
-    if not np.allclose(rim_radial, radius, atol=1e-6):
-        failures.append(f"PURE: rim ring radius {rim_radial.mean():.4g} != {radius}")
-
-    # Each ring's axial offset == its medial focus, and grows with field.
+    if not np.allclose(rim_radial, rim_radius, atol=1e-6):
+        failures.append(f"PURE: rim radius {rim_radial.mean():.4g} != max image height {rim_radius}")
+    if abs(float(true_spec["radius"]) - rim_radius) > 1e-6:
+        failures.append(f"PURE: spec radius {true_spec['radius']:.4g} != max image height {rim_radius}")
     axial = _axial_offsets(points, center, normal)
     for i in range(n_rings):
-        ring_axial = axial[i * n_az:(i + 1) * n_az]
-        if not np.allclose(ring_axial, medial[i], atol=1e-9):
-            failures.append(f"PURE: ring {i} axial offset {ring_axial.mean():.4g} != medial {medial[i]:.4g}")
+        if not np.allclose(axial[i * n_az:(i + 1) * n_az], medial[i], atol=1e-9):
+            failures.append(f"PURE: true-scale ring {i} axial != medial")
             break
-    if np.max(np.abs(medial)) <= 1e-3:
-        failures.append("PURE: synthetic curvature too small to test")
-    # Curvature monotonic in |field| for this input.
-    if not (abs(medial[-1]) > abs(medial[1]) > 1e-9):
-        failures.append("PURE: medial offset does not grow with field")
+    if not np.allclose(np.asarray(true_spec["ring_dz"]), medial, atol=1e-12):
+        failures.append("PURE: ring_dz is not the true medial offsets")
+
+    # 2) AUTO exaggeration: the sag is magnified to a visible fraction of the rim,
+    #    the factor > 1 (tiny true sag), and ring_dz stays TRUE.
+    spec = build_best_focus_surface(
+        image_heights, focus_t, focus_s,
+        center=center, normal=normal, tangent=tangent,
+    )
+    factor = float(spec["exaggeration"])
+    if factor <= 1.0:
+        failures.append(f"PURE: tiny curvature was not exaggerated (factor={factor:.3g})")
+    display_axial = _axial_offsets(np.asarray(spec["points"], dtype=float), center, normal)
+    rim_display = abs(float(display_axial[(n_rings - 1) * n_az]))
+    if rim_display < 0.05 * rim_radius:
+        failures.append(f"PURE: exaggerated rim sag {rim_display:.3g} < 5% of rim {rim_radius} -- still flat")
+    if not np.allclose(np.asarray(spec["ring_dz"]), medial, atol=1e-12):
+        failures.append("PURE: exaggeration corrupted the TRUE ring_dz (must stay un-exaggerated)")
+    if not np.allclose(np.asarray(spec["display_dz"]), medial * factor, atol=1e-9):
+        failures.append("PURE: display_dz != medial * exaggeration")
 
     faces = best_focus_surface_faces(n_rings, n_az)
     if faces.size != (n_rings - 1) * n_az * 5:
@@ -125,12 +133,10 @@ def _check_pure_geometry(failures: list[str]) -> None:
         failures.append("PURE: a face references a point index out of range")
 
     # Degenerate inputs -> None.
-    if build_best_focus_surface([0.0], [0.0], [0.0], field_limit, center=center, normal=normal, tangent=tangent, radius=radius) is not None:
-        failures.append("PURE: <2 field samples did not return None")
-    if build_best_focus_surface(fields, focus_t, focus_s, 0.0, center=center, normal=normal, tangent=tangent, radius=radius) is not None:
-        failures.append("PURE: zero field_limit did not return None")
-    if build_best_focus_surface(fields, focus_t, focus_s, field_limit, center=center, normal=normal, tangent=tangent, radius=0.0) is not None:
-        failures.append("PURE: zero radius did not return None")
+    if build_best_focus_surface([0.0], [0.0], [0.0], center=center, normal=normal, tangent=tangent) is not None:
+        failures.append("PURE: <2 rings did not return None")
+    if build_best_focus_surface([0.0, 0.0], [0.0, 0.0], [0.0, 0.0], center=center, normal=normal, tangent=tangent) is not None:
+        failures.append("PURE: zero image radius did not return None")
 
 
 def _double_gauss_editor():
@@ -188,14 +194,34 @@ def _check_integration(failures: list[str], notes: list[str]) -> None:
     if ring_dz.size < 2:
         failures.append("INTEGRATION: surface has < 2 rings")
         return
-    max_dev = float(np.max(np.abs(ring_dz)))
+    max_dev = float(np.max(np.abs(ring_dz)))  # TRUE field curvature (mm)
     if max_dev <= 1e-4:
         failures.append(f"INTEGRATION: surface does not deviate from the flat plane (max|dz|={max_dev:.3g} mm)")
+
+    # The rim is sized to the REAL chief-ray image height (where the rays land), not
+    # the lens clear-aperture: the double gauss images its 14-deg field to ~24.5 mm.
+    rim = float(spec.get("radius", 0.0))
+    scan = editor._analysis_plot_service()._sample_field_curvature_distortion(system, float(editor._current_wavelength()))
+    if scan:
+        true_rim = float(np.max(np.asarray(scan[0]["Y"]["image_height"], dtype=float)))
+        if abs(rim - true_rim) > 0.5:
+            failures.append(f"INTEGRATION: rim {rim:.4g} != max real image height {true_rim:.4g} (sized to clear-aperture?)")
+
+    # The tiny true sag must be auto-exaggerated to a visible fraction of the rim.
+    factor = float(spec.get("exaggeration", 1.0))
+    display_dz = np.asarray(spec.get("display_dz", []), dtype=float)
+    if factor <= 1.0:
+        failures.append(f"INTEGRATION: sub-mm curvature ({max_dev:.3g} mm) was not exaggerated (factor={factor:.3g})")
+    if display_dz.size and float(np.max(np.abs(display_dz))) < 0.05 * max(rim, 1e-9):
+        failures.append("INTEGRATION: exaggerated sag still < 5% of the rim -- bowl would read flat")
+
     # Caching: a second call must reuse the same object (the scan is expensive).
     spec2 = editor.best_focus_surface_overlay_spec(system, bundle)
     if spec2 is not spec:
         failures.append("INTEGRATION: best-focus surface spec is not cached (recomputes the field scan each call)")
-    notes.append(f"integration: double-gauss field curvature max|dz|={max_dev:.4g} mm over {ring_dz.size} rings")
+    notes.append(
+        f"integration: double-gauss field curv P-V~{float(np.ptp(ring_dz)):.4g} mm, rim {rim:.4g} mm, ×{factor:.0f}"
+    )
 
 
 def _check_anchor_skips_branch_scene(failures: list[str]) -> None:

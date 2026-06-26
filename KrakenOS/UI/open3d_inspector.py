@@ -11467,6 +11467,44 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 count += 1
             except Exception:
                 continue
+        # The bowl's axial sag is auto-exaggerated so the (usually sub-mm) field
+        # curvature reads; label the TRUE peak-to-valley + the magnification so it
+        # stays honest -- the gap to the flat detector is the field-dependent defocus.
+        try:
+            if vtkBillboardTextActor3D is not None and int(spec.get("n_rings", 0)) >= 2:
+                ring_dz = np.asarray(spec.get("ring_dz", []), dtype=float)
+                pv = float(np.ptp(ring_dz)) if ring_dz.size else 0.0
+                factor = float(spec.get("exaggeration", 1.0))
+                points = np.asarray(spec["points"], dtype=float)
+                n_az = int(spec["n_az"])
+                n_rings = int(spec["n_rings"])
+                rim = points[(n_rings - 1) * n_az:n_rings * n_az]
+                anchor = (
+                    rim[int(np.argmax(rim[:, 1]))].copy()
+                    if rim.size
+                    else np.asarray(spec["center"], dtype=float)
+                )
+                _c, scene_radius = self._scene_bounds()
+                anchor = anchor + np.asarray(spec["normal"], dtype=float) * max(float(scene_radius) * 0.01, 0.4)
+                factor_text = f"  (×{factor:.0f})" if factor >= 1.5 else ""
+                actor = vtkBillboardTextActor3D()
+                actor.SetInput(f"Best-focus surface · field curv P-V {pv:.3g} mm{factor_text}")
+                actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
+                try:
+                    actor.PickableOff()
+                except Exception:
+                    pass
+                text_prop = actor.GetTextProperty()
+                text_prop.SetFontSize(12)
+                text_prop.SetColor(*line_color)
+                text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
+                text_prop.SetBackgroundOpacity(0.72)
+                text_prop.SetFrame(1)
+                text_prop.SetFrameColor(*line_color)
+                self._add_renderer_view_prop(actor)
+                count += 1
+        except Exception:
+            pass
         return count
 
     def _add_thickness_dimension_overlays(self, system, scene_bundle: SceneBundle | None) -> int:

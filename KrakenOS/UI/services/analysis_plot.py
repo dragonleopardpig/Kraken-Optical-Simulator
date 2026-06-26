@@ -303,12 +303,18 @@ class AnalysisPlotService:
                 "fields": abs_fields,
                 "focus": _curvature(tangential_focus),
                 "distortion": distortion,
+                # Real chief-ray image height per field (the radial position where
+                # each field lands on the detector). Exported so the 3D best-focus
+                # surface can size its rings to the actual image circle rather than
+                # the clear-aperture diameter.
+                "image_height": abs_heights,
                 "workers": workers_arr,
             }
             axis_results["X"] = {
                 "fields": abs_fields,
                 "focus": _curvature(sagittal_focus),
                 "distortion": distortion,
+                "image_height": abs_heights,
                 "workers": workers_arr,
             }
 

@@ -40,41 +40,54 @@ def _any_perpendicular(n_hat: np.ndarray) -> np.ndarray:
     return _unit(np.cross(n_hat, seed))
 
 
+# The true best-focus sag of a corrected lens is tiny (often << 1% of the image
+# radius) -- edge-on it reads as a flat line. Auto-exaggerate the axial deviation so
+# the bowl is visible, targeting a peak sag of this fraction of the rim radius, and
+# report the magnification so the surface is honest (the gap is NOT the literal
+# defocus once exaggerated). The factor is clamped to [1, cap].
+BEST_FOCUS_SAG_TARGET_FRACTION = 0.12
+BEST_FOCUS_EXAGGERATION_CAP = 5000.0
+
+
 def build_best_focus_surface(
-    fields,
+    image_heights,
     focus_tangential,
     focus_sagittal,
-    field_limit: float,
     *,
     center,
     normal,
     tangent,
-    radius: float,
     n_az: int = BEST_FOCUS_SURFACE_AZIMUTHS,
+    exaggeration: "float | None" = None,
     color=BEST_FOCUS_SURFACE_COLOR,
     opacity: float = BEST_FOCUS_SURFACE_OPACITY,
 ) -> "dict | None":
     """Loft the medial best-focus surface as a grid of revolved rings.
 
-    ``fields`` are the absolute field samples ``[0 .. field_limit]``;
+    ``image_heights`` are the real chief-ray image heights per field (mm) -- the
+    radial position where each field actually lands on the detector, so the rim ring
+    sits on the real image circle (NOT the lens clear-aperture diameter).
     ``focus_tangential`` / ``focus_sagittal`` are the on-axis-referenced longitudinal
     best-focus offsets (mm) at each field (the Y/X ``focus`` arrays from
-    ``_sample_field_curvature_distortion``). The medial surface is their mean. The
-    in-plane radius of ring i maps the field linearly onto the image-plane radius so
-    the rim ring (``field_limit``) sits at ``radius`` (the detector / image edge).
+    ``_sample_field_curvature_distortion``); the medial surface is their mean.
 
-    Returns the surface spec dict, or None when the inputs cannot make a surface
-    (too few fields, zero field span, zero radius, non-finite focus).
+    The axial sag is auto-exaggerated (``exaggeration=None``) so the curvature reads
+    edge-on; ``ring_dz`` keeps the TRUE medial offsets while ``points`` use the
+    exaggerated sag, and the returned ``exaggeration`` / ``true_max_sag_mm`` let the
+    overlay label the magnification.
+
+    Returns None when the inputs cannot make a surface (too few fields, zero image
+    radius, non-finite focus).
     """
-    fields = np.asarray(fields, dtype=float).reshape(-1)
+    image_heights = np.asarray(image_heights, dtype=float).reshape(-1)
     focus_t = np.asarray(focus_tangential, dtype=float).reshape(-1)
     focus_s = np.asarray(focus_sagittal, dtype=float).reshape(-1)
-    n_rings = int(fields.size)
+    n_rings = int(image_heights.size)
     if n_rings < 2 or focus_t.size != n_rings or focus_s.size != n_rings:
         return None
-    if not np.isfinite(field_limit) or float(field_limit) <= 1e-9:
-        return None
-    if not np.isfinite(radius) or float(radius) <= 1e-6:
+    ring_radii = np.abs(image_heights)
+    rim = float(np.max(ring_radii)) if ring_radii.size else 0.0
+    if not np.isfinite(rim) or rim <= 1e-6:
         return None
     n_az = int(n_az)
     if n_az < 8:
@@ -83,7 +96,17 @@ def build_best_focus_surface(
     medial = 0.5 * (focus_t + focus_s)
     if not np.all(np.isfinite(medial)):
         return None
-    ring_radii = (np.abs(fields) / float(field_limit)) * float(radius)
+    true_max_sag = float(np.max(np.abs(medial)))
+
+    if exaggeration is None:
+        target_sag = BEST_FOCUS_SAG_TARGET_FRACTION * rim
+        factor = (target_sag / true_max_sag) if true_max_sag > 1e-9 else 1.0
+        factor = float(min(max(factor, 1.0), BEST_FOCUS_EXAGGERATION_CAP))
+    else:
+        factor = float(exaggeration)
+        if not np.isfinite(factor) or factor <= 0.0:
+            factor = 1.0
+    display_dz = medial * factor
 
     center = np.asarray(center, dtype=float).reshape(3)
     n_hat = _unit(normal)
@@ -99,7 +122,7 @@ def build_best_focus_surface(
         ring = (
             center[None, :]
             + ring_radii[i] * (np.outer(cos_t, u) + np.outer(sin_t, v))
-            + medial[i] * n_hat[None, :]
+            + display_dz[i] * n_hat[None, :]
         )
         rings.append(ring)
     points = np.concatenate(rings, axis=0)
@@ -110,7 +133,11 @@ def build_best_focus_surface(
         "n_rings": n_rings,
         "n_az": n_az,
         "ring_radii": ring_radii,
-        "ring_dz": medial,
+        "ring_dz": medial,           # TRUE medial offsets (mm), on-axis referenced
+        "display_dz": display_dz,    # exaggerated offsets actually drawn
+        "radius": rim,               # rim = max real image height (the image circle)
+        "exaggeration": float(factor),
+        "true_max_sag_mm": true_max_sag,
         "center": center,
         "normal": n_hat,
         "color": tuple(float(c) for c in color),

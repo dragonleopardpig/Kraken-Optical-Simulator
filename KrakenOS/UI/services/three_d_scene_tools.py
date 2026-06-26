@@ -2561,27 +2561,23 @@ class ThreeDSceneToolsMixin:
                 wavelength = float(self._current_wavelength())
             except Exception:
                 return None
-        radius = self._best_focus_surface_radius(target)
-        if radius <= 1e-6:
-            return None
         try:
             signature = (
                 self._preview_trace_signature(),
                 round(float(wavelength), 6),
                 int(getattr(target, "row_index", -1)),
-                round(float(radius), 6),
             )
         except Exception:
             signature = None
         cache = self.__dict__.get("_best_focus_surface_cache")
         if signature is not None and isinstance(cache, tuple) and len(cache) == 2 and cache[0] == signature:
             return cache[1]
-        spec = self._compute_best_focus_surface_spec(system, target, float(wavelength), radius)
+        spec = self._compute_best_focus_surface_spec(system, target, float(wavelength))
         if signature is not None:
             self._best_focus_surface_cache = (signature, spec)
         return spec
 
-    def _compute_best_focus_surface_spec(self, system, target, wavelength: float, radius: float):
+    def _compute_best_focus_surface_spec(self, system, target, wavelength: float):
         try:
             # The field-curvature scan lives on the composed AnalysisPlotService
             # (reached via the editor's accessor), not directly on the editor.
@@ -2599,15 +2595,22 @@ class ThreeDSceneToolsMixin:
         x_result = axis_results.get("X") if isinstance(axis_results, dict) else None
         if not isinstance(y_result, dict) or not isinstance(x_result, dict):
             return None
+        # Size the rings to the REAL chief-ray image height per field (where the rays
+        # actually land on the detector) -- the user flagged that the bowl built from
+        # the lens clear-aperture diameter ran past where the rays land. Falls back to
+        # the field grid only if the scan didn't export image heights.
+        image_heights = y_result.get("image_height")
+        if image_heights is None:
+            fields = np.asarray(y_result.get("fields"), dtype=float)
+            flim = float(field_limit) if float(field_limit) > 1e-9 else (float(np.max(np.abs(fields))) or 1.0)
+            image_heights = (np.abs(fields) / flim) * float(self._best_focus_surface_radius(target))
         spec = build_best_focus_surface(
-            y_result.get("fields"),
+            image_heights,
             y_result.get("focus"),
             x_result.get("focus"),
-            float(field_limit),
             center=np.asarray(getattr(target, "center_world"), dtype=float),
             normal=np.asarray(getattr(target, "normal_world"), dtype=float),
             tangent=np.asarray(getattr(target, "tangent_world"), dtype=float),
-            radius=float(radius),
         )
         if spec is not None:
             spec["faces"] = best_focus_surface_faces(spec["n_rings"], spec["n_az"])
