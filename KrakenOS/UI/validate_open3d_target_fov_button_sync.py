@@ -30,7 +30,11 @@ What it checks (pure QuickEstimationService on a tk-free fake editor):
   F  REGRESSION -- no live sensor keeps the 4:3 disk model: _aspect_vertical_fraction
      0.6, height_to_diagonal(6)=10, diagonal_to_height(10)=6, recommended_sensor 4:3.
   G  source contract: recommended_sensor + format_readout gate on the live sensor;
-     height_to_diagonal / diagonal_to_height exist.
+     height_to_diagonal / diagonal_to_height / set_target_fov_rect exist.
+  H  two-box dialog: set_target_fov_rect(W, H) stores the rectangle DIAGONAL-semi the
+     same way the popup's Solve-for-Thickness does -- square 19.5x19.5 / width-only /
+     height-only all -> semi ~13.789 and a following snap reaches |m| ~1.181; both-blank
+     / non-positive are rejected; no live sensor still folds 4:3 (width 6 -> semi 3.75).
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_target_fov_button_sync
@@ -166,8 +170,51 @@ def run_checks():
     if not recF or not _approx(recF["width"] / recF["height"], 4.0 / 3.0, tol=2e-3):
         failures.append(f"F FAIL: no-camera recommendation must stay 4:3, got {recF}")
 
+    # H: two-box dialog path -- set_target_fov_rect (Width x Height) stores the same
+    # diagonal-semi the single-box height path did, but accepts two sides like the
+    # canvas popup. Square 23.04: width-only / height-only / both -> semi ~13.789.
+    svcH, _ = _service(sensor_diameter=FLAG_DIAM, mag=1.671, camera_dims=FLAG_SQUARE)
+    for label, w, h in (("both", 19.5, 19.5), ("width-only", 19.5, None), ("height-only", None, 19.5)):
+        ok, msg, fw, fh = svcH.set_target_fov_rect(w, h)
+        if not ok:
+            failures.append(f"H FAIL: set_target_fov_rect({label}) should succeed, got {msg!r}")
+            continue
+        if not (_approx(fw, 19.5, tol=2e-3) and _approx(fh, 19.5, tol=2e-3)):
+            failures.append(f"H FAIL: set_target_fov_rect({label}) should fill 19.5 x 19.5, got {fw} x {fh}")
+        if not _approx(svcH.target_object_semi(), 13.789, tol=2e-3):
+            failures.append(
+                f"H FAIL: set_target_fov_rect({label}) target semi should be ~13.789, "
+                f"got {svcH.target_object_semi()}"
+            )
+
+    # snap after a rect target reaches |m| ~1.181 (not the 1.671 no-op), like check B/C.
+    svcH2, rowsH2 = _service(sensor_diameter=FLAG_DIAM, mag=1.671, camera_dims=FLAG_SQUARE, f=100.0)
+    svcH2.set_target_fov_rect(19.5, 19.5)
+    okH, msgH = svcH2.snap_to_fov()
+    if not okH:
+        failures.append(f"H FAIL: snap after set_target_fov_rect should succeed, got {msgH!r}")
+    else:
+        obj_d = rowsH2[0].thickness
+        implied = rowsH2[2].thickness / obj_d if obj_d else None
+        if not _approx(implied, 1.181, tol=4e-3):
+            failures.append(f"H FAIL: rect-target snap |m| should be ~1.181, got {implied}")
+
+    # invalid input is rejected (both blank / non-positive) and leaves the target alone.
+    if svcH.set_target_fov_rect(None, None)[0]:
+        failures.append("H FAIL: set_target_fov_rect(None, None) must be rejected")
+    if svcH.set_target_fov_rect(0.0, None)[0]:
+        failures.append("H FAIL: set_target_fov_rect(0, None) must be rejected")
+
+    # REGRESSION -- no live sensor folds 4:3: width-only 6 -> height 4.5 -> diag 7.5 -> semi 3.75.
+    svcH4, _ = _service(sensor_diameter=24.0, mag=1.0, camera_dims=None)
+    okH4, _m4, fw4, fh4 = svcH4.set_target_fov_rect(6.0, None)
+    if not okH4 or not (_approx(fw4, 6.0) and _approx(fh4, 4.5)):
+        failures.append(f"H FAIL: 4:3 fallback width-only 6 should derive 4.5 height, got {fw4} x {fh4}")
+    if not _approx(svcH4.target_object_semi(), 3.75, tol=2e-3):
+        failures.append(f"H FAIL: 4:3 fallback rect target semi should be ~3.75, got {svcH4.target_object_semi()}")
+
     # G: source contract.
-    for name in ("height_to_diagonal", "diagonal_to_height", "_aspect_vertical_fraction"):
+    for name in ("height_to_diagonal", "diagonal_to_height", "_aspect_vertical_fraction", "set_target_fov_rect"):
         if not hasattr(QuickEstimationService, name):
             failures.append(f"G FAIL: QuickEstimationService must expose {name}")
     try:

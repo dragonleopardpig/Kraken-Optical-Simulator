@@ -769,6 +769,27 @@ class QuickEstimationService:
     def previous_object_semi(self) -> float | None:
         return self._previous_object_semi
 
+    def set_target_fov_rect(
+        self, width: Any, height: Any, aspect: tuple[float, float] | None = None
+    ) -> tuple[bool, str, float, float]:
+        """Store the target object FOV from an explicit Width x Height rectangle --
+        the two-box "Set Target FOV" dialog, mirroring the canvas double-click popup's
+        'Solve for Thickness' mapping (``fov_solve`` object/thickness above). Either
+        side may be blank: the other is derived from ``aspect`` (default the live
+        sensor shape). The rectangle's DIAGONAL becomes the disk-model target
+        semi-height ``snap_to_fov`` uses, so a square 23.04 sensor takes 19.5 x 19.5
+        -> snap fills 19.5 x 19.5 (not the 13.8 the old image-circle-diameter single
+        box produced -- bugs/0154). No conjugate move -- the panel's Snap to FOV
+        button owns that. Returns ``(ok, message, width, height)``."""
+        if aspect is None:
+            aspect = self.sensor_active_dimensions()
+        wh = self._sensor_wh(width, height, aspect)
+        if wh is None:
+            return False, "Enter a positive FOV width or height.", 0.0, 0.0
+        w, h, diagonal = wh
+        self.set_target_fov(diagonal / 2.0)
+        return True, f"Target FOV {w:.6g} x {h:.6g} mm", w, h
+
     def snap_to_fov(self, object_semi: float | None = None) -> tuple[bool, str]:
         """Set both gaps to the unique conjugate pair that images an object of
         semi-height ``object_semi`` to fill the sensor, in focus. No retrace."""

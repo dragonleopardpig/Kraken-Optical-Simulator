@@ -14262,43 +14262,139 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.status_var.set(f"Could not set field type: {exc}")
 
     def _quick_estimation_set_target_fov(self) -> None:
+        """Two-box (Width x Height) target-FOV dialog, the same shape as the canvas
+        double-click Object-plane FOV popup: the DIAGONAL of the typed rectangle is
+        the snap target, so a square sensor takes 19.5 x 19.5 and Snap fills it 19.5 x
+        19.5 (not the 13.8 the old single image-circle box produced -- bugs/0154).
+        Fill just one box and the other is derived from the live sensor aspect. This
+        only STORES the target rectangle; the panel's Snap to FOV button moves the
+        conjugates (keeping the two-step Set-then-Snap workflow)."""
         qe = self._quick_estimation_service()
         if not qe.is_enabled():
             self.quick_estimation_var.set(True)
-        cur = qe.target_object_semi()
-        cur_full = f"{qe.diagonal_to_height(2 * cur):.6g}" if cur else ""
-        value = self._centered_input_dialog(
-            "Target FOV / Object Height",
-            "Object size to image (full Object Height) [mm]; blank = fill the sensor:",
-            cur_full,
+        wh = qe.object_fov_dimensions()
+        w0, h0 = (wh if wh else (0.0, 0.0))
+        dialog = tk.Toplevel(self)
+        try:
+            dialog.withdraw()
+            dialog.title("Target FOV — Object Field")
+            dialog.transient(self.winfo_toplevel())
+            dialog.resizable(False, False)
+        except Exception:
+            pass
+        ttk.Label(
+            dialog,
+            text="Object field to image (width x height, mm); the rectangle diagonal "
+            "becomes the snap target:",
+            wraplength=320,
+            justify="left",
+        ).grid(row=0, column=0, columnspan=2, padx=12, pady=(12, 6), sticky="w")
+        width_var = tk.StringVar(value=(f"{w0:.6g}" if w0 else ""))
+        height_var = tk.StringVar(value=(f"{h0:.6g}" if h0 else ""))
+        ttk.Label(dialog, text="Width (mm):").grid(
+            row=1, column=0, padx=(12, 4), pady=(0, 4), sticky="e"
         )
-        if value is None:
-            return
-        if not str(value).strip():
+        entry = ttk.Entry(dialog, textvariable=width_var, width=12)
+        entry.grid(row=1, column=1, padx=(0, 12), pady=(0, 4), sticky="ew")
+        ttk.Label(dialog, text="Height (mm):").grid(
+            row=2, column=0, padx=(12, 4), pady=(0, 10), sticky="e"
+        )
+        ttk.Entry(dialog, textvariable=height_var, width=12).grid(
+            row=2, column=1, padx=(0, 12), pady=(0, 10), sticky="ew"
+        )
+        ttk.Label(
+            dialog,
+            text="Fill just one box — the other is derived from the sensor aspect. "
+            "Then click Snap to FOV to move the conjugates.",
+            foreground="#888888",
+            wraplength=320,
+            justify="left",
+        ).grid(row=3, column=0, columnspan=2, padx=12, pady=(0, 8), sticky="w")
+
+        def _read_dim(var, label):
+            """Parse one box: blank -> (True, None) so it is derived; a present but
+            non-positive / non-numeric value -> (False, None) with a status note."""
+            raw = var.get().strip() if var is not None else ""
+            if not raw:
+                return True, None
+            try:
+                val = float(raw)
+            except (TypeError, ValueError):
+                self.status_var.set(f"{label} must be a number (or blank).")
+                return False, None
+            if not (val > 0):
+                self.status_var.set(f"{label} must be positive (or blank).")
+                return False, None
+            return True, val
+
+        def _set_target():
+            ok_w, width = _read_dim(width_var, "Width")
+            if not ok_w:
+                return
+            ok_h, height = _read_dim(height_var, "Height")
+            if not ok_h:
+                return
+            if width is None and height is None:
+                self.status_var.set(
+                    "Enter a Width or a Height — the other is derived from the sensor aspect."
+                )
+                return
+            aspect = (w0, h0) if (w0 and h0) else None
+            ok, msg, fw, fh = qe.set_target_fov_rect(width, height, aspect)
+            if not ok:
+                self.status_var.set(msg)
+                return
+            try:
+                dialog.grab_release()
+            except Exception:
+                pass
+            dialog.destroy()
+            qe.update_readout()
+            state = qe.current_state()
+            fill = state.get("fill_factor")
+            if fill is not None:
+                self.status_var.set(
+                    f"Target FOV {fw:.6g} x {fh:.6g} mm -> {100 * fill:.1f}% of sensor. "
+                    "Click Snap to FOV to fill it (or drag a distance)."
+                )
+            else:
+                self.status_var.set(f"Target FOV set to {fw:.6g} x {fh:.6g} mm.")
+
+        def _clear_target():
+            try:
+                dialog.grab_release()
+            except Exception:
+                pass
+            dialog.destroy()
             qe.set_target_fov(None)
             qe.update_readout()
             self.status_var.set("Target FOV cleared (FOV = fill the sensor).")
-            return
+
+        ttk.Button(dialog, text="Set Target", command=_set_target).grid(
+            row=4, column=0, padx=(12, 4), pady=(0, 6), sticky="ew"
+        )
+        ttk.Button(dialog, text="Clear (fill sensor)", command=_clear_target).grid(
+            row=4, column=1, padx=(4, 12), pady=(0, 6), sticky="ew"
+        )
+        ttk.Button(dialog, text="Cancel", command=dialog.destroy).grid(
+            row=5, column=0, columnspan=2, padx=12, pady=(0, 12)
+        )
+        dialog.bind("<Return>", lambda _e: _set_target())
+        dialog.bind("<Escape>", lambda _e: dialog.destroy())
         try:
-            full = float(value)
-        except (TypeError, ValueError):
-            self.status_var.set("Object Height must be a number.")
-            return
-        # The typed value is the object-rectangle HEIGHT (a side, like the canvas +
-        # double-click popup), NOT the image-circle diameter. Convert the side to the
-        # object diagonal via the live sensor aspect so Snap reaches FOV Height = full
-        # (square sensor: 19.5 -> object plane 19.5 x 19.5, not 13.8) -- bugs/0154.
-        qe.set_target_fov(qe.height_to_diagonal(full) / 2.0)
-        qe.update_readout()
-        state = qe.current_state()
-        fill = state.get("fill_factor")
-        if fill is not None:
-            self.status_var.set(
-                f"Target FOV {full:.6g} mm -> {100 * fill:.1f}% of sensor. "
-                "Drag a distance (other auto-solves for focus) or Snap to reach 100%."
-            )
-        else:
-            self.status_var.set(f"Target Object Height set to {full:.6g} mm.")
+            dialog.grab_set()
+        except Exception:
+            pass
+        try:
+            self.editor._show_centered_dialog(dialog)
+        except Exception:
+            pass
+        try:
+            entry.focus_set()
+            entry.selection_range(0, "end")
+        except Exception:
+            pass
+        self.wait_window(dialog)
 
     def _quick_estimation_snap_to_fov(self) -> None:
         qe = self._quick_estimation_service()

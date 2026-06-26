@@ -77,3 +77,30 @@ on a tk-free fake editor:
 * `recommended_sensor()` is square (23.04 x 23.04) for the live square sensor;
 * REGRESSION: no-camera scenes keep the 4:3 disk model (recommended 4:3,
   `height_to_diagonal` falls back to the 4:3 aspect).
+
+## Follow-up — two-box dialog (UX half of the sync)
+
+The first fix corrected the *number* the single-box dialog produced but left the box a
+single "Object Height" field. The user flagged that it was *"still not sync with the
+canvas double-click FOV, still showing one value instead of two inputs"* — the canvas
+double-click Object-plane FOV popup is a **Width × Height** dialog. Now the left-panel
+*Set Target FOV…* button opens the same two-box modal:
+
+* `_quick_estimation_set_target_fov` is a `tk.Toplevel` modal modelled on
+  `_open_quick_estimation_fov_popup` (Width / Height entries, "fill just one box — the
+  other is derived from the sensor aspect" note), prefilled from
+  `qe.object_fov_dimensions()`. Buttons: *Set Target* / *Clear (fill sensor)* / *Cancel*.
+* New `QuickEstimationService.set_target_fov_rect(width, height, aspect=None)` reuses the
+  popup's `_sensor_wh` to turn the rectangle into a **diagonal**, then
+  `set_target_fov(diagonal / 2)` — exactly the popup's *Solve-for-Thickness* mapping. It
+  only **stores** the target; the panel's *Snap to FOV* button still moves the
+  conjugates (the two-step Set-then-Snap workflow is preserved). For a square sensor:
+  19.5 × 19.5 (or width-only / height-only 19.5) → diagonal 27.58 → semi 13.789.
+* If a future **rectangular** sensor is registered, both boxes prefill with the real
+  W × H and either-box-derives-the-other follows the live aspect — answering the user's
+  "what if the sensor is rectangular?" directly.
+
+Guard extended with check **H** in the same validator (and phase 145): `set_target_fov_rect`
+on the square flag scene (both / width-only / height-only) stores semi ≈ 13.789 and a
+following snap reaches `|m|` ≈ 1.181; both-blank / non-positive are rejected; a no-camera
+scene still folds 4:3 (width 6 → height 4.5 → semi 3.75).
