@@ -9134,6 +9134,37 @@ def phase_155_fov_label_edge_on_clearance(
     return result
 
 
+def phase_156_inpath_spacer_flag_survives_reload(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The in-path trailing-spacer flag must survive a save/reload so the suppressed
+    "big circle" (bugs/0093) does not come back (bugs/0165). The in-path promote flags
+    the trailing AIR gap-carrier ``advanced.InPathTrailingSpacer = True`` and the
+    display skips its big clear-aperture disc + ring -- but the flag was missing from
+    the ``ADVANCED_SURFACE_ATTR_NAMES`` allowlist, so reloading a saved ``.py`` layout
+    stripped it and the spacer drew the Ø disc again (selectable as "S2"). The
+    display-free guard checks the flag is in the allowlist and survives both import
+    paths with ``_is_inpath_trailing_spacer_row`` staying True.
+    """
+    result = PhaseResult(
+        name="Phase 156: in-path trailing-spacer flag survives reload, big circle stays gone (0165)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_inpath_spacer_flag_survives_reload import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"in-path spacer flag guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("in-path spacer flag phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9335,6 +9366,7 @@ def main() -> int:
             phase_153_launch_within_camera_fov,
             phase_154_inscribed_sensor_recommendation,
             phase_155_fov_label_edge_on_clearance,
+            phase_156_inpath_spacer_flag_survives_reload,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

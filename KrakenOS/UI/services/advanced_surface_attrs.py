@@ -68,6 +68,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
             ("StepAnalyticPromotion", "Open 3D analytic STEP promotion metadata"),
             ("StepAnalyticBodyStlPath", "Open 3D analytic STEP body STL cache path"),
             ("StepAnalyticBodyOmitMesh", "Open 3D analytic STEP body trailing-row mesh suppress"),
+            ("InPathTrailingSpacer", "Open 3D in-path promote trailing AIR gap-carrier flag"),
             ("MissingResourceState", "User-skipped missing on-disk asset references"),
             ("LiveStepOverlayTrace", "Open 3D live STEP trace metadata"),
             ("Note", "Note"),
