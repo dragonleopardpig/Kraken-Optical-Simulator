@@ -61,6 +61,7 @@ class DetectorCoverageMetrics:
     required_real_image_height: float
     object_fov_half_width: float
     object_fov_half_height: float
+    sensor_is_real: bool = True
 
 
 def detector_coverage_metrics(
@@ -68,6 +69,8 @@ def detector_coverage_metrics(
     sensor_height: float,
     image_circle_radius: float,
     magnification: float | None,
+    *,
+    sensor_is_real: bool = True,
 ) -> DetectorCoverageMetrics:
     """Does the real image circle cover the rectangular sensor?
 
@@ -75,6 +78,12 @@ def detector_coverage_metrics(
     actual ray-traced coverage radius. The sensor is covered when that radius
     reaches the sensor *corner* (half-diagonal). The object FOV box is the sensor
     scaled back by the magnification, ``sensor / |m|``.
+
+    ``sensor_is_real`` is True for a registered camera / explicit sensor (the
+    coverage-vs-corners question is meaningful) and False when the "sensor" is
+    the largest square *inscribed* in the image circle that the overlay
+    recommends for a bare lens (bugs/0163) -- its corners sit on the circle, so
+    it always covers and the "short"/required-ring framing is suppressed.
     """
     half_w = max(float(sensor_width), 0.0) / 2.0
     half_h = max(float(sensor_height), 0.0) / 2.0
@@ -100,7 +109,19 @@ def detector_coverage_metrics(
         required_real_image_height=half_diag,
         object_fov_half_width=object_half_w,
         object_fov_half_height=object_half_h,
+        sensor_is_real=bool(sensor_is_real),
     )
+
+
+def recommended_inscribed_sensor_side(image_circle_radius: float) -> float:
+    """Side of the largest square that fits *inside* the image circle.
+
+    The user's rule for a bare lens (no camera): the sensor must lie within the
+    image circle (bugs/0163). The largest such square has its corners on the
+    circle -- half-diagonal == radius -- so side == ``radius * sqrt(2)``.
+    """
+    radius = max(float(image_circle_radius), 0.0)
+    return float(radius * np.sqrt(2.0))
 
 
 def _basis(axis: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -177,21 +198,38 @@ def detector_coverage_overlay_specs(
             }
         )
 
-    # Image plane: the real image circle (cyan when it covers the sensor).
+    covering = metrics.covers or not metrics.sensor_is_real
+
+    # Image plane: the real image circle (cyan when it covers the sensor; a
+    # recommended inscribed sensor always covers, so it stays cyan).
     if metrics.image_circle_radius > 1e-9:
         specs.append(
             {
                 "kind": "image_circle",
                 "points": _circle_points(img_pt, iu, iv, metrics.image_circle_radius),
-                "color": _IMAGE_CIRCLE_COVERS if metrics.covers else _IMAGE_CIRCLE_SHORT,
+                "color": _IMAGE_CIRCLE_COVERS if covering else _IMAGE_CIRCLE_SHORT,
                 "dashed": False,
                 "line_width": 2.5,
             }
         )
 
-    # When it does not cover, a dashed ring at the sensor diagonal shows the
-    # image circle the design needs to reach the corners.
-    if not metrics.covers and metrics.sensor_half_diagonal > 1e-9:
+    # No real sensor (bare lens): draw the largest sensor that fits *inside* the
+    # image circle -- a useful recommendation in place of the round aperture
+    # fabricated into a square (bugs/0163). Its corners sit on the image circle.
+    if not metrics.sensor_is_real and metrics.sensor_half_width > 1e-9 and metrics.sensor_half_height > 1e-9:
+        specs.append(
+            {
+                "kind": "recommended_sensor_rect",
+                "points": _rect_points(img_pt, iv, iu, metrics.sensor_half_width, metrics.sensor_half_height),
+                "color": _SENSOR_FOOTPRINT,
+                "dashed": False,
+                "line_width": 2.2,
+            }
+        )
+
+    # When a real sensor does not cover, a dashed ring at the sensor diagonal
+    # shows the image circle the design needs to reach the corners.
+    if metrics.sensor_is_real and not metrics.covers and metrics.sensor_half_diagonal > 1e-9:
         specs.append(
             {
                 "kind": "required_image_circle",
@@ -245,15 +283,19 @@ def detector_coverage_label_specs(
         return {"text": str(text), "anchor": anchor, "color": tuple(color)}
 
     labels: list[dict[str, Any]] = []
+    covering = metrics.covers or not metrics.sensor_is_real
 
     # Image plane (concentric): spread labels to widely separated clock angles.
-    if metrics.sensor_half_diagonal > 1e-9:
+    # A real sensor is named "Sensor WxH"; a bare lens shows the recommended
+    # largest sensor that fits inside the image circle, "Max sensor WxH".
+    if metrics.sensor_half_width > 1e-9 and metrics.sensor_half_height > 1e-9:
+        sensor_label = "Sensor" if metrics.sensor_is_real else "Max sensor"
         labels.append(
             place(
                 img_label_center,
                 metrics.sensor_half_diagonal * (1.0 + _LABEL_MARGIN) + _LABEL_GAP,
                 35.0,
-                f"Sensor {2 * metrics.sensor_half_width:.1f}×{2 * metrics.sensor_half_height:.1f}",
+                f"{sensor_label} {2 * metrics.sensor_half_width:.1f}×{2 * metrics.sensor_half_height:.1f}",
                 _SENSOR_FOOTPRINT,
                 iu, iv,
             )
@@ -265,12 +307,12 @@ def detector_coverage_label_specs(
                 metrics.image_circle_radius * (1.0 + _LABEL_MARGIN) + _LABEL_GAP,
                 150.0,
                 f"Image circle Ø{2 * metrics.image_circle_radius:.1f}"
-                + ("" if metrics.covers else " (short)"),
-                _IMAGE_CIRCLE_COVERS if metrics.covers else _IMAGE_CIRCLE_SHORT,
+                + ("" if covering else " (short)"),
+                _IMAGE_CIRCLE_COVERS if covering else _IMAGE_CIRCLE_SHORT,
                 iu, iv,
             )
         )
-    if not metrics.covers and metrics.sensor_half_diagonal > 1e-9:
+    if metrics.sensor_is_real and not metrics.covers and metrics.sensor_half_diagonal > 1e-9:
         labels.append(
             place(
                 img_label_center,
@@ -320,6 +362,11 @@ class DetectorCoverageOverlayService:
         if dims is None:
             return None
         return float(dims[0]), float(dims[1])
+
+    def _target_has_real_sensor(self, target) -> bool:
+        from KrakenOS.UI.scene_geometry import scene_target_has_explicit_sensor
+
+        return scene_target_has_explicit_sensor(target)
 
     def _image_circle_radius(self) -> float | None:
         try:
@@ -485,15 +532,30 @@ class DetectorCoverageOverlayService:
         # One detector for single-axis scenes; one PER ARM for a two-arm splitter fold, each at
         # its OWN folded position with its OWN magnification (stored in the target metadata).
         for target in detectors:
-            sensor = self._sensor_dimensions(target)
-            if sensor is None:
-                continue
             meta = getattr(target, "metadata", None) or {}
             mag = meta["two_arm_magnification"] if "two_arm_magnification" in meta else sys_mag
             image_radius = meta.get("two_arm_image_circle_radius") or sys_image_radius
             if image_radius is None:
                 continue
-            metrics = detector_coverage_metrics(sensor[0], sensor[1], float(image_radius), mag if finite else None)
+            if self._target_has_real_sensor(target):
+                sensor = self._sensor_dimensions(target)
+                if sensor is None:
+                    continue
+                metrics = detector_coverage_metrics(
+                    sensor[0], sensor[1], float(image_radius), mag if finite else None,
+                    sensor_is_real=True,
+                )
+            else:
+                # Bare lens (no camera): recommend the largest sensor that fits
+                # inside the image circle instead of fabricating a square from
+                # the round aperture (bugs/0163).
+                rec_side = recommended_inscribed_sensor_side(float(image_radius))
+                if rec_side <= 1e-9:
+                    continue
+                metrics = detector_coverage_metrics(
+                    rec_side, rec_side, float(image_radius), mag if finite else None,
+                    sensor_is_real=False,
+                )
             img_pt = np.asarray(getattr(target, "center_world"), dtype=float).reshape(3)   # the (folded) detector
             image_axis = np.asarray(getattr(target, "normal_world"), dtype=float).reshape(3)
             iu, iv = _basis(image_axis)
@@ -524,7 +586,7 @@ class DetectorCoverageOverlayService:
                 if self._label_actor(label["anchor"], label["text"], label["color"]):
                     count += 1
 
-            if not metrics.covers and metrics.image_circle_radius > 0.0:
+            if metrics.sensor_is_real and not metrics.covers and metrics.image_circle_radius > 0.0:
                 self.editor.append_debug(
                     f"Detector coverage ({meta.get('two_arm_selector', 'detector')}): image circle "
                     f"Ø{2 * metrics.image_circle_radius:.4g} mm does not cover the "

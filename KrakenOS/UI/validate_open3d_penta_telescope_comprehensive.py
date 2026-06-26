@@ -9072,6 +9072,37 @@ def phase_153_launch_within_camera_fov(
     return result
 
 
+def phase_154_inscribed_sensor_recommendation(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A bare lens (no camera) must NOT fabricate a square "Sensor" from its round
+    image aperture and then demand a larger image circle (bugs/0163). With no real
+    sensor the footprint square is suppressed and the coverage overlay recommends
+    the largest square that fits INSIDE the image circle (side = R*sqrt(2), corners
+    on the circle) -- it always covers, so no "(short)" / "Needs Ø" framing. A real
+    sensor is unchanged: footprint drawn, coverage-vs-corners kept. The display-free
+    guard checks the footprint suppression, the inscribed geometry, the no-camera
+    specs/labels, and the unchanged real-sensor path.
+    """
+    result = PhaseResult(
+        name="Phase 154: bare lens recommends the inscribed sensor, no fabricated square (0163)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_inscribed_sensor_recommendation import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"inscribed-sensor guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("inscribed-sensor phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9271,6 +9302,7 @@ def main() -> int:
             phase_151_navigation_cube_zoom_fit,
             phase_152_sequential_cone_is_cone,
             phase_153_launch_within_camera_fov,
+            phase_154_inscribed_sensor_recommendation,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

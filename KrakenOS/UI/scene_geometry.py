@@ -238,9 +238,31 @@ def scene_target_active_dimensions(target: Any) -> tuple[float, float] | None:
     return float(width), float(height)
 
 
+def scene_target_has_explicit_sensor(target: Any) -> bool:
+    """Whether the detector carries a real rectangular sensor (a registered
+    camera or an explicit active area), as opposed to falling back to its round
+    clear-aperture diameter. The footprint square + the corner-coverage check
+    only make sense for a real sensor; a bare lens (no camera) has only a round
+    image aperture, so drawing it as a square sensor is misleading (bugs/0163)."""
+    try:
+        width = float(getattr(target, "active_width_mm", 0.0) or 0.0)
+        height = float(getattr(target, "active_height_mm", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return False
+    return width > 1e-9 and height > 1e-9
+
+
 def scene_target_active_footprint_polylines(target: Any) -> list[np.ndarray]:
-    """Return world-space active detector rectangle and center crosshair."""
+    """Return world-space active detector rectangle and center crosshair.
+
+    Drawn only for a detector with a real rectangular sensor (camera/explicit
+    active area). Without one the "footprint" would be the round image aperture
+    drawn as a square -- the misleading "Sensor 93.2x93.2" the bare-lens flag
+    objected to (bugs/0163); that case is handled by the coverage overlay's
+    inscribed-sensor recommendation instead."""
     if not bool(getattr(target, "is_detector", False)):
+        return []
+    if not scene_target_has_explicit_sensor(target):
         return []
     dimensions = scene_target_active_dimensions(target)
     axes = _target_frame_axes(target)
