@@ -9230,6 +9230,38 @@ def phase_158_best_focus_surface(
     return result
 
 
+def phase_159_image_circle_efl(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The "Image circle" / max real image height of an infinity-object layout must use
+    EFL*tan(field), not back-focal-distance*tan(field) (bugs/0168). The shared
+    ``_field_metrics_for_value`` projected the field through the last-surface->image gap
+    (the BFD) instead of the rear nodal point (the EFL), so on any thick lens the image
+    circle underread by EFL/BFD -- ~1.7x on a double gauss, ~16x on a Cooke triplet --
+    and the traced rays landed well beyond it. The display-free guard pins the
+    object-mode-aware ``field_image_radius`` (== max paraxial == EFL*tan), the corrected
+    ``max_real_image_height``, the fail-before/pass-after EFL/BFD jump, and that the
+    detector-coverage image circle now reads ``field_image_radius``.
+    """
+    result = PhaseResult(
+        name="Phase 159: image circle uses EFL*tan(field), matches where rays land (0168)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_image_circle_efl import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"image-circle EFL guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("image-circle EFL phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9434,6 +9466,7 @@ def main() -> int:
             phase_156_inpath_spacer_flag_survives_reload,
             phase_157_overlay_toggle_no_rebuild,
             phase_158_best_focus_surface,
+            phase_159_image_circle_efl,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

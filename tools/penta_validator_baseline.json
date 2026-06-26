@@ -160,7 +160,8 @@
     "155": "pass",
     "156": "pass",
     "157": "pass",
-    "158": "pass"
+    "158": "pass",
+    "159": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -321,6 +322,7 @@
     "155": "object FOV label lifts clear of the object plane + rays in -YZ (0164)",
     "156": "in-path trailing-spacer flag survives reload, big circle stays gone (0165)",
     "157": "overlay toggles re-render the cached scene -- no solid rebuild (0166)",
-    "158": "curved best-focus surface lofts field curvature over the flat detector (idea #2)"
+    "158": "curved best-focus surface lofts field curvature over the flat detector (idea #2)",
+    "159": "image circle uses EFL*tan(field), matches where rays land (0168)"
   }
 }

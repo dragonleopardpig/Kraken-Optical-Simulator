@@ -386,7 +386,10 @@ class DetectorCoverageOverlayService:
         except Exception:
             return None
         try:
-            radius = float(summary.get("max_real_image_height"))
+            # bugs/0168: use the object-mode-aware image radius (EFL*tan(field) for an
+            # infinity object) so the "image circle" matches where the rays actually
+            # land, not the back-focal-distance underestimate ``max_real_image_height``.
+            radius = float(summary.get("field_image_radius", summary.get("max_real_image_height")))
         except (TypeError, ValueError):
             return None
         return radius if np.isfinite(radius) and radius > 0.0 else None

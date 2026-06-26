@@ -78,11 +78,20 @@ class LayoutSceneBundleDisplayMixin:
                     object_height = object_distance * np.tan(np.deg2rad(angle_deg))
                 else:
                     real_image_height = raw_value
-                    angle_deg = np.rad2deg(np.arctan2(real_image_height, max(image_distance, 1e-6)))
+                    # bugs/0168: an object-space field angle theta images to EFL*tan(theta)
+                    # (the rear-nodal-to-image distance is the EFL), so a given real image
+                    # height maps back through the EFL -- NOT the back-focal-distance
+                    # ``image_distance`` (which is only the last-surface->image gap and
+                    # underreads by EFL/BFD on any thick lens).
+                    angle_deg = np.rad2deg(np.arctan2(real_image_height, max(effl, 1e-6)))
                     object_height = object_distance * np.tan(np.deg2rad(angle_deg))
 
                 paraxial_image_height = effl * np.tan(np.deg2rad(angle_deg))
-                real_image_height = image_distance * np.tan(np.deg2rad(angle_deg))
+                # The non-tracing estimate of the real chief-ray image height is the
+                # paraxial height (EFL*tan); true distortion comes from the traced image
+                # diameter, not this quick estimator. Using ``image_distance`` here was the
+                # 0168 bug (e.g. a Cooke triplet read 16x too small).
+                real_image_height = paraxial_image_height
 
         if not np.isfinite(angle_deg):
             angle_deg = 0.0
@@ -125,6 +134,12 @@ class LayoutSceneBundleDisplayMixin:
             "current_real_image_height": float(current_metrics.get("real_image_height", 0.0)),
             "max_paraxial_image_height": float(max_paraxial),
             "max_real_image_height": float(max_real),
+            # bugs/0168: the object-mode-aware image radius -- for an INFINITY object
+            # the chief-ray image height is EFL*tan(field) (= max_paraxial), NOT
+            # image_distance*tan(field) (the back-focal-distance projection that
+            # ``max_real`` uses, which underreads by EFL/BFD). The "image circle"
+            # overlay must use this so it matches where the rays actually land.
+            "field_image_radius": float(field_image_radius),
             "image_diameter": float(required_image_diameter),
         }
 
