@@ -760,8 +760,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     self._camera_orientation_widget.AddObserver(
                         "InteractionEvent", self._on_camera_interaction
                     )
+                    # bugs/0160: on SETTLE, reframe the view (zoom-to-extent +
+                    # recenter) like the top-bar preset buttons -- the raw snap
+                    # keeps the old parallel scale, so the scene looked tiny. The
+                    # reframe is bound ONLY to the cube widget's own End event so a
+                    # mouse orbit (which routes through _on_camera_interaction on
+                    # the main interactor) keeps its zoom.
                     self._camera_orientation_widget.AddObserver(
-                        "EndInteractionEvent", self._on_camera_interaction
+                        "EndInteractionEvent", self._on_navigation_cube_snap
                     )
                 except Exception as exc:
                     self._camera_orientation_widget = None
@@ -10380,6 +10386,118 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 camera.Azimuth(float(angle_deg))
         except Exception:
             return
+        try:
+            self._on_camera_interaction(None, "EndInteractionEvent")
+        except Exception:
+            pass
+        self.render()
+
+    def _fit_view_to_scene_for_current_orientation(self) -> bool:
+        """Frame the whole scene for the camera's CURRENT orientation -- recenter
+        on the scene and set the orthographic zoom to fit -- WITHOUT changing which
+        way the camera looks. Returns True if the view was reframed.
+
+        bugs/0160: a navigation-cube snap (bugs/0156/0157) reorients the camera but
+        leaves the parallel scale (the orthographic zoom) at its old value, so the
+        scene rendered tiny compared to the top-bar preset buttons. This restores
+        the preset buttons' zoom-to-extent framing for whatever orientation the
+        cube landed on.
+
+        It generalises set_camera_preset's fit: the cardinal presets fit axis-
+        aligned spans, the Iso branch projects the eight scene-bounds corners onto
+        the camera's right / true-up axes. The cube can land on ANY face/edge/
+        corner orientation, so the corner-projection fit is always used here.
+        """
+        if self._renderer is None:
+            return False
+        camera = self._renderer.GetActiveCamera()
+        if camera is None:
+            return False
+        bounds = self._camera_fit_bounds()
+        if (
+            bounds is None
+            or bounds.size != 6
+            or not np.all(np.isfinite(bounds))
+            or bounds[0] > bounds[1]
+        ):
+            return False
+        center = np.array(
+            [
+                0.5 * (bounds[0] + bounds[1]),
+                0.5 * (bounds[2] + bounds[3]),
+                0.5 * (bounds[4] + bounds[5]),
+            ],
+            dtype=float,
+        )
+        position = np.asarray(camera.GetPosition(), dtype=float)
+        focal = np.asarray(camera.GetFocalPoint(), dtype=float)
+        view_dir = focal - position
+        view_norm = float(np.linalg.norm(view_dir))
+        up_vec = np.asarray(camera.GetViewUp(), dtype=float)
+        right = np.cross(view_dir, up_vec)
+        right_norm = float(np.linalg.norm(right))
+        if view_norm <= 1e-9 or right_norm <= 1e-9:
+            return False
+        view_unit = view_dir / view_norm
+        right = right / right_norm
+        true_up = np.cross(right, view_unit)
+        # Recenter on the scene, keeping the cube's chosen view direction (so the
+        # picked face/edge/corner orientation is respected). In parallel projection
+        # the camera distance is irrelevant to the image, so slide the camera back
+        # by a preset-style radius*2.2 -- matching set_camera_preset -- which keeps
+        # the clip-range backstop the same geometry the presets leave behind.
+        radius = max(
+            float(bounds[1] - bounds[0]),
+            float(bounds[3] - bounds[2]),
+            float(bounds[5] - bounds[4]),
+            1.0,
+        )
+        distance = max(radius * 2.2, 50.0)
+        new_position = center - view_unit * distance
+        # Fit the orthographic zoom: project the eight scene-bounds corners onto
+        # the camera right / true-up axes and size the parallel scale to the larger
+        # span (the same _parallel_scale_for_orthographic_fit the presets use).
+        corners = np.array(
+            [
+                (bounds[i], bounds[j], bounds[k])
+                for i in (0, 1)
+                for j in (2, 3)
+                for k in (4, 5)
+            ],
+            dtype=float,
+        )
+        rel = corners - center
+        horizontal_span = float(np.ptp(rel @ right))
+        vertical_span = float(np.ptp(rel @ true_up))
+        parallel_scale = self._parallel_scale_for_orthographic_fit(
+            horizontal_span, vertical_span, self._render_aspect()
+        )
+        try:
+            camera.SetPosition(*new_position.tolist())
+            camera.SetFocalPoint(*center.tolist())
+            camera.SetParallelProjection(1)
+            camera.SetParallelScale(float(parallel_scale))
+        except Exception:
+            return False
+        return True
+
+    def _on_navigation_cube_snap(self, *_args) -> None:
+        """The navigation cube (bugs/0156/0157) settled on a new face/edge/corner
+        orientation. Reframe the view to zoom-to-extent like the top-bar preset
+        buttons (bugs/0160), THEN run the usual settled-orbit backstop
+        (_on_camera_interaction re-fits the clip range, re-squares the
+        perpendicular thickness labels and re-places the view-relative dimensions
+        for the new basis), then force a render.
+
+        Bound ONLY to the cube widget's EndInteractionEvent -- a mouse orbit routes
+        through _on_camera_interaction on the main interactor and keeps its zoom; a
+        cube snap is a discrete "frame this view" gesture, so a zoom-to-extent is
+        what the user expects.
+        """
+        try:
+            self._fit_view_to_scene_for_current_orientation()
+        except Exception:
+            pass
         try:
             self._on_camera_interaction(None, "EndInteractionEvent")
         except Exception:

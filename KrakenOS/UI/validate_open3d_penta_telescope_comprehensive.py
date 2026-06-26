@@ -8858,6 +8858,157 @@ def phase_150_navigation_cube_plane_roll(
     return result
 
 
+def phase_151_navigation_cube_zoom_fit(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A navigation-cube snap must zoom-to-extent like the top-bar preset buttons
+    (bugs/0160). The raw vtkCameraOrientationWidget snap reorients the camera but
+    PRESERVES the parallel scale, so the scene looked tiny; the cube's End handler
+    now reframes via _fit_view_to_scene_for_current_orientation (recenter + zoom-to-
+    extent for the snap's orientation). The display-free guard pins the fit math +
+    the observer wiring. This phase ALSO drives the LIVE inspector: from the Iso
+    preset (a known good fit) it records the fitted parallel scale + sight line,
+    then deliberately mis-zooms and pans the camera (mimicking the unfitted post-
+    snap state) and calls the fit -- the parallel scale must return to the Iso fit,
+    the focal point to the scene centre, and the sight line must be UNCHANGED (the
+    cube's chosen orientation is preserved). A second, arbitrary (non-preset)
+    orientation is fit and its scale must match the corner-projection fit exactly.
+    """
+    result = PhaseResult(
+        name="Phase 151: navigation-cube snap zooms-to-extent like the preset buttons (0160)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_navigation_cube_zoom_fit import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"navigation-cube zoom-fit guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+
+    renderer = getattr(inspector, "_renderer", None)
+    if renderer is None or renderer.GetActiveCamera() is None:
+        result.passed = False
+        result.notes.append("live inspector missing renderer/camera for the zoom-fit test")
+        return result
+
+    try:
+        cam = renderer.GetActiveCamera()
+
+        def sight() -> "np.ndarray":
+            vec = np.array(cam.GetFocalPoint(), float) - np.array(cam.GetPosition(), float)
+            norm = float(np.linalg.norm(vec))
+            return vec / norm if norm else vec
+
+        def scene_center() -> "np.ndarray":
+            b = inspector._camera_fit_bounds()
+            return np.array(
+                [0.5 * (b[0] + b[1]), 0.5 * (b[2] + b[3]), 0.5 * (b[4] + b[5])], float
+            )
+
+        # 1) Iso preset = a known good fit (the corner-projection fit the cube must
+        #    reproduce for an oblique orientation). Record it.
+        inspector.set_camera_preset("iso")
+        iso_sight = sight()
+        iso_scale = float(cam.GetParallelScale())
+        center = scene_center()
+
+        # 2) Mimic the unfitted post-snap state: zoom way out + pan off-centre,
+        #    WITHOUT changing the view direction (the cube keeps the orientation).
+        cam.SetParallelScale(iso_scale * 4.0)
+        off = center + np.array([13.0, -7.0, 11.0], float)
+        d = np.array(cam.GetPosition(), float) - np.array(cam.GetFocalPoint(), float)
+        cam.SetFocalPoint(*off.tolist())
+        cam.SetPosition(*(off + d).tolist())
+        mis_scale = float(cam.GetParallelScale())
+
+        # 3) Reframe exactly as the cube's End handler does.
+        moved = inspector._fit_view_to_scene_for_current_orientation()
+        fit_sight = sight()
+        fit_scale = float(cam.GetParallelScale())
+        focal_err = float(np.linalg.norm(np.array(cam.GetFocalPoint(), float) - center))
+        sight_drift = float(np.linalg.norm(fit_sight - iso_sight))
+        scale_rel_err = abs(fit_scale - iso_scale) / max(iso_scale, 1e-9)
+
+        result.detail["iso_parallel_scale"] = round(iso_scale, 4)
+        result.detail["mis_zoom_scale"] = round(mis_scale, 4)
+        result.detail["refit_parallel_scale"] = round(fit_scale, 4)
+        result.detail["scale_rel_err_vs_iso"] = round(scale_rel_err, 6)
+        result.detail["focal_recenter_err"] = round(focal_err, 4)
+        result.detail["sight_drift"] = round(sight_drift, 6)
+
+        if not moved:
+            result.passed = False
+            result.notes.append("the live reframe returned False (did not zoom-to-extent)")
+        # The reframe must UNDO the mis-zoom back to the Iso fit ...
+        if scale_rel_err > 1e-3:
+            result.passed = False
+            result.notes.append(
+                f"refit scale {fit_scale:.4f} != Iso fit {iso_scale:.4f} (rel-err "
+                f"{scale_rel_err:.4f}) -- the cube snap would not match the preset-button zoom"
+            )
+        # ... recenter on the scene ...
+        if focal_err > 1e-3:
+            result.passed = False
+            result.notes.append(
+                f"refit did not recenter the focal point on the scene (err {focal_err:.4f})"
+            )
+        # ... and keep the orientation the cube chose.
+        if sight_drift > 1e-6:
+            result.passed = False
+            result.notes.append(
+                f"refit changed the sight line (drift {sight_drift:.6f}) -- the cube's chosen "
+                "orientation must be preserved"
+            )
+        # Sanity: the mis-zoom really did differ from the fit (else the test is vacuous).
+        if abs(mis_scale - iso_scale) <= 1e-6:
+            result.passed = False
+            result.notes.append("the mis-zoom step did not change the scale -- the test is vacuous")
+
+        # 4) An ARBITRARY (non-preset) orientation: the refit scale must match the
+        #    corner-projection fit recomputed for that basis -- proving the cube can
+        #    frame any face/edge/corner, not just the presets.
+        cam.SetPosition(*(center + np.array([160.0, 120.0, -90.0], float)).tolist())
+        cam.SetFocalPoint(*center.tolist())
+        cam.SetViewUp(0.0, 1.0, 0.0)
+        inspector._fit_view_to_scene_for_current_orientation()
+        arb_scale = float(cam.GetParallelScale())
+        b = inspector._camera_fit_bounds()
+        ctr = np.array([0.5 * (b[0] + b[1]), 0.5 * (b[2] + b[3]), 0.5 * (b[4] + b[5])], float)
+        vd = np.array(cam.GetFocalPoint(), float) - np.array(cam.GetPosition(), float)
+        vu = np.array(cam.GetViewUp(), float)
+        rt = np.cross(vd, vu)
+        rt = rt / (float(np.linalg.norm(rt)) or 1.0)
+        vdn = vd / (float(np.linalg.norm(vd)) or 1.0)
+        tu = np.cross(rt, vdn)
+        corners = np.array(
+            [(b[i], b[j], b[k]) for i in (0, 1) for j in (2, 3) for k in (4, 5)], float
+        )
+        rel = corners - ctr
+        want_arb = inspector._parallel_scale_for_orthographic_fit(
+            float(np.ptp(rel @ rt)), float(np.ptp(rel @ tu)), inspector._render_aspect()
+        )
+        arb_rel_err = abs(arb_scale - want_arb) / max(want_arb, 1e-9)
+        result.detail["arbitrary_orientation_scale"] = round(arb_scale, 4)
+        result.detail["arbitrary_scale_rel_err"] = round(arb_rel_err, 6)
+        if arb_rel_err > 1e-3:
+            result.passed = False
+            result.notes.append(
+                f"arbitrary-orientation fit {arb_scale:.4f} != expected {want_arb:.4f} "
+                f"(rel-err {arb_rel_err:.4f}) -- the corner-projection fit is wrong off-preset"
+            )
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"navigation cube zoom-fit live drive raised: {exc!r}")
+
+    if not result.passed and not result.notes:
+        result.notes.append("navigation cube zoom-fit phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9054,6 +9205,7 @@ def main() -> int:
             phase_148_navigation_cube_click,
             phase_149_navigation_cube_rotate,
             phase_150_navigation_cube_plane_roll,
+            phase_151_navigation_cube_zoom_fit,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
