@@ -9,14 +9,18 @@ launches -- emitted rays from outside the object aperture.
 
 The current contract is:
 
-* The launch radial maximum is ``min(configured_field_height, object_radius)``.
+* The launch radial maximum is ``min(configured_field_height, object_radius,
+  camera_fov_inscribed_radius)`` -- the last term present only when a vendor
+  camera is registered (its sensor maps back to an object-plane FOV of inscribed
+  radius ``min(sensor_half_w, sensor_half_h) / |m|``; bugs/0162).
 * The 3x3 grid corners land exactly on that radial maximum.
 * Per-axis samples sit at ``radial_max / sqrt(2)``.
 * All 9 grid points launch successfully -- nothing is silently dropped.
 
-This validator enforces both bounds (field-limited and aperture-limited)
-against MV150 and a shrunk-aperture variant so a regression in either case is
-caught.
+MV150 stock registers the hr25MCX camera at a magnifying conjugate, so its
+binding limiter is the camera FOV (bugs/0162). This validator enforces that
+camera-FOV-limited bound and a shrunk-aperture variant so a regression in either
+case is caught.
 
 Run from the repository root:
 
@@ -123,30 +127,34 @@ def main() -> int:
         app.load_layouts()
         app.load_layout_by_name("Machine Vision 150Mm Measured", refresh=False)
 
-        # Case 1: field-limited. MV150's stock field_height (~10.05 mm) is
-        # smaller than the object aperture (12.5 mm), so the launch maximum
-        # equals the field height.
+        # Case 1: camera-FOV-limited. MV150 stock registers the hr25MCX at a
+        # magnifying conjugate, so the object-plane FOV inscribed radius is
+        # smaller than both the field height and the object aperture and becomes
+        # the binding launch limiter (bugs/0162). The launch maximum equals the
+        # FOV inscribed radius.
         field_height = float(app._current_field_height())
         object_radius = float(app.rows[0].diameter) * 0.5
+        fov_inscribed = app._camera_fov_inscribed_object_radius()
         _assert(
-            field_height < object_radius,
-            f"MV150 stock config no longer field-limited "
-            f"(field_height={field_height:.4g}, object_radius={object_radius:.4g}). "
-            f"Update the fixture so this case is exercised.",
+            fov_inscribed is not None and fov_inscribed < min(field_height, object_radius),
+            f"MV150 stock config no longer camera-FOV-limited "
+            f"(fov_inscribed={fov_inscribed}, field_height={field_height:.4g}, "
+            f"object_radius={object_radius:.4g}). Update the fixture so this case "
+            f"is exercised.",
             failures,
         )
         _check_grid_inscribed(
             app,
-            case="field-limited",
-            expected_radial_max=field_height,
+            case="camera-fov-limited",
+            expected_radial_max=float(fov_inscribed) if fov_inscribed is not None else field_height,
             failures=failures,
         )
 
-        # Case 2: aperture-limited. Shrink the object diameter to a value
-        # smaller than the configured field so the clamp drives the launch
-        # maximum. This simulates an inserted optic that constrains the
-        # achievable object FOV.
-        smaller_object_radius = field_height * 0.5
+        # Case 2: aperture-limited. Shrink the object diameter below the camera
+        # FOV inscribed radius so the aperture clamp drives the launch maximum.
+        # This simulates an inserted optic that constrains the achievable object
+        # FOV more tightly than the camera sees.
+        smaller_object_radius = float(fov_inscribed) * 0.5 if fov_inscribed is not None else field_height * 0.5
         app.rows[0].diameter = smaller_object_radius * 2.0
         _check_grid_inscribed(
             app,

@@ -81,6 +81,11 @@ class TracePreviewSamplingMixin:
         magnification shift for Real Image Height fields -- the launch grid
         automatically adapts. The clamp ensures the launch pattern never
         exceeds the object surface that physically emits the rays.
+
+        When a vendor camera is registered, its sensor also defines the
+        field of view that actually reaches the detector. The launch is
+        additionally clamped to that FOV's inscribed object radius so rays
+        never originate beyond the box the camera can image (bugs/0162).
         """
         height = abs(float(self._current_field_height()))
         if self.rows:
@@ -90,7 +95,52 @@ class TracePreviewSamplingMixin:
                 object_radius = 0.0
             if object_radius > 0.0:
                 height = min(height, object_radius)
+        fov_radius = self._camera_fov_inscribed_object_radius()
+        if fov_radius is not None and fov_radius > 0.0:
+            height = min(height, fov_radius)
         return height
+
+    def _camera_fov_inscribed_object_radius(self) -> float | None:
+        """Inscribed radius of the registered camera's object-plane FOV box.
+
+        A registered vendor camera's sensor maps back through the magnification
+        to an object-plane field of view of half-extent ``sensor_half / |m|``
+        (the green FOV overlay, ``detector_coverage_metrics``). The largest disc
+        that fits inside that rectangle has radius ``min(half_w, half_h)``;
+        bounding the radial field launch to it keeps every launched ray inside
+        the FOV the camera can image (bugs/0162).
+
+        Returns ``None`` when no camera is registered or the finite
+        magnification is unavailable, so plain scenes keep the object-aperture
+        clamp alone (and rays still launch -- never vanish).
+        """
+        try:
+            sensor = self._current_camera_sensor_active_mm()
+        except Exception:
+            sensor = None
+        if not sensor:
+            return None
+        try:
+            mag = self._current_finite_paraxial_magnification()
+        except Exception:
+            mag = None
+        if mag is None:
+            return None
+        try:
+            m = abs(float(mag))
+        except (TypeError, ValueError):
+            return None
+        if not np.isfinite(m) or m <= 1e-9:
+            return None
+        try:
+            half_w = abs(float(sensor[0])) * 0.5
+            half_h = abs(float(sensor[1])) * 0.5
+        except (TypeError, ValueError, IndexError):
+            return None
+        inscribed = min(half_w, half_h)
+        if inscribed <= 1e-9:
+            return None
+        return inscribed / m
 
     def _sample_field_grid_pairs(self, maximum: float) -> list[tuple[float, float]]:
         """Sample full-field preview points as an X/Y grid inscribed in the

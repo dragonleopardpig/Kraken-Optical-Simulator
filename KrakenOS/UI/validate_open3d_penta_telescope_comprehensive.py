@@ -9041,6 +9041,37 @@ def phase_152_sequential_cone_is_cone(
     return result
 
 
+def phase_153_launch_within_camera_fov(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """With a registered vendor camera, finite-object rays must launch WITHIN the
+    object-plane FOV box the camera defines, not out to the object aperture
+    (bugs/0162). For a magnifying conjugate the FOV (sensor_half / |m|) is smaller
+    than the object aperture, so ``_launch_field_radial_max()`` now clamps to the
+    FOV's inscribed object radius. The display-free guard binds the real clamp +
+    FOV helper and checks the clamp value, landscape vs. square sensors, the
+    every-point-inside-FOV guarantee, and the no-camera / unavailable-mag
+    fall-through (rays never vanish).
+    """
+    result = PhaseResult(
+        name="Phase 153: registered-camera rays launch within the object FOV box (0162)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_launch_within_camera_fov import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"launch-within-FOV guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("launch-within-FOV phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9239,6 +9270,7 @@ def main() -> int:
             phase_150_navigation_cube_plane_roll,
             phase_151_navigation_cube_zoom_fit,
             phase_152_sequential_cone_is_cone,
+            phase_153_launch_within_camera_fov,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
