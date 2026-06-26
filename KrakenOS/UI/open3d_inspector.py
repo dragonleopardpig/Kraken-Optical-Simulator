@@ -11503,11 +11503,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 except Exception:
                     pass
                 text_prop = actor.GetTextProperty()
-                text_prop.SetFontSize(12)
-                text_prop.SetColor(*line_color)
+                text_prop.SetFontSize(17)
+                try:
+                    text_prop.SetBold(1)
+                except Exception:
+                    pass
+                # Dark teal text on a solid white plate (the light-cyan bowl colour had
+                # poor contrast on the white background); the frame keeps the bowl hue.
+                text_prop.SetColor(0.05, 0.27, 0.34)
                 text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
-                text_prop.SetBackgroundOpacity(0.72)
+                text_prop.SetBackgroundOpacity(0.92)
                 text_prop.SetFrame(1)
+                text_prop.SetFrameWidth(2)
                 text_prop.SetFrameColor(*line_color)
                 self._add_renderer_view_prop(actor)
                 count += 1
