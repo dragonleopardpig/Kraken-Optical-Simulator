@@ -14478,9 +14478,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # Streamlined design block: the OBJECT plane already fixes the object field, so
         # the FOV is pinned from the Width box above (the magnification DOF); the user
         # adds one length and the EFL solves. Object plane only -- the image popup is the
-        # sensor-sizing tool. Same block as the left QE panel.
+        # sensor-sizing tool. Same block as the left QE panel. A separator + section
+        # header set it apart from the FOV-sizing tool above.
         if plane == "object":
             from KrakenOS.UI.services.quick_estimation import DESIGN_OBJECT_FOV_SEMI as _fov_key
+
+            ttk.Separator(dialog, orient="horizontal").grid(
+                row=button_row + 2, column=0, columnspan=2, sticky="ew", padx=12, pady=(2, 8)
+            )
+            ttk.Label(
+                dialog,
+                text="Design a lens for this field",
+                font=("TkDefaultFont", 10, "bold"),
+                justify="left",
+            ).grid(row=button_row + 3, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 4))
 
             def _fov_context():
                 raw = (width_var.get() or "").strip()
@@ -14499,7 +14510,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 return {_fov_key: semi} if semi > 0 else {}
 
             design_frame = ttk.Frame(dialog)
-            design_frame.grid(row=button_row + 2, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 10))
+            design_frame.grid(row=button_row + 4, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 10))
             design_frame.columnconfigure(1, weight=1)
             try:
                 from KrakenOS.UI.panels.design_constraint_controls import DesignConstraintControls

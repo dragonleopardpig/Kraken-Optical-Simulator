@@ -809,9 +809,17 @@ class QuickEstimationService:
     # ----------------------------------------------- click-on-plane FOV solve
     # The FOV/sensor here is modelled as a circle (semi-height = radius,
     # ``diameter`` = the image circle), so a *horizontal* field width only
-    # differs from the diameter once an aspect is assumed. Use the working
-    # machine-vision aspect (SENSOR_ASPECT, 4:3 -> horizontal/diagonal = 0.8).
+    # differs from the diameter once an aspect is assumed. Track the LIVE sensor
+    # the 3D view draws -- a registered camera's vendor sensor (e.g. a square
+    # 23.04x23.04 sets horizontal/diagonal = 1/sqrt2) -- falling back to the
+    # working machine-vision 4:3 (-> 0.8) only when no sensor is known.
     def _aspect_horizontal_fraction(self) -> float:
+        dims = self.sensor_active_dimensions()
+        if dims:
+            w, h = dims
+            diag = (float(w) * float(w) + float(h) * float(h)) ** 0.5
+            if diag > 1e-9 and float(w) > 1e-9:
+                return float(w) / diag
         aw, ah = SENSOR_ASPECT
         norm = (aw * aw + ah * ah) ** 0.5 or 1.0
         return float(aw) / norm
@@ -935,22 +943,46 @@ class QuickEstimationService:
             advanced["Detector"] = det
         return det
 
-    def sensor_active_dimensions(self) -> tuple[float, float] | None:
-        """Current sensor ``(width, height)`` in mm for the image popup prefill.
+    def _live_sensor_active_dimensions(self) -> tuple[float, float] | None:
+        """The terminal sensor ``(width, height)`` the 3D canvas actually draws.
 
-        Uses the terminal row's explicit rectangular detector dims when set, else
-        derives a 4:3 rectangle from the circular image-circle diameter."""
+        Mirrors ``scene_builder``'s precedence exactly: explicit rectangular
+        detector dims on the terminal row first, then the registered camera's
+        vendor sensor (the ``_camera_detector_active_dims_overrides`` the
+        detector overlay blends to -- e.g. a square 23.04x23.04). None when
+        neither is set -- the caller then folds the circular aperture."""
         det = self._terminal_detector_advanced(create=False) or {}
         try:
             width = float(det.get("active_width_mm", 0.0) or 0.0)
-        except (TypeError, ValueError):
-            width = 0.0
-        try:
             height = float(det.get("active_height_mm", 0.0) or 0.0)
         except (TypeError, ValueError):
-            height = 0.0
+            width = height = 0.0
         if width > 0 and height > 0:
             return width, height
+        try:
+            overrides = self.editor._camera_detector_active_dims_overrides()
+        except Exception:
+            overrides = None
+        if overrides:
+            rows = getattr(self.editor, "rows", None) or []
+            dims = overrides.get(len(rows) - 1)
+            try:
+                if dims and float(dims[0]) > 0 and float(dims[1]) > 0:
+                    return float(dims[0]), float(dims[1])
+            except (TypeError, ValueError, IndexError):
+                pass
+        return None
+
+    def sensor_active_dimensions(self) -> tuple[float, float] | None:
+        """Current sensor ``(width, height)`` in mm for the image popup prefill.
+
+        Prefers the live sensor the 3D view draws -- the registered camera's
+        vendor sensor (e.g. a square 23.04x23.04), else explicit rectangular
+        detector dims. Only when neither is set does it fall back to a 4:3
+        rectangle derived from the circular image-circle diameter."""
+        live = self._live_sensor_active_dimensions()
+        if live is not None:
+            return live
         semi = self._sensor_semi()
         if not semi or semi <= 0:
             return None

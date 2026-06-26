@@ -8384,6 +8384,36 @@ def phase_143_quick_estimation_placement_solve(
     return result
 
 
+def phase_144_quick_estimation_live_sensor_prefill(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The FOV / sensor double-click popups prefill the LIVE sensor the 3D canvas
+    draws -- a registered camera's vendor sensor (e.g. the hr25MCX square 23.04x23.04)
+    -- not a hardcoded 4:3 fold of the circular image aperture (bugs/0153). Explicit
+    rectangular detector dims still win (canvas precedence); the 4:3 fold remains only
+    when no sensor is known, and the FOV "semi" tracks the live aspect. The guard
+    drives the pure ``sensor_active_dimensions`` / ``object_fov_dimensions`` /
+    ``_aspect_horizontal_fraction`` on a tk-free fake editor; display-free.
+    """
+    result = PhaseResult(
+        name="Phase 144: Quick Estimation FOV/sensor popup reads the live camera sensor"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_quick_estimation_live_sensor_prefill import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"quick-estimation live-sensor-prefill guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("quick-estimation live-sensor-prefill guard reported failure without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -8573,6 +8603,7 @@ def main() -> int:
             phase_141_reanchor_menu_endpoint,
             phase_142_quick_estimation_focal_solve,
             phase_143_quick_estimation_placement_solve,
+            phase_144_quick_estimation_live_sensor_prefill,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

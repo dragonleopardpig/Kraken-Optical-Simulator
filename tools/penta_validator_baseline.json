@@ -145,7 +145,8 @@
     "140": "pass",
     "141": "pass",
     "142": "pass",
-    "143": "pass"
+    "143": "pass",
+    "144": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -291,6 +292,7 @@
     "140": "Open 3D thickness dimension side re-derives on orbit",
     "141": "Open 3D right-click re-anchor menu moves the endpoint nearest the click",
     "142": "Quick Estimation design-mode solve-for-EFL + DOF accountant",
-    "143": "Quick Estimation placement-mode solve (fixed lens, 1 DOF)"
+    "143": "Quick Estimation placement-mode solve (fixed lens, 1 DOF)",
+    "144": "Quick Estimation FOV/sensor popup reads the live camera sensor"
   }
 }
