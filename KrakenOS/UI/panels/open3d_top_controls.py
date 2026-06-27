@@ -113,6 +113,9 @@ class Open3DTopControlsPanel:
                 # 3D field-curvature viz (idea #2): translucent curved best-focus
                 # surface lofted over the flat detector.
                 MenuCheckbutton("Focus surf", self.inspector.show_best_focus_surface_var, self.inspector._on_scene_visibility_changed),
+                # 3D distortion viz (idea #2, 2nd half): rectilinear reference grid +
+                # its warped real image on the detector.
+                MenuCheckbutton("Distortion", self.inspector.show_distortion_grid_var, self.inspector._on_scene_visibility_changed),
             ),
         )
         pack_menubutton(view_toolbar, "Overlays", overlay_menu, padx=(8, 0))

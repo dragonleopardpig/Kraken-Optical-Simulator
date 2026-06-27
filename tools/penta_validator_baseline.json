@@ -161,7 +161,8 @@
     "156": "pass",
     "157": "pass",
     "158": "pass",
-    "159": "pass"
+    "159": "pass",
+    "160": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -323,6 +324,7 @@
     "156": "in-path trailing-spacer flag survives reload, big circle stays gone (0165)",
     "157": "overlay toggles re-render the cached scene -- no solid rebuild (0166)",
     "158": "curved best-focus surface lofts field curvature over the flat detector (idea #2)",
-    "159": "image circle uses EFL*tan(field), matches where rays land (0168)"
+    "159": "image circle uses EFL*tan(field), matches where rays land (0168)",
+    "160": "distortion grid warps a rectilinear grid into its real image (idea #2)"
   }
 }

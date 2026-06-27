@@ -9262,6 +9262,36 @@ def phase_159_image_circle_efl(
     return result
 
 
+def phase_160_distortion_grid(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The 3D distortion grid-warp (idea #2, 2nd half): a rectilinear reference grid and
+    its real (radially warped) image drawn on the detector, so barrel/pincushion reads in
+    3D. Built from the per-field real-vs-paraxial chief-ray heights the 2D Distortion
+    analysis already computes, behind a new "Distortion" overlay toggle (render-only per
+    bugs/0166). The display-free guard pins the warp geometry (ideal rectilinear, real
+    bows + expands, max % reported, tiny warp auto-exaggerated), a real double-gauss
+    pincushion (~1.1%), the scan caching, and the render-only + toggle contracts.
+    """
+    result = PhaseResult(
+        name="Phase 160: distortion grid warps a rectilinear grid into its real image (idea #2)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_distortion_grid import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"distortion-grid guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("distortion-grid phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9467,6 +9497,7 @@ def main() -> int:
             phase_157_overlay_toggle_no_rebuild,
             phase_158_best_focus_surface,
             phase_159_image_circle_efl,
+            phase_160_distortion_grid,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

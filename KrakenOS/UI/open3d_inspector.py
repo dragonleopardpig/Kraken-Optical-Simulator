@@ -605,6 +605,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # lofted over the flat detector. Off by default; the field-curvature scan is
         # lazy + cached, computed only when this is on.
         self.show_best_focus_surface_var = tk.BooleanVar(value=False)
+        # 3D distortion viz (idea #2, 2nd half): rectilinear reference grid + its
+        # radially-warped real image on the detector. Same lazy + cached scan.
+        self.show_distortion_grid_var = tk.BooleanVar(value=False)
         self.slide_along_axis_mode_var = tk.BooleanVar(value=False)
         self.show_live_controls_panel_var = tk.BooleanVar(value=True)
         self.show_scene_components_panel_var = tk.BooleanVar(value=True)
@@ -1684,6 +1687,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             show_placement_handles=bool(self.show_placement_handles_var.get()),
             show_thickness_dimensions=bool(self.editor.show_physical_distances_var.get()),
             show_best_focus_surface=bool(self.show_best_focus_surface_var.get()),
+            show_distortion_grid=bool(self.show_distortion_grid_var.get()),
             counts=self._debug_actor_counts(),
         )
         # bugs/0166: reference-surface / detector / thickness / terminal-diagnostic /
@@ -11516,6 +11520,82 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 text_prop.SetFrame(1)
                 text_prop.SetFrameWidth(2)
                 text_prop.SetFrameColor(*line_color)
+                self._add_renderer_view_prop(actor)
+                count += 1
+        except Exception:
+            pass
+        return count
+
+    def _add_distortion_grid_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
+        """Draw the rectilinear reference grid + its real (warped) image on the detector
+        (3D distortion viz, idea #2 / 2nd half). Render-only: geometry + the lazy, cached
+        field scan live on the editor (``distortion_grid_overlay_spec``)."""
+        if self._renderer is None or pv is None or scene_bundle is None:
+            return 0
+        try:
+            spec = self.editor.distortion_grid_overlay_spec(system, scene_bundle)
+        except Exception as exc:
+            self.editor.append_debug(f"Distortion grid overlay failed: {exc}")
+            return 0
+        if not spec:
+            return 0
+        count = 0
+
+        def _draw(polylines, color, opacity, width):
+            drawn = 0
+            for line in polylines or []:
+                try:
+                    pts = np.asarray(line, dtype=float)
+                    if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+                        continue
+                    mesh = pv.lines_from_points(pts[:, :3])
+                    self._add_mesh_actor(mesh, color=color, opacity=opacity, line_width=width)
+                    drawn += 1
+                except Exception:
+                    continue
+            return drawn
+
+        # Faint rectilinear reference, then the bold warped real image over it.
+        count += _draw(spec.get("ideal_polylines"), tuple(spec["ideal_color"]), 0.5, 1.0)
+        count += _draw(spec.get("real_polylines"), tuple(spec["real_color"]), 0.95, 2.0)
+
+        # Label the true max distortion + the exaggeration so the warp is honest.
+        try:
+            if vtkBillboardTextActor3D is not None and spec.get("real_polylines"):
+                max_pct = float(spec.get("max_distortion_pct", 0.0))
+                factor = float(spec.get("exaggeration", 1.0))
+                rim = spec.get("real_polylines")[-1]
+                rim_pts = np.asarray(rim, dtype=float)
+                anchor = rim_pts[int(np.argmax(rim_pts[:, 1]))].copy()
+                _c, scene_radius = self._scene_bounds()
+                anchor = anchor + np.asarray(spec["normal"], dtype=float) * max(float(scene_radius) * 0.01, 0.4)
+                kind = "pincushion" if max_pct >= 0 else "barrel"
+                if factor >= 1.5:
+                    label_text = (
+                        f"Distortion grid · max {abs(max_pct):.2g}% {kind}\n"
+                        f"warp exaggerated ×{factor:.0f} to show (grey = undistorted)"
+                    )
+                else:
+                    label_text = f"Distortion grid · max {abs(max_pct):.2g}% {kind} (true scale; grey = undistorted)"
+                actor = vtkBillboardTextActor3D()
+                actor.SetInput(label_text)
+                actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
+                try:
+                    actor.PickableOff()
+                except Exception:
+                    pass
+                text_prop = actor.GetTextProperty()
+                text_prop.SetFontSize(17)
+                try:
+                    text_prop.SetBold(1)
+                except Exception:
+                    pass
+                text_prop.SetColor(0.30, 0.07, 0.36)
+                text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
+                text_prop.SetBackgroundOpacity(0.92)
+                text_prop.SetFrame(1)
+                text_prop.SetFrameWidth(2)
+                text_prop.SetFrameColor(*tuple(spec["real_color"]))
                 self._add_renderer_view_prop(actor)
                 count += 1
         except Exception:

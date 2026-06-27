@@ -56,6 +56,7 @@ from KrakenOS.UI.services.best_focus_surface import (
     best_focus_surface_ring_polylines,
     build_best_focus_surface,
 )
+from KrakenOS.UI.services.distortion_grid import build_distortion_grid
 from KrakenOS.UI.services.legacy_3d_scene import Legacy3DSceneService
 from KrakenOS.UI.services.missing_assets_scan import (
     MISSING_RESOURCE_STATE_ATTR,
@@ -2616,6 +2617,75 @@ class ThreeDSceneToolsMixin:
             spec["faces"] = best_focus_surface_faces(spec["n_rings"], spec["n_az"])
             spec["ring_polylines"] = best_focus_surface_ring_polylines(spec)
         return spec
+
+    # ------------------------------------------------------------------
+    # Distortion grid-warp overlay (3D field-distortion viz, idea #2 / 2nd half)
+
+    def distortion_grid_overlay_spec(self, system, scene_bundle, *, wavelength=None):
+        """Build the rectilinear-vs-warped distortion grid spec, or None.
+
+        Same lazy + signature-cached contract as ``best_focus_surface_overlay_spec``
+        (the field scan is expensive; the bugs/0166 overlay toggles re-render the cached
+        scene). Anchors on the primary sequential image plane; branch / fieldless /
+        sizeless scenes return None.
+        """
+        if system is None or scene_bundle is None:
+            return None
+        target = self._best_focus_surface_anchor_target(scene_bundle)
+        if target is None:
+            return None
+        if wavelength is None:
+            try:
+                wavelength = float(self._current_wavelength())
+            except Exception:
+                return None
+        try:
+            signature = (
+                self._preview_trace_signature(),
+                round(float(wavelength), 6),
+                int(getattr(target, "row_index", -1)),
+            )
+        except Exception:
+            signature = None
+        cache = self.__dict__.get("_distortion_grid_cache")
+        if signature is not None and isinstance(cache, tuple) and len(cache) == 2 and cache[0] == signature:
+            return cache[1]
+        spec = self._compute_distortion_grid_spec(system, target, float(wavelength))
+        if signature is not None:
+            self._distortion_grid_cache = (signature, spec)
+        return spec
+
+    def _compute_distortion_grid_spec(self, system, target, wavelength: float):
+        try:
+            sampled = self._analysis_plot_service()._sample_field_curvature_distortion(system, wavelength)
+        except Exception as exc:  # pragma: no cover - defensive
+            try:
+                self.append_debug(f"Distortion grid: field scan failed: {exc}")
+            except Exception:
+                pass
+            return None
+        if not sampled:
+            return None
+        axis_results, _field_type, _field_limit = sampled
+        y_result = axis_results.get("Y") if isinstance(axis_results, dict) else None
+        if not isinstance(y_result, dict):
+            return None
+        real = np.asarray(y_result.get("image_height"), dtype=float).reshape(-1)
+        distortion = np.asarray(y_result.get("distortion"), dtype=float).reshape(-1)
+        if real.size < 2 or distortion.size != real.size:
+            return None
+        # ideal (paraxial, undistorted) height = real / (1 + distortion%/100).
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ideal = real / (1.0 + distortion / 100.0)
+        if not np.all(np.isfinite(ideal)):
+            return None
+        return build_distortion_grid(
+            ideal,
+            real,
+            center=np.asarray(getattr(target, "center_world"), dtype=float),
+            normal=np.asarray(getattr(target, "normal_world"), dtype=float),
+            tangent=np.asarray(getattr(target, "tangent_world"), dtype=float),
+        )
 
     def _iter_3d_scene_rays(
         self,

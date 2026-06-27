@@ -798,6 +798,10 @@ class Open3DSceneRefreshService:
         best_focus_surface_actors = 0
         if bool(getattr(self, "show_best_focus_surface_var", None) is not None and self.show_best_focus_surface_var.get()):
             best_focus_surface_actors = self._add_best_focus_surface_overlays(system, scene_bundle)
+        # 3D distortion viz (idea #2, 2nd half): rectilinear reference grid + warped image.
+        distortion_grid_actors = 0
+        if bool(getattr(self, "show_distortion_grid_var", None) is not None and self.show_distortion_grid_var.get()):
+            distortion_grid_actors = self._add_distortion_grid_overlays(system, scene_bundle)
         # bugs/0009: the thickness dimensions must be added *after* the imported
         # STEP overlay loop below registers the optical body into
         # ``_step_actor_map`` -- otherwise ``add_overlays`` measures against an

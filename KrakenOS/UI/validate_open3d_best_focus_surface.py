@@ -165,11 +165,13 @@ def _double_gauss_editor():
     return editor, system, layout_path
 
 
-def _check_integration(failures: list[str], notes: list[str]) -> None:
-    editor, system, layout_path = _double_gauss_editor()
+def _build_scene_bundle_for_double_gauss():
+    """Shared headless harness: editor + system + traced scene bundle for the double
+    gauss (reused by the distortion-grid guard). Returns (None, None, None) on any
+    fixture/build failure."""
+    editor, system, _layout_path = _double_gauss_editor()
     if editor is None:
-        notes.append("SKIP integration: double-gauss layout unavailable")
-        return
+        return None, None, None
     try:
         wavelength = float(editor._current_wavelength())
         rays = Kos.raykeeper(system)
@@ -177,8 +179,15 @@ def _check_integration(failures: list[str], notes: list[str]) -> None:
         editor._trace_preview_rays(system, rays, wavelength, max_radius, allow_full_pupil=True,
                                    sampling_mode=editor._preview_2d_sampling_mode())
         bundle = editor._build_scene_bundle(system, rays, max_radius)
-    except Exception as exc:
-        notes.append(f"SKIP integration: could not build scene bundle ({type(exc).__name__}: {exc})")
+    except Exception:
+        return None, None, None
+    return editor, system, bundle
+
+
+def _check_integration(failures: list[str], notes: list[str]) -> None:
+    editor, system, bundle = _build_scene_bundle_for_double_gauss()
+    if editor is None:
+        notes.append("SKIP integration: double-gauss layout/bundle unavailable")
         return
 
     anchor = editor._best_focus_surface_anchor_target(bundle)
