@@ -9535,6 +9535,35 @@ def phase_168_zemax_wavefront(
     return result
 
 
+def phase_169_wavefront_augmented_surrogate(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The wavefront-augmented surrogate (bugs/0177, option 2): an ideal Thin-Lens surrogate
+    carrying a vendor Zemax OPD map shows the REAL geometric spot (transverse ray aberration
+    of the measured wavefront) inside the Airy circle, not the ideal sub-diffraction point,
+    and the surrogate verdict flips to 'wavefront-augmented'. The display-free guard pins, on
+    the real MV-150 surrogate + Lens/15056 wavefront, the ideal (~0) -> augmented (~2 um,
+    inside the real-NA Airy) jump, the verdict flip, and the WavefrontMap allowlist round-trip.
+    """
+    result = PhaseResult(
+        name="Phase 169: wavefront-augmented surrogate -- real Zemax OPD spot inside the Airy (0177)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_wavefront_augmented_surrogate import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"wavefront-augmented-surrogate guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("wavefront-augmented-surrogate phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9749,6 +9778,7 @@ def main() -> int:
             phase_166_surrogate_optics_warning,
             phase_167_snap_detector_best_focus,
             phase_168_zemax_wavefront,
+            phase_169_wavefront_augmented_surrogate,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

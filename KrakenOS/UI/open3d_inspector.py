@@ -11802,10 +11802,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 if isinstance(shift, (int, float)) and abs(float(shift)) > 0.05:
                     focus_note = f"\n⚠ detector {float(shift):+.2g} mm off best focus → spots are defocus blur"
                 # Ideal/surrogate optics (Thin Lens / black-box) are aberration-free, so the
-                # spot is defocus-only, not the real lens -- say so plainly.
+                # spot is defocus-only, not the real lens -- say so plainly. When a vendor Zemax
+                # OPD map is attached the surrogate is wavefront-augmented (real spot).
                 surrogate_note = ""
+                wf_aug = spec.get("wavefront_augmented")
                 try:
-                    if self.editor._scene_surrogate_optics_info().get("is_surrogate"):
+                    if wf_aug:
+                        surrogate_note = (
+                            f"\n✓ Wavefront-augmented surrogate (Zemax OPD, RMS {float(wf_aug.get('rms_waves', 0.0)):.3g}λ, on-axis)"
+                        )
+                    elif self.editor._scene_surrogate_optics_info().get("is_surrogate"):
                         surrogate_note = "\n⚠ Surrogate optics (ideal lens) — defocus only, NOT real aberrations; load the real prescription"
                 except Exception:
                     pass
@@ -14984,6 +14990,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             variable=self.show_pixel_grid_var,
             command=self._on_scene_visibility_changed,
         )
+        # Wavefront-augmented surrogate (option 2): attach a vendor Zemax OPD map to an ideal
+        # Thin-Lens surrogate so the Spot map shows the real (measured) spot, not the ideal point.
+        try:
+            surrogate = self.editor._scene_surrogate_optics_info()
+        except Exception:
+            surrogate = {}
+        if surrogate.get("is_surrogate"):
+            if surrogate.get("wavefront_augmented"):
+                menu.add_command(label="Clear wavefront map (back to ideal)", command=self._clear_surrogate_wavefront_map)
+            else:
+                menu.add_command(label="Attach wavefront map… (Zemax OPD → real spot)", command=self._attach_surrogate_wavefront_map)
         exaggeration_menu = tk.Menu(menu, tearoff=False)
         current = getattr(self.editor, "_field_aberration_exaggeration", None)
 
@@ -15018,6 +15035,55 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         bowl/grid rebuild at the new factor on the next render-only refresh."""
         self.editor._field_aberration_exaggeration = value
         self._on_scene_visibility_changed()
+
+    def _attach_surrogate_wavefront_map(self) -> None:
+        """Right-click 'Attach wavefront map…': pick a Zemax wavefront-map .txt and store it on
+        the surrogate's Thin-Lens row, so the Spot map shows the real (measured) OPD spot
+        instead of the ideal point (option 2 -- wavefront-augmented surrogate)."""
+        row = self.editor._surrogate_thin_lens_row()
+        if row is None:
+            self.status_var.set("Attach wavefront map: no Thin-Lens surrogate row found.")
+            return
+        path = filedialog.askopenfilename(
+            title="Attach vendor wavefront (Zemax OPD) map",
+            filetypes=[("Zemax wavefront map", "*.txt"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            from KrakenOS.UI.services.zemax_wavefront import parse_zemax_wavefront_map
+            parsed = parse_zemax_wavefront_map(path)
+        except Exception:
+            parsed = None
+        if parsed is None:
+            self.status_var.set("Attach wavefront map: not a readable Zemax wavefront map.")
+            return
+        advanced = getattr(row, "advanced", None)
+        if not isinstance(advanced, dict):
+            advanced = {}
+            row.advanced = advanced
+        advanced["WavefrontMap"] = {"path": str(path)}
+        self.editor.__dict__.pop("_spot_field_map_cache", None)
+        self.editor.__dict__.pop("_wavefront_spot_cache", None)
+        self.status_var.set(
+            f"Attached wavefront map (RMS {float(parsed.get('rms_waves', 0.0)):.3g}λ) — surrogate is wavefront-augmented."
+        )
+        self.refresh_from_editor(force_retrace=True)
+
+    def _clear_surrogate_wavefront_map(self) -> None:
+        """Right-click 'Clear wavefront map': drop the OPD map (back to the ideal surrogate); the
+        disabled flag also suppresses auto-detection of a sibling map."""
+        row = self.editor._surrogate_thin_lens_row()
+        if row is not None:
+            advanced = getattr(row, "advanced", None)
+            if not isinstance(advanced, dict):
+                advanced = {}
+                row.advanced = advanced
+            advanced["WavefrontMap"] = {"disabled": True}
+        self.editor.__dict__.pop("_spot_field_map_cache", None)
+        self.editor.__dict__.pop("_wavefront_spot_cache", None)
+        self.status_var.set("Cleared wavefront map — surrogate back to ideal.")
+        self.refresh_from_editor(force_retrace=True)
 
     def _centered_input_dialog(self, title: str, prompt: str, initial: str) -> str | None:
         """Small screen-centred modal text input reusing the reliable

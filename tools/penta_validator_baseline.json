@@ -170,7 +170,8 @@
     "165": "pass",
     "166": "pass",
     "167": "pass",
-    "168": "pass"
+    "168": "pass",
+    "169": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -341,6 +342,7 @@
     "165": "pupil reference builds solid meshes for non-seq scenes (0171)",
     "166": "spot views warn when optics are an ideal surrogate (defocus only)",
     "167": "Snap detector falls back to ray-traced best focus (solid/BS scenes)",
-    "168": "Zemax wavefront -> Zernike -> real spot (augmented-surrogate engine)"
+    "168": "Zemax wavefront -> Zernike -> real spot (augmented-surrogate engine)",
+    "169": "wavefront-augmented surrogate -- real Zemax OPD spot inside the Airy (0177)"
   }
 }

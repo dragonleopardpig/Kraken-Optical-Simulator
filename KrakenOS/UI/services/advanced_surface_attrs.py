@@ -69,6 +69,7 @@ ADVANCED_SURFACE_FIELD_GROUPS = (
             ("StepAnalyticBodyStlPath", "Open 3D analytic STEP body STL cache path"),
             ("StepAnalyticBodyOmitMesh", "Open 3D analytic STEP body trailing-row mesh suppress"),
             ("InPathTrailingSpacer", "Open 3D in-path promote trailing AIR gap-carrier flag"),
+            ("WavefrontMap", "Vendor wavefront (Zemax OPD) map for a surrogate"),
             ("MissingResourceState", "User-skipped missing on-disk asset references"),
             ("LiveStepOverlayTrace", "Open 3D live STEP trace metadata"),
             ("Note", "Note"),

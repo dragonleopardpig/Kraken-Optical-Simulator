@@ -2866,6 +2866,7 @@ class ThreeDSceneToolsMixin:
                 round(float(wavelength), 6),
                 int(getattr(target, "row_index", -1)),
                 None if override is None else round(float(override), 4),
+                self._wavefront_map_signature(),  # invalidate when a wavefront map is (re)attached
                 "spotmap",
             )
         except Exception:
@@ -2934,6 +2935,29 @@ class ThreeDSceneToolsMixin:
                                                 np.asarray(m_dir, dtype=float), np.asarray(n_dir, dtype=float))
         if len(chief_u) < 2:
             return None
+        airy_radius_mm = self._airy_radius_mm_from_rays(on_axis_rays, wavelength)
+        try:
+            if on_axis_rays is not None:
+                _ox, _oy, _ol, _om, _on = on_axis_rays
+                self._surrogate_on_axis_na = float(np.max(np.hypot(np.asarray(_ol, dtype=float), np.asarray(_om, dtype=float))))
+        except Exception:
+            pass
+        # Wavefront-augmented surrogate (option 2): an ideal Thin-Lens surrogate carrying a
+        # vendor Zemax OPD map shows the REAL geometric spot (transverse ray aberration of the
+        # measured wavefront) instead of the ideal ~0 point -- the real blob lands inside the
+        # Airy circle. The OPD is on-axis only, so the same blob rides every field.
+        wavefront_augmented = None
+        wf_path = self._surrogate_wavefront_map_path()
+        if wf_path:
+            wf = self._wavefront_spot_for_surrogate(wf_path)
+            if wf is not None and np.asarray(wf["dx_mm"]).size >= 4:
+                blob = np.column_stack((wf["dx_mm"], wf["dy_mm"]))
+                for i in range(len(chief_u)):
+                    rms[i] = float(wf["rms_mm"])
+                    scatter[i] = blob
+                if wf.get("airy_radius_mm"):
+                    airy_radius_mm = float(wf["airy_radius_mm"])
+                wavefront_augmented = {"rms_um": float(wf["rms_um"]), "rms_waves": float(wf["rms_waves"]), "path": wf_path}
         spec = build_spot_field_map(
             chief_u, chief_v, rms,
             center=np.asarray(getattr(target, "center_world"), dtype=float),
@@ -2942,12 +2966,15 @@ class ThreeDSceneToolsMixin:
             image_radius=self._image_circle_radius_value(),
             magnification=exaggeration,
             scatter=scatter,
-            airy_radius_mm=self._airy_radius_mm_from_rays(on_axis_rays, wavelength),
+            airy_radius_mm=airy_radius_mm,
         )
-        if spec is not None and on_axis_rays is not None:
-            shift = self._spot_best_focus_shift(*on_axis_rays)
-            if shift is not None:
-                spec["best_focus_shift_mm"] = float(shift)
+        if spec is not None:
+            if wavefront_augmented is not None:
+                spec["wavefront_augmented"] = wavefront_augmented
+            if on_axis_rays is not None:
+                shift = self._spot_best_focus_shift(*on_axis_rays)
+                if shift is not None:
+                    spec["best_focus_shift_mm"] = float(shift)
         return spec
 
     @staticmethod
@@ -2990,15 +3017,176 @@ class ThreeDSceneToolsMixin:
     def _scene_surrogate_optics_info(self) -> dict:
         """Detect ideal/surrogate imaging optics (KrakenOS 'Thin Lens' / black-box stand-ins)
         on the current rows, so the spot views can warn that a ray-traced spot is defocus-only
-        rather than real lens aberration. Returns ``{is_surrogate, ideal_lens_count, ...}``."""
+        rather than real lens aberration. When a vendor wavefront (Zemax OPD) map is attached
+        to the surrogate the verdict flips to 'wavefront-augmented'. Returns
+        ``{is_surrogate, wavefront_augmented, reason, ...}``."""
         try:
             from KrakenOS.UI.services.surrogate_optics import detect_surrogate_optics
             rows = list(getattr(self, "rows", []) or [])
             surface_types = [getattr(r, "surface", "") for r in rows]
             element_names = [str(getattr(r, "name", "") or "") for r in rows]
-            return detect_surrogate_optics(surface_types, element_names)
+            info = detect_surrogate_optics(surface_types, element_names)
         except Exception:
-            return {"is_surrogate": False, "ideal_lens_count": 0, "blackbox_count": 0, "reason": ""}
+            return {"is_surrogate": False, "ideal_lens_count": 0, "blackbox_count": 0, "reason": "", "wavefront_augmented": False}
+        info["wavefront_augmented"] = False
+        if info.get("is_surrogate"):
+            rms = self._surrogate_wavefront_rms_waves()
+            if rms is not None:
+                info["wavefront_augmented"] = True
+                info["reason"] = f"wavefront-augmented (Zemax OPD, RMS {rms:.3g}λ, on-axis)"
+        return info
+
+    # ------------------------------------------------------------------
+    # Wavefront-augmented surrogate (real Zemax OPD -> real spot; option 2)
+
+    def _surrogate_thin_lens_row(self):
+        """The first 'Thin Lens' (Blackbox) row of a surrogate, which carries the wavefront map."""
+        for row in list(getattr(self, "rows", []) or []):
+            if str(getattr(row, "surface", "") or "") == "Thin Lens":
+                return row
+        return None
+
+    def _surrogate_wavefront_map_path(self):
+        """Absolute path of the surrogate's vendor wavefront (Zemax OPD) map, or None. An
+        explicit ``advanced['WavefrontMap']['path']`` wins (it survives a .py reload via the
+        ADVANCED_SURFACE_FIELD_GROUPS allowlist); otherwise a best-effort auto-detect of a
+        ``wavefront/Mag1.0.txt`` next to the layout / under a single ``Lens/<id>/`` folder."""
+        from pathlib import Path
+
+        row = self._surrogate_thin_lens_row()
+        if row is None:
+            return None
+        advanced = getattr(row, "advanced", None)
+        if isinstance(advanced, dict):
+            entry = advanced.get("WavefrontMap")
+            if isinstance(entry, dict):
+                if entry.get("disabled"):
+                    return None  # user explicitly cleared -> don't auto-detect either
+                path = entry.get("path")
+                if path and Path(str(path)).exists():
+                    return str(path)
+        # Auto-detect (transient, not persisted): a single unambiguous sibling map.
+        try:
+            candidates: list[Path] = []
+            layout = getattr(self, "current_layout_file", None)
+            search_dirs = []
+            if layout is not None:
+                layout_dir = Path(str(layout)).resolve().parent
+                search_dirs.append(layout_dir)
+                search_dirs.append(layout_dir / "Lens")
+            for base in search_dirs:
+                try:
+                    candidates += sorted(base.glob("wavefront/Mag1.0.txt"))
+                    candidates += sorted(base.glob("*/wavefront/Mag1.0.txt"))
+                except Exception:
+                    continue
+            uniq = [p for p in dict.fromkeys(candidates) if p.exists()]
+            if len(uniq) == 1:
+                return str(uniq[0])
+        except Exception:
+            pass
+        return None
+
+    def _wavefront_spot_for_surrogate(self, path):
+        """Parse + cache the Zemax OPD map at ``path`` and return the real geometric spot it
+        implies: ``{dx_mm, dy_mm, rms_mm, rms_um, rms_waves, airy_radius_mm}`` (None on failure).
+        Cached by ``(path, mtime)``. ``R`` (exit-pupil->image) prefers the sibling Zemax
+        prescription report, else falls back to ``exit_pupil_radius / on-axis NA``."""
+        from pathlib import Path
+
+        if not path:
+            return None
+        try:
+            mtime = Path(str(path)).stat().st_mtime
+        except Exception:
+            return None
+        cache = self.__dict__.get("_wavefront_spot_cache")
+        key = (str(path), float(mtime))
+        if isinstance(cache, tuple) and len(cache) == 2 and cache[0] == key:
+            return cache[1]
+        result = None
+        try:
+            from KrakenOS.UI.services.zemax_wavefront import parse_zemax_wavefront_map, wavefront_to_spot
+            parsed = parse_zemax_wavefront_map(path)
+            if parsed is not None:
+                epd = float(parsed.get("exit_pupil_diameter_mm") or 0.0)
+                epr = epd / 2.0 if epd > 0.0 else 0.0
+                lam_um = float(parsed.get("wavelength_um") or 0.546)
+                R = self._resolve_exit_pupil_to_image_mm(path, epr)
+                if epr > 0.0 and R and R > 0.0:
+                    spot = wavefront_to_spot(
+                        parsed["opd_waves"], parsed["mask"],
+                        wavelength_um=lam_um, exit_pupil_radius_mm=epr, exit_pupil_to_image_mm=R,
+                    )
+                    na = epr / R  # the REAL image-space NA from the vendor pupil + conjugate
+                    airy = 0.61 * (lam_um / 1000.0) / na if na > 1e-9 else None
+                    result = {
+                        "dx_mm": np.asarray(spot["dx_mm"], dtype=float),
+                        "dy_mm": np.asarray(spot["dy_mm"], dtype=float),
+                        "rms_mm": float(spot["rms_mm"]),
+                        "rms_um": float(spot["rms_um"]),
+                        "rms_waves": float(parsed.get("rms_waves") or 0.0),
+                        "airy_radius_mm": airy,
+                    }
+        except Exception as exc:  # pragma: no cover - defensive
+            try:
+                self.append_debug(f"Wavefront-augmented surrogate failed: {exc}")
+            except Exception:
+                pass
+            result = None
+        self._wavefront_spot_cache = (key, result)
+        return result
+
+    def _resolve_exit_pupil_to_image_mm(self, wavefront_path, exit_pupil_radius_mm):
+        """R = exit-pupil -> image distance (mm). Prefer the sibling Zemax prescription report
+        (``Exit Pupil Position``), else fall back to ``exit_pupil_radius / on-axis NA``."""
+        from pathlib import Path
+        import re as _re
+
+        try:
+            lens_dir = Path(str(wavefront_path)).resolve().parent.parent
+            for report in sorted(lens_dir.glob("*Presc*Data.txt")):
+                try:
+                    text = report.read_text(errors="ignore")
+                except Exception:
+                    continue
+                match = _re.search(r"Exit Pupil Position\s*:\s*(-?\d+(?:\.\d+)?)", text)
+                if match:
+                    value = abs(float(match.group(1)))
+                    if value > 1e-6:
+                        return value
+        except Exception:
+            pass
+        na = self.__dict__.get("_surrogate_on_axis_na")
+        try:
+            if na and float(na) > 1e-9 and float(exit_pupil_radius_mm) > 0.0:
+                return float(exit_pupil_radius_mm) / float(na)
+        except Exception:
+            pass
+        return None
+
+    def _surrogate_wavefront_rms_waves(self):
+        """The attached wavefront map's RMS in waves (for the surrogate verdict), or None."""
+        path = self._surrogate_wavefront_map_path()
+        if not path:
+            return None
+        spot = self._wavefront_spot_for_surrogate(path)
+        return None if spot is None else float(spot.get("rms_waves") or 0.0)
+
+    def _wavefront_map_signature(self):
+        """``(path, mtime)`` of the attached wavefront map, for the spot-map cache key, or None."""
+        from pathlib import Path
+
+        path = self._surrogate_wavefront_map_path()
+        if not path:
+            return None
+        try:
+            return (str(path), float(Path(str(path)).stat().st_mtime))
+        except Exception:
+            return (str(path), 0.0)
+
+    # ------------------------------------------------------------------
+    # Camera pixel-grid overlay (idea #1: the spot footprint on real pixels)
 
     # ------------------------------------------------------------------
     # Camera pixel-grid overlay (idea #1: the spot footprint on real pixels)
