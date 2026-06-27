@@ -14612,6 +14612,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # mirroring the per-branch "Register STEP camera" so single-axis and cascade arms are
             # uniform (item 1; user expects camera import from the detector right-click).
             self._add_image_plane_camera_menu(menu)
+            # 3D image-plane analyses (field curvature / distortion), also on the Overlays
+            # dropdown -- the user wants them reachable by right-clicking the image plane.
+            self._add_image_plane_analysis_menu(menu)
         try:
             menu.tk_popup(int(event.x_root), int(event.y_root))
         finally:
@@ -14619,6 +14622,61 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 menu.grab_release()
             except Exception:
                 pass
+
+    def _add_image_plane_analysis_menu(self, menu) -> None:
+        """Append the 3D image-plane analysis overlays (best-focus surface = field
+        curvature, distortion grid) + the aberration-exaggeration control to a right-click
+        menu, mirroring the Overlays dropdown. The checkbuttons share the same BooleanVars
+        as the dropdown, so the two stay in sync and toggling re-renders via the bugs/0166
+        display-toggle gate. The exaggeration submenu lets the user pick visibility (auto
+        magnifies the sub-mm aberrations) vs true scale (×1 = no apparent 'detachment'
+        from the flat image circle)."""
+        menu.add_separator()
+        menu.add_command(label="3D image-plane analyses", state="disabled")
+        menu.add_checkbutton(
+            label="Best-focus surface (field curvature)",
+            variable=self.show_best_focus_surface_var,
+            command=self._on_scene_visibility_changed,
+        )
+        menu.add_checkbutton(
+            label="Distortion grid (barrel / pincushion)",
+            variable=self.show_distortion_grid_var,
+            command=self._on_scene_visibility_changed,
+        )
+        exaggeration_menu = tk.Menu(menu, tearoff=False)
+        current = getattr(self.editor, "_field_aberration_exaggeration", None)
+
+        def _mark(value) -> str:
+            if value is None:
+                same = current is None
+            else:
+                try:
+                    same = current is not None and abs(float(current) - float(value)) < 1e-6
+                except Exception:
+                    same = False
+            return "● " if same else "    "
+
+        exaggeration_menu.add_command(
+            label=_mark(None) + "Auto (fit to view)",
+            command=lambda: self._set_field_aberration_exaggeration(None),
+        )
+        exaggeration_menu.add_command(
+            label=_mark(1.0) + "True scale ×1 (no exaggeration)",
+            command=lambda: self._set_field_aberration_exaggeration(1.0),
+        )
+        for factor in (5.0, 10.0, 25.0, 50.0):
+            exaggeration_menu.add_command(
+                label=_mark(factor) + f"×{int(factor)}",
+                command=lambda value=factor: self._set_field_aberration_exaggeration(value),
+            )
+        menu.add_cascade(label="Aberration exaggeration…", menu=exaggeration_menu)
+
+    def _set_field_aberration_exaggeration(self, value) -> None:
+        """Set the best-focus/distortion aberration exaggeration (None = auto, a positive
+        float = fixed factor) and re-render. The overlay caches key on this value, so the
+        bowl/grid rebuild at the new factor on the next render-only refresh."""
+        self.editor._field_aberration_exaggeration = value
+        self._on_scene_visibility_changed()
 
     def _centered_input_dialog(self, title: str, prompt: str, initial: str) -> str | None:
         """Small screen-centred modal text input reusing the reliable

@@ -2562,23 +2562,36 @@ class ThreeDSceneToolsMixin:
                 wavelength = float(self._current_wavelength())
             except Exception:
                 return None
+        override = self._field_aberration_exaggeration_value()
         try:
             signature = (
                 self._preview_trace_signature(),
                 round(float(wavelength), 6),
                 int(getattr(target, "row_index", -1)),
+                None if override is None else round(float(override), 4),
             )
         except Exception:
             signature = None
         cache = self.__dict__.get("_best_focus_surface_cache")
         if signature is not None and isinstance(cache, tuple) and len(cache) == 2 and cache[0] == signature:
             return cache[1]
-        spec = self._compute_best_focus_surface_spec(system, target, float(wavelength))
+        spec = self._compute_best_focus_surface_spec(system, target, float(wavelength), override)
         if signature is not None:
             self._best_focus_surface_cache = (signature, spec)
         return spec
 
-    def _compute_best_focus_surface_spec(self, system, target, wavelength: float):
+    def _field_aberration_exaggeration_value(self):
+        """User-set field-aberration exaggeration for the best-focus/distortion overlays:
+        a positive float, or None for the auto factor. Lets the user trade visibility
+        (auto magnifies the sub-mm aberrations) against true scale (×1, where the bowl
+        coincides with the flat image circle -- no apparent 'detachment')."""
+        value = getattr(self, "_field_aberration_exaggeration", None)
+        try:
+            return float(value) if value is not None and float(value) > 0.0 else None
+        except Exception:
+            return None
+
+    def _compute_best_focus_surface_spec(self, system, target, wavelength: float, exaggeration=None):
         try:
             # The field-curvature scan lives on the composed AnalysisPlotService
             # (reached via the editor's accessor), not directly on the editor.
@@ -2612,6 +2625,7 @@ class ThreeDSceneToolsMixin:
             center=np.asarray(getattr(target, "center_world"), dtype=float),
             normal=np.asarray(getattr(target, "normal_world"), dtype=float),
             tangent=np.asarray(getattr(target, "tangent_world"), dtype=float),
+            exaggeration=exaggeration,
         )
         if spec is not None:
             spec["faces"] = best_focus_surface_faces(spec["n_rings"], spec["n_az"])
@@ -2641,12 +2655,14 @@ class ThreeDSceneToolsMixin:
                 wavelength = float(self._current_wavelength())
             except Exception:
                 return None
+        override = self._field_aberration_exaggeration_value()
         try:
             signature = (
                 self._preview_trace_signature(),
                 round(float(wavelength), 6),
                 int(getattr(target, "row_index", -1)),
                 bool(lift_onto_best_focus),
+                None if override is None else round(float(override), 4),
             )
         except Exception:
             signature = None
@@ -2654,12 +2670,12 @@ class ThreeDSceneToolsMixin:
         if signature is not None and isinstance(cache, tuple) and len(cache) == 2 and cache[0] == signature:
             return cache[1]
         bf_spec = self.best_focus_surface_overlay_spec(system, scene_bundle) if lift_onto_best_focus else None
-        spec = self._compute_distortion_grid_spec(system, target, float(wavelength), bf_spec)
+        spec = self._compute_distortion_grid_spec(system, target, float(wavelength), bf_spec, override)
         if signature is not None:
             self._distortion_grid_cache = (signature, spec)
         return spec
 
-    def _compute_distortion_grid_spec(self, system, target, wavelength: float, bf_spec=None):
+    def _compute_distortion_grid_spec(self, system, target, wavelength: float, bf_spec=None, exaggeration=None):
         try:
             sampled = self._analysis_plot_service()._sample_field_curvature_distortion(system, wavelength)
         except Exception as exc:  # pragma: no cover - defensive
@@ -2693,6 +2709,7 @@ class ThreeDSceneToolsMixin:
             center=np.asarray(getattr(target, "center_world"), dtype=float),
             normal=np.asarray(getattr(target, "normal_world"), dtype=float),
             tangent=np.asarray(getattr(target, "tangent_world"), dtype=float),
+            exaggeration=exaggeration,
             lift_radii=lift_radii,
             lift_dz=lift_dz,
         )

@@ -294,6 +294,20 @@ def _check_source_contracts(failures: list[str]) -> None:
     if "can_reuse_current_scene_for_display_toggle" not in handler_src:
         failures.append("CONTRACT: the Focus-surf toggle would rebuild -- handler lost the bugs/0166 display gate")
 
+    # Right-click access: the Image-plane menu must offer the analyses + exaggeration.
+    qe_src = inspect.getsource(Kraken3DInspector._show_quick_estimation_role_menu)
+    if "_add_image_plane_analysis_menu" not in qe_src:
+        failures.append("CONTRACT: the Image-plane right-click menu does not offer the 3D analyses")
+    analysis_src = inspect.getsource(Kraken3DInspector._add_image_plane_analysis_menu)
+    for needle in ("show_best_focus_surface_var", "show_distortion_grid_var", "_set_field_aberration_exaggeration"):
+        if needle not in analysis_src:
+            failures.append(f"CONTRACT: the right-click analyses menu is missing {needle!r}")
+
+    # The user-set exaggeration override must reach the bowl builder.
+    from KrakenOS.UI.layout_editor import KrakenLayoutEditor
+    if "_field_aberration_exaggeration_value" not in inspect.getsource(KrakenLayoutEditor.best_focus_surface_overlay_spec):
+        failures.append("CONTRACT: best_focus_surface_overlay_spec ignores the exaggeration override")
+
 
 def run_checks() -> "tuple[bool, list[str]]":
     failures: list[str] = []
