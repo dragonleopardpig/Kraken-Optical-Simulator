@@ -813,12 +813,21 @@ class AnalysisComputeWorkflowMixin:
             pupil_rows, _last_source_index = self._paraxial_reference_rows_for_layout(
                 source_rows, unfold_branch_tilts=(rows is not None)
             )
-            # bugs/0166: this build=0 system only feeds PupilCalc (paraxial first-order
-            # math); it never NS-traces through the solid meshes. Skip the output-port
-            # overrides so the beam-splitter solid is NOT force-meshed once per branch.
+            # bugs/0166: this system feeds PupilCalc (paraxial first-order math); skip the
+            # output-port overrides so the beam-splitter solid is NOT force-meshed once per
+            # branch.
+            # bugs/0171: but PupilCalc's reference launch is NON-SEQUENTIAL when the
+            # reference chain still carries a promoted optical SOLID (a glued beam-splitter
+            # cube / STL body) -- it traces THROUGH the solid mesh. With build=0 +
+            # ports=False the system keeps Prerequisites3DSolidsDummy's int-placeholder EEE,
+            # so that trace dies with "non-sequential surface N: int has no ray_trace" and
+            # silently falls back to a coarse geometric aim. Build real meshes when the
+            # reference rows need geometry; the 0166 speedup still holds for the
+            # centered-sequential case (no solids -> build=0, no force-mesh).
+            pupil_needs_geometry = self._rows_require_geometry_build(pupil_rows)
             pupil_system = _build_system_from_specs(
                 self._serializable_specs_for_rows(pupil_rows),
-                build=0,
+                build=1 if pupil_needs_geometry else 0,
                 apply_optical_solid_output_ports=False,
             )
         pupil_surface_index = self._pupil_surface_index_for_rows(pupil_rows)

@@ -9413,6 +9413,38 @@ def phase_164_camera_pixel_grid(
     return result
 
 
+def phase_165_pupil_reference_solid_mesh(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The first-order PUPIL REFERENCE must build real solid meshes when its reference chain
+    carries a promoted optical solid / beam-splitter cube (bugs/0171). The 0166 pupil
+    reference built with build=0, but PupilCalc's launch is NON-sequential when a solid is in
+    the chain and traces through the solid mesh -- with build=0 the system keeps
+    Prerequisites3DSolidsDummy's int-EEE so the trace dies ("non-sequential surface N: int
+    has no ray_trace") and falls back to a coarse aim, spamming and breaking Solve Best Focus.
+    Fix: gate the reference build on _rows_require_geometry_build (non-seq -> build=1; the
+    sequential 0166 speedup is preserved). The display-free guard pins the int-EEE trap, the
+    build=1 mesh remedy, the source gate, and (with the fixture) a clean PupilCalc reference.
+    """
+    result = PhaseResult(
+        name="Phase 165: pupil reference builds solid meshes for non-seq scenes (0171)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_pupil_reference_solid_mesh import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"pupil-reference-solid-mesh guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("pupil-reference-solid-mesh phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9623,6 +9655,7 @@ def main() -> int:
             phase_162_spot_field_map,
             phase_163_spot_diagram_2d_pupil,
             phase_164_camera_pixel_grid,
+            phase_165_pupil_reference_solid_mesh,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
