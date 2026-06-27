@@ -84,8 +84,13 @@ def build_spot_field_map(
     if radius_ref <= 1e-6:
         radius_ref = 1.0
 
+    airy_mm = float(airy_radius_mm) if (airy_radius_mm is not None and float(airy_radius_mm) > 0.0) else 0.0
     if magnification is None:
-        factor = (SPOT_FIELD_MAP_TARGET_FRACTION * radius_ref) / max_rms
+        # Reference the zoom to the LARGER of the spot RMS and the Airy radius: a sub-pixel /
+        # sub-diffraction spot must not blow the (much bigger) Airy disk up off-screen -- when
+        # the spot is below the diffraction floor the Airy IS the meaningful reference scale.
+        size_ref = max(max_rms, airy_mm)
+        factor = (SPOT_FIELD_MAP_TARGET_FRACTION * radius_ref) / size_ref
         factor = float(min(max(factor, 1.0), SPOT_FIELD_MAP_MAG_CAP))
     else:
         factor = float(magnification)
@@ -133,7 +138,6 @@ def build_spot_field_map(
     # circle of the SAME radius at every chief, magnified by the same factor; a geometric
     # spot drawn INSIDE it is below the physical limit (ideal/surrogate optics, no diffraction).
     airy_circles: list[np.ndarray] = []
-    airy_mm = float(airy_radius_mm) if (airy_radius_mm is not None and float(airy_radius_mm) > 0.0) else 0.0
     if airy_mm > 0.0:
         airy_display = airy_mm * factor
         for i in range(n):

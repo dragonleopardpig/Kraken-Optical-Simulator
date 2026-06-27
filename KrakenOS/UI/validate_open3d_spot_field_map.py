@@ -76,6 +76,17 @@ def _check_pure_geometry(failures: list[str]) -> None:
         if not (colors[0][1] > colors[3][1] and colors[0][0] < colors[3][0]):
             failures.append("PURE: colour does not track RMS (good->green, bad->red)")
 
+    # Airy cap: a sub-diffraction spot (RMS << Airy) must reference the zoom to the Airy, so
+    # the Airy disk stays on-screen (~the image), not blown up off it by the tiny spot.
+    spec_airy = build_spot_field_map(
+        chief_u, chief_v, np.array([1e-4] * 5), center=center, normal=normal, tangent=tangent,
+        image_radius=10.0, airy_radius_mm=5e-3,
+    )
+    if spec_airy is not None:
+        airy_display = 5e-3 * float(spec_airy["magnification"])
+        if airy_display > 0.5 * 10.0:
+            failures.append(f"PURE: a sub-diffraction spot blew the Airy disk up ({airy_display:.3g} mm vs image 10 mm)")
+
     # Scatter: the real spot shape laid at the chief, magnified by the same factor as the
     # circle (so each blob fits inside its RMS circle).
     theta = np.linspace(0.0, 2.0 * np.pi, 16, endpoint=False)
