@@ -11532,8 +11532,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         field scan live on the editor (``distortion_grid_overlay_spec``)."""
         if self._renderer is None or pv is None or scene_bundle is None:
             return 0
+        # When Focus surf is also on, lay the warped grid onto the best-focus bowl.
+        lift = bool(
+            getattr(self, "show_best_focus_surface_var", None) is not None
+            and self.show_best_focus_surface_var.get()
+        )
         try:
-            spec = self.editor.distortion_grid_overlay_spec(system, scene_bundle)
+            spec = self.editor.distortion_grid_overlay_spec(system, scene_bundle, lift_onto_best_focus=lift)
         except Exception as exc:
             self.editor.append_debug(f"Distortion grid overlay failed: {exc}")
             return 0
@@ -11570,13 +11575,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 _c, scene_radius = self._scene_bounds()
                 anchor = anchor + np.asarray(spec["normal"], dtype=float) * max(float(scene_radius) * 0.01, 0.4)
                 kind = "pincushion" if max_pct >= 0 else "barrel"
+                surface_note = " on best-focus bowl" if spec.get("lifted") else ""
                 if factor >= 1.5:
                     label_text = (
-                        f"Distortion grid · max {abs(max_pct):.2g}% {kind}\n"
+                        f"Distortion grid{surface_note} · max {abs(max_pct):.2g}% {kind}\n"
                         f"warp exaggerated ×{factor:.0f} to show (grey = undistorted)"
                     )
                 else:
-                    label_text = f"Distortion grid · max {abs(max_pct):.2g}% {kind} (true scale; grey = undistorted)"
+                    label_text = (
+                        f"Distortion grid{surface_note} · max {abs(max_pct):.2g}% {kind} "
+                        "(true scale; grey = undistorted)"
+                    )
                 actor = vtkBillboardTextActor3D()
                 actor.SetInput(label_text)
                 actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))

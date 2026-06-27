@@ -93,6 +93,25 @@ def _check_pure_geometry(failures: list[str]) -> None:
     if abs(float(auto["max_distortion_pct"]) - float(spec["max_distortion_pct"])) > 1e-6:
         failures.append("PURE: exaggeration changed the reported TRUE max distortion %")
 
+    # Lift onto a best-focus bowl (the "distorted bowl" when both overlays are on):
+    # every vertex gets the interpolated axial offset along the normal.
+    lift_radii = np.array([0.0, 5.0, 10.0])
+    lift_dz = np.array([0.0, -1.0, -4.0])  # a dish (toward the lens)
+    lifted = build_distortion_grid(
+        ideal, real, center=center, normal=normal, tangent=tangent,
+        exaggeration=1.0, lift_radii=lift_radii, lift_dz=lift_dz,
+    )
+    if not lifted or not lifted.get("lifted"):
+        failures.append("PURE: lift params did not produce a lifted grid")
+    else:
+        rim_pts = np.asarray(lifted["real_polylines"][0], dtype=float)
+        rim_axial = (rim_pts - center) @ normal
+        if float(np.max(np.abs(rim_axial))) <= 1e-3:
+            failures.append("PURE: lifted grid has no axial offset (not laid on the bowl)")
+        flat_rim = np.asarray(real_lines[0], dtype=float)
+        if float(np.max(np.abs((flat_rim - center) @ normal))) > 1e-6:
+            failures.append("PURE: the un-lifted grid should stay in the image plane (no axial offset)")
+
     # Degenerate inputs -> None.
     if build_distortion_grid([0.0], [0.0], center=center, normal=normal, tangent=tangent) is not None:
         failures.append("PURE: <2 radii did not return None")

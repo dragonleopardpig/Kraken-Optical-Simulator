@@ -55,6 +55,8 @@ def build_distortion_grid(
     n_lines: int = DISTORTION_GRID_LINES,
     samples: int = DISTORTION_GRID_SAMPLES,
     exaggeration: "float | None" = None,
+    lift_radii=None,
+    lift_dz=None,
     real_color=DISTORTION_GRID_REAL_COLOR,
     ideal_color=DISTORTION_GRID_IDEAL_COLOR,
 ) -> "dict | None":
@@ -63,8 +65,15 @@ def build_distortion_grid(
     ``ideal_radii`` / ``real_radii`` are monotonic per-field paraxial and real chief-ray
     image heights (mm). The grid is an inscribed square (half-side = max ideal radius /
     sqrt(2)) of ``n_lines`` lines each way, each sampled at ``samples`` points so a warped
-    line reads as a smooth curve. Returns world-space polylines + the true max distortion
-    % + the (auto) exaggeration factor, or None for degenerate input.
+    line reads as a smooth curve.
+
+    When ``lift_radii`` / ``lift_dz`` are given (the best-focus surface's ring radii and
+    its already-exaggerated axial offsets), each grid vertex is lifted along the normal by
+    ``interp(vertex_radius, lift_radii, lift_dz)`` -- i.e. the warped grid is laid onto the
+    curved best-focus bowl (the "distorted bowl" when both overlays are on).
+
+    Returns world-space polylines + the true max distortion % + the (auto) exaggeration
+    factor, or None for degenerate input.
     """
     ideal_radii = np.asarray(ideal_radii, dtype=float).reshape(-1)
     real_radii = np.asarray(real_radii, dtype=float).reshape(-1)
@@ -105,6 +114,16 @@ def build_distortion_grid(
     line_coords = np.linspace(-half, half, n_lines)
     sample_coords = np.linspace(-half, half, samples)
 
+    lifted = lift_radii is not None and lift_dz is not None
+    if lifted:
+        lr = np.asarray(lift_radii, dtype=float).reshape(-1)
+        ld = np.asarray(lift_dz, dtype=float).reshape(-1)
+        lifted = lr.size >= 2 and ld.size == lr.size and np.all(np.isfinite(lr)) and np.all(np.isfinite(ld))
+        if lifted:
+            order_l = np.argsort(lr)
+            lr = lr[order_l]
+            ld = ld[order_l]
+
     def _warp(a: np.ndarray, b: np.ndarray):
         rho = np.hypot(a, b)
         real_rho = np.interp(rho, ir, rr)
@@ -113,7 +132,11 @@ def build_distortion_grid(
         return a * scale, b * scale
 
     def _to_world(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-        return center[None, :] + a[:, None] * u[None, :] + b[:, None] * v[None, :]
+        pts = center[None, :] + a[:, None] * u[None, :] + b[:, None] * v[None, :]
+        if lifted:
+            dz = np.interp(np.hypot(a, b), lr, ld)
+            pts = pts + dz[:, None] * n_hat[None, :]
+        return pts
 
     ideal_polylines: list[np.ndarray] = []
     real_polylines: list[np.ndarray] = []
@@ -133,6 +156,7 @@ def build_distortion_grid(
         "real_polylines": real_polylines,
         "max_distortion_pct": max_distortion_pct,
         "exaggeration": float(factor),
+        "lifted": bool(lifted),
         "image_radius": image_radius,
         "center": center,
         "normal": n_hat,

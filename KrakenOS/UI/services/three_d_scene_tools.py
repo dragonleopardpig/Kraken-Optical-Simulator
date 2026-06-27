@@ -2621,13 +2621,15 @@ class ThreeDSceneToolsMixin:
     # ------------------------------------------------------------------
     # Distortion grid-warp overlay (3D field-distortion viz, idea #2 / 2nd half)
 
-    def distortion_grid_overlay_spec(self, system, scene_bundle, *, wavelength=None):
+    def distortion_grid_overlay_spec(self, system, scene_bundle, *, wavelength=None, lift_onto_best_focus=False):
         """Build the rectilinear-vs-warped distortion grid spec, or None.
 
         Same lazy + signature-cached contract as ``best_focus_surface_overlay_spec``
         (the field scan is expensive; the bugs/0166 overlay toggles re-render the cached
         scene). Anchors on the primary sequential image plane; branch / fieldless /
-        sizeless scenes return None.
+        sizeless scenes return None. When ``lift_onto_best_focus`` (the user has the
+        Focus-surf overlay on too) the warped grid is laid onto the curved best-focus
+        bowl -- the "distorted bowl".
         """
         if system is None or scene_bundle is None:
             return None
@@ -2644,18 +2646,20 @@ class ThreeDSceneToolsMixin:
                 self._preview_trace_signature(),
                 round(float(wavelength), 6),
                 int(getattr(target, "row_index", -1)),
+                bool(lift_onto_best_focus),
             )
         except Exception:
             signature = None
         cache = self.__dict__.get("_distortion_grid_cache")
         if signature is not None and isinstance(cache, tuple) and len(cache) == 2 and cache[0] == signature:
             return cache[1]
-        spec = self._compute_distortion_grid_spec(system, target, float(wavelength))
+        bf_spec = self.best_focus_surface_overlay_spec(system, scene_bundle) if lift_onto_best_focus else None
+        spec = self._compute_distortion_grid_spec(system, target, float(wavelength), bf_spec)
         if signature is not None:
             self._distortion_grid_cache = (signature, spec)
         return spec
 
-    def _compute_distortion_grid_spec(self, system, target, wavelength: float):
+    def _compute_distortion_grid_spec(self, system, target, wavelength: float, bf_spec=None):
         try:
             sampled = self._analysis_plot_service()._sample_field_curvature_distortion(system, wavelength)
         except Exception as exc:  # pragma: no cover - defensive
@@ -2679,12 +2683,18 @@ class ThreeDSceneToolsMixin:
             ideal = real / (1.0 + distortion / 100.0)
         if not np.all(np.isfinite(ideal)):
             return None
+        # When the best-focus surface is also on, lay the warped grid onto the bowl
+        # (its already-exaggerated axial offsets) -> the "distorted bowl".
+        lift_radii = bf_spec.get("ring_radii") if isinstance(bf_spec, dict) else None
+        lift_dz = bf_spec.get("display_dz") if isinstance(bf_spec, dict) else None
         return build_distortion_grid(
             ideal,
             real,
             center=np.asarray(getattr(target, "center_world"), dtype=float),
             normal=np.asarray(getattr(target, "normal_world"), dtype=float),
             tangent=np.asarray(getattr(target, "tangent_world"), dtype=float),
+            lift_radii=lift_radii,
+            lift_dz=lift_dz,
         )
 
     def _iter_3d_scene_rays(
