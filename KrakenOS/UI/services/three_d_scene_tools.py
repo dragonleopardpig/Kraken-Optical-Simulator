@@ -2740,6 +2740,107 @@ class ThreeDSceneToolsMixin:
             lift_dz=lift_dz,
         )
 
+    # ------------------------------------------------------------------
+    # Tangential / sagittal best-focus surfaces (astigmatism in 3D, idea #2a)
+
+    # Tangential = amber, sagittal = blue; their separation is the astigmatism.
+    _ASTIGMATISM_TANGENTIAL_COLOR = (0.96, 0.58, 0.14)
+    _ASTIGMATISM_SAGITTAL_COLOR = (0.20, 0.58, 0.92)
+
+    def astigmatism_surfaces_overlay_spec(self, system, scene_bundle, *, wavelength=None):
+        """Build the separate tangential + sagittal best-focus surfaces, or None. Their
+        gap is the astigmatism. Same lazy + signature-cached, image-plane-anchored
+        contract as the medial best-focus bowl."""
+        if system is None or scene_bundle is None:
+            return None
+        target = self._best_focus_surface_anchor_target(scene_bundle)
+        if target is None:
+            return None
+        if wavelength is None:
+            try:
+                wavelength = float(self._current_wavelength())
+            except Exception:
+                return None
+        override = self._field_aberration_exaggeration_value()
+        try:
+            signature = (
+                self._preview_trace_signature(),
+                round(float(wavelength), 6),
+                int(getattr(target, "row_index", -1)),
+                None if override is None else round(float(override), 4),
+                "astigmatism",
+            )
+        except Exception:
+            signature = None
+        cache = self.__dict__.get("_astigmatism_surfaces_cache")
+        if signature is not None and isinstance(cache, tuple) and len(cache) == 2 and cache[0] == signature:
+            return cache[1]
+        spec = self._compute_astigmatism_surfaces_spec(system, target, float(wavelength), override)
+        if signature is not None:
+            self._astigmatism_surfaces_cache = (signature, spec)
+        return spec
+
+    def _compute_astigmatism_surfaces_spec(self, system, target, wavelength: float, exaggeration=None):
+        try:
+            sampled = self._analysis_plot_service()._sample_field_curvature_distortion(system, wavelength)
+        except Exception:
+            return None
+        if not sampled:
+            return None
+        axis_results, _field_type, _field_limit = sampled
+        y_result = axis_results.get("Y") if isinstance(axis_results, dict) else None
+        x_result = axis_results.get("X") if isinstance(axis_results, dict) else None
+        if not isinstance(y_result, dict) or not isinstance(x_result, dict):
+            return None
+        image_heights = y_result.get("image_height")
+        if image_heights is None:
+            return None
+        image_heights = np.asarray(image_heights, dtype=float)
+        fir = self._image_circle_radius_value()
+        peak = float(np.max(np.abs(image_heights))) if image_heights.size else 0.0
+        if fir is not None and peak > 1e-9:
+            image_heights = image_heights * (fir / peak)
+        focus_t = np.asarray(y_result.get("focus"), dtype=float).reshape(-1)
+        focus_s = np.asarray(x_result.get("focus"), dtype=float).reshape(-1)
+        if focus_t.size < 2 or focus_s.size != focus_t.size:
+            return None
+        center = np.asarray(getattr(target, "center_world"), dtype=float)
+        normal = np.asarray(getattr(target, "normal_world"), dtype=float)
+        tangent = np.asarray(getattr(target, "tangent_world"), dtype=float)
+        # The medial surface fixes the SHARED exaggeration so the T and S bowls (and the
+        # medial bowl, if also shown) are all magnified by the same factor -> their gap is
+        # the astigmatism at the true relative scale.
+        medial_spec = build_best_focus_surface(
+            image_heights, focus_t, focus_s, center=center, normal=normal, tangent=tangent,
+            exaggeration=exaggeration,
+        )
+        if medial_spec is None:
+            return None
+        factor = float(medial_spec["exaggeration"])
+        surfaces = {}
+        for key, focus, color in (
+            ("tangential", focus_t, self._ASTIGMATISM_TANGENTIAL_COLOR),
+            ("sagittal", focus_s, self._ASTIGMATISM_SAGITTAL_COLOR),
+        ):
+            sub = build_best_focus_surface(
+                image_heights, focus, focus, center=center, normal=normal, tangent=tangent,
+                exaggeration=factor, color=color,
+            )
+            if sub is None:
+                return None
+            sub["faces"] = best_focus_surface_faces(sub["n_rings"], sub["n_az"])
+            sub["ring_polylines"] = best_focus_surface_ring_polylines(sub)
+            surfaces[key] = sub
+        return {
+            "kind": "astigmatism_surfaces",
+            "tangential": surfaces["tangential"],
+            "sagittal": surfaces["sagittal"],
+            "max_astigmatism_mm": float(np.max(np.abs(focus_t - focus_s))),
+            "exaggeration": factor,
+            "center": center,
+            "normal": np.asarray(medial_spec["normal"], dtype=float),
+        }
+
     def _iter_3d_scene_rays(
         self,
         rays=None,

@@ -802,6 +802,10 @@ class Open3DSceneRefreshService:
         distortion_grid_actors = 0
         if bool(getattr(self, "show_distortion_grid_var", None) is not None and self.show_distortion_grid_var.get()):
             distortion_grid_actors = self._add_distortion_grid_overlays(system, scene_bundle)
+        # 3D astigmatism viz (idea #2a): tangential + sagittal best-focus surfaces.
+        astigmatism_actors = 0
+        if bool(getattr(self, "show_astigmatism_var", None) is not None and self.show_astigmatism_var.get()):
+            astigmatism_actors = self._add_astigmatism_surfaces_overlays(system, scene_bundle)
         # bugs/0009: the thickness dimensions must be added *after* the imported
         # STEP overlay loop below registers the optical body into
         # ``_step_actor_map`` -- otherwise ``add_overlays`` measures against an

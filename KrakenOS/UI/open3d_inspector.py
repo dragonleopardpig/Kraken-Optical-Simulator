@@ -608,6 +608,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # 3D distortion viz (idea #2, 2nd half): rectilinear reference grid + its
         # radially-warped real image on the detector. Same lazy + cached scan.
         self.show_distortion_grid_var = tk.BooleanVar(value=False)
+        # 3D astigmatism viz (idea #2a): the separate tangential + sagittal best-focus
+        # surfaces; their gap is the astigmatism. Same lazy + cached scan.
+        self.show_astigmatism_var = tk.BooleanVar(value=False)
         self.slide_along_axis_mode_var = tk.BooleanVar(value=False)
         self.show_live_controls_panel_var = tk.BooleanVar(value=True)
         self.show_scene_components_panel_var = tk.BooleanVar(value=True)
@@ -1688,6 +1691,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             show_thickness_dimensions=bool(self.editor.show_physical_distances_var.get()),
             show_best_focus_surface=bool(self.show_best_focus_surface_var.get()),
             show_distortion_grid=bool(self.show_distortion_grid_var.get()),
+            show_astigmatism=bool(self.show_astigmatism_var.get()),
             counts=self._debug_actor_counts(),
         )
         # bugs/0166: reference-surface / detector / thickness / terminal-diagnostic /
@@ -11611,6 +11615,102 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         return count
 
+    def _draw_focus_surface_fill_and_rings(self, sub_spec, *, fill_opacity=None) -> int:
+        """Render a best-focus-style surface spec (translucent fill + latitude ring lines).
+        Shared by the medial best-focus bowl and the tangential/sagittal astigmatism
+        surfaces. Reads pv/np module globals -- never shadow them (the 0167 crash)."""
+        if pv is None or self._renderer is None or not sub_spec:
+            return 0
+        count = 0
+        color = tuple(sub_spec["color"])
+        opacity = float(fill_opacity if fill_opacity is not None else sub_spec.get("opacity", 0.22))
+        try:
+            points = np.asarray(sub_spec["points"], dtype=float)
+            faces = np.asarray(sub_spec["faces"], dtype=np.int64)
+            if points.ndim == 2 and points.shape[0] >= 3 and faces.size >= 5:
+                self._add_mesh_actor(
+                    pv.PolyData(points[:, :3], faces),
+                    color=color, opacity=opacity, flat_shading=True, backface_culling=False,
+                )
+                count += 1
+        except Exception:
+            pass
+        line_color = tuple(min(1.0, c + 0.05) for c in color)
+        for ring in sub_spec.get("ring_polylines", []) or []:
+            try:
+                ring_pts = np.asarray(ring, dtype=float)
+                if ring_pts.ndim != 2 or ring_pts.shape[0] < 3:
+                    continue
+                self._add_mesh_actor(
+                    pv.lines_from_points(ring_pts[:, :3]),
+                    color=line_color, opacity=min(0.9, opacity + 0.5), line_width=1.4,
+                )
+                count += 1
+            except Exception:
+                continue
+        return count
+
+    def _add_astigmatism_surfaces_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
+        """Draw the tangential (amber) + sagittal (blue) best-focus surfaces; their gap is
+        the astigmatism (3D astigmatism viz, idea #2a). Render-only; geometry + the lazy
+        cached field scan live on the editor (``astigmatism_surfaces_overlay_spec``)."""
+        if self._renderer is None or pv is None or scene_bundle is None:
+            return 0
+        try:
+            spec = self.editor.astigmatism_surfaces_overlay_spec(system, scene_bundle)
+        except Exception as exc:
+            self.editor.append_debug(f"Astigmatism surfaces overlay failed: {exc}")
+            return 0
+        if not spec:
+            return 0
+        count = 0
+        count += self._draw_focus_surface_fill_and_rings(spec.get("tangential"), fill_opacity=0.16)
+        count += self._draw_focus_surface_fill_and_rings(spec.get("sagittal"), fill_opacity=0.16)
+        try:
+            tangential = spec.get("tangential")
+            if vtkBillboardTextActor3D is not None and tangential:
+                points = np.asarray(tangential["points"], dtype=float)
+                n_az = int(tangential["n_az"])
+                n_rings = int(tangential["n_rings"])
+                rim = points[(n_rings - 1) * n_az:n_rings * n_az]
+                anchor = (
+                    rim[int(np.argmax(rim[:, 1]))].copy()
+                    if rim.size
+                    else np.asarray(spec["center"], dtype=float)
+                )
+                _c, scene_radius = self._scene_bounds()
+                anchor = anchor + np.asarray(spec["normal"], dtype=float) * max(float(scene_radius) * 0.01, 0.4)
+                max_astigmatism = float(spec.get("max_astigmatism_mm", 0.0))
+                factor = float(spec.get("exaggeration", 1.0))
+                factor_text = f"  (×{factor:.0f})" if factor >= 1.5 else ""
+                actor = vtkBillboardTextActor3D()
+                actor.SetInput(
+                    "Astigmatism · tangential (amber) vs sagittal (blue)\n"
+                    f"max T−S {max_astigmatism:.3g} mm{factor_text}"
+                )
+                actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
+                try:
+                    actor.PickableOff()
+                except Exception:
+                    pass
+                text_prop = actor.GetTextProperty()
+                text_prop.SetFontSize(16)
+                try:
+                    text_prop.SetBold(1)
+                except Exception:
+                    pass
+                text_prop.SetColor(0.32, 0.19, 0.02)
+                text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
+                text_prop.SetBackgroundOpacity(0.92)
+                text_prop.SetFrame(1)
+                text_prop.SetFrameWidth(2)
+                text_prop.SetFrameColor(*tuple(tangential["color"]))
+                self._add_renderer_view_prop(actor)
+                count += 1
+        except Exception:
+            pass
+        return count
+
     def _add_thickness_dimension_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
         return self._open3d_thickness_dimension_service().add_overlays(system, scene_bundle)
 
@@ -14641,6 +14741,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         menu.add_checkbutton(
             label="Distortion grid (barrel / pincushion)",
             variable=self.show_distortion_grid_var,
+            command=self._on_scene_visibility_changed,
+        )
+        menu.add_checkbutton(
+            label="Astigmatism (tangential vs sagittal)",
+            variable=self.show_astigmatism_var,
             command=self._on_scene_visibility_changed,
         )
         exaggeration_menu = tk.Menu(menu, tearoff=False)

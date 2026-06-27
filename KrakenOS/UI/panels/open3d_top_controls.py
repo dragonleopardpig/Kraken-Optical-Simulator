@@ -116,6 +116,8 @@ class Open3DTopControlsPanel:
                 # 3D distortion viz (idea #2, 2nd half): rectilinear reference grid +
                 # its warped real image on the detector.
                 MenuCheckbutton("Distortion", self.inspector.show_distortion_grid_var, self.inspector._on_scene_visibility_changed),
+                # 3D astigmatism viz (idea #2a): tangential + sagittal best-focus surfaces.
+                MenuCheckbutton("Astigmatism", self.inspector.show_astigmatism_var, self.inspector._on_scene_visibility_changed),
             ),
         )
         pack_menubutton(view_toolbar, "Overlays", overlay_menu, padx=(8, 0))

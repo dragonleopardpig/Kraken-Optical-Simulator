@@ -9292,6 +9292,36 @@ def phase_160_distortion_grid(
     return result
 
 
+def phase_161_astigmatism_surfaces(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The 3D astigmatism viz (idea #2a): the separate tangential + sagittal best-focus
+    surfaces (amber vs blue); their gap is the astigmatism. Built from the per-field T/S
+    foci the 2D Field Curvature analysis computes, magnified by the same factor as the
+    medial best-focus bowl, behind a new "Astigmatism" overlay toggle (render-only per
+    bugs/0166). The display-free guard pins that the two surfaces genuinely differ on a
+    real double gauss (~0.09 mm), share one exaggeration, coincide with the image circle,
+    cache the scan, and the render is render-only with no global shadowing.
+    """
+    result = PhaseResult(
+        name="Phase 161: tangential + sagittal best-focus surfaces show astigmatism in 3D (idea #2a)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_astigmatism_surfaces import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"astigmatism-surfaces guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("astigmatism-surfaces phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9498,6 +9528,7 @@ def main() -> int:
             phase_158_best_focus_surface,
             phase_159_image_circle_efl,
             phase_160_distortion_grid,
+            phase_161_astigmatism_surfaces,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

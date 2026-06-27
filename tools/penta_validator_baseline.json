@@ -162,7 +162,8 @@
     "157": "pass",
     "158": "pass",
     "159": "pass",
-    "160": "pass"
+    "160": "pass",
+    "161": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -325,6 +326,7 @@
     "157": "overlay toggles re-render the cached scene -- no solid rebuild (0166)",
     "158": "curved best-focus surface lofts field curvature over the flat detector (idea #2)",
     "159": "image circle uses EFL*tan(field), matches where rays land (0168)",
-    "160": "distortion grid warps a rectilinear grid into its real image (idea #2)"
+    "160": "distortion grid warps a rectilinear grid into its real image (idea #2)",
+    "161": "tangential + sagittal best-focus surfaces show astigmatism in 3D (idea #2a)"
   }
 }
