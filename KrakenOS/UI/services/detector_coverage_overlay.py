@@ -638,8 +638,10 @@ class DetectorCoverageOverlayService:
                     count += 1
                 self._arrow_cone(seg[0], seg[0] - seg[1], _IMAGE_PLANE)
                 self._arrow_cone(seg[1], seg[1] - seg[0], _IMAGE_PLANE)
-                # push the label ABOVE the dimension line so it no longer overlaps the line/body
-                label_pos = 0.5 * (seg[0] + seg[1]) + np.array([0.0, radius * 0.7 + _LABEL_GAP, 0.0], dtype=float)
+                # Sit the label just OFF the dimension line (the line is already at the
+                # standoff y=stand, clear of the body); radius*0.7 pushed it ~17 mm away
+                # from a ~25 mm-radius arrow, so keep it a small fixed nudge instead.
+                label_pos = 0.5 * (seg[0] + seg[1]) + np.array([0.0, max(radius * 0.06, 1.2) + _LABEL_GAP, 0.0], dtype=float)
                 if self._label_actor(label_pos, f"defocus = {gap:+.4g} mm", _IMAGE_PLANE):
                     count += 1
             elif self._label_actor(ip + np.array([0.0, stand, 0.0]), "image plane (in focus)", _IMAGE_PLANE):

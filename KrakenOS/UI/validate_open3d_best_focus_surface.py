@@ -207,14 +207,13 @@ def _check_integration(failures: list[str], notes: list[str]) -> None:
     if max_dev <= 1e-4:
         failures.append(f"INTEGRATION: surface does not deviate from the flat plane (max|dz|={max_dev:.3g} mm)")
 
-    # The rim is sized to the REAL chief-ray image height (where the rays land), not
-    # the lens clear-aperture: the double gauss images its 14-deg field to ~24.5 mm.
+    # The rim COINCIDES with the drawn image circle (field_image_radius), so the bowl
+    # edge sits on the image circle rather than as a separate smaller ring; not the lens
+    # clear-aperture (~half a 0.26 mm distortion under it = where the chief rays land).
     rim = float(spec.get("radius", 0.0))
-    scan = editor._analysis_plot_service()._sample_field_curvature_distortion(system, float(editor._current_wavelength()))
-    if scan:
-        true_rim = float(np.max(np.asarray(scan[0]["Y"]["image_height"], dtype=float)))
-        if abs(rim - true_rim) > 0.5:
-            failures.append(f"INTEGRATION: rim {rim:.4g} != max real image height {true_rim:.4g} (sized to clear-aperture?)")
+    image_circle_radius = float(editor._field_metrics_summary().get("field_image_radius", 0.0))
+    if image_circle_radius > 1e-6 and abs(rim - image_circle_radius) > 0.02 * image_circle_radius:
+        failures.append(f"INTEGRATION: bowl rim {rim:.4g} != image circle radius {image_circle_radius:.4g} (should coincide)")
 
     # The tiny true sag must be auto-exaggerated to a visible fraction of the rim.
     factor = float(spec.get("exaggeration", 1.0))

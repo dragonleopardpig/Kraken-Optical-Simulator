@@ -2580,6 +2580,17 @@ class ThreeDSceneToolsMixin:
             self._best_focus_surface_cache = (signature, spec)
         return spec
 
+    def _image_circle_radius_value(self):
+        """The drawn image-circle radius (``field_image_radius``), so the best-focus bowl
+        and distortion grid can size their rim to COINCIDE with it. The traced chief rays
+        land ~1% inside (the distortion, which the warped grid shows); the user expects the
+        bowl edge to sit on the image circle, not as a separate smaller ring."""
+        try:
+            radius = float(self._field_metrics_summary().get("field_image_radius", 0.0))
+            return radius if np.isfinite(radius) and radius > 1e-6 else None
+        except Exception:
+            return None
+
     def _field_aberration_exaggeration_value(self):
         """User-set field-aberration exaggeration for the best-focus/distortion overlays:
         a positive float, or None for the auto factor. Lets the user trade visibility
@@ -2618,6 +2629,12 @@ class ThreeDSceneToolsMixin:
             fields = np.asarray(y_result.get("fields"), dtype=float)
             flim = float(field_limit) if float(field_limit) > 1e-9 else (float(np.max(np.abs(fields))) or 1.0)
             image_heights = (np.abs(fields) / flim) * float(self._best_focus_surface_radius(target))
+        # Rim -> the image-circle radius so the bowl coincides with the drawn image circle.
+        image_heights = np.asarray(image_heights, dtype=float)
+        fir = self._image_circle_radius_value()
+        peak = float(np.max(np.abs(image_heights))) if image_heights.size else 0.0
+        if fir is not None and peak > 1e-9:
+            image_heights = image_heights * (fir / peak)
         spec = build_best_focus_surface(
             image_heights,
             y_result.get("focus"),
@@ -2699,6 +2716,15 @@ class ThreeDSceneToolsMixin:
             ideal = real / (1.0 + distortion / 100.0)
         if not np.all(np.isfinite(ideal)):
             return None
+        # Scale the rectilinear (ideal) grid to the image-circle radius so the reference
+        # grid coincides with the drawn image circle; the warped real grid then shows the
+        # real image landing ~1% inside (the distortion). Uniform scale preserves the warp.
+        fir = self._image_circle_radius_value()
+        peak = float(np.max(np.abs(ideal))) if ideal.size else 0.0
+        if fir is not None and peak > 1e-9:
+            grid_scale = fir / peak
+            ideal = ideal * grid_scale
+            real = real * grid_scale
         # When the best-focus surface is also on, lay the warped grid onto the bowl
         # (its already-exaggerated axial offsets) -> the "distorted bowl".
         lift_radii = bf_spec.get("ring_radii") if isinstance(bf_spec, dict) else None
