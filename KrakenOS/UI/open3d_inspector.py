@@ -11778,10 +11778,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 focus_note = ""
                 if isinstance(shift, (int, float)) and abs(float(shift)) > 0.05:
                     focus_note = f"\n⚠ detector {float(shift):+.2g} mm off best focus → spots are defocus blur"
+                # Ideal/surrogate optics (Thin Lens / black-box) are aberration-free, so the
+                # spot is defocus-only, not the real lens -- say so plainly.
+                surrogate_note = ""
+                try:
+                    if self.editor._scene_surrogate_optics_info().get("is_surrogate"):
+                        surrogate_note = "\n⚠ Surrogate optics (ideal lens) — defocus only, NOT real aberrations; load the real prescription"
+                except Exception:
+                    pass
                 actor = vtkBillboardTextActor3D()
                 actor.SetInput(
                     f"Spot RMS map · {int(spec.get('n_spots', 0))} fields (green=tight, red=soft)\n"
-                    f"RMS {rms_lo:.2g}–{rms_hi:.2g} µm · circles ×{mag:.0f}{focus_note}"
+                    f"RMS {rms_lo:.2g}–{rms_hi:.2g} µm · circles ×{mag:.0f}{focus_note}{surrogate_note}"
                 )
                 actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
                 try:

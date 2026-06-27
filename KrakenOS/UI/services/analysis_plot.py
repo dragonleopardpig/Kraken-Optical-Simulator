@@ -649,6 +649,20 @@ class AnalysisPlotService:
                 "Grid": "Grid View",
             }.get(spot_mode, "Grid View")
             analysis_ax.set_title(f"Spot Diagram ({title_suffix})")
+            # Ideal/surrogate optics (Thin Lens / black-box) are aberration-free, so this spot
+            # is defocus-only, not the real lens -- warn so it is not read as image quality.
+            try:
+                if self._scene_surrogate_optics_info().get("is_surrogate"):
+                    analysis_ax.text(
+                        0.5, 0.985,
+                        "Surrogate optics (ideal Thin Lens): spots are defocus only, not real "
+                        "aberrations — load the real prescription for image quality",
+                        transform=analysis_ax.transAxes, ha="center", va="top", fontsize=7,
+                        color="#7a3b00",
+                        bbox=dict(boxstyle="round", fc="#fff3e0", ec="#e08a2e", alpha=0.92),
+                    )
+            except Exception:
+                pass
             analysis_ax.set_xlabel("X [mm]")
             analysis_ax.set_ylabel("Y [mm]")
             self._apply_equal_spot_axis_scaling(analysis_ax, X_plot, Y_plot)

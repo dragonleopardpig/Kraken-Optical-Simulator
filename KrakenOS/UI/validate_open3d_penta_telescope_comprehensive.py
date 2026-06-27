@@ -9445,6 +9445,37 @@ def phase_165_pupil_reference_solid_mesh(
     return result
 
 
+def phase_166_surrogate_optics_warning(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A spot diagram from SURROGATE optics must say so. A surrogate lens (KrakenOS 'Thin
+    Lens' / black-box stand-in) is aberration-free by construction, so a ray-traced spot /
+    PSF / pixel-grid footprint is defocus-only (uniform across the field), not the real
+    lens. ``_scene_surrogate_optics_info`` detects ideal Thin Lens / Blackbox elements and
+    the 3-D Spot-map + 2-D Spot Diagram warn "spots are defocus only, not real aberrations
+    -- load the real prescription". The display-free guard pins the detector (Thin Lens trips
+    it, an all-Standard real prescription does not), the real measured MV-150 surrogate vs a
+    real double-gauss, and the two spot-view warning contracts.
+    """
+    result = PhaseResult(
+        name="Phase 166: spot views warn when optics are an ideal surrogate (defocus only)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_surrogate_optics_warning import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"surrogate-optics-warning guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("surrogate-optics-warning phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9656,6 +9687,7 @@ def main() -> int:
             phase_163_spot_diagram_2d_pupil,
             phase_164_camera_pixel_grid,
             phase_165_pupil_reference_solid_mesh,
+            phase_166_surrogate_optics_warning,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

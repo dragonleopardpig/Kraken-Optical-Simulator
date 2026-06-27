@@ -2970,6 +2970,19 @@ class ThreeDSceneToolsMixin:
         shift = -float(np.sum(xp * ap + yp * bp)) / denom
         return shift if np.isfinite(shift) else None
 
+    def _scene_surrogate_optics_info(self) -> dict:
+        """Detect ideal/surrogate imaging optics (KrakenOS 'Thin Lens' / black-box stand-ins)
+        on the current rows, so the spot views can warn that a ray-traced spot is defocus-only
+        rather than real lens aberration. Returns ``{is_surrogate, ideal_lens_count, ...}``."""
+        try:
+            from KrakenOS.UI.services.surrogate_optics import detect_surrogate_optics
+            rows = list(getattr(self, "rows", []) or [])
+            surface_types = [getattr(r, "surface", "") for r in rows]
+            element_names = [str(getattr(r, "name", "") or "") for r in rows]
+            return detect_surrogate_optics(surface_types, element_names)
+        except Exception:
+            return {"is_surrogate": False, "ideal_lens_count": 0, "blackbox_count": 0, "reason": ""}
+
     # ------------------------------------------------------------------
     # Camera pixel-grid overlay (idea #1: the spot footprint on real pixels)
 
