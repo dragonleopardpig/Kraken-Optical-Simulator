@@ -55,6 +55,7 @@ def build_pixel_grid_overlay(
     tangent,
     pitch_mm,
     magnification,
+    image_radius=None,
     margin_px: int = PIXEL_GRID_MARGIN_PX,
     max_cells: int = PIXEL_GRID_MAX_CELLS,
 ) -> "dict | None":
@@ -89,6 +90,33 @@ def build_pixel_grid_overlay(
     u = _unit(tangent_vec - n_hat * float(np.dot(tangent_vec, n_hat)), fallback=_any_perpendicular(n_hat))
     v = _unit(np.cross(n_hat, u))
     margin = max(int(margin_px), 1)
+
+    # When the spots are sub-pixel (a focused / ideal system), the spot map magnifies hugely
+    # to show them -- which would blow one pixel up LARGER than the whole image, drowning the
+    # scene in a useless giant mesh. Detect that ("one pixel >> the spot spread") and skip the
+    # lattice; the caller shows a plain "spots are sub-pixel" note instead.
+    spot_radii = np.where(np.isfinite(spot_extent_mm) & (spot_extent_mm > 0.0), spot_extent_mm, max(px, py))
+    spans_all = np.maximum(2.0 * spot_radii / px, 2.0 * spot_radii / py)
+    if image_radius is not None and float(image_radius) > 1e-6:
+        image_ref = float(image_radius)  # the real sensor/image radius (robust)
+    else:
+        image_ref = float(np.max(np.hypot(chief_uv[:, 0], chief_uv[:, 1]))) if n else 0.0
+    cell_size = px * factor  # on-screen size of one pixel at the spot-map magnification
+    if image_ref > 1e-6 and cell_size > 0.35 * image_ref:
+        return {
+            "kind": "pixel_grid",
+            "grids": [],
+            "too_coarse": True,
+            "spans_px": [float(s) for s in spans_all],
+            "span_px_min": float(np.min(spans_all)),
+            "span_px_max": float(np.max(spans_all)),
+            "pitch_um": (px * 1000.0, py * 1000.0),
+            "magnification": factor,
+            "color": PIXEL_GRID_LINE_COLOR,
+            "n_spots": n,
+            "center": center,
+            "normal": n_hat,
+        }
 
     grids: list[dict] = []
     spans_px: list[float] = []
@@ -128,6 +156,7 @@ def build_pixel_grid_overlay(
     return {
         "kind": "pixel_grid",
         "grids": grids,
+        "too_coarse": False,
         "spans_px": spans_px,
         "span_px_min": float(np.min(spans_px)),
         "span_px_max": float(np.max(spans_px)),

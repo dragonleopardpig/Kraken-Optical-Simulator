@@ -56,7 +56,7 @@ def _check_pure_geometry(failures: list[str]) -> None:
         cu = cu_frac * px
         spec = build_pixel_grid_overlay(
             [[cu, 0.0]], [extent], center=center, normal=normal, tangent=tangent,
-            pitch_mm=(px, px), magnification=factor,
+            pitch_mm=(px, px), magnification=factor, image_radius=10.0,
         )
         if not spec:
             failures.append(f"PURE: build returned None for a valid spot (cu={cu_frac}px)")
@@ -81,6 +81,16 @@ def _check_pure_geometry(failures: list[str]) -> None:
         failures.append("PURE: a zero pixel pitch did not return None")
     if build_pixel_grid_overlay([], [], center=center, normal=normal, tangent=tangent, pitch_mm=(px, px), magnification=factor) is not None:
         failures.append("PURE: no spots did not return None")
+
+    # Sub-pixel spots (focused system): the spot map's huge magnification makes one pixel
+    # bigger than the image -> suppress the giant lattice, flag too_coarse, no grids.
+    field = np.array([[0.0, 0.0], [5.0, 0.0], [-5.0, 0.0], [0.0, 5.0], [0.0, -5.0]])  # ~5 mm spread
+    coarse = build_pixel_grid_overlay(field, [0.0003] * 5, center=center, normal=normal, tangent=tangent, pitch_mm=(px, px), magnification=1558.0)
+    if not coarse or not coarse.get("too_coarse") or (coarse.get("grids") or []):
+        failures.append("PURE: sub-pixel spots did not suppress the lattice (too_coarse)")
+    normal_spots = build_pixel_grid_overlay(field, [0.18] * 5, center=center, normal=normal, tangent=tangent, pitch_mm=(px, px), magnification=25.0)
+    if not normal_spots or normal_spots.get("too_coarse") or not (normal_spots.get("grids") or []):
+        failures.append("PURE: multi-pixel spots were wrongly suppressed as too_coarse")
 
 
 def _camera_with_pitch() -> "str | None":

@@ -3020,6 +3020,7 @@ class ThreeDSceneToolsMixin:
             tangent=spot_spec.get("tangent"),
             pitch_mm=pitch,
             magnification=spot_spec.get("magnification", 1.0),
+            image_radius=self._image_circle_radius_value(),
         )
         if spec is not None:
             try:

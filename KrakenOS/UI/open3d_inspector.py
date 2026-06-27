@@ -11854,23 +11854,41 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 pass
         try:
-            if vtkBillboardTextActor3D is not None and top_point is not None:
-                _c, scene_radius = self._scene_bounds()
-                anchor = np.asarray(top_point, dtype=float) + np.asarray(spec["normal"], dtype=float) * max(float(scene_radius) * 0.01, 0.4)
+            too_coarse = bool(spec.get("too_coarse"))
+            anchor = None
+            _c, scene_radius = self._scene_bounds()
+            normal_vec = np.asarray(spec.get("normal"), dtype=float).reshape(3)
+            if too_coarse:
+                center_pt = np.asarray(spec.get("center"), dtype=float).reshape(3)
+                anchor = center_pt + normal_vec * max(float(scene_radius) * 0.02, 0.6)
+            elif top_point is not None:
+                anchor = np.asarray(top_point, dtype=float) + normal_vec * max(float(scene_radius) * 0.01, 0.4)
+            if vtkBillboardTextActor3D is not None and anchor is not None:
                 pitch = spec.get("pitch_um", (0.0, 0.0))
-                res = spec.get("resolution_px")
-                # The full sensor is the orange detector frame; each per-spot grid is only a
-                # LOCAL zoom where ONE cell = ONE pixel (the user asked: is each grid 5120x5120?
-                # no -- 5120x5120 is the whole sensor).
-                full_sensor = (
-                    f" · full sensor {int(res[0])}×{int(res[1])} px = orange frame"
-                    if (isinstance(res, (tuple, list)) and len(res) == 2) else ""
-                )
+                span_lo = float(spec.get("span_px_min", 0.0))
+                span_hi = float(spec.get("span_px_max", 0.0))
+                if too_coarse:
+                    # Spots smaller than a pixel: at the zoom needed to see them, one pixel is
+                    # bigger than the whole image -- so we say it plainly instead of a giant mesh.
+                    label_text = (
+                        f"Camera pixel grid · {spec.get('camera_label', '')}\n"
+                        f"spots ≈ {span_lo:.2g}-{span_hi:.2g} px — sub-pixel; one {float(pitch[0]):.3g} µm pixel ≫ the spot, nothing to resolve"
+                    )
+                else:
+                    res = spec.get("resolution_px")
+                    # The full sensor is the orange detector frame; each per-spot grid is only a
+                    # LOCAL zoom where ONE cell = ONE pixel (the user asked: is each grid 5120x5120?
+                    # no -- 5120x5120 is the whole sensor).
+                    full_sensor = (
+                        f" · full sensor {int(res[0])}×{int(res[1])} px = orange frame"
+                        if (isinstance(res, (tuple, list)) and len(res) == 2) else ""
+                    )
+                    label_text = (
+                        f"Camera pixel grid · {spec.get('camera_label', '')} · 1 cell = 1 pixel ({float(pitch[0]):.3g} µm)\n"
+                        f"each grid = ×{float(spec.get('magnification', 1.0)):.0f} zoom on one spot (≈ {span_lo:.0f}-{span_hi:.0f} px){full_sensor}"
+                    )
                 actor = vtkBillboardTextActor3D()
-                actor.SetInput(
-                    f"Camera pixel grid · {spec.get('camera_label', '')} · 1 cell = 1 pixel ({float(pitch[0]):.3g} µm)\n"
-                    f"each grid = ×{float(spec.get('magnification', 1.0)):.0f} zoom on one spot (≈ {float(spec.get('span_px_min', 0.0)):.0f}-{float(spec.get('span_px_max', 0.0)):.0f} px){full_sensor}"
-                )
+                actor.SetInput(label_text)
                 actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
                 try:
                     actor.PickableOff()
