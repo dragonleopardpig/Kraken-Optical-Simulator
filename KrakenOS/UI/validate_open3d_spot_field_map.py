@@ -162,11 +162,31 @@ def _check_source_contracts(failures: list[str]) -> None:
         failures.append("CONTRACT: the right-click analyses menu does not offer the spot map")
 
 
+def _check_best_focus_shift(failures: list[str]) -> None:
+    # Rays straight in image space, converging d=3mm BEFORE the image (x = slope*d there);
+    # the best-focus shift must recover -d. A large |shift| is how the spot map tells the
+    # user a big spot is defocus, not a bad lens.
+    slopes = np.linspace(-0.05, 0.05, 9)
+    d = 3.0
+    n = np.ones_like(slopes)
+    l = slopes * n
+    m = np.zeros_like(slopes)
+    x = slopes * d
+    y = np.zeros_like(slopes)
+    from KrakenOS.UI.layout_editor import KrakenLayoutEditor
+    shift = KrakenLayoutEditor._spot_best_focus_shift(x, y, l, m, n)
+    if shift is None or not np.isclose(shift, -d, atol=1e-6):
+        failures.append(f"BEST-FOCUS: shift {shift} did not recover the {-d} mm defocus")
+    if "best_focus_shift_mm" not in inspect.getsource(Kraken3DInspector._add_spot_field_map_overlays):
+        failures.append("CONTRACT: the spot-map label does not surface the best-focus shift")
+
+
 def run_checks() -> "tuple[bool, list[str]]":
     failures: list[str] = []
     notes: list[str] = []
     _check_pure_geometry(failures)
     _check_integration(failures, notes)
+    _check_best_focus_shift(failures)
     _check_source_contracts(failures)
     return (not failures), (failures + notes)
 

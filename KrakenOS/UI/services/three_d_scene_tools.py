@@ -2897,6 +2897,7 @@ class ThreeDSceneToolsMixin:
         chief_v: list[float] = []
         rms: list[float] = []
         scatter: list = []  # per field: the ray intercepts relative to the chief (the spot shape)
+        on_axis_rays = None  # (x, y, l, m, n) for the chief field -> best-focus shift
         capture = io.StringIO()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -2906,7 +2907,7 @@ class ThreeDSceneToolsMixin:
                         if fx * fx + fy * fy > 1.0 + 1e-9:
                             continue  # keep the round field
                         try:
-                            x, y, _z, _l, _m, _n, _w = self._build_geometric_image_samples_full(
+                            x, y, _z, l_dir, m_dir, n_dir, _w = self._build_geometric_image_samples_full(
                                 system, wavelength, sample_count=sample_count, pattern="hexapolar",
                                 surface_index=self._analysis_surface_index(),
                                 aperture_type=self._current_aperture_type(),
@@ -2928,9 +2929,12 @@ class ThreeDSceneToolsMixin:
                             chief_v.append(cv)
                             rms.append(spot_rms)
                             scatter.append(np.column_stack((x - cu, y - cv)))
+                            if abs(fx) < 1e-9 and abs(fy) < 1e-9:
+                                on_axis_rays = (x, y, np.asarray(l_dir, dtype=float),
+                                                np.asarray(m_dir, dtype=float), np.asarray(n_dir, dtype=float))
         if len(chief_u) < 2:
             return None
-        return build_spot_field_map(
+        spec = build_spot_field_map(
             chief_u, chief_v, rms,
             center=np.asarray(getattr(target, "center_world"), dtype=float),
             normal=np.asarray(getattr(target, "normal_world"), dtype=float),
@@ -2939,6 +2943,32 @@ class ThreeDSceneToolsMixin:
             magnification=exaggeration,
             scatter=scatter,
         )
+        if spec is not None and on_axis_rays is not None:
+            shift = self._spot_best_focus_shift(*on_axis_rays)
+            if shift is not None:
+                spec["best_focus_shift_mm"] = float(shift)
+        return spec
+
+    @staticmethod
+    def _spot_best_focus_shift(x, y, l_dir, m_dir, n_dir):
+        """Axial shift (mm) from the image surface to the on-axis best focus: rays are
+        straight in image space, so x(d)=x+(l/n)d; the least-squares minimum of the spot
+        spread is at d* = -Σ(x'a'+y'b') / Σ(a'²+b'²). A large |d*| means the detector is
+        defocused -- the spots are a defocus blur, not real aberration."""
+        mask = np.abs(n_dir) > 1e-9
+        if int(np.count_nonzero(mask)) < 4:
+            return None
+        a = l_dir[mask] / n_dir[mask]
+        b = m_dir[mask] / n_dir[mask]
+        xp = x[mask] - float(np.mean(x[mask]))
+        yp = y[mask] - float(np.mean(y[mask]))
+        ap = a - float(np.mean(a))
+        bp = b - float(np.mean(b))
+        denom = float(np.sum(ap * ap + bp * bp))
+        if denom < 1e-12:
+            return None
+        shift = -float(np.sum(xp * ap + yp * bp)) / denom
+        return shift if np.isfinite(shift) else None
 
     # ------------------------------------------------------------------
     # Camera pixel-grid overlay (idea #1: the spot footprint on real pixels)

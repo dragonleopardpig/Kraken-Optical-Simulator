@@ -11771,10 +11771,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 mag = float(spec.get("magnification", 1.0))
                 rms_lo = float(spec.get("rms_min_mm", 0.0)) * 1000.0
                 rms_hi = float(spec.get("rms_max_mm", 0.0)) * 1000.0
+                # If the detector is off best focus, the spots are a (near-uniform) defocus
+                # blur, not real aberration -- call it out so a big spot isn't mistaken for a
+                # bad lens (user's MV150 was 2.7mm defocused -> 65µm spots, sharp at focus).
+                shift = spec.get("best_focus_shift_mm")
+                focus_note = ""
+                if isinstance(shift, (int, float)) and abs(float(shift)) > 0.05:
+                    focus_note = f"\n⚠ detector {float(shift):+.2g} mm off best focus → spots are defocus blur"
                 actor = vtkBillboardTextActor3D()
                 actor.SetInput(
                     f"Spot RMS map · {int(spec.get('n_spots', 0))} fields (green=tight, red=soft)\n"
-                    f"RMS {rms_lo:.2g}–{rms_hi:.2g} µm · circles ×{mag:.0f}"
+                    f"RMS {rms_lo:.2g}–{rms_hi:.2g} µm · circles ×{mag:.0f}{focus_note}"
                 )
                 actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
                 try:
@@ -11844,11 +11851,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 anchor = np.asarray(top_point, dtype=float) + np.asarray(spec["normal"], dtype=float) * max(float(scene_radius) * 0.01, 0.4)
                 pitch = spec.get("pitch_um", (0.0, 0.0))
                 res = spec.get("resolution_px")
-                res_text = f"{int(res[0])}x{int(res[1])} px · " if (isinstance(res, (tuple, list)) and len(res) == 2) else ""
+                # The full sensor is the orange detector frame; each per-spot grid is only a
+                # LOCAL zoom where ONE cell = ONE pixel (the user asked: is each grid 5120x5120?
+                # no -- 5120x5120 is the whole sensor).
+                full_sensor = (
+                    f" · full sensor {int(res[0])}×{int(res[1])} px = orange frame"
+                    if (isinstance(res, (tuple, list)) and len(res) == 2) else ""
+                )
                 actor = vtkBillboardTextActor3D()
                 actor.SetInput(
-                    f"Camera pixels · {spec.get('camera_label', '')}\n"
-                    f"{res_text}{float(pitch[0]):.3g} µm pitch · spot ≈ {float(spec.get('span_px_min', 0.0)):.0f}-{float(spec.get('span_px_max', 0.0)):.0f} px (grid ×{float(spec.get('magnification', 1.0)):.0f})"
+                    f"Camera pixel grid · {spec.get('camera_label', '')} · 1 cell = 1 pixel ({float(pitch[0]):.3g} µm)\n"
+                    f"each grid = ×{float(spec.get('magnification', 1.0)):.0f} zoom on one spot (≈ {float(spec.get('span_px_min', 0.0)):.0f}-{float(spec.get('span_px_max', 0.0)):.0f} px){full_sensor}"
                 )
                 actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
                 try:

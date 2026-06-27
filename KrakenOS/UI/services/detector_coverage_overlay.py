@@ -41,6 +41,7 @@ _IMAGE_PLANE = (1.0, 0.0, 0.6)              # magenta -- best-focus image plane 
 # tiny element still gets a readable standoff.
 _LABEL_GAP = 0.6      # mm standoff beyond the radial placement
 _LABEL_MARGIN = 0.10  # fraction of the element radius added before the gap
+_LABEL_NORMAL_LIFT_FRACTION = 0.2  # off-plane lift for the image labels (edge-on clearance only)
 
 # Coverage tolerance in mm. 1 micron is physically negligible (under a quarter
 # of the 4.5 um sensor pixel) yet wide enough to absorb the 6-significant-figure
@@ -274,9 +275,12 @@ def detector_coverage_label_specs(
     # flag "text overlaps the detector"); a normal offset moves them off it without hiding geometry.
     _inormal = np.asarray(image_axis if image_axis is not None else default_axis, dtype=float).reshape(3)
     _nn = float(np.linalg.norm(_inormal))
+    # Lift just enough to clear the detector edge-on (a small fraction of the sensor), NOT
+    # the full half-diagonal -- a full-diagonal lift PLUS the in-plane radius floated the
+    # labels ~1.5x the sensor radius away (user: "Sensor / Image circle labels too far").
+    _label_lift = metrics.sensor_half_diagonal * _LABEL_NORMAL_LIFT_FRACTION + _LABEL_GAP
     img_label_center = (
-        img_pt + (_inormal / _nn) * (metrics.sensor_half_diagonal * (1.0 + _LABEL_MARGIN) + _LABEL_GAP)
-        if _nn > 1e-9 else img_pt
+        img_pt + (_inormal / _nn) * _label_lift if _nn > 1e-9 else img_pt
     )
 
     def place(center, radius, angle_deg, text, color, u, v):
