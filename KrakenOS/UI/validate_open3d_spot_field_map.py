@@ -76,6 +76,30 @@ def _check_pure_geometry(failures: list[str]) -> None:
         if not (colors[0][1] > colors[3][1] and colors[0][0] < colors[3][0]):
             failures.append("PURE: colour does not track RMS (good->green, bad->red)")
 
+    # Scatter: the real spot shape laid at the chief, magnified by the same factor as the
+    # circle (so each blob fits inside its RMS circle).
+    theta = np.linspace(0.0, 2.0 * np.pi, 16, endpoint=False)
+    scatter = [np.column_stack((rms[i] * np.cos(theta), rms[i] * np.sin(theta))) for i in range(5)]
+    spec_scatter = build_spot_field_map(
+        chief_u, chief_v, rms, center=center, normal=normal, tangent=tangent, image_radius=10.0, scatter=scatter,
+    )
+    groups = spec_scatter.get("scatter_groups", []) if spec_scatter else []
+    if len(groups) != 5:
+        failures.append(f"PURE: expected 5 scatter groups, got {len(groups)}")
+    else:
+        factor_s = float(spec_scatter["magnification"])
+        for i in range(5):
+            pts = np.asarray(groups[i]["points"], dtype=float)
+            centroid = pts.mean(axis=0)
+            want_center = center + chief_u[i] * np.array([1.0, 0.0, 0.0]) + chief_v[i] * np.array([0.0, 1.0, 0.0])
+            if not np.allclose(centroid, want_center, atol=1e-6):
+                failures.append(f"PURE: scatter group {i} not centred at its chief")
+                break
+            blob_radius = float(np.linalg.norm(pts - centroid, axis=1).mean())
+            if not np.isclose(blob_radius, rms[i] * factor_s, rtol=1e-5, atol=1e-9):
+                failures.append(f"PURE: scatter group {i} radius {blob_radius:.4g} != rms*mag {rms[i] * factor_s:.4g}")
+                break
+
     if build_spot_field_map([0.0], [0.0], [0.0], center=center, normal=normal, tangent=tangent) is not None:
         failures.append("PURE: <2 spots did not return None")
     if build_spot_field_map(chief_u, chief_v, np.zeros(5), center=center, normal=normal, tangent=tangent) is not None:
@@ -104,6 +128,12 @@ def _check_integration(failures: list[str], notes: list[str]) -> None:
         failures.append("INTEGRATION: the few-um spots were not magnified")
     if len(spec.get("circles") or []) != n_spots:
         failures.append("INTEGRATION: circle count != spot count")
+    # The actual ray-intercept scatter (the real spot shape) must be present per field.
+    groups = spec.get("scatter_groups") or []
+    if len(groups) != n_spots:
+        failures.append(f"INTEGRATION: scatter groups {len(groups)} != {n_spots} fields (no spot shape drawn)")
+    elif groups and int(np.asarray(groups[0]["points"]).shape[0]) < 10:
+        failures.append("INTEGRATION: a spot has too few scatter points to show its shape")
     if editor.spot_field_map_overlay_spec(system, bundle) is not spec:
         failures.append("INTEGRATION: spot map is not cached (re-traces every call)")
     notes.append(f"integration: double-gauss RMS {rms_lo*1000:.2g}-{rms_hi*1000:.2g} µm over {n_spots} fields, ×{float(spec.get('magnification',1)):.0f}")
@@ -121,6 +151,8 @@ def _check_source_contracts(failures: list[str]) -> None:
     for forbidden in ("build_system(", "_build_preview_system_rays_bundle("):
         if forbidden in add_src:
             failures.append(f"CONTRACT: _add_spot_field_map_overlays references {forbidden!r} -- not render-only")
+    if "scatter_groups" not in add_src or ".glyph(" not in add_src:
+        failures.append("CONTRACT: _add_spot_field_map_overlays does not render the spot scatter (only circles)")
     shadowed = [g for g in ("pv", "np", "vtkBillboardTextActor3D") if g in method.__code__.co_varnames]
     if shadowed:
         failures.append(f"CONTRACT: _add_spot_field_map_overlays shadows module globals {shadowed} with locals")

@@ -2895,6 +2895,7 @@ class ThreeDSceneToolsMixin:
         chief_u: list[float] = []
         chief_v: list[float] = []
         rms: list[float] = []
+        scatter: list = []  # per field: the ray intercepts relative to the chief (the spot shape)
         capture = io.StringIO()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -2925,6 +2926,7 @@ class ThreeDSceneToolsMixin:
                             chief_u.append(cu)
                             chief_v.append(cv)
                             rms.append(spot_rms)
+                            scatter.append(np.column_stack((x - cu, y - cv)))
         if len(chief_u) < 2:
             return None
         return build_spot_field_map(
@@ -2934,6 +2936,7 @@ class ThreeDSceneToolsMixin:
             tangent=np.asarray(getattr(target, "tangent_world"), dtype=float),
             image_radius=self._image_circle_radius_value(),
             magnification=exaggeration,
+            scatter=scatter,
         )
 
     def _iter_3d_scene_rays(

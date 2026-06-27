@@ -11730,13 +11730,31 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         count = 0
         circles = spec.get("circles") or []
         colors = spec.get("colors") or []
+        scatter_groups = spec.get("scatter_groups") or []
+        # The RMS circle is a faint size reference; the actual ray-intercept SCATTER
+        # (the real spot shape -- round on-axis, coma teardrop off-axis) is the primary.
+        circle_opacity = 0.4 if scatter_groups else 0.95
         for index, circle in enumerate(circles):
             try:
                 pts = np.asarray(circle, dtype=float)
                 if pts.ndim != 2 or pts.shape[0] < 3 or pts.shape[1] < 3:
                     continue
                 color = tuple(colors[index]) if index < len(colors) else (0.5, 0.5, 0.5)
-                self._add_mesh_actor(pv.lines_from_points(pts[:, :3]), color=color, opacity=0.95, line_width=2.0)
+                self._add_mesh_actor(pv.lines_from_points(pts[:, :3]), color=color, opacity=circle_opacity, line_width=1.4)
+                count += 1
+            except Exception:
+                continue
+        for group in scatter_groups:
+            try:
+                pts = np.asarray(group.get("points"), dtype=float)
+                if pts.ndim != 2 or pts.shape[0] < 1 or pts.shape[1] < 3:
+                    continue
+                dot_radius = max(float(group.get("radius_mm", 1.0)) / 22.0, 1e-3)
+                glyph = pv.PolyData(pts[:, :3]).glyph(
+                    geom=pv.Sphere(radius=dot_radius, theta_resolution=6, phi_resolution=6),
+                    scale=False, orient=False,
+                )
+                self._add_mesh_actor(glyph, color=tuple(group.get("color", (0.2, 0.3, 0.5))), opacity=0.92)
                 count += 1
             except Exception:
                 continue

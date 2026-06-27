@@ -54,6 +54,7 @@ def build_spot_field_map(
     image_radius=None,
     magnification: "float | None" = None,
     n_circle: int = SPOT_FIELD_MAP_CIRCLE_SEGMENTS,
+    scatter=None,
 ) -> "dict | None":
     """Build per-field RMS circles on the detector.
 
@@ -104,17 +105,30 @@ def build_spot_field_map(
     rms_span = max(max_rms - rms_min, 1e-12)
     circles: list[np.ndarray] = []
     colors: list[tuple] = []
+    scatter_groups: list[dict] = []
+    have_scatter = scatter is not None
     for i in range(n):
         radius = float(rms[i]) * factor
         ring2d = np.array([chief_u[i], chief_v[i]])[None, :] + radius * unit_ring
         world = center[None, :] + ring2d[:, 0:1] * u[None, :] + ring2d[:, 1:2] * v[None, :]
         circles.append(np.vstack([world, world[0]]))  # close the loop
-        colors.append(_rms_color((float(rms[i]) - rms_min) / rms_span))
+        color = _rms_color((float(rms[i]) - rms_min) / rms_span)
+        colors.append(color)
+        # The actual ray-intercept scatter (the real spot SHAPE -- round on-axis, coma
+        # off-axis), magnified by the same factor and laid at the chief on the detector.
+        if have_scatter and i < len(scatter):
+            duv = np.asarray(scatter[i], dtype=float)
+            if duv.ndim == 2 and duv.shape[0] >= 1 and duv.shape[1] >= 2 and np.all(np.isfinite(duv)):
+                su = chief_u[i] + duv[:, 0] * factor
+                sv = chief_v[i] + duv[:, 1] * factor
+                pts = center[None, :] + su[:, None] * u[None, :] + sv[:, None] * v[None, :]
+                scatter_groups.append({"points": pts, "color": color, "radius_mm": float(radius)})
 
     return {
         "kind": "spot_field_map",
         "circles": circles,
         "colors": colors,
+        "scatter_groups": scatter_groups,
         "magnification": float(factor),
         "rms_min_mm": rms_min,
         "rms_max_mm": max_rms,
