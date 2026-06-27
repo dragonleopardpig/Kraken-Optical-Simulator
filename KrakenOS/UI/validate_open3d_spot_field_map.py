@@ -136,7 +136,13 @@ def _check_integration(failures: list[str], notes: list[str]) -> None:
         failures.append("INTEGRATION: a spot has too few scatter points to show its shape")
     if editor.spot_field_map_overlay_spec(system, bundle) is not spec:
         failures.append("INTEGRATION: spot map is not cached (re-traces every call)")
-    notes.append(f"integration: double-gauss RMS {rms_lo*1000:.2g}-{rms_hi*1000:.2g} µm over {n_spots} fields, ×{float(spec.get('magnification',1)):.0f}")
+    # Airy disk (diffraction floor): one circle per field, a physically sane sub-mm radius.
+    airy_mm = float(spec.get("airy_radius_mm", 0.0))
+    if not (0.0 < airy_mm < 1.0):
+        failures.append(f"INTEGRATION: implausible Airy radius {airy_mm*1000:.3g} µm")
+    if len(spec.get("airy_circles") or []) != n_spots:
+        failures.append("INTEGRATION: Airy circle count != spot count")
+    notes.append(f"integration: double-gauss RMS {rms_lo*1000:.2g}-{rms_hi*1000:.2g} µm over {n_spots} fields, ×{float(spec.get('magnification',1)):.0f}, Airy ⌀{airy_mm*2000:.1f}µm")
 
 
 def _check_source_contracts(failures: list[str]) -> None:

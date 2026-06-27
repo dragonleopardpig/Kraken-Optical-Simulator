@@ -11762,6 +11762,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 count += 1
             except Exception:
                 continue
+        # Airy disk (orange) = the diffraction floor; a geometric spot drawn INSIDE it is below
+        # the physical limit (ideal/surrogate optics + geometric tracing ignore diffraction).
+        for airy in spec.get("airy_circles") or []:
+            try:
+                airy_pts = np.asarray(airy, dtype=float)
+                if airy_pts.ndim != 2 or airy_pts.shape[0] < 3 or airy_pts.shape[1] < 3:
+                    continue
+                self._add_mesh_actor(pv.lines_from_points(airy_pts[:, :3]), color=(0.95, 0.55, 0.10), opacity=0.85, line_width=1.6)
+                count += 1
+            except Exception:
+                continue
         try:
             if vtkBillboardTextActor3D is not None and circles:
                 rim = np.asarray(circles[int(np.argmax([np.max(np.asarray(c)[:, 1]) for c in circles]))], dtype=float)
@@ -11786,10 +11797,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                         surrogate_note = "\n⚠ Surrogate optics (ideal lens) — defocus only, NOT real aberrations; load the real prescription"
                 except Exception:
                     pass
+                airy_um = float(spec.get("airy_radius_mm", 0.0)) * 2.0 * 1000.0  # diffraction-limit diameter
+                airy_note = f" · Airy ⌀{airy_um:.1f} µm (orange) = diffraction floor" if airy_um > 1e-6 else ""
                 actor = vtkBillboardTextActor3D()
                 actor.SetInput(
                     f"Spot RMS map · {int(spec.get('n_spots', 0))} fields (green=tight, red=soft)\n"
-                    f"RMS {rms_lo:.2g}–{rms_hi:.2g} µm · circles ×{mag:.0f}{focus_note}{surrogate_note}"
+                    f"RMS {rms_lo:.2g}–{rms_hi:.2g} µm · circles ×{mag:.0f}{airy_note}{focus_note}{surrogate_note}"
                 )
                 actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
                 try:

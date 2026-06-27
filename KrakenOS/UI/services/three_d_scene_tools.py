@@ -2942,12 +2942,29 @@ class ThreeDSceneToolsMixin:
             image_radius=self._image_circle_radius_value(),
             magnification=exaggeration,
             scatter=scatter,
+            airy_radius_mm=self._airy_radius_mm_from_rays(on_axis_rays, wavelength),
         )
         if spec is not None and on_axis_rays is not None:
             shift = self._spot_best_focus_shift(*on_axis_rays)
             if shift is not None:
                 spec["best_focus_shift_mm"] = float(shift)
         return spec
+
+    @staticmethod
+    def _airy_radius_mm_from_rays(on_axis_rays, wavelength_um):
+        """Airy radius (mm) = 0.61 λ / NA, NA = the largest image-space ray angle (sin) of the
+        on-axis bundle. The diffraction floor -- no real spot is smaller. None if unknown."""
+        if on_axis_rays is None:
+            return None
+        try:
+            _x, _y, l_dir, m_dir, _n = on_axis_rays
+            na = float(np.max(np.hypot(np.asarray(l_dir, dtype=float), np.asarray(m_dir, dtype=float))))
+            lam_mm = float(wavelength_um) / 1000.0  # KrakenOS wavelengths are micrometres
+            if na <= 1e-6 or lam_mm <= 0.0:
+                return None
+            return 0.61 * lam_mm / na
+        except Exception:
+            return None
 
     @staticmethod
     def _spot_best_focus_shift(x, y, l_dir, m_dir, n_dir):

@@ -55,6 +55,7 @@ def build_spot_field_map(
     magnification: "float | None" = None,
     n_circle: int = SPOT_FIELD_MAP_CIRCLE_SEGMENTS,
     scatter=None,
+    airy_radius_mm=None,
 ) -> "dict | None":
     """Build per-field RMS circles on the detector.
 
@@ -128,11 +129,25 @@ def build_spot_field_map(
                 extent_true = float(np.max(np.hypot(duv[:, 0], duv[:, 1])))
         spot_extent_mm.append(extent_true)
 
+    # Airy disk = the diffraction floor (no geometric spot can be smaller in reality). One
+    # circle of the SAME radius at every chief, magnified by the same factor; a geometric
+    # spot drawn INSIDE it is below the physical limit (ideal/surrogate optics, no diffraction).
+    airy_circles: list[np.ndarray] = []
+    airy_mm = float(airy_radius_mm) if (airy_radius_mm is not None and float(airy_radius_mm) > 0.0) else 0.0
+    if airy_mm > 0.0:
+        airy_display = airy_mm * factor
+        for i in range(n):
+            ring2d = np.array([chief_u[i], chief_v[i]])[None, :] + airy_display * unit_ring
+            world = center[None, :] + ring2d[:, 0:1] * u[None, :] + ring2d[:, 1:2] * v[None, :]
+            airy_circles.append(np.vstack([world, world[0]]))
+
     return {
         "kind": "spot_field_map",
         "circles": circles,
         "colors": colors,
         "scatter_groups": scatter_groups,
+        "airy_circles": airy_circles,
+        "airy_radius_mm": airy_mm,
         "magnification": float(factor),
         "rms_min_mm": rms_min,
         "rms_max_mm": max_rms,
