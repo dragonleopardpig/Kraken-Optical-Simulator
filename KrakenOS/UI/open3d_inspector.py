@@ -611,6 +611,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # 3D astigmatism viz (idea #2a): the separate tangential + sagittal best-focus
         # surfaces; their gap is the astigmatism. Same lazy + cached scan.
         self.show_astigmatism_var = tk.BooleanVar(value=False)
+        # 3D spot-quality viz (idea #1/#3): RMS spot circle per field on the detector.
+        self.show_spot_field_map_var = tk.BooleanVar(value=False)
         self.slide_along_axis_mode_var = tk.BooleanVar(value=False)
         self.show_live_controls_panel_var = tk.BooleanVar(value=True)
         self.show_scene_components_panel_var = tk.BooleanVar(value=True)
@@ -1692,6 +1694,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             show_best_focus_surface=bool(self.show_best_focus_surface_var.get()),
             show_distortion_grid=bool(self.show_distortion_grid_var.get()),
             show_astigmatism=bool(self.show_astigmatism_var.get()),
+            show_spot_field_map=bool(self.show_spot_field_map_var.get()),
             counts=self._debug_actor_counts(),
         )
         # bugs/0166: reference-surface / detector / thickness / terminal-diagnostic /
@@ -11711,6 +11714,69 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         return count
 
+    def _add_spot_field_map_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
+        """Draw the per-field RMS spot circles on the detector, coloured good->bad
+        (3D spot-quality viz, idea #1/#3). Render-only; geometry + the lazy cached spot
+        traces live on the editor (``spot_field_map_overlay_spec``)."""
+        if self._renderer is None or pv is None or scene_bundle is None:
+            return 0
+        try:
+            spec = self.editor.spot_field_map_overlay_spec(system, scene_bundle)
+        except Exception as exc:
+            self.editor.append_debug(f"Spot field map overlay failed: {exc}")
+            return 0
+        if not spec:
+            return 0
+        count = 0
+        circles = spec.get("circles") or []
+        colors = spec.get("colors") or []
+        for index, circle in enumerate(circles):
+            try:
+                pts = np.asarray(circle, dtype=float)
+                if pts.ndim != 2 or pts.shape[0] < 3 or pts.shape[1] < 3:
+                    continue
+                color = tuple(colors[index]) if index < len(colors) else (0.5, 0.5, 0.5)
+                self._add_mesh_actor(pv.lines_from_points(pts[:, :3]), color=color, opacity=0.95, line_width=2.0)
+                count += 1
+            except Exception:
+                continue
+        try:
+            if vtkBillboardTextActor3D is not None and circles:
+                rim = np.asarray(circles[int(np.argmax([np.max(np.asarray(c)[:, 1]) for c in circles]))], dtype=float)
+                anchor = rim[int(np.argmax(rim[:, 1]))].copy()
+                _c, scene_radius = self._scene_bounds()
+                anchor = anchor + np.asarray(spec["normal"], dtype=float) * max(float(scene_radius) * 0.01, 0.4)
+                mag = float(spec.get("magnification", 1.0))
+                rms_lo = float(spec.get("rms_min_mm", 0.0)) * 1000.0
+                rms_hi = float(spec.get("rms_max_mm", 0.0)) * 1000.0
+                actor = vtkBillboardTextActor3D()
+                actor.SetInput(
+                    f"Spot RMS map · {int(spec.get('n_spots', 0))} fields (green=tight, red=soft)\n"
+                    f"RMS {rms_lo:.2g}–{rms_hi:.2g} µm · circles ×{mag:.0f}"
+                )
+                actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
+                try:
+                    actor.PickableOff()
+                except Exception:
+                    pass
+                text_prop = actor.GetTextProperty()
+                text_prop.SetFontSize(16)
+                try:
+                    text_prop.SetBold(1)
+                except Exception:
+                    pass
+                text_prop.SetColor(0.10, 0.25, 0.12)
+                text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
+                text_prop.SetBackgroundOpacity(0.92)
+                text_prop.SetFrame(1)
+                text_prop.SetFrameWidth(2)
+                text_prop.SetFrameColor(0.15, 0.55, 0.25)
+                self._add_renderer_view_prop(actor)
+                count += 1
+        except Exception:
+            pass
+        return count
+
     def _add_thickness_dimension_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
         return self._open3d_thickness_dimension_service().add_overlays(system, scene_bundle)
 
@@ -14746,6 +14812,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         menu.add_checkbutton(
             label="Astigmatism (tangential vs sagittal)",
             variable=self.show_astigmatism_var,
+            command=self._on_scene_visibility_changed,
+        )
+        menu.add_checkbutton(
+            label="Spot RMS map (across the field)",
+            variable=self.show_spot_field_map_var,
             command=self._on_scene_visibility_changed,
         )
         exaggeration_menu = tk.Menu(menu, tearoff=False)

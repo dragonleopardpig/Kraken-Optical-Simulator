@@ -57,6 +57,7 @@ from KrakenOS.UI.services.best_focus_surface import (
     build_best_focus_surface,
 )
 from KrakenOS.UI.services.distortion_grid import build_distortion_grid
+from KrakenOS.UI.services.spot_field_map import build_spot_field_map
 from KrakenOS.UI.services.legacy_3d_scene import Legacy3DSceneService
 from KrakenOS.UI.services.missing_assets_scan import (
     MISSING_RESOURCE_STATE_ATTR,
@@ -2840,6 +2841,103 @@ class ThreeDSceneToolsMixin:
             "center": center,
             "normal": np.asarray(medial_spec["normal"], dtype=float),
         }
+
+    # ------------------------------------------------------------------
+    # Spot RMS field map (3D spot-quality viz, idea #1/#3 foundation)
+
+    def spot_field_map_overlay_spec(self, system, scene_bundle, *, wavelength=None):
+        """Build the per-field RMS-circle spot map on the detector, or None. Same lazy +
+        signature-cached, image-plane-anchored contract as the other field overlays."""
+        if system is None or scene_bundle is None:
+            return None
+        target = self._best_focus_surface_anchor_target(scene_bundle)
+        if target is None:
+            return None
+        if wavelength is None:
+            try:
+                wavelength = float(self._current_wavelength())
+            except Exception:
+                return None
+        override = self._field_aberration_exaggeration_value()
+        try:
+            signature = (
+                self._preview_trace_signature(),
+                round(float(wavelength), 6),
+                int(getattr(target, "row_index", -1)),
+                None if override is None else round(float(override), 4),
+                "spotmap",
+            )
+        except Exception:
+            signature = None
+        cache = self.__dict__.get("_spot_field_map_cache")
+        if signature is not None and isinstance(cache, tuple) and len(cache) == 2 and cache[0] == signature:
+            return cache[1]
+        spec = self._compute_spot_field_map_spec(system, target, float(wavelength), override)
+        if signature is not None:
+            self._spot_field_map_cache = (signature, spec)
+        return spec
+
+    def _compute_spot_field_map_spec(self, system, target, wavelength: float, exaggeration=None):
+        from contextlib import redirect_stderr, redirect_stdout
+
+        field_type = "angle" if self._current_object_mode() == "Infinity" else "height"
+        try:
+            field_max = float(self._current_field_angle_deg() if field_type == "angle" else self._current_field_height())
+        except Exception:
+            field_max = 0.0
+        if field_max <= 1e-9:
+            field_max = 5.0 if field_type == "angle" else 0.5
+        try:
+            sample_count = max(18, int(self._current_ray_count()))
+        except Exception:
+            sample_count = 18
+        fractions = np.linspace(-1.0, 1.0, 5)
+        chief_u: list[float] = []
+        chief_v: list[float] = []
+        rms: list[float] = []
+        capture = io.StringIO()
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                with redirect_stdout(capture), redirect_stderr(capture):
+                    for fy in fractions:
+                        for fx in fractions:
+                            if fx * fx + fy * fy > 1.0 + 1e-9:
+                                continue  # keep the round field
+                            x, y, _z, _l, _m, _n, _w = self._build_geometric_image_samples_full(
+                                system, wavelength, sample_count=sample_count, pattern="hexapolar",
+                                surface_index=self._analysis_surface_index(),
+                                aperture_type=self._current_aperture_type(),
+                                aperture_value=self._current_aperture_value(),
+                                field_type=field_type, field_x=float(fx * field_max), field_y=float(fy * field_max),
+                            )
+                            x = np.asarray(x, dtype=float)
+                            y = np.asarray(y, dtype=float)
+                            if x.size < 3 or y.size != x.size:
+                                continue
+                            cu = float(np.mean(x))
+                            cv = float(np.mean(y))
+                            spot_rms = float(np.sqrt(np.mean((x - cu) ** 2 + (y - cv) ** 2)))
+                            if np.isfinite(cu) and np.isfinite(cv) and np.isfinite(spot_rms):
+                                chief_u.append(cu)
+                                chief_v.append(cv)
+                                rms.append(spot_rms)
+        except Exception as exc:  # pragma: no cover - defensive
+            try:
+                self.append_debug(f"Spot field map trace failed: {exc}")
+            except Exception:
+                pass
+            return None
+        if len(chief_u) < 2:
+            return None
+        return build_spot_field_map(
+            chief_u, chief_v, rms,
+            center=np.asarray(getattr(target, "center_world"), dtype=float),
+            normal=np.asarray(getattr(target, "normal_world"), dtype=float),
+            tangent=np.asarray(getattr(target, "tangent_world"), dtype=float),
+            image_radius=self._image_circle_radius_value(),
+            magnification=exaggeration,
+        )
 
     def _iter_3d_scene_rays(
         self,

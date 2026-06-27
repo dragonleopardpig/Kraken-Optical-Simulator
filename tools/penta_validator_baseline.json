@@ -163,7 +163,8 @@
     "158": "pass",
     "159": "pass",
     "160": "pass",
-    "161": "pass"
+    "161": "pass",
+    "162": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -327,6 +328,7 @@
     "158": "curved best-focus surface lofts field curvature over the flat detector (idea #2)",
     "159": "image circle uses EFL*tan(field), matches where rays land (0168)",
     "160": "distortion grid warps a rectilinear grid into its real image (idea #2)",
-    "161": "tangential + sagittal best-focus surfaces show astigmatism in 3D (idea #2a)"
+    "161": "tangential + sagittal best-focus surfaces show astigmatism in 3D (idea #2a)",
+    "162": "spot RMS map shows spot quality across the field in 3D (idea #1/#3)"
   }
 }

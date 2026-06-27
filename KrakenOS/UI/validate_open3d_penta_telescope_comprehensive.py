@@ -9322,6 +9322,36 @@ def phase_161_astigmatism_surfaces(
     return result
 
 
+def phase_162_spot_field_map(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The 3D spot RMS field map (idea #1/#3 foundation): trace the geometric spot at a
+    grid of field points and draw a circle sized by the magnified RMS spot radius at each
+    field's detector position, coloured green (tight) -> red (soft), behind a new "Spot
+    map" overlay toggle (render-only per bugs/0166). The display-free guard pins the
+    circle geometry (chief position + rms*mag radius + colour), a real double-gauss RMS
+    that grows toward the edge, the scan caching, and the render-only/no-shadowing
+    contract.
+    """
+    result = PhaseResult(
+        name="Phase 162: spot RMS map shows spot quality across the field in 3D (idea #1/#3)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_spot_field_map import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"spot-field-map guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("spot-field-map phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9529,6 +9559,7 @@ def main() -> int:
             phase_159_image_circle_efl,
             phase_160_distortion_grid,
             phase_161_astigmatism_surfaces,
+            phase_162_spot_field_map,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

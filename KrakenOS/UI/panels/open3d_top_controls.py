@@ -118,6 +118,8 @@ class Open3DTopControlsPanel:
                 MenuCheckbutton("Distortion", self.inspector.show_distortion_grid_var, self.inspector._on_scene_visibility_changed),
                 # 3D astigmatism viz (idea #2a): tangential + sagittal best-focus surfaces.
                 MenuCheckbutton("Astigmatism", self.inspector.show_astigmatism_var, self.inspector._on_scene_visibility_changed),
+                # 3D spot-quality viz (idea #1/#3): per-field RMS spot circles on the detector.
+                MenuCheckbutton("Spot map", self.inspector.show_spot_field_map_var, self.inspector._on_scene_visibility_changed),
             ),
         )
         pack_menubutton(view_toolbar, "Overlays", overlay_menu, padx=(8, 0))

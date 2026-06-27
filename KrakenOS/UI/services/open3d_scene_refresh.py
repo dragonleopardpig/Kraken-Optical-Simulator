@@ -806,6 +806,10 @@ class Open3DSceneRefreshService:
         astigmatism_actors = 0
         if bool(getattr(self, "show_astigmatism_var", None) is not None and self.show_astigmatism_var.get()):
             astigmatism_actors = self._add_astigmatism_surfaces_overlays(system, scene_bundle)
+        # 3D spot-quality viz (idea #1/#3): per-field RMS spot circles.
+        spot_field_map_actors = 0
+        if bool(getattr(self, "show_spot_field_map_var", None) is not None and self.show_spot_field_map_var.get()):
+            spot_field_map_actors = self._add_spot_field_map_overlays(system, scene_bundle)
         # bugs/0009: the thickness dimensions must be added *after* the imported
         # STEP overlay loop below registers the optical body into
         # ``_step_actor_map`` -- otherwise ``add_overlays`` measures against an
