@@ -545,6 +545,9 @@ class AnalysisPlotService:
                         field_type=field_type,
                         field_x=0.0,
                         field_y=float(field_value),
+                        # A spot diagram must fill the pupil in 2D, not the editor's
+                        # display fan (default "Meridional fan") which draws line spots.
+                        require_2d_pupil=True,
                     )
                     analysis_workers = max(analysis_workers, int(worker_count))
                     if Xi.size == 0:

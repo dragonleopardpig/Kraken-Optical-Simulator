@@ -2887,47 +2887,44 @@ class ThreeDSceneToolsMixin:
             field_max = 0.0
         if field_max <= 1e-9:
             field_max = 5.0 if field_type == "angle" else 0.5
-        try:
-            sample_count = max(18, int(self._current_ray_count()))
-        except Exception:
-            sample_count = 18
+        # Hexapolar ring count: 1+3S(S+1) rays/field, so keep S modest -- ~217 rays is
+        # ample for an RMS and 13 fields stay cheap (vs the editor ray-count, which with
+        # a 2D pupil would be tens of thousands of rays).
+        sample_count = 8
         fractions = np.linspace(-1.0, 1.0, 5)
         chief_u: list[float] = []
         chief_v: list[float] = []
         rms: list[float] = []
         capture = io.StringIO()
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                with redirect_stdout(capture), redirect_stderr(capture):
-                    for fy in fractions:
-                        for fx in fractions:
-                            if fx * fx + fy * fy > 1.0 + 1e-9:
-                                continue  # keep the round field
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with redirect_stdout(capture), redirect_stderr(capture):
+                for fy in fractions:
+                    for fx in fractions:
+                        if fx * fx + fy * fy > 1.0 + 1e-9:
+                            continue  # keep the round field
+                        try:
                             x, y, _z, _l, _m, _n, _w = self._build_geometric_image_samples_full(
                                 system, wavelength, sample_count=sample_count, pattern="hexapolar",
                                 surface_index=self._analysis_surface_index(),
                                 aperture_type=self._current_aperture_type(),
                                 aperture_value=self._current_aperture_value(),
                                 field_type=field_type, field_x=float(fx * field_max), field_y=float(fy * field_max),
+                                require_2d_pupil=True,  # 2D pupil so the RMS is a real spot, not a fan
                             )
-                            x = np.asarray(x, dtype=float)
-                            y = np.asarray(y, dtype=float)
-                            if x.size < 3 or y.size != x.size:
-                                continue
-                            cu = float(np.mean(x))
-                            cv = float(np.mean(y))
-                            spot_rms = float(np.sqrt(np.mean((x - cu) ** 2 + (y - cv) ** 2)))
-                            if np.isfinite(cu) and np.isfinite(cv) and np.isfinite(spot_rms):
-                                chief_u.append(cu)
-                                chief_v.append(cv)
-                                rms.append(spot_rms)
-        except Exception as exc:  # pragma: no cover - defensive
-            try:
-                self.append_debug(f"Spot field map trace failed: {exc}")
-            except Exception:
-                pass
-            return None
+                        except Exception:
+                            continue  # one bad field must not kill the whole map
+                        x = np.asarray(x, dtype=float)
+                        y = np.asarray(y, dtype=float)
+                        if x.size < 3 or y.size != x.size:
+                            continue
+                        cu = float(np.mean(x))
+                        cv = float(np.mean(y))
+                        spot_rms = float(np.sqrt(np.mean((x - cu) ** 2 + (y - cv) ** 2)))
+                        if np.isfinite(cu) and np.isfinite(cv) and np.isfinite(spot_rms):
+                            chief_u.append(cu)
+                            chief_v.append(cv)
+                            rms.append(spot_rms)
         if len(chief_u) < 2:
             return None
         return build_spot_field_map(

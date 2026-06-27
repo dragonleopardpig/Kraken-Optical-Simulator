@@ -9352,6 +9352,36 @@ def phase_162_spot_field_map(
     return result
 
 
+def phase_163_spot_diagram_2d_pupil(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A spot diagram / PSF / spot-RMS must fill the pupil in 2D, not the editor's 1-D
+    display fan (bugs/0169). The spot trace asked for "hexapolar" but the sampler overrode
+    it with the editor's display pupil pattern (default "Meridional fan" -> "fany"), so
+    every spot collapsed to a vertical line (on-axis X-spread = 0). The fix adds
+    ``require_2d_pupil`` (forces hexapolar when the resolved pattern is a 1-D fan), wired in
+    the 2-D Spot Diagram and the 3-D Spot-map traces. The display-free guard pins the
+    on-axis spot going round (X ~ Y) with the 2-D pupil and the two call sites forcing it.
+    """
+    result = PhaseResult(
+        name="Phase 163: spot diagram fills the pupil in 2D -- round spots not fans (0169)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_spot_diagram_2d_pupil import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"spot-diagram 2D-pupil guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("spot-diagram 2D-pupil phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9560,6 +9590,7 @@ def main() -> int:
             phase_160_distortion_grid,
             phase_161_astigmatism_surfaces,
             phase_162_spot_field_map,
+            phase_163_spot_diagram_2d_pupil,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

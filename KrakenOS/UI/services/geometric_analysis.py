@@ -583,6 +583,7 @@ class GeometricAnalysisMixin:
         field_type: str,
         field_x: float,
         field_y: float,
+        require_2d_pupil: bool = False,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
         random_source_bundle = self._build_random_source_bundle(sample_count)
         if random_source_bundle is not None:
@@ -615,7 +616,13 @@ class GeometricAnalysisMixin:
             float(aperture_value),
         )
         pupil.Samp = max(2, int(sample_count))
-        pupil.Ptype = self._current_analysis_pupil_pattern(pattern) if pattern == "hexapolar" else str(pattern)
+        ptype = self._current_analysis_pupil_pattern(pattern) if pattern == "hexapolar" else str(pattern)
+        if require_2d_pupil and str(ptype) in {"fanx", "fany", "fan", "chief", "rtheta"}:
+            # A spot diagram / PSF needs the pupil filled in 2D. The editor's display pupil
+            # pattern may be a 1-D fan (the default "Meridional fan" -> "fany"), which would
+            # collapse the spot to a vertical line; force a 2-D hexapolar pupil instead.
+            ptype = "hexapolar"
+        pupil.Ptype = ptype
         pupil.FieldType = str(field_type)
         pupil.FieldX = float(field_x)
         pupil.FieldY = float(field_y)
