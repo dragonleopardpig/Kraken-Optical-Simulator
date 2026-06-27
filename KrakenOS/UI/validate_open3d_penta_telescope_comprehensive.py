@@ -9382,6 +9382,37 @@ def phase_163_spot_diagram_2d_pupil(
     return result
 
 
+def phase_164_camera_pixel_grid(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The camera pixel-grid overlay (idea #1: the spot footprint on real pixels). With a
+    vendor camera registered (a pixel pitch, e.g. the 25 MP 5120x5120 @ 4.50 um) the "Pixel
+    grid" toggle draws that pixel lattice under each spot -- true-aligned (lines on real
+    k*pitch boundaries) and magnified about the chief by the spot-map factor -- so the spot
+    blur reads in pixels. The display-free guard pins the lattice geometry (span =
+    2*extent/pitch, true alignment + sub-pixel honesty, pitch*factor spacing), a real
+    double-gauss + 25 MP camera spanning a few pixels, the no-camera None, and the
+    render-only/no-shadowing contract.
+    """
+    result = PhaseResult(
+        name="Phase 164: camera pixel grid shows the spot footprint on real pixels (idea #1)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_pixel_grid import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"pixel-grid guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("pixel-grid phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9591,6 +9622,7 @@ def main() -> int:
             phase_161_astigmatism_surfaces,
             phase_162_spot_field_map,
             phase_163_spot_diagram_2d_pupil,
+            phase_164_camera_pixel_grid,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

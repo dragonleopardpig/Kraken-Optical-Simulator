@@ -613,6 +613,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.show_astigmatism_var = tk.BooleanVar(value=False)
         # 3D spot-quality viz (idea #1/#3): RMS spot circle per field on the detector.
         self.show_spot_field_map_var = tk.BooleanVar(value=False)
+        # Camera pixel grid (idea #1): the registered camera's pixel lattice under each spot,
+        # so the spot footprint reads in pixels. Needs a registered camera (a pixel pitch).
+        self.show_pixel_grid_var = tk.BooleanVar(value=False)
         self.slide_along_axis_mode_var = tk.BooleanVar(value=False)
         self.show_live_controls_panel_var = tk.BooleanVar(value=True)
         self.show_scene_components_panel_var = tk.BooleanVar(value=True)
@@ -1695,6 +1698,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             show_distortion_grid=bool(self.show_distortion_grid_var.get()),
             show_astigmatism=bool(self.show_astigmatism_var.get()),
             show_spot_field_map=bool(self.show_spot_field_map_var.get()),
+            show_pixel_grid=bool(self.show_pixel_grid_var.get()),
             counts=self._debug_actor_counts(),
         )
         # bugs/0166: reference-surface / detector / thickness / terminal-diagnostic /
@@ -11795,6 +11799,80 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         return count
 
+    def _add_pixel_grid_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
+        """Draw the registered camera's pixel lattice under each spot (idea #1), so the spot
+        footprint reads in pixels (how many pixels the blur covers). Render-only; geometry +
+        the camera pitch live on the editor (``pixel_grid_overlay_spec``)."""
+        if self._renderer is None or pv is None or scene_bundle is None:
+            return 0
+        try:
+            spec = self.editor.pixel_grid_overlay_spec(system, scene_bundle)
+        except Exception as exc:
+            self.editor.append_debug(f"Pixel grid overlay failed: {exc}")
+            return 0
+        if not spec:
+            return 0
+        count = 0
+        color = tuple(spec.get("color", (0.42, 0.47, 0.55)))
+        segment_points: list = []
+        line_cells: list = []
+        offset = 0
+        top_point = None
+        for grid in spec.get("grids") or []:
+            for key in ("v_lines", "h_lines"):
+                for seg in grid.get(key) or []:
+                    pts = np.asarray(seg, dtype=float)
+                    if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+                        continue
+                    segment_points.append(pts[:2, :3])
+                    line_cells.extend((2, offset, offset + 1))
+                    offset += 2
+                    candidate = pts[int(np.argmax(pts[:, 1])), :3]
+                    if top_point is None or float(candidate[1]) > float(top_point[1]):
+                        top_point = candidate
+        if segment_points:
+            try:
+                # One merged line mesh (hundreds of short segments) -> a single actor.
+                mesh = pv.PolyData(np.vstack(segment_points), lines=np.asarray(line_cells, dtype=np.int64))
+                self._add_mesh_actor(mesh, color=color, opacity=0.6, line_width=1.0)
+                count += 1
+            except Exception:
+                pass
+        try:
+            if vtkBillboardTextActor3D is not None and top_point is not None:
+                _c, scene_radius = self._scene_bounds()
+                anchor = np.asarray(top_point, dtype=float) + np.asarray(spec["normal"], dtype=float) * max(float(scene_radius) * 0.01, 0.4)
+                pitch = spec.get("pitch_um", (0.0, 0.0))
+                res = spec.get("resolution_px")
+                res_text = f"{int(res[0])}x{int(res[1])} px · " if (isinstance(res, (tuple, list)) and len(res) == 2) else ""
+                actor = vtkBillboardTextActor3D()
+                actor.SetInput(
+                    f"Camera pixels · {spec.get('camera_label', '')}\n"
+                    f"{res_text}{float(pitch[0]):.3g} µm pitch · spot ≈ {float(spec.get('span_px_min', 0.0)):.0f}-{float(spec.get('span_px_max', 0.0)):.0f} px (grid ×{float(spec.get('magnification', 1.0)):.0f})"
+                )
+                actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
+                try:
+                    actor.PickableOff()
+                except Exception:
+                    pass
+                text_prop = actor.GetTextProperty()
+                text_prop.SetFontSize(15)
+                try:
+                    text_prop.SetBold(1)
+                except Exception:
+                    pass
+                text_prop.SetColor(0.20, 0.24, 0.30)
+                text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
+                text_prop.SetBackgroundOpacity(0.9)
+                text_prop.SetFrame(1)
+                text_prop.SetFrameWidth(2)
+                text_prop.SetFrameColor(0.42, 0.47, 0.55)
+                self._add_renderer_view_prop(actor)
+                count += 1
+        except Exception:
+            pass
+        return count
+
     def _add_thickness_dimension_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
         return self._open3d_thickness_dimension_service().add_overlays(system, scene_bundle)
 
@@ -14835,6 +14913,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         menu.add_checkbutton(
             label="Spot RMS map (across the field)",
             variable=self.show_spot_field_map_var,
+            command=self._on_scene_visibility_changed,
+        )
+        menu.add_checkbutton(
+            label="Camera pixel grid (spot on pixels)",
+            variable=self.show_pixel_grid_var,
             command=self._on_scene_visibility_changed,
         )
         exaggeration_menu = tk.Menu(menu, tearoff=False)

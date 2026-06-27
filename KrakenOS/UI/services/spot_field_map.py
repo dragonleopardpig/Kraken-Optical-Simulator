@@ -106,6 +106,7 @@ def build_spot_field_map(
     circles: list[np.ndarray] = []
     colors: list[tuple] = []
     scatter_groups: list[dict] = []
+    spot_extent_mm: list[float] = []  # per spot: TRUE max scatter radius (un-magnified)
     have_scatter = scatter is not None
     for i in range(n):
         radius = float(rms[i]) * factor
@@ -114,6 +115,7 @@ def build_spot_field_map(
         circles.append(np.vstack([world, world[0]]))  # close the loop
         color = _rms_color((float(rms[i]) - rms_min) / rms_span)
         colors.append(color)
+        extent_true = 2.5 * float(rms[i])  # fallback when no scatter is supplied
         # The actual ray-intercept scatter (the real spot SHAPE -- round on-axis, coma
         # off-axis), magnified by the same factor and laid at the chief on the detector.
         if have_scatter and i < len(scatter):
@@ -123,6 +125,8 @@ def build_spot_field_map(
                 sv = chief_v[i] + duv[:, 1] * factor
                 pts = center[None, :] + su[:, None] * u[None, :] + sv[:, None] * v[None, :]
                 scatter_groups.append({"points": pts, "color": color, "radius_mm": float(radius)})
+                extent_true = float(np.max(np.hypot(duv[:, 0], duv[:, 1])))
+        spot_extent_mm.append(extent_true)
 
     return {
         "kind": "spot_field_map",
@@ -135,4 +139,7 @@ def build_spot_field_map(
         "n_spots": n,
         "center": center,
         "normal": n_hat,
+        "tangent": u,  # the in-plane axis -- pixel grid reuses this exact frame
+        "chief_uv": np.column_stack((chief_u, chief_v)),
+        "spot_extent_mm": np.asarray(spot_extent_mm, dtype=float),
     }

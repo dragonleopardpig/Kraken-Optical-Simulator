@@ -810,6 +810,10 @@ class Open3DSceneRefreshService:
         spot_field_map_actors = 0
         if bool(getattr(self, "show_spot_field_map_var", None) is not None and self.show_spot_field_map_var.get()):
             spot_field_map_actors = self._add_spot_field_map_overlays(system, scene_bundle)
+        # Camera pixel grid (idea #1): the spot footprint on the camera's real pixels.
+        pixel_grid_actors = 0
+        if bool(getattr(self, "show_pixel_grid_var", None) is not None and self.show_pixel_grid_var.get()):
+            pixel_grid_actors = self._add_pixel_grid_overlays(system, scene_bundle)
         # bugs/0009: the thickness dimensions must be added *after* the imported
         # STEP overlay loop below registers the optical body into
         # ``_step_actor_map`` -- otherwise ``add_overlays`` measures against an

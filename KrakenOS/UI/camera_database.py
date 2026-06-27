@@ -267,6 +267,47 @@ def camera_sensor_active_mm(name: str) -> tuple[float, float] | None:
     return w, h
 
 
+def camera_pixel_pitch_mm(name: str) -> tuple[float, float] | None:
+    """Return the vendor pixel pitch ``(pitch_x_mm, pitch_y_mm)`` or ``None``.
+
+    Converts the datasheet ``pixel_size_um`` (e.g. the hr25MCX / SVS 25MP is 4.50 um) to
+    millimetres -- the cell size of the sensor's pixel lattice, used to draw the pixel grid
+    a spot lands on.
+    """
+    record = camera_record(name)
+    if record is None:
+        return None
+    pixel_size = record.get("pixel_size_um")
+    if not (isinstance(pixel_size, (tuple, list)) and len(pixel_size) == 2):
+        return None
+    try:
+        px = float(pixel_size[0])
+        py = float(pixel_size[1])
+    except (TypeError, ValueError):
+        return None
+    if not (px > 0.0 and py > 0.0):
+        return None
+    return px / 1000.0, py / 1000.0
+
+
+def camera_resolution_px(name: str) -> tuple[int, int] | None:
+    """Return the vendor sensor resolution ``(nx, ny)`` in pixels, or ``None``."""
+    record = camera_record(name)
+    if record is None:
+        return None
+    resolution = record.get("resolution_px")
+    if not (isinstance(resolution, (tuple, list)) and len(resolution) == 2):
+        return None
+    try:
+        nx = int(resolution[0])
+        ny = int(resolution[1])
+    except (TypeError, ValueError):
+        return None
+    if not (nx > 0 and ny > 0):
+        return None
+    return nx, ny
+
+
 def camera_image_coverage_mm(name: str) -> tuple[float, float] | None:
     """Image-circle coverage for a camera's vendor sensor.
 

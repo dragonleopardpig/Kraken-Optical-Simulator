@@ -120,6 +120,8 @@ class Open3DTopControlsPanel:
                 MenuCheckbutton("Astigmatism", self.inspector.show_astigmatism_var, self.inspector._on_scene_visibility_changed),
                 # 3D spot-quality viz (idea #1/#3): per-field RMS spot circles on the detector.
                 MenuCheckbutton("Spot map", self.inspector.show_spot_field_map_var, self.inspector._on_scene_visibility_changed),
+                # Camera pixel grid (idea #1): the spot footprint on the camera's real pixels.
+                MenuCheckbutton("Pixel grid", self.inspector.show_pixel_grid_var, self.inspector._on_scene_visibility_changed),
             ),
         )
         pack_menubutton(view_toolbar, "Overlays", overlay_menu, padx=(8, 0))

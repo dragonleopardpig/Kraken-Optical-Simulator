@@ -58,6 +58,7 @@ from KrakenOS.UI.services.best_focus_surface import (
 )
 from KrakenOS.UI.services.distortion_grid import build_distortion_grid
 from KrakenOS.UI.services.spot_field_map import build_spot_field_map
+from KrakenOS.UI.services.pixel_grid import build_pixel_grid_overlay
 from KrakenOS.UI.services.legacy_3d_scene import Legacy3DSceneService
 from KrakenOS.UI.services.missing_assets_scan import (
     MISSING_RESOURCE_STATE_ATTR,
@@ -2938,6 +2939,56 @@ class ThreeDSceneToolsMixin:
             magnification=exaggeration,
             scatter=scatter,
         )
+
+    # ------------------------------------------------------------------
+    # Camera pixel-grid overlay (idea #1: the spot footprint on real pixels)
+
+    def _camera_pixel_pitch_mm(self):
+        """The registered detector camera's ``(px, py)`` pixel pitch in mm, or None."""
+        try:
+            from KrakenOS.UI.camera_database import camera_pixel_pitch_mm
+            name = self._current_camera_model()
+        except Exception:
+            return None
+        if not name:
+            return None
+        try:
+            return camera_pixel_pitch_mm(str(name))
+        except Exception:
+            return None
+
+    def pixel_grid_overlay_spec(self, system, scene_bundle, *, wavelength=None):
+        """Build the camera pixel-lattice overlay drawn under each spot, or None. Reuses the
+        cached spot-field-map (chief positions + true extents + magnification) so the grid
+        aligns exactly with the spots; needs a registered camera (a pixel pitch)."""
+        if system is None or scene_bundle is None:
+            return None
+        pitch = self._camera_pixel_pitch_mm()
+        if pitch is None:
+            return None  # no camera registered / no vendor pixel size -> nothing to draw
+        spot_spec = self.spot_field_map_overlay_spec(system, scene_bundle, wavelength=wavelength)
+        if not spot_spec:
+            return None
+        spec = build_pixel_grid_overlay(
+            spot_spec.get("chief_uv"),
+            spot_spec.get("spot_extent_mm"),
+            center=spot_spec.get("center"),
+            normal=spot_spec.get("normal"),
+            tangent=spot_spec.get("tangent"),
+            pitch_mm=pitch,
+            magnification=spot_spec.get("magnification", 1.0),
+        )
+        if spec is not None:
+            try:
+                spec["camera_label"] = str(self._current_camera_model() or "")
+            except Exception:
+                spec["camera_label"] = ""
+            try:
+                from KrakenOS.UI.camera_database import camera_resolution_px
+                spec["resolution_px"] = camera_resolution_px(str(self._current_camera_model() or ""))
+            except Exception:
+                spec["resolution_px"] = None
+        return spec
 
     def _iter_3d_scene_rays(
         self,
