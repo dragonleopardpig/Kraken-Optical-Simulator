@@ -168,7 +168,8 @@
     "163": "pass",
     "164": "pass",
     "165": "pass",
-    "166": "pass"
+    "166": "pass",
+    "167": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -337,6 +338,7 @@
     "163": "spot diagram fills the pupil in 2D -- round spots not fans (0169)",
     "164": "camera pixel grid shows the spot footprint on real pixels (idea #1)",
     "165": "pupil reference builds solid meshes for non-seq scenes (0171)",
-    "166": "spot views warn when optics are an ideal surrogate (defocus only)"
+    "166": "spot views warn when optics are an ideal surrogate (defocus only)",
+    "167": "Snap detector falls back to ray-traced best focus (solid/BS scenes)"
   }
 }

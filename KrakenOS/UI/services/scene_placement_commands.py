@@ -2591,13 +2591,21 @@ class ScenePlacementMixin:
             self.status_var.set("Snap detector: the layout has no final Image row to move.")
             return False
         image_z = self._paraxial_image_plane_z()
-        if image_z is None:
-            self.status_var.set("Snap detector: best-focus image plane is not computable for this layout.")
-            return False
-        detector_z = sum(float(r.thickness) for r in self.rows[:-1])
-        delta = float(image_z) - float(detector_z)
+        if image_z is not None:
+            detector_z = sum(float(r.thickness) for r in self.rows[:-1])
+            delta = float(image_z) - float(detector_z)
+            source = "image plane"
+        else:
+            # The paraxial conjugate is unavailable for this layout (a 3D solid / beam-splitter
+            # cube in the path that the centered-refractive paraxial solve can't model). Fall
+            # back to the REAL-RAY on-axis best focus so the one-click snap still works.
+            delta = self._real_ray_best_focus_shift_for_rows()
+            if delta is None:
+                self.status_var.set("Snap detector: best focus is not computable for this layout.")
+                return False
+            source = "best focus (ray-traced)"
         if abs(delta) <= 1e-6:
-            self.status_var.set("Detector already on the image plane (no defocus).")
+            self.status_var.set("Detector already at best focus (no defocus).")
             return False
         gui = not bool(getattr(self, "headless", False))   # history/table sync are GUI-only
         if gui:
@@ -2610,7 +2618,7 @@ class ScenePlacementMixin:
                 pass
             self._commit_history_capture()
         self._invalidate_preview_scene_trace()
-        self.status_var.set(f"Snapped detector to image plane (moved {delta:+.4g} mm to best focus).")
+        self.status_var.set(f"Snapped detector to {source} (moved {delta:+.4g} mm to best focus).")
         return True
 
     def glue_step_overlay_to_surrogate(self, label: str) -> bool:

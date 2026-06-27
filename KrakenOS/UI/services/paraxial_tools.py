@@ -1221,6 +1221,42 @@ class ParaxialToolsMixin:
             self._preview_field_bundle_count = field_bundle_count_before
             self._preview_field_ray_count = ray_count_before
 
+    def _real_ray_best_focus_shift_for_rows(self, rows=None, wavelength=None):
+        """Axial shift (mm) from the detector to REAL-RAY on-axis best focus, for layouts the
+        paraxial image-plane conjugate can't handle (a 3D solid / beam-splitter cube in the
+        path). Builds the mesh system, traces the on-axis 2D spot, and returns the shift that
+        minimises it (rays are straight in image space). ``None`` on failure -- the one-click
+        Snap then reports it cleanly."""
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+
+        rows = list(rows if rows is not None else getattr(self, "rows", []) or [])
+        if len(rows) < 3:
+            return None
+        try:
+            if wavelength is None:
+                wavelength = float(self._current_wavelength())
+            field_type = "angle" if self._current_object_mode() == "Infinity" else "height"
+            capture = io.StringIO()
+            with redirect_stdout(capture), redirect_stderr(capture):
+                system = _build_system_from_specs(self._serializable_specs_for_rows(rows), build=1)
+                x, y, _z, l_dir, m_dir, n_dir, _w = self._build_geometric_image_samples_full(
+                    system, float(wavelength), sample_count=10, pattern="hexapolar",
+                    surface_index=self._analysis_surface_index(),
+                    aperture_type=self._current_aperture_type(),
+                    aperture_value=self._current_aperture_value(),
+                    field_type=field_type, field_x=0.0, field_y=0.0, require_2d_pupil=True,
+                )
+            x = np.asarray(x, dtype=float)
+            y = np.asarray(y, dtype=float)
+            if x.size < 4:
+                return None
+            return self._spot_best_focus_shift(
+                x, y, np.asarray(l_dir, dtype=float), np.asarray(m_dir, dtype=float), np.asarray(n_dir, dtype=float)
+            )
+        except Exception:
+            return None
+
     def _spot_rms_for_rows(self, rows: list[SurfaceRow], wavelength: float, sample_count: int) -> float:
         metric_mode = self._best_focus_metric_mode_for_rows(rows)
         if metric_mode == "folded_preview":

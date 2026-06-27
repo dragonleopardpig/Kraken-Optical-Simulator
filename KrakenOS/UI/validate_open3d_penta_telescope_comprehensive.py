@@ -9476,6 +9476,36 @@ def phase_166_surrogate_optics_warning(
     return result
 
 
+def phase_167_snap_detector_best_focus(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The right-click "Snap detector to image plane (remove defocus)" must work even when a
+    3D solid / beam-splitter cube is in the path. The paraxial image conjugate it used can't
+    model a mesh solid (centered-refractive only) -> it bailed "not computable" and left the
+    detector defocused. Fix: fall back to the REAL-RAY on-axis best focus
+    (``_real_ray_best_focus_shift_for_rows``) and move the back-focal gap by it. The display-
+    free guard pins, on the MV-150 beam-splitter scene, that the paraxial path is unavailable,
+    the real-ray shift recovers the ~+2.7 mm defocus, and the snap applies it.
+    """
+    result = PhaseResult(
+        name="Phase 167: Snap detector falls back to ray-traced best focus (solid/BS scenes)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_snap_detector_best_focus import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"snap-detector-best-focus guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("snap-detector-best-focus phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9688,6 +9718,7 @@ def main() -> int:
             phase_164_camera_pixel_grid,
             phase_165_pupil_reference_solid_mesh,
             phase_166_surrogate_optics_warning,
+            phase_167_snap_detector_best_focus,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
