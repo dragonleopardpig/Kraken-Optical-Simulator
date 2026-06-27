@@ -9506,6 +9506,35 @@ def phase_167_snap_detector_best_focus(
     return result
 
 
+def phase_168_zemax_wavefront(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The wavefront-augmented-surrogate engine (option 2): a Thin-Lens surrogate is
+    aberration-free, but the real black-box lens ships a Zemax wavefront-map (OPD) export.
+    ``services/zemax_wavefront.py`` parses it, fits Zernikes, and turns the wavefront into the
+    transverse ray aberration (the real geometric spot) -- so the surrogate can blur like the
+    real lens. The display-free guard pins a synthetic pure-defocus recovery + the real
+    Lens/15056 map (parse RMS/PV == the report, ~0 Zernike residual, a sane sub-Airy spot).
+    """
+    result = PhaseResult(
+        name="Phase 168: Zemax wavefront -> Zernike -> real spot (augmented-surrogate engine)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_zemax_wavefront import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"zemax-wavefront guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("zemax-wavefront phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9719,6 +9748,7 @@ def main() -> int:
             phase_165_pupil_reference_solid_mesh,
             phase_166_surrogate_optics_warning,
             phase_167_snap_detector_best_focus,
+            phase_168_zemax_wavefront,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
