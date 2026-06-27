@@ -11778,7 +11778,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 rim = np.asarray(circles[int(np.argmax([np.max(np.asarray(c)[:, 1]) for c in circles]))], dtype=float)
                 anchor = rim[int(np.argmax(rim[:, 1]))].copy()
                 _c, scene_radius = self._scene_bounds()
-                anchor = anchor + np.asarray(spec["normal"], dtype=float) * max(float(scene_radius) * 0.01, 0.4)
+                # Lift the multi-line label clearly ABOVE the image circle so it never overlaps the
+                # detector-coverage Sensor / Image-circle labels that ring the image plane at ~1.1x
+                # the image radius (user flag: "Sensor 23.0x23.0 overlaps the spot text box").
+                try:
+                    img_radius = float(self.editor._image_circle_radius_value() or 0.0)
+                except Exception:
+                    img_radius = 0.0
+                vertical_lift = max(img_radius * 0.65, float(scene_radius) * 0.02)
+                anchor = (
+                    anchor
+                    + np.array([0.0, 1.0, 0.0]) * vertical_lift  # screen-up, clear of the ringed labels
+                    + np.asarray(spec["normal"], dtype=float) * max(float(scene_radius) * 0.01, 0.4)
+                )
                 mag = float(spec.get("magnification", 1.0))
                 rms_lo = float(spec.get("rms_min_mm", 0.0)) * 1000.0
                 rms_hi = float(spec.get("rms_max_mm", 0.0)) * 1000.0
