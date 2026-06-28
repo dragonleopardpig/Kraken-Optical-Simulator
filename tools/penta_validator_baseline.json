@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-06-28 (phase 170 field-resolved surrogate added)",
+  "generated_at": "2026-06-28 (phase 171 advanced-surface-dialog-scrollable added)",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -172,7 +172,8 @@
     "167": "pass",
     "168": "pass",
     "169": "pass",
-    "170": "pass"
+    "170": "pass",
+    "171": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -345,6 +346,7 @@
     "167": "Snap detector falls back to ray-traced best focus (solid/BS scenes)",
     "168": "Zemax wavefront -> Zernike -> real spot (augmented-surrogate engine)",
     "169": "wavefront-augmented surrogate -- real Zemax OPD spot inside the Airy (0177)",
-    "170": "field-resolved surrogate -- spot grows + elongates with field from Zemax spot data (0178)"
+    "170": "field-resolved surrogate -- spot grows + elongates with field from Zemax spot data (0178)",
+    "171": "Advanced Surface dialog fits the screen + scrolls its tabs (no overflow under the top bar)"
   }
 }

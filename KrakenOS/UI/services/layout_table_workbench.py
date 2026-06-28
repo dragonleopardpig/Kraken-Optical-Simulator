@@ -6338,12 +6338,17 @@ class LayoutTableWorkbenchMixin:
             if not dialog.winfo_exists():
                 return
             dialog.update_idletasks()
-            dialog_width = max(dialog.winfo_reqwidth(), dialog.winfo_width(), 1)
-            dialog_height = max(dialog.winfo_reqheight(), dialog.winfo_height(), 1)
             screen_width = max(dialog.winfo_screenwidth(), 1)
             screen_height = max(dialog.winfo_screenheight(), 1)
+            # Cap to the usable screen so a tall dialog never grows past the edges or tucks its
+            # title under a top panel bar (e.g. the AGS bar). A dialog whose content exceeds this
+            # must scroll its own body -- see the Advanced Surface editor's scrollable tabs.
+            max_width = max(screen_width - 80, 480)
+            max_height = max(screen_height - 120, 320)
+            dialog_width = min(max(dialog.winfo_reqwidth(), dialog.winfo_width(), 1), max_width)
+            dialog_height = min(max(dialog.winfo_reqheight(), dialog.winfo_height(), 1), max_height)
             pos_x = max((screen_width - dialog_width) // 2, 0)
-            pos_y = max((screen_height - dialog_height) // 2, 0)
+            pos_y = max((screen_height - dialog_height) // 2, 40)  # never tuck the title under a top bar
             dialog.geometry(f"{dialog_width}x{dialog_height}+{pos_x}+{pos_y}")
 
         place_dialog()

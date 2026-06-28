@@ -99,6 +99,47 @@ class MainAdvancedSurfaceDialog:
         notebook = ttk.Notebook(window)
         notebook.grid(row=1, column=0, sticky="nsew", padx=10, pady=(4, 8))
 
+        # Each tab scrolls its own body: the Diagnostics/Native group alone is ~30 rows (taller
+        # than the screen), which used to grow the dialog past the screen edges with no scrollbar
+        # (the title tucked under the top/AGS bar). A canvas+scrollbar per tab keeps the dialog
+        # screen-sized and every field reachable.
+        scroll_tabs: list[tuple[tk.Canvas, ttk.Frame]] = []
+
+        def make_scroll_tab(title: str) -> ttk.Frame:
+            host = ttk.Frame(notebook)
+            host.columnconfigure(0, weight=1)
+            host.rowconfigure(0, weight=1)
+            notebook.add(host, text=title)
+            canvas = tk.Canvas(host, highlightthickness=0)
+            vscroll = ttk.Scrollbar(host, orient="vertical", command=canvas.yview)
+            canvas.configure(yscrollcommand=vscroll.set)
+            canvas.grid(row=0, column=0, sticky="nsew")
+            inner = ttk.Frame(canvas, padding=(0, 8, 0, 8))
+            window_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+            def _update_scroll(_event=None) -> None:
+                try:
+                    canvas.configure(scrollregion=canvas.bbox("all"))
+                    overflow = inner.winfo_reqheight() > canvas.winfo_height()
+                    if overflow and not vscroll.grid_info():
+                        vscroll.grid(row=0, column=1, sticky="ns")
+                    elif not overflow and vscroll.grid_info():
+                        vscroll.grid_remove()
+                except tk.TclError:
+                    pass
+
+            def _on_canvas_configure(event) -> None:
+                # the inner form fills the canvas width (the column-2 stretch + label wraplengths
+                # lay out) and at least the canvas height (a short tab is not clipped); v-scroll only.
+                fill_height = max(int(event.height), inner.winfo_reqheight())
+                canvas.itemconfigure(window_id, width=int(event.width), height=fill_height)
+                _update_scroll()
+
+            inner.bind("<Configure>", lambda _e: _update_scroll(), add="+")
+            canvas.bind("<Configure>", _on_canvas_configure, add="+")
+            scroll_tabs.append((canvas, inner))
+            return inner
+
         attr_entries: dict[str, tuple[ttk.Entry, bool]] = {}
         row_shape_entries: dict[str, tuple[ttk.Entry, bool]] = {}
 
@@ -125,9 +166,8 @@ class MainAdvancedSurfaceDialog:
             ).grid(row=1, column=0, sticky="w", pady=(2, 0))
             attr_entries[attr] = (entry, is_editable)
 
-        shape_frame = ttk.Frame(notebook, padding=(0, 8, 0, 8))
+        shape_frame = make_scroll_tab("Shape Params")
         shape_frame.columnconfigure(2, weight=1)
-        notebook.add(shape_frame, text="Shape Params")
         ttk.Label(shape_frame, text="Control").grid(row=0, column=0, sticky="w", padx=(8, 6), pady=(0, 4))
         ttk.Label(shape_frame, text="Row field").grid(row=0, column=1, sticky="w", padx=(0, 6), pady=(0, 4))
         ttk.Label(shape_frame, text="Value").grid(row=0, column=2, sticky="w", padx=(0, 6), pady=(0, 4))
@@ -184,18 +224,16 @@ class MainAdvancedSurfaceDialog:
             k_bounds_entry.configure(state="disabled")
 
         for group_name, fields in self.advanced_surface_field_groups:
-            frame = ttk.Frame(notebook, padding=(0, 8, 0, 8))
+            frame = make_scroll_tab(group_name)
             frame.columnconfigure(2, weight=1)
-            notebook.add(frame, text=group_name)
             ttk.Label(frame, text="Control").grid(row=0, column=0, sticky="w", padx=(8, 6), pady=(0, 4))
             ttk.Label(frame, text="KrakenOS attr").grid(row=0, column=1, sticky="w", padx=(0, 6), pady=(0, 4))
             ttk.Label(frame, text="Override value").grid(row=0, column=2, sticky="w", padx=(0, 6), pady=(0, 4))
             for offset, (attr, label) in enumerate(fields, start=1):
                 add_attr_row(frame, offset, attr, label, row.advanced.get(attr, ""))
 
-        custom_frame = ttk.Frame(notebook, padding=(0, 8, 0, 8))
+        custom_frame = make_scroll_tab("Custom Surface")
         custom_frame.columnconfigure(2, weight=1)
-        notebook.add(custom_frame, text="Custom Surface")
         ttk.Label(custom_frame, text="Control").grid(row=0, column=0, sticky="w", padx=(8, 6), pady=(0, 4))
         ttk.Label(custom_frame, text="KrakenOS attr").grid(row=0, column=1, sticky="w", padx=(0, 6), pady=(0, 4))
         ttk.Label(custom_frame, text="Override value").grid(row=0, column=2, sticky="w", padx=(0, 6), pady=(0, 4))
@@ -319,4 +357,44 @@ class MainAdvancedSurfaceDialog:
         ttk.Button(footer, text="Validate", command=lambda: validate_values(show_success=True)).pack(side="right", padx=(0, 8))
         ttk.Button(footer, text="Apply", command=apply_values).pack(side="right")
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
+
+        # The fields all exist now: bind the wheel recursively on each tab body so hovering any
+        # field scrolls that tab, and size the initial scroll regions before the window is shown.
+        def bind_tab_wheel(canvas: tk.Canvas, inner: ttk.Frame) -> None:
+            def on_wheel(event):
+                if inner.winfo_reqheight() <= canvas.winfo_height():
+                    return None  # nothing to scroll -- let the event through
+                num = getattr(event, "num", 0)
+                delta = getattr(event, "delta", 0)
+                if num == 4 or delta > 0:
+                    canvas.yview_scroll(-1, "units")
+                elif num == 5 or delta < 0:
+                    canvas.yview_scroll(1, "units")
+                return "break"
+
+            def bind_recursive(node) -> None:
+                for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+                    try:
+                        node.bind(seq, on_wheel, add="+")
+                    except Exception:
+                        pass
+                try:
+                    children = node.winfo_children()
+                except Exception:
+                    children = []
+                for child in children:
+                    bind_recursive(child)
+
+            bind_recursive(canvas)
+            bind_recursive(inner)
+
+        for tab_canvas, tab_inner in scroll_tabs:
+            bind_tab_wheel(tab_canvas, tab_inner)
+        window.update_idletasks()
+        for tab_canvas, _tab_inner in scroll_tabs:
+            try:
+                tab_canvas.configure(scrollregion=tab_canvas.bbox("all"))
+            except tk.TclError:
+                pass
+
         self._show_centered_dialog(window)

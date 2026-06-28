@@ -9594,6 +9594,36 @@ def phase_170_field_resolved_surrogate(
     return result
 
 
+def phase_171_advanced_surface_dialog_scrollable(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The "Advanced..." (Native KrakenOS attributes) dialog fits the screen and scrolls its
+    tabs. The Diagnostics/Native tab alone is ~30 rows -- taller than the screen -- so the
+    window used to grow to its requested content height and overflow the screen edges with no
+    scrollbar (title tucked under the top/AGS bar). Now each tab body is a Canvas+Scrollbar
+    (recursive mouse + touchpad wheel) and the shared dialog placer caps the window to the
+    usable screen. `validate_advanced_surface_dialog_scrollable` is a display-free source check
+    (the harness has no display to render the Tk dialog), mirroring phase 100.
+    """
+    result = PhaseResult(
+        name="Phase 171: Advanced Surface dialog fits the screen + scrolls its tabs (no overflow under the top bar)"
+    )
+    try:
+        from KrakenOS.UI.validate_advanced_surface_dialog_scrollable import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"advanced-surface-dialog-scrollable guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("advanced-surface-dialog-scrollable phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9810,6 +9840,7 @@ def main() -> int:
             phase_168_zemax_wavefront,
             phase_169_wavefront_augmented_surrogate,
             phase_170_field_resolved_surrogate,
+            phase_171_advanced_surface_dialog_scrollable,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
