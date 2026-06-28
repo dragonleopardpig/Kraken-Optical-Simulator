@@ -9624,6 +9624,36 @@ def phase_171_advanced_surface_dialog_scrollable(
     return result
 
 
+def phase_172_optical_solid_face_coating(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Per-face coating merge: a promoted-solid CAD face's coating is a name from the SAME shared
+    COATING_PRESETS library the 2D "Coating..." editor uses, and the non-sequential trace applies
+    it through CoatingFun -- the same physics as a sequential-surface coating (it used to be a
+    free-text string that never reached the trace). `validate_optical_solid_face_coating` is a
+    display-free guard: resolver + build map + the DIFFERENTIAL trace (a coated penta mirror face
+    flips RP ~0.04 bare -> ~0.96 = the 94%-mirror table) + the additive (no-coating unchanged)
+    baseline.
+    """
+    result = PhaseResult(
+        name="Phase 172: promoted-solid face coating uses the shared library and applies in the non-seq trace"
+    )
+    try:
+        from KrakenOS.UI.validate_optical_solid_face_coating import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"optical-solid-face-coating guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("optical-solid-face-coating phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9841,6 +9871,7 @@ def main() -> int:
             phase_169_wavefront_augmented_surrogate,
             phase_170_field_resolved_surrogate,
             phase_171_advanced_surface_dialog_scrollable,
+            phase_172_optical_solid_face_coating,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

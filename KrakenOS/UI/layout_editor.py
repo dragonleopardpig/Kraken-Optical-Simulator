@@ -748,6 +748,21 @@ COATING_PRESETS = {
 }
 COATING_PRESET_NAMES = tuple(COATING_PRESETS.keys())
 
+
+def resolve_optical_solid_face_coating(coating_name):
+    """Resolve a promoted-solid face's coating NAME (a shared ``COATING_PRESETS`` key, the same
+    library the 2D "Coating..." editor uses) into the KrakenOS ``(Coating table, CoatingMet)``
+    the non-sequential trace applies through ``CoatingFun`` -- so a face coating means the same
+    thing as a sequential-surface coating. Returns None for an empty / "Clear" / free-text
+    coating, i.e. NO per-face coating, leaving the trace unchanged (the additive contract)."""
+    name = str(coating_name or "").strip()
+    if not name:
+        return None
+    table = COATING_PRESETS.get(name)
+    if not table or table == [[], [], [], []]:
+        return None
+    return (table, 0)
+
 from KrakenOS.UI.services.beam_scatter_metadata import (
     BEAM_SPLITTER_ADVANCED_ATTR,
     DIFFUSE_SCATTER_ADVANCED_ATTR,
@@ -1990,6 +2005,22 @@ def _build_system_from_specs(
             surface.UDA = decode_custom_surface_value(spec.get("uda", spec.get("UDA", surface.UDA)))
         for attr, value in _advanced_surface_attrs_from_spec(spec).items():
             setattr(surface, attr, _normalize_advanced_surface_value(attr, value))
+        # Per-face coating: resolve each promoted-solid face's coating NAME (a shared
+        # COATING_PRESETS key, the same library the 2D "Coating..." editor uses) into the
+        # KrakenOS (Coating table, CoatingMet) and stash it on the built surface keyed by
+        # face_id, so the non-sequential trace applies it through CoatingFun -- the same physics
+        # as a sequential-surface coating. Transient (never persisted); absent for non-solid
+        # surfaces or clear/free-text faces, so those traces are unchanged (the additive contract).
+        solid_faces = getattr(surface, "OpticalSolidFaces", None)
+        if solid_faces:
+            face_coatings: dict[str, tuple] = {}
+            for face in normalize_optical_solid_face_metadata(solid_faces).get("faces", []) or []:
+                face_id = str(face.get("face_id", "") or "").strip()
+                resolved = resolve_optical_solid_face_coating(face.get("coating"))
+                if face_id and resolved is not None:
+                    face_coatings[face_id] = resolved
+            if face_coatings:
+                surface.OpticalSolidFaceCoatingTables = face_coatings
         # bugs/0021: a file-backed Solid_3d_stl whose cached mesh is missing on
         # this machine (a layout opened on another box without the CAD cache,
         # or one the user Skipped in the missing-assets dialog) must NOT reach

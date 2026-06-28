@@ -338,7 +338,11 @@ class MainOpticalSolidFaceRolesDialog:
         material_entry = ttk.Entry(editor, textvariable=material_var, width=18)
         material_entry.grid(row=9, column=1, sticky='ew', pady=(0, 6))
         ttk.Label(editor, text='Coating').grid(row=10, column=0, sticky='w', pady=(0, 2))
-        coating_entry = ttk.Entry(editor, textvariable=coating_var, width=18)
+        # Pick from the SAME shared coating library as the 2D "Coating..." editor
+        # (le.COATING_PRESET_NAMES); a chosen preset is resolved per-face into the KrakenOS
+        # Coating table the non-seq trace applies via CoatingFun. Editable so legacy free-text
+        # coatings still load (they read as a note -- no preset -> no per-face coating physics).
+        coating_entry = ttk.Combobox(editor, textvariable=coating_var, values=le.COATING_PRESET_NAMES, width=16)
         coating_entry.grid(row=10, column=1, sticky='ew', pady=(0, 6))
         flip_check = ttk.Checkbutton(editor, text='Flip normal for UI intent', variable=flip_var)
         flip_check.grid(row=11, column=0, columnspan=2, sticky='w', pady=(0, 8))

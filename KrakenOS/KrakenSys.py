@@ -1208,6 +1208,23 @@ class system():
             "normal_world": tuple(float(value) for value in np.asarray(matched.get("normal_world", normal_world), dtype=float).reshape(3)),
             "boundary_source": str(matched.get("boundary_source", "") or "").strip(),
         }
+        # Per-face coating: a promoted-solid face can carry its own coating table, resolved at
+        # build into surface.OpticalSolidFaceCoatingTables from the shared COATING_PRESETS (keyed
+        # by face_id). __CollectData reads self._collect_interaction_override, which the subset
+        # builders REBUILD copying only a few keys (dropping coating_table), so the table is carried
+        # on a DEDICATED channel that survives to the energy calc. Set unconditionally per face
+        # (None for an uncoated face) so a previous coated face's table can never leak to this hit.
+        self._collect_face_coating_override = None
+        try:
+            face_coatings = getattr(self.SDT[int(surface_index)], "OpticalSolidFaceCoatingTables", None)
+            if isinstance(face_coatings, dict) and override["face_id"]:
+                entry = face_coatings.get(override["face_id"])
+                if entry:
+                    override["coating_table"] = entry[0]
+                    override["coating_met"] = entry[1]
+                    self._collect_face_coating_override = (entry[0], entry[1])
+        except Exception:
+            pass
         diagnostics = [
             str(item)
             for item in list(matched.get("diagnostics", []) or [])
@@ -1496,6 +1513,7 @@ class system():
         self._collect_interaction_override = None
         self._collect_mesh_hit_override = None
         self._collect_media_state_override = None
+        self._collect_face_coating_override = None
         return None
 
     def __EmptyCollect(self, pS, dC, WaveLength, j):
@@ -1550,6 +1568,10 @@ class system():
         self._collect_mesh_hit_override = None
         media_state_override = dict(self._collect_media_state_override or {})
         self._collect_media_state_override = None
+        # Per-face coating table for THIS hit (set by __OpticalSolidFaceInteraction on its own
+        # channel, since the interaction-override subset rebuild drops it). Consume-once.
+        face_coating_override = getattr(self, "_collect_face_coating_override", None)
+        self._collect_face_coating_override = None
 
         self.SURFACE.append(j)
         self.NAME.append(Name)
@@ -1579,9 +1601,16 @@ class system():
         self.ORDER.append(Ord)
         self.GRATING.append(GrSpa)
         if (self.val == 1):
-            # Coating
-            Rp2, Rs2, Tp2, Ts2, V  = self.CoatingFun(self.SDT[j].Coating, self.ang, self.Wave)
-            mtl = self.SDT[j].CoatingMet
+            # Coating -- a promoted-solid face's own coating table (resolved per-face, carried on
+            # the dedicated channel that survives the interaction-override subset rebuild) takes
+            # precedence over the surface's for THIS hit; absent, the surface Coating/CoatingMet
+            # are used exactly as before (the additive contract).
+            if face_coating_override:
+                Rp2, Rs2, Tp2, Ts2, V = self.CoatingFun(face_coating_override[0], self.ang, self.Wave)
+                mtl = int(face_coating_override[1] or 0)
+            else:
+                Rp2, Rs2, Tp2, Ts2, V  = self.CoatingFun(self.SDT[j].Coating, self.ang, self.Wave)
+                mtl = self.SDT[j].CoatingMet
             (Rp, Rs, Tp, Ts) = FresnelEnergy(Glass, PrevN, CurrN, ImpVec, SurfNorm, ResVec, self.SETUP, self.Wave, mtl)
             if V == 1:
                 Rp, Rs, Tp, Ts = Rp2, Rs2, Tp2, Ts2
@@ -3417,6 +3446,7 @@ class system():
         self._collect_interaction_override = None
         self._collect_mesh_hit_override = None
         self._collect_media_state_override = None
+        self._collect_face_coating_override = None
 
     def __FinalizeNsTraceArrays(self):
         self.ray_SurfHits = np.asarray(self.RAY)
