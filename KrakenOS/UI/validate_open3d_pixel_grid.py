@@ -7,13 +7,13 @@ by the spot-map factor -- so the spot footprint reads in pixels.
 
 This guard pins (headless, no VTK):
 
-  * PURE GEOMETRY: span_px == 2*extent/pitch (factor cancels), the lattice is true-aligned
-    (a chief on a pixel boundary sits ON a grid line; a chief mid-pixel sits half a
-    magnified pixel away -> sub-pixel honesty), adjacent lines are pitch*factor apart,
-    magnification preserved, degenerate / no-pitch input returns None.
+  * PURE GEOMETRY: span_px == 2*extent/pitch (factor cancels), the lattice is UNIFORM (one
+    even grid about the sensor centre -- a line on k=0, equally spaced pitch*factor, and it
+    does NOT move with the spot chief), magnification preserved, the lattice is tiled only
+    inside the sensor box, degenerate / no-pitch input returns None.
   * INTEGRATION on the Zemax double gauss + the registered 25 MP camera: the spot spans a
-    sane handful of pixels (4.5 um pitch), grids == spots, resolution carried; NO camera
-    registered -> None.
+    sane handful of pixels (4.5 um pitch), ONE uniform lattice inside the sensor box,
+    resolution carried; NO camera registered -> None.
   * RENDER-ONLY / TOGGLE: refresh_scene reads show_pixel_grid_var and calls
     _add_pixel_grid_overlays; that renderer never rebuilds the system, does not shadow the
     pv/np/vtkBillboardTextActor3D globals; the right-click menu offers it.
@@ -51,29 +51,35 @@ def _check_pure_geometry(failures: list[str]) -> None:
     factor = 200.0
     extent = 4.0 * px  # spot radius 4 px -> diameter 8 px
 
-    captured_du: list[float] = []
-    for cu_frac, on_boundary in ((5.0, True), (5.5, False)):
+    # UNIFORM lattice (bugs/pixel-grid-uniform): the grid is one even pixel lattice about the
+    # sensor centre, NOT a per-spot patch -- so it must NOT move with the spot chief, must be
+    # equally spaced at pitch*factor, and must have a line on the sensor centre (k=0).
+    box = (10.0, 10.0)
+    captured_du = None
+    for cu_frac in (5.0, 5.5):
         cu = cu_frac * px
         spec = build_pixel_grid_overlay(
             [[cu, 0.0]], [extent], center=center, normal=normal, tangent=tangent,
-            pitch_mm=(px, px), magnification=factor, image_radius=10.0,
+            pitch_mm=(px, px), magnification=factor, image_radius=10.0, sensor_half_uv=box,
         )
         if not spec:
             failures.append(f"PURE: build returned None for a valid spot (cu={cu_frac}px)")
             return
+        if not spec.get("uniform"):
+            failures.append("PURE: the lattice is not flagged uniform")
         if not np.isclose(spec["span_px_max"], 2.0 * extent / px, rtol=1e-6):
             failures.append(f"PURE: span_px {spec['span_px_max']:.4g} != 2*extent/pitch {2*extent/px:.4g}")
         if not np.isclose(float(spec["magnification"]), factor):
             failures.append("PURE: magnification not preserved")
-        du = _v_line_u_offsets(spec["grids"][0], center, 0)
-        nearest = min(abs(cu - d) for d in du)
-        if on_boundary and nearest > 1e-6:
-            failures.append(f"PURE: a chief on a pixel boundary is not on a grid line (nearest {nearest:.3g})")
-        if (not on_boundary) and not np.isclose(nearest, 0.5 * px * factor, rtol=1e-3):
-            failures.append(f"PURE: a mid-pixel chief is not half a magnified pixel from a line ({nearest:.4g} vs {0.5*px*factor:.4g})")
-        captured_du = du
+        du = sorted(_v_line_u_offsets(spec["grids"][0], center, 0))
+        if not du or min(abs(d) for d in du) > 1e-6:
+            failures.append("PURE: the uniform lattice has no line on the sensor centre (k=0)")
+        if captured_du is None:
+            captured_du = du
+        elif len(du) != len(captured_du) or not np.allclose(du, captured_du, atol=1e-9):
+            failures.append("PURE: the lattice MOVED with the spot chief -- it must be uniform (chief-independent)")
 
-    spacing = np.diff(np.sort(captured_du))
+    spacing = np.diff(np.asarray(captured_du or [], dtype=float))
     if spacing.size and not np.allclose(spacing, px * factor, rtol=1e-5):
         failures.append(f"PURE: adjacent pixel lines are not pitch*factor apart ({float(spacing[0]):.4g} vs {px*factor:.4g})")
 
@@ -92,8 +98,8 @@ def _check_pure_geometry(failures: list[str]) -> None:
     if not normal_spots or normal_spots.get("too_coarse") or not (normal_spots.get("grids") or []):
         failures.append("PURE: multi-pixel spots were wrongly suppressed as too_coarse")
 
-    # bugs/pixel-grid-beyond-detector-box: the magnified lattice must be CLIPPED to the sensor box
-    # (the orange detector frame) so an edge spot's x-factor patch never spills past it.
+    # bugs/pixel-grid-beyond-detector-box: the uniform lattice must be tiled only INSIDE the sensor
+    # box (the orange detector frame) so it never spills past it; without a box it tiles the spots.
     edge = np.array([[0.0, 0.0], [10.0, 10.0]])  # a corner-field spot near a 11.52 mm sensor edge
     half = 11.52
 
@@ -158,10 +164,28 @@ def _check_integration(failures: list[str], notes: list[str]) -> None:
     span_hi = float(spec.get("span_px_max", 0.0))
     if not (0.5 < span_lo <= span_hi < 1000.0):
         failures.append(f"INTEGRATION: implausible spot span ({span_lo:.2g}..{span_hi:.2g} px)")
-    n_grids = len(spec.get("grids") or [])
-    if n_grids < 5:
-        failures.append(f"INTEGRATION: too few pixel grids ({n_grids})")
-    notes.append(f"integration: {camera} {spec['pitch_um'][0]:.3g}µm -> spot ≈ {span_lo:.0f}-{span_hi:.0f} px over {n_grids} fields")
+    grids = spec.get("grids") or []
+    if len(grids) != 1 or not spec.get("uniform"):
+        failures.append(f"INTEGRATION: expected ONE uniform lattice, got {len(grids)} (uniform={spec.get('uniform')})")
+    g0 = grids[0] if grids else {"h_lines": [], "v_lines": []}
+    n_lines = len(g0.get("h_lines") or []) + len(g0.get("v_lines") or [])
+    if n_lines < 8:
+        failures.append(f"INTEGRATION: the uniform lattice has too few lines ({n_lines})")
+    # the whole lattice must sit inside the sensor box (camera registered -> box known)
+    resolution = spec.get("resolution_px")
+    pitch_mm = (float(spec["pitch_um"][0]) / 1000.0, float(spec["pitch_um"][1]) / 1000.0)
+    center_pt = np.asarray(spec.get("center"), dtype=float).reshape(3)
+    cell = pitch_mm[0] * float(spec["magnification"])
+    reach = 0.0
+    for key in ("h_lines", "v_lines"):
+        for seg in g0.get(key) or []:
+            reach = max(reach, float(np.max(np.linalg.norm(np.asarray(seg, dtype=float) - center_pt, axis=1))))
+    if isinstance(resolution, (tuple, list)) and len(resolution) == 2:
+        diag_half = float(np.hypot(resolution[0] * pitch_mm[0] * 0.5, resolution[1] * pitch_mm[1] * 0.5))
+        if reach > diag_half + cell + 1e-6:
+            failures.append(f"INTEGRATION: lattice extends past the sensor box ({reach:.4g} > {diag_half:.4g})")
+    nu, nv = spec.get("n_cells_uv", (0, 0))
+    notes.append(f"integration: {camera} {spec['pitch_um'][0]:.3g}µm -> spot ≈ {span_lo:.0f}-{span_hi:.0f} px, uniform {nu}×{nv} cells")
 
 
 def _check_source_contracts(failures: list[str]) -> None:

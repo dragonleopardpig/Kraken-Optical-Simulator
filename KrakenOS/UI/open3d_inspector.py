@@ -11963,16 +11963,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     )
                 else:
                     res = spec.get("resolution_px")
-                    # The full sensor is the orange detector frame; each per-spot grid is only a
-                    # LOCAL zoom where ONE cell = ONE pixel (the user asked: is each grid 5120x5120?
-                    # no -- 5120x5120 is the whole sensor).
+                    # ONE uniform lattice (the sensor's real, even pixels); the orange frame is the
+                    # full sensor. The grid is magnified so a 4.5 um pixel is visible, so only a few
+                    # of the 5120 pixels fit -- the label says so plainly.
                     full_sensor = (
                         f" · full sensor {int(res[0])}×{int(res[1])} px = orange frame"
                         if (isinstance(res, (tuple, list)) and len(res) == 2) else ""
                     )
                     label_text = (
                         f"Camera pixel grid · {spec.get('camera_label', '')} · 1 cell = 1 pixel ({float(pitch[0]):.3g} µm)\n"
-                        f"each grid = ×{float(spec.get('magnification', 1.0)):.0f} zoom on one spot (≈ {span_lo:.0f}-{span_hi:.0f} px){full_sensor}"
+                        f"uniform lattice, ×{float(spec.get('magnification', 1.0)):.0f} zoom so pixels are visible · spots span ≈ {span_lo:.0f}-{span_hi:.0f} px{full_sensor}"
                     )
                 actor = vtkBillboardTextActor3D()
                 actor.SetInput(label_text)

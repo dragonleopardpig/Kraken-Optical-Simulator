@@ -1,26 +1,27 @@
 """Camera pixel-grid overlay geometry (idea #1: the spot footprint on real pixels).
 
 When a vendor camera is registered on the detector it carries a pixel pitch (e.g. the SVS
-/ Allied-Vision 25 MP is 5120x5120 @ 4.50 um). This module draws, at each spot in the
-spot-field map, the camera's pixel LATTICE over the local region the spot covers -- so the
-user sees the actual spot land on individual pixels (how many pixels the blur spans).
+/ Allied-Vision 25 MP is 5120x5120 @ 4.50 um). This module draws ONE uniform pixel lattice
+across the sensor -- every cell is a true pixel (4.5 um) -- so the user sees the camera's
+real, even pixel grid with the spots landing on it (how many pixels the blur spans).
 
-The lattice is true-aligned (lines fall on real pixel boundaries k*pitch from the sensor
-centre, so the spot's sub-pixel position is honest) and magnified about each spot's chief
-by the SAME factor the spot map uses, so the spot/pixel size RATIO is exact even though a
-4.5 um pixel could never be seen at the sensor's true 23 mm scale.
+The lattice is uniform: lines fall on real pixel boundaries k*pitch from the sensor centre,
+magnified about the sensor centre by the SAME factor the spot map uses, so the spot/pixel
+size RATIO is exact even though a 4.5 um pixel could never be seen at the sensor's true
+23 mm scale. (It was once built per-spot -- a magnified patch about each chief -- which made
+the cells overlap at different offsets; a camera sensor's pixels are uniform, so it is now
+a single even grid clipped to the orange detector frame.)
 
-Pure geometry only (numpy): the editor wrapper supplies the per-spot chief positions +
-true extents (from the spot-map trace) and the camera pitch; the inspector renders the
-returned line sets.
+Pure geometry only (numpy): the editor wrapper supplies the spot chief positions + true
+extents (from the spot-map trace, used only for the span-in-pixels label) and the camera
+pitch + sensor box; the inspector renders the returned line set.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-PIXEL_GRID_MARGIN_PX = 3       # pixels of lattice drawn beyond the spot on each side
-PIXEL_GRID_MAX_CELLS = 80      # per-spot/per-axis cap (a pathological tiny pitch backstop)
+PIXEL_GRID_MAX_CELLS = 80      # per-axis line cap (a pathological tiny pitch / low mag backstop)
 PIXEL_GRID_LINE_COLOR = (0.42, 0.47, 0.55)
 
 
@@ -39,13 +40,6 @@ def _any_perpendicular(n_hat: np.ndarray) -> np.ndarray:
     return _unit(np.cross(n_hat, seed))
 
 
-def _clamp_span(lo: int, hi: int, max_cells: int) -> "tuple[int, int]":
-    if (hi - lo) <= max_cells:
-        return lo, hi
-    mid = (hi + lo) // 2
-    return mid - max_cells // 2, mid + max_cells // 2
-
-
 def build_pixel_grid_overlay(
     chief_uv,
     spot_extent_mm,
@@ -57,17 +51,17 @@ def build_pixel_grid_overlay(
     magnification,
     image_radius=None,
     sensor_half_uv=None,
-    margin_px: int = PIXEL_GRID_MARGIN_PX,
     max_cells: int = PIXEL_GRID_MAX_CELLS,
 ) -> "dict | None":
-    """Build per-spot pixel-lattice line sets on the detector.
+    """Build ONE uniform pixel-lattice line set across the detector.
 
     ``chief_uv`` (N,2) are the spot chief positions (mm, image-plane local); ``spot_extent_mm``
-    (N,) their true (un-magnified) radii; ``pitch_mm`` the ``(px, py)`` true pixel pitch;
-    ``magnification`` the spot-map factor. Each spot gets the pixel boundaries it straddles
-    (k*pitch, plus ``margin_px`` either side), displayed at ``chief + (true - chief)*factor`` so
-    the lattice aligns with the magnified scatter. Returns the line sets + the spot's span in
-    pixels, or None when there is nothing/no pitch.
+    (N,) their true (un-magnified) radii (used only for the span-in-pixels label); ``pitch_mm``
+    the ``(px, py)`` true pixel pitch; ``magnification`` the spot-map factor. The lattice is a
+    single even grid -- lines on real pixel boundaries ``k*pitch`` magnified about the sensor
+    centre by ``factor`` (so cell size == ``pitch*factor``) -- clipped to ``sensor_half_uv`` (the
+    orange detector frame). Returns the line set + the spots' span in pixels, or None when there
+    is nothing/no pitch.
     """
     chief_uv = np.asarray(chief_uv, dtype=float).reshape(-1, 2)
     spot_extent_mm = np.asarray(spot_extent_mm, dtype=float).reshape(-1)
@@ -90,10 +84,9 @@ def build_pixel_grid_overlay(
     tangent_vec = np.asarray(tangent, dtype=float).reshape(3)
     u = _unit(tangent_vec - n_hat * float(np.dot(tangent_vec, n_hat)), fallback=_any_perpendicular(n_hat))
     v = _unit(np.cross(n_hat, u))
-    margin = max(int(margin_px), 1)
-    # Optional sensor box (half width/height in image-plane mm): the magnified lattice is CLIPPED
-    # to it so an edge spot's x-factor patch never spills past the orange detector frame (bug: the
-    # camera grid drew beyond the orange detector box). None -> no clip.
+    # Optional sensor box (half width/height in image-plane mm): the uniform lattice is tiled only
+    # inside it so it never spills past the orange detector frame (bug: the camera grid drew beyond
+    # the orange detector box). None -> tile the spots' own footprint instead.
     half_w = half_h = None
     if sensor_half_uv is not None:
         try:
@@ -131,62 +124,53 @@ def build_pixel_grid_overlay(
             "normal": n_hat,
         }
 
-    grids: list[dict] = []
-    spans_px: list[float] = []
-    for i in range(n):
-        cu = float(chief_uv[i, 0])
-        cv = float(chief_uv[i, 1])
-        r = float(spot_extent_mm[i])
-        if not np.isfinite(r) or r <= 0.0:
-            r = max(px, py)
-        spans_px.append(max(2.0 * r / px, 2.0 * r / py))  # spot diameter in pixels (factor cancels)
+    # ONE uniform lattice: pixel boundaries k*pitch magnified about the sensor CENTRE (not per
+    # spot), so the cells are even -- a camera sensor's pixels are uniform. Cell size on screen
+    # is pitch*factor; the spots (drawn by the spot map, each magnified about its own chief) land
+    # on this shared grid, and the count of pixels a spot spans is exact (the factor cancels).
+    cell_u = px * factor
+    cell_v = py * factor
+    spans_px = [float(s) for s in spans_all]  # spot diameter in pixels (factor cancels)
 
-        kx_lo, kx_hi = _clamp_span(int(np.floor((cu - r) / px)) - margin, int(np.ceil((cu + r) / px)) + margin, max_cells)
-        ky_lo, ky_hi = _clamp_span(int(np.floor((cv - r) / py)) - margin, int(np.ceil((cv + r) / py)) + margin, max_cells)
+    # Half-extent to tile (image-plane mm): the sensor box (orange frame) when known, else the
+    # spots' own on-screen footprint (chief +/- magnified radius) so the grid underlies them.
+    if half_w is not None and half_h is not None:
+        reach_u, reach_v = half_w, half_h
+    elif n:
+        spot_reach = float(np.max(spot_radii)) * factor
+        reach_u = float(np.max(np.abs(chief_uv[:, 0]))) + spot_reach + cell_u
+        reach_v = float(np.max(np.abs(chief_uv[:, 1]))) + spot_reach + cell_v
+    else:
+        reach_u = reach_v = 0.0
 
-        # display offset of a true image coord t from the chief: (t - chief) * factor
-        dv_lo = cv + (ky_lo * py - cv) * factor
-        dv_hi = cv + (ky_hi * py - cv) * factor
-        du_lo = cu + (kx_lo * px - cu) * factor
-        du_hi = cu + (kx_hi * px - cu) * factor
+    # Pixel-boundary indices whose magnified position k*cell stays inside the reach -> the lattice
+    # never spills past the box (clip is exact: the lattice is axis-aligned with (u, v)). Capped so
+    # a tiny magnification can't ask for thousands of lines.
+    kmax_u = max(min(int(np.floor(reach_u / cell_u + 1e-9)) if cell_u > 0.0 else 0, max_cells // 2), 0)
+    kmax_v = max(min(int(np.floor(reach_v / cell_v + 1e-9)) if cell_v > 0.0 else 0, max_cells // 2), 0)
+    us = [k * cell_u for k in range(-kmax_u, kmax_u + 1)]
+    vs = [k * cell_v for k in range(-kmax_v, kmax_v + 1)]
 
-        v_lines: list[np.ndarray] = []
-        for kx in range(kx_lo, kx_hi + 1):
-            du = cu + (kx * px - cu) * factor
-            if half_w is not None and abs(du) > half_w + 1e-9:
-                continue  # column past the sensor edge -> drop the whole line
-            a, b = dv_lo, dv_hi
-            if half_h is not None:
-                a, b = max(dv_lo, -half_h), min(dv_hi, half_h)
-                if b <= a + 1e-9:
-                    continue  # line fully outside the sensor box
-            p0 = center + du * u + a * v
-            p1 = center + du * u + b * v
-            v_lines.append(np.vstack([p0, p1]))
-        h_lines: list[np.ndarray] = []
-        for ky in range(ky_lo, ky_hi + 1):
-            dv = cv + (ky * py - cv) * factor
-            if half_h is not None and abs(dv) > half_h + 1e-9:
-                continue
-            a, b = du_lo, du_hi
-            if half_w is not None:
-                a, b = max(du_lo, -half_w), min(du_hi, half_w)
-                if b <= a + 1e-9:
-                    continue
-            p0 = center + a * u + dv * v
-            p1 = center + b * u + dv * v
-            h_lines.append(np.vstack([p0, p1]))
-        grids.append({"h_lines": h_lines, "v_lines": v_lines})
+    v_lines: list[np.ndarray] = []
+    if len(vs) >= 2:
+        v0, v1 = vs[0], vs[-1]
+        for du in us:
+            v_lines.append(np.vstack([center + du * u + v0 * v, center + du * u + v1 * v]))
+    h_lines: list[np.ndarray] = []
+    if len(us) >= 2:
+        u0, u1 = us[0], us[-1]
+        for dv in vs:
+            h_lines.append(np.vstack([center + u0 * u + dv * v, center + u1 * u + dv * v]))
 
-    if not spans_px:
-        return None
     return {
         "kind": "pixel_grid",
-        "grids": grids,
+        "grids": [{"h_lines": h_lines, "v_lines": v_lines}],
+        "uniform": True,
         "too_coarse": False,
+        "n_cells_uv": (max(len(us) - 1, 0), max(len(vs) - 1, 0)),
         "spans_px": spans_px,
-        "span_px_min": float(np.min(spans_px)),
-        "span_px_max": float(np.max(spans_px)),
+        "span_px_min": float(np.min(spans_all)),
+        "span_px_max": float(np.max(spans_all)),
         "pitch_um": (px * 1000.0, py * 1000.0),
         "magnification": factor,
         "color": PIXEL_GRID_LINE_COLOR,
