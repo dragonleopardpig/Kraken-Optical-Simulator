@@ -94,10 +94,8 @@ class Open3DLiveControlsPanel:
         solve = ttk.LabelFrame(stack, text="Solve (Variable thickness)", padding=8)
         solve.grid(row=4, column=0, sticky="ew", pady=(8, 0))
         self.build_solve_controls(solve)
-
-        measure = ttk.LabelFrame(stack, text="Measure", padding=8)
-        measure.grid(row=5, column=0, sticky="ew", pady=(8, 0))
-        self.build_measure_controls(measure)
+        # Measure moved to the top Scene toolbar (open3d_top_controls) -- no longer a Left-Panel
+        # LabelFrame. build_measure_controls is kept for any external caller / test.
 
     def build_measure_controls(self, parent: tk.Widget) -> None:
         # CAD-style 2-point measure tool: click two edges/surfaces -> a dimension between them.

@@ -262,6 +262,11 @@ class Open3DTopControlsPanel:
             values=self.normal_target_choices,
             width=12,
         )
+        # Measure tool, moved up here from the Left Panel (Live Controls): CAD-style 2-point
+        # measure -> a dimension between two picked edges/surfaces, plus Clear. start_measure_pick
+        # sets the "click 2 edges/surfaces" status, so the help text is conveyed at click time.
+        pack_command_button(scene_toolbar, "Measure", command=self.inspector.start_measure_pick, padx=(12, 0))
+        pack_command_button(scene_toolbar, "Clear meas.", command=self.inspector.clear_measurements, padx=(4, 0))
         return scene_toolbar
 
     def build_carry_toolbar(self, parent: tk.Widget) -> ttk.Frame:
