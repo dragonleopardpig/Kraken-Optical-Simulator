@@ -290,6 +290,11 @@ class Open3DTopControlsPanel:
             values=("15", "30", "45", "90", "180"),
             width=4,
         )
+        # Free-input move/drag snap step (mm): blank = the auto grid, 0 = smooth (continuous drag),
+        # any number = snap to exactly that step -- so the BS can be dragged smoothly or to a
+        # precise step instead of the coarse auto span/20 placement-handle snap.
+        ttk.Label(carry_toolbar, text="Snap mm").pack(side="left", padx=(10, 2))
+        ttk.Entry(carry_toolbar, textvariable=self.inspector.carry_snap_mm_var, width=6).pack(side="left")
         pack_commit_checkbutton(
             carry_toolbar,
             "Placement handles",

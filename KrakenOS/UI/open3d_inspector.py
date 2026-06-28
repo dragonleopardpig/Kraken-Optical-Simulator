@@ -594,6 +594,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.normal_target_var = tk.StringVar(value=SCENE_NORMAL_TARGET_LABELS["detector"])
         self.step_carry_grid_var = tk.StringVar(value=STEP_CARRY_GRID_FREE)
         self.rotation_step_deg_var = tk.StringVar(value="90")
+        # Free-input move/drag snap step (mm). Blank -> the auto span/20 grid; 0 -> SMOOTH
+        # (continuous drag); any number -> snap to exactly that step. Lets the user drag the BS
+        # smoothly / to a precise step instead of the coarse auto placement-handle snap.
+        self.carry_snap_mm_var = tk.StringVar(value="")
         self.show_rays_var = tk.BooleanVar(value=True)
         self.ray_pick_enabled_var = tk.BooleanVar(value=False)
         self.show_rotation_handles_var = tk.BooleanVar(value=True)
@@ -3243,8 +3247,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 state["ray_constraint_preferred_index"] = ray_index
         anchor_along = float(state.get("ray_anchor_along", hit["along"]))
         raw_along_delta = float(hit["along"]) - anchor_along
-        if np.isfinite(spacing) and spacing > 1e-12:
-            along_delta = float(np.round(raw_along_delta / spacing) * spacing)
+        override = self._drag_snap_override_mm()
+        snap_step = float(override) if override is not None else spacing
+        if np.isfinite(snap_step) and snap_step > 1e-12:
+            along_delta = float(np.round(raw_along_delta / snap_step) * snap_step)
         else:
             along_delta = raw_along_delta
         target = self._polyline_point_at_along(np.asarray(hit["points"], dtype=float), anchor_along + along_delta)
@@ -12096,8 +12102,31 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 except Exception:
                     pass
 
-    @staticmethod
-    def _scene_placement_translate_step(placement: ScenePlacement3D, spacing: float) -> float:
+    def _drag_snap_override_mm(self) -> "float | None":
+        """User-set move/drag snap step (mm) from the Carry-toolbar 'Snap mm' field: None = the
+        auto span/20 grid, 0.0 = smooth (continuous drag), any positive number = snap to exactly
+        that step. Lets the user drag the BS smoothly / to a precise step."""
+        var = self.__dict__.get("carry_snap_mm_var")
+        if var is None:
+            return None
+        try:
+            text = str(var.get()).strip()
+        except Exception:
+            return None
+        if not text:
+            return None
+        try:
+            value = float(text)
+        except Exception:
+            return None
+        if not np.isfinite(value) or value < 0.0:
+            return None
+        return float(value)
+
+    def _scene_placement_translate_step(self, placement: ScenePlacement3D, spacing: float) -> float:
+        override = self._drag_snap_override_mm()
+        if override is not None:
+            return max(abs(override), 1e-6)  # 0 -> 1e-6 (continuous); N -> snap to N mm
         if bool(getattr(placement, "snap_enabled", False)):
             step = float(getattr(placement, "snap_mm", spacing) or spacing)
         else:
