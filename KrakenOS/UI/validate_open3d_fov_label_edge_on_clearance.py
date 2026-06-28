@@ -27,6 +27,7 @@ from __future__ import annotations
 import numpy as np
 
 from KrakenOS.UI.services.detector_coverage_overlay import (
+    _basis,
     detector_coverage_label_specs,
     detector_coverage_metrics,
 )
@@ -94,6 +95,21 @@ def run_checks() -> "tuple[bool, list[str]]":
         a = np.asarray(l["anchor"], dtype=float).reshape(3)
         if abs(float(a[2]) - float(_IMG[2])) < 1e-6:
             failures.append(f"FAIL: image label {l['text']!r} not lifted off the image plane (still at z=image)")
+
+    # 5b) the Sensor label sits on the sensor's VERTICAL (right) edge -- +v (= -X) -- not above
+    #     the TOP (+u = +Y) where it collided with the spot-map text box. The user flagged the
+    #     top placement twice (0deg was the wrong axis: +u is up, not the side); pin the side.
+    iu, iv = _basis(_IMG - _OBJ)  # +Z image axis -> iu = +Y (top), iv = -X (right, in-view)
+    sensor = next((l for l in img_labels if str(l["text"]).startswith("Sensor")), None)
+    if sensor is not None:
+        soff = np.asarray(sensor["anchor"], dtype=float).reshape(3) - _IMG
+        along_top = float(np.dot(soff, iu))    # +Y (up / top edge)
+        along_side = float(np.dot(soff, iv))   # -X (right / vertical edge)
+        if abs(along_top) > 1.0 or along_side <= abs(along_top) + 1.0:
+            failures.append(
+                f"FAIL: Sensor label is not on the sensor's vertical side -- top(+Y)={along_top:.2f} mm, "
+                f"side(-X)={along_side:.2f} mm (want side >> top: beside the right edge, not above it)"
+            )
 
     # 6) an infinite-conjugate object draws no FOV label (object plane has no rect).
     _, inf_fov = _fov_label(m, finite=False)

@@ -300,7 +300,8 @@ def detector_coverage_label_specs(
             place(
                 img_label_center,
                 metrics.sensor_half_diagonal * (1.0 + _LABEL_MARGIN) + _LABEL_GAP,
-                0.0,  # the sensor's vertical (right) side -- clear of the top, where the spot-map box sits
+                90.0,  # +v (= -X) = the sensor's RIGHT vertical edge; 0deg was +u (= +Y) = the top,
+                       # which is why it kept landing above the sensor by the spot-map box
                 f"{sensor_label} {2 * metrics.sensor_half_width:.1f}×{2 * metrics.sensor_half_height:.1f}",
                 _SENSOR_FOOTPRINT,
                 iu, iv,
