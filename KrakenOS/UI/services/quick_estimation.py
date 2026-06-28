@@ -928,6 +928,30 @@ class QuickEstimationService:
             return None
         return object_distance, image_distance, mag
 
+    def _object_locked_redirect_row(self, obj_row: int | None) -> int | None:
+        """When a glued LED + a promoted optical solid sit right after the object gap, the LED+BS is
+        a FIXED illumination constraint that must be EXCLUDED from QE. Return the first air gap AFTER
+        that solid -- the lens gap QE should vary instead of the object gap -- or None when not in
+        that locked configuration."""
+        if obj_row is None or not bool(getattr(self.editor, "_optical_led_glued", False)):
+            return None
+        rows = getattr(self.editor, "rows", None) or []
+        solid = int(obj_row) + 1
+        if not (0 <= solid < len(rows)):
+            return None
+        advanced = getattr(rows[solid], "advanced", None) or {}
+        if not isinstance(advanced, dict) or not (
+            advanced.get("OpticalSolidFaces") or advanced.get("Solid_3d_stl")
+        ):
+            return None  # the row after the object gap isn't a promoted solid
+        cand = solid + 1
+        if not (0 <= cand < len(rows) - 1):
+            return None  # need a non-terminal air gap to absorb the change
+        glass = str(getattr(rows[cand], "glass", "") or "").strip().upper()
+        if glass not in ("", "AIR"):
+            return None  # solid cemented to the next element -- no air gap to move the lens into
+        return cand
+
     def _apply_conjugate_pair(self, object_semi: Any, image_semi: Any) -> tuple[bool, str]:
         pair = self._conjugate_pair(object_semi, image_semi)
         if pair is None:
@@ -937,6 +961,30 @@ class QuickEstimationService:
         img_row = self.image_thickness_row()
         if obj_row is None or img_row is None:
             return False, "Layout has no object/image gap."
+        # A glued LED+BS at the object side is a FIXED illumination constraint (kept as close to the
+        # object as the machine allows, for uniform illumination) -- it must be EXCLUDED from Quick
+        # Estimation (flag_20260628_212404). Instead of writing the object gap (which moves the unit
+        # and detaches the LED from the BS), redirect the object-distance change to the gap AFTER the
+        # solid: that MOVES THE LENS by the same delta, so object->lens + lens->detector -- the whole
+        # conjugate, hence focus + FOV -- are identical, but the LED+BS stays put.
+        lens_gap = self._object_locked_redirect_row(obj_row)
+        if lens_gap is not None:
+            try:
+                delta = float(object_distance) - float(self.editor.rows[obj_row].thickness)
+                new_lens = float(self.editor.rows[lens_gap].thickness) + delta
+            except Exception:
+                new_lens = -1.0
+            if np.isfinite(new_lens) and new_lens >= 0.0:
+                self.editor.rows[lens_gap].thickness = new_lens
+                self.editor.rows[img_row].thickness = float(image_distance)
+                return True, (
+                    f"Solved (LED+BS held fixed): moved the lens {delta:+.4g} mm, "
+                    f"image {image_distance:.6g} mm (|m|={mag:.4g})."
+                )
+            return False, (
+                "FOV needs the lens nearer than the glued LED+BS allows (object unit is locked at "
+                "its minimum). Unglue the LED or relax the FOV."
+            )
         self.editor.rows[obj_row].thickness = float(object_distance)
         self.editor.rows[img_row].thickness = float(image_distance)
         return True, (
