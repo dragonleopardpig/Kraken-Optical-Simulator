@@ -92,6 +92,34 @@ def _check_pure_geometry(failures: list[str]) -> None:
     if not normal_spots or normal_spots.get("too_coarse") or not (normal_spots.get("grids") or []):
         failures.append("PURE: multi-pixel spots were wrongly suppressed as too_coarse")
 
+    # bugs/pixel-grid-beyond-detector-box: the magnified lattice must be CLIPPED to the sensor box
+    # (the orange detector frame) so an edge spot's x-factor patch never spills past it.
+    edge = np.array([[0.0, 0.0], [10.0, 10.0]])  # a corner-field spot near a 11.52 mm sensor edge
+    half = 11.52
+
+    def _grid_uv_max(spec):
+        mu = mv = 0.0
+        for g in (spec.get("grids") or []):
+            for ln in (g.get("h_lines") or []) + (g.get("v_lines") or []):
+                arr = np.asarray(ln, dtype=float)
+                mu = max(mu, float(np.max(np.abs(arr[:, 0] - center[0]))))  # u = +x
+                mv = max(mv, float(np.max(np.abs(arr[:, 1] - center[1]))))  # v = +y
+        return mu, mv
+
+    unclipped = build_pixel_grid_overlay(edge, [0.05, 0.05], center=center, normal=normal, tangent=tangent, pitch_mm=(px, px), magnification=210.0)
+    clipped = build_pixel_grid_overlay(edge, [0.05, 0.05], center=center, normal=normal, tangent=tangent, pitch_mm=(px, px), magnification=210.0, sensor_half_uv=(half, half))
+    if unclipped and clipped:
+        umu, umv = _grid_uv_max(unclipped)
+        cmu, cmv = _grid_uv_max(clipped)
+        if not (umu > half + 1.0 and umv > half + 1.0):
+            failures.append(f"PURE: the unclipped edge patch should spill past the sensor box ({umu:.3g},{umv:.3g} vs {half})")
+        if cmu > half + 1e-6 or cmv > half + 1e-6:
+            failures.append(f"PURE: clipped lattice spills past the sensor box ({cmu:.4g},{cmv:.4g} > {half})")
+        if not any((g.get("h_lines") or g.get("v_lines")) for g in (clipped.get("grids") or [])):
+            failures.append("PURE: clipping emptied the lattice (should keep the in-box lines)")
+    else:
+        failures.append("PURE: edge-spot clip build returned None")
+
 
 def _camera_with_pitch() -> "str | None":
     preferred = [n for n in camera_names() if camera_pixel_pitch_mm(n) is not None and "25" in n]

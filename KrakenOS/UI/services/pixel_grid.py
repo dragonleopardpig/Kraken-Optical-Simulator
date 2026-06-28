@@ -56,6 +56,7 @@ def build_pixel_grid_overlay(
     pitch_mm,
     magnification,
     image_radius=None,
+    sensor_half_uv=None,
     margin_px: int = PIXEL_GRID_MARGIN_PX,
     max_cells: int = PIXEL_GRID_MAX_CELLS,
 ) -> "dict | None":
@@ -90,6 +91,18 @@ def build_pixel_grid_overlay(
     u = _unit(tangent_vec - n_hat * float(np.dot(tangent_vec, n_hat)), fallback=_any_perpendicular(n_hat))
     v = _unit(np.cross(n_hat, u))
     margin = max(int(margin_px), 1)
+    # Optional sensor box (half width/height in image-plane mm): the magnified lattice is CLIPPED
+    # to it so an edge spot's x-factor patch never spills past the orange detector frame (bug: the
+    # camera grid drew beyond the orange detector box). None -> no clip.
+    half_w = half_h = None
+    if sensor_half_uv is not None:
+        try:
+            hw = float(sensor_half_uv[0])
+            hh = float(sensor_half_uv[1])
+            if np.isfinite(hw) and hw > 0.0 and np.isfinite(hh) and hh > 0.0:
+                half_w, half_h = hw, hh
+        except (TypeError, ValueError, IndexError):
+            half_w = half_h = None
 
     # When the spots are sub-pixel (a focused / ideal system), the spot map magnifies hugely
     # to show them -- which would blow one pixel up LARGER than the whole image, drowning the
@@ -140,14 +153,28 @@ def build_pixel_grid_overlay(
         v_lines: list[np.ndarray] = []
         for kx in range(kx_lo, kx_hi + 1):
             du = cu + (kx * px - cu) * factor
-            p0 = center + du * u + dv_lo * v
-            p1 = center + du * u + dv_hi * v
+            if half_w is not None and abs(du) > half_w + 1e-9:
+                continue  # column past the sensor edge -> drop the whole line
+            a, b = dv_lo, dv_hi
+            if half_h is not None:
+                a, b = max(dv_lo, -half_h), min(dv_hi, half_h)
+                if b <= a + 1e-9:
+                    continue  # line fully outside the sensor box
+            p0 = center + du * u + a * v
+            p1 = center + du * u + b * v
             v_lines.append(np.vstack([p0, p1]))
         h_lines: list[np.ndarray] = []
         for ky in range(ky_lo, ky_hi + 1):
             dv = cv + (ky * py - cv) * factor
-            p0 = center + du_lo * u + dv * v
-            p1 = center + du_hi * u + dv * v
+            if half_h is not None and abs(dv) > half_h + 1e-9:
+                continue
+            a, b = du_lo, du_hi
+            if half_w is not None:
+                a, b = max(du_lo, -half_w), min(du_hi, half_w)
+                if b <= a + 1e-9:
+                    continue
+            p0 = center + a * u + dv * v
+            p1 = center + b * u + dv * v
             h_lines.append(np.vstack([p0, p1]))
         grids.append({"h_lines": h_lines, "v_lines": v_lines})
 

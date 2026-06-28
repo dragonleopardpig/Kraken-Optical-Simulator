@@ -3330,6 +3330,23 @@ class ThreeDSceneToolsMixin:
         spot_spec = self.spot_field_map_overlay_spec(system, scene_bundle, wavelength=wavelength)
         if not spot_spec:
             return None
+        # Sensor box (the orange detector frame) = camera resolution x pitch. Clip the magnified
+        # lattice to it so the grid never spills past the frame (bug: grid drawn beyond the box).
+        resolution = None
+        try:
+            from KrakenOS.UI.camera_database import camera_resolution_px
+            resolution = camera_resolution_px(str(self._current_camera_model() or ""))
+        except Exception:
+            resolution = None
+        sensor_half_uv = None
+        if resolution is not None:
+            try:
+                sensor_half_uv = (
+                    float(resolution[0]) * float(pitch[0]) * 0.5,
+                    float(resolution[1]) * float(pitch[1]) * 0.5,
+                )
+            except (TypeError, ValueError, IndexError):
+                sensor_half_uv = None
         spec = build_pixel_grid_overlay(
             spot_spec.get("chief_uv"),
             spot_spec.get("spot_extent_mm"),
@@ -3339,17 +3356,14 @@ class ThreeDSceneToolsMixin:
             pitch_mm=pitch,
             magnification=spot_spec.get("magnification", 1.0),
             image_radius=self._image_circle_radius_value(),
+            sensor_half_uv=sensor_half_uv,
         )
         if spec is not None:
             try:
                 spec["camera_label"] = str(self._current_camera_model() or "")
             except Exception:
                 spec["camera_label"] = ""
-            try:
-                from KrakenOS.UI.camera_database import camera_resolution_px
-                spec["resolution_px"] = camera_resolution_px(str(self._current_camera_model() or ""))
-            except Exception:
-                spec["resolution_px"] = None
+            spec["resolution_px"] = resolution
         return spec
 
     def _iter_3d_scene_rays(
