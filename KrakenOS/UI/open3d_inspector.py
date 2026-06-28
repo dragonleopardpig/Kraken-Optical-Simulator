@@ -12932,7 +12932,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     if resolved is None:
                         continue
                     p0, p1, a0, a1, mid, dist = resolved
-                    _hrad = float(min(max(dist * 0.04, 2.5), 7.0))  # grab-handle radius (shared by sphere + label offset)
+                    _hrad = float(min(max(dist * 0.04, 2.5), 7.0))  # grab REACH (label standoff off the line)
+                    # The visible center drag-ball reads a little too big; shrink the sphere only,
+                    # leaving the label's _hrad standoff so it still clears the dimension line.
+                    _ball_rad = _hrad * 0.6
                     if line_cls is not None and mapper_cls is not None and vtkActor is not None:
                         def _meas_line(s, e, width, color):
                             try:
@@ -12961,7 +12964,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                             try:
                                 _sp = sphere_cls()
                                 _sp.SetCenter(float(mid[0]), float(mid[1]), float(mid[2]))
-                                _sp.SetRadius(_hrad)
+                                _sp.SetRadius(_ball_rad)
                                 _sp.SetThetaResolution(16)
                                 _sp.SetPhiResolution(16)
                                 _hm = mapper_cls()
