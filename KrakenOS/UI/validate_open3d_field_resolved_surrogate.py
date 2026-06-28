@@ -119,7 +119,17 @@ def _check_integration(failures: list[str], notes: list[str]) -> None:
         failures.append(f"INTEGRATION: per-field RMS does not grow ({rms_lo:.2g}..{rms_hi:.2g} µm)")
     if "field-resolved" not in str(verdict.get("reason", "")):
         failures.append(f"INTEGRATION: verdict did not flip to field-resolved ({verdict.get('reason')!r})")
-    notes.append(f"integration: field-resolved RMS {rms_lo:.2g}->{rms_hi:.2g} µm; reason={verdict.get('reason')!r}")
+    # The surrogate vignettes (even the chief) before the field edge, so the traced grid stops at
+    # ~11.5 mm/~4.8 µm; the geometric grid must reach the configured edge (~16.3 mm) so the edge
+    # coma/astig (~7 µm) actually shows. Pin both the grid reach and the edge spot magnitude.
+    edge_mm = float((spec.get("field_resolved") or {}).get("edge_image_mm", 0.0))
+    if edge_mm < 14.0:
+        failures.append(f"INTEGRATION: field grid did not reach the field edge (edge_image_mm={edge_mm:.3g} mm, expect ~16.3)")
+    if rms_hi < 6.0:
+        failures.append(f"INTEGRATION: edge coma/astig not shown -- RMS max only {rms_hi:.2g} µm (expect ~7 at the ~16.3 mm edge, not the vignetted ~4.8)")
+    if int(spec.get("n_spots", 0)) < 13:
+        failures.append(f"INTEGRATION: geometric grid is not the full round field ({spec.get('n_spots')} spots, expect 13)")
+    notes.append(f"integration: field-resolved RMS {rms_lo:.2g}->{rms_hi:.2g} µm to the {edge_mm:.1f} mm edge ({spec.get('n_spots')} spots); reason={verdict.get('reason')!r}")
 
 
 def _check_contract(failures: list[str]) -> None:

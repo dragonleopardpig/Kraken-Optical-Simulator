@@ -35,6 +35,14 @@ The Y-elongation is the real meridional aberration (coma + astigmatism + field c
   beside the attached wavefront map (`_surrogate_spot_radius_path`), it replaces the uniform
   on-axis OPD blob with the per-field scatter + RMS. The Airy circle (real-NA) is unchanged.
   When there is no sibling, the on-axis wavefront-augmented (0177) behaviour stands.
+- **Full-edge grid:** the surrogate **vignettes — even the chief ray is clipped** — before the
+  configured field edge (the ideal Thin-Lens + datum/BS apertures cover less field than the real
+  lens), so a *traced* grid stops at ~11.5 mm/~4.8 µm (only the diagonal fields survive). Since
+  the per-field data covers the whole field, the field-resolved path lays down a full **geometric**
+  grid out to the field edge — the fraction-1.0 image height calibrated from the surviving traced
+  fields (`_field_edge_image_height`: `median(chief_radius / field_fraction)`, fallback paraxial
+  magnification, then the data's max field) = 16.29 mm for the MV-150 — so the edge coma/astig
+  shows in full (13 spots, RMS to ~7.3 µm) instead of the vignetted stub.
 - **Verdict flip:** `_scene_surrogate_optics_info().reason` and the Spot-map label read
   **"✓ Field-resolved surrogate (Zemax per-field spot data — real coma/astig, RMS to X µm at
   edge)"** instead of "wavefront-augmented (on-axis)".
@@ -61,8 +69,9 @@ The Y-elongation is the real meridional aberration (coma + astigmatism + field c
 
 ## Status
 
-Shipped. Guard `validate_open3d_field_resolved_surrogate` (parse + integration + contract) +
-penta phase 170 green; baseline 171 phases. ON-AXIS-to-edge from the real Lens/15056 data:
-RMS 1.3 → up to 7.4 µm; the spot map's own field grid reaches ~11.5 mm so it shows up to
-~4.8 µm — push the field sampling to the 16.5 mm edge to see the full 7.4 µm. In-app eyeball
-owed (the radial elongation + the verdict label).
+Shipped, including the full-edge geometric grid. Guard
+`validate_open3d_field_resolved_surrogate` (parse + integration + contract; pins the edge reach,
+the edge RMS magnitude, and the 13-spot full round grid) + penta phase 170 green; baseline 171
+phases. From the real Lens/15056 data the spot map now spans the whole field: RMS **1.3 µm
+on-axis → 7.3 µm at the 16.3 mm edge** (13 spots), the real coma/astigmatism growing radially.
+In-app eyeball owed (the radial elongation + the verdict label).

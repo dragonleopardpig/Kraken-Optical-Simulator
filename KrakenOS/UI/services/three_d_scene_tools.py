@@ -2898,6 +2898,7 @@ class ThreeDSceneToolsMixin:
         chief_v: list[float] = []
         rms: list[float] = []
         scatter: list = []  # per field: the ray intercepts relative to the chief (the spot shape)
+        frac_radii: list[float] = []  # the field-fraction radius per surviving field (calibrates the edge)
         on_axis_rays = None  # (x, y, l, m, n) for the chief field -> best-focus shift
         capture = io.StringIO()
         with warnings.catch_warnings():
@@ -2930,6 +2931,7 @@ class ThreeDSceneToolsMixin:
                             chief_v.append(cv)
                             rms.append(spot_rms)
                             scatter.append(np.column_stack((x - cu, y - cv)))
+                            frac_radii.append(float(np.hypot(fx, fy)))
                             if abs(fx) < 1e-9 and abs(fy) < 1e-9:
                                 on_axis_rays = (x, y, np.asarray(l_dir, dtype=float),
                                                 np.asarray(m_dir, dtype=float), np.asarray(n_dir, dtype=float))
@@ -2961,20 +2963,37 @@ class ThreeDSceneToolsMixin:
                 wavefront_augmented = {"rms_um": float(wf["rms_um"]), "rms_waves": float(wf["rms_waves"]), "path": wf_path}
             # Field-resolved: a per-field Zemax spot-radius sibling makes the spot GROW + ELONGATE
             # with field (the real coma/astigmatism -- round on-axis, a radial ellipse at the edge),
-            # replacing the on-axis OPD blob that otherwise rides every field uniformly.
+            # replacing the on-axis OPD blob that otherwise rides every field uniformly. The
+            # surrogate VIGNETTES (even the chief ray is clipped) before the configured field edge,
+            # so the traced grid stops short of it; but the per-field data covers the WHOLE field --
+            # lay down a full GEOMETRIC grid out to the field edge (the fraction-1.0 image height,
+            # calibrated from the surviving traced fields) and place the data spot at each point.
             sr_path = self._surrogate_spot_radius_path(wf_path)
-            fr = self._field_resolved_spot_for_surrogate(sr_path, chief_u, chief_v) if sr_path else None
-            if fr is not None:
-                scatters, rms_radius_mm, recs = fr
-                for i in range(len(chief_u)):
-                    scatter[i] = scatters[i]
-                    rms[i] = float(rms_radius_mm[i])
-                field_resolved = {
-                    "path": sr_path,
-                    "n_fields": len(recs),
-                    "field_max_mm": float(recs[-1]["field_mm"]),
-                    "rms_max_um": float(recs[-1].get("rms_radius_um", 0.0)),
-                }
+            records = self._spot_radius_records_for_surrogate(sr_path) if sr_path else None
+            if records:
+                from KrakenOS.UI.services.zemax_field_spot import field_resolved_scatter
+                edge_mm = self._field_edge_image_height(frac_radii, chief_u, chief_v, field_max, records)
+                geo_u: list[float] = []
+                geo_v: list[float] = []
+                for fy in fractions:
+                    for fx in fractions:
+                        if fx * fx + fy * fy > 1.0 + 1e-9:
+                            continue
+                        geo_u.append(float(fx) * edge_mm)
+                        geo_v.append(float(fy) * edge_mm)
+                out = field_resolved_scatter(geo_u, geo_v, records)
+                if out is not None:
+                    scatters, rms_radius_mm = out
+                    chief_u, chief_v = geo_u, geo_v
+                    rms = [float(r) for r in rms_radius_mm]
+                    scatter = list(scatters)
+                    field_resolved = {
+                        "path": sr_path,
+                        "n_fields": len(records),
+                        "field_max_mm": float(records[-1]["field_mm"]),
+                        "rms_max_um": float(records[-1].get("rms_radius_um", 0.0)),
+                        "edge_image_mm": float(edge_mm),
+                    }
         spec = build_spot_field_map(
             chief_u, chief_v, rms,
             center=np.asarray(getattr(target, "center_world"), dtype=float),
@@ -3132,28 +3151,54 @@ class ThreeDSceneToolsMixin:
             return None
         return None
 
-    def _field_resolved_spot_for_surrogate(self, path, chief_u, chief_v):
-        """Per-field aberration scatters from the Zemax spot-radius export at ``path``, evaluated
-        at the spot-map chief positions. Returns ``(scatters, rms_radius_mm, records)`` or None.
-        Cheap (interpolation only) so it runs inside the already-signature-cached spec compute."""
+    def _spot_radius_records_for_surrogate(self, path):
+        """Per-field Zemax spot-radius records parsed from ``path`` (cached by path+mtime), or
+        None. The spot-map compute lays these onto a geometric field grid via
+        ``field_resolved_scatter``; cheap, but cached because the parse re-reads a UTF-16 file."""
+        from pathlib import Path
+
         if not path:
             return None
         try:
-            from KrakenOS.UI.services.zemax_field_spot import field_resolved_scatter, parse_zemax_spot_radius
-            records = parse_zemax_spot_radius(path)
-            if not records:
-                return None
-            out = field_resolved_scatter(chief_u, chief_v, records)
-            if out is None:
-                return None
-            scatters, rms_radius_mm = out
-            return scatters, rms_radius_mm, records
+            mtime = Path(str(path)).stat().st_mtime
+        except Exception:
+            return None
+        cache = self.__dict__.get("_spot_radius_records_cache")
+        key = (str(path), float(mtime))
+        if isinstance(cache, tuple) and len(cache) == 2 and cache[0] == key:
+            return cache[1]
+        records = None
+        try:
+            from KrakenOS.UI.services.zemax_field_spot import parse_zemax_spot_radius
+            records = parse_zemax_spot_radius(path) or None
         except Exception as exc:  # pragma: no cover - defensive
             try:
                 self.append_debug(f"Field-resolved surrogate failed: {exc}")
             except Exception:
                 pass
-            return None
+            records = None
+        self._spot_radius_records_cache = (key, records)
+        return records
+
+    def _field_edge_image_height(self, frac_radii, chief_u, chief_v, field_max, records):
+        """Image height (mm) at the field edge (fraction 1.0) for the field-resolved geometric
+        grid. Calibrated from the surviving traced off-axis fields (chief_radius / field_fraction)
+        so the grid reaches the TRUE field edge even though the surrogate vignettes before it;
+        falls back to the paraxial magnification, then the spot-radius data's own max field."""
+        ratios = [
+            float(np.hypot(cu, cv)) / fr
+            for fr, cu, cv in zip(frac_radii, chief_u, chief_v)
+            if fr > 1e-6
+        ]
+        if ratios:
+            return float(np.median(ratios))
+        try:
+            mag = self._current_finite_paraxial_magnification()
+            if mag is not None and np.isfinite(mag) and abs(float(mag)) > 1e-6:
+                return abs(float(mag)) * float(field_max)
+        except Exception:
+            pass
+        return float(max(r["field_mm"] for r in records))
 
     def _wavefront_spot_for_surrogate(self, path):
         """Parse + cache the Zemax OPD map at ``path`` and return the real geometric spot it
