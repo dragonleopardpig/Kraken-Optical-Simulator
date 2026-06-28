@@ -12718,6 +12718,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # on edges/surfaces drop a distance dimension between them.
         self._measure_pick_mode = True
         self._measure_p0 = None
+        self._measure_reanchor = None
         self._measure_offset_adjust_mode = False
         self._measure_offset_adjust_state = None
         for _flag in (
@@ -12736,6 +12737,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def clear_measurements(self) -> None:
         self._measure_pick_mode = False
         self._measure_p0 = None
+        self._measure_reanchor = None
         self._measure_offset_adjust_mode = False
         self._measure_offset_adjust_state = None
         self._measure_segments = []
@@ -12845,6 +12847,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return
         # anchor each end to the nearest optical row's z-station so the dimension tracks geometry.
         r, dz = self._anchor_measure_point(point)
+        # Re-anchor in progress: this pick REPLACES one endpoint of an existing measurement (like
+        # the blue dimension arrows' re-anchor) instead of starting a new segment.
+        reanchor = getattr(self, "_measure_reanchor", None)
+        if isinstance(reanchor, dict):
+            self._apply_measure_reanchor(reanchor, point, int(r), float(dz), normal)
+            return
         if getattr(self, "_measure_p0", None) is None:
             n0 = None
             if normal is not None:
@@ -13602,6 +13610,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             command=lambda i=int(index): self._open_measure_value_editor(i),
         )
         menu.add_command(
+            label="Re-anchor first point…",
+            command=lambda i=int(index): self._begin_measure_reanchor(i, 0),
+        )
+        menu.add_command(
+            label="Re-anchor second point…",
+            command=lambda i=int(index): self._begin_measure_reanchor(i, 1),
+        )
+        menu.add_command(
             label="Delete this measurement",
             command=lambda i=int(index): self.delete_measure_segment(i),
         )
@@ -13674,6 +13690,62 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self._refresh_measure_overlays()
             except Exception:
                 pass
+
+    def _begin_measure_reanchor(self, seg_index: int, end: int) -> None:
+        """Enter a pick mode where the next click on an edge/surface REPLACES one endpoint of an
+        existing measurement (re-anchor, like the blue dimension arrows). Reuses the measure
+        point-pick lifecycle; the new endpoint is anchored to its nearest optical row so the
+        dimension keeps tracking geometry and its edit-to-move works off the new anchor."""
+        segments = getattr(self, "_measure_segments", [])
+        if not (0 <= int(seg_index) < len(segments)):
+            return
+        # start_measure_pick enters the pick mode + cursor + clears competing modes/_measure_reanchor.
+        self.start_measure_pick()
+        self._measure_reanchor = {"seg": int(seg_index), "end": int(end)}
+        self.status_var.set(
+            f"Re-anchor: click the new edge/surface for endpoint {int(end) + 1} (Clear cancels)."
+        )
+        self._update_mode_badge()
+
+    def _apply_measure_reanchor(self, reanchor, point, r, dz, normal) -> None:
+        """Commit a re-anchor pick: overwrite one endpoint (p/r/dz[/n]) of the stored segment."""
+        self._measure_reanchor = None
+        self._measure_pick_mode = False
+        try:
+            self._set_axis_pick_cursor(False)
+        except Exception:
+            pass
+        try:
+            self._clear_measure_preview()
+        except Exception:
+            pass
+        seg_index = int(reanchor.get("seg", -1))
+        end = int(reanchor.get("end", 0))
+        segments = list(getattr(self, "_measure_segments", []))
+        if not (0 <= seg_index < len(segments)):
+            self._update_mode_badge()
+            return
+        n = None
+        if normal is not None:
+            nv = np.asarray(normal, dtype=float).reshape(-1)[:3]
+            if nv.size >= 3 and np.all(np.isfinite(nv)) and float(np.linalg.norm(nv)) > 1e-9:
+                n = (nv / float(np.linalg.norm(nv))).tolist()
+        pt = np.asarray(point, dtype=float).reshape(-1)[:3].tolist()
+        seg = dict(segments[seg_index])
+        if end <= 0:
+            seg["p0"] = pt
+            seg["r0"] = int(r)
+            seg["dz0"] = float(dz)
+            seg["n0"] = n  # the projected-distance normal lives on the first endpoint
+        else:
+            seg["p1"] = pt
+            seg["r1"] = int(r)
+            seg["dz1"] = float(dz)
+        segments[seg_index] = seg
+        self._measure_segments = segments
+        self._refresh_measure_overlays()
+        self.status_var.set(f"Re-anchored measurement endpoint {end + 1}.")
+        self._update_mode_badge()
 
     def delete_measure_segment(self, index: int) -> None:
         segments = list(getattr(self, "_measure_segments", []))
