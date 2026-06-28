@@ -28,6 +28,16 @@ import inspect
 import numpy as np
 
 from KrakenOS.UI.services.trace_preview_sampling import TracePreviewSamplingMixin
+from KrakenOS.UI.trace_intent import resolve_trace_intent
+
+
+class _SolidRow:
+    """A promoted optical-solid row carrying an OpticalSolidFaces metadata block."""
+
+    surface = "Solid_3d_stl"
+
+    def __init__(self, optical_solid_faces: dict) -> None:
+        self.advanced = {"Solid_3d_stl": "x.stl", "OpticalSolidFaces": optical_solid_faces}
 
 
 class _Row:
@@ -166,6 +176,33 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     # H -- axial desp_z alone must NEVER trip the symmetry breaker.
     ed = _FakeEditor({"use_nonseq": True}, [axial_solid], ray_count)
     check("H axial desp_z does not break rotational symmetry", not ed._scene_breaks_rotational_symmetry())
+
+    # I -- DETECTION (resolve_trace_intent): a PROMOTED beam-splitter cube carries its split on an
+    # OpticalSolidFaces "Beam Splitter" face (NOT a sequential BeamSplitter surface), so it must
+    # classify as has_beam_splitter -> branching -> its launch revolves into a cone, not the 0126
+    # non-branching-refractive flat fan. This is the MV150 BS-cube regression (a beam-splitter
+    # promoted solid was mistaken for the inline refractive carve-out and launched a flat fan).
+    def _intent_flags(rows):
+        return resolve_trace_intent(
+            rows, {}, requested="Auto", can_folded=False, ns_trace_available=True,
+            has_physical_source=False, nonseq_energy_probability=False, nonseq_target_surface_index=None,
+        ).as_dict()
+
+    bs_flags = _intent_flags([_SolidRow({"version": 1, "faces": [
+        {"face_id": "F1", "function": "Transmit/Port"},
+        {"face_id": "F2", "function": "Beam Splitter", "split_ratio": 0.5},
+    ]})])
+    check(
+        "I promoted BS-cube face classifies as has_beam_splitter",
+        bool(bs_flags.get("has_beam_splitter")),
+        f"flags={ {k: bs_flags.get(k) for k in ('has_beam_splitter', 'has_optical_stl_solid')} }",
+    )
+    plain_flags = _intent_flags([_SolidRow({"version": 1, "faces": [{"face_id": "F1", "function": "Transmit/Port"}]})])
+    check(
+        "I plain promoted solid (no BS face) stays non-beam-splitter (0126 fan preserved)",
+        (not plain_flags.get("has_beam_splitter")) and bool(plain_flags.get("has_optical_stl_solid")),
+        f"flags={ {k: plain_flags.get(k) for k in ('has_beam_splitter', 'has_optical_stl_solid')} }",
+    )
 
     # Source contract: the predicate must reason about branching, not bare
     # use_nonseq, and must consult the symmetry helper.

@@ -160,6 +160,32 @@ def resolve_trace_intent(
     )
 
 
+def _optical_solid_faces_have_beam_splitter(metadata: Any) -> bool:
+    """A PROMOTED optical solid (e.g. a beam-splitter cube) carries its split on an
+    ``OpticalSolidFaces`` "Beam Splitter" face / virtual plane, NOT a sequential BeamSplitter
+    surface. Detect it so a promoted-BS scene still classifies as branching -- otherwise it is
+    mistaken for the bug-0126 non-branching refractive solid and its launch collapses to a flat
+    fan instead of revolving into a cone (bugs/0161)."""
+    if not metadata:
+        return False
+    try:
+        from KrakenOS.UI.optical_solid_metadata import (
+            OPTICAL_SOLID_VIRTUAL_PLANE_KIND_SPLITTER,
+            normalize_optical_solid_face_metadata,
+        )
+
+        normalized = normalize_optical_solid_face_metadata(metadata)
+        for face in normalized.get("faces", []) or []:
+            if str(face.get("function", "")) == "Beam Splitter":
+                return True
+        for plane in normalized.get("virtual_planes", []) or []:
+            if str(plane.get("kind", "")) == OPTICAL_SOLID_VIRTUAL_PLANE_KIND_SPLITTER:
+                return True
+    except Exception:
+        return False
+    return False
+
+
 def _trace_flags(
     rows_or_specs: list[Any],
     settings: dict[str, Any],
@@ -179,6 +205,8 @@ def _trace_flags(
         advanced = _row_advanced(row)
         if surface == BEAM_SPLITTER_SURFACE or BEAM_SPLITTER_ADVANCED_ATTR in advanced:
             beam_splitter = True
+        elif _optical_solid_faces_have_beam_splitter(advanced.get("OpticalSolidFaces")):
+            beam_splitter = True  # a PROMOTED beam-splitter cube (split on an OpticalSolidFaces face)
         if surface == DIFFUSE_OBJECT_SURFACE or DIFFUSE_SCATTER_ADVANCED_ATTR in advanced:
             diffuse = True
         if surface == OBJECT_TARGET_SURFACE:
