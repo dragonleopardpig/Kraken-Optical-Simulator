@@ -44,9 +44,11 @@ class _Var:
 
 
 class _Ed:
-    def __init__(self, rows):
+    def __init__(self, rows, glued: bool = False):
         self.rows = rows
         self.status_var = _Var()
+        self._optical_led_glued = bool(glued)
+        self.led_object_edge_distance_mm = 200.0
 
     def _dimension_anchor_override_for_row(self, _i):
         return None
@@ -139,6 +141,17 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     term = _Svc(_Ed(rows[:2]), _Insp())  # [object, BS] -> BS is terminal, nothing to compensate into
     check("G no air gap after the solid -> compensation None (cumulative + QE fallback)",
           term._solid_slide_compensation_row(0) is None)
+
+    # Glued LED rides the BS: a manual gap-to-solid edit must carry the LED by the same slide delta.
+    rows_g = [KrakenLayoutEditor._row_from_layout_item(it) for it in data["surfaces"]]
+    edg = _Ed(rows_g, glued=True)
+    svc_g = _Svc(edg, _Insp())
+    bs0 = float(rows_g[0].thickness)
+    led0 = float(edg.led_object_edge_distance_mm)
+    svc_g.apply_dimension_value(0, 150.0)
+    check("G2 glued LED carried by the same slide delta (stays attached to the BS)",
+          abs((float(edg.led_object_edge_distance_mm) - led0) - (150.0 - bs0)) < 1e-6,
+          f"led {led0} -> {edg.led_object_edge_distance_mm}")
 
     # Source contract: skip QE on a slide, consult the compensation helper.
     src = _inspect.getsource(S.apply_dimension_value)

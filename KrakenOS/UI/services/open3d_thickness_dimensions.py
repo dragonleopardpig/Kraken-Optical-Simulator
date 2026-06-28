@@ -1512,6 +1512,16 @@ class Open3DThicknessDimensionService:
             if np.isfinite(comp_new) and comp_new >= 0.0:
                 self.editor.rows[comp_row].thickness = comp_new
                 slid = True
+                # Glued means glued: a glued LED rides the BS, so carry it by the same slide -- a
+                # manual gap-to-solid edit must not leave the LED behind (the gizmo drag already
+                # carries it; this closes the last path).
+                if bool(getattr(self.editor, "_optical_led_glued", False)):
+                    try:
+                        self.editor.led_object_edge_distance_mm = max(
+                            float(getattr(self.editor, "led_object_edge_distance_mm", 0.0)) + delta, 0.0
+                        )
+                    except Exception:
+                        pass
         # Quick Estimation: setting one conjugate gap re-solves the other so the image stays
         # focused on the pinned sensor; FOV updates from the new magnification. Skipped for a solid
         # slide (the conjugate is held fixed by the compensation above).
