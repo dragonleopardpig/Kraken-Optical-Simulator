@@ -2147,6 +2147,89 @@ class ScenePlacementMixin:
         )
         return True
 
+    def apply_measure_dimension_value(self, lo_z: float, hi_z: float, value: float) -> bool:
+        """Edit a manual MEASURE dimension's value by MOVING the downstream element so the axial
+        span between the two measured points becomes ``value`` -- the same directed-gap move as a
+        re-anchored thickness dimension (``apply_reanchored_dimension_value``), but driven by the
+        measure's two row-anchored endpoints instead of a stored override. The measure endpoints
+        are anchored to their rows (``r0``/``r1`` + ``dz``), so they FOLLOW the moved surface on
+        the next render -- no endpoint rewrite is needed here.
+
+        Returns True when an element moved; False (model untouched + a status note) when the two
+        points share a z-plane, the downstream point is not on a movable optical surface, there is
+        no editable upstream gap, or the move would collapse the chain.
+        """
+        try:
+            prev_z = float(min(lo_z, hi_z))
+            next_z = float(max(lo_z, hi_z))
+            target_span = abs(float(value))
+        except Exception:
+            return False
+        if not (np.isfinite(prev_z) and np.isfinite(next_z) and np.isfinite(target_span)):
+            return False
+        current_span = next_z - prev_z
+        if current_span <= 1e-9:
+            self.status_var.set(
+                "Measure value edit: the two points share a z-plane (no axial gap to move)."
+            )
+            return False
+        z_positions = list(self._row_z_positions())
+        if not z_positions:
+            return False
+        track = float(z_positions[-1] - z_positions[0]) if len(z_positions) > 1 else 0.0
+        snap_tol = max(abs(track) * 0.02, 0.5)
+        # Map the downstream point to the optical surface it sits on; that row is the element we
+        # move (mirrors apply_reanchored_dimension_value's Next-element rule).
+        next_row = None
+        best = snap_tol
+        for idx, z in enumerate(z_positions):
+            d = abs(float(z) - next_z)
+            if d <= best:
+                best = d
+                next_row = idx
+        if next_row is None or next_row < 1:
+            self.status_var.set(
+                "Measure value edit: the downstream point is not on a movable optical surface."
+            )
+            return False
+        gap_row = next_row - 1
+        if not (0 <= gap_row < len(self.rows) - 1):
+            self.status_var.set(
+                "Measure value edit: no editable gap upstream of the moved element."
+            )
+            return False
+        delta = target_span - current_span
+        try:
+            current_gap = float(self.rows[gap_row].thickness)
+        except Exception:
+            return False
+        new_gap = current_gap + delta
+        if not np.isfinite(new_gap) or new_gap < 0.0:
+            self.status_var.set(
+                f"Measure value {target_span:.6g} mm would collapse the chain; ignored."
+            )
+            return False
+        self._begin_history_capture()
+        self.rows[gap_row].thickness = float(new_gap)
+        try:
+            self._sync_table()
+        except Exception:
+            pass
+        try:
+            self._invalidate_preview_scene_trace()
+        except Exception:
+            pass
+        try:
+            self._sync_trace_state_badge()
+        except Exception:
+            pass
+        self._commit_history_capture()
+        self.status_var.set(
+            f"Measure set to {target_span:.6g} mm: moved the downstream element "
+            f"(gap S{gap_row}) {delta:+.4g} mm; other gaps unchanged."
+        )
+        return True
+
     def _move_led_for_reanchored_value(
         self, row_index: int, spec: dict, overrides: dict,
         fixed_z: float, cur_ref: float, target_span: float,

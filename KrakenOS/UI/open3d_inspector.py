@@ -13598,6 +13598,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         menu.add_command(label=f"Measurement {dist:.4g} mm", state="disabled")
         menu.add_separator()
         menu.add_command(
+            label="Edit distance (move element)…",
+            command=lambda i=int(index): self._open_measure_value_editor(i),
+        )
+        menu.add_command(
             label="Delete this measurement",
             command=lambda i=int(index): self.delete_measure_segment(i),
         )
@@ -13617,6 +13621,57 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         finally:
             try:
                 menu.grab_release()
+            except Exception:
+                pass
+
+    def _open_measure_value_editor(self, index: int) -> None:
+        """Edit a manual measurement's value -> MOVE the downstream element so the AXIAL span
+        becomes the typed value, like the blue dimension arrows' edit-to-move. The two measured
+        points are row-anchored (r0/r1 + dz), so they follow the moved surface on the next render.
+        """
+        segments = getattr(self, "_measure_segments", [])
+        if not (0 <= int(index) < len(segments)):
+            return
+        resolved = self._measure_segment_offset_endpoints(segments[int(index)])
+        if resolved is None:
+            self.status_var.set("Measure: can't resolve this dimension's endpoints.")
+            return
+        p0, p1 = resolved[0], resolved[1]
+        try:
+            lo_z = float(min(float(p0[2]), float(p1[2])))
+            hi_z = float(max(float(p0[2]), float(p1[2])))
+        except Exception:
+            return
+        axial = abs(hi_z - lo_z)
+        if axial <= 1e-9:
+            self.status_var.set(
+                "Measure value edit: the two points share a z-plane (no axial gap to move)."
+            )
+            return
+        try:
+            new_value = simpledialog.askfloat(
+                "Edit Measurement",
+                "Axial distance [mm] -- moves the downstream element to set it:",
+                initialvalue=round(axial, 6),
+                minvalue=0.0,
+                parent=self,
+            )
+        except Exception:
+            new_value = None
+        if new_value is None:
+            return
+        moved = False
+        try:
+            moved = bool(self.editor.apply_measure_dimension_value(lo_z, hi_z, float(new_value)))
+        except Exception:
+            moved = False
+        if moved:
+            try:
+                self.refresh_from_editor()
+            except Exception:
+                pass
+            try:
+                self._refresh_measure_overlays()
             except Exception:
                 pass
 
