@@ -72,8 +72,20 @@ class Open3DThicknessDimensionService:
         radius = max(base_head * 0.20, 0.12) * scale
         tube_radius = max(radius * self.DIMENSION_TUBE_RADIUS_FACTOR, self.DIMENSION_TUBE_RADIUS_FLOOR)
         parts: list[Any] = []
+        # The shaft tube must STOP at the cone bases, not run to the very tip. A full-length tube
+        # (radius tube_radius) swallows the cone's sharp apex -- the last stretch where the cone is
+        # thinner than the tube sits INSIDE it -- so the arrow reads BLUNT, with the tube's flat end
+        # poking a short straight stub past the head and the measured span appearing to end at that
+        # stub instead of the true endpoint. Inset the tube by the head length on each side so the
+        # cones show as clean sharp tips landing exactly on start/end.
+        inset = min(float(head), length * 0.45)
+        shaft_lo = start + direction * inset
+        shaft_hi = end - direction * inset
         try:
-            line = pv.Line(tuple(float(value) for value in start), tuple(float(value) for value in end))
+            line = pv.Line(
+                tuple(float(value) for value in shaft_lo),
+                tuple(float(value) for value in shaft_hi),
+            )
             try:
                 parts.append(line.tube(radius=float(tube_radius), n_sides=10))
             except Exception:
