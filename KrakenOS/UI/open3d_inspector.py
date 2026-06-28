@@ -17303,13 +17303,24 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             faces = self._runtime_world_face_records_for_pick(row, metadata, transform)
         else:
             faces = self.editor._optical_solid_face_records_for_temp_row(row, int(row_index), metadata)
+        # A promoted beam-splitter cube's 45deg splitting face is INTERNAL. The STEP-overlay pick
+        # (open3d_round_lens_pick) already prefers the deterministic internal ray pick for a clean
+        # solid, so the diagonal highlights BEFORE promote; this saved-mesh row path disabled that
+        # (prefer_internal off), so AFTER promote the hover latched only the outer shell. Re-enable
+        # the internal preference when the solid carries a Beam Splitter face so the diagonal hovers
+        # again (a non-BS solid is unaffected; if the saved mesh has no internal face it just falls
+        # back to the external hit -- no harm).
+        from KrakenOS.UI.trace_intent import _optical_solid_faces_have_beam_splitter
         return pick_face_from_ray(
             faces,
             world_triangles,
             origin,
             direction,
             all_points=world_triangles.reshape((-1, 3)),
-            prefer_internal=not self._row_face_metadata_uses_saved_mesh(row),
+            prefer_internal=(
+                not self._row_face_metadata_uses_saved_mesh(row)
+                or _optical_solid_faces_have_beam_splitter(metadata)
+            ),
         )
 
     @staticmethod
