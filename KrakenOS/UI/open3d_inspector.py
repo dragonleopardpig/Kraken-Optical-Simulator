@@ -3424,17 +3424,41 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if not np.isfinite(signed_pixels) or abs(signed_pixels) <= 1e-12:
             return
         pixels_per_step = self._placement_drag_pixels_per_step()
-        accumulator = float(state.get("pixel_accumulator", 0.0)) + signed_pixels
-        steps = int(accumulator / pixels_per_step)
-        if steps == 0:
-            state["pixel_accumulator"] = accumulator
+        if not np.isfinite(pixels_per_step) or pixels_per_step <= 1e-12:
             return
-        state["pixel_accumulator"] = accumulator - float(steps) * pixels_per_step
-        state["applied_steps"] = int(state.get("applied_steps", 0)) + abs(int(steps))
         row_index = int(state.get("row_index", -1))
         axis = str(state.get("axis", ""))
-        delta = float(steps) * float(state.get("signed_step", 0.0))
-        if str(state.get("kind")) == "rotate":
+        signed_step = float(state.get("signed_step", 0.0))
+        is_rotate = str(state.get("kind")) == "rotate"
+        # Translate slides SMOOTHLY: the optical axis is virtually infinite, so a placement slide is
+        # free -- the body tracks the cursor 1:1 instead of jumping in coarse span/20 steps (user:
+        # "the BS still moves in steps"). Rotate keeps its discrete angle snap, and a live
+        # "Snap mm" > 0 re-imposes a translate step for precise placement.
+        override = None if is_rotate else self._drag_snap_override_mm()
+        if is_rotate or (override is not None and override > 1e-9):
+            step_pixels = pixels_per_step
+            step_mm = signed_step
+            if override is not None and override > 1e-9 and abs(signed_step) > 1e-9:
+                ratio = float(override) / abs(signed_step)
+                step_pixels = pixels_per_step * ratio
+                step_mm = float(override) if signed_step >= 0 else -float(override)
+            if not np.isfinite(step_pixels) or step_pixels <= 1e-12:
+                return
+            accumulator = float(state.get("pixel_accumulator", 0.0)) + signed_pixels
+            steps = int(accumulator / step_pixels)
+            if steps == 0:
+                state["pixel_accumulator"] = accumulator
+                return
+            state["pixel_accumulator"] = accumulator - float(steps) * step_pixels
+            state["applied_steps"] = int(state.get("applied_steps", 0)) + abs(int(steps))
+            delta = float(steps) * float(step_mm)
+        else:
+            # Continuous, un-rounded slide (the un-quantized form of the discrete move above).
+            if abs(signed_step) <= 1e-12:
+                return
+            delta = signed_pixels * signed_step / pixels_per_step
+            state["applied_steps"] = int(state.get("applied_steps", 0)) + 1
+        if is_rotate:
             self._apply_scene_placement_rotate_handle(row_index, axis, delta)
         else:
             # bugs/0012 (+ 20:37/20:38 follow-ups): a promoted optical-solid row
@@ -13683,7 +13707,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             moved = False
         if moved:
             try:
-                self.refresh_from_editor()
+                # force_retrace so the moved element actually shifts in the 3D scene -- the measure
+                # endpoints anchor to traced z-stations, so without the retrace they would not move.
+                self.refresh_from_editor(force_retrace=True)
             except Exception:
                 pass
             try:
