@@ -11904,7 +11904,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         segment_points: list = []
         line_cells: list = []
         offset = 0
+        # Anchor the label at the detector's top-RIGHT corner in the view (it overlapped a spot at
+        # the top). The grid is clipped to the sensor box, so its extreme corner point IS the corner.
+        try:
+            _sax = self._camera_screen_world_axes()
+            sright = np.asarray(_sax[0], dtype=float).reshape(3)
+            sup = np.asarray(_sax[1], dtype=float).reshape(3)
+        except Exception:
+            sright = sup = None
         top_point = None
+        best_score = None
         for grid in spec.get("grids") or []:
             for key in ("v_lines", "h_lines"):
                 for seg in grid.get(key) or []:
@@ -11914,9 +11923,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     segment_points.append(pts[:2, :3])
                     line_cells.extend((2, offset, offset + 1))
                     offset += 2
-                    candidate = pts[int(np.argmax(pts[:, 1])), :3]
-                    if top_point is None or float(candidate[1]) > float(top_point[1]):
-                        top_point = candidate
+                    for candidate in pts[:2, :3]:
+                        score = (
+                            float(np.dot(candidate, sright)) + float(np.dot(candidate, sup))
+                            if sright is not None else float(candidate[1])
+                        )
+                        if best_score is None or score > best_score:
+                            best_score = score
+                            top_point = np.asarray(candidate, dtype=float)
         if segment_points:
             try:
                 # One merged line mesh (hundreds of short segments) -> a single actor.
@@ -11934,7 +11948,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 center_pt = np.asarray(spec.get("center"), dtype=float).reshape(3)
                 anchor = center_pt + normal_vec * max(float(scene_radius) * 0.02, 0.6)
             elif top_point is not None:
-                anchor = np.asarray(top_point, dtype=float) + normal_vec * max(float(scene_radius) * 0.01, 0.4)
+                outward = (sright + sup) * max(float(scene_radius) * 0.03, 1.0) if sright is not None else 0.0
+                anchor = np.asarray(top_point, dtype=float) + outward + normal_vec * max(float(scene_radius) * 0.01, 0.4)
             if vtkBillboardTextActor3D is not None and anchor is not None:
                 pitch = spec.get("pitch_um", (0.0, 0.0))
                 span_lo = float(spec.get("span_px_min", 0.0))
