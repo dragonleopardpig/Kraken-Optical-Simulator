@@ -22,6 +22,8 @@ Run:
 from __future__ import annotations
 
 import io
+import shutil
+import tempfile
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
@@ -98,24 +100,40 @@ def run_checks() -> "tuple[bool, list[str]]":
         if ideal_rms_um > 1.5:
             failures.append(f"INTEGRATION: ideal spot not sub-diffraction ({ideal_rms_um:.3g} um)")
 
-        row.advanced["WavefrontMap"] = {"path": str(_WAVEFRONT)}
-        aug = _compute(editor, system, target, cap)
-        if aug is None:
-            failures.append("INTEGRATION: augmented spot map returned None")
-            return (not failures), (failures + notes)
-        wf = aug.get("wavefront_augmented")
-        aug_rms_um = float(aug["rms_max_mm"]) * 1000.0
-        airy_um = float(aug.get("airy_radius_mm", 0.0)) * 1000.0
-        if not wf:
-            failures.append("INTEGRATION: augmented spec missing wavefront_augmented")
-        if not (1.5 <= aug_rms_um <= 3.0):
-            failures.append(f"INTEGRATION: augmented spot RMS {aug_rms_um:.3g} um not the expected ~2 um wavefront spot")
-        if not (airy_um > 0 and aug_rms_um < airy_um):
-            failures.append(f"INTEGRATION: augmented spot ({aug_rms_um:.3g} um) is not inside the Airy radius ({airy_um:.3g} um)")
-        reason = editor._scene_surrogate_optics_info().get("reason", "")
-        if "wavefront-augmented" not in reason:
-            failures.append(f"INTEGRATION: surrogate reason did not flip ({reason!r})")
-        notes.append(f"integration: ideal {ideal_rms_um:.2g} um -> wavefront-augmented {aug_rms_um:.2g} um (RMS {wf['rms_waves']:.3g} waves), inside Airy {airy_um:.2g} um")
+        # Isolate the wavefront-ONLY (uniform) path: mirror the real Lens/15056 folder (OPD +
+        # prescription, so R is unchanged) into a temp dir but OMIT the 'spot radius/' sibling,
+        # so the per-field field-resolution (0178) does not supersede the on-axis blob -- that
+        # path is pinned by validate_open3d_field_resolved_surrogate. Explicit path > auto-detect.
+        tmp_dir = Path(tempfile.mkdtemp(prefix="wf_aug_"))
+        try:
+            lens_dir = tmp_dir / "Lens" / "15056"
+            wf_only = lens_dir / "wavefront" / "Mag1.0.txt"
+            wf_only.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(_WAVEFRONT, wf_only)
+            for presc in sorted(_WAVEFRONT.parent.parent.glob("*Presc*Data.txt")):
+                shutil.copy(presc, lens_dir / presc.name)
+            row.advanced["WavefrontMap"] = {"path": str(wf_only)}
+            aug = _compute(editor, system, target, cap)
+            if aug is None:
+                failures.append("INTEGRATION: augmented spot map returned None")
+                return (not failures), (failures + notes)
+            if aug.get("field_resolved"):
+                failures.append("INTEGRATION: field-resolution leaked into the sibling-less wavefront-only case")
+            wf = aug.get("wavefront_augmented")
+            aug_rms_um = float(aug["rms_max_mm"]) * 1000.0
+            airy_um = float(aug.get("airy_radius_mm", 0.0)) * 1000.0
+            if not wf:
+                failures.append("INTEGRATION: augmented spec missing wavefront_augmented")
+            if not (1.5 <= aug_rms_um <= 3.0):
+                failures.append(f"INTEGRATION: augmented spot RMS {aug_rms_um:.3g} um not the expected ~2 um wavefront spot")
+            if not (airy_um > 0 and aug_rms_um < airy_um):
+                failures.append(f"INTEGRATION: augmented spot ({aug_rms_um:.3g} um) is not inside the Airy radius ({airy_um:.3g} um)")
+            reason = editor._scene_surrogate_optics_info().get("reason", "")
+            if "wavefront-augmented" not in reason:
+                failures.append(f"INTEGRATION: surrogate reason did not flip ({reason!r})")
+            notes.append(f"integration: ideal {ideal_rms_um:.2g} um -> wavefront-augmented {aug_rms_um:.2g} um (RMS {wf['rms_waves']:.3g} waves), inside Airy {airy_um:.2g} um")
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
     except Exception as exc:  # pragma: no cover - defensive
         failures.append(f"INTEGRATION: raised {exc!r}")
 

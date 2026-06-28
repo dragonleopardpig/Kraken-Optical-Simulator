@@ -9564,6 +9564,36 @@ def phase_169_wavefront_augmented_surrogate(
     return result
 
 
+def phase_170_field_resolved_surrogate(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Field-resolved surrogate (bugs/0178): a vendor's per-field Zemax 'Spot Diagram Data'
+    export (Lens/<id>/spot radius/Mag*.txt) makes the augmented-surrogate spot GROW and
+    ELONGATE with field -- round on-axis, a radial coma/astigmatism ellipse at the edge --
+    instead of the on-axis OPD blob riding every field uniformly. The display-free guard pins
+    the parse (RMS radius 1.3->7.4 um, radial elongation that rotates with azimuth) and the
+    integration on the real MV-150 + Lens/15056 data (auto-detected spot-radius sibling, the
+    spec marked field_resolved, per-field RMS varying, the verdict flipped to 'field-resolved').
+    """
+    result = PhaseResult(
+        name="Phase 170: field-resolved surrogate -- spot grows + elongates with field from Zemax spot data (0178)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_field_resolved_surrogate import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"field-resolved-surrogate guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_checks"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("field-resolved-surrogate phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9779,6 +9809,7 @@ def main() -> int:
             phase_167_snap_detector_best_focus,
             phase_168_zemax_wavefront,
             phase_169_wavefront_augmented_surrogate,
+            phase_170_field_resolved_surrogate,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -2947,6 +2947,7 @@ class ThreeDSceneToolsMixin:
         # measured wavefront) instead of the ideal ~0 point -- the real blob lands inside the
         # Airy circle. The OPD is on-axis only, so the same blob rides every field.
         wavefront_augmented = None
+        field_resolved = None
         wf_path = self._surrogate_wavefront_map_path()
         if wf_path:
             wf = self._wavefront_spot_for_surrogate(wf_path)
@@ -2958,6 +2959,22 @@ class ThreeDSceneToolsMixin:
                 if wf.get("airy_radius_mm"):
                     airy_radius_mm = float(wf["airy_radius_mm"])
                 wavefront_augmented = {"rms_um": float(wf["rms_um"]), "rms_waves": float(wf["rms_waves"]), "path": wf_path}
+            # Field-resolved: a per-field Zemax spot-radius sibling makes the spot GROW + ELONGATE
+            # with field (the real coma/astigmatism -- round on-axis, a radial ellipse at the edge),
+            # replacing the on-axis OPD blob that otherwise rides every field uniformly.
+            sr_path = self._surrogate_spot_radius_path(wf_path)
+            fr = self._field_resolved_spot_for_surrogate(sr_path, chief_u, chief_v) if sr_path else None
+            if fr is not None:
+                scatters, rms_radius_mm, recs = fr
+                for i in range(len(chief_u)):
+                    scatter[i] = scatters[i]
+                    rms[i] = float(rms_radius_mm[i])
+                field_resolved = {
+                    "path": sr_path,
+                    "n_fields": len(recs),
+                    "field_max_mm": float(recs[-1]["field_mm"]),
+                    "rms_max_um": float(recs[-1].get("rms_radius_um", 0.0)),
+                }
         spec = build_spot_field_map(
             chief_u, chief_v, rms,
             center=np.asarray(getattr(target, "center_world"), dtype=float),
@@ -2971,6 +2988,8 @@ class ThreeDSceneToolsMixin:
         if spec is not None:
             if wavefront_augmented is not None:
                 spec["wavefront_augmented"] = wavefront_augmented
+            if field_resolved is not None:
+                spec["field_resolved"] = field_resolved
             if on_axis_rays is not None:
                 shift = self._spot_best_focus_shift(*on_axis_rays)
                 if shift is not None:
@@ -3029,11 +3048,16 @@ class ThreeDSceneToolsMixin:
         except Exception:
             return {"is_surrogate": False, "ideal_lens_count": 0, "blackbox_count": 0, "reason": "", "wavefront_augmented": False}
         info["wavefront_augmented"] = False
+        info["field_resolved"] = False
         if info.get("is_surrogate"):
             rms = self._surrogate_wavefront_rms_waves()
             if rms is not None:
                 info["wavefront_augmented"] = True
                 info["reason"] = f"wavefront-augmented (Zemax OPD, RMS {rms:.3g}λ, on-axis)"
+                wf_path = self._surrogate_wavefront_map_path()
+                if wf_path and self._surrogate_spot_radius_path(wf_path):
+                    info["field_resolved"] = True
+                    info["reason"] = "field-resolved (Zemax OPD on-axis + per-field spot data)"
         return info
 
     # ------------------------------------------------------------------
@@ -3086,6 +3110,50 @@ class ThreeDSceneToolsMixin:
         except Exception:
             pass
         return None
+
+    def _surrogate_spot_radius_path(self, wavefront_path):
+        """The per-field Zemax spot-radius export beside the wavefront map (same ``Lens/<id>/``
+        folder, ``spot radius/<same name>``), or None -- the source of the field-dependent spot
+        sizes (RMS sagittal/tangential per field)."""
+        from pathlib import Path
+
+        if not wavefront_path:
+            return None
+        try:
+            wf = Path(str(wavefront_path))
+            cand = wf.parent.parent / "spot radius" / wf.name
+            if cand.exists():
+                return str(cand)
+            sibling = wf.parent.parent / "spot radius"
+            if sibling.is_dir():
+                for match in sorted(sibling.glob(wf.stem + "*.txt")):
+                    return str(match)
+        except Exception:
+            return None
+        return None
+
+    def _field_resolved_spot_for_surrogate(self, path, chief_u, chief_v):
+        """Per-field aberration scatters from the Zemax spot-radius export at ``path``, evaluated
+        at the spot-map chief positions. Returns ``(scatters, rms_radius_mm, records)`` or None.
+        Cheap (interpolation only) so it runs inside the already-signature-cached spec compute."""
+        if not path:
+            return None
+        try:
+            from KrakenOS.UI.services.zemax_field_spot import field_resolved_scatter, parse_zemax_spot_radius
+            records = parse_zemax_spot_radius(path)
+            if not records:
+                return None
+            out = field_resolved_scatter(chief_u, chief_v, records)
+            if out is None:
+                return None
+            scatters, rms_radius_mm = out
+            return scatters, rms_radius_mm, records
+        except Exception as exc:  # pragma: no cover - defensive
+            try:
+                self.append_debug(f"Field-resolved surrogate failed: {exc}")
+            except Exception:
+                pass
+            return None
 
     def _wavefront_spot_for_surrogate(self, path):
         """Parse + cache the Zemax OPD map at ``path`` and return the real geometric spot it

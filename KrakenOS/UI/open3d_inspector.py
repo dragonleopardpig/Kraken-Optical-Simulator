@@ -11806,8 +11806,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 # OPD map is attached the surrogate is wavefront-augmented (real spot).
                 surrogate_note = ""
                 wf_aug = spec.get("wavefront_augmented")
+                field_res = spec.get("field_resolved")
                 try:
-                    if wf_aug:
+                    if field_res:
+                        # Per-field Zemax spot data -> the real coma/astigmatism grows with field.
+                        surrogate_note = (
+                            f"\n✓ Field-resolved surrogate (Zemax per-field spot data — real coma/astig, "
+                            f"RMS to {float(field_res.get('rms_max_um', 0.0)):.1f} µm at edge)"
+                        )
+                    elif wf_aug:
                         surrogate_note = (
                             f"\n✓ Wavefront-augmented surrogate (Zemax OPD, RMS {float(wf_aug.get('rms_waves', 0.0)):.3g}λ, on-axis)"
                         )
