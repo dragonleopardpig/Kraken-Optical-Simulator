@@ -110,6 +110,13 @@ def run_checks() -> "tuple[bool, list[str]]":
                 f"FAIL: Sensor label is not on the sensor's vertical side -- top(+Y)={along_top:.2f} mm, "
                 f"side(-X)={along_side:.2f} mm (want side >> top: beside the right edge, not above it)"
             )
+        # ...and it must HUG the right edge (half-width), not float out at the corner (half-diagonal):
+        # the diagonal radius sat it ~5 mm off the edge (user: "should be JUST beside the orange square").
+        if along_side >= m.sensor_half_diagonal:
+            failures.append(
+                f"FAIL: Sensor label floats off the edge -- side(-X)={along_side:.2f} mm >= half-diagonal "
+                f"{m.sensor_half_diagonal:.2f} mm (should hug the ~{m.sensor_half_width:.1f} mm right edge)"
+            )
 
     # 6) an infinite-conjugate object draws no FOV label (object plane has no rect).
     _, inf_fov = _fov_label(m, finite=False)

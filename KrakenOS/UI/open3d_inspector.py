@@ -11785,11 +11785,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     img_radius = float(self.editor._image_circle_radius_value() or 0.0)
                 except Exception:
                     img_radius = 0.0
-                vertical_lift = max(img_radius * 0.12, float(scene_radius) * 0.01)
+                # Size the clearance to the IMAGE CIRCLE, not the scene: the ray bundle to a finite
+                # object inflates scene_radius to hundreds of mm, so scene_radius*0.01 floated the
+                # legend up to the screen top (user: "Spot text too far away; bring it just above the
+                # outermost light-blue [image] circle"). A small image-radius lift hugs the top spot.
+                vertical_lift = max(img_radius * 0.05, 0.5)
                 anchor = (
                     anchor
                     + np.array([0.0, 1.0, 0.0]) * vertical_lift  # small screen-up clearance over the top spot
-                    + np.asarray(spec["normal"], dtype=float) * max(float(scene_radius) * 0.01, 0.4)
+                    + np.asarray(spec["normal"], dtype=float) * max(img_radius * 0.05, 0.4)
                 )
                 mag = float(spec.get("magnification", 1.0))
                 rms_lo = float(spec.get("rms_min_mm", 0.0)) * 1000.0
