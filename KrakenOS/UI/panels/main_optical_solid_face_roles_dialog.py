@@ -19,6 +19,101 @@ def _layout_module():
     return layout_editor_module
 
 
+def _open_face_coating_table_editor(parent, layout_module, initial_table, initial_met, on_apply):
+    """A focused per-face coating-table editor: pick a shared preset OR hand-edit the
+    ``[R, A, W, THETA]`` table (the same shape + ``COATING_PRESETS`` library the 2D "Coating..."
+    editor uses), validate, and hand the result to ``on_apply(table, coating_met)``. Decoupled
+    from any surface row, so a promoted-solid FACE can carry its own custom coating that the
+    non-sequential trace applies through ``CoatingFun``."""
+    import ast
+    from pprint import pformat
+
+    presets = dict(getattr(layout_module, "COATING_PRESETS", {}) or {})
+    window = tk.Toplevel(parent)
+    window.withdraw()
+    window.title("Face coating table")
+    window.transient(parent)
+    window.columnconfigure(0, weight=1)
+    window.rowconfigure(1, weight=1)
+
+    header = ttk.Frame(window, padding=(10, 10, 10, 4))
+    header.grid(row=0, column=0, sticky="ew")
+    header.columnconfigure(1, weight=1)
+    ttk.Label(header, text="Preset").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=3)
+    preset_var = tk.StringVar(master=window, value="Custom")
+    preset_menu = ttk.Combobox(
+        header, textvariable=preset_var,
+        values=("Custom",) + tuple(presets.keys()), state="readonly", width=28,
+    )
+    preset_menu.grid(row=0, column=1, sticky="w", pady=3)
+    ttk.Label(
+        header,
+        text="Coating = [R, A, W, THETA]. R/A rows follow THETA; columns follow wavelength.",
+        foreground="#5f6b7a",
+    ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(5, 0))
+
+    body = ttk.Frame(window, padding=(10, 4, 10, 8))
+    body.grid(row=1, column=0, sticky="nsew")
+    body.columnconfigure(1, weight=1)
+    body.rowconfigure(0, weight=1)
+    ttk.Label(body, text="Coating table").grid(row=0, column=0, sticky="nw", padx=(0, 8), pady=3)
+    table_text = tk.Text(body, height=10, wrap="none")
+    table_text.insert("1.0", pformat(list(initial_table) if initial_table else [[], [], [], []], width=100))
+    table_text.grid(row=0, column=1, sticky="nsew", pady=3)
+    scroll = ttk.Scrollbar(body, orient="vertical", command=table_text.yview)
+    scroll.grid(row=0, column=2, sticky="ns")
+    table_text.configure(yscrollcommand=scroll.set)
+    ttk.Label(body, text="CoatingMet").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(6, 0))
+    met_var = tk.StringVar(master=window, value=str(int(initial_met or 0)))
+    ttk.Entry(body, textvariable=met_var, width=12).grid(row=1, column=1, sticky="w", pady=(6, 0))
+
+    def _use_preset(_event=None):
+        name = preset_var.get()
+        if name in presets:
+            table_text.delete("1.0", "end")
+            table_text.insert("1.0", pformat(presets[name], width=100))
+    preset_menu.bind("<<ComboboxSelected>>", _use_preset)
+
+    footer = ttk.Frame(window, padding=(10, 0, 10, 10))
+    footer.grid(row=2, column=0, sticky="ew")
+
+    def _apply():
+        from KrakenOS.UI.optical_solid_metadata import normalize_optical_solid_face_coating_table
+        from KrakenOS.UI.services.advanced_surface_validation import _validate_coating_met, _validate_coating_table
+        try:
+            table = ast.literal_eval(table_text.get("1.0", "end").strip() or "[[], [], [], []]")
+        except Exception as exc:
+            messagebox.showerror("Face coating", f"Could not parse the coating table:\n\n{exc}", parent=window)
+            return
+        try:
+            met = int(float(str(met_var.get()).strip() or "0"))
+        except Exception:
+            messagebox.showerror("Face coating", "CoatingMet must be an integer metal index.", parent=window)
+            return
+        errors = list(_validate_coating_table(table)) + list(_validate_coating_met(met))
+        if errors:
+            messagebox.showerror("Face coating", "Invalid coating:\n\n" + "\n".join(errors), parent=window)
+            return
+        normalized = normalize_optical_solid_face_coating_table(table)
+        if not normalized:
+            messagebox.showerror(
+                "Face coating",
+                "An empty / clear table is not a custom coating. Pick a named preset instead, or "
+                "leave the coating blank for no per-face coating.",
+                parent=window,
+            )
+            return
+        on_apply(normalized, met)
+        window.destroy()
+
+    ttk.Button(footer, text="Apply", command=_apply).pack(side="right")
+    ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
+    window.update_idletasks()
+    window.deiconify()
+    window.lift()
+    window.focus_force()
+
+
 class MainOpticalSolidFaceRolesDialog:
     """Own the large optical-solid face-role editor while delegating state to the editor."""
 
@@ -269,6 +364,9 @@ class MainOpticalSolidFaceRolesDialog:
         aperture_var = tk.StringVar(master=window, value='0')
         material_var = tk.StringVar(master=window, value=str(row.glass or ''))
         coating_var = tk.StringVar(master=window, value='')
+        # Per-face CUSTOM coating table (the advanced "Edit table..." editor). When set it wins
+        # over the preset NAME in coating_var; picking a preset from the dropdown clears it.
+        face_coating_state: dict[str, object] = {'table': None, 'met': 0}
         flip_var = tk.BooleanVar(master=window, value=False)
         notes_var = tk.StringVar(master=window, value='')
         validation_var = tk.StringVar(master=window, value='Select a face candidate, assign a 2D side/function, then Apply.')
@@ -342,8 +440,32 @@ class MainOpticalSolidFaceRolesDialog:
         # (le.COATING_PRESET_NAMES); a chosen preset is resolved per-face into the KrakenOS
         # Coating table the non-seq trace applies via CoatingFun. Editable so legacy free-text
         # coatings still load (they read as a note -- no preset -> no per-face coating physics).
-        coating_entry = ttk.Combobox(editor, textvariable=coating_var, values=le.COATING_PRESET_NAMES, width=16)
-        coating_entry.grid(row=10, column=1, sticky='ew', pady=(0, 6))
+        coating_frame = ttk.Frame(editor)
+        coating_frame.grid(row=10, column=1, sticky='ew', pady=(0, 6))
+        coating_frame.columnconfigure(0, weight=1)
+        coating_entry = ttk.Combobox(
+            coating_frame, textvariable=coating_var,
+            values=('Custom',) + tuple(le.COATING_PRESET_NAMES), width=13,
+        )
+        coating_entry.grid(row=0, column=0, sticky='ew')
+
+        def _on_coating_preset_chosen(_event=None) -> None:
+            # Choosing a NAMED preset drops any custom table (the name resolves at build instead).
+            if str(coating_var.get()).strip() != 'Custom':
+                face_coating_state['table'] = None
+                face_coating_state['met'] = 0
+        coating_entry.bind('<<ComboboxSelected>>', _on_coating_preset_chosen)
+
+        def _edit_face_coating_table() -> None:
+            def _apply(table, met) -> None:
+                face_coating_state['table'] = table
+                face_coating_state['met'] = int(met)
+                coating_var.set('Custom')
+            _open_face_coating_table_editor(
+                window, le, face_coating_state.get('table'), face_coating_state.get('met', 0), _apply,
+            )
+        coating_table_button = ttk.Button(coating_frame, text='Edit table…', width=11, command=_edit_face_coating_table)
+        coating_table_button.grid(row=0, column=1, padx=(4, 0))
         flip_check = ttk.Checkbutton(editor, text='Flip normal for UI intent', variable=flip_var)
         flip_check.grid(row=11, column=0, columnspan=2, sticky='w', pady=(0, 8))
         ttk.Label(editor, text='Notes').grid(row=12, column=0, sticky='w', pady=(0, 2))
@@ -1348,6 +1470,11 @@ class MainOpticalSolidFaceRolesDialog:
                 aperture_var.set(f"{float(record.get('clear_aperture_mm', 0.0) or 0.0):.6g}")
                 material_var.set(str(record.get('material', '') or ''))
                 coating_var.set(str(record.get('coating', '') or ''))
+                face_coating_state['table'] = record.get('coating_table') or None
+                try:
+                    face_coating_state['met'] = int(record.get('coating_met', 0) or 0)
+                except Exception:
+                    face_coating_state['met'] = 0
                 flip_var.set(bool(record.get('flip_normal', False)))
                 notes_var.set(str(record.get('notes', '') or ''))
             finally:
@@ -1393,7 +1520,7 @@ class MainOpticalSolidFaceRolesDialog:
                 validation_var.set('Clear aperture cannot be negative.')
                 return None
             role = le._legacy_role_from_optical_solid_face_function(function)
-            return {'role': role, 'function': function, 'side_2d': side, 'port_role': port_role, 'fit_reference': le._normalize_optical_solid_face_fit_reference(fit_reference_var.get()), 'split_ratio': split, 'loss': loss, 'phase_deg': phase, 'clear_aperture_mm': aperture, 'input_offset_u_mm': input_offset_u, 'input_offset_v_mm': input_offset_v, 'material': str(material_var.get()).strip(), 'coating': str(coating_var.get()).strip(), 'flip_normal': bool(flip_var.get()), 'notes': str(notes_var.get()).strip()}
+            return {'role': role, 'function': function, 'side_2d': side, 'port_role': port_role, 'fit_reference': le._normalize_optical_solid_face_fit_reference(fit_reference_var.get()), 'split_ratio': split, 'loss': loss, 'phase_deg': phase, 'clear_aperture_mm': aperture, 'input_offset_u_mm': input_offset_u, 'input_offset_v_mm': input_offset_v, 'material': str(material_var.get()).strip(), 'coating': str(coating_var.get()).strip(), 'coating_table': (face_coating_state.get('table') or []), 'coating_met': int(face_coating_state.get('met', 0) or 0), 'flip_normal': bool(flip_var.get()), 'notes': str(notes_var.get()).strip()}
 
         def apply_current_form_to_selection(*, quiet: bool=False) -> bool:
             indices = selected_record_indices()

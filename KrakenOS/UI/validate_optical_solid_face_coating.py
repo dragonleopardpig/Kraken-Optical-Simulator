@@ -18,6 +18,10 @@ Checks (display-free; the trace is numpy, no display needed):
      table reached CoatingFun -- and the coated reflectance lands near the table's ~0.94..0.96
      (vs ~0.04 bare). This is the merge's whole point.
   D. ADDITIVE: the uncoated trace is the baseline; the coating changes the energy ONLY when set.
+  E. CUSTOM TABLE: a face's own ``coating_table`` (the advanced "Edit table..." editor) round-trips
+     the face-record schema and WINS over the preset name; an empty table is not persisted.
+  F. UI WIRING (source check): the face dialog exposes the per-face table editor and persists
+     ``coating_table``/``coating_met`` into the face record.
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_optical_solid_face_coating
@@ -142,6 +146,50 @@ def run_checks() -> "tuple[bool, list[str]]":
         f"physics: bare RP max {float(np.max(rp_bare)):.3f} -> coated max {float(np.max(rp_coat)):.3f} "
         f"(changed={changed}, near-table={coated_near_table})"
     )
+
+    # E) CUSTOM per-face table (advanced "Edit table..." editor): it round-trips the face-record
+    #    schema, WINS over the preset name in the resolver, and an empty table is not persisted
+    #    (falls back to the name). The build map + engine then apply it via the same path as B/C.
+    try:
+        from KrakenOS.UI.layout_editor import resolve_optical_solid_face_coating_for_face
+        from KrakenOS.UI.optical_solid_metadata import (
+            normalize_optical_solid_face_coating_table,
+            normalize_optical_solid_face_record,
+        )
+        custom = [[[0.5, 0.5, 0.5]], [[0.0, 0.0, 0.0]], [0.45, 0.55, 0.65], [0.0]]
+        norm_custom = normalize_optical_solid_face_coating_table(custom)
+        rec = normalize_optical_solid_face_record(
+            {"face_id": "F1", "coating": _COATING, "coating_table": custom, "coating_met": 2}
+        )
+        if rec.get("coating_table") != norm_custom:
+            failures.append("E: a custom coating_table does not round-trip the face-record schema")
+        if resolve_optical_solid_face_coating_for_face(rec) != (norm_custom, 2):
+            failures.append("E: a custom coating_table does not win over the preset name in the resolver")
+        rec_clear = normalize_optical_solid_face_record(
+            {"face_id": "F2", "coating": _COATING, "coating_table": [[], [], [], []]}
+        )
+        if "coating_table" in rec_clear:
+            failures.append("E: an empty custom table is wrongly persisted on the face record")
+        if resolve_optical_solid_face_coating_for_face(rec_clear) != (COATING_PRESETS[_COATING], 0):
+            failures.append("E: with an empty custom table the resolver does not fall back to the preset name")
+        notes.append("custom: a per-face coating_table round-trips + wins over the preset name")
+    except Exception as exc:
+        failures.append(f"E: custom-table check raised {exc!r}")
+
+    # F) UI wiring (source-structure -- the harness has no display to drive the Tk dialog): the
+    #    face dialog exposes the custom-table editor and persists coating_table/coating_met.
+    try:
+        import inspect
+
+        from KrakenOS.UI.panels import main_optical_solid_face_roles_dialog as face_dialog
+        dialog_src = inspect.getsource(face_dialog)
+        if "_open_face_coating_table_editor" not in dialog_src or "Edit table" not in dialog_src:
+            failures.append("F: the face dialog exposes no per-face coating-table editor / 'Edit table' button")
+        if "'coating_table'" not in dialog_src or "'coating_met'" not in dialog_src:
+            failures.append("F: the face dialog does not persist coating_table/coating_met into the face record")
+    except Exception as exc:
+        failures.append(f"F: UI-wiring check raised {exc!r}")
+
     return (not failures), (failures + notes)
 
 

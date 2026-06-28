@@ -763,6 +763,19 @@ def resolve_optical_solid_face_coating(coating_name):
         return None
     return (table, 0)
 
+
+def resolve_optical_solid_face_coating_for_face(face):
+    """Resolve a promoted-solid FACE record to the KrakenOS ``(Coating table, CoatingMet)`` the
+    non-seq trace applies. A CUSTOM per-face table (authored in the face coating-table editor,
+    persisted on ``face['coating_table']``) WINS over the named preset; else the shared-library
+    preset name (``resolve_optical_solid_face_coating``); else None (no per-face coating)."""
+    if isinstance(face, dict):
+        table = face.get("coating_table")
+        if table:  # the face-record normaliser only keeps a valid, non-empty custom table
+            return (table, int(face.get("coating_met", 0) or 0))
+        return resolve_optical_solid_face_coating(face.get("coating"))
+    return resolve_optical_solid_face_coating(face)
+
 from KrakenOS.UI.services.beam_scatter_metadata import (
     BEAM_SPLITTER_ADVANCED_ATTR,
     DIFFUSE_SCATTER_ADVANCED_ATTR,
@@ -2016,7 +2029,7 @@ def _build_system_from_specs(
             face_coatings: dict[str, tuple] = {}
             for face in normalize_optical_solid_face_metadata(solid_faces).get("faces", []) or []:
                 face_id = str(face.get("face_id", "") or "").strip()
-                resolved = resolve_optical_solid_face_coating(face.get("coating"))
+                resolved = resolve_optical_solid_face_coating_for_face(face)
                 if face_id and resolved is not None:
                     face_coatings[face_id] = resolved
             if face_coatings:

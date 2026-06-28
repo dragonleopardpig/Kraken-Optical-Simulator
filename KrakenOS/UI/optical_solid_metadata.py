@@ -335,6 +335,29 @@ def optical_solid_face_record_from_candidate(candidate) -> dict[str, object]:
     }
 
 
+def normalize_optical_solid_face_coating_table(value: object) -> list:
+    """A per-face CUSTOM coating table is a ``[R, A, W, THETA]`` structure (R/A are
+    angle x wavelength reflectance/absorptance grids, W the wavelengths, THETA the angles) -- the
+    same shape the 2D Coating editor edits. Coerce to plain nested lists, or ``[]`` for an empty
+    / "clear" / malformed table (so it round-trips a .py save cleanly and reads as "no custom
+    table" -- the face's preset-name coating then applies instead)."""
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        return []
+
+    def _coerce(item: object) -> object:
+        if isinstance(item, (list, tuple)):
+            return [_coerce(child) for child in item]
+        try:
+            return float(item)
+        except Exception:
+            return item
+
+    table = [_coerce(item) for item in value]
+    if not table[0] or not table[2] or not table[3]:
+        return []  # no reflectance grid / wavelengths / angles -> not a real coating
+    return table
+
+
 def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, object]:
     role = str(record.get("role", OPTICAL_SOLID_FACE_ROLE_DEFAULT) or OPTICAL_SOLID_FACE_ROLE_DEFAULT).strip()
     if role not in OPTICAL_SOLID_FACE_ROLE_VALUES:
@@ -391,6 +414,12 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
         "assignment_source": str(record.get("assignment_source", "") or "").strip(),
         "notes": str(record.get("notes", "") or "").strip(),
     }
+    # A custom per-face coating table is persisted ONLY when authored (keeps the save clean for
+    # the common preset-name / uncoated faces). When present it wins over the preset name.
+    coating_table = normalize_optical_solid_face_coating_table(record.get("coating_table"))
+    if coating_table:
+        normalized["coating_table"] = coating_table
+        normalized["coating_met"] = int(round(float_or_default(record.get("coating_met"), 0.0)))
     for key in (
         "component_face_id",
         "source_face_id",

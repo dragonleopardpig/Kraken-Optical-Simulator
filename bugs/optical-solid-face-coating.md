@@ -12,11 +12,17 @@ non-sequential trace applies it through `CoatingFun` — the same physics as a s
 ## Implementation (three layers)
 
 1. **UI** (`main_optical_solid_face_roles_dialog.py`): the per-face "Coating" entry is a combobox
-   over the shared `le.COATING_PRESET_NAMES` (editable — legacy free-text still loads).
+   over the shared `le.COATING_PRESET_NAMES` (editable — legacy free-text still loads), plus an
+   **"Edit table…"** button that opens a focused coating-table editor (`_open_face_coating_table_editor`
+   — the same `[R,A,W,THETA]` shape + `COATING_PRESETS` library + `_validate_coating_table` the 2D
+   editor uses, but value+callback, decoupled from a row) for a CUSTOM per-face table.
 2. **Resolver + build** (`layout_editor.py`): `resolve_optical_solid_face_coating(name)` maps a
-   shared preset key → `(Coating table, CoatingMet=0)` (None for clear/empty/free-text). The
-   system build resolves each promoted-solid face and stashes
-   `surface.OpticalSolidFaceCoatingTables = {face_id: (table, met)}` (transient, never persisted).
+   shared preset key → `(Coating table, CoatingMet=0)` (None for clear/empty/free-text);
+   `resolve_optical_solid_face_coating_for_face(face)` prefers a face's own **custom**
+   `coating_table` (persisted on the face record via `normalize_optical_solid_face_coating_table`,
+   only when authored — no save bloat) over the preset name. The system build resolves each
+   promoted-solid face and stashes `surface.OpticalSolidFaceCoatingTables = {face_id: (table, met)}`
+   (transient, never persisted).
 3. **Engine** (`KrakenSys.py`): `__OpticalSolidFaceInteraction` adds `override["coating_table"]`/
    `["coating_met"]` from that map by `face_id`; `__CollectData`'s energy block
    `if (self.val == 1):` uses the per-face table in `CoatingFun` when present, else the surface
