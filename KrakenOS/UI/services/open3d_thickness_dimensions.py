@@ -1433,6 +1433,29 @@ class Open3DThicknessDimensionService:
         row = self.editor.rows[int(row_index)]
         return f"S{int(row_index)}: {row.name or row.surface or 'Surface'}"
 
+    def _solid_slide_compensation_row(self, row_index: int):
+        """If the row AFTER ``row_index`` is a promoted optical solid, return the air-gap row right
+        after that solid whose thickness compensates a slide of this 'gap to solid' dimension -- so
+        editing it moves ONLY the solid and the downstream surrogate + detector (and the focus) stay
+        fixed. None when the next row isn't a solid, or there's no editable air gap after it (then
+        the plain cumulative thickness edit + QE is used)."""
+        rows = getattr(self.editor, "rows", None) or []
+        solid = int(row_index) + 1
+        if not (0 <= solid < len(rows)):
+            return None
+        try:
+            if not self._row_optical_solid_stl(rows[solid]):
+                return None
+        except Exception:
+            return None
+        cand = solid + 1  # the air gap immediately after the solid's exit
+        if not (0 <= cand < len(rows) - 1):
+            return None  # need a non-terminal gap to compensate into
+        glass = str(getattr(rows[cand], "glass", "") or "").strip().upper()
+        if glass not in ("", "AIR"):
+            return None  # solid is cemented to the next element -- don't disturb a glass thickness
+        return cand
+
     def apply_dimension_value(self, row_index: int, next_value: float) -> bool:
         row_index = int(row_index)
         if not (0 <= row_index < len(self.editor.rows) - 1):
@@ -1472,28 +1495,51 @@ class Open3DThicknessDimensionService:
                     "(end not on an optical surface). Re-pick onto a surface to move it."
                 )
             return applied
+        # flag_20260628_203139: when the NEXT row is a promoted optical solid this dimension is the
+        # "gap to solid". A plain thickness change shifts the solid AND the whole downstream
+        # (surrogate + detector) rigidly; with the object fixed that shortens the object->lens
+        # conjugate and DEFOCUSES the detector. Slide ONLY the solid -- change this gap and
+        # COMPENSATE the air gap right after the solid -- so the downstream + the focus stay put,
+        # and skip the Quick-Estimation re-solve (no conjugate change to chase).
+        comp_row = self._solid_slide_compensation_row(row_index)
+        old_thickness = float(self.editor.rows[row_index].thickness)
+        delta = float(next_value) - old_thickness
         self.editor._begin_history_capture()
         self.editor.rows[row_index].thickness = next_value
-        # Quick Estimation: setting one conjugate gap re-solves the other so the
-        # image stays focused on the pinned sensor; FOV updates from the new
-        # magnification. The dragged/typed gap becomes the independent variable.
+        slid = False
+        if comp_row is not None:
+            comp_new = float(self.editor.rows[comp_row].thickness) - delta
+            if np.isfinite(comp_new) and comp_new >= 0.0:
+                self.editor.rows[comp_row].thickness = comp_new
+                slid = True
+        # Quick Estimation: setting one conjugate gap re-solves the other so the image stays
+        # focused on the pinned sensor; FOV updates from the new magnification. Skipped for a solid
+        # slide (the conjugate is held fixed by the compensation above).
         qe_note = ""
-        try:
-            qe = self.inspector._quick_estimation_service()
-            if qe.is_enabled():
-                _ok, qe_note = qe.solve_dependent(int(row_index))
-        except Exception as exc:  # pragma: no cover - defensive
-            self.editor.append_debug(f"Quick Estimation solve skipped: {exc}")
-            qe_note = ""
+        if not slid:
+            try:
+                qe = self.inspector._quick_estimation_service()
+                if qe.is_enabled():
+                    _ok, qe_note = qe.solve_dependent(int(row_index))
+            except Exception as exc:  # pragma: no cover - defensive
+                self.editor.append_debug(f"Quick Estimation solve skipped: {exc}")
+                qe_note = ""
         self.editor._sync_table()
         self.editor._select_table_row(row_index)
         self.editor._commit_history_capture()
         self.editor._invalidate_preview_scene_trace()
         self.editor._sync_trace_state_badge()
-        base_msg = f"S{row_index} Thickness set to {next_value:.6g} mm."
-        if qe_note:
-            base_msg = f"{base_msg} {qe_note}"
-        self.editor.status_var.set(f"{base_msg} Other table thickness values are unchanged.")
+        if slid:
+            base_msg = (
+                f"S{row_index} -> {next_value:.6g} mm: slid the solid; gap S{comp_row} "
+                "compensated so the downstream surrogate + detector (and focus) stay put."
+            )
+            self.editor.status_var.set(base_msg)
+        else:
+            base_msg = f"S{row_index} Thickness set to {next_value:.6g} mm."
+            if qe_note:
+                base_msg = f"{base_msg} {qe_note}"
+            self.editor.status_var.set(f"{base_msg} Other table thickness values are unchanged.")
         self.inspector.status_var.set(base_msg)
         self.inspector.refresh_from_editor(force_retrace=True)
         try:
