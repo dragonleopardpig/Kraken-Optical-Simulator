@@ -64,6 +64,12 @@ GROUP_2_TO_REAR = FRONT_VERTEX_TO_REAR_VERTEX - GROUP_2_Z
 MIN_F_NUMBER = 4.5
 STOP_DIAMETER = EFFECTIVE_FOCAL_LENGTH / MIN_F_NUMBER
 MAX_SENSOR_DIAMETER = 68.0
+# Datasheet clear apertures (通光口径): front Φ29.0, back Φ27.26. The optical-element
+# rows are drawn at these real apertures (not a generic placeholder) so the discs sit
+# inside the barrel glass and never exceed the STEP body -- in particular the rear
+# element must not poke past the necked-down V-mount (flag 20260629_205740).
+FRONT_CLEAR_APERTURE = 29.0
+REAR_CLEAR_APERTURE = 27.26
 
 # First-order finite-conjugate distances measured from the model's first and last
 # optical vertex datums, not from the mechanical barrel shoulders.
@@ -268,7 +274,7 @@ SURFACES = [
         "name": "Front Optical Vertex Datum",
         "rc": 0.0,
         "thickness": GROUP_1_Z,
-        "diameter": 41.0,
+        "diameter": FRONT_CLEAR_APERTURE,
         "glass": "AIR",
     },
     {
@@ -276,7 +282,7 @@ SURFACES = [
         "name": "Blackbox Group 1",
         "rc": GROUP_1_FOCAL_LENGTH,
         "thickness": GROUP_1_TO_STOP,
-        "diameter": 37.0,
+        "diameter": FRONT_CLEAR_APERTURE,
         "glass": "AIR",
     },
     {
@@ -292,7 +298,7 @@ SURFACES = [
         "name": "Blackbox Group 2",
         "rc": GROUP_2_FOCAL_LENGTH,
         "thickness": GROUP_2_TO_REAR,
-        "diameter": 37.0,
+        "diameter": REAR_CLEAR_APERTURE,
         "glass": "AIR",
     },
     {
@@ -300,7 +306,7 @@ SURFACES = [
         "name": "Rear Optical Vertex Datum",
         "rc": 0.0,
         "thickness": REAR_VERTEX_TO_IMAGE_1X,
-        "diameter": 41.0,
+        "diameter": REAR_CLEAR_APERTURE,
         "glass": "AIR",
     },
     {
