@@ -595,6 +595,23 @@ def ray_path_has_diffuse_scatter(path: Any) -> bool:
     return False
 
 
+def ray_paths_have_diffuse_scatter(ray_paths: Any) -> bool:
+    """True when ANY ray path in the scene underwent a diffuse scatter.
+
+    bugs/0184: in a diffuse double-pass scene (the coaxial-LED fold: LED -> beam
+    splitter -> diffuse object -> scatter back -> imaging lens) EVERY synthesized
+    branch detector is noise -- the only real detector is the camera/Image plane.
+    The per-path gates suppress the scatter-token (bugs/0182) and internal-bounce
+    (bugs/0183) ghosts, but a clean single-pass beam-splitter LEAK (the LED light
+    transmitting straight through the cube, branch path ``S1:S1/transmit``) carries
+    neither signature, so it still drew a stray orange parallelogram + crosshairs at
+    the reduced preview ray count (where the deep internal bounces that would extend
+    it into a non-terminal prefix never form). This scene-level flag lets the draw
+    gates suppress ALL branch-detector footprints/planes in such a scene, while a
+    clean (scatter-free) beam splitter keeps both arm detectors (bugs/0090)."""
+    return any(ray_path_has_diffuse_scatter(path) for path in list(ray_paths or []))
+
+
 def ray_path_visible_without_clipping_from_events(path: Any) -> bool:
     """Return whether a ray should display with "Show Clipped Rays" OFF.
 

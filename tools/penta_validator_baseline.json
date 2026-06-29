@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-06-29 (phase 179 branch-detector internal-bounce-clutter guard added; verified standalone, full marathon segfaults under Xvfb)",
+  "generated_at": "2026-06-29 (phase 180 branch-detector leak-clutter guard added; verified standalone, full marathon segfaults under Xvfb)",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -181,7 +181,8 @@
     "176": "pass",
     "177": "pass",
     "178": "pass",
-    "179": "pass"
+    "179": "pass",
+    "180": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -363,6 +364,7 @@
     "176": "folded coaxial area-LED traces LED -> BS reflect -> object -> back -> image",
     "177": "diffuse double-pass shows the global guide only (no stray optical axes)",
     "178": "diffuse double-pass draws no per-scatter branch-detector clutter (2D full-3D)",
-    "179": "beam-splitter internal-bounce draws no branch-detector clutter (2D full-3D)"
+    "179": "beam-splitter internal-bounce draws no branch-detector clutter (2D full-3D)",
+    "180": "diffuse double-pass draws no branch-detector leak clutter (2D full-3D)"
   }
 }

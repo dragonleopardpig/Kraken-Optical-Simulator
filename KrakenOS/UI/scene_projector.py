@@ -23,6 +23,7 @@ from .scene_geometry import (
     ray_path_terminal_event,
     ray_path_terminal_metadata,
     ray_path_terminal_status_from_events,
+    ray_paths_have_diffuse_scatter,
     scene_target_active_dimensions,
     scene_target_active_footprint_polylines,
     scene_target_detector_miss_crosshair_polylines,
@@ -72,17 +73,23 @@ def _target_is_scatter_branch_detector(target) -> bool:
     return _branch_path_has_scatter(metadata.get("branch_path", ""))
 
 
-def _target_branch_detector_draw_suppressed(target) -> bool:
+def _target_branch_detector_draw_suppressed(target, scene_has_diffuse_scatter: bool = False) -> bool:
     """True for a branch detector whose 2-D footprint/crosshair must NOT draw.
 
-    Covers BOTH the bugs/0182 diffuse-scatter leaves and the bugs/0183 beam-splitter
-    internal multi-bounce ghosts. In both cases the detector target is kept (it still
-    feeds detector_planes_for_hard_stop and bounds the rays in 3-D); only the DRAW is
-    gated so the 2-D 'full 3-D' projection does not fill with orange clutter.
+    Covers the bugs/0182 diffuse-scatter leaves and the bugs/0183 beam-splitter
+    internal multi-bounce ghosts (per-path), PLUS bugs/0184: when the whole scene is
+    a diffuse double-pass (``scene_has_diffuse_scatter``) EVERY branch detector is
+    noise -- including a clean single-pass leak like ``S1:S1/transmit`` that carries
+    neither a scatter token nor an internal-bounce signature -- so its draw is gated
+    too. In all cases the detector target is kept (it still feeds
+    detector_planes_for_hard_stop and bounds the rays in 3-D); only the DRAW is gated
+    so the 2-D 'full 3-D' projection does not fill with orange clutter.
     """
     metadata = getattr(target, "metadata", None) or {}
     if metadata.get("target_source") != "branch_detector":
         return False
+    if scene_has_diffuse_scatter:
+        return True
     from KrakenOS.UI.services.branch_detectors import _branch_path_draw_suppressed
 
     return _branch_path_draw_suppressed(metadata.get("branch_path", ""))
@@ -249,8 +256,9 @@ class SceneProjector2D:
 
     def _project_detector_footprints(self, bundle: SceneBundle) -> list[ProjectedCurve2D]:
         projected: list[ProjectedCurve2D] = []
+        scene_scatter = ray_paths_have_diffuse_scatter(getattr(bundle, "ray_paths", []))
         for target in list(getattr(bundle, "targets", []) or []):
-            if _target_branch_detector_draw_suppressed(target):
+            if _target_branch_detector_draw_suppressed(target, scene_scatter):
                 continue
             polylines = scene_target_active_footprint_polylines(target)
             if not polylines:
@@ -281,11 +289,12 @@ class SceneProjector2D:
         return projected
 
     def _project_detector_miss_crosshairs(self, bundle: SceneBundle) -> list[ProjectedCurve2D]:
+        scene_scatter = ray_paths_have_diffuse_scatter(getattr(bundle, "ray_paths", []))
         targets_by_surface = {
             int(getattr(target, "trace_surface")): target
             for target in list(getattr(bundle, "targets", []) or [])
             if getattr(target, "trace_surface", None) is not None
-            and not _target_branch_detector_draw_suppressed(target)
+            and not _target_branch_detector_draw_suppressed(target, scene_scatter)
         }
         projected: list[ProjectedCurve2D] = []
         for path in list(getattr(bundle, "ray_paths", []) or []):

@@ -51,6 +51,7 @@ from .scene_geometry import (
     SceneTarget3D,
     StyleHint,
     SurfaceCurve3D,
+    ray_paths_have_diffuse_scatter,
 )
 from .scene_row_mapping import build_scene_row_mapping
 from ..TraceEvents import TRACE_EVENT_SOURCE_RAYKEEPER, trace_event_to_record
@@ -1022,6 +1023,12 @@ def build_scene_bundle(
             scene_radius=float(max_half) * 2.0,
             branch_camera_sensors=branch_camera_sensors,
         )
+        # bugs/0184: in a diffuse double-pass scene EVERY branch detector is noise
+        # (the only real detector is the camera/Image plane), so gate ALL their draws
+        # -- including a clean single-pass leak (S1:S1/transmit) that survives the
+        # per-path scatter/bounce gates. A clean (scatter-free) beam splitter keeps
+        # both arm planes (bugs/0090).
+        scene_has_diffuse_scatter = ray_paths_have_diffuse_scatter(ray_paths)
         for offset, branch_detector in enumerate(branch_detectors):
             scene_targets.append(
                 branch_detector_scene_target(branch_detector, row_index=100000 + offset)
@@ -1031,7 +1038,10 @@ def build_scene_bundle(
             # (detector_planes_for_hard_stop bounds the otherwise-escaping rays), but we
             # DON'T draw its plane -- dozens of such footprints buried the 2-D 'full 3-D'
             # projection in crisscrossing orange rectangles.
-            if not _branch_path_draw_suppressed(branch_detector.branch_path):
+            if not (
+                scene_has_diffuse_scatter
+                or _branch_path_draw_suppressed(branch_detector.branch_path)
+            ):
                 surface_curves.append(branch_detector_plane_curve(branch_detector))
     except Exception:
         branch_detectors = []

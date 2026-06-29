@@ -9886,6 +9886,43 @@ def phase_179_branch_detector_internal_bounce_clutter(
     return result
 
 
+def phase_180_branch_detector_leak_clutter(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """After 0182 (scatter) and 0183 (internal-bounce) gated their branch detectors, ONE still drew a tilted
+    orange parallelogram + crosshairs in the 2D 'YZ full 3D' view -- but only at the reduced preview ray count
+    (the flag's sampling ray_count was 15, not the live 60). The survivor is the clean single-pass beam-splitter
+    LEAK `branch_path='S1:S1/transmit'` (the LED transmitting straight through the glued cube once and escaping):
+    it carries NEITHER a scatter token (0182) NOR an internal-bounce signature (0183), so both per-path gates
+    pass it. It is ray-count-dependent -- at 60 rays the deep internal bounces extend it into a non-terminal
+    prefix (no detector); at 15 rays it is a terminal leaf (a detector that draws). The fix is a SCENE-LEVEL
+    gate: in a scene with ANY diffuse-scatter path EVERY branch detector is noise (the only real detector is the
+    camera/Image plane), so all branch-detector 2D draws are gated off while each target is KEPT as a ray
+    hard-stop (rays stay bounded). A clean (scatter-free) beam splitter has no scatter path, so the gate is inert
+    and both arms still draw (0090). `validate_open3d_branch_detector_leak_clutter` asserts the scene-scatter
+    primitive, an end-to-end projection (a scatter scene draws 0 footprints yet keeps every target; a clean
+    2-arm BS draws both arms), and the real folded layout at BOTH 15 and 60 rays (hard-stops kept, 0 footprints,
+    bounded 3D ray extent tight).
+    """
+    result = PhaseResult(
+        name="Phase 180: diffuse double-pass draws no branch-detector leak clutter (2D full-3D)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_branch_detector_leak_clutter import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"branch-detector leak-clutter guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("branch-detector leak-clutter phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10111,6 +10148,7 @@ def main() -> int:
             phase_177_optical_axis_scatter_clutter,
             phase_178_branch_detector_scatter_clutter,
             phase_179_branch_detector_internal_bounce_clutter,
+            phase_180_branch_detector_leak_clutter,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
