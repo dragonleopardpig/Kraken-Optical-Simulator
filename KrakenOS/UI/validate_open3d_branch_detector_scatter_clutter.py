@@ -2,23 +2,32 @@
 
 The folded MV-150 coaxial area-LED scene is a diffuse double-pass: the object
 scatter forks one leaf branch per scattered ray (``S3/scatter01..N``). Each leaf
-used to earn its own synthesized branch detector, so the 2-D 'full 3-D'
-projection drew dozens of crisscrossing orange footprint/plane rectangles (one
-``detector_active_footprint`` quad + ``detector_active_center`` crosshairs +
-``image`` plane outline per detector).
+earns its own synthesized branch detector.
 
-``derive_branch_detectors`` now drops any leaf that has passed through a diffuse
-scatter (a non-deterministic branch with no single focus). A scatter-free split
-(a genuine beam splitter) keeps every arm, so clean beam-splitter scenes are
-untouched.
+bugs/0182 has two faces, and the corrective fix has to satisfy BOTH at once:
 
-Two checks:
+* 2-D plaid -- if every scatter detector DRAWS its orange footprint + dark plane,
+  the 2-D 'full 3-D' projection is buried under dozens of crisscrossing
+  rectangles. So the DRAW of a scatter-branch detector is gated off (in
+  scene_builder for the plane curve, in scene_projector for the footprint).
+* 3-D starburst -- those same detectors are also ray HARD-STOPS
+  (``detector_planes_for_hard_stop`` -> ``bounded_ray_points_for_scene_display``).
+  Dropping them entirely (the first 0182 attempt) let the non-deterministic
+  scatter rays fly to the scene radius -> a starburst that blew the visible
+  bounds out to x[-235,592] y[-342,286]. So the detectors are KEPT (just not
+  drawn); the rays stay bounded.
 
-* Unit -- ``derive_branch_detectors`` directly: a 3-way scatter fork yields NO
-  scatter detector (at most the clean straight-through leak); a clean 2-arm beam
-  splitter still yields both arm detectors.
-* Real scene -- the folded coaxial-LED bundle: 0 branch detectors carry a scatter
-  branch path, and the total branch-detector count collapses from dozens to <=2.
+Checks:
+
+* Unit -- ``derive_branch_detectors`` + ``_branch_path_has_scatter``: a scatter
+  fork still yields a detector per scatter leaf (the hard-stops), each correctly
+  classified as scatter (so it won't draw); the clean straight-through leak is a
+  detector that is NOT scatter-classified (so it still draws). A clean 2-arm beam
+  splitter yields both arm detectors, neither scatter-classified.
+* Real scene -- the folded coaxial-LED bundle: (a) the bounded 3-D ray extent is
+  TIGHT (hard-stops still bound the scatter rays); (b) the 2-D projection draws
+  only a couple of detector curves (no plaid); (c) the branch-detector targets
+  are still numerous (the hard-stops survived).
 
 Run headless: ``python -m KrakenOS.UI.validate_open3d_branch_detector_scatter_clutter``
 """
@@ -28,7 +37,14 @@ import os
 
 import numpy as np
 
-from KrakenOS.UI.scene_geometry import RayPath3D
+from KrakenOS.UI.scene_geometry import RayPath3D, ray_path_terminal_status_from_events
+from KrakenOS.UI.scene_projector import (
+    SceneProjector2D,
+    _target_is_scatter_branch_detector,
+    bounded_ray_points_for_scene_display,
+    detector_planes_for_hard_stop,
+    scene_display_center_radius,
+)
 from KrakenOS.UI.services.branch_detectors import (
     _branch_path_has_scatter,
     derive_branch_detectors,
@@ -36,11 +52,14 @@ from KrakenOS.UI.services.branch_detectors import (
 
 os.environ.setdefault("KRAKENOS_HEADLESS", "1")
 
+# A scatter-bounded folded scene stays well inside this half-extent in display
+# X/Y; the starburst regression blew it past 200 (and Y past 460).
+_BOUNDED_XY_LIMIT = 150.0
+
 
 def _ray(branch_path: str, origin, direction, *, ray_index: int) -> RayPath3D:
     o = np.asarray(origin, dtype=float)
     d = np.asarray(direction, dtype=float)
-    pts = np.vstack((o, o + 0.0 * d, o + 40.0 * d))  # >=2 distinct points -> a real exit segment
     return RayPath3D(
         ray_index=int(ray_index),
         points_world=np.asarray((o, o + 40.0 * d), dtype=float),
@@ -49,12 +68,11 @@ def _ray(branch_path: str, origin, direction, *, ray_index: int) -> RayPath3D:
     )
 
 
-# --- Part 1: unit -- derive_branch_detectors ----------------------------------
+# --- Part 1: unit -- derive_branch_detectors + the scatter predicate ----------
 
 def _scatter_fork_paths() -> list[RayPath3D]:
     """A diffuse fork: the reflect arm hits the object then scatters three ways,
-    plus a clean straight-through transmit leak. Each scatter leaf points off in
-    its own random direction -- none earns a detector."""
+    plus a clean straight-through transmit leak."""
     paths: list[RayPath3D] = []
     # intermediate reflect arm (a proper prefix of the scatter leaves -> not a leaf)
     paths.append(_ray("S1:S1/reflect", [0.0, 0.0, 0.0], [0.0, -1.0, 0.0], ray_index=0))
@@ -62,7 +80,7 @@ def _scatter_fork_paths() -> list[RayPath3D]:
     paths.append(_ray("S1:S1/reflect -> S3:S3/scatter01", [0.0, -30.0, 0.0], [0.3, 1.0, 0.2], ray_index=1))
     paths.append(_ray("S1:S1/reflect -> S3:S3/scatter02", [0.0, -30.0, 0.0], [-0.4, 1.0, -0.1], ray_index=2))
     paths.append(_ray("S1:S1/reflect -> S3:S3/scatter03", [0.0, -30.0, 0.0], [0.1, 1.0, 0.5], ray_index=3))
-    # clean straight-through leak (deterministic, no scatter -> keeps a detector)
+    # clean straight-through leak (deterministic, no scatter)
     paths.append(_ray("S1:S1/transmit", [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], ray_index=4))
     paths.append(_ray("S1:S1/transmit", [2.0, 0.0, 0.0], [0.0, 0.0, 1.0], ray_index=5))
     return paths
@@ -83,24 +101,30 @@ def _check_unit(notes: list[str]) -> bool:
 
     fork = derive_branch_detectors(_scatter_fork_paths(), existing_targets=[], scene_radius=50.0)
     scatter_dets = [d for d in fork if _branch_path_has_scatter(d.branch_path)]
-    if scatter_dets:
-        bps = [d.branch_path for d in scatter_dets]
-        notes.append(f"scatter branches still earned {len(scatter_dets)} detectors: {bps}")
+    clean_dets = [d for d in fork if not _branch_path_has_scatter(d.branch_path)]
+    # The scatter leaves must KEEP their detectors (they are the ray hard-stops),
+    # and each must be classified as scatter so the draw is gated off.
+    if len(scatter_dets) < 1:
+        notes.append("scatter fork lost its scatter detectors -> rays would un-bound in 3-D")
         ok = False
     else:
-        notes.append("scatter fork: 0 scatter detectors (random branches suppressed)")
-    if len(fork) > 1:
-        notes.append(f"scatter fork left {len(fork)} detectors (expected <=1: the clean leak)")
+        notes.append(f"scatter fork: {len(scatter_dets)} scatter hard-stop detector(s) kept (drawn=NO)")
+    if len(clean_dets) < 1:
+        notes.append("scatter fork lost the clean straight-through leak detector")
         ok = False
     else:
-        notes.append(f"scatter fork: {len(fork)} surviving detector(s) (clean leak only)")
+        notes.append(f"scatter fork: {len(clean_dets)} clean detector(s) kept (drawn=YES)")
 
     clean = derive_branch_detectors(_clean_beam_splitter_paths(), existing_targets=[], scene_radius=50.0)
+    clean_scatter = [d for d in clean if _branch_path_has_scatter(d.branch_path)]
     if len(clean) != 2:
         notes.append(f"clean beam splitter expected 2 arm detectors, got {len(clean)}")
         ok = False
+    elif clean_scatter:
+        notes.append(f"clean beam splitter falsely scatter-classified {len(clean_scatter)} arm(s)")
+        ok = False
     else:
-        notes.append("clean beam splitter keeps both arm detectors (filter is a no-op without scatter)")
+        notes.append("clean beam splitter keeps both arm detectors, neither scatter-classified (draws)")
     return ok
 
 
@@ -118,26 +142,74 @@ def _check_real_scene(notes: list[str]) -> bool:
         notes.append(f"real folded-scene build raised: {exc!r}")
         return False
 
-    branch_targets = []
-    for target in list(getattr(bundle, "targets", []) or []):
-        meta = getattr(target, "metadata", {}) or {}
-        if str(meta.get("target_source", "") or "") == "branch_detector":
-            branch_targets.append(target)
-    scatter_targets = [
-        t for t in branch_targets
-        if _branch_path_has_scatter(str((getattr(t, "metadata", {}) or {}).get("branch_path", "")))
-    ]
-    notes.append(
-        f"real folded scene: {len(branch_targets)} branch detectors, "
-        f"{len(scatter_targets)} on scatter branches"
-    )
     ok = True
-    if scatter_targets:
-        notes.append("scatter-branch detectors survived -> 2-D clutter not suppressed")
+
+    # (c) the hard-stop detectors survive (they are NOT dropped)
+    branch_targets = [
+        t for t in (getattr(bundle, "targets", []) or [])
+        if str((getattr(t, "metadata", {}) or {}).get("target_source", "")) == "branch_detector"
+    ]
+    if len(branch_targets) < 10:
+        notes.append(f"only {len(branch_targets)} branch-detector hard-stops -> scatter rays may un-bound")
         ok = False
-    if len(branch_targets) > 2:
-        notes.append(f"too many branch detectors ({len(branch_targets)}) -> clutter remains")
+    else:
+        scatter_n = sum(1 for t in branch_targets if _target_is_scatter_branch_detector(t))
+        notes.append(
+            f"real scene: {len(branch_targets)} branch-detector hard-stops kept "
+            f"({scatter_n} scatter, draw-gated)"
+        )
+
+    # (a) the bounded 3-D ray extent is tight (the hard-stops still bound scatter)
+    center, radius = scene_display_center_radius(bundle)
+    planes = detector_planes_for_hard_stop(bundle, radius)
+    bounded: list[np.ndarray] = []
+    for path in list(getattr(bundle, "ray_paths", []) or []):
+        pts = np.asarray(getattr(path, "points_world", []), dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 2:
+            continue
+        try:
+            status = ray_path_terminal_status_from_events(path)
+        except Exception:
+            status = ""
+        bpts, _capped = bounded_ray_points_for_scene_display(
+            pts, center, radius, terminal_status=status, detector_planes=planes
+        )
+        bpts = np.asarray(bpts, dtype=float)
+        if bpts.ndim == 2 and bpts.shape[0] >= 1 and bpts.shape[1] >= 3:
+            bounded.append(bpts[:, :3])
+    if not bounded:
+        notes.append("no bounded ray points produced -> cannot verify 3-D extent")
         ok = False
+    else:
+        allpts = np.vstack(bounded)
+        allpts = allpts[np.all(np.isfinite(allpts), axis=1)]
+        max_xy = float(np.max(np.abs(allpts[:, :2]))) if allpts.size else 0.0
+        if max_xy > _BOUNDED_XY_LIMIT:
+            notes.append(
+                f"bounded 3-D ray extent max|x,y|={max_xy:.0f} > {_BOUNDED_XY_LIMIT:.0f}"
+                " -> scatter starburst un-bounded"
+            )
+            ok = False
+        else:
+            notes.append(f"bounded 3-D ray extent tight: max|x,y|={max_xy:.0f} (hard-stops hold)")
+
+    # (b) the 2-D projection draws only a couple of detector curves (no plaid)
+    proj = SceneProjector2D("Vertical").project_bundle(bundle)
+    footprints = sum(1 for c in proj.curves if getattr(c, "kind", "") == "detector_active_footprint")
+    branch_planes = sum(
+        1 for c in proj.curves
+        if getattr(c, "kind", "") == "image" and int(getattr(c, "row_index", 0)) == -1
+    )
+    if footprints > 2:
+        notes.append(f"2-D draws {footprints} detector footprints (>2) -> plaid clutter returned")
+        ok = False
+    elif branch_planes > 2:
+        notes.append(f"2-D draws {branch_planes} branch-detector planes (>2) -> plaid clutter returned")
+        ok = False
+    else:
+        notes.append(
+            f"2-D draws {footprints} detector footprint(s) + {branch_planes} branch plane(s) (no plaid)"
+        )
     return ok
 
 
@@ -153,7 +225,7 @@ def main() -> int:
     ok, notes = run_checks()
     for note in notes:
         print(("  ok  " if ok else "  --  ") + note)
-    label = "diffuse double-pass draws no per-scatter branch-detector clutter (2-D full-3D)"
+    label = "diffuse double-pass: scatter detectors stay hard-stops but draw no 2-D clutter"
     print(("[PASS] " if ok else "[FAIL] ") + label + " (bugs/0182)")
     return 0 if ok else 1
 

@@ -56,6 +56,22 @@ def projection_axis_labels(orientation: str) -> tuple[str, str, str]:
     return "Z [mm]", "Y [mm]", "YZ"
 
 
+def _target_is_scatter_branch_detector(target) -> bool:
+    """True for a branch detector synthesised on a diffuse-scatter leaf.
+
+    bugs/0182: such detectors are kept as is_detector targets so they still feed
+    detector_planes_for_hard_stop (bounding the otherwise-escaping scatter rays in
+    3-D), but their orange footprint / crosshair must NOT draw -- dozens of them
+    plastered the 2-D 'full 3-D' projection with crisscrossing rectangles.
+    """
+    metadata = getattr(target, "metadata", None) or {}
+    if metadata.get("target_source") != "branch_detector":
+        return False
+    from KrakenOS.UI.services.branch_detectors import _branch_path_has_scatter
+
+    return _branch_path_has_scatter(metadata.get("branch_path", ""))
+
+
 class SceneProjector2D:
     """Project a :class:`SceneBundle` into a :class:`ProjectedScene2D`."""
 
@@ -218,6 +234,8 @@ class SceneProjector2D:
     def _project_detector_footprints(self, bundle: SceneBundle) -> list[ProjectedCurve2D]:
         projected: list[ProjectedCurve2D] = []
         for target in list(getattr(bundle, "targets", []) or []):
+            if _target_is_scatter_branch_detector(target):
+                continue
             polylines = scene_target_active_footprint_polylines(target)
             if not polylines:
                 continue
@@ -251,6 +269,7 @@ class SceneProjector2D:
             int(getattr(target, "trace_surface")): target
             for target in list(getattr(bundle, "targets", []) or [])
             if getattr(target, "trace_surface", None) is not None
+            and not _target_is_scatter_branch_detector(target)
         }
         projected: list[ProjectedCurve2D] = []
         for path in list(getattr(bundle, "ray_paths", []) or []):

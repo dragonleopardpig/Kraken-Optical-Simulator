@@ -62,3 +62,44 @@ the LED straight-through leak (`S1/transmit`) — a real branch, correctly kept 
 In-app eyeball still owed (headless can't drive the live VTK/matplotlib render), but the branch-detector
 generation — the entire defect — is reproduced and asserted headlessly, and a faithful matplotlib
 snapshot of the projection (`scene_renderer_2d.render_scene_2d`) confirms the plaid is gone.
+
+## UPDATE — the first fix caused a 3D starburst regression (corrective fix)
+
+**Flag** `attachment/recorded_bug_repros/flag_20260629_154209_345/` (description "3D"), re-recorded right
+after the fix above shipped (commit `0a6dae00`). The 2D view is now clean — but the **3D** view became a
+**starburst** of rays radiating in every direction, blowing `scene_visible_bounds` out to
+**x[-235,592] y[-342,286]** (vs the known-good tight x[-46,46] y[-46,46] before).
+
+**Root cause of the regression — branch detectors do DOUBLE DUTY.** Dropping the scatter leaves out of
+`derive_branch_detectors` removed not just the *drawn* plane/footprint but the detector **target** itself.
+Each branch detector is an `is_detector` `SceneTarget3D` that also feeds
+`detector_planes_for_hard_stop` → `bounded_ray_points_for_scene_display`, i.e. it is a ray **hard-stop**
+plane that **clips the otherwise-escaping scatter rays**. The diffuse scatter is non-deterministic —
+133/173 rays "escape" (no Image hit) — so with the 67 per-scatter hard-stops gone, every escaping ray
+extended to the **scene radius** → the 3D starburst. (The 2D looked fine because the YZ
+`set_plot_limits(..., max_radius=50)` clamps Y to ±50 regardless; only VTK's `ComputeVisiblePropBounds`
+exposed the blow-out.) Confirmed headlessly: with the scatter detectors present the bounded ray extent is
+x[-5,61] y[-45,54] z[-47,78]; with them dropped only **1** hard-stop survives and the extent blows to
+x[-181,234] y[-163,469].
+
+**Corrective fix — keep the detector, gate only its DRAW.** `derive_branch_detectors` is reverted to its
+original behaviour (it once again yields a detector per leaf, so all 67 hard-stops are back and the rays
+stay bounded). The `_branch_path_has_scatter` predicate is now a **draw gate**, not a derivation filter:
+- `scene_builder.py` — still appends the branch-detector *target* (the hard-stop) for every leaf, but only
+  appends its `branch_detector_plane_curve` (the dark `image` plane) when the branch is **not** scatter.
+- `scene_projector.py` — `_project_detector_footprints` / `_project_detector_miss_crosshairs` skip targets
+  for which the new module helper `_target_is_scatter_branch_detector` (reads `metadata.target_source ==
+  "branch_detector"` + `_branch_path_has_scatter(metadata.branch_path)`) is true → no orange footprint/
+  crosshair drawn for a scatter detector.
+
+So: scatter detectors are **invisible hard-stops** — they bound the rays in 3D (no starburst) but draw
+nothing in 2D (no plaid). The single deterministic `S1/transmit` leak detector still both bounds and draws.
+
+**Verification (headless).** Real folded layout: **67** branch-detector hard-stops kept (66 scatter,
+draw-gated); bounded 3D ray extent **max|x,y| = 61** (was ~470 during the regression); 2D projection draws
+**1** detector footprint + **1** branch plane (was ~67). The guard
+`validate_open3d_branch_detector_scatter_clutter.py` was rewritten to assert all three of these (plus the
+unit rule: a scatter fork keeps a detector per scatter leaf, each scatter-classified; a clean 2-arm beam
+splitter keeps both arms, neither scatter-classified). Penta **phase 178** delegates to the same
+`run_checks()`; its docstring was updated to the double-duty story. The three clean-BS validators and the
+0181 sibling guard stay green. A fresh matplotlib snapshot confirms the 2D stays clean.
