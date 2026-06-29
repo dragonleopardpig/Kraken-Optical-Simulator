@@ -27,6 +27,7 @@ from KrakenOS.UI.scene_geometry import (
     SceneBundle,
     ScenePlacement3D,
     SurfaceMesh3D,
+    ray_path_has_diffuse_scatter,
     ray_path_has_non_refractive_steering,
 )
 from KrakenOS.UI.scene_placement import SCENE_PLACEMENT_ADVANCED_ATTR
@@ -9135,9 +9136,25 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if self._cached_traced_axis_records:
                 records.extend(self._cached_traced_axis_records)
             return records
-        allow_traced_axis_guides = bool(getattr(scene_bundle, "has_off_axis", False)) or bool(
-            list(getattr(scene_bundle, "optical_volumes", []) or [])
-        ) or bool(list(getattr(scene_bundle, "boundary_faces", []) or []))
+        # A diffuse double-pass (coaxial-LED illumination, the zemax LED beam
+        # splitter template, ...) has NO single chief-ray optical axis: the
+        # object scatters every ray off in its own random direction, so the
+        # return arm is a random spray and even the down arm of an extended
+        # area source fans across its emission cone. Promoting those segments
+        # produced up to six scene-spanning "Optical Axis" guides reaching
+        # +/-900 mm that wrecked the camera fit and made the 3D/2D views an
+        # unreadable mess of crisscrossing lines (bugs/0181). Such a scene shows
+        # only the global dotted guide; the rays themselves still render the
+        # folded path.
+        scene_has_diffuse_scatter = any(
+            ray_path_has_diffuse_scatter(path)
+            for path in list(getattr(scene_bundle, "ray_paths", []) or [])
+        )
+        allow_traced_axis_guides = not scene_has_diffuse_scatter and (
+            bool(getattr(scene_bundle, "has_off_axis", False))
+            or bool(list(getattr(scene_bundle, "optical_volumes", []) or []))
+            or bool(list(getattr(scene_bundle, "boundary_faces", []) or []))
+        )
         if not allow_traced_axis_guides:
             return records
         # One cleaned polyline per path, shared by the filter below and _path_score (run

@@ -306,6 +306,33 @@ def _dotted_axis_records_from_ray_path(path, bounds, *, max_segments: int = 6) -
             return False
         return True
 
+    def _event_is_scatter(event) -> bool:
+        if event is None:
+            return False
+        text = " ".join(
+            (
+                str(getattr(event, "event_type", "") or ""),
+                str(getattr(event, "interaction_model", "") or ""),
+                str(getattr(event, "surface_name", "") or ""),
+            )
+        ).strip().lower()
+        return "scatter" in text
+
+    # A diffuse scatter is NON-deterministic: every scattered ray leaves in its
+    # own random direction, so NOTHING downstream of a scatter has a single
+    # meaningful optical axis (bugs/0181 -- the folded coaxial-LED double-pass
+    # promoted post-scatter return segments to scene-spanning guides reaching
+    # +/-900 mm, blowing up the camera-fit bounds). The existing
+    # _is_external_between_surface_axis only rejects a segment whose IMMEDIATELY
+    # adjacent event is a scatter; a segment one hop further on (scatter -> beam
+    # splitter -> lens) carries the same random direction yet slips through. So
+    # find the first scatter and drop every segment that starts at or after it.
+    first_scatter_pos: int | None = None
+    for _pos, _event in enumerate(surface_events):
+        if _event_is_scatter(_event):
+            first_scatter_pos = _pos
+            break
+
     for index, (start, end) in enumerate(zip(points[:-1], points[1:]), start=1):
         event_before = surface_events[index - 2] if 0 <= index - 2 < len(surface_events) else None
         event_after = surface_events[index - 1] if 0 <= index - 1 < len(surface_events) else None
@@ -316,6 +343,11 @@ def _dotted_axis_records_from_ray_path(path, bounds, *, max_segments: int = 6) -
         else:
             axis_role = "between_surfaces"
         if axis_role == "launch_segment":
+            continue
+        # Segment starts at event_before (position index - 2 in surface_events).
+        # If a scatter happened at or before that event, this segment is a
+        # random post-scatter ray -- never an optical axis (bugs/0181).
+        if first_scatter_pos is not None and (index - 2) >= first_scatter_pos:
             continue
         if axis_role == "between_surfaces" and not _is_external_between_surface_axis(event_before, event_after):
             continue

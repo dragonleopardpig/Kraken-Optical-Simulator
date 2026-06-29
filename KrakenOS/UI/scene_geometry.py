@@ -569,6 +569,32 @@ def ray_path_has_non_refractive_steering(path: Any) -> bool:
     return False
 
 
+def ray_path_has_diffuse_scatter(path: Any) -> bool:
+    """Return whether a ray path underwent a diffuse (non-deterministic) scatter.
+
+    A diffuse scatter (a Diffuse Object / Lambertian / Oren-Nayar / pySCATMECH
+    surface) sends each ray off in its own random direction, so a scene built
+    around one -- e.g. a coaxial-LED double-pass that illuminates an object and
+    collects the diffusely reflected light -- has NO single chief-ray optical
+    axis. The traced-optical-axis builder uses this to stay out of such scenes
+    (bugs/0181): otherwise every random post-scatter branch became a
+    scene-spanning "Optical Axis" guide that wrecked the camera-fit bounds.
+    """
+    for event in list(getattr(path, "events", []) or []):
+        if str(getattr(event, "event_kind", "") or "") != "surface":
+            continue
+        text = " ".join(
+            (
+                str(getattr(event, "event_type", "") or ""),
+                str(getattr(event, "interaction_model", "") or ""),
+                str(getattr(event, "surface_name", "") or ""),
+            )
+        ).strip().lower()
+        if "scatter" in text:
+            return True
+    return False
+
+
 def ray_path_visible_without_clipping_from_events(path: Any) -> bool:
     """Return whether a ray should display with "Show Clipped Rays" OFF.
 

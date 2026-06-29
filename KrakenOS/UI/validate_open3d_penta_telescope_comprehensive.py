@@ -9781,6 +9781,38 @@ def phase_176_coaxial_led_folded(
     return result
 
 
+def phase_177_optical_axis_scatter_clutter(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A diffuse double-pass (the folded coaxial area-LED, the zemax LED beam splitter) has NO
+    single chief-ray optical axis: the object scatters every ray off in its own random direction.
+    `validate_open3d_optical_axis_scatter_clutter` is a display-free guard for bugs/0181, where
+    those random return rays -- and the extended LED cone's down arm -- were promoted into up to
+    six scene-spanning "Optical Axis" guides reaching +/-900 mm that wrecked the camera fit and
+    made the 3D/2D views an unreadable mess. It asserts the per-segment rule (drop every segment
+    at or after a scatter; keep a scatter-free fold), the scene-level gate (a scatter scene shows
+    the global guide only; a clean fold scene is untouched), and the real folded layout (global
+    guide only, zero traced axes).
+    """
+    result = PhaseResult(
+        name="Phase 177: diffuse double-pass shows the global guide only (no stray optical axes)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_optical_axis_scatter_clutter import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"optical-axis scatter-clutter guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("optical-axis scatter-clutter phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10003,6 +10035,7 @@ def main() -> int:
             phase_174_analysis_overlay_labels,
             phase_175_coaxial_led_dark_edges,
             phase_176_coaxial_led_folded,
+            phase_177_optical_axis_scatter_clutter,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-06-29 (phase 176 folded coaxial-LED visualization added; verified standalone, full marathon segfaults under Xvfb)",
+  "generated_at": "2026-06-29 (phase 177 optical-axis scatter-clutter guard added; verified standalone, full marathon segfaults under Xvfb)",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -178,7 +178,8 @@
     "173": "pass",
     "174": "pass",
     "175": "pass",
-    "176": "pass"
+    "176": "pass",
+    "177": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -357,6 +358,7 @@
     "173": "a flagged-bug bundle can be discarded (cancel the flag; empty box auto-cancels)",
     "174": "image-plane analysis overlays group into one expanding label (no overlap)",
     "175": "coaxial area-LED relative-illumination shows the 2 dark edges (fold dark, perp uniform)",
-    "176": "folded coaxial area-LED traces LED -> BS reflect -> object -> back -> image"
+    "176": "folded coaxial area-LED traces LED -> BS reflect -> object -> back -> image",
+    "177": "diffuse double-pass shows the global guide only (no stray optical axes)"
   }
 }
