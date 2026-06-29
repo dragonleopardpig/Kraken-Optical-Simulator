@@ -9813,6 +9813,38 @@ def phase_177_optical_axis_scatter_clutter(
     return result
 
 
+def phase_178_branch_detector_scatter_clutter(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The folded coaxial area-LED scene is a diffuse double-pass: the object scatters every ray
+    off in its own random direction, forking one leaf branch per scattered ray. `derive_branch_detectors`
+    used to synthesize a detector per leaf (the 0090 "both arms" rule), so the diffuse fork produced
+    ~67 branch detectors -- each drawing an orange footprint quad + center crosshairs + image-plane
+    outline -- which buried the 2D "YZ full 3D" projection under a plaid of crisscrossing rectangles.
+    `validate_open3d_branch_detector_scatter_clutter` is a display-free guard for bugs/0182: a scattered
+    branch has no deterministic focus, so it earns no detector. It asserts the unit rule (a scatter fork
+    yields zero scatter detectors, the clean straight-through leak is kept; a scatter-free beam splitter
+    keeps both arms) and the real folded layout (1 branch detector, zero on scatter branches).
+    """
+    result = PhaseResult(
+        name="Phase 178: diffuse double-pass draws no per-scatter branch-detector clutter (2D full-3D)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_branch_detector_scatter_clutter import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"branch-detector scatter-clutter guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("branch-detector scatter-clutter phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10036,6 +10068,7 @@ def main() -> int:
             phase_175_coaxial_led_dark_edges,
             phase_176_coaxial_led_folded,
             phase_177_optical_axis_scatter_clutter,
+            phase_178_branch_detector_scatter_clutter,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

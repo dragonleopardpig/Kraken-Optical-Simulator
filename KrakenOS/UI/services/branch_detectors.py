@@ -100,6 +100,27 @@ def _is_proper_prefix(short: tuple, long: tuple) -> bool:
     return len(short) < len(long) and tuple(long[: len(short)]) == tuple(short)
 
 
+_SCATTER_BRANCH_TOKENS = ("scatter", "diffuse")
+
+
+def _branch_path_has_scatter(branch_path: str) -> bool:
+    """True once a branch has passed through a diffuse scatter event.
+
+    bugs/0182: a diffuse double-pass (the object scatter in the coaxial-LED fold)
+    spawns ONE leaf branch per scattered ray (S3/scatter01..N). Each leaf would
+    otherwise earn its own branch detector -> dozens of crisscrossing footprint /
+    plane rectangles in the 2-D 'full 3-D' projection. A scattered branch has no
+    deterministic focus -- the post-scatter direction is random -- so it gets no
+    detector; the rays still render and the real Image plane still catches them.
+    Mirrors the optical-axis scatter guard (bugs/0181)."""
+    components = _branch_components(branch_path)
+    for component in components:
+        text = str(component or "").lower()
+        if any(token in text for token in _SCATTER_BRANCH_TOKENS):
+            return True
+    return False
+
+
 def _leaf_reaches_existing_detector(group: list) -> bool:
     """True when this branch already terminates at the sequential Image/detector."""
     for path in group:
@@ -272,6 +293,13 @@ def derive_branch_detectors(
     # detector/Image plane lingers in that branch. Absorbing one arm of a splitter
     # then collapses the scene to its surviving arm(s) (re: multi_leaf below).
     leaves = [bp for bp in leaves if not _leaf_fully_absorbed(groups[bp])]
+    # bugs/0182: a diffuse scatter is non-deterministic -- it forks one leaf per
+    # scattered ray, each with a random exit direction. Promoting every such leaf to
+    # its own detector buried the 2-D 'full 3-D' projection under dozens of orange
+    # footprint/plane rectangles. Drop any leaf that has passed through a scatter; the
+    # rays still render and the real Image plane (an existing target) still catches
+    # them. A scatter-free split (a genuine beam splitter) keeps all its arms.
+    leaves = [bp for bp in leaves if not _branch_path_has_scatter(bp)]
     default_half = _existing_detector_half_dims(existing_targets)
     try:
         radius = float(scene_radius)
