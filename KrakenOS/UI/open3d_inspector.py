@@ -8293,6 +8293,31 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
         return False
 
+    @staticmethod
+    def _discard_flag_bundle(bundle_dir, flag_event_payload=None) -> bool:
+        """Delete a flagged-bug bundle (the user cancelled the flag) and mark any recording
+        flag event discarded. Returns True if the directory is gone afterwards.
+
+        Used when the user presses Discard, or dismisses the description dialog with an empty
+        box (an empty description == an accidental / changed-mind flag, so it is auto-cancelled
+        rather than left behind as clutter).
+        """
+        import shutil
+
+        if isinstance(flag_event_payload, dict):
+            try:
+                flag_event_payload["discarded"] = True
+            except Exception:
+                pass
+        try:
+            shutil.rmtree(bundle_dir, ignore_errors=True)
+        except Exception:
+            pass
+        try:
+            return not Path(bundle_dir).exists()
+        except Exception:
+            return False
+
     def _open_flag_description_dialog(
         self,
         *,
@@ -8306,8 +8331,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         a STEP body, finish a placement drag, etc., and circle back to
         type the description later. ``Save`` writes description.txt and
         updates state.json (and the recording event payload, if a
-        recording is live). ``Close`` leaves an empty description and
-        the bundle behind so the screenshot is still preserved.
+        recording is live). ``Keep screenshot`` leaves an empty
+        description and the bundle behind (the mid-drag safety net).
+        ``Discard`` deletes the whole bundle; dismissing the dialog
+        (Escape / window-close) with an empty box also discards it, so an
+        accidental flag does not linger.
         """
         try:
             popup = tk.Toplevel(self)
@@ -8324,7 +8352,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 frame,
                 text=(
                     "Describe the bug (carry / drag stays live while this is open).\n"
-                    "Press Save to persist; press Close to keep just the screenshot."
+                    "Save = keep with description · Keep screenshot = keep without · Discard = delete this flag.\n"
+                    "Closing with an empty box discards the flag (changed your mind)."
                 ),
                 justify="left",
             ).pack(anchor="w")
@@ -8364,16 +8393,42 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 except Exception:
                     pass
 
-            def _do_close(*_args) -> None:
+            def _do_keep(*_args) -> None:
+                # Keep the bundle even with an empty description (the mid-drag safety net).
+                self.status_var.set(f"Flag kept (screenshot only): {bundle_dir.name}")
                 try:
                     popup.destroy()
                 except Exception:
                     pass
 
+            def _do_discard(*_args) -> None:
+                name = bundle_dir.name
+                ok = self._discard_flag_bundle(bundle_dir, flag_event_payload)
+                self.status_var.set(
+                    f"Flag discarded: {name}" if ok else f"Flag discard failed (kept): {name}"
+                )
+                try:
+                    popup.destroy()
+                except Exception:
+                    pass
+
+            def _dismiss(*_args) -> None:
+                # Empty box on dismiss == cancelled -> discard; typed-but-unsaved text is saved
+                # so the user's words are never thrown away.
+                if entry.get("1.0", "end").strip():
+                    _do_save()
+                else:
+                    _do_discard()
+
             ttk.Button(buttons, text="Save", command=_do_save).pack(side="right", padx=(8, 0))
-            ttk.Button(buttons, text="Close", command=_do_close).pack(side="right")
+            ttk.Button(buttons, text="Keep screenshot", command=_do_keep).pack(side="right", padx=(8, 0))
+            ttk.Button(buttons, text="Discard", command=_do_discard).pack(side="right")
             entry.bind("<Control-Return>", _do_save)
-            popup.bind("<Escape>", _do_close)
+            popup.bind("<Escape>", _dismiss)
+            try:
+                popup.protocol("WM_DELETE_WINDOW", _dismiss)
+            except Exception:
+                pass
             # Explicitly do NOT call grab_set / wait_window: the popup
             # is non-modal so VTK drag/carry events keep flowing.
         except Exception as exc:
