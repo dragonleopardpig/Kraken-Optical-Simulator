@@ -205,9 +205,13 @@ Rendered Layout
 Load ``Machine Vision 85 mm Azure (Datasheet 0.5X-2.0X)`` from the Machine Vision
 menu and open it in Open 3D.  The layout shows optical vertex datums, two blackbox
 thin-lens groups, an F/4.5 stop, the 1x image plane, and the vendor barrel STEP as
-a mechanical overlay.  The STEP overlay alignment (180-degree Y flip + glass-vertex
-offset) is mirrored from the PYRITE 85 preset and should be eyeballed on a real
-display.
+a mechanical overlay.  The STEP is a multi-body assembly, so it is loaded with
+``lens_step_largest_component_only = False`` to render the whole ~52 mm barrel (the
+largest single connected solid is only an ~18 mm ring).  Its optical axis is the
+STEP's local -X; the ``front-face = "max"`` alignment plus the -3.849 mm glass-vertex
+offset seat the front glass surface on the front optical-vertex datum (141.85) and
+the rear glass on the rear datum (196.85), enclosing the two thin-lens groups -- so
+no 180-degree flip is used (unlike the +Z-authored PYRITE 85 STEP).
 
 Known Limits
 ------------

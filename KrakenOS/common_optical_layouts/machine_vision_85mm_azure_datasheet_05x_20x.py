@@ -150,11 +150,16 @@ SETTINGS = {
     "camera_step_axis_offset_xy": [0.0, 0.0],
     "camera_step_placement_offset_xyz": [0.0, 0.0, 0.0],
     "lens_step_path": STEP_PATH,
-    "lens_step_largest_component_only": True,
+    # The vendor STEP is a MULTI-BODY assembly, so render all bodies (the full
+    # ~52 mm barrel) -- the largest single connected solid is only an ~18 mm ring
+    # (flag 20260629_203726). The lens optical axis is the STEP's local -X; the
+    # loader's front-face="max" alignment + the glass-vertex offset below already
+    # seat the front glass surface on the front optical-vertex datum (141.85) and
+    # the rear glass on the rear datum (196.85), so NO 180 deg flip is needed here
+    # -- unlike the PYRITE 85, whose STEP is authored along +Z.
+    "lens_step_largest_component_only": False,
     "lens_step_rotation_x_deg": 0.0,
-    # Vendor STEP authors the barrel facing -Z (object side), so it loads reversed;
-    # spin 180 deg about the (vertical) Y axis to face the sensor.
-    "lens_step_rotation_y_deg": 180.0,
+    "lens_step_rotation_y_deg": 0.0,
     "lens_step_rotation_z_deg": 0.0,
     "lens_step_axis_offset_xy": [0.0, 0.0],
     "lens_step_placement_offset_xyz": [0.0, 0.0, STEP_GLASS_ALIGNMENT_Z_OFFSET_MM],
