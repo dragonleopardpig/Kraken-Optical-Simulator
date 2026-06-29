@@ -792,6 +792,11 @@ class Open3DSceneRefreshService:
             include_footprints=bool(self.show_detector_overlays_var.get()),
             include_miss_crosshairs=bool(self.show_terminal_diagnostics_var.get()),
         )
+        # Each image-plane analysis overlay below QUEUES its label into one shared legend
+        # instead of drawing its own billboard; with 2+ overlays on the separate billboards
+        # overlapped (bugs/analysis-overlay-labels-overlap). Reset the collector here, draw
+        # the single combined (expanding) legend after all overlays are added.
+        self._reset_analysis_overlay_labels()
         # 3D field-curvature viz (idea #2): the translucent curved best-focus surface.
         # Read live here so its toggle is a render-only refresh (bugs/0166); the scan
         # behind it is lazy + cached on the editor.
@@ -814,6 +819,9 @@ class Open3DSceneRefreshService:
         pixel_grid_actors = 0
         if bool(getattr(self, "show_pixel_grid_var", None) is not None and self.show_pixel_grid_var.get()):
             pixel_grid_actors = self._add_pixel_grid_overlays(system, scene_bundle)
+        # One combined, expanding legend for every analysis overlay queued above (replaces the
+        # per-overlay billboards that overlapped when several were on).
+        analysis_overlay_label_actors = self._add_grouped_analysis_overlay_label()
         # bugs/0009: the thickness dimensions must be added *after* the imported
         # STEP overlay loop below registers the optical body into
         # ``_step_actor_map`` -- otherwise ``add_overlays`` measures against an

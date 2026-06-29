@@ -9654,6 +9654,67 @@ def phase_172_optical_solid_face_coating(
     return result
 
 
+def phase_173_flag_bundle_discard(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A flagged-bug bundle can be DISCARDED (cancel the flag). The in-app ``s`` flag writes a
+    bundle (screenshot + state.json + empty description) then opens a non-modal dialog; both
+    buttons used to keep the bundle on disk, so an accidental flag left clutter with no undo.
+    `validate_open3d_flag_discard` is a display-free guard: discard deletes the whole bundle dir
+    + marks the recording event discarded (missing dir / None payload safe), and the dialog offers
+    Discard + auto-discards on an EMPTY description box (Escape / window-close) while never throwing
+    away typed-but-unsaved text.
+    """
+    result = PhaseResult(
+        name="Phase 173: a flagged-bug bundle can be discarded (cancel the flag; empty box auto-cancels)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_flag_discard import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"flag-bundle-discard guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("flag-bundle-discard phase failed without detail")
+    return result
+
+
+def phase_174_analysis_overlay_labels(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The image-plane analysis overlays (best-focus surface, distortion grid, astigmatism
+    surfaces, spot RMS map, camera pixel grid) share ONE expanding label. Each used to draw its
+    own billboard near the detector top, so two or more enabled overlapped into an unreadable pile
+    (user: "just group them in one label, expand it if more analysis are shown").
+    `validate_open3d_analysis_overlay_labels` is a display-free guard: the collector reset/queue
+    (in-order, first-overlay anchor, empty skipped, safe no-op drawer) + the source contract (one
+    combined billboard joining the sections; each overlay queues and no longer draws its own; the
+    refresh resets before and draws the combined label after).
+    """
+    result = PhaseResult(
+        name="Phase 174: image-plane analysis overlays group into one expanding label (no overlap)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_analysis_overlay_labels import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"analysis-overlay-labels guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("analysis-overlay-labels phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9872,6 +9933,8 @@ def main() -> int:
             phase_170_field_resolved_surrogate,
             phase_171_advanced_surface_dialog_scrollable,
             phase_172_optical_solid_face_coating,
+            phase_173_flag_bundle_discard,
+            phase_174_analysis_overlay_labels,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

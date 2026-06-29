@@ -11518,6 +11518,107 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 continue
         return count
 
+    def _reset_analysis_overlay_labels(self) -> None:
+        """Clear the shared image-plane analysis-overlay label collector before a scene
+        refresh. The per-overlay methods (best-focus, distortion, astigmatism, spot map,
+        pixel grid) used to each draw their OWN billboard near the detector top; with two
+        or more overlays on, the labels overlapped (bugs/analysis-overlay-labels-overlap).
+        They now QUEUE their text here and one combined, expanding billboard is drawn."""
+        self._analysis_overlay_label_sections = []
+        self._analysis_overlay_label_center = None
+        self._analysis_overlay_label_normal = None
+
+    def _queue_analysis_overlay_label(self, text, *, center=None, normal=None) -> None:
+        """Append one overlay's label text to the shared collector (instead of drawing a
+        separate billboard). The first non-None ``center``/``normal`` fixes the shared
+        anchor basis (every analysis overlay sits on the same image plane)."""
+        if not text:
+            return
+        sections = getattr(self, "_analysis_overlay_label_sections", None)
+        if sections is None:
+            sections = []
+            self._analysis_overlay_label_sections = sections
+        sections.append(str(text))
+        try:
+            if center is not None and getattr(self, "_analysis_overlay_label_center", None) is None:
+                self._analysis_overlay_label_center = np.asarray(center, dtype=float).reshape(3)
+            if normal is not None and getattr(self, "_analysis_overlay_label_normal", None) is None:
+                self._analysis_overlay_label_normal = np.asarray(normal, dtype=float).reshape(3)
+        except Exception:
+            pass
+
+    def _add_grouped_analysis_overlay_label(self) -> int:
+        """Draw ONE combined billboard stacking every queued analysis-overlay label, at the
+        image-plane top-right corner (out of the way of the spots/grid). The block grows
+        downward as more overlays are enabled -- one label, expanding, instead of N
+        overlapping ones (the user's request)."""
+        if self._renderer is None or vtkBillboardTextActor3D is None:
+            return 0
+        sections = getattr(self, "_analysis_overlay_label_sections", None) or []
+        if not sections:
+            return 0
+        center = getattr(self, "_analysis_overlay_label_center", None)
+        normal = getattr(self, "_analysis_overlay_label_normal", None)
+        if center is None or normal is None:
+            return 0
+        try:
+            n_hat = np.asarray(normal, dtype=float).reshape(3)
+            n_norm = float(np.linalg.norm(n_hat))
+            n_hat = n_hat / n_norm if n_norm > 1e-12 else np.array([0.0, 0.0, 1.0])
+            center = np.asarray(center, dtype=float).reshape(3)
+        except Exception:
+            return 0
+        # Screen right/up so the block hugs the image plane's top-right corner regardless of
+        # camera orientation (same trick the pixel-grid label used for its corner anchor).
+        try:
+            _sax = self._camera_screen_world_axes()
+            sright = np.asarray(_sax[0], dtype=float).reshape(3)
+            sup = np.asarray(_sax[1], dtype=float).reshape(3)
+        except Exception:
+            sright = sup = None
+        try:
+            img_radius = float(self.editor._image_circle_radius_value() or 0.0)
+        except Exception:
+            img_radius = 0.0
+        _c, scene_radius = self._scene_bounds()
+        reach = img_radius if img_radius > 1e-6 else float(scene_radius)
+        if not np.isfinite(reach) or reach <= 0.0:
+            reach = max(float(scene_radius), 1.0)
+        if sright is not None and sup is not None:
+            anchor = center + sright * (reach * 1.05) + sup * (reach * 0.95) + n_hat * max(reach * 0.02, 0.4)
+        else:
+            anchor = center + np.array([0.0, 1.0, 0.0]) * reach + n_hat * max(reach * 0.02, 0.4)
+        text = "\n\n".join(sections)
+        try:
+            actor = vtkBillboardTextActor3D()
+            actor.SetInput(text)
+            actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
+            try:
+                actor.PickableOff()
+            except Exception:
+                pass
+            text_prop = actor.GetTextProperty()
+            text_prop.SetFontSize(15)
+            try:
+                text_prop.SetBold(1)
+            except Exception:
+                pass
+            try:
+                text_prop.SetJustificationToLeft()
+                text_prop.SetVerticalJustificationToTop()
+            except Exception:
+                pass
+            text_prop.SetColor(0.12, 0.14, 0.18)
+            text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
+            text_prop.SetBackgroundOpacity(0.92)
+            text_prop.SetFrame(1)
+            text_prop.SetFrameWidth(2)
+            text_prop.SetFrameColor(0.45, 0.50, 0.58)
+            self._add_renderer_view_prop(actor)
+            return 1
+        except Exception:
+            return 0
+
     def _add_best_focus_surface_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
         """Draw the translucent curved best-focus surface over the flat detector
         (3D field-curvature viz, idea #2). Render-only: the geometry + the lazy,
@@ -11570,24 +11671,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # The bowl's axial sag is auto-exaggerated so the (usually sub-mm) field
         # curvature reads; label the TRUE peak-to-valley + the magnification so it
         # stays honest -- the gap to the flat detector is the field-dependent defocus.
+        # Queue the label (the true peak-to-valley + exaggeration) into the shared analysis
+        # legend so it stacks with the other overlays instead of drawing its own billboard.
         try:
-            if vtkBillboardTextActor3D is not None and int(spec.get("n_rings", 0)) >= 2:
+            if int(spec.get("n_rings", 0)) >= 2:
                 ring_dz = np.asarray(spec.get("ring_dz", []), dtype=float)
                 peak_valley = float(np.ptp(ring_dz)) if ring_dz.size else 0.0
                 factor = float(spec.get("exaggeration", 1.0))
-                points = np.asarray(spec["points"], dtype=float)
-                n_az = int(spec["n_az"])
-                n_rings = int(spec["n_rings"])
-                rim = points[(n_rings - 1) * n_az:n_rings * n_az]
-                anchor = (
-                    rim[int(np.argmax(rim[:, 1]))].copy()
-                    if rim.size
-                    else np.asarray(spec["center"], dtype=float)
-                )
-                _c, scene_radius = self._scene_bounds()
-                anchor = anchor + np.asarray(spec["normal"], dtype=float) * max(float(scene_radius) * 0.01, 0.4)
-                # Make the exaggeration explicit beside the bowl so the user never
-                # mistakes the magnified dish for the literal sag.
                 if factor >= 1.5:
                     label_text = (
                         f"Best-focus surface (field curvature)\n"
@@ -11595,29 +11685,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     )
                 else:
                     label_text = f"Best-focus surface (field curvature)\ntrue depth {peak_valley:.3g} mm P-V (true scale)"
-                actor = vtkBillboardTextActor3D()
-                actor.SetInput(label_text)
-                actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
-                try:
-                    actor.PickableOff()
-                except Exception:
-                    pass
-                text_prop = actor.GetTextProperty()
-                text_prop.SetFontSize(17)
-                try:
-                    text_prop.SetBold(1)
-                except Exception:
-                    pass
-                # Dark teal text on a solid white plate (the light-cyan bowl colour had
-                # poor contrast on the white background); the frame keeps the bowl hue.
-                text_prop.SetColor(0.05, 0.27, 0.34)
-                text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
-                text_prop.SetBackgroundOpacity(0.92)
-                text_prop.SetFrame(1)
-                text_prop.SetFrameWidth(2)
-                text_prop.SetFrameColor(*line_color)
-                self._add_renderer_view_prop(actor)
-                count += 1
+                self._queue_analysis_overlay_label(label_text, center=spec.get("center"), normal=spec.get("normal"))
         except Exception:
             pass
         return count
@@ -11660,16 +11728,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         count += _draw(spec.get("ideal_polylines"), tuple(spec["ideal_color"]), 0.5, 1.0)
         count += _draw(spec.get("real_polylines"), tuple(spec["real_color"]), 0.95, 2.0)
 
-        # Label the true max distortion + the exaggeration so the warp is honest.
+        # Queue the label (true max distortion + exaggeration) into the shared analysis legend.
         try:
-            if vtkBillboardTextActor3D is not None and spec.get("real_polylines"):
+            if spec.get("real_polylines"):
                 max_pct = float(spec.get("max_distortion_pct", 0.0))
                 factor = float(spec.get("exaggeration", 1.0))
-                rim = spec.get("real_polylines")[-1]
-                rim_pts = np.asarray(rim, dtype=float)
-                anchor = rim_pts[int(np.argmax(rim_pts[:, 1]))].copy()
-                _c, scene_radius = self._scene_bounds()
-                anchor = anchor + np.asarray(spec["normal"], dtype=float) * max(float(scene_radius) * 0.01, 0.4)
                 kind = "pincushion" if max_pct >= 0 else "barrel"
                 surface_note = " on best-focus bowl" if spec.get("lifted") else ""
                 if factor >= 1.5:
@@ -11682,27 +11745,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                         f"Distortion grid{surface_note} · max {abs(max_pct):.2g}% {kind} "
                         "(true scale; grey = undistorted)"
                     )
-                actor = vtkBillboardTextActor3D()
-                actor.SetInput(label_text)
-                actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
-                try:
-                    actor.PickableOff()
-                except Exception:
-                    pass
-                text_prop = actor.GetTextProperty()
-                text_prop.SetFontSize(17)
-                try:
-                    text_prop.SetBold(1)
-                except Exception:
-                    pass
-                text_prop.SetColor(0.30, 0.07, 0.36)
-                text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
-                text_prop.SetBackgroundOpacity(0.92)
-                text_prop.SetFrame(1)
-                text_prop.SetFrameWidth(2)
-                text_prop.SetFrameColor(*tuple(spec["real_color"]))
-                self._add_renderer_view_prop(actor)
-                count += 1
+                self._queue_analysis_overlay_label(label_text, center=spec.get("center"), normal=spec.get("normal"))
         except Exception:
             pass
         return count
@@ -11760,45 +11803,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         count += self._draw_focus_surface_fill_and_rings(spec.get("sagittal"), fill_opacity=0.16)
         try:
             tangential = spec.get("tangential")
-            if vtkBillboardTextActor3D is not None and tangential:
-                points = np.asarray(tangential["points"], dtype=float)
-                n_az = int(tangential["n_az"])
-                n_rings = int(tangential["n_rings"])
-                rim = points[(n_rings - 1) * n_az:n_rings * n_az]
-                anchor = (
-                    rim[int(np.argmax(rim[:, 1]))].copy()
-                    if rim.size
-                    else np.asarray(spec["center"], dtype=float)
-                )
-                _c, scene_radius = self._scene_bounds()
-                anchor = anchor + np.asarray(spec["normal"], dtype=float) * max(float(scene_radius) * 0.01, 0.4)
+            if tangential:
                 max_astigmatism = float(spec.get("max_astigmatism_mm", 0.0))
                 factor = float(spec.get("exaggeration", 1.0))
                 factor_text = f"  (×{factor:.0f})" if factor >= 1.5 else ""
-                actor = vtkBillboardTextActor3D()
-                actor.SetInput(
+                self._queue_analysis_overlay_label(
                     "Astigmatism · tangential (amber) vs sagittal (blue)\n"
-                    f"max T−S {max_astigmatism:.3g} mm{factor_text}"
+                    f"max T−S {max_astigmatism:.3g} mm{factor_text}",
+                    center=spec.get("center"), normal=spec.get("normal"),
                 )
-                actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
-                try:
-                    actor.PickableOff()
-                except Exception:
-                    pass
-                text_prop = actor.GetTextProperty()
-                text_prop.SetFontSize(16)
-                try:
-                    text_prop.SetBold(1)
-                except Exception:
-                    pass
-                text_prop.SetColor(0.32, 0.19, 0.02)
-                text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
-                text_prop.SetBackgroundOpacity(0.92)
-                text_prop.SetFrame(1)
-                text_prop.SetFrameWidth(2)
-                text_prop.SetFrameColor(*tuple(tangential["color"]))
-                self._add_renderer_view_prop(actor)
-                count += 1
         except Exception:
             pass
         return count
@@ -11859,27 +11872,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 continue
         try:
-            if vtkBillboardTextActor3D is not None and circles:
-                rim = np.asarray(circles[int(np.argmax([np.max(np.asarray(c)[:, 1]) for c in circles]))], dtype=float)
-                anchor = rim[int(np.argmax(rim[:, 1]))].copy()
-                _c, scene_radius = self._scene_bounds()
-                # Keep the label close to the spots -- a small clearance above the top circle. (The
-                # earlier big lift floated it off-screen; the detector Sensor label now sits on the
-                # plane's right side, so the box no longer has to clear the ringed labels overhead.)
-                try:
-                    img_radius = float(self.editor._image_circle_radius_value() or 0.0)
-                except Exception:
-                    img_radius = 0.0
-                # Size the clearance to the IMAGE CIRCLE, not the scene: the ray bundle to a finite
-                # object inflates scene_radius to hundreds of mm, so scene_radius*0.01 floated the
-                # legend up to the screen top (user: "Spot text too far away; bring it just above the
-                # outermost light-blue [image] circle"). A small image-radius lift hugs the top spot.
-                vertical_lift = max(img_radius * 0.05, 0.5)
-                anchor = (
-                    anchor
-                    + np.array([0.0, 1.0, 0.0]) * vertical_lift  # small screen-up clearance over the top spot
-                    + np.asarray(spec["normal"], dtype=float) * max(img_radius * 0.05, 0.4)
-                )
+            if circles:
                 mag = float(spec.get("magnification", 1.0))
                 rms_lo = float(spec.get("rms_min_mm", 0.0)) * 1000.0
                 rms_hi = float(spec.get("rms_max_mm", 0.0)) * 1000.0
@@ -11913,30 +11906,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     pass
                 airy_um = float(spec.get("airy_radius_mm", 0.0)) * 2.0 * 1000.0  # diffraction-limit diameter
                 airy_note = f" · Airy ⌀{airy_um:.1f} µm (orange) = diffraction floor" if airy_um > 1e-6 else ""
-                actor = vtkBillboardTextActor3D()
-                actor.SetInput(
+                self._queue_analysis_overlay_label(
                     f"Spot RMS map · {int(spec.get('n_spots', 0))} fields (green=tight, red=soft)\n"
-                    f"RMS {rms_lo:.2g}–{rms_hi:.2g} µm · circles ×{mag:.0f}{airy_note}{focus_note}{surrogate_note}"
+                    f"RMS {rms_lo:.2g}–{rms_hi:.2g} µm · circles ×{mag:.0f}{airy_note}{focus_note}{surrogate_note}",
+                    center=spec.get("center"), normal=spec.get("normal"),
                 )
-                actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
-                try:
-                    actor.PickableOff()
-                except Exception:
-                    pass
-                text_prop = actor.GetTextProperty()
-                text_prop.SetFontSize(16)
-                try:
-                    text_prop.SetBold(1)
-                except Exception:
-                    pass
-                text_prop.SetColor(0.10, 0.25, 0.12)
-                text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
-                text_prop.SetBackgroundOpacity(0.92)
-                text_prop.SetFrame(1)
-                text_prop.SetFrameWidth(2)
-                text_prop.SetFrameColor(0.15, 0.55, 0.25)
-                self._add_renderer_view_prop(actor)
-                count += 1
         except Exception:
             pass
         return count
@@ -11959,16 +11933,6 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         segment_points: list = []
         line_cells: list = []
         offset = 0
-        # Anchor the label at the detector's top-RIGHT corner in the view (it overlapped a spot at
-        # the top). The grid is clipped to the sensor box, so its extreme corner point IS the corner.
-        try:
-            _sax = self._camera_screen_world_axes()
-            sright = np.asarray(_sax[0], dtype=float).reshape(3)
-            sup = np.asarray(_sax[1], dtype=float).reshape(3)
-        except Exception:
-            sright = sup = None
-        top_point = None
-        best_score = None
         for grid in spec.get("grids") or []:
             for key in ("v_lines", "h_lines"):
                 for seg in grid.get(key) or []:
@@ -11978,14 +11942,6 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     segment_points.append(pts[:2, :3])
                     line_cells.extend((2, offset, offset + 1))
                     offset += 2
-                    for candidate in pts[:2, :3]:
-                        score = (
-                            float(np.dot(candidate, sright)) + float(np.dot(candidate, sup))
-                            if sright is not None else float(candidate[1])
-                        )
-                        if best_score is None or score > best_score:
-                            best_score = score
-                            top_point = np.asarray(candidate, dtype=float)
         if segment_points:
             try:
                 # One merged line mesh (hundreds of short segments) -> a single actor.
@@ -11996,60 +11952,30 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 pass
         try:
             too_coarse = bool(spec.get("too_coarse"))
-            anchor = None
-            _c, scene_radius = self._scene_bounds()
-            normal_vec = np.asarray(spec.get("normal"), dtype=float).reshape(3)
+            pitch = spec.get("pitch_um", (0.0, 0.0))
+            span_lo = float(spec.get("span_px_min", 0.0))
+            span_hi = float(spec.get("span_px_max", 0.0))
             if too_coarse:
-                center_pt = np.asarray(spec.get("center"), dtype=float).reshape(3)
-                anchor = center_pt + normal_vec * max(float(scene_radius) * 0.02, 0.6)
-            elif top_point is not None:
-                outward = (sright + sup) * max(float(scene_radius) * 0.03, 1.0) if sright is not None else 0.0
-                anchor = np.asarray(top_point, dtype=float) + outward + normal_vec * max(float(scene_radius) * 0.01, 0.4)
-            if vtkBillboardTextActor3D is not None and anchor is not None:
-                pitch = spec.get("pitch_um", (0.0, 0.0))
-                span_lo = float(spec.get("span_px_min", 0.0))
-                span_hi = float(spec.get("span_px_max", 0.0))
-                if too_coarse:
-                    # Spots smaller than a pixel: at the zoom needed to see them, one pixel is
-                    # bigger than the whole image -- so we say it plainly instead of a giant mesh.
-                    label_text = (
-                        f"Camera pixel grid · {spec.get('camera_label', '')}\n"
-                        f"spots ≈ {span_lo:.2g}-{span_hi:.2g} px — sub-pixel; one {float(pitch[0]):.3g} µm pixel ≫ the spot, nothing to resolve"
-                    )
-                else:
-                    res = spec.get("resolution_px")
-                    # ONE uniform lattice (the sensor's real, even pixels); the orange frame is the
-                    # full sensor. The grid is magnified so a 4.5 um pixel is visible, so only a few
-                    # of the 5120 pixels fit -- the label says so plainly.
-                    full_sensor = (
-                        f" · full sensor {int(res[0])}×{int(res[1])} px = orange frame"
-                        if (isinstance(res, (tuple, list)) and len(res) == 2) else ""
-                    )
-                    label_text = (
-                        f"Camera pixel grid · {spec.get('camera_label', '')} · 1 cell = 1 pixel ({float(pitch[0]):.3g} µm)\n"
-                        f"uniform lattice, ×{float(spec.get('magnification', 1.0)):.0f} zoom so pixels are visible · spots span ≈ {span_lo:.0f}-{span_hi:.0f} px{full_sensor}"
-                    )
-                actor = vtkBillboardTextActor3D()
-                actor.SetInput(label_text)
-                actor.SetPosition(float(anchor[0]), float(anchor[1]), float(anchor[2]))
-                try:
-                    actor.PickableOff()
-                except Exception:
-                    pass
-                text_prop = actor.GetTextProperty()
-                text_prop.SetFontSize(15)
-                try:
-                    text_prop.SetBold(1)
-                except Exception:
-                    pass
-                text_prop.SetColor(0.20, 0.24, 0.30)
-                text_prop.SetBackgroundColor(1.0, 1.0, 1.0)
-                text_prop.SetBackgroundOpacity(0.9)
-                text_prop.SetFrame(1)
-                text_prop.SetFrameWidth(2)
-                text_prop.SetFrameColor(0.42, 0.47, 0.55)
-                self._add_renderer_view_prop(actor)
-                count += 1
+                # Spots smaller than a pixel: at the zoom needed to see them, one pixel is
+                # bigger than the whole image -- so we say it plainly instead of a giant mesh.
+                label_text = (
+                    f"Camera pixel grid · {spec.get('camera_label', '')}\n"
+                    f"spots ≈ {span_lo:.2g}-{span_hi:.2g} px — sub-pixel; one {float(pitch[0]):.3g} µm pixel ≫ the spot, nothing to resolve"
+                )
+            else:
+                res = spec.get("resolution_px")
+                # ONE uniform lattice (the sensor's real, even pixels); the orange frame is the
+                # full sensor. The grid is magnified so a 4.5 um pixel is visible, so only a few
+                # of the 5120 pixels fit -- the label says so plainly.
+                full_sensor = (
+                    f" · full sensor {int(res[0])}×{int(res[1])} px = orange frame"
+                    if (isinstance(res, (tuple, list)) and len(res) == 2) else ""
+                )
+                label_text = (
+                    f"Camera pixel grid · {spec.get('camera_label', '')} · 1 cell = 1 pixel ({float(pitch[0]):.3g} µm)\n"
+                    f"uniform lattice, ×{float(spec.get('magnification', 1.0)):.0f} zoom so pixels are visible · spots span ≈ {span_lo:.0f}-{span_hi:.0f} px{full_sensor}"
+                )
+            self._queue_analysis_overlay_label(label_text, center=spec.get("center"), normal=spec.get("normal"))
         except Exception:
             pass
         return count

@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-06-28 (phase 172 optical-solid-face-coating added)",
+  "generated_at": "2026-06-29 (phases 173 flag-bundle-discard + 174 analysis-overlay-labels added)",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -174,7 +174,9 @@
     "169": "pass",
     "170": "pass",
     "171": "pass",
-    "172": "pass"
+    "172": "pass",
+    "173": "pass",
+    "174": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -349,6 +351,8 @@
     "169": "wavefront-augmented surrogate -- real Zemax OPD spot inside the Airy (0177)",
     "170": "field-resolved surrogate -- spot grows + elongates with field from Zemax spot data (0178)",
     "171": "Advanced Surface dialog fits the screen + scrolls its tabs (no overflow under the top bar)",
-    "172": "promoted-solid face coating uses the shared library and applies in the non-seq trace"
+    "172": "promoted-solid face coating uses the shared library and applies in the non-seq trace",
+    "173": "a flagged-bug bundle can be discarded (cancel the flag; empty box auto-cancels)",
+    "174": "image-plane analysis overlays group into one expanding label (no overlap)"
   }
 }
