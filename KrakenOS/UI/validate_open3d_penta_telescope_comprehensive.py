@@ -9715,6 +9715,40 @@ def phase_174_analysis_overlay_labels(
     return result
 
 
+def phase_175_coaxial_led_dark_edges(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The MV-150 coaxial 55x78 area-LED layout reproduces the user's 2 dark edges: the
+    fold-axis BS clear-aperture stop (~30 mm) under-fills the 39 mm FOV (-> dark fold edges)
+    while the perp-axis 78 mm stop covers it (-> uniform). `validate_open3d_coaxial_led_dark_edges`
+    is a display-free guard: the asymmetric rectangle source + rectangular under-filling UDA +
+    `relative_illumination` contract, the rectangle UDA clips as a rectangle, the source samples
+    a true W x H rectangle, the closed-form coverage (umbra-pinch) model on the layout's own
+    geometry shows the fold FOV edge dark (~0.66 of centre) while the perp edge stays uniform
+    (~1.00), AND -- the decisive bugs/0179 check -- the REAL in-app non-sequential trace +
+    relative-illumination sampler reproduces that asymmetry (fold(X) edge/centre ~0.68 dark,
+    perp(Y) ~1.2 uniform), proving the rectangular UDA stop now vignettes and vignetted rays are
+    labeled stopped-at-stop instead of leaking into the map as image hits.
+    """
+    result = PhaseResult(
+        name="Phase 175: coaxial area-LED relative-illumination shows the 2 dark edges (fold dark, perp uniform)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_coaxial_led_dark_edges import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"coaxial-led-dark-edges guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("coaxial-led-dark-edges phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9935,6 +9969,7 @@ def main() -> int:
             phase_172_optical_solid_face_coating,
             phase_173_flag_bundle_discard,
             phase_174_analysis_overlay_labels,
+            phase_175_coaxial_led_dark_edges,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

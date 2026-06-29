@@ -2016,6 +2016,17 @@ def _build_system_from_specs(
             surface.ExtraData = decode_custom_surface_value(spec.get("extra_data", spec.get("ExtraData", surface.ExtraData)))
         if "uda" in spec or "UDA" in spec:
             surface.UDA = decode_custom_surface_value(spec.get("uda", spec.get("UDA", surface.UDA)))
+            # bugs/0179: a User-Defined Aperture defines an intentional clear aperture, so
+            # the non-seq trace must VIGNETTE rays landing outside it (matching the sequential
+            # UDA_Obj.Hit test) instead of shooting them through -- e.g. the rectangular
+            # beam-splitter exit stop that carves the coaxial-LED dark edges. Flagging the
+            # UDA surface lets __NsApertureStopVignette honour its polygon.
+            _uda_value = surface.UDA
+            _uda_active = _uda_value is not None and not (
+                isinstance(_uda_value, str) and _uda_value.strip().lower() in {"none", ""}
+            )
+            if _uda_active:
+                surface.IsApertureStop = True
         for attr, value in _advanced_surface_attrs_from_spec(spec).items():
             setattr(surface, attr, _normalize_advanced_surface_value(attr, value))
         # Per-face coating: resolve each promoted-solid face's coating NAME (a shared

@@ -3534,8 +3534,10 @@ class system():
         aperture, so here we terminate the ray AT the stop plane. Only surfaces the
         editor flagged ``IsApertureStop`` are blocking -- arbitrary elements/lens
         edges are NOT, so this never makes rays vanish at a randomly-placed element
-        (see the random-element robustness rule). Returns the world vignette point or
-        None.
+        (see the random-element robustness rule). Returns ``(world vignette point,
+        blocking surface index)``; both ``None`` when nothing blocks. bugs/0179: the
+        caller records the blocking surface as the ray's terminal so the scene bundle
+        labels it stopped-at-stop, not an image hit.
         """
         try:
             RayOrig = np.asarray(RayOrig, dtype=float).reshape(3)
@@ -3553,6 +3555,7 @@ class system():
         far = RayOrig + udir * 1.0e9
         best_d = None
         best_pt = None
+        best_k = None
         for k in range(1, len(self.SDT)):
             s = self.SDT[k]
             if not bool(getattr(s, "IsApertureStop", False)):
@@ -3587,11 +3590,24 @@ class system():
             D0 = 2.0 * float(np.hypot(Px - sub2, Py - sub1))
             DiamSup = float(getattr(s, "Diameter", 0.0)) * sub0
             DiamInf = float(getattr(s, "InDiameter", 0.0)) * sub0 * float(getattr(self.INORM, "Disable_Inner", 1.0))
-            if D0 > DiamSup or D0 < DiamInf:  # outside the clear aperture -> blocked
+            blocked = bool(D0 > DiamSup or D0 < DiamInf)  # outside the circular clear aperture
+            # bugs/0179: a User-Defined Aperture (e.g. the rectangular beam-splitter exit
+            # stop in the coaxial-LED layout) defines a NON-circular clear aperture. The
+            # sequential trace already vignettes on UDA_Obj.Hit (InterNormalCalc); honour the
+            # same test here so a ray crossing the stop plane outside the polygon is blocked.
+            uda_obj = getattr(s, "UDA_Obj", "None")
+            if (not blocked) and uda_obj != "None" and uda_obj is not None:
+                try:
+                    if not bool(uda_obj.Hit(Px, Py)):
+                        blocked = True
+                except Exception:
+                    pass
+            if blocked:  # outside the clear aperture (circular or UDA) -> blocked
                 if best_d is None or d_stop < best_d:
                     best_d = d_stop
                     best_pt = RayOrig + udir * d_stop
-        return best_pt
+                    best_k = k
+        return best_pt, best_k
 
     def __NsTraceTerminationDiagnostic(
         self,
@@ -4084,9 +4100,12 @@ class system():
                             surface_index=j,
                         )
                         break
-                    vign_pt = self.__NsApertureStopVignette(RayOrig, ResVec, SIGN, pTarget)
+                    vign_pt, vign_k = self.__NsApertureStopVignette(RayOrig, ResVec, SIGN, pTarget)
                     if vign_pt is not None:
                         self.__AppendNsTerminalSegment(RayOrig, ResVec, SIGN, stop_point=vign_pt)
+                        # bugs/0179: the branch's per-branch snapshot/restore data extraction
+                        # labels the terminal via this termination_reason (the coaxial layout is
+                        # non-branching, so the NsTrace EmptyCollect path is the one under test).
                         termination_reason = "aperture_stop_vignette"
                         termination_diagnostic = self.__NsTraceTerminationDiagnostic(
                             termination_reason,
@@ -4756,9 +4775,17 @@ class system():
                     self.__AppendNsTerminalSegment(RayOrig, ResVec, SIGN)
                     self.NsTraceTimingRecord("NsTrace.terminal_segment", timing_started)
                     break
-                vign_pt = self.__NsApertureStopVignette(RayOrig, ResVec, SIGN, pTarget)
+                vign_pt, vign_k = self.__NsApertureStopVignette(RayOrig, ResVec, SIGN, pTarget)
                 if vign_pt is not None:
                     self.__AppendNsTerminalSegment(RayOrig, ResVec, SIGN, stop_point=vign_pt)
+                    # bugs/0179: tag this ray's terminal with the BLOCKING stop surface so
+                    # the scene bundle reads last_surface=stop (reaches_image=False). Without
+                    # it the post-loop empty-collect labels the ray with the chosen downstream
+                    # surface (the image), so vignetted rays leak into the relative-illumination
+                    # map and wash out the coaxial-LED dark edges.
+                    if vign_k is not None:
+                        self.val = 0
+                        self.__EmptyCollect(np.asarray(vign_pt, dtype=float), ResVec, WaveLength, int(vign_k))
                     break
                 ImpVec = np.asarray(ResVec)
                 (CurrN, alpha) = (self.N_Prec[j_gg], self.AlphaPrecal[j_gg])

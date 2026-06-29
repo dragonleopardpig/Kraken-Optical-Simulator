@@ -53,6 +53,17 @@ def regular_polygon_uda(radius: float, sides: int, rotation_deg: float = 0.0) ->
     return [px.tolist(), py.tolist()]
 
 
+def rectangle_uda(half_x: float, half_y: float, rotation_deg: float = 0.0) -> list[list[float]]:
+    hx = abs(float(half_x))
+    hy = abs(float(half_y))
+    corners = np.asarray([[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy], [-hx, -hy]], dtype=float)
+    angle = np.deg2rad(float(rotation_deg))
+    if angle:
+        cos_a, sin_a = np.cos(angle), np.sin(angle)
+        corners = corners @ np.asarray([[cos_a, sin_a], [-sin_a, cos_a]], dtype=float)
+    return [corners[:, 0].tolist(), corners[:, 1].tolist()]
+
+
 def decode_custom_surface_value(value):
     if not isinstance(value, dict):
         return value
@@ -68,6 +79,12 @@ def decode_custom_surface_value(value):
         return regular_polygon_uda(
             float(value.get("radius", 1.0)),
             int(value.get("sides", 6)),
+            float(value.get("rotation_deg", value.get("rotation", 0.0))),
+        )
+    if kind in {"rectangle", "rectangle_uda", "uda_rectangle"}:
+        return rectangle_uda(
+            float(value.get("half_x", value.get("half_width_x", value.get("radius_x", 1.0)))),
+            float(value.get("half_y", value.get("half_width_y", value.get("radius_y", 1.0)))),
             float(value.get("rotation_deg", value.get("rotation", 0.0))),
         )
     return value

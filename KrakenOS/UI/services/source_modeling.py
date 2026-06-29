@@ -1232,6 +1232,11 @@ class SourceModelingMixin:
             if source_model == "Random line source":
                 x_values = rng.uniform(-radius, radius, ray_count)
                 y_values = np.zeros(ray_count, dtype=float)
+            elif source_model == "Random rectangle source":
+                # Live panel exposes a single radius -> symmetric square fallback; the
+                # independent W x H rectangle lives on the scene-source path (radius_x/radius_y).
+                x_values = rng.uniform(-radius, radius, ray_count)
+                y_values = rng.uniform(-radius, radius, ray_count)
             else:
                 x_values = np.zeros(ray_count, dtype=float)
                 y_values = np.zeros(ray_count, dtype=float)
@@ -1393,6 +1398,11 @@ class SourceModelingMixin:
         elif model == "Random square source":
             x_values = rng.uniform(-radius, radius, ray_count)
             y_values = rng.uniform(-radius, radius, ray_count)
+        elif model == "Random rectangle source":
+            radius_x = self._source_spec_float(settings, ("radius_x", "half_width_x", "source_radius_x"), radius, minimum=0.0)
+            radius_y = self._source_spec_float(settings, ("radius_y", "half_width_y", "source_radius_y"), radius, minimum=0.0)
+            x_values = rng.uniform(-radius_x, radius_x, ray_count)
+            y_values = rng.uniform(-radius_y, radius_y, ray_count)
         elif model == "Random line source":
             x_values = rng.uniform(-radius, radius, ray_count)
             y_values = np.zeros(ray_count, dtype=float)

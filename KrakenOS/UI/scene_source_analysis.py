@@ -126,6 +126,7 @@ def scene_source_from_spec(
         "Collimated disk source",
         "Random circle source",
         "Random square source",
+        "Random rectangle source",
         "Random line source",
         "Random point cone",
         "Zemax rayfile source",
@@ -156,6 +157,8 @@ def scene_source_from_spec(
     ray_count = int(max(1, round(source_spec_float(spec, ("ray_count", "rays"), sample_count or default_ray_count, minimum=1.0))))
     power = source_spec_float(spec, ("power", "source_power"), 1.0, minimum=0.0)
     radius = source_spec_float(spec, ("radius", "source_radius", "launch_radius"), default_radius, minimum=0.0)
+    radius_x = source_spec_float(spec, ("radius_x", "half_width_x", "source_radius_x"), radius, minimum=0.0)
+    radius_y = source_spec_float(spec, ("radius_y", "half_width_y", "source_radius_y"), radius, minimum=0.0)
     cone_deg = source_spec_float(spec, ("cone_deg", "source_cone_angle"), default_cone_deg, minimum=0.0)
     physical = source_spec_bool(spec, "physical", model != source_model_default)
     role_default = "illumination" if physical else "pupil_field_reference"
@@ -171,6 +174,8 @@ def scene_source_from_spec(
             "power": float(power),
             "power_per_ray": float(power) / float(ray_count),
             "radius": radius,
+            "radius_x": radius_x,
+            "radius_y": radius_y,
             "cone_deg": cone_deg,
             "seed": int(round(source_spec_float(spec, ("seed", "source_seed"), index + 1, minimum=0.0))) % (2**32 - 1),
             "angular_weight": str(spec.get("angular_weight", spec.get("source_angular_weight", angular_weight_default))),

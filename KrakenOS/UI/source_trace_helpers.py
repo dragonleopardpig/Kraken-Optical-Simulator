@@ -30,6 +30,7 @@ SOURCE_MODEL_VALUES = (
     "Collimated disk source",
     "Random circle source",
     "Random square source",
+    "Random rectangle source",
     "Random line source",
     "Random point cone",
     SOURCE_MODEL_ZEMAX_RAYFILE,
@@ -964,6 +965,11 @@ def build_scene_source_bundle(source: SceneSource3D):
     elif model == "Random square source":
         x_values = rng.uniform(-radius, radius, ray_count)
         y_values = rng.uniform(-radius, radius, ray_count)
+    elif model == "Random rectangle source":
+        radius_x = source_spec_float(settings, ("radius_x", "half_width_x", "source_radius_x"), radius, minimum=0.0)
+        radius_y = source_spec_float(settings, ("radius_y", "half_width_y", "source_radius_y"), radius, minimum=0.0)
+        x_values = rng.uniform(-radius_x, radius_x, ray_count)
+        y_values = rng.uniform(-radius_y, radius_y, ray_count)
     elif model == "Random line source":
         x_values = rng.uniform(-radius, radius, ray_count)
         y_values = np.zeros(ray_count, dtype=float)
