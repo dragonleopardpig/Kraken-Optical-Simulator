@@ -9848,6 +9848,44 @@ def phase_178_branch_detector_scatter_clutter(
     return result
 
 
+def phase_179_branch_detector_internal_bounce_clutter(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The folded coaxial scene's beam-splitter is a glued non-sequential CUBE: the tracer forks
+    transmit/reflect at every face, so a ray can re-bounce on the SAME surface (S1) up to depth 8
+    (`S1/transmit -> S1/reflect -> S1/reflect -> ...`). `derive_branch_detectors` makes one detector per
+    terminal leaf, so at the live LED ray count the internal bounce explodes into ~128 deterministic ghost
+    detectors clustered at the cube. They carry NO scatter token, so the 0182 scatter gate never touched
+    them -- they drew ~128 overlapping orange footprint quads (two big tilted parallelograms + crosshairs)
+    over the real geometry. (The 0182 guard used 15 rays where the explosion never forms, which is why it
+    missed this.) Like a scatter leaf, an internal-bounce ghost has no meaningful focus: the fix gates its
+    2D DRAW (new `_branch_path_has_internal_bounce` = same surface hit >=3 times, folded into
+    `_branch_path_draw_suppressed`) while KEEPING the detector target as a ray hard-stop -- so the rays stay
+    bounded in 3D (no starburst) and the 2D stays clean. `validate_open3d_branch_detector_internal_bounce_clutter`
+    asserts the unit rule (an 8-deep same-surface fork keeps a detector per leaf, all draw-suppressed, plus
+    the clean leak draws; a clean 2-arm beam splitter draws both arms; a 3-distinct-surface fold draws all
+    its detectors) and the real folded layout at the LIVE ray count (hard-stops numerous, 0 detector
+    footprints drawn, bounded 3D ray extent tight).
+    """
+    result = PhaseResult(
+        name="Phase 179: beam-splitter internal-bounce draws no branch-detector clutter (2D full-3D)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_branch_detector_internal_bounce_clutter import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"branch-detector internal-bounce-clutter guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("branch-detector internal-bounce-clutter phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10072,6 +10110,7 @@ def main() -> int:
             phase_176_coaxial_led_folded,
             phase_177_optical_axis_scatter_clutter,
             phase_178_branch_detector_scatter_clutter,
+            phase_179_branch_detector_internal_bounce_clutter,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

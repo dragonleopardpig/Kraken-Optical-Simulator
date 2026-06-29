@@ -1013,7 +1013,7 @@ def build_scene_bundle(
             derive_branch_detectors,
             branch_detector_scene_target,
             branch_detector_plane_curve,
-            _branch_path_has_scatter,
+            _branch_path_draw_suppressed,
         )
 
         branch_detectors = derive_branch_detectors(
@@ -1026,11 +1026,12 @@ def build_scene_bundle(
             scene_targets.append(
                 branch_detector_scene_target(branch_detector, row_index=100000 + offset)
             )
-            # bugs/0182: a diffuse-scatter leaf still earns a detector so it acts as a
-            # ray hard-stop (detector_planes_for_hard_stop bounds the otherwise-escaping
-            # scatter rays), but we DON'T draw its plane -- dozens of scatter footprints
-            # buried the 2-D 'full 3-D' projection in crisscrossing orange rectangles.
-            if not _branch_path_has_scatter(branch_detector.branch_path):
+            # bugs/0182 + bugs/0183: a diffuse-scatter leaf OR an internal multi-bounce
+            # ghost still earns a detector so it acts as a ray hard-stop
+            # (detector_planes_for_hard_stop bounds the otherwise-escaping rays), but we
+            # DON'T draw its plane -- dozens of such footprints buried the 2-D 'full 3-D'
+            # projection in crisscrossing orange rectangles.
+            if not _branch_path_draw_suppressed(branch_detector.branch_path):
                 surface_curves.append(branch_detector_plane_curve(branch_detector))
     except Exception:
         branch_detectors = []

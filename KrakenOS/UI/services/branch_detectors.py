@@ -102,6 +102,12 @@ def _is_proper_prefix(short: tuple, long: tuple) -> bool:
 
 _SCATTER_BRANCH_TOKENS = ("scatter", "diffuse")
 
+# bugs/0183: a single surface hit this many times in one branch path is an internal
+# multi-bounce ghost, not a primary arm (see _branch_path_has_internal_bounce). A
+# legitimate double-pass (e.g. a Michelson recombine, an autocollimator return) hits
+# a surface at most twice, so 3 is the first count that can only be an internal bounce.
+_MAX_SAME_SURFACE_HITS = 3
+
 
 def _branch_path_has_scatter(branch_path: str) -> bool:
     """True once a branch has passed through a diffuse scatter event.
@@ -110,15 +116,56 @@ def _branch_path_has_scatter(branch_path: str) -> bool:
     spawns ONE leaf branch per scattered ray (S3/scatter01..N). Each such leaf still
     earns a branch detector so it acts as a ray hard-stop (detector_planes_for_hard_stop
     bounds the otherwise-escaping scatter rays in 3-D), but the DRAW of its orange
-    footprint / dark plane is gated off by this predicate (in scene_builder and
-    scene_projector) -- otherwise dozens of crisscrossing rectangles bury the 2-D
-    'full 3-D' projection. Mirrors the optical-axis scatter guard (bugs/0181)."""
+    footprint / dark plane is gated off (in scene_builder and scene_projector) --
+    otherwise dozens of crisscrossing rectangles bury the 2-D 'full 3-D' projection.
+    Mirrors the optical-axis scatter guard (bugs/0181)."""
     components = _branch_components(branch_path)
     for component in components:
         text = str(component or "").lower()
         if any(token in text for token in _SCATTER_BRANCH_TOKENS):
             return True
     return False
+
+
+def _branch_component_surface(component: str) -> str:
+    """The surface token a branch component HITS (``S1:S1/transmit`` -> ``S1``)."""
+    segment = str(component or "").split(":")[-1]
+    return segment.split("/")[0].strip()
+
+
+def _branch_path_has_internal_bounce(branch_path: str) -> bool:
+    """True when one surface is hit ``_MAX_SAME_SURFACE_HITS`` times in a branch.
+
+    bugs/0183: a glued beam-splitter cube is a non-sequential solid -- the tracer
+    forks transmit/reflect at EVERY face interaction, so a ray can re-bounce on the
+    SAME surface (the cube) over and over (``S1/transmit -> S1/reflect -> S1/reflect
+    -> ...``, depth 8 on the MV-150 fold). Each leaf earns a branch detector, so a
+    dense LED bundle explodes into ~128 deterministic-but-faint ghost detectors, all
+    clustered at the cube and drawn as overlapping orange parallelograms (the plaid
+    that survived the bugs/0182 scatter gate, since these carry no scatter token).
+    Like scatter, an internal-bounce ghost has no meaningful focus, so its detector
+    DRAW is gated off; the target is kept as a ray hard-stop (double-duty)."""
+    components = _branch_components(branch_path)
+    if not components:
+        return False
+    counts: dict[str, int] = {}
+    for component in components:
+        token = _branch_component_surface(component)
+        if not token:
+            continue
+        counts[token] = counts.get(token, 0) + 1
+        if counts[token] >= _MAX_SAME_SURFACE_HITS:
+            return True
+    return False
+
+
+def _branch_path_draw_suppressed(branch_path: str) -> bool:
+    """A branch detector should NOT draw its 2-D footprint/plane when the branch is
+    non-deterministic (diffuse scatter, bugs/0182) or a faint internal multi-bounce
+    ghost (bugs/0183). In BOTH cases the detector TARGET is still kept as an
+    is_detector ray hard-stop, so only the DRAW is gated -- the rays stay bounded in
+    3-D (no starburst) while the 2-D 'full 3-D' projection stays clean (no plaid)."""
+    return _branch_path_has_scatter(branch_path) or _branch_path_has_internal_bounce(branch_path)
 
 
 def _leaf_reaches_existing_detector(group: list) -> bool:

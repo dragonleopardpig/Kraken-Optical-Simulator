@@ -72,6 +72,22 @@ def _target_is_scatter_branch_detector(target) -> bool:
     return _branch_path_has_scatter(metadata.get("branch_path", ""))
 
 
+def _target_branch_detector_draw_suppressed(target) -> bool:
+    """True for a branch detector whose 2-D footprint/crosshair must NOT draw.
+
+    Covers BOTH the bugs/0182 diffuse-scatter leaves and the bugs/0183 beam-splitter
+    internal multi-bounce ghosts. In both cases the detector target is kept (it still
+    feeds detector_planes_for_hard_stop and bounds the rays in 3-D); only the DRAW is
+    gated so the 2-D 'full 3-D' projection does not fill with orange clutter.
+    """
+    metadata = getattr(target, "metadata", None) or {}
+    if metadata.get("target_source") != "branch_detector":
+        return False
+    from KrakenOS.UI.services.branch_detectors import _branch_path_draw_suppressed
+
+    return _branch_path_draw_suppressed(metadata.get("branch_path", ""))
+
+
 class SceneProjector2D:
     """Project a :class:`SceneBundle` into a :class:`ProjectedScene2D`."""
 
@@ -234,7 +250,7 @@ class SceneProjector2D:
     def _project_detector_footprints(self, bundle: SceneBundle) -> list[ProjectedCurve2D]:
         projected: list[ProjectedCurve2D] = []
         for target in list(getattr(bundle, "targets", []) or []):
-            if _target_is_scatter_branch_detector(target):
+            if _target_branch_detector_draw_suppressed(target):
                 continue
             polylines = scene_target_active_footprint_polylines(target)
             if not polylines:
@@ -269,7 +285,7 @@ class SceneProjector2D:
             int(getattr(target, "trace_surface")): target
             for target in list(getattr(bundle, "targets", []) or [])
             if getattr(target, "trace_surface", None) is not None
-            and not _target_is_scatter_branch_detector(target)
+            and not _target_branch_detector_draw_suppressed(target)
         }
         projected: list[ProjectedCurve2D] = []
         for path in list(getattr(bundle, "ray_paths", []) or []):
