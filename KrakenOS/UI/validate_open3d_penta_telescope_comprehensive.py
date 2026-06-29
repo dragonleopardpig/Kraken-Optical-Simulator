@@ -9749,6 +9749,38 @@ def phase_175_coaxial_led_dark_edges(
     return result
 
 
+def phase_176_coaxial_led_folded(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The FOLDED MV-150 coaxial area-LED layout (`machine_vision_150mm_coaxial_led_folded`)
+    renders the real beam path: a 55x78 side-port LED reflects off the 45 deg BS diagonal down
+    to the FOV object, diffusely scatters back, transmits through the BS to the imaging lens +
+    camera. `validate_open3d_coaxial_led_folded` is a display-free guard: the structural contract
+    (-X side-port rectangle LED outside the +X face, BS tilted -45 to fold -X->-Z, Diffuse Object
+    on the reflected arm, beam-splitter-paths display), the fold geometry (near-collimated probe:
+    the reflected beam illuminates the FOV object across 55 mm fold (X) x 78 mm perp (Y) -- fold <
+    perp, so radius_x/radius_y did not swap after the fold), and end-to-end (the as-shipped 30 deg
+    cone still drives the full branched diffuse double-pass to the image plane).
+    """
+    result = PhaseResult(
+        name="Phase 176: folded coaxial area-LED traces LED -> BS reflect -> object -> back -> image"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_coaxial_led_folded import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"coaxial-led-folded guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("coaxial-led-folded phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -9970,6 +10002,7 @@ def main() -> int:
             phase_173_flag_bundle_discard,
             phase_174_analysis_overlay_labels,
             phase_175_coaxial_led_dark_edges,
+            phase_176_coaxial_led_folded,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
