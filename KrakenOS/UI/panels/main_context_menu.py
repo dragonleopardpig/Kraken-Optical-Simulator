@@ -194,14 +194,19 @@ class MainContextMenu:
         insert_menu.add_command(label="Optical CAD/STL Solid...", command=self.import_optical_stl_solid)
         insert_menu.add_command(label="Component to Current Path View...", command=self.open_current_path_component_placement)
         machine_vision_names = list(getattr(self, "machine_vision_names", []) or [])
+        machine_vision_menu = tk.Menu(insert_menu, tearoff=0)
+        machine_vision_menu.add_command(
+            label="Import Lens from Folder...",
+            command=self.import_machine_vision_lens_from_folder,
+        )
         if machine_vision_names:
-            machine_vision_menu = tk.Menu(insert_menu, tearoff=0)
+            machine_vision_menu.add_separator()
             for machine_vision_name in machine_vision_names:
                 machine_vision_menu.add_command(
                     label=machine_vision_name,
                     command=lambda value=machine_vision_name: self.insert_machine_vision_lens_by_name(value),
                 )
-            insert_menu.add_cascade(label="Machine Vision Lens", menu=machine_vision_menu)
+        insert_menu.add_cascade(label="Machine Vision Lens", menu=machine_vision_menu)
         if row.surface == self.beam_splitter_surface:
             insert_menu.add_separator()
             insert_menu.add_command(

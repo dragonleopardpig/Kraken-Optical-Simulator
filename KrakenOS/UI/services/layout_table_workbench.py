@@ -11,6 +11,10 @@ from __future__ import annotations
 
 from KrakenOS.UI.custom_surfaces import encode_custom_surface_value
 from KrakenOS.UI.services.fold_insertion import can_insert_fold_mirror, plan_fold_mirror
+from KrakenOS.UI.services.machine_vision_folder_import import (
+    import_lens_folder,
+    render_surrogate_layout_source,
+)
 from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timing_span
 from KrakenOS.UI.widgets import place_commit_cell_entry
 
@@ -617,6 +621,47 @@ class LayoutTableWorkbenchMixin:
             )
             return
         self.insert_layout_component_by_name(name, refresh=refresh)
+
+    def import_machine_vision_lens_from_folder(self, folder: str | None = None) -> None:
+        """Item 3: ingest a whole vendor lens folder into one auto-built surrogate.
+
+        The user picks a folder; everything useful in it is read and a single
+        first-order surrogate is synthesised: a Zemax sequential prescription OR
+        -- for a real Black-Box lens whose surfaces are encrypted -- the System/
+        Prescription Data text dump drives the optics, the mechanical STEP is
+        wired as the overlay, and a wavefront export is wired onto the first ideal
+        group.  The emitted ``machine_vision_<slug>.py`` is written into the
+        common-layout library, re-discovered, and loaded as the working layout --
+        after which it is also insertable from the right-click Machine Vision
+        cascade (item 2) and foldable (item 1) like any other surrogate.
+        """
+        if folder is None:
+            folder = filedialog.askdirectory(
+                title="Import Machine Vision Lens from Folder", parent=self
+            )
+        if not folder:
+            return
+        try:
+            model = import_lens_folder(folder)
+            source = render_surrogate_layout_source(model)
+            destination = LAYOUTS_DIR / model.filename
+            destination.write_text(source, encoding="utf-8")
+        except Exception as exc:
+            messagebox.showerror(
+                "Import Machine Vision Lens",
+                "Could not build a surrogate from this folder:\n\n"
+                f"{folder}\n\n{exc}",
+                parent=self,
+            )
+            return
+        self.load_layouts()
+        self.load_layout_by_name(model.title)
+        message = (
+            f"Imported {model.title} (EFL {model.effl:.4g} mm) from "
+            f"{Path(folder).name}; surrogate saved as {model.filename}."
+        )
+        self.status_var.set(message)
+        self.append_progress(message)
 
     def _selected_operand_labels(self) -> list[str]:
         if "merit_mode_list" not in self.__dict__:
