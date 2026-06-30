@@ -654,6 +654,15 @@ class Open3DEventRecorder:
                         return {k: tm.get(k) for k in ("use_nonseq", "use_folded", "mode", "trace_mode")}
                     return tm
                 _safe("resolved_trace_mode", _trace_flags)
+                # bugs/0187: the ACTUAL tracer backend used for the last preview. Unlike
+                # resolved_trace_mode (which reports the off-axis classification and stays
+                # non-seq for a folded Mirror), this reveals whether the folded-sequential
+                # fix engaged: "Scalar TraceLoop"/"BatchTraceLoop" => folded-sequential ran,
+                # "NsTraceLoop" => non-seq (fix did not engage / stale app).
+                diag["actual_trace_backend"] = getattr(editor, "_last_preview_trace_backend", None)
+                diag["folded_sequential_engaged"] = getattr(
+                    editor, "_last_preview_folded_sequential", None
+                )
 
                 def _bundle_mode():
                     from KrakenOS.UI.layout_plot_controller import scene_bundle_launch_sampling_mode

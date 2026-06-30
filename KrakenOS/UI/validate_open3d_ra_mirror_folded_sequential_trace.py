@@ -136,10 +136,23 @@ def _end_to_end_pipeline(failures: list[str], notes: list[str]) -> None:
         failures.append("end-to-end: display row lost its promoted cube (OpticalSolidFaces) after the trace")
     if getattr(editor, "_force_sequential_preview_trace", False):
         failures.append("end-to-end: the force-sequential override was not cleared after the trace")
+    # bugs/0187: the bug-flag recorder reads these to state the backend outright (the
+    # resolve_trace_intent diagnostic stays non-seq for a folded Mirror and cannot reveal
+    # whether the fix engaged). A stale app would record folded_sequential_engaged=False /
+    # actual_trace_backend="NsTraceLoop".
+    if getattr(editor, "_last_preview_folded_sequential", None) is not True:
+        failures.append(
+            "end-to-end: _last_preview_folded_sequential was not set True "
+            "(recorder cannot report that the fold engaged)"
+        )
+    if "Ns" in str(getattr(editor, "_last_preview_trace_backend", "")):
+        failures.append("end-to-end: recorder would report a non-sequential backend for the folded scene")
     if not failures:
         notes.append(
             f"end-to-end: real pipeline folded + traced on {backend} -> rays on +X sensor "
-            f"(X={float(X.min()):.2f}..{float(X.max()):.2f}), display cube preserved"
+            f"(X={float(X.min()):.2f}..{float(X.max()):.2f}), display cube preserved; "
+            f"recorder backend diag={backend!r}, folded_engaged="
+            f"{getattr(editor, '_last_preview_folded_sequential', None)}"
         )
 
 

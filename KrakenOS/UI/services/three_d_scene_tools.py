@@ -520,6 +520,10 @@ class ThreeDSceneToolsMixin:
                     if mode is None:
                         mode = self._preview_scene_sampling_mode()
                     folded_trace_rows = self._folded_sequential_trace_rows(self.rows)
+                    # bugs/0187: record whether the folded-sequential path engaged so a bug
+                    # flag can state it outright (the resolve_trace_intent diagnostic still
+                    # reports non-seq for a folded Mirror, so it cannot reveal the fix).
+                    self._last_preview_folded_sequential = bool(folded_trace_rows is not None)
                     with open3d_timing_span(
                         "preview_trace_rays",
                         sampling_mode=str(mode or ""),
