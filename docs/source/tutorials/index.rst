@@ -12,7 +12,7 @@ edits, then explains which UI controls map to optical design concepts.
    machine_vision_focus
    machine_vision_pyrite_85_surrogate
    machine_vision_azure_85_surrogate
-   machine_vision_azure_85_folded
+   machine_vision_azure_85_ra_mirror
    machine_vision_pyrite_120_surrogate
    gaussian_beam_expander
    michelson_interferometer
