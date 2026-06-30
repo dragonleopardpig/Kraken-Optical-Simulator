@@ -186,6 +186,28 @@ def _optical_solid_faces_have_beam_splitter(metadata: Any) -> bool:
     return False
 
 
+def _optical_solid_faces_have_mirror_fold(metadata: Any) -> bool:
+    """A PROMOTED optical solid that folds the path (a right-angle mirror cube) carries its
+    reflection on an ``OpticalSolidFaces`` face whose ``function`` is "Mirror", NOT a sequential
+    ``Mirror`` surface row. Detect it so a promoted-mirror fold still classifies as breaking
+    rotational symmetry -- otherwise the folded scene is mistaken for the bug-0126 non-branching
+    refractive solid and its launch collapses to a flat fan instead of revolving into a cone
+    (bugs/0161, bugs/0186). A "Beam Splitter" face is intentionally NOT a fold here -- it keeps its
+    real straight-through (bugs/0185 reflects the downstream chain only for a FULL mirror)."""
+    if not metadata:
+        return False
+    try:
+        from KrakenOS.UI.optical_solid_metadata import normalize_optical_solid_face_metadata
+
+        normalized = normalize_optical_solid_face_metadata(metadata)
+        for face in normalized.get("faces", []) or []:
+            if str(face.get("function", "")) == "Mirror":
+                return True
+    except Exception:
+        return False
+    return False
+
+
 def _trace_flags(
     rows_or_specs: list[Any],
     settings: dict[str, Any],

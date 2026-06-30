@@ -752,15 +752,28 @@ class TracePreviewSamplingMixin:
         """True if any element tilts, transversely decentres, or folds the path.
 
         An element rotated (any tilt) or slid OFF the optical axis
-        (``desp_x`` / ``desp_y``) -- or a reflective fold (``Mirror``) -- destroys
-        the rotational symmetry that lets a non-sequential scene be sampled by a
-        flat meridional fan; such a scene must keep the area-filling disk so the
-        off-axis / folded deflection is captured. An axial slide (``desp_z`` only,
-        an element moved ALONG the axis) preserves the symmetry and must NOT trip
-        this -- unlike ``has_nonseq_geometry``, which counts any ``desp_z`` too.
+        (``desp_x`` / ``desp_y``) -- or a reflective fold (a sequential ``Mirror``
+        surface OR a PROMOTED mirror cube whose ``OpticalSolidFaces`` carries a
+        ``function == "Mirror"`` face) -- destroys the rotational symmetry that lets
+        a non-sequential scene be sampled by a flat meridional fan; such a scene
+        must keep the area-filling disk so the off-axis / folded deflection is
+        captured. An axial slide (``desp_z`` only, an element moved ALONG the axis)
+        preserves the symmetry and must NOT trip this -- unlike
+        ``has_nonseq_geometry``, which counts any ``desp_z`` too. bugs/0186: a
+        promoted right-angle mirror folds +Z -> +X but its row is ``surface =
+        "Standard"`` with only ``desp_z``, so without the OpticalSolidFaces check
+        the folded RA-mirror scene was misread as the bug-0126 in-line refractive
+        solid and its launch collapsed to a flat fan instead of revolving a cone.
         """
+        from KrakenOS.UI.trace_intent import _optical_solid_faces_have_mirror_fold
+
         for row in getattr(self, "rows", None) or []:
             if str(getattr(row, "surface", "") or "").strip().lower() == "mirror":
+                return True
+            advanced = getattr(row, "advanced", None)
+            if isinstance(advanced, dict) and _optical_solid_faces_have_mirror_fold(
+                advanced.get("OpticalSolidFaces")
+            ):
                 return True
             for attr in ("tilt_x", "tilt_y", "tilt_z", "desp_x", "desp_y"):
                 try:
