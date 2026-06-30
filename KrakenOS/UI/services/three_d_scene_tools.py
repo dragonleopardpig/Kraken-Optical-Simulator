@@ -81,6 +81,10 @@ from KrakenOS.UI.services.open3d_step_state import Open3DStepStateService
 from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timing_span
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.offbeam_optical_solid import offbeam_neutralized_body_transform
+from KrakenOS.UI.services.folded_sequential_fold import (
+    fold_promoted_mirror_specs_to_sequential,
+    scene_nonseq_trigger_is_only_promoted_full_mirrors,
+)
 from KrakenOS.UI.services.optical_solid_geometry import (
     _read_stl_triangle_vertices,
     _rotation_matrix_from_kraken_tilts,
@@ -512,23 +516,56 @@ class ThreeDSceneToolsMixin:
                             require_solids=True,
                             force_rebuild=bool(live_step_records or saved_native_records),
                         )
-                    rays = Kos.raykeeper(system)
                     max_radius = max((max(row.diameter / 2.0, 0.5) for row in self.rows), default=1.0)
                     if mode is None:
                         mode = self._preview_scene_sampling_mode()
+                    folded_trace_rows = self._folded_sequential_trace_rows(self.rows)
                     with open3d_timing_span(
                         "preview_trace_rays",
                         sampling_mode=str(mode or ""),
                         row_count=len(self.rows),
                         wavelength_um=float(wavelength),
+                        folded_sequential=bool(folded_trace_rows is not None),
                     ):
-                        self._trace_preview_rays(
-                            system,
-                            rays,
-                            wavelength,
-                            max_radius,
-                            sampling_mode=mode,
-                        )
+                        if folded_trace_rows is not None:
+                            # bugs/0187 fix (3): the only non-seq trigger is a promoted FULL
+                            # mirror cube -- trace the fold as a SEQUENTIAL Mirror chain so the
+                            # ideal Thin Lenses reach the sensor (the mesh-mirror non-seq trace
+                            # flips the propagation sign and the lenses retroreflect). The
+                            # display bundle below still keeps the mesh cube + 0185 overlays;
+                            # only the ray paths come from this sequential system.
+                            from KrakenOS.UI.layout_editor import _build_system_from_specs
+
+                            folded_specs = self._serializable_specs_for_rows(folded_trace_rows)
+                            trace_system = _build_system_from_specs(
+                                folded_specs, build=0, apply_optical_solid_output_ports=False
+                            )
+                            trace_system.energy_probability = 0
+                            rays = Kos.raykeeper(trace_system)
+                            original_trace_rows = self.rows
+                            # A folded Mirror row carries a tilt, so resolve_trace_intent would
+                            # classify it as off-axis (non-seq) geometry. Force the sequential
+                            # tracer for this build -- a sequential Mirror is exactly what folds
+                            # the running frame so the ideal Thin Lenses behave (a non-seq trace
+                            # of the same specs reaches 0 rays).
+                            self._force_sequential_preview_trace = True
+                            try:
+                                self.rows = folded_trace_rows
+                                self._trace_preview_rays(
+                                    trace_system, rays, wavelength, max_radius, sampling_mode=mode
+                                )
+                            finally:
+                                self.rows = original_trace_rows
+                                self._force_sequential_preview_trace = False
+                        else:
+                            rays = Kos.raykeeper(system)
+                            self._trace_preview_rays(
+                                system,
+                                rays,
+                                wavelength,
+                                max_radius,
+                                sampling_mode=mode,
+                            )
             ray_path_count = len(getattr(rays, "CC", []) or [])
             with open3d_timing_span(
                 "preview_build_scene_bundle",
@@ -834,6 +871,53 @@ class ThreeDSceneToolsMixin:
         if not changed:
             return rows, []
         return output, records
+
+    def _folded_sequential_trace_rows(
+        self, rows: list[SurfaceRow]
+    ) -> list[SurfaceRow] | None:
+        """bugs/0187 fix (3): when the ONLY non-sequential trigger in the scene is one or
+        more promoted FULL-mirror cubes, return a copy of ``rows`` with each such cube
+        converted to a sequential ``Mirror`` surface (TRACE only -- the display keeps the
+        mesh cube + the bugs/0185 folded overlays). The native sequential tracer then folds
+        the running coordinate frame on each ``Mirror`` row, so the surrogate's ideal Thin
+        Lenses reach the sensor instead of retroreflecting (the mesh-mirror non-seq trace
+        flips the propagation sign), and an ARBITRARY CHAIN of folds composes natively.
+
+        Returns ``None`` for every other scene (a beam splitter, a refractive promoted solid,
+        or no fold at all keeps the non-sequential / sequential trace it already had)."""
+        try:
+            specs = self._serializable_specs_for_rows(list(rows or []))
+        except Exception:
+            return None
+        if not scene_nonseq_trigger_is_only_promoted_full_mirrors(specs):
+            return None
+        try:
+            _folded_specs, records = fold_promoted_mirror_specs_to_sequential(specs)
+        except Exception:
+            return None
+        if not records:
+            return None
+        folded_rows = [SurfaceRow(**asdict(row)) for row in rows]
+        for record in records:
+            index = int(record.get("row_index", -1))
+            if not (0 <= index < len(folded_rows)):
+                return None
+            tilt = record.get("tilt", {}) or {}
+            mirror = folded_rows[index]
+            mirror.surface = "Mirror"
+            mirror.glass = "MIRROR"
+            mirror.rc = 0.0
+            mirror.tilt_x = float(tilt.get("tilt_x", 0.0))
+            mirror.tilt_y = float(tilt.get("tilt_y", 0.0))
+            mirror.tilt_z = float(tilt.get("tilt_z", 0.0))
+            mirror.desp_z = 0.0
+            mirror.axis_move = 2.0
+            mirror.advanced = {}
+            reseated = float(record.get("reseated_desp_z", 0.0) or 0.0)
+            if abs(reseated) > 1e-9 and index > 0:
+                prior = folded_rows[index - 1]
+                prior.thickness = float(getattr(prior, "thickness", 0.0) or 0.0) + reseated
+        return folded_rows
 
     def _live_step_overlay_trace_rows(self) -> tuple[list[SurfaceRow], list[dict[str, object]]]:
         if self._step_path_for_label("optical") is None:

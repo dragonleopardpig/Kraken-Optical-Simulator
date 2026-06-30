@@ -413,6 +413,11 @@ class TracePreviewService:
         try:
             row_specs = self._serializable_row_specs()
             trace_state = self._resolved_trace_mode(system=system)
+            if getattr(self.editor, "_force_sequential_preview_trace", False):
+                # bugs/0187 fix (3): a promoted full-mirror fold has been synthesised into a
+                # sequential Mirror chain; trace it sequentially regardless of the tilted-mirror
+                # off-axis classification (a non-seq trace of the folded specs reaches 0 rays).
+                trace_state = {**trace_state, "use_nonseq": False, "use_folded": False, "active": "Sequential"}
             sampling_mode = str(self.editor.__dict__.get("_active_preview_sampling_mode", "") or "ui_preview")
             launch_metadata = self._launch_metadata_for_trace(trace_state, sampling_mode=sampling_mode)
 

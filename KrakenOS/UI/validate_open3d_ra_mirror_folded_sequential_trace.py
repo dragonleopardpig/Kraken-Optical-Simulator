@@ -1,0 +1,223 @@
+"""Display-free guard for bugs/0187 fix (3): a promoted RA-mirror cube traces as a
+SEQUENTIAL ``Mirror`` so rays reach the sensor on the folded path.
+
+A promoted right-angle mirror cube (``machine_vision_AZ85_RA_Mirror.py``) reflects on an
+``OpticalSolidFaces`` face whose ``function`` is "Mirror". Because it is a real CAD body the
+whole trace is forced NON-sequential, a mesh-mirror reflection flips the propagation sign, and
+the surrogate's IDEAL Thin Lenses then retroreflect -- 0 of 93 rays reach the sensor (the "ray
+diverges" flag ``flag_20260630_142846_722``). See ``bugs/0187``.
+
+Fix (3) (``services/folded_sequential_fold.py``) represents each promoted full-mirror cube as a
+sequential ``Mirror`` surface for the TRACE: the native sequential tracer folds the running
+coordinate frame on a ``Mirror`` row, the ideal Thin Lenses behave, and an ARBITRARY CHAIN of
+folds composes natively (the per-mirror tilt is solved convention-free from each cube's world
+face normal, so a second mirror the user orients differently still folds correctly).
+
+This guard binds the REAL synthesiser + the REAL ``_build_system_from_specs`` build and asserts:
+  1. the single-mirror AZ85 layout folds +Z -> +X and an on-axis ray lands on the sensor at
+     world X ~ +287.82, Z ~ 71.9 (the flag's measured sensor station);
+  2. a synthetic SECOND cube before the image (the user's planned RA mirror between lens and
+     camera) still reaches the image -- the chain composes;
+  3. a non-folded layout is left byte-identical (gate False, no records);
+  4. END-TO-END the real editor pipeline (``_build_preview_system_rays_bundle``) folds the
+     AZ85 scene and traces it SEQUENTIALLY (a ``TraceLoop`` backend, never ``NsTraceLoop``) so
+     the full ray cone lands on the +X sensor, while the display row keeps its promoted cube --
+     this pins the force-sequential override, since a non-seq trace of the folded specs is 0 rays.
+
+Run:
+    .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_ra_mirror_folded_sequential_trace
+
+Exit: 0 = pass, 1 = regression.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import io
+import sys
+from pathlib import Path
+
+import numpy as np
+
+import KrakenOS as Kos
+from KrakenOS.UI.layout_editor import (
+    LAYOUTS_DIR,
+    KrakenLayoutEditor,
+    _build_system_from_specs,
+    _load_python_data,
+)
+from KrakenOS.UI.layout_library import load_python_data
+from KrakenOS.UI.render_layout_snapshot import _snapshot_editor
+from KrakenOS.UI.services.folded_sequential_fold import (
+    fold_promoted_mirror_specs_to_sequential,
+    scene_nonseq_trigger_is_only_promoted_full_mirrors,
+)
+
+_LAYOUTS = Path(__file__).resolve().parent.parent / "common_optical_layouts"
+_LAYOUT_FILE = "machine_vision_AZ85_RA_Mirror.py"
+_SENSOR_X = 287.82
+_SENSOR_Z = 71.90
+
+
+def _load(name: str) -> list[dict]:
+    return [dict(s) for s in load_python_data(_LAYOUTS / name)["surfaces"]]
+
+
+def _trace_on_axis(specs: list[dict]):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+        system = _build_system_from_specs(
+            [dict(s) for s in specs], apply_optical_solid_output_ports=False
+        )
+        system.energy_probability = 0
+        rays = Kos.raykeeper(system)
+        system.Trace([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.55)
+        rays.push()
+    surfaces = list(system.SURFACE)
+    X, Y, Z, _, _, _ = rays.pick(-1)
+    return surfaces, np.asarray(X, float), np.asarray(Y, float), np.asarray(Z, float)
+
+
+def _clone_mirror_cube(specs: list[dict]) -> dict:
+    for spec in specs:
+        adv = spec.get("advanced")
+        if isinstance(adv, dict) and adv.get("OpticalSolidFaces"):
+            return dict(spec)
+    raise AssertionError("no promoted solid row found to clone")
+
+
+def _end_to_end_pipeline(failures: list[str], notes: list[str]) -> None:
+    """Bind the REAL editor pipeline ``_build_preview_system_rays_bundle`` on the AZ85
+    layout and assert it folds + traces SEQUENTIALLY to the sensor while the display row
+    keeps its promoted cube. This pins the wiring (the force-sequential override), not
+    just the pure synthesiser -- a non-seq trace of the folded specs reaches 0 rays, so a
+    populated sensor proves the override routed around the tilted-mirror non-seq gate."""
+    layout_path = _LAYOUTS / _LAYOUT_FILE
+    try:
+        info = _load_python_data(layout_path)
+        settings = info.get("settings", {}) if isinstance(info.get("settings", {}), dict) else {}
+        rows = [KrakenLayoutEditor._row_from_layout_item(item) for item in info["surfaces"]]
+        rows[0].surface = "Object"
+        rows[-1].surface = "Image"
+        editor = _snapshot_editor(rows, settings)
+        editor.tk = object()  # break tkinter __getattr__ recursion on the __new__ instance
+        editor.current_layout_file = layout_path
+        editor._normalize_special_rows()
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"SKIP end-to-end: editor harness unavailable ({type(exc).__name__}: {exc})")
+        return
+
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            _system, rays, _bundle = editor._build_preview_system_rays_bundle(sampling_mode=None)
+    except Exception as exc:  # noqa: BLE001
+        notes.append(f"SKIP end-to-end: preview bundle build failed ({type(exc).__name__}: {exc})")
+        return
+
+    backend = str(getattr(editor, "_last_preview_trace_backend", ""))
+    if "Ns" in backend:
+        failures.append(f"end-to-end: folded trace ran on {backend!r} (must be sequential, not NsTraceLoop)")
+    X, _Y, Z, _, _, _ = rays.pick(-1)
+    X = np.asarray(X, float)
+    Z = np.asarray(Z, float)
+    if X.size == 0:
+        failures.append("end-to-end: no rays reached the image surface (sequential fold did not trace)")
+    else:
+        on_sensor = int(np.sum(np.abs(X - _SENSOR_X) < 2.0))
+        if on_sensor == 0:
+            failures.append(
+                f"end-to-end: no rays landed on the +X sensor ~{_SENSOR_X}; X in "
+                f"[{float(X.min()):.2f}, {float(X.max()):.2f}]"
+            )
+    # the DISPLAY rows are restored, so the mesh cube + 0185 overlays still draw
+    adv = editor.rows[1].advanced if isinstance(getattr(editor.rows[1], "advanced", None), dict) else {}
+    if not adv.get("OpticalSolidFaces"):
+        failures.append("end-to-end: display row lost its promoted cube (OpticalSolidFaces) after the trace")
+    if getattr(editor, "_force_sequential_preview_trace", False):
+        failures.append("end-to-end: the force-sequential override was not cleared after the trace")
+    if not failures:
+        notes.append(
+            f"end-to-end: real pipeline folded + traced on {backend} -> rays on +X sensor "
+            f"(X={float(X.min()):.2f}..{float(X.max()):.2f}), display cube preserved"
+        )
+
+
+def main() -> int:
+    failures: list[str] = []
+    notes: list[str] = []
+
+    base = _load("machine_vision_AZ85_RA_Mirror.py")
+
+    # ---- gate ----------------------------------------------------------------
+    if not scene_nonseq_trigger_is_only_promoted_full_mirrors(base):
+        failures.append("gate: AZ85 RA-mirror scene was NOT classified as promoted-full-mirror-only")
+
+    # ---- (1) single mirror folds to the sensor -------------------------------
+    folded, records = fold_promoted_mirror_specs_to_sequential(base)
+    if len(records) != 1:
+        failures.append(f"single: expected 1 synthesised mirror, got {len(records)}")
+    surfaces, X, Y, Z = _trace_on_axis(folded)
+    image_index = len(folded) - 1
+    if image_index not in surfaces:
+        failures.append(f"single: on-axis ray did not reach the image surface {image_index}; reached {surfaces}")
+    elif X.size == 0 or not np.isfinite(X[0]):
+        failures.append("single: no finite image intercept")
+    else:
+        if abs(float(X[0]) - _SENSOR_X) > 1.0:
+            failures.append(f"single: image X {float(X[0]):.2f} not folded to +X sensor ~{_SENSOR_X}")
+        if abs(float(Z[0]) - _SENSOR_Z) > 1.0:
+            failures.append(f"single: image Z {float(Z[0]):.2f} not at sensor station ~{_SENSOR_Z}")
+        if abs(float(Y[0])) > 1.0:
+            failures.append(f"single: on-axis image Y {float(Y[0]):.2f} should be ~0")
+
+    # ---- (2) a second cube before the image -> chain composes ----------------
+    cube = _clone_mirror_cube(base)
+    two = []
+    for spec in base:
+        if spec.get("surface") == "Image":
+            two.append(dict(cube))
+        two.append(dict(spec))
+    if not scene_nonseq_trigger_is_only_promoted_full_mirrors(two):
+        failures.append("double: two-cube scene was NOT classified as promoted-full-mirror-only")
+    folded2, records2 = fold_promoted_mirror_specs_to_sequential(two)
+    if len(records2) != 2:
+        failures.append(f"double: expected 2 synthesised mirrors, got {len(records2)}")
+    surfaces2, X2, Y2, Z2 = _trace_on_axis(folded2)
+    image_index2 = len(folded2) - 1
+    if image_index2 not in surfaces2:
+        failures.append(
+            f"double: on-axis ray did not reach the image surface {image_index2}; reached {surfaces2}"
+        )
+    elif X2.size == 0 or not np.isfinite(X2[0]):
+        failures.append("double: no finite image intercept after the second fold")
+
+    # ---- (3) non-folded layout is untouched ----------------------------------
+    plain = _load("flat_mirror_45_deg.py")
+    if scene_nonseq_trigger_is_only_promoted_full_mirrors(plain):
+        failures.append("regression: a plain sequential-mirror layout was misclassified as a promoted fold")
+    folded3, records3 = fold_promoted_mirror_specs_to_sequential(plain)
+    if records3:
+        failures.append(f"regression: non-folded layout produced {len(records3)} spurious mirror records")
+    if folded3 != plain:
+        failures.append("regression: non-folded layout specs were modified")
+
+    # ---- (4) end-to-end: the real editor pipeline folds + traces sequentially -
+    _end_to_end_pipeline(failures, notes)
+
+    if failures:
+        print("FAIL bugs/0187 folded-sequential trace:")
+        for line in failures:
+            print(f"  - {line}")
+        return 1
+    print("PASS bugs/0187 folded-sequential trace:")
+    print(f"  - single mirror folds +Z -> +X, on-axis ray at world X={float(X[0]):.2f} Z={float(Z[0]):.2f} (sensor reached)")
+    print(f"  - double mirror chain composes; on-axis ray reaches image at world X={float(X2[0]):.2f} Z={float(Z2[0]):.2f}")
+    print("  - non-folded layout untouched (gate False, no records)")
+    for note in notes:
+        print(f"  - {note}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

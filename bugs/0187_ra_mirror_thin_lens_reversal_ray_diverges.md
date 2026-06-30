@@ -1,7 +1,11 @@
 # 0187 — BUG: in the folded RA-mirror scene the rays reverse at the first Thin Lens and never reach the sensor ("ray diverges")
 
-**Status: DIAGNOSED — fix direction NOT yet chosen (deep non-seq tracer change, high blast
-radius). Awaiting go-ahead.**
+**Status: RESOLVED via fix (3) — the folded-SEQUENTIAL trace. A promoted full-mirror cube is
+represented as a sequential `Mirror` for the TRACE only (the display keeps the mesh cube), where
+the ideal Thin Lenses work and the full ray cone reaches the +X sensor. Fix (1), the non-seq
+tracer SIGN fix, remains documented below as the NEXT-LEVEL most-correct future fix; fix (2) is
+discarded as too layout-specific. Generalises to an arbitrary CHAIN of folds (the user's planned
+second RA mirror between lens and camera composes natively).**
 
 ## Flag
 
@@ -72,27 +76,78 @@ with the non-sequential trace that a promoted mesh mirror forces.** (A real refr
 — curved glass surfaces with an index change — refracts through `PHYSICS.calculate` normally and
 would not hit this fake-normal path.)
 
-## Candidate fixes (need a direction before implementing)
+## Candidate fixes (evaluated)
 
-1. **Tracer fix (correct, highest blast radius):** make the non-seq thin-lens fake-normal
-   interaction honour the incoming propagation sense, so a Thin Lens downstream of a mesh-mirror
-   reflection deflects forward. Touches `KrakenSys.NsTrace` / `InterNormalCalc.__ParaxCalcObjOut2OrigSpace`
-   / `PhysicsClass.calculate` SIGN handling — the same path every penta folding-mirror and
-   thin-lens phase exercises. Must be gated and regression-checked against the full marathon
-   (which currently segfaults under Xvfb on the long run — verification is itself a project).
-2. **Surrogate fix (lower risk, changes the layout, not the engine):** rebuild the folded AZ85
-   blackbox from a **real refractive prescription** (the actual ELS-85 glass, or the
-   wavefront-augmented surrogate path) instead of two ideal `Thin Lens` elements, so the non-seq
-   trace refracts through real surfaces. The promoted mesh mirror + real glass downstream is the
-   combination the non-seq tracer is built for.
-3. **Trace-mode fix (medium risk):** when a scene's only non-sequential element is a promoted FULL
-   mirror (no beam splitter / diffuse / refractive mesh solid), trace it as a **folded SEQUENTIAL**
-   pass (`use_folded`) rather than non-seq, where ideal thin lenses already work. Requires teaching
-   the folded-sequential machinery to fold on an `OpticalSolidFaces` Mirror face (today it expects a
-   sequential `Mirror` surface), so it is not a drop-in.
+1. **Tracer SIGN fix (most correct, highest blast radius) — NEXT LEVEL, not yet done.** Make the
+   non-seq thin-lens fake-normal interaction honour the incoming propagation sense, so a Thin Lens
+   downstream of a mesh-mirror reflection deflects forward. Touches `KrakenSys.NsTrace` /
+   `InterNormalCalc.__ParaxCalcObjOut2OrigSpace` / `PhysicsClass.calculate` SIGN handling — the same
+   path every penta folding-mirror and thin-lens phase exercises. This is the *root* fix: it would
+   let an ideal Thin Lens live downstream of ANY mesh interaction (mirror, beam splitter, refractive
+   solid) in a genuinely non-sequential trace, not just a pure-mirror fold. It is deferred because it
+   must be gated and regression-checked against the full marathon (which currently segfaults under
+   Xvfb on the long run — verification is itself a project). **Pick this up when a non-seq scene needs
+   ideal optics downstream of a mesh element that is NOT a full mirror (a beam splitter, a diffuser),
+   because fix (3) below cannot fold those.**
+2. **Surrogate fix (discarded — too layout-specific).** Rebuild the folded AZ85 blackbox from a real
+   refractive prescription so the non-seq trace refracts through real glass. Rejected: it fixes only
+   *this* layout (and only if a real prescription exists), does nothing for the next surrogate, and
+   is not a general engine capability. Discarded per the user.
+3. **Folded-SEQUENTIAL trace (CHOSEN + IMPLEMENTED).** When a scene's only non-sequential trigger is
+   a promoted FULL mirror (no beam splitter / diffuse / refractive mesh solid), represent each such
+   cube as a **sequential `Mirror` surface for the TRACE only** and trace the whole scene
+   sequentially — where the ideal Thin Lenses already work. The native sequential tracer folds the
+   running coordinate frame on a `Mirror` row (`AxisMove = 2`), so the downstream ideal optics behave
+   and an **arbitrary CHAIN** of folds composes natively (no extra machinery for a 2nd, 3rd… mirror —
+   the later fold is interpreted in the running, already-folded frame).
 
-## Verification owed (once a direction is chosen)
+### How fix (3) works (implementation)
 
-A display-free guard that builds the runtime system and asserts **≥1 ray reaches the image surface
-on +X at z ≈ 71.9** (and, ideally, that the on-axis bundle converges to a small spot at x ≈ 288),
-plus a non-folded regression. No penta phase yet exercises a promoted mirror + thin-lens conjugate.
+- **`KrakenOS/UI/services/folded_sequential_fold.py`** (new, pure):
+  - `scene_nonseq_trigger_is_only_promoted_full_mirrors(specs)` — the **gate**: True iff ≥1 promoted
+    full-mirror fold is present and EVERY non-seq trigger is such a fold. For any other scene it is
+    False and nothing changes (contained blast radius; the penta suite and all non-folded layouts are
+    untouched).
+  - `fold_promoted_mirror_specs_to_sequential(specs) -> (new_specs, records)` — converts each promoted
+    mirror cube row into a sequential `Mirror` (`glass="MIRROR"`, `rc=0`, `axis_move=2`, `advanced={}`)
+    and **reseats** the cube's axial `desp_z` onto the preceding row's thickness so the AxisMove=2
+    reflection folds cleanly from the running axis. Non-folded layouts return a plain copy + `[]`.
+  - The per-mirror tilt is solved **convention-free**: the cube's world Mirror-face normal gives the
+    target outgoing direction `reflect(d_in, n)`; we trace one chief ray through the partially-built
+    chain for each principal half-angle candidate (±half about x/y/z) and keep the tilt whose real
+    world exit direction matches (cos > 0.999). No hand-derived Euler/AxisMove sign tables (those
+    differ per axis and would silently mis-fold a second mirror the user orients differently).
+- **Wiring (`services/three_d_scene_tools.py` `_build_preview_system_rays_bundle`):** when
+  `_folded_sequential_trace_rows(self.rows)` returns folded rows, a separate `trace_system` is built
+  from the folded specs and the rays come from it; the display **`scene_bundle` is still built from the
+  original mesh `system`**, so the cube + bugs/0185 folded overlays draw unchanged. A transient
+  `editor._force_sequential_preview_trace` flag is honoured in `services/trace_preview.py`
+  `_trace_preview_bundles` to force the **sequential** backend — necessary because a folded `Mirror`
+  carries a tilt, which `resolve_trace_intent` would otherwise classify as off-axis (non-seq) geometry.
+  (Measured: a non-seq trace of the folded specs still reaches **0** rays; the sequential trace reaches
+  the sensor.)
+
+## Verification (done)
+
+`KrakenOS/UI/validate_open3d_ra_mirror_folded_sequential_trace.py` (standalone, display-free; run
+`.devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_ra_mirror_folded_sequential_trace`):
+
+1. the single-mirror AZ85 layout folds +Z → +X and the on-axis ray lands on the sensor at world
+   X ≈ 287.82, Z ≈ 71.9 (the flag's measured station);
+2. a synthetic SECOND cube before the image (the user's planned RA mirror between lens and camera)
+   still reaches the image — the chain composes (on-axis ray at X ≈ 300.32, Z ≈ 111.9);
+3. a non-folded layout (`flat_mirror_45_deg.py`) is left byte-identical (gate False, no records);
+4. END-TO-END the real editor pipeline (`_build_preview_system_rays_bundle`) folds the AZ85 scene and
+   traces it on a `TraceLoop` backend (never `NsTraceLoop`) so the full ray cone lands on the +X
+   sensor, while the display row keeps its promoted cube.
+
+This guard is standalone (NOT a penta phase) — no penta phase exercises a promoted mirror + thin-lens
+conjugate. In-app eyeball still owed (headless cannot drive the VTK inspector).
+
+## Known limitation — Quick Estimation across a fold (NEXT LEVEL)
+
+With a fold (and more so with a CHAIN), the object path and/or the image path break into multiple
+axial **segments** (object→mirror, mirror→lens, lens→…→sensor), each along a different world axis.
+The Quick Estimation overlay assumes a single straight axis, so it has no clean way to lay out its
+estimate across the broken path yet. Folding the QE onto the running, per-segment frame (the same
+frame the sequential tracer already composes) is the next-level follow-up; not addressed here.
