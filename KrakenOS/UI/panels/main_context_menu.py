@@ -185,6 +185,10 @@ class MainContextMenu:
                 label=label,
                 command=lambda selected=kind, index=row_index: self.insert_surface_context_component(index, selected),
             )
+        insert_menu.add_command(
+            label="Fold Mirror (rows below follow reflected path)",
+            command=lambda index=row_index: self.insert_fold_mirror_below_index(index),
+        )
         insert_menu.add_separator()
         insert_menu.add_command(label="Stock Lens Catalog...", command=self.open_stock_lens_importer)
         insert_menu.add_command(label="Optical CAD/STL Solid...", command=self.import_optical_stl_solid)

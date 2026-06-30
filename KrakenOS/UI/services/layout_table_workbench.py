@@ -10,6 +10,7 @@ modules.
 from __future__ import annotations
 
 from KrakenOS.UI.custom_surfaces import encode_custom_surface_value
+from KrakenOS.UI.services.fold_insertion import can_insert_fold_mirror, plan_fold_mirror
 from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timing_span
 from KrakenOS.UI.widgets import place_commit_cell_entry
 
@@ -5300,6 +5301,46 @@ class LayoutTableWorkbenchMixin:
                 status_label="cube beam splitter primitive",
             )
             return
+
+    def insert_fold_mirror_below_index(self, row_index: int) -> None:
+        """Insert a sequential 45-degree fold mirror below ``row_index`` so every
+        surface that follows is repositioned onto the reflected path.
+
+        A sequential ``Mirror`` row folds the optical axis for free (the system
+        builder forces ``AxisMove = 2.0``), so the downstream surfaces stay on the
+        beam -- unlike a promoted non-sequential prism, which folds the rays but
+        leaves the table rows on the original axis.  The gap the mirror lands in
+        is split between the upstream surface and the mirror, so the conjugate
+        (focus) is preserved.
+        """
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror("Insert Fold Mirror", f"Could not read the surface table:\n\n{exc}", parent=self)
+            return
+        insert_after = self._context_insert_after_index(row_index)
+        if insert_after is None or not can_insert_fold_mirror(self.rows, insert_after):
+            messagebox.showinfo(
+                "Insert Fold Mirror",
+                "A fold mirror needs at least one surface after it to reflect onto. "
+                "Select a surface upstream of the image plane and try again.",
+                parent=self,
+            )
+            return
+        plan = plan_fold_mirror(self.rows, insert_after)
+        mirror_row = plan.mirror_row
+        mirror_row.element = "Fold Mirror"
+        self._begin_history_capture()
+        self.rows[insert_after].thickness = plan.upstream_thickness
+        self._remap_inserted_element_labels([mirror_row])
+        insert_at = self._insert_surface_rows([mirror_row], insert_after=insert_after)
+        self._commit_history_capture()
+        self.current_layout_file = None
+        self.refresh_plot(suppress_analysis=True)
+        self.status_var.set(
+            f"Inserted fold mirror at S{insert_at}; rows below now follow the reflected path. Click Update to trace."
+        )
 
     @staticmethod
     def _rectangle_uda(width: float, height: float) -> list[list[float]]:
