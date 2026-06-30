@@ -599,6 +599,25 @@ class LayoutTableWorkbenchMixin:
         if refresh:
             self.refresh_plot(suppress_analysis=True)
 
+    def insert_machine_vision_lens_by_name(self, name: str, *, refresh: bool = True) -> None:
+        """Insert a machine-vision lens surrogate into the current path, independent
+        of the top Machine Vision menu.
+
+        The surrogate's optical body (the rows between Object and Image -- the ideal
+        blackbox groups and the stop between the vertex datums) is inserted at the
+        current selection; the scene's own source/camera/FOV settings are left
+        untouched, so an imported lens can then be folded (Insert Fold Mirror) or
+        re-centered like any other component.
+        """
+        if name not in getattr(self, "machine_vision_files", {}):
+            messagebox.showerror(
+                "Import Machine Vision Lens",
+                f"Machine-vision lens not found:\n\n{name}",
+                parent=self,
+            )
+            return
+        self.insert_layout_component_by_name(name, refresh=refresh)
+
     def _selected_operand_labels(self) -> list[str]:
         if "merit_mode_list" not in self.__dict__:
             return [str(label) for label in getattr(self, "_headless_selected_operand_labels", [])]
