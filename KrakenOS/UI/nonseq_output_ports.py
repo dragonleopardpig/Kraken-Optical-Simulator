@@ -231,6 +231,24 @@ def select_optical_solid_interaction_face(world_faces: list[dict[str, object]]) 
     )
 
 
+def _solid_has_full_mirror_interaction_face(world_faces: list[dict[str, object]]) -> bool:
+    """True when the solid's primary interaction face is a full specular mirror.
+
+    A full mirror reflects 100% of the beam, so it has NO straight-through
+    transmit path. A promoted right-angle mirror CUBE reads all of its outer
+    faces as inferred Transmit/Port outputs, so ``select_optical_solid_output_face``
+    picks the +Z face as a straight-through exit (bugs/0084 axial preference) and
+    the follower-row builder would leave the downstream chain on the straight
+    axis. This predicate lets that builder recognise the cube as a fold instead.
+    A beam-splitter cube (interaction face function "Beam Splitter") keeps its
+    real straight-through transmit and is intentionally excluded (bugs/0084-0091).
+    """
+    face = select_optical_solid_interaction_face(world_faces)
+    if face is None:
+        return False
+    return _optical_solid_face_function(face) == "Mirror"
+
+
 def _unit_vector(values, fallback=(0.0, 0.0, 1.0)) -> np.ndarray:
     try:
         vector = np.asarray(values, dtype=float).reshape(3)
@@ -1176,8 +1194,31 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
             frame_rotation,
             np.asarray((0.0, 0.0, 1.0), dtype=float),
         ):
-            row_index += 1
-            continue
+            # bugs/0185: a promoted right-angle MIRROR cube reads all six outer
+            # faces as inferred Transmit/Port outputs, so the +Z face is picked as
+            # a straight-through exit (the bugs/0084 axial preference) and this
+            # guard would leave the lens chain on the straight axis. But a full
+            # mirror has NO straight-through path -- the beam physically reflects
+            # off the mirror face (the user's "only one way the ray can go") -- so
+            # fold the downstream rows onto the reflected branch instead. A
+            # beam-splitter cube keeps its real straight-through (its interaction
+            # face is a Beam Splitter, not a Mirror) so bugs/0084-0091 are
+            # unchanged.
+            reflected_frame = None
+            if _solid_has_full_mirror_interaction_face(world_faces):
+                z_station = float(z_positions[row_index]) if row_index < len(z_positions) else 0.0
+                reflected_frame = _reflected_frame_from_interaction_face(
+                    world_faces,
+                    np.asarray((0.0, 0.0, z_station), dtype=float),
+                    _frame_rotation_from_normal((0.0, 0.0, 1.0)),
+                    float(getattr(current, "thickness", 0.0) or 0.0),
+                )
+            if reflected_frame is None:
+                row_index += 1
+                continue
+            frame_origin, frame_rotation = reflected_frame
+            output_face = None
+            frame_source = "interaction_reflection_fallback"
         follower_index = row_index + 1
         while follower_index < len(prepared):
             follower = prepared[follower_index]

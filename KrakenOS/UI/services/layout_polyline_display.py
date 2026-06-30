@@ -20,7 +20,10 @@ from KrakenOS.UI.camera_database import (
     camera_sensor_active_mm,
 )
 from KrakenOS.UI.layout_plot_controller import distance_to_polyline, thin_lens_glyph_polyline
-from KrakenOS.UI.nonseq_output_ports import optical_solid_output_port_runtime_transform_override
+from KrakenOS.UI.nonseq_output_ports import (
+    optical_solid_output_port_pose_overrides,
+    optical_solid_output_port_runtime_transform_override,
+)
 from KrakenOS.UI.services.cad_step_export import (
     _convex_hull_2d,
     _profile_from_section_points,
@@ -350,6 +353,92 @@ class LayoutPolylineDisplayMixin:
             if row.surface not in {"Object", "Image", "Aperture"}:
                 return float(z_positions[index])
         return 0.0
+
+    def _lens_front_datum_row_index(self) -> int | None:
+        for index, row in enumerate(self.rows):
+            name = (row.name or "").strip().lower()
+            if "front" in name and ("datum" in name or "edge" in name):
+                return index
+        for index, row in enumerate(self.rows):
+            if row.surface not in {"Object", "Image", "Aperture"}:
+                return index
+        return None
+
+    def _image_plane_row_index(self) -> int | None:
+        last_image = None
+        for index, row in enumerate(self.rows):
+            if row.surface == "Image":
+                last_image = index
+        if last_image is not None:
+            return last_image
+        return (len(self.rows) - 1) if self.rows else None
+
+    def _optical_axis_fold_world_transform_for_row(self, row_index):
+        """World 4x4 that folds a straight-axis overlay onto a row's reflected pose.
+
+        When a promoted optical solid (e.g. a right-angle mirror cube) folds the
+        beam, ``build_optical_solid_output_port_pose_overrides`` repositions the
+        downstream sequential rows onto the reflected branch. The lens/camera STEP
+        overlays are seated on the STRAIGHT cumulative-thickness +Z axis by
+        :meth:`_cad_mesh_aligned_to_optical_axis`, so they would float on the old
+        axis while the optics fold away (the flag 20260630_133944 report). This
+        returns the single rigid transform that carries the straight axis onto the
+        anchor row's folded pose: ``F(v) = C + R @ (v - S)`` with ``S`` the row's
+        straight-axis station, ``C``/``R`` its folded centre/rotation. ``None`` when
+        the row has no fold override (unfolded layouts are untouched).
+        """
+        if row_index is None:
+            return None
+        try:
+            overrides = optical_solid_output_port_pose_overrides(None, self.rows)
+        except Exception:
+            return None
+        pose = overrides.get(int(row_index)) if isinstance(overrides, dict) else None
+        if not isinstance(pose, dict):
+            return None
+        try:
+            center = np.asarray(pose.get("center"), dtype=float).reshape(3)
+            rotation = np.asarray(pose.get("rotation"), dtype=float).reshape(3, 3)
+        except Exception:
+            return None
+        if not (np.all(np.isfinite(center)) and np.all(np.isfinite(rotation))):
+            return None
+        z_positions = self._row_z_positions()
+        if not (0 <= int(row_index) < len(z_positions)):
+            return None
+        straight_anchor = np.asarray((0.0, 0.0, float(z_positions[int(row_index)])), dtype=float)
+        transform = np.eye(4, dtype=float)
+        transform[:3, :3] = rotation
+        transform[:3, 3] = center - rotation @ straight_anchor
+        return transform
+
+    @staticmethod
+    def _fold_transform_signature(transform) -> tuple | None:
+        if transform is None:
+            return None
+        try:
+            return tuple(round(float(v), 6) for v in np.asarray(transform, dtype=float).reshape(-1))
+        except Exception:
+            return None
+
+    @staticmethod
+    def _mesh_with_world_transform(mesh, transform):
+        if mesh is None or transform is None:
+            return mesh
+        try:
+            matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+        except Exception:
+            return mesh
+        if not np.all(np.isfinite(matrix)):
+            return mesh
+        if np.allclose(matrix, np.eye(4)):
+            return mesh
+        try:
+            folded = mesh.copy(deep=True)
+            folded.transform(matrix, inplace=True)
+            return folded
+        except Exception:
+            return mesh
 
     @staticmethod
     def _polydata_from_triangle_array(triangles: np.ndarray):
@@ -1192,6 +1281,9 @@ class LayoutPolylineDisplayMixin:
         if self.imported_lens_step_path is None:
             return None
         largest = bool(getattr(self, "lens_step_largest_component_only", True))
+        fold_transform = self._optical_axis_fold_world_transform_for_row(
+            self._lens_front_datum_row_index()
+        )
         signature = (
             self._step_overlay_stat_key(self.imported_lens_step_path),
             largest,
@@ -1202,6 +1294,7 @@ class LayoutPolylineDisplayMixin:
             tuple(round(float(v), 6) for v in self._step_axis_offset_xy("lens")),
             tuple(round(float(v), 6) for v in self._step_placement_offset_xyz("lens")),
             self._step_resize_signature("lens"),
+            self._fold_transform_signature(fold_transform),
         )
 
         def build():
@@ -1224,7 +1317,7 @@ class LayoutPolylineDisplayMixin:
                 optical_axis_point = self._step_primary_cylinder_axis_point(
                     self.imported_lens_step_path
                 )
-            return self._cad_mesh_aligned_to_optical_axis(
+            aligned = self._cad_mesh_aligned_to_optical_axis(
                 mesh,
                 source_axis=cylinder_axis if cylinder_axis is not None else "pca0",
                 front_face="max",
@@ -1237,6 +1330,7 @@ class LayoutPolylineDisplayMixin:
                 placement_offset_xyz=self._step_placement_offset_xyz("lens"),
                 optical_axis_point_xyz=optical_axis_point,
             )
+            return self._mesh_with_world_transform(aligned, fold_transform)
 
         return self._cached_transformed_step_overlay("lens", signature, build)
 
@@ -1281,6 +1375,9 @@ class LayoutPolylineDisplayMixin:
         if self.imported_camera_step_path is None:
             return None
         camera_front_z = self._current_image_plane_z() - self._current_camera_front_to_sensor_mm()
+        fold_transform = self._optical_axis_fold_world_transform_for_row(
+            self._image_plane_row_index()
+        )
         signature = (
             self._step_overlay_stat_key(self.imported_camera_step_path),
             round(float(camera_front_z), 6),
@@ -1290,6 +1387,7 @@ class LayoutPolylineDisplayMixin:
             tuple(round(float(v), 6) for v in self._step_axis_offset_xy("camera")),
             tuple(round(float(v), 6) for v in self._step_placement_offset_xyz("camera")),
             self._step_resize_signature("camera"),
+            self._fold_transform_signature(fold_transform),
         )
 
         def build():
@@ -1332,7 +1430,7 @@ class LayoutPolylineDisplayMixin:
             # so building the full geometry once per layout-load is
             # cheap and the per-frame cost is only VTK's actor render,
             # which 100 k cells handle comfortably.
-            return aligned
+            return self._mesh_with_world_transform(aligned, fold_transform)
 
         return self._cached_transformed_step_overlay("camera", signature, build)
 
