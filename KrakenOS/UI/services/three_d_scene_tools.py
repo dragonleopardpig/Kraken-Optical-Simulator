@@ -484,6 +484,7 @@ class ThreeDSceneToolsMixin:
         original_rows: list[SurfaceRow] | None = None
         scene_bundle = None
         saved_native_records: list[dict[str, object]] = []
+        straight_equivalent_fold_transform = None
         try:
             if include_live_step_overlays:
                 with open3d_timing_span(
@@ -534,35 +535,95 @@ class ThreeDSceneToolsMixin:
                         folded_sequential=bool(folded_trace_rows is not None),
                     ):
                         if folded_trace_rows is not None:
-                            # bugs/0187 fix (3): the only non-seq trigger is a promoted FULL
-                            # mirror cube -- trace the fold as a SEQUENTIAL Mirror chain so the
-                            # ideal Thin Lenses reach the sensor (the mesh-mirror non-seq trace
-                            # flips the propagation sign and the lenses retroreflect). The
-                            # display bundle below still keeps the mesh cube + 0185 overlays;
-                            # only the ray paths come from this sequential system.
                             from KrakenOS.UI.layout_editor import _build_system_from_specs
 
-                            folded_specs = self._serializable_specs_for_rows(folded_trace_rows)
-                            trace_system = _build_system_from_specs(
-                                folded_specs, build=0, apply_optical_solid_output_ports=False
-                            )
-                            trace_system.energy_probability = 0
-                            rays = Kos.raykeeper(trace_system)
-                            original_trace_rows = self.rows
-                            # A folded Mirror row carries a tilt, so resolve_trace_intent would
-                            # classify it as off-axis (non-seq) geometry. Force the sequential
-                            # tracer for this build -- a sequential Mirror is exactly what folds
-                            # the running frame so the ideal Thin Lenses behave (a non-seq trace
-                            # of the same specs reaches 0 rays).
-                            self._force_sequential_preview_trace = True
-                            try:
-                                self.rows = folded_trace_rows
-                                self._trace_preview_rays(
-                                    trace_system, rays, wavelength, max_radius, sampling_mode=mode
+                            # bugs/0197: the sequential-Mirror surrogate (else-branch below)
+                            # folds the running frame but DROPS the ideal Thin Lens power
+                            # through the fold, so the on-axis cone waists at the surrogate and
+                            # DIVERGES to the sensor (the user's "focus before the surrogate,
+                            # diverge after / can't focus"). Prefer the flat-plate EQUIVALENT:
+                            # the UNFOLDED straight system images to a real focus (first-order
+                            # conjugates are invariant under the rigid fold), so trace it here
+                            # and BEND the display rays at the mirror after the bundle -- using
+                            # the editor's OWN overlay fold transform, so the folded cone lands
+                            # exactly on the drawn detector (a hand-rolled reflection lands
+                            # 12.5mm short = the mirror's desp_z). Fall back to the sequential-
+                            # Mirror trace when the equivalent or the fold transform is
+                            # unavailable, or for a CHAIN of folds -- the bend after the bundle
+                            # is scoped to a SINGLE fold (matching the bugs/0192 correction), so
+                            # a chain keeps the native sequential-Mirror fold that composes.
+                            single_fold = (
+                                sum(
+                                    1
+                                    for original, folded in zip(self.rows, folded_trace_rows)
+                                    if str(getattr(folded, "surface", "")) == "Mirror"
+                                    and str(getattr(original, "surface", "")) != "Mirror"
                                 )
-                            finally:
-                                self.rows = original_trace_rows
-                                self._force_sequential_preview_trace = False
+                                == 1
+                            )
+                            equivalent_rows = (
+                                self._folded_optical_solid_straight_equivalent_rows()
+                                if single_fold
+                                else None
+                            )
+                            fold_transform = (
+                                self._optical_axis_fold_world_transform_for_row(
+                                    self._image_plane_row_index()
+                                )
+                                if equivalent_rows is not None
+                                else None
+                            )
+                            if equivalent_rows is not None and fold_transform is not None:
+                                equivalent_specs = self._serializable_specs_for_rows(
+                                    equivalent_rows
+                                )
+                                trace_system = _build_system_from_specs(
+                                    equivalent_specs,
+                                    build=0,
+                                    apply_optical_solid_output_ports=False,
+                                )
+                                trace_system.energy_probability = 0
+                                rays = Kos.raykeeper(trace_system)
+                                original_trace_rows = self.rows
+                                try:
+                                    self.rows = equivalent_rows
+                                    self._trace_preview_rays(
+                                        trace_system,
+                                        rays,
+                                        wavelength,
+                                        max_radius,
+                                        sampling_mode=mode,
+                                    )
+                                finally:
+                                    self.rows = original_trace_rows
+                                straight_equivalent_fold_transform = fold_transform
+                            else:
+                                # bugs/0187 fix (3): trace the fold as a SEQUENTIAL Mirror chain
+                                # so the ideal Thin Lenses reach the sensor (the mesh-mirror
+                                # non-seq trace flips the propagation sign and they retroreflect).
+                                # The display keeps the mesh cube + 0185 overlays; only the ray
+                                # paths come from this sequential system.
+                                folded_specs = self._serializable_specs_for_rows(folded_trace_rows)
+                                trace_system = _build_system_from_specs(
+                                    folded_specs, build=0, apply_optical_solid_output_ports=False
+                                )
+                                trace_system.energy_probability = 0
+                                rays = Kos.raykeeper(trace_system)
+                                original_trace_rows = self.rows
+                                # A folded Mirror row carries a tilt, so resolve_trace_intent
+                                # would classify it as off-axis (non-seq) geometry. Force the
+                                # sequential tracer -- a sequential Mirror folds the running
+                                # frame so the ideal Thin Lenses behave (a non-seq trace of the
+                                # same specs reaches 0 rays).
+                                self._force_sequential_preview_trace = True
+                                try:
+                                    self.rows = folded_trace_rows
+                                    self._trace_preview_rays(
+                                        trace_system, rays, wavelength, max_radius, sampling_mode=mode
+                                    )
+                                finally:
+                                    self.rows = original_trace_rows
+                                    self._force_sequential_preview_trace = False
                         else:
                             rays = Kos.raykeeper(system)
                             self._trace_preview_rays(
@@ -581,6 +642,10 @@ class ThreeDSceneToolsMixin:
             ):
                 scene_bundle = self._build_scene_bundle(system, rays, max_radius)
             if folded_trace_rows is not None:
+                if straight_equivalent_fold_transform is not None:
+                    self._fold_straight_equivalent_display_rays(
+                        scene_bundle, straight_equivalent_fold_transform
+                    )
                 self._apply_folded_mirror_reflection_correction(scene_bundle)
             if include_live_step_overlays:
                 self._last_live_step_overlay_trace_rows = list(self.rows)
@@ -926,6 +991,80 @@ class ThreeDSceneToolsMixin:
                 prior = folded_rows[index - 1]
                 prior.thickness = float(getattr(prior, "thickness", 0.0) or 0.0) + reseated
         return folded_rows
+
+    def _fold_straight_equivalent_display_rays(self, scene_bundle, fold_transform) -> None:
+        """bugs/0197: bend the flat-plate-equivalent display rays at the promoted mirror.
+
+        The ray paths were traced through the UNFOLDED straight-axis equivalent, which
+        images to a real focus (the sequential-Mirror surrogate instead loses the ideal
+        Thin Lens power, so its on-axis cone diverges past the surrogate -- the user's
+        "focus before the surrogate, diverge after"). Carry every vertex at/after the
+        mirror's straight-axis station onto the folded branch with ``fold_transform`` --
+        the SAME rigid rotation (``_optical_axis_fold_world_transform_for_row``) that
+        seats the lens/detector overlays -- so the folded cone lands exactly on the drawn
+        detector. The equivalent records a vertex on the mirror station plane, so the fold
+        kinks cleanly there; the incoming leg is untouched. Scoped to a SINGLE promoted-
+        mirror fold (matches the bugs/0192 correction that runs next); an arbitrary chain
+        keeps the sequential-Mirror trace and never reaches this method."""
+        if scene_bundle is None or fold_transform is None:
+            return
+        ray_paths = getattr(scene_bundle, "ray_paths", None)
+        if not ray_paths:
+            return
+        try:
+            specs = self._serializable_specs_for_rows(list(self.rows))
+            _folded, records = fold_promoted_mirror_specs_to_sequential(specs)
+        except Exception:
+            return
+        if len(records) != 1:
+            return
+        try:
+            row_index = int(records[0].get("row_index", -1))
+            matrix = np.asarray(fold_transform, dtype=float).reshape(4, 4)
+        except Exception:
+            return
+        if not (0 <= row_index < len(self.rows)) or not np.all(np.isfinite(matrix)):
+            return
+        rotation = matrix[:3, :3]
+        translation = matrix[:3, 3]
+        station_z = float(
+            sum(
+                float(getattr(self.rows[i], "thickness", 0.0) or 0.0)
+                for i in range(row_index)
+            )
+        )
+        for path in ray_paths:
+            folded = self._fold_ray_downstream_of_station(
+                getattr(path, "points_world", None), rotation, translation, station_z
+            )
+            if folded is None:
+                continue
+            path.points_world = folded
+            try:
+                path.display_geometry_source = "folded_straight_equivalent_bent"
+            except Exception:
+                pass
+
+    @staticmethod
+    def _fold_ray_downstream_of_station(
+        points, rotation, translation, station_z, *, tol: float = 1e-6
+    ) -> np.ndarray | None:
+        """Rigid-fold every vertex at/after the ``station_z`` plane (measured along +Z) by
+        ``rotation @ v + translation``; leave the incoming leg untouched. Returns a new
+        array (column count preserved) or None when the ray never crosses the station."""
+        pts = np.asarray(points, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+            return None
+        coords = pts[:, :3]
+        downstream = coords[:, 2] >= (float(station_z) - float(tol))
+        if not downstream.any() or downstream.all():
+            return None
+        out = pts.copy()
+        out[downstream, :3] = (
+            coords[downstream] @ np.asarray(rotation, dtype=float).T
+            + np.asarray(translation, dtype=float)[None, :]
+        )
+        return out
 
     def _apply_folded_mirror_reflection_correction(self, scene_bundle) -> None:
         """bugs/0192: correct the folded-sequential display rays so they reflect off the

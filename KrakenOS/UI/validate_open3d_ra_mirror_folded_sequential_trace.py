@@ -20,9 +20,12 @@ This guard binds the REAL synthesiser + the REAL ``_build_system_from_specs`` bu
      camera) still reaches the image -- the chain composes;
   3. a non-folded layout is left byte-identical (gate False, no records);
   4. END-TO-END the real editor pipeline (``_build_preview_system_rays_bundle``) folds the
-     AZ85 scene and traces it SEQUENTIALLY (a ``TraceLoop`` backend, never ``NsTraceLoop``) so
-     the full ray cone lands on the +X sensor, while the display row keeps its promoted cube --
-     this pins the force-sequential override, since a non-seq trace of the folded specs is 0 rays.
+     AZ85 scene on a sequential ``TraceLoop`` backend (never ``NsTraceLoop``) and the folded
+     DISPLAY cone CONVERGES onto the +X sensor. bugs/0197: the single-fold path now traces the
+     flat-plate EQUIVALENT (real ideal-lens power) and BENDS the display rays at the mirror with
+     the editor's own fold transform, so the on-axis cone lands converged (transverse RMS < 1mm)
+     on the drawn detector -- the old sequential-Mirror surrogate reached the sensor DIVERGING at
+     ~4.98mm ("can't focus"). The display row still keeps its promoted cube + 0185 overlays.
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_ra_mirror_folded_sequential_trace
@@ -88,10 +91,11 @@ def _clone_mirror_cube(specs: list[dict]) -> dict:
 
 def _end_to_end_pipeline(failures: list[str], notes: list[str]) -> None:
     """Bind the REAL editor pipeline ``_build_preview_system_rays_bundle`` on the AZ85
-    layout and assert it folds + traces SEQUENTIALLY to the sensor while the display row
-    keeps its promoted cube. This pins the wiring (the force-sequential override), not
-    just the pure synthesiser -- a non-seq trace of the folded specs reaches 0 rays, so a
-    populated sensor proves the override routed around the tilted-mirror non-seq gate."""
+    layout and assert the folded DISPLAY cone CONVERGES on the +X sensor on a sequential
+    backend, while the display row keeps its promoted cube. bugs/0197: the single-fold path
+    traces the flat-plate equivalent and bends the display rays at the mirror, so the check
+    reads the bundle's folded ray paths (the returned raykeeper holds the UNFOLDED
+    equivalent); a diverging cone (the pre-0197 surrogate) fails the convergence bound."""
     layout_path = _LAYOUTS / _LAYOUT_FILE
     try:
         info = _load_python_data(layout_path)
@@ -110,7 +114,7 @@ def _end_to_end_pipeline(failures: list[str], notes: list[str]) -> None:
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-            _system, rays, _bundle = editor._build_preview_system_rays_bundle(sampling_mode=None)
+            _system, rays, bundle = editor._build_preview_system_rays_bundle(sampling_mode=None)
     except Exception as exc:  # noqa: BLE001
         notes.append(f"SKIP end-to-end: preview bundle build failed ({type(exc).__name__}: {exc})")
         return
@@ -118,17 +122,41 @@ def _end_to_end_pipeline(failures: list[str], notes: list[str]) -> None:
     backend = str(getattr(editor, "_last_preview_trace_backend", ""))
     if "Ns" in backend:
         failures.append(f"end-to-end: folded trace ran on {backend!r} (must be sequential, not NsTraceLoop)")
-    X, _Y, Z, _, _, _ = rays.pick(-1)
-    X = np.asarray(X, float)
-    Z = np.asarray(Z, float)
-    if X.size == 0:
-        failures.append("end-to-end: no rays reached the image surface (sequential fold did not trace)")
+    # bugs/0197: the returned ``rays`` now hold the flat-plate EQUIVALENT (the UNFOLDED
+    # straight system, which images with the real ideal-lens power), so ``rays.pick(-1)``
+    # sits in unfolded coordinates (X ~ 0). The DISPLAY bundle bends those rays at the
+    # mirror onto the +X arm with the editor's own fold transform. Assert on the folded
+    # DISPLAY bundle: the on-axis cone must CONVERGE onto the +X sensor. (bugs/0187's
+    # sequential-Mirror surrogate only reached the sensor DIVERGING at ~4.98mm RMS -- the
+    # user's "focus before the surrogate, can't focus after"; 0197 lands it converged.)
+    onaxis = []
+    for path in list(getattr(bundle, "ray_paths", []) or []):
+        pw = np.asarray(getattr(path, "points_world", None), dtype=float)
+        if pw.ndim != 2 or pw.shape[0] < 2 or pw.shape[1] < 3:
+            continue
+        if float(np.linalg.norm(pw[0][:3])) <= 1.0 and float(pw[:, 0].max()) > 250.0:
+            onaxis.append(pw)
+    end_x = float("nan")
+    end_rms = float("nan")
+    if len(onaxis) < 4:
+        failures.append(
+            f"end-to-end: too few on-axis folded display rays ({len(onaxis)}) to test the focus "
+            "(the folded display cone did not reach the +X sensor)"
+        )
     else:
-        on_sensor = int(np.sum(np.abs(X - _SENSOR_X) < 2.0))
-        if on_sensor == 0:
+        ends = np.asarray([p[-1][:3] for p in onaxis], dtype=float)
+        end_x = float(ends[:, 0].mean())
+        end_rms = float(np.sqrt(((ends[:, 1:] - ends[:, 1:].mean(0)) ** 2).sum(1).mean()))
+        if abs(end_x - _SENSOR_X) > 2.0:
             failures.append(
-                f"end-to-end: no rays landed on the +X sensor ~{_SENSOR_X}; X in "
-                f"[{float(X.min()):.2f}, {float(X.max()):.2f}]"
+                f"end-to-end: folded on-axis cone did not land on the +X sensor ~{_SENSOR_X}; "
+                f"endpoint X mean {end_x:.2f}"
+            )
+        if not (end_rms < 1.0):
+            failures.append(
+                f"end-to-end: folded on-axis cone did not converge on the sensor (endpoint "
+                f"transverse RMS {end_rms:.3f}mm >= 1.0; the bugs/0187 sequential-Mirror "
+                f"surrogate diverged to ~4.98mm here)"
             )
     # the DISPLAY rows are restored, so the mesh cube + 0185 overlays still draw
     adv = editor.rows[1].advanced if isinstance(getattr(editor.rows[1], "advanced", None), dict) else {}
@@ -149,9 +177,9 @@ def _end_to_end_pipeline(failures: list[str], notes: list[str]) -> None:
         failures.append("end-to-end: recorder would report a non-sequential backend for the folded scene")
     if not failures:
         notes.append(
-            f"end-to-end: real pipeline folded + traced on {backend} -> rays on +X sensor "
-            f"(X={float(X.min()):.2f}..{float(X.max()):.2f}), display cube preserved; "
-            f"recorder backend diag={backend!r}, folded_engaged="
+            f"end-to-end: real pipeline folded + traced on {backend} -> folded display cone "
+            f"CONVERGES on the +X sensor (endpoint X={end_x:.2f}, transverse RMS={end_rms:.3f}mm), "
+            f"display cube preserved; recorder backend diag={backend!r}, folded_engaged="
             f"{getattr(editor, '_last_preview_folded_sequential', None)}"
         )
 
