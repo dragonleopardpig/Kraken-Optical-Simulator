@@ -81,6 +81,120 @@ def _reflect(direction: np.ndarray, normal: np.ndarray) -> np.ndarray:
     return d - 2.0 * float(np.dot(d, n)) * n
 
 
+def _unit(vector: Any) -> np.ndarray:
+    vec = np.asarray(vector, dtype=float).reshape(-1)[:3]
+    norm = float(np.linalg.norm(vec))
+    return vec / norm if norm > 1e-12 else vec
+
+
+def promoted_mirror_world_center(specs: list[dict], row_index: int) -> np.ndarray | None:
+    """World point on the promoted mirror's fold plane: the cumulative axial station of
+    the mirror row plus its own decenter. The real Mirror face passes through it, so it
+    anchors the reflection plane used to re-fold the display rays."""
+    if not (0 <= int(row_index) < len(specs or [])):
+        return None
+    z = sum(_spec_get(specs[i], "thickness") for i in range(int(row_index)))
+    z += _spec_get(specs[int(row_index)], "desp_z")
+    return np.array(
+        [
+            _spec_get(specs[int(row_index)], "desp_x"),
+            _spec_get(specs[int(row_index)], "desp_y"),
+            z,
+        ],
+        dtype=float,
+    )
+
+
+def mirror_reflection_flip_plane_normal(
+    chief_in: Any, face_normal: Any
+) -> np.ndarray | None:
+    """Unit normal of the world plane across which the ROTATION-folded downstream must
+    be reflected to become the physical MIRROR reflection.
+
+    The sequential tracer folds the running frame by a proper ROTATION (rotate_x/y/z +
+    AxisMove=2); a real mirror is an improper REFLECTION. The two share the chief
+    outgoing direction ``d_out`` and the sagittal axis ``s = d_in x d_out`` (both fix
+    them), so their difference is the reflection across the plane they span -- whose
+    normal is ``d_out x s``. Reflecting the rotation-folded leg across that plane (then
+    re-anchoring onto the real face) yields the physical reflection for ALL rays."""
+    d_in = _unit(chief_in)
+    normal = _unit(face_normal)
+    d_out = _unit(_reflect(d_in, normal))
+    sagittal = np.cross(d_in, d_out)
+    s_norm = float(np.linalg.norm(sagittal))
+    if s_norm < 1e-9:
+        return None  # no fold (incoming already parallel to outgoing)
+    sagittal = sagittal / s_norm
+    flip = np.cross(d_out, sagittal)
+    flip_norm = float(np.linalg.norm(flip))
+    if flip_norm < 1e-9:
+        return None
+    return flip / flip_norm
+
+
+def _line_plane_intersection(
+    p0: np.ndarray, direction: np.ndarray, plane_point: np.ndarray, plane_normal: np.ndarray
+) -> np.ndarray | None:
+    denom = float(np.dot(direction, plane_normal))
+    if abs(denom) < 1e-12:
+        return None
+    t = float(np.dot(np.asarray(plane_point, dtype=float) - p0, plane_normal)) / denom
+    return p0 + t * direction
+
+
+def correct_folded_mirror_ray_points(
+    points: Any,
+    fold_center: Any,
+    face_normal: Any,
+    chief_in: Any,
+    *,
+    cos_fold_max: float = 0.2,
+) -> np.ndarray | None:
+    """bugs/0192: re-fold ONE display ray polyline from the sequential ROTATION fold to
+    the physical MIRROR reflection off the real face plane.
+
+    Locate the mirror kink (the sharpest ~90 deg turn), intersect the incoming leg with
+    the real face plane (through ``fold_center``, normal ``face_normal``) to get the true
+    hypotenuse hit ``K``, then replace every post-kink vertex with its reflection across
+    the flip plane, translated so the kink lands on ``K``. Incoming vertices are left
+    untouched. Returns a new array (input shape preserved) or None when the ray has no
+    clear fold (e.g. clipped before the mirror)."""
+    pts = np.asarray(points, dtype=float)
+    if pts.ndim != 2 or pts.shape[0] < 3 or pts.shape[1] < 3:
+        return None
+    coords = pts[:, :3]
+    flip = mirror_reflection_flip_plane_normal(chief_in, face_normal)
+    if flip is None:
+        return None
+    segments = np.diff(coords, axis=0)
+    lengths = np.linalg.norm(segments, axis=1)
+    valid = lengths > 1e-9
+    if int(valid.sum()) < 2:
+        return None
+    units = np.zeros_like(segments)
+    units[valid] = segments[valid] / lengths[valid, None]
+    cos_turn = np.sum(units[:-1] * units[1:], axis=1)
+    kink_seg = int(np.argmin(cos_turn))
+    if cos_turn[kink_seg] > cos_fold_max:
+        return None  # no ~90 deg fold -> not a mirror kink
+    k = kink_seg + 1
+    normal = _unit(face_normal)
+    center = np.asarray(fold_center, dtype=float).reshape(-1)[:3]
+    kink = _line_plane_intersection(coords[k - 1], units[k - 1], center, normal)
+    if kink is None:
+        return None
+    reflected_kink = coords[k] - 2.0 * float(np.dot(coords[k], flip)) * flip
+    tau = kink - reflected_kink
+    out = coords.copy()
+    tail = coords[k:]
+    out[k:] = tail - 2.0 * (tail @ flip)[:, None] * flip[None, :] + tau
+    if pts.shape[1] > 3:
+        result = pts.copy()
+        result[:, :3] = out
+        return result
+    return out
+
+
 def _is_promoted_mirror_fold(spec: dict) -> bool:
     if str(spec.get("surface", "")) in {"Object", "Image", "Mirror"}:
         return False
@@ -249,6 +363,9 @@ def fold_promoted_mirror_specs_to_sequential(
         if face_normal is None:
             out.append(spec)
             continue
+        chief_in = _chief_exit_direction(list(out) + [dict(_DUMMY_IMAGE)])
+        if chief_in is None:
+            chief_in = np.asarray([0.0, 0.0, 1.0], dtype=float)
         tilt = _solve_mirror_tilt(out, spec, face_normal)
         if tilt is None:
             # Could not establish a clean fold; leave the row as-is (non-seq trace).
@@ -269,6 +386,7 @@ def fold_promoted_mirror_specs_to_sequential(
                 "tilt": dict(tilt),
                 "reseated_desp_z": float(desp_z),
                 "face_normal": [float(v) for v in face_normal],
+                "chief_in": [float(v) for v in _unit(chief_in)],
             }
         )
     if not records:

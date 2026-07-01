@@ -82,7 +82,9 @@ from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timin
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.offbeam_optical_solid import offbeam_neutralized_body_transform
 from KrakenOS.UI.services.folded_sequential_fold import (
+    correct_folded_mirror_ray_points,
     fold_promoted_mirror_specs_to_sequential,
+    promoted_mirror_world_center,
     scene_nonseq_trigger_is_only_promoted_full_mirrors,
 )
 from KrakenOS.UI.services.optical_solid_geometry import (
@@ -578,6 +580,8 @@ class ThreeDSceneToolsMixin:
                 ray_path_count=int(ray_path_count),
             ):
                 scene_bundle = self._build_scene_bundle(system, rays, max_radius)
+            if folded_trace_rows is not None:
+                self._apply_folded_mirror_reflection_correction(scene_bundle)
             if include_live_step_overlays:
                 self._last_live_step_overlay_trace_rows = list(self.rows)
                 self._last_live_step_overlay_trace_records = list(live_step_records)
@@ -922,6 +926,59 @@ class ThreeDSceneToolsMixin:
                 prior = folded_rows[index - 1]
                 prior.thickness = float(getattr(prior, "thickness", 0.0) or 0.0) + reseated
         return folded_rows
+
+    def _apply_folded_mirror_reflection_correction(self, scene_bundle) -> None:
+        """bugs/0192: correct the folded-sequential display rays so they reflect off the
+        real mesh hypotenuse instead of the wrong diagonal.
+
+        The bugs/0187 folded-sequential trace folds the running frame by a proper
+        ROTATION (sequential ``Mirror`` + AxisMove=2), but a physical mirror is an
+        improper REFLECTION. The two agree on the chief direction yet differ by a
+        meridional flip, so every off-axis ray kinked on the opposite diagonal and
+        reflected in mid-air, off the drawn cube -- the user's "reflection wrong at
+        hypotenuse". Re-fold each ray's post-mirror leg onto the real face plane for
+        DISPLAY only (the optical trace is untouched -- it still reaches the sensor).
+
+        Scoped to a SINGLE promoted-mirror fold, which covers the flagged scene and the
+        minimal Object+Image+RA-mirror repro; a chain of folds keeps the current display
+        (not flagged) because each subsequent fold's flip plane lives in the already
+        folded frame."""
+        if scene_bundle is None:
+            return
+        ray_paths = getattr(scene_bundle, "ray_paths", None)
+        if not ray_paths:
+            return
+        try:
+            specs = self._serializable_specs_for_rows(list(self.rows))
+            _folded, records = fold_promoted_mirror_specs_to_sequential(specs)
+        except Exception:
+            return
+        if len(records) != 1:
+            return
+        record = records[0]
+        try:
+            row_index = int(record.get("row_index", -1))
+            face_normal = np.asarray(record.get("face_normal"), dtype=float).reshape(-1)[:3]
+            chief_in = np.asarray(
+                record.get("chief_in") or [0.0, 0.0, 1.0], dtype=float
+            ).reshape(-1)[:3]
+            center = promoted_mirror_world_center(specs, row_index)
+        except Exception:
+            return
+        if center is None or face_normal.size < 3:
+            return
+        for path in ray_paths:
+            points = getattr(path, "points_world", None)
+            if points is None:
+                continue
+            corrected = correct_folded_mirror_ray_points(points, center, face_normal, chief_in)
+            if corrected is None:
+                continue
+            path.points_world = corrected
+            try:
+                path.display_geometry_source = "folded_mirror_reflection_corrected"
+            except Exception:
+                pass
 
     def _live_step_overlay_trace_rows(self) -> tuple[list[SurfaceRow], list[dict[str, object]]]:
         if self._step_path_for_label("optical") is None:
