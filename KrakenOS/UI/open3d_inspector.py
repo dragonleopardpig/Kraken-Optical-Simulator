@@ -4890,7 +4890,31 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # like dragging the actual body, not orbiting the camera
             # around it.
             camera.Azimuth(-dx_f * degrees_per_pixel)
-            camera.Elevation(dy_f * degrees_per_pixel)
+            # Clamp the vertical tilt just short of the pole. Past ~80 deg
+            # elevation the view direction comes within 15 deg of world +Y, so
+            # `_safe_view_up_for_camera` stops re-picking +Y and discretely
+            # swaps the view-up to +Z -- a 90 deg reorient that reads as the
+            # whole assembly suddenly flipping mid-drag (flag 20260701_201224).
+            # Stopping at 79 deg keeps +Y a stable, valid up so the swap (and
+            # the flip) can never happen; use the Top preset / nav-cube for an
+            # exact top-down view.
+            elevation_limit_deg = 79.0
+            requested_elev = dy_f * degrees_per_pixel
+            try:
+                cam_pos = np.asarray(camera.GetPosition(), dtype=float).reshape(3)
+                focal = np.asarray(camera.GetFocalPoint(), dtype=float).reshape(3)
+                offset = cam_pos - focal
+                radius = float(np.linalg.norm(offset))
+                if radius > 1e-9:
+                    current_elev = float(np.degrees(np.arcsin(np.clip(offset[1] / radius, -1.0, 1.0))))
+                    new_elev = current_elev + requested_elev
+                    if new_elev > elevation_limit_deg:
+                        requested_elev = elevation_limit_deg - current_elev
+                    elif new_elev < -elevation_limit_deg:
+                        requested_elev = -elevation_limit_deg - current_elev
+            except Exception:
+                requested_elev = dy_f * degrees_per_pixel
+            camera.Elevation(requested_elev)
             # Re-lock view-up after Elevation tilts view-direction so
             # the NEXT tick's Azimuth rotates around a stable axis.
             camera.SetViewUp(*self._safe_view_up_for_camera(camera))
