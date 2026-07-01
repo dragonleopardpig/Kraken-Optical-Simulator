@@ -141,6 +141,10 @@ from KrakenOS.UI import optical_solid_metadata
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ATTACHMENT_DIR = PROJECT_ROOT / "attachment"
 STEP_CARRY_GRID_FREE = "Free"
+# bugs/0189: how far past a promoted-mirror fold point the +Z global optical-axis
+# guide may reach before it is clamped -- just enough to visually meet the mirror
+# body, not the ~300 mm the folded scene's X-width otherwise inflated it by.
+_AXIS_FOLD_POINT_GUIDE_MARGIN_MM = 5.0
 FIELD_TYPE_CANONICAL_VALUES = (
     "Angle",
     "Object Height",
@@ -9079,6 +9083,46 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
         return extent
 
+    def _folded_axis_incoming_fold_point_z(self) -> float | None:
+        """World Z where the incoming +Z optical axis meets a promoted-mirror fold.
+
+        A promoted full-mirror cube folds the downstream chain onto the reflected
+        +X branch (bugs/0185); every folded row's world pose then sits at the SAME
+        constant Z -- the fold plane / mirror vertex (e.g. AZ85 RA-mirror: Z=71.9).
+        Applying each folded row's rigid fold transform to its straight +Z anchor
+        recovers that Z. Returns the nearest such Z, or ``None`` for an unfolded
+        scene (no row carries a fold override) so the +Z guide is left byte-identical.
+        """
+        editor = getattr(self, "editor", None)
+        fold_fn = getattr(editor, "_optical_axis_fold_world_transform_for_row", None)
+        z_positions_fn = getattr(editor, "_row_z_positions", None)
+        if not callable(fold_fn) or not callable(z_positions_fn):
+            return None
+        try:
+            z_positions = z_positions_fn()
+            rows = getattr(editor, "rows", []) or []
+        except Exception:
+            return None
+        fold_branch_zs: list[float] = []
+        for row_index in range(len(rows)):
+            try:
+                transform = fold_fn(row_index)
+            except Exception:
+                transform = None
+            if transform is None or not (0 <= row_index < len(z_positions)):
+                continue
+            try:
+                matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+                anchor = np.asarray((0.0, 0.0, float(z_positions[row_index]), 1.0), dtype=float)
+                folded_center = (matrix @ anchor)[:3]
+            except Exception:
+                continue
+            if np.all(np.isfinite(folded_center)):
+                fold_branch_zs.append(float(folded_center[2]))
+        if not fold_branch_zs:
+            return None
+        return min(fold_branch_zs)
+
     def _optical_axis_records_for_3d(self, scene_bundle: SceneBundle | None) -> list[dict[str, object]]:
         try:
             bounds = np.asarray(self._renderer.ComputeVisiblePropBounds(), dtype=float).reshape(6)
@@ -9095,6 +9139,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # refresh order.
         bounds = self._augment_bounds_with_scene_overlays(bounds, scene_bundle)
         z0, z1 = _optical_axis_z_span(bounds)
+        # bugs/0189: on a promoted-mirror fold the beam bends onto +X at the mirror,
+        # so the folded branch makes X the largest scene extent. _optical_axis_z_span
+        # pads the +Z guide by 0.65*max-extent, which the X width then inflates ~300 mm
+        # PAST the mirror -- a stray faint +Z line reaching toward the folded detector
+        # (the residual of flags 20260701_0817/0841/0847). The +Z global guide is only
+        # the INCOMING axis (object -> mirror); past the mirror the axis is +X (drawn by
+        # the traced segments). Clamp the far end to the fold point so it stops bending.
+        fold_point_z = self._folded_axis_incoming_fold_point_z()
+        if fold_point_z is not None and np.isfinite(fold_point_z):
+            z1 = min(z1, float(fold_point_z) + _AXIS_FOLD_POINT_GUIDE_MARGIN_MM)
         records = [
             {
                 "axis_id": "axis:global",

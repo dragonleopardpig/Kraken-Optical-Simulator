@@ -32,6 +32,32 @@ def _current_pv_backend():
     return value
 
 
+def _is_blocked_reference_ray_stub(path) -> bool:
+    """A pupil/field reference ray blocked before it ever entered the optics.
+
+    True only for a ``pupil_field_reference`` path that stopped at the first
+    surface (``stopped_at_surface_0``), carries no branch power and reaches no
+    image -- pure sampling scaffolding that never propagated. These are the
+    stubs a promoted-mirror fold strands on the +Z axis (bugs/0189). A real
+    launched ray (``missed_image`` or any that reaches the detector) is never a
+    match, so the folded imaging cone is untouched.
+    """
+    if str(getattr(path, "source_role", "") or "") != "pupil_field_reference":
+        return False
+    if str(getattr(path, "termination_reason", "") or "") != "stopped_at_surface_0":
+        return False
+    if bool(getattr(path, "reaches_image", False)):
+        return False
+    power = getattr(path, "branch_power", None)
+    if power is not None:
+        try:
+            if abs(float(power)) > 1e-9:
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
 class LayoutSceneBundleDisplayMixin:
     def _current_field_value(self) -> float:
         try:
@@ -643,7 +669,46 @@ class LayoutSceneBundleDisplayMixin:
             # sensor. The two-arm splitter path above already replaced the detectors with
             # their own per-arm folded centres, so it is left untouched.
             self._fold_promoted_mirror_table_row_targets(bundle)
+            # bugs/0189: the same promoted-mirror fold leaves the BLOCKED pupil/field
+            # reference rays stranded on the unfolded +Z axis. They never reach the
+            # mirror (stopped at surface 0, zero branch power, reaching no image), so the
+            # display fold never carries them -- they draw as a faint +Z line past the
+            # folded optics (the residual of flags 20260701_0817/0841/0847). Drop them.
+            self._suppress_blocked_reference_ray_stubs(bundle)
         return bundle
+
+    def _suppress_blocked_reference_ray_stubs(self, bundle) -> int:
+        """Drop blocked pupil/field reference-ray stubs stranded on the unfolded +Z axis.
+
+        A promoted full-mirror cube folds the traced beam onto the reflected +X
+        branch, but the pupil/field REFERENCE rays that never reach the mirror --
+        blocked at the first surface, carrying no branch power, reaching no image --
+        are seated on the STRAIGHT +Z cumulative-thickness axis and are never folded,
+        so they draw a faint +Z line past the folded optics (bugs/0189). Only runs on
+        a folded scene (>=1 row carries an optical-axis fold override, the same gate
+        the detector/overlay fold uses), so plain / sequential-mirror / unfolded
+        layouts keep every ray byte-identical. Returns the number dropped.
+        """
+        fold = getattr(self, "_optical_axis_fold_world_transform_for_row", None)
+        if not callable(fold):
+            return 0
+        try:
+            scene_is_folded = any(
+                fold(row_index) is not None
+                for row_index in range(len(getattr(self, "rows", []) or []))
+            )
+        except Exception:
+            scene_is_folded = False
+        if not scene_is_folded:
+            return 0
+        paths = list(getattr(bundle, "ray_paths", []) or [])
+        if not paths:
+            return 0
+        kept = [p for p in paths if not _is_blocked_reference_ray_stub(p)]
+        dropped = len(paths) - len(kept)
+        if dropped:
+            bundle.ray_paths = kept
+        return dropped
 
     def _fold_promoted_mirror_table_row_targets(self, bundle) -> int:
         """Fold every TABLE-ROW detector target onto a promoted mirror's reflected branch.
