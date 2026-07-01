@@ -632,7 +632,77 @@ class LayoutSceneBundleDisplayMixin:
                 c for c in (getattr(bundle, "surface_curves", None) or [])
                 if not _is_superseded_terminal(c)
             ]
+        else:
+            # bugs/0188: a single promoted full-mirror cube folds the downstream chain
+            # onto the reflected +X branch in the MESH system, but build_scene_targets
+            # seats the table-row detector on the STRAIGHT +Z cumulative-thickness axis.
+            # Carry it onto the branch here so EVERY consumer -- the 3-D footprint actor
+            # (three_d_scene_tools._scene_detector_overlay_specs), the 2-D footprint
+            # projection (scene_projector._project_detector_footprints) and the coverage
+            # overlay (detector_coverage_overlay.add_overlays) -- draws on the folded
+            # sensor. The two-arm splitter path above already replaced the detectors with
+            # their own per-arm folded centres, so it is left untouched.
+            self._fold_promoted_mirror_table_row_targets(bundle)
         return bundle
+
+    def _fold_promoted_mirror_table_row_targets(self, bundle) -> int:
+        """Fold every TABLE-ROW detector target onto a promoted mirror's reflected branch.
+
+        ``build_scene_targets`` derives each table-row target's world pose from the
+        unfolded cumulative-thickness +Z axis (it only knows ``editor.rows``, not the
+        bugs/0185 fold, which lives in the optical-solid output-port pose overrides /
+        the mesh system). A promoted full-mirror cube reflects the downstream chain --
+        including the image surface disc -- onto +X, so an untouched detector target
+        floats on the straight axis (the user's faint 45-deg "still in the wrong axis"
+        line: flags ``flag_20260701_074930_725`` / ``flag_20260701_075019_938``). This
+        applies the SAME rigid fold the lens/camera STEP overlays use
+        (``_optical_axis_fold_world_transform_for_row``), which returns ``None`` for any
+        row without a fold override -- so plain / sequential-mirror layouts and the
+        upstream object reference are byte-identical. Returns the number folded.
+        """
+        folded = 0
+        for target in list(getattr(bundle, "targets", []) or []):
+            meta = getattr(target, "metadata", None) or {}
+            if not isinstance(meta, dict) or str(meta.get("target_source", "") or "") != "table_row":
+                continue
+            if self._fold_table_row_target_world_pose(target):
+                folded += 1
+        return folded
+
+    def _fold_table_row_target_world_pose(self, target) -> bool:
+        """Carry one table-row target's ``center``/``normal``/``tangent`` world pose onto
+        its row's folded branch in place. Returns ``True`` when a fold was applied
+        (``False`` for an unfolded row or a non-finite result)."""
+        fold = getattr(self, "_optical_axis_fold_world_transform_for_row", None)
+        row_index = getattr(target, "row_index", None)
+        if row_index is None or not callable(fold):
+            return False
+        try:
+            transform = fold(int(row_index))
+        except Exception:
+            transform = None
+        if transform is None:
+            return False
+        try:
+            matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+            center = np.asarray(target.center_world, dtype=float).reshape(3)
+            normal = np.asarray(target.normal_world, dtype=float).reshape(3)
+            tangent = np.asarray(target.tangent_world, dtype=float).reshape(3)
+            folded_center = (matrix @ np.append(center, 1.0))[:3]
+            folded_normal = matrix[:3, :3] @ normal
+            folded_tangent = matrix[:3, :3] @ tangent
+        except Exception:
+            return False
+        if not (
+            np.all(np.isfinite(folded_center))
+            and np.all(np.isfinite(folded_normal))
+            and np.all(np.isfinite(folded_tangent))
+        ):
+            return False
+        target.center_world = np.asarray(folded_center, dtype=float)
+        target.normal_world = np.asarray(folded_normal, dtype=float)
+        target.tangent_world = np.asarray(folded_tangent, dtype=float)
+        return True
 
     def _settings_for_two_arm_leaf_trace(self) -> dict:
         """The launch settings each per-arm sequential leaf trace needs (the rest default)."""

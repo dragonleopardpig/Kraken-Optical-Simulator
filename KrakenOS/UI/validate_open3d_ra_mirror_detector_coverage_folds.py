@@ -1,27 +1,38 @@
-"""Display-free guard for bugs/0188: the IMAGE detector-coverage overlay folds onto the
-reflected +X branch of a promoted RA-mirror layout.
+"""Display-free guard for bugs/0188: the IMAGE detector TARGET folds onto the reflected
++X branch of a promoted RA-mirror layout AT THE BUNDLE SOURCE, so every consumer follows.
 
 A promoted full-mirror cube (``machine_vision_AZ85_RA_Mirror.py``) folds the downstream
 lens chain + the image surface onto the reflected +X branch in the MESH display system
-(bugs/0185). The detector-coverage overlay (image circle / sensor square / labels +
-the pickable fill) is built from ``build_scene_targets``, which derives the Image
-detector from the UNFOLDED cumulative-thickness +Z axis -- so without a fold it draws
-at world (0, 0, 347.22) along +Z, a stray plane far from the folded image that the user
-saw as a faint 45-deg line (flag ``flag_20260630_212049_339`` "still the same"; the row-8
-actor bounds were the diagonal [-16.29, 287.82, -16.29, 16.29, 55.6, 347.2]).
+(bugs/0185). The scene TARGETS come from ``build_scene_targets``, which derives each
+table-row target from the UNFOLDED cumulative-thickness +Z axis -- so without a fold the
+Image detector target sits at world (0, 0, 347.22) along +Z, a stray plane far from the
+folded image. THREE consumers read that one target's world pose:
+  * the 3-D detector footprint actor (three_d_scene_tools._scene_detector_overlay_specs),
+  * the 2-D footprint projection (scene_projector._project_detector_footprints),
+  * the detector-coverage overlay (detector_coverage_overlay.add_overlays).
+The first fix folded only the coverage overlay's local copy, so the footprint actor stayed
+on +Z (flags ``flag_20260701_074930_725`` "the detector still in original wrong axis" /
+``flag_20260701_075019_938`` "the reflection still follow the fainted line").
 
-Fix (``services/detector_coverage_overlay.py`` ``_fold_table_row_detector_frame``) carries
-a plain TABLE-ROW image detector onto the reflected branch with the SAME rigid fold the
-lens/camera STEP overlays use (``_optical_axis_fold_world_transform_for_row``). Branch
-detectors already sit on their own per-arm folded centre, so only table-row targets fold;
-unfolded layouts are left byte-identical (transform is ``None``).
+Fix (option 1, source-level): ``LayoutSceneBundleDisplayMixin.
+_fold_promoted_mirror_table_row_targets`` (called from ``_build_scene_bundle`` on the
+single-axis path) folds each table-row target's ``center``/``normal``/``tangent`` world
+pose in place with the SAME rigid fold the lens/camera STEP overlays use
+(``_optical_axis_fold_world_transform_for_row``) -- so all THREE consumers draw on the
+folded sensor from one shared pose. Two-arm splitter detectors are replaced upstream with
+their own per-arm folded centres, so the single-axis fold is left to this path; unfolded
+layouts get ``None`` transforms and are byte-identical.
 
-This guard binds the REAL ``build_scene_targets`` + the REAL overlay fold helper and asserts:
-  1. the AZ85 image detector is UNFOLDED at (0, 0, ~347.22) +Z as build_scene_targets emits it;
-  2. the fold helper carries it to the sensor at world X ~ +287.82, Z ~ 71.9, normal +X, and
-     the in-plane basis lies in the Y-Z plane (the coverage disc is square to +X);
-  3. the folded detector centre coincides with the MESH image surface (within 1 mm);
-  4. a non-folded sequential-mirror layout (``flat_mirror_45_deg.py``) is left byte-identical
+This guard binds the REAL ``build_scene_targets`` + the REAL bundle-source fold helper and
+the REAL footprint polyline builder, asserting:
+  1. the AZ85 image detector target is UNFOLDED at (0, 0, ~347.22) +Z as build emits it;
+  2. the source fold carries it to the sensor at world X ~ +287.82, Z ~ 71.9, normal +X,
+     with the in-plane basis in the Y-Z plane (the coverage disc is square to +X);
+  3. the SHARED target drives the 3-D/2-D detector FOOTPRINT: a footprint built from the
+     folded target (given a test sensor) lies on +X, not the +Z axis -- this is the
+     consumer the coverage-overlay-only fix missed;
+  4. the folded detector centre coincides with the MESH image surface (within 1 mm);
+  5. a non-folded sequential-mirror layout (``flat_mirror_45_deg.py``) is left byte-identical
      (the fold helper no-ops -- no promoted-solid pose override).
 
 Run:
@@ -33,6 +44,7 @@ Exit: 0 = pass, 1 = regression.
 from __future__ import annotations
 
 import contextlib
+import copy
 import io
 import sys
 from pathlib import Path
@@ -47,7 +59,7 @@ from KrakenOS.UI.layout_editor import (
 from KrakenOS.UI.layout_library import load_python_data
 from KrakenOS.UI.render_layout_snapshot import _snapshot_editor
 from KrakenOS.UI.scene_builder import build_scene_targets
-from KrakenOS.UI.services.detector_coverage_overlay import DetectorCoverageOverlayService
+from KrakenOS.UI.scene_geometry import scene_target_active_footprint_polylines
 
 _LAYOUTS = Path(__file__).resolve().parent.parent / "common_optical_layouts"
 _AZ85 = "machine_vision_AZ85_RA_Mirror.py"
@@ -57,11 +69,12 @@ _SENSOR_Z = 71.90
 _UNFOLDED_Z = 347.218
 
 
-class _InspectorStub:
-    """Minimal carrier so the overlay service can reach ``editor`` display-free."""
+class _Bundle:
+    """Minimal carrier so the real ``_fold_promoted_mirror_table_row_targets`` (which reads
+    ``bundle.targets``) can run display-free -- the exact list ``_build_scene_bundle`` folds."""
 
-    def __init__(self, editor) -> None:
-        self.editor = editor
+    def __init__(self, targets) -> None:
+        self.targets = list(targets)
 
 
 def _build_editor(name: str):
@@ -86,8 +99,7 @@ def _build_editor(name: str):
     return editor
 
 
-def _image_detector(editor):
-    targets = build_scene_targets(editor.rows)
+def _image_detector(targets):
     dets = [t for t in targets if bool(getattr(t, "is_detector", False))]
     if not dets:
         raise AssertionError("no image detector target found")
@@ -113,13 +125,13 @@ def main() -> int:
     failures: list[str] = []
     notes: list[str] = []
 
-    # ---- AZ85: the detector folds onto the +X branch -------------------------
+    # ---- AZ85: the detector TARGET folds onto the +X branch at the source -----
     editor = _build_editor(_AZ85)
-    overlay = DetectorCoverageOverlayService(_InspectorStub(editor), pv_module=None)
-    det = _image_detector(editor)
+    targets = build_scene_targets(editor.rows)
+    det = _image_detector(targets)
 
-    c0 = np.asarray(det.center_world, dtype=float).reshape(3)
-    n0 = np.asarray(det.normal_world, dtype=float).reshape(3)
+    c0 = np.asarray(det.center_world, dtype=float).reshape(3).copy()
+    n0 = np.asarray(det.normal_world, dtype=float).reshape(3).copy()
     src = str((det.metadata or {}).get("target_source", ""))
 
     # (1) precondition: build_scene_targets emits the UNFOLDED +Z detector.
@@ -130,12 +142,15 @@ def main() -> int:
     if abs(abs(float(n0[2])) - 1.0) > 1e-3:
         failures.append(f"AZ85: unfolded detector normal {np.round(n0, 4).tolist()} not ~+Z")
 
-    # (2) the fold helper carries it onto the +X sensor branch, normal +X.
-    cf, nf = overlay._fold_table_row_detector_frame(det, c0, n0)
-    cf = np.asarray(cf, dtype=float).reshape(3)
-    nf = np.asarray(nf, dtype=float).reshape(3)
+    # (2) the REAL source fold (the method _build_scene_bundle calls) folds the SHARED
+    #     target in place onto the +X sensor branch, normal +X.
+    folded_count = editor._fold_promoted_mirror_table_row_targets(_Bundle(targets))
+    if folded_count < 1:
+        failures.append("AZ85: source fold reported 0 folded targets (detector left on the unfolded axis)")
+    cf = np.asarray(det.center_world, dtype=float).reshape(3)
+    nf = np.asarray(det.normal_world, dtype=float).reshape(3)
     if np.allclose(cf, c0):
-        failures.append("AZ85: fold helper left the detector on the unfolded axis (no fold applied)")
+        failures.append("AZ85: source fold left the detector target on the unfolded axis (no fold applied)")
     if abs(cf[0] - _SENSOR_X) > 1.0:
         failures.append(f"AZ85: folded detector X {cf[0]:.2f} not at the +X sensor ~{_SENSOR_X}")
     if abs(cf[1]) > 1.0:
@@ -156,7 +171,30 @@ def main() -> int:
             f"iv={np.round(iv, 4).tolist()})"
         )
 
-    # (3) the folded detector coincides with the real mesh image surface.
+    # (3) the SHARED target drives the 3-D/2-D detector FOOTPRINT. The AZ85 detector has no
+    #     explicit sensor (footprint empty), so give the folded target a test sensor and
+    #     confirm the footprint polylines follow the fold onto +X -- the consumer the
+    #     coverage-overlay-only fix left on the +Z axis.
+    probe = copy.deepcopy(det)
+    probe.active_width_mm = 12.0
+    probe.active_height_mm = 8.0
+    footprint = scene_target_active_footprint_polylines(probe)
+    if not footprint:
+        failures.append("AZ85: folded target produced no detector footprint even with a test sensor")
+    else:
+        pts = np.vstack([np.asarray(p, dtype=float).reshape(-1, 3) for p in footprint])
+        if float(np.max(np.abs(pts[:, 0] - _SENSOR_X))) > 1.0:
+            failures.append(
+                f"AZ85: detector footprint did not fold to +X (X in "
+                f"[{float(pts[:, 0].min()):.2f}, {float(pts[:, 0].max()):.2f}], expected ~{_SENSOR_X})"
+            )
+        if float(np.min(pts[:, 2])) < _SENSOR_Z - 10.0 or float(np.max(pts[:, 2])) > _SENSOR_Z + 10.0:
+            failures.append(
+                f"AZ85: detector footprint Z {[round(float(pts[:, 2].min()), 2), round(float(pts[:, 2].max()), 2)]} "
+                f"not near the folded sensor ~{_SENSOR_Z} (still on the +Z axis?)"
+            )
+
+    # (4) the folded detector coincides with the real mesh image surface.
     mesh_pt = _mesh_image_surface_point(_AZ85)
     if mesh_pt is None:
         notes.append("SKIP coincidence check: mesh image-surface build unavailable")
@@ -166,13 +204,17 @@ def main() -> int:
             f"mesh image surface {np.round(mesh_pt, 3).tolist()}"
         )
 
-    # ---- (4) a non-folded sequential-mirror layout is untouched --------------
+    # ---- (5) a non-folded sequential-mirror layout is untouched --------------
     plain_editor = _build_editor(_PLAIN)
-    plain_overlay = DetectorCoverageOverlayService(_InspectorStub(plain_editor), pv_module=None)
-    plain_det = _image_detector(plain_editor)
-    pc0 = np.asarray(plain_det.center_world, dtype=float).reshape(3)
-    pn0 = np.asarray(plain_det.normal_world, dtype=float).reshape(3)
-    pcf, pnf = plain_overlay._fold_table_row_detector_frame(plain_det, pc0, pn0)
+    plain_targets = build_scene_targets(plain_editor.rows)
+    plain_det = _image_detector(plain_targets)
+    pc0 = np.asarray(plain_det.center_world, dtype=float).reshape(3).copy()
+    pn0 = np.asarray(plain_det.normal_world, dtype=float).reshape(3).copy()
+    plain_folded = plain_editor._fold_promoted_mirror_table_row_targets(_Bundle(plain_targets))
+    pcf = np.asarray(plain_det.center_world, dtype=float).reshape(3)
+    pnf = np.asarray(plain_det.normal_world, dtype=float).reshape(3)
+    if plain_folded != 0:
+        failures.append(f"regression: non-folded layout folded {plain_folded} target(s) (expected 0)")
     if not (np.allclose(pc0, pcf) and np.allclose(pn0, pnf)):
         failures.append(
             f"regression: non-folded layout detector was modified "
@@ -184,12 +226,14 @@ def main() -> int:
         for line in failures:
             print(f"  - {line}")
         return 1
-    print("PASS bugs/0188 folded detector-coverage:")
-    print(f"  - AZ85 detector unfolds at (0,0,{c0[2]:.2f}) +Z, folds to ({cf[0]:.2f},{cf[1]:.2f},{cf[2]:.2f}) +X")
+    print("PASS bugs/0188 folded detector-coverage (source-level, all consumers):")
+    print(f"  - AZ85 detector target unfolds at (0,0,{c0[2]:.2f}) +Z, folds to ({cf[0]:.2f},{cf[1]:.2f},{cf[2]:.2f}) +X")
+    print(f"  - source fold moved {folded_count} table-row target(s) in place (shared by all consumers)")
+    print("  - the detector FOOTPRINT built from the folded target lands on +X (not the +Z axis)")
     print("  - folded coverage basis is square to +X (Y-Z plane)")
     if mesh_pt is not None:
         print(f"  - folded detector coincides with the mesh image surface ({np.round(mesh_pt, 2).tolist()})")
-    print(f"  - non-folded {_PLAIN} left byte-identical (fold helper no-op)")
+    print(f"  - non-folded {_PLAIN} left byte-identical (fold helper no-op, 0 folded)")
     for note in notes:
         print(f"  - {note}")
     return 0

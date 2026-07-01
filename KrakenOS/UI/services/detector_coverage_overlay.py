@@ -528,38 +528,6 @@ class DetectorCoverageOverlayService:
             self.editor.append_debug(f"Detector coverage label skipped: {exc}")
             return False
 
-    def _fold_table_row_detector_frame(self, target, img_pt, image_axis):
-        """Carry a plain table-row image detector onto the folded reflected branch.
-
-        ``build_scene_targets`` places a table-row Image detector on the UNFOLDED
-        cumulative-thickness +Z axis. When a promoted full-mirror cube folds the
-        downstream chain (bugs/0185), the detector-coverage geometry must follow it
-        onto the reflected branch -- otherwise the image circle / sensor / labels
-        draw on the straight axis (bugs/0188). Uses the same rigid fold transform
-        ``_optical_axis_fold_world_transform_for_row`` the STEP overlays use. Returns
-        the inputs unchanged for unfolded layouts (transform ``None``) and for
-        branch-detector targets (already seated on their own folded per-arm centre).
-        """
-        meta = getattr(target, "metadata", None) or {}
-        if not isinstance(meta, dict) or str(meta.get("target_source", "") or "") != "table_row":
-            return img_pt, image_axis
-        row_index = getattr(target, "row_index", None)
-        fold = getattr(self.editor, "_optical_axis_fold_world_transform_for_row", None)
-        if row_index is None or not callable(fold):
-            return img_pt, image_axis
-        try:
-            transform = fold(int(row_index))
-            if transform is None:
-                return img_pt, image_axis
-            matrix = np.asarray(transform, dtype=float).reshape(4, 4)
-            folded_pt = (matrix @ np.append(np.asarray(img_pt, dtype=float).reshape(3), 1.0))[:3]
-            folded_axis = matrix[:3, :3] @ np.asarray(image_axis, dtype=float).reshape(3)
-        except Exception:
-            return img_pt, image_axis
-        if np.all(np.isfinite(folded_pt)) and np.all(np.isfinite(folded_axis)):
-            return np.asarray(folded_pt, dtype=float), np.asarray(folded_axis, dtype=float)
-        return img_pt, image_axis
-
     def add_overlays(self, system: Any, scene_bundle: Any = None) -> int:
         if scene_bundle is None:
             return 0
@@ -610,17 +578,13 @@ class DetectorCoverageOverlayService:
                     rec_side, rec_side, float(image_radius), mag if finite else None,
                     sensor_is_real=False,
                 )
+            # bugs/0188: the table-row detector target is already folded onto the
+            # reflected +X branch at the bundle source (LayoutSceneBundleDisplayMixin.
+            # _fold_promoted_mirror_table_row_targets), so center_world/normal_world
+            # here read the folded sensor pose -- shared with the 3-D footprint actor
+            # and the 2-D footprint projection, which draw from the same target.
             img_pt = np.asarray(getattr(target, "center_world"), dtype=float).reshape(3)   # the (folded) detector
             image_axis = np.asarray(getattr(target, "normal_world"), dtype=float).reshape(3)
-            # bugs/0188: a promoted full-mirror cube folds the downstream chain onto the
-            # reflected +X branch in the MESH system, but build_scene_targets derives this
-            # table-row detector from the UNFOLDED cumulative-thickness +Z axis. Untouched,
-            # the image circle / sensor square / labels (and the pickable fill) draw on the
-            # straight +Z axis far from the folded image -- the stray plane the user saw as a
-            # faint 45-deg line. Carry the detector onto the branch with the same rigid fold
-            # the lens/camera STEP overlays use (bugs/0185). Branch-detector targets already
-            # sit on their own folded per-arm centre, so only plain table-row targets fold.
-            img_pt, image_axis = self._fold_table_row_detector_frame(target, img_pt, image_axis)
             iu, iv = _basis(image_axis)
 
             for spec in detector_coverage_overlay_specs(
