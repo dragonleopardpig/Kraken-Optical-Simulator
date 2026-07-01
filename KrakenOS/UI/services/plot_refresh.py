@@ -186,14 +186,21 @@ class PlotRefreshService:
                 warnings.simplefilter("ignore", RuntimeWarning)
                 with redirect_stdout(capture), redirect_stderr(capture):
                     system = self.build_system(require_solids=True)
-                    rays = Kos.raykeeper(system)
-                    self._trace_preview_rays(
-                        system,
-                        rays,
-                        wavelength,
-                        max_radius,
-                        allow_full_pupil=True,
-                        sampling_mode=preview_sampling_mode,
+                    # bugs/0201 (#6): route the 2D preview through the same folded-aware
+                    # trace the 3D view uses. A direct mesh non-seq trace of the folded
+                    # RA-mirror scene retroreflects the ideal Thin Lenses (0 rays), so the
+                    # 2D view showed no ray tracing at all; the straight-equivalent /
+                    # sequential-Mirror trace reaches the sensor and is bent onto the drawn
+                    # detector after the bundle is built.
+                    folded_trace_rows = self._folded_sequential_trace_rows(self.rows)
+                    rays, straight_equivalent_fold_transform = (
+                        self._trace_preview_rays_folded_aware(
+                            system,
+                            wavelength,
+                            max_radius,
+                            sampling_mode=preview_sampling_mode,
+                            folded_trace_rows=folded_trace_rows,
+                        )
                     )
             self.append_debug(capture.getvalue())
             self._update_analysis_progress("Tracing rays", 2, 5)
@@ -211,6 +218,8 @@ class PlotRefreshService:
             self.update_idletasks()
             orientation = self._current_display_orientation()
             bundle = self._build_scene_bundle(system, rays, max_radius)
+            if folded_trace_rows is not None:
+                self._apply_folded_display_bend(bundle, straight_equivalent_fold_transform)
             title_bundle = bundle
             self._last_scene_bundle = bundle
             self._refresh_3d_inspector_if_open(system=system, rays=rays, scene_bundle=bundle)
