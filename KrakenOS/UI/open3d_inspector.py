@@ -9183,6 +9183,73 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         forward = points[0] if t0 >= t1 else points[1]
         return np.vstack((start, forward))
 
+    def _folded_reflected_axis_guide_record(self, bounds, fold_point_z):
+        """The OUTGOING (reflected) dotted optical-axis guide for a SINGLE mirror fold.
+
+        bugs/0200 (flag 20260701_201444): the incoming +Z guide is clamped at the mirror
+        (bugs/0189) on the intent that the traced ray segments draw the +X branch -- but
+        when no chief ray is traced (rays off, or an untraced preview), the reflected path
+        has NO optical-axis line. Draw a dotted guide from the fold point along the folded
+        axis (``R @ +Z``) out to the scene extent. Returns ``None`` for an unfolded layout,
+        a CHAIN of folds (the axis zig-zags -- left to the traced segments), or when the
+        fold transform is unavailable, so nothing else changes.
+        """
+        if fold_point_z is None or not np.isfinite(float(fold_point_z)):
+            return None
+        try:
+            folded_rows = self.editor._folded_sequential_trace_rows(self.editor.rows)
+        except Exception:
+            folded_rows = None
+        if folded_rows is None:
+            return None
+        single_fold = (
+            sum(
+                1
+                for original, folded in zip(self.editor.rows, folded_rows)
+                if str(getattr(folded, "surface", "")) == "Mirror"
+                and str(getattr(original, "surface", "")) != "Mirror"
+            )
+            == 1
+        )
+        if not single_fold:
+            return None
+        try:
+            transform = self.editor._optical_axis_fold_world_transform_for_row(
+                self.editor._image_plane_row_index()
+            )
+            matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+            fold_dir = matrix[:3, :3] @ np.asarray((0.0, 0.0, 1.0))
+            bounds_arr = np.asarray(bounds, dtype=float).reshape(6)
+        except Exception:
+            return None
+        norm = float(np.linalg.norm(fold_dir))
+        if not (norm > 1e-9 and np.all(np.isfinite(fold_dir)) and np.all(np.isfinite(bounds_arr))):
+            return None
+        fold_dir = fold_dir / norm
+        fold_point = np.asarray((0.0, 0.0, float(fold_point_z)), dtype=float)
+        corners = np.asarray(
+            [
+                (bounds_arr[a], bounds_arr[2 + b], bounds_arr[4 + c])
+                for a in (0, 1)
+                for b in (0, 1)
+                for c in (0, 1)
+            ],
+            dtype=float,
+        )
+        reach = float(np.max((corners - fold_point) @ fold_dir))
+        if not (reach > 1e-6):
+            return None
+        far = fold_point + fold_dir * reach
+        return {
+            "axis_id": "axis:global:reflected",
+            "axis_label": "Optical Axis",
+            "axis_kind": "dotted_global_guide",
+            "branch_path": "",
+            "source_id": "",
+            "ray_index": -1,
+            "points": np.asarray((fold_point, far), dtype=float),
+        }
+
     def _optical_axis_records_for_3d(self, scene_bundle: SceneBundle | None) -> list[dict[str, object]]:
         try:
             bounds = np.asarray(self._renderer.ComputeVisiblePropBounds(), dtype=float).reshape(6)
@@ -9221,6 +9288,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 "points": np.asarray(((0.0, 0.0, z0), (0.0, 0.0, z1)), dtype=float),
             }
         ]
+        # bugs/0200: on a single mirror fold the +Z guide above stops at the mirror; add
+        # the OUTGOING +X guide so the reflected path always keeps an optical-axis line.
+        reflected_guide = self._folded_reflected_axis_guide_record(
+            bounds, float(fold_point_z) if scene_is_folded else None
+        )
+        if reflected_guide is not None:
+            records.append(reflected_guide)
         try:
             show_rays = bool(self.show_rays_var.get())
         except Exception:
