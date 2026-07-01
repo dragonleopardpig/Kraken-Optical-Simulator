@@ -9123,6 +9123,42 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return None
         return min(fold_branch_zs)
 
+    def _folded_traced_axis_forward_points(self, segment) -> np.ndarray | None:
+        """Clamp a folded reflected optical-axis segment so it emanates FORWARD from
+        its reflection point instead of extending back through the mirror.
+
+        ``_dotted_axis_records_from_ray_path`` draws every traced ``Optical Axis N``
+        via ``_extended_axis_points`` -- ``origin +/- 0.85*scene-span`` in BOTH
+        directions. On a promoted-mirror fold the reflected +X chief branch then
+        pokes ~250 mm out the BACK of the 45-deg hypotenuse: a faint dash-dot line
+        crossing the mirror the user kept re-flagging as "reflection wrong at the
+        hypotenuse" (bugs/0190). The physical beam only travels forward from where it
+        reflects, so replace the backward end with the segment's reflection point
+        (``segment_start``). Returns clamped (2,3) points, or ``None`` to leave the
+        segment untouched -- the caller applies this only on a folded scene, and only
+        a segment that genuinely overhangs BEHIND its reflection point is rewritten
+        (a segment already entirely forward of its start stays byte-identical)."""
+        try:
+            points = np.asarray(segment.get("points"), dtype=float).reshape(2, 3)
+            start = np.asarray(segment.get("segment_start"), dtype=float).reshape(3)
+            direction = np.asarray(segment.get("segment_direction"), dtype=float).reshape(3)
+        except Exception:
+            return None
+        if not (
+            np.all(np.isfinite(points)) and np.all(np.isfinite(start)) and np.all(np.isfinite(direction))
+        ):
+            return None
+        norm = float(np.linalg.norm(direction))
+        if not np.isfinite(norm) or norm <= 1e-9:
+            return None
+        unit = direction / norm
+        t0 = float(np.dot(points[0] - start, unit))
+        t1 = float(np.dot(points[1] - start, unit))
+        if min(t0, t1) >= -1e-6:
+            return None
+        forward = points[0] if t0 >= t1 else points[1]
+        return np.vstack((start, forward))
+
     def _optical_axis_records_for_3d(self, scene_bundle: SceneBundle | None) -> list[dict[str, object]]:
         try:
             bounds = np.asarray(self._renderer.ComputeVisiblePropBounds(), dtype=float).reshape(6)
@@ -9147,7 +9183,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # the INCOMING axis (object -> mirror); past the mirror the axis is +X (drawn by
         # the traced segments). Clamp the far end to the fold point so it stops bending.
         fold_point_z = self._folded_axis_incoming_fold_point_z()
-        if fold_point_z is not None and np.isfinite(fold_point_z):
+        scene_is_folded = fold_point_z is not None and bool(np.isfinite(fold_point_z))
+        if scene_is_folded:
             z1 = min(z1, float(fold_point_z) + _AXIS_FOLD_POINT_GUIDE_MARGIN_MM)
         records = [
             {
@@ -9344,6 +9381,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     if len(traced_segments) >= max_traced_axes:
                         break
                 del traced_segments[max_traced_axes:]
+                # bugs/0190: on a promoted-mirror fold a reflected traced axis is
+                # drawn symmetrically about its origin (_extended_axis_points), so its
+                # backward half pokes ~250 mm out the BACK of the 45-deg hypotenuse --
+                # the faint dash-dot line the user re-flagged as "reflection still
+                # wrong at the hypotenuse". Clamp each folded segment to run FORWARD
+                # from its reflection point. Unfolded scenes (scene_is_folded False)
+                # are untouched, so penta / beam-splitter Optical Axis 2 stay
+                # byte-identical.
+                if scene_is_folded:
+                    for segment in traced_segments:
+                        forward_points = self._folded_traced_axis_forward_points(segment)
+                        if forward_points is not None:
+                            segment["points"] = forward_points
                 for axis_number, segment in enumerate(traced_segments, start=2):
                     segment["axis_label"] = f"Optical Axis {axis_number}"
                 records.extend(traced_segments)
