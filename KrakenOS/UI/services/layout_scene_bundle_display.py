@@ -58,6 +58,43 @@ def _is_blocked_reference_ray_stub(path) -> bool:
     return True
 
 
+# bugs/0191: a folded ray that RETROREFLECTS at an ideal Thin Lens reverses its
+# propagation ~180 deg. Measured on the AZ85 bundle the per-vertex turn is cleanly
+# bimodal: the 53 retroreflections all fall at cos(turn) in [-1.0, -0.9], then a HARD
+# empty gap [-0.9, -0.6], then every legitimate fold/refraction turn (the steepest is
+# the ~90-120 deg mirror fold for a marginal FIELD ray) sits at cos >= -0.6. -0.75 is
+# the middle of that gap, so it isolates the retroreflection with ~0.15 margin either
+# way and never trips the mirror fold itself (which turns the imaging cone forward).
+_FOLDED_RETROREFLECTED_TAIL_COS_MAX = -0.75
+
+
+def _folded_retroreflected_tail_points(points, cos_max: float = _FOLDED_RETROREFLECTED_TAIL_COS_MAX):
+    """Points truncated at the first ~180 deg propagation reversal, or None if none.
+
+    Walks the display polyline; at the first vertex whose incoming vs outgoing unit
+    direction dot is below ``cos_max`` (a retroreflection, not a fold/refraction) it
+    keeps every point up to and INCLUDING that vertex (the ray stops at the lens where
+    it turned around) and drops the non-physical tail (the double-pass return + the
+    dive out the back of the fold hypotenuse). Returns ``None`` -- leave untouched --
+    for a forward-only ray or a polyline too short / degenerate to judge.
+    """
+    try:
+        pts = np.asarray(points, dtype=float)
+    except (TypeError, ValueError):
+        return None
+    if pts.ndim != 2 or pts.shape[0] < 3 or pts.shape[1] < 3:
+        return None
+    segments = np.diff(pts[:, :3], axis=0)
+    lengths = np.linalg.norm(segments, axis=1)
+    for i in range(1, len(segments)):
+        a, b = lengths[i - 1], lengths[i]
+        if a <= 1e-9 or b <= 1e-9:
+            continue
+        if float(np.dot(segments[i - 1] / a, segments[i] / b)) < cos_max:
+            return np.array(pts[: i + 1], dtype=float, copy=True)
+    return None
+
+
 class LayoutSceneBundleDisplayMixin:
     def _current_field_value(self) -> float:
         try:
@@ -675,6 +712,15 @@ class LayoutSceneBundleDisplayMixin:
             # display fold never carries them -- they draw as a faint +Z line past the
             # folded optics (the residual of flags 20260701_0817/0841/0847). Drop them.
             self._suppress_blocked_reference_ray_stubs(bundle)
+            # bugs/0191: 0187 folds the running frame at a promoted full-mirror cube so the
+            # ideal Thin Lenses downstream behave for the imaging cone -- but ~21% of the
+            # MARGINAL rays still retroreflect at the first ideal Thin Lens (KrakenOS fakes
+            # the ideal deflection as (L/N)*f, which back-bends a folded off-axis ray), then
+            # double-pass back through the mirror and dive out the 45-deg hypotenuse to
+            # ~250 mm behind it. That downward ray fan crossing the mirror is the user's
+            # persistent "reflection still wrong at the hypotenuse". Trim each ray at its
+            # retroreflection so it stops at the lens instead of plunging through the fold.
+            self._truncate_folded_retroreflected_ray_tails(bundle)
         return bundle
 
     def _suppress_blocked_reference_ray_stubs(self, bundle) -> int:
@@ -709,6 +755,41 @@ class LayoutSceneBundleDisplayMixin:
         if dropped:
             bundle.ray_paths = kept
         return dropped
+
+    def _truncate_folded_retroreflected_ray_tails(self, bundle) -> int:
+        """Trim each ray at its retroreflection on a promoted-mirror fold (bugs/0191).
+
+        0187 represents a promoted full-mirror cube as a sequential ``Mirror`` so the
+        running frame folds and the ideal Thin Lenses downstream behave for the imaging
+        cone. But KrakenOS fakes an ideal Thin Lens deflection as ``(L/N)*f``, which
+        back-bends a folded off-axis ray whose local axial cosine ``N`` has been driven
+        small by the fold, so ~21% of the MARGINAL rays retroreflect at the first Thin
+        Lens, double-pass back through the cube, and dive out the 45-deg hypotenuse to
+        ~250 mm behind it -- the downward ray fan crossing the mirror the user keeps
+        flagging. Truncating each ray at that ~180 deg reversal drops the non-physical
+        tail so the ray stops at the lens instead. Only runs on a folded scene (the same
+        fold-override gate the detector/stub fold uses), so plain / sequential-mirror /
+        unfolded layouts keep every ray byte-identical. Returns the number truncated.
+        """
+        fold = getattr(self, "_optical_axis_fold_world_transform_for_row", None)
+        if not callable(fold):
+            return 0
+        try:
+            scene_is_folded = any(
+                fold(row_index) is not None
+                for row_index in range(len(getattr(self, "rows", []) or []))
+            )
+        except Exception:
+            scene_is_folded = False
+        if not scene_is_folded:
+            return 0
+        truncated = 0
+        for path in list(getattr(bundle, "ray_paths", []) or []):
+            forward = _folded_retroreflected_tail_points(getattr(path, "points_world", None))
+            if forward is not None:
+                path.points_world = forward
+                truncated += 1
+        return truncated
 
     def _fold_promoted_mirror_table_row_targets(self, bundle) -> int:
         """Fold every TABLE-ROW detector target onto a promoted mirror's reflected branch.
