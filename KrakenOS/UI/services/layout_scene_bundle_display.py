@@ -287,6 +287,13 @@ class LayoutSceneBundleDisplayMixin:
             return None
         if any(getattr(row, "surface", "") == "Mirror" for row in self.rows):
             return None  # folded/catadioptric: principal-plane conjugate not handled here
+        equivalent = self._folded_optical_solid_straight_equivalent_rows()
+        if equivalent is not None:
+            # bugs/0194: a promoted mesh mirror folds the axis 90deg; its placement decenter
+            # trips the centered-refractive guard below. Folding is rigid, so solve the unfolded
+            # flat-plate equivalent (same cumulative-z frame -> the returned image_z is directly
+            # the detector-frame best focus).
+            return self._with_rows_swapped(equivalent, self._paraxial_image_plane_z)
         try:
             _a, _b, _c, _d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(self.rows)
             h1_vertex_z, h2_vertex_z = self._paraxial_vertex_zs(self.rows)

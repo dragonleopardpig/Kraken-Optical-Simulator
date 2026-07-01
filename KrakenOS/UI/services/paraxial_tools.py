@@ -355,6 +355,84 @@ class ParaxialToolsMixin:
             for row in source
         )
 
+    def _folded_optical_solid_straight_equivalent_rows(self) -> list[SurfaceRow] | None:
+        """Straight sequential equivalent of a layout whose promoted mesh solid FOLDS the
+        optical axis (the AZ85 right-angle mesh mirror). Folding is a RIGID transform, so the
+        unfolded straight system has IDENTICAL first-order conjugates, magnification and best
+        focus -- but the sequential paraxial solve trips its centered-refractive guard on the
+        solid's placement decenter, and the real-ray PupilCalc branches/throws on the mesh's
+        90-degree internal reflection. Replace each promoted mesh optical solid with its flat
+        sequential plate (same axial thickness + glass, mesh/faces/placement stripped, its
+        curvature/decenter/tilt zeroed), preserving row count and every air gap so the result
+        stays in the detector's cumulative-z frame. Returns ``None`` for layouts with no
+        rotating fold: a straight-through beam-splitter cube keeps its mesh (bugs/0173) and
+        every unfolded / sequential layout is untouched."""
+        rows = list(getattr(self, "rows", []) or [])
+        if len(rows) < 3:
+            return None
+        fold = getattr(self, "_optical_axis_fold_world_transform_for_row", None)
+        if not callable(fold):
+            return None
+        has_rotating_fold = False
+        for index in range(len(rows)):
+            try:
+                transform = fold(index)
+            except Exception:
+                transform = None
+            if transform is None:
+                continue
+            try:
+                rotation = np.asarray(transform, dtype=float).reshape(4, 4)[:3, :3]
+            except Exception:
+                continue
+            if np.all(np.isfinite(rotation)) and not np.allclose(rotation, np.eye(3), atol=1e-6):
+                has_rotating_fold = True
+                break
+        if not has_rotating_fold:
+            return None
+        equivalent: list[SurfaceRow] = []
+        replaced = False
+        for row in rows:
+            if _row_is_nonseq_optical_solid(row):
+                flat = SurfaceRow(**asdict(row))
+                flat.surface = "Standard"
+                flat.rc = 0.0
+                flat.tilt_x = flat.tilt_y = flat.tilt_z = 0.0
+                flat.desp_x = flat.desp_y = flat.desp_z = 0.0
+                flat.axis_move = 0.0
+                advanced = dict(flat.advanced or {})
+                for key in (
+                    "Solid_3d_stl",
+                    "OpticalSolidFaces",
+                    "StepOverlayPromotion",
+                    "OpticalSolidSourceFormat",
+                    "OpticalSolidSourcePath",
+                    "ScenePlacement",
+                    "BeamSplitter",
+                    "Coating",
+                    "CoatingMet",
+                    "DiffuseScatter",
+                ):
+                    advanced.pop(key, None)
+                flat.advanced = advanced
+                equivalent.append(flat)
+                replaced = True
+            else:
+                equivalent.append(SurfaceRow(**asdict(row)))
+        return equivalent if replaced else None
+
+    def _with_rows_swapped(self, rows: list[SurfaceRow], compute):
+        """Run ``compute()`` with ``self.rows`` temporarily swapped to ``rows`` (restored in a
+        finally), so first-order helpers that read ``self.rows`` internally (the analysis
+        surface index, aperture, cache) all see the same straight sequential equivalent. Used
+        to evaluate a folded layout through its unfolded flat-plate equivalent."""
+        saved = self.rows
+        try:
+            self.rows = rows
+            return compute()
+        finally:
+            self.rows = saved
+
     def _paraxial_total_image_gap(
         self,
         rows: list[SurfaceRow] | None = None,
@@ -694,6 +772,13 @@ class ParaxialToolsMixin:
         return float(-(c + (a * image_distance)) / denominator)
 
     def _compute_paraxial_solve_result(self, target: str) -> dict[str, float | str]:
+        equivalent = self._folded_optical_solid_straight_equivalent_rows()
+        if equivalent is not None:
+            # bugs/0195: a promoted mesh mirror folds the axis 90deg; its placement decenter trips
+            # the centered-refractive guard in _exact_paraxial_solution_for_rows. Folding is rigid,
+            # so solve the unfolded flat-plate equivalent (same cumulative-z frame -> the object /
+            # image distances and the in-focus check stay in the detector frame).
+            return self._with_rows_swapped(equivalent, lambda: self._compute_paraxial_solve_result(target))
         a, b, c, d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(self.rows)
         if not np.isfinite(effl) or abs(effl) <= 1e-12:
             raise RuntimeError("Paraxial solve failed: invalid effective focal length")
@@ -1230,6 +1315,17 @@ class ParaxialToolsMixin:
         import io
         from contextlib import redirect_stderr, redirect_stdout
 
+        if rows is None:
+            equivalent = self._folded_optical_solid_straight_equivalent_rows()
+            if equivalent is not None:
+                # bugs/0194: keeping the promoted mesh mirror makes PupilCalc branch/throw on its
+                # 90deg internal reflection. Folding is rigid, so trace the unfolded flat-plate
+                # equivalent (swap self.rows so the analysis-surface/aperture helpers agree). The
+                # minimising axial shift is the same in the detector's cumulative-z frame.
+                return self._with_rows_swapped(
+                    equivalent,
+                    lambda: self._real_ray_best_focus_shift_for_rows(equivalent, wavelength),
+                )
         rows = list(rows if rows is not None else getattr(self, "rows", []) or [])
         if len(rows) < 3:
             return None
