@@ -706,6 +706,13 @@ class LayoutSceneBundleDisplayMixin:
             # sensor. The two-arm splitter path above already replaced the detectors with
             # their own per-arm folded centres, so it is left untouched.
             self._fold_promoted_mirror_table_row_targets(bundle)
+            # bugs/0193: build_scene_placements copies each row-backed placement's world
+            # pose from the SAME unfolded +Z targets (scene_builder runs it before this
+            # fold), so an aperture-stop / reference-grid placement on a folded row floats
+            # on the straight axis (the user's misplaced reference grid). Carry it onto the
+            # branch with the identical per-row rigid fold, so the grid overlay + drag gizmo
+            # sit on the folded optics. The mirror pivot (no override) stays byte-identical.
+            self._fold_promoted_mirror_scene_placements(bundle)
             # bugs/0189: the same promoted-mirror fold leaves the BLOCKED pupil/field
             # reference rays stranded on the unfolded +Z axis. They never reach the
             # mirror (stopped at surface 0, zero branch power, reaching no image), so the
@@ -849,6 +856,54 @@ class LayoutSceneBundleDisplayMixin:
         target.normal_world = np.asarray(folded_normal, dtype=float)
         target.tangent_world = np.asarray(folded_tangent, dtype=float)
         return True
+
+    def _fold_promoted_mirror_scene_placements(self, bundle) -> int:
+        """Fold every row-backed scene PLACEMENT onto a promoted mirror's reflected branch.
+
+        ``build_scene_placements`` seats each placement's world pose on the unfolded
+        cumulative-thickness +Z axis (scene_builder builds it from the pre-fold targets,
+        before ``_fold_promoted_mirror_table_row_targets`` runs). A promoted full-mirror
+        cube reflects the downstream chain onto +X, so an aperture-stop / reference-grid
+        placement on a folded row floats on the straight axis (bugs/0193). Apply the SAME
+        rigid fold the detector targets use (``_optical_axis_fold_world_transform_for_row``,
+        ``None`` for any unfolded row -- so the mirror pivot and plain layouts stay
+        byte-identical). Returns the number folded.
+        """
+        fold = getattr(self, "_optical_axis_fold_world_transform_for_row", None)
+        if not callable(fold):
+            return 0
+        folded = 0
+        for placement in list(getattr(bundle, "placements", []) or []):
+            row_index = getattr(placement, "row_index", None)
+            if row_index is None:
+                continue
+            try:
+                transform = fold(int(row_index))
+            except Exception:
+                transform = None
+            if transform is None:
+                continue
+            try:
+                matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+                center = np.asarray(placement.center_world, dtype=float).reshape(3)
+                normal = np.asarray(placement.normal_world, dtype=float).reshape(3)
+                tangent = np.asarray(placement.tangent_world, dtype=float).reshape(3)
+                folded_center = (matrix @ np.append(center, 1.0))[:3]
+                folded_normal = matrix[:3, :3] @ normal
+                folded_tangent = matrix[:3, :3] @ tangent
+            except Exception:
+                continue
+            if not (
+                np.all(np.isfinite(folded_center))
+                and np.all(np.isfinite(folded_normal))
+                and np.all(np.isfinite(folded_tangent))
+            ):
+                continue
+            placement.center_world = np.asarray(folded_center, dtype=float)
+            placement.normal_world = np.asarray(folded_normal, dtype=float)
+            placement.tangent_world = np.asarray(folded_tangent, dtype=float)
+            folded += 1
+        return folded
 
     def _settings_for_two_arm_leaf_trace(self) -> dict:
         """The launch settings each per-arm sequential leaf trace needs (the rest default)."""
