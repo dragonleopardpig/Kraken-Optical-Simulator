@@ -1079,12 +1079,25 @@ def _reflected_frame_from_interaction_face(
     reflected = incoming - 2.0 * float(np.dot(incoming, normal)) * normal
     reflected = _unit_vector(reflected)
     denominator = float(np.dot(incoming, normal))
+    pre_hit_run = 0.0
     if abs(denominator) > 1e-12:
         distance = float(np.dot(point - origin, normal) / denominator)
-        hit = origin + incoming * distance if np.isfinite(distance) else point
+        if np.isfinite(distance):
+            hit = origin + incoming * distance
+            pre_hit_run = distance
+        else:
+            hit = point
     else:
         hit = point
-    center = hit + reflected * float(thickness or 0.0)
+    # The reflecting face sits ``pre_hit_run`` INTO the element measured from the
+    # row's front station -- for a centred cube the '/' hypotenuse is desp_z past
+    # the station (AZ85: 12.5mm). The sequential ``thickness`` spans that whole
+    # station->next-station run, so only ``thickness - pre_hit_run`` lies BEYOND the
+    # fold. Adding the full thickness here overshot the downstream exit frame by the
+    # pre-hit run, drawing the entire folded lens/camera/detector chain ~desp_z
+    # beyond where the reflected display rays actually land -- bugs/0207,
+    # "the ray not reaching the image plane or detector".
+    center = hit + reflected * (float(thickness or 0.0) - pre_hit_run)
     return center, _frame_rotation_from_normal(reflected)
 
 

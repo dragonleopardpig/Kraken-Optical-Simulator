@@ -68,6 +68,12 @@ def validate_optical_solid_uncoated_interaction_fold() -> list[UncoatedInteracti
         )
     )
 
+    # frame_origin is the mirror row's front STATION (0,0,-10); the interaction
+    # face sits 10 ahead at (0,0,0); the sequential ``thickness`` (12) spans the
+    # whole station->next-station run. The beam travels 10 up TO the fold, reflects
+    # to +Y, then only the REMAINING 2 lies beyond it -> exit at (0,2,0). Adding the
+    # full 12 beyond the hit (the old (0,12,0)) overshot by the pre-hit run -- the
+    # bugs/0207 defect that drew the folded chain desp_z past where the rays land.
     reflected = _reflected_frame_from_interaction_face(
         [uncoated_face],
         np.asarray((0.0, 0.0, -10.0), dtype=float),
@@ -89,7 +95,7 @@ def validate_optical_solid_uncoated_interaction_fold() -> list[UncoatedInteracti
             UncoatedInteractionFoldCheck(
                 "uncoated interaction face generates a reflected downstream frame",
                 np.allclose(outgoing, np.asarray((0.0, 1.0, 0.0), dtype=float), atol=1e-6)
-                and np.allclose(center, np.asarray((0.0, 12.0, 0.0), dtype=float), atol=1e-6),
+                and np.allclose(center, np.asarray((0.0, 2.0, 0.0), dtype=float), atol=1e-6),
                 f"center={tuple(np.round(center, 6).tolist())}, outgoing={tuple(np.round(outgoing, 6).tolist())}",
             )
         )

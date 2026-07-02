@@ -172,3 +172,16 @@ reflected image — endpoint X AND Z match the mirror-centre reflection of the s
 mis-folded detector X. The new Z-assertion also independently catches the front-datum offset
 regression (reads Z 59.397). It targets the physics, so a future overlay-fold fix that moves the
 detector onto 283.077 leaves the guard passing.
+
+> **RESOLVED by bugs/0207 — and this "deferred" analysis was wrong on two counts.** (1) The gap
+> was NOT "nearly invisible": the user re-flagged it immediately (`flag_20260702_183320_903`,
+> *"the ray not reaching the image plane or detector"*) — the reflected rays visibly terminated
+> ~12.5 mm SHORT of the drawn detector (a longitudinal gap, not a blur). (2) It did NOT need a
+> reflection-fold of the detector or any change to `F`'s rotation-ness. The real cause was a
+> double-count in the fold EXIT FRAME: `_reflected_frame_from_interaction_face` added the FULL
+> sequential mirror thickness BEYOND the reflection hit, but the hit sits `desp_z` past the row's
+> front station, so that pre-hit run was counted twice — drawing the whole folded lens/camera/
+> detector chain `desp_z` too far along +X. The rays (folded about the mirror centre) were right;
+> the drawn chain overshot. Fix: add only the REMAINING thickness after the hit
+> (`thickness − pre_hit_run`). `F` stays a rotation, nothing is mirrored, and the drawn detector
+> now COINCIDES with the reflected image (283.077). See `bugs/0207`.

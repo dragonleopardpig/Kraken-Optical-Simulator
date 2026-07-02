@@ -30,12 +30,13 @@ NOTE (bugs/0205): the PRODUCTION display fold (checks 2 & 3) was later replaced 
 REFLECTION of the straight-equivalent rays about the mirror-face CENTRE plane
 (``_reflect_straight_equivalent_display_rays``) -- an isometry, so the incoming leg keeps its
 cone and the kink lands ON the '/' hypotenuse. The focus lands at the REFLECTED image, ON the
-drawn optical axis (Z). That reflected image sits ``desp_z`` (~12.5mm) SHORT of the
-rotation-folded drawn detector along +X: the detector/overlays are folded by the ROTATION ``F``
-(which MUST stay a rotation so the lens/camera CAD is not mirrored), so a reflection-folded ray
-bundle and a rotation-folded detector differ by that meridional flip -- an overlay-fold gap
-deferred to a follow-up (nearly invisible over this f/13 fold: ~1mm blur). So check (3) targets
-the PHYSICS (the reflected image on-axis), not the mis-folded detector X.
+drawn optical axis (Z). Check (3) therefore targets the PHYSICS (the reflected image on-axis).
+NOTE (bugs/0207): that reflected image used to sit ``desp_z`` (~12.5mm) SHORT of the drawn
+detector along +X, because the downstream exit frame added the FULL mirror thickness beyond the
+reflection hit (double-counting the pre-hit run). ``_reflected_frame_from_interaction_face`` now
+adds only the REMAINING thickness, so the whole folded chain lands ON the reflected rays -- the
+drawn detector X now COINCIDES with the reflected image (the guard note reads +0.000 beyond; a
+dedicated guard, ``validate_open3d_ra_mirror_rays_reach_detector``, asserts the coincidence).
 
 Asserts (all display-free, on the live AZ85 editor):
   1. #2 routing: ``_folded_scene_prefers_launch_cone()`` is True and BOTH
@@ -253,7 +254,7 @@ def run_checks() -> tuple[bool, list[str]]:
         if abs(x_mean - ex) < 0.05 and abs(z_mean - ez) < 0.05 and trms < 0.05:
             notes.append(
                 f"#5: on-axis focus ({x_mean:.3f},{z_mean:.3f}) at the reflected image "
-                f"(rotation-folded detector X {drawn_x:.3f} sits +{drawn_x-x_mean:.3f} beyond -- overlay-fold gap); "
+                f"(drawn detector X {drawn_x:.3f} now +{drawn_x-x_mean:.3f} -- coincident since bugs/0207); "
                 f"transverse RMS={trms*1000:.2f} um"
             )
 

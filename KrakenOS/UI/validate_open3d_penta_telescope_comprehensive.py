@@ -10072,6 +10072,43 @@ def phase_184_trackball_orbit_through_pole(
     return result
 
 
+def phase_185_folded_rays_reach_detector(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The user flagged the working folded AZ85 RA-mirror scene: "the ray not reaching the image
+    plane or detector" (flag 20260702_183320). The bugs/0205 fix folds the display RAYS by REFLECTING
+    the straight-equivalent bundle about the mirror-face CENTRE (physically correct), but the drawn
+    downstream chain hangs off the exit frame from ``_reflected_frame_from_interaction_face``, which
+    added the FULL sequential mirror thickness BEYOND the reflection hit. The hit sits ``desp_z``
+    (12.5mm) past the row's front station, so that pre-hit run was double-counted -- the whole folded
+    lens/camera/detector chain was drawn ``desp_z`` further along +X than where the reflected rays
+    land, so the rays terminated ~12.5mm SHORT of the drawn image plane (a visible gap). Fix
+    (bugs/0207): the exit frame adds only the REMAINING thickness after the hit
+    (``thickness - pre_hit_run``), landing the whole chain ON the rays.
+    ``validate_open3d_ra_mirror_rays_reach_detector`` asserts, as-loaded AND after snap, that the
+    drawn detector X coincides with the on-axis reflected ray endpoint (gap < 0.05mm), that EVERY
+    folded downstream row's drawn X coincides with the ray's crossing (the whole chain, not just the
+    detector), and that the on-axis arm stays on the folded axis Z (bugs/0205 registration preserved).
+    """
+    result = PhaseResult(
+        name="Phase 185: folded RA-mirror rays reach the drawn image plane / detector (0207)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_ra_mirror_rays_reach_detector import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"rays-reach-detector guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("rays-reach-detector phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10302,6 +10339,7 @@ def main() -> int:
             phase_182_thickness_dimension_no_rebuild,
             phase_183_folded_incoming_cone,
             phase_184_trackball_orbit_through_pole,
+            phase_185_folded_rays_reach_detector,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
