@@ -9963,6 +9963,42 @@ def phase_181_folded_cone_focus(
     return result
 
 
+def phase_182_thickness_dimension_no_rebuild(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The user re-flagged the working folded AZ85 RA-mirror scene with a PERF complaint: "the loading
+    now is exceptionally long ... rebuild of solid elements". The 3-D thickness-dimension overlay calls
+    ``_surface_reference_world_point`` TWICE per dimension (near + far endpoint) -- 16 dimensions -> 32
+    calls per refresh. The old fallback flowed through ``_surface_origin_for_rows`` ->
+    ``_surface_transform_for_rows`` -> ``_build_system_from_specs(apply_optical_solid_output_ports=True)``,
+    which force-meshed the promoted BK7 cube ("Creating solid objects for optical elements") ONCE PER
+    CALL -> ~40 s / refresh. The fix reads the row's origin straight from the ALREADY-BUILT system's
+    transform list (``[:3, 3]``, the mirror of ``_surface_reference_world_normal``'s ``[:3, 2]`` normal
+    read), falling back to the rebuild only for headless callers that pass no system.
+    ``validate_open3d_thickness_dimension_no_rebuild`` asserts (1) the fast path's origins are identical
+    to the old rebuild within 1e-6 mm for every thickness-loop row (the fix moves no dimension), and (2)
+    the fast path triggers ZERO rebuilds + ZERO force-meshes while the control slow path force-meshes the
+    cube >=1x -- so a revert to the rebuild is caught.
+    """
+    result = PhaseResult(
+        name="Phase 182: thickness-dimension overlay reads origins from the built system, no per-call rebuild (0204)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_thickness_dimension_no_rebuild import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"thickness-no-rebuild guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("thickness-no-rebuild phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10190,6 +10226,7 @@ def main() -> int:
             phase_179_branch_detector_internal_bounce_clutter,
             phase_180_branch_detector_leak_clutter,
             phase_181_folded_cone_focus,
+            phase_182_thickness_dimension_no_rebuild,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

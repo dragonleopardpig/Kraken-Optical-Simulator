@@ -519,6 +519,23 @@ class ScenePlacementMixin:
             except Exception:
                 pass
 
+        # bugs/0204: read this row's origin straight from the ALREADY-BUILT system's
+        # transform list (the mirror of _surface_reference_world_normal's [:3, 2] read
+        # below), instead of rebuilding the whole system per call via
+        # _surface_origin_for_rows. The thickness-dimension overlay calls this twice per
+        # row (32x on the folded RA-mirror scene); each rebuild force-meshed the BK7 cube
+        # via apply_optical_solid_output_port_system_overrides -> ~40 s per refresh
+        # ("Creating solid objects for optical elements" x32). Falls back to the rebuild
+        # when no system is passed (headless callers) or it carries no transforms.
+        transforms = self._system_transform_list(system)
+        if transforms is not None and 0 <= row_index < len(transforms):
+            try:
+                origin = np.asarray(transforms[row_index], dtype=float).reshape(4, 4)[:3, 3]
+                if origin.size >= 3 and np.all(np.isfinite(origin)):
+                    return origin.astype(float)
+            except Exception:
+                pass
+
         try:
             return self._surface_origin_for_rows(self.rows, row_index)
         except Exception:
