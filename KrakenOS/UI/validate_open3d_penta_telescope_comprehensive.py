@@ -9923,6 +9923,46 @@ def phase_180_branch_detector_leak_clutter(
     return result
 
 
+def phase_181_folded_cone_focus(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The user re-flagged the working (bugs/0197-converging) folded AZ85 RA-mirror scene twice:
+    #2 "the rays are fan, not cone" and #5 "the focusing rays vary from left to right". The scene
+    resolves to ``use_nonseq`` (its promoted mesh mirror reads as an "STL optical solid"), so BOTH
+    ``_preview_scene_sampling_mode`` and ``_preview_3d_sampling_mode`` returned the sparse area-filling
+    "world_envelope" (~31 golden-angle pupil points) -- over the slender f/13 fold that foreshortens to
+    a wireframe sheet and reads as a flat FAN, not the dense cone a mirror-less sequential AZ85 shows.
+    Because a NON-branching promoted-mirror fold is traced through its straight-equivalent SEQUENTIAL
+    rows (bugs/0197), a revolved launch cone is exactly the rotated sequential cone (each pupil ray still
+    traced individually through the fold), so nothing is lost and the converged focus is preserved.
+    ``_folded_scene_prefers_launch_cone`` routes such a scene to "world_cone" (dense ``count//2`` rings x
+    azimuth spokes, ~361 on-axis rays); the envelope stays only for genuinely BRANCHING scenes. #5's
+    ``_apply_folded_mirror_rigid_reflection`` (one rigid reflection across the flip plane) keeps the cone's
+    tight waist on the drawn detector where the old per-ray ``tau`` shear blew it to ~mm.
+    ``validate_open3d_ra_mirror_folded_cone_focus`` asserts the routing (cone in both mode methods), the
+    density+shape (world_cone on-axis >=100 rays forming a 2D disk vs the sparse <=40 envelope), the #5
+    convergence (on-axis endpoints on the drawn detector, transverse RMS < 0.05 mm), and the #5 rigid-vs-tau
+    contrast (rigid converges where tau shears > 0.5 mm) so a revert to either the envelope or the shear is caught.
+    """
+    result = PhaseResult(
+        name="Phase 181: folded RA-mirror preview is a dense cone that focuses on the drawn detector (0203)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_ra_mirror_folded_cone_focus import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-cone-focus guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-cone-focus phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10149,6 +10189,7 @@ def main() -> int:
             phase_178_branch_detector_scatter_clutter,
             phase_179_branch_detector_internal_bounce_clutter,
             phase_180_branch_detector_leak_clutter,
+            phase_181_folded_cone_focus,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

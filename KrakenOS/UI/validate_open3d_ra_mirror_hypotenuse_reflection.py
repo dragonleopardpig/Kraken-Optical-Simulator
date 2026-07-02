@@ -15,21 +15,27 @@ cube reflects on X-Z=const (the '/'). The kink sat up to ~12 mm off the drawn fa
 
 Fix: ``correct_folded_mirror_ray_points`` re-reflects each ray's post-mirror leg across
 the flip plane (normal ``d_out x (d_in x d_out)``) and re-anchors its kink onto the real
-face plane (through the mirror centre, normal = the mesh Mirror-face normal). The mixin
-method ``_apply_folded_mirror_reflection_correction`` runs it over ``bundle.ray_paths``
-inside ``_build_preview_system_rays_bundle`` ONLY on a single promoted-mirror fold; the
-optical trace is untouched (rays still reach the sensor).
+face plane (through the mirror centre, normal = the mesh Mirror-face normal), so the kink
+lands EXACTLY on the '/' face. This per-ray re-anchor (``tau``) is now the PATH-B tool
+(the sequential-``Mirror`` fallback for a fold chain); the single-fold PATH A (AZ85)
+switched to the bugs/0203 RIGID flip (``_apply_folded_mirror_rigid_reflection``), which
+keeps the converged focus on the drawn detector for a 2D cone at the price of a ~mm kink
+gap (the KrakenOS mirror station sits ~12.5mm before the mesh hypotenuse centre, so no
+single rigid map lands the kink on the mesh face AND the focus on the detector -- focus
+wins, per the user's flag). Both leave the optical trace untouched (rays reach the sensor).
 
-This guard binds the REAL free functions (unit) and the REAL wired method (to the live
+This guard binds the REAL free functions (unit) and the REAL wired pipeline (to the live
 AZ85 editor -- the same single-fold flip as the minimal repro), asserting:
   1. a synthetic rotation-folded polyline is re-folded so its kink lands ON the real '/'
      face, its downstream leg keeps +X, and its incoming leg is byte-identical;
   2. a monotonic-forward ray and a degenerate/short polyline are left untouched (None);
   3. the flip-plane normal for a +Z chief off a (0.707,0,-0.707) face is ~(0,0,1);
-  4. INTEGRATION: on the REAL traced AZ85 bundle every off-axis kink sits OFF the '/'
-     face BEFORE the fix (max residual > 1 mm) and ON it AFTER (< 1e-6), with the correct
-     '/' sign, every corrected path tagged -- both via the free function and the wired
-     method inside _build_preview_system_rays_bundle;
+  4. INTEGRATION: on the REAL rotation-folded AZ85 bundle every off-axis kink sits OFF the
+     '/' face (max residual > 1 mm); the free function re-folds each ONTO it (< 1e-6) with
+     the correct '/' sign. The WIRED Path A now bends via the bugs/0203 rigid flip (every
+     path tagged ``folded_mirror_rigid_reflected``; focus-on-detector guarded by bugs/0197
+     & the cone by bugs/0203) -- so the per-ray free function is the Path-B tool this
+     section still validates on real traced data;
   5. the fold is scoped: AZ85 yields exactly ONE fold record; the sequential flat_mirror
      scene yields NONE (the correction is inert on non-promoted mirrors).
 
@@ -126,68 +132,65 @@ def main() -> int:
     if m is None or not np.allclose(np.abs(m), (0.0, 0.0, 1.0), atol=1e-6):
         failures.append(f"unit: flip-plane normal {None if m is None else np.round(m,4).tolist()} != +/-Z for a +Z chief off a '/' face")
 
-    # ---- (4) INTEGRATION: real AZ85 bundle, BEFORE vs AFTER the wired method ----
+    # ---- (4) INTEGRATION: real AZ85 -- free fn re-folds the rotation fold onto the '/'
+    #          face; the WIRED Path A now bends via the bugs/0203 rigid flip (tagged) ----
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
             editor = _build_editor(_AZ85)
             specs, records, center, normal = _fold_geometry(editor)
-            # BEFORE: shadow the wired correction with a no-op -> raw flipped bundle.
-            editor._apply_folded_mirror_reflection_correction = lambda bundle: None
+            # Rotation fold ONLY: shadow the bugs/0203 rigid flip -> raw wrong-'/' bundle.
+            editor._apply_folded_mirror_rigid_reflection = lambda bundle, ft: None
             _s0, _r0, raw_bundle = editor._build_preview_system_rays_bundle(update_state=True)
             raw_paths = list(getattr(raw_bundle, "ray_paths", []))
-            # AFTER (a): the REAL free function over each raw path.
-            # AFTER (b): the REAL wired method inside a fresh preview build.
-            del editor._apply_folded_mirror_reflection_correction
+            # The REAL wired Path A (bugs/0203 rigid flip) inside a fresh preview build.
+            del editor._apply_folded_mirror_rigid_reflection
             _s1, _r1, fixed_bundle = editor._build_preview_system_rays_bundle(update_state=True)
             fixed_paths = list(getattr(fixed_bundle, "ray_paths", []))
 
         if center is None or normal is None:
             failures.append("AZ85 integration: no promoted-mirror fold record (precondition gone)")
         else:
-            before, freefn_after, offaxis_badsign = [], [], 0
+            before, freefn_after, freefn_badsign = [], [], 0
             for path in raw_paths:
                 info = _kink(getattr(path, "points_world", np.empty((0, 3))), center, normal)
                 if info is not None:
                     before.append(abs(info[0]))
                 fx = correct_folded_mirror_ray_points(getattr(path, "points_world", None), center, normal, [0.0, 0.0, 1.0])
-                if fx is not None:
-                    fi = _kink(fx, center, normal)
-                    if fi is not None:
-                        freefn_after.append(abs(fi[0]))
-            wired_after, tagged, total = [], 0, 0
-            for path in fixed_paths:
-                info = _kink(getattr(path, "points_world", np.empty((0, 3))), center, normal)
-                if info is None:
+                if fx is None:
                     continue
-                total += 1
-                wired_after.append(abs(info[0]))
-                K = np.asarray(getattr(path, "points_world"), float)
-                # '/' sign: for off-axis kinks sign(x) must equal sign(z - Cz)
+                fi = _kink(fx, center, normal)
+                if fi is not None:
+                    freefn_after.append(abs(fi[0]))
+                K = np.asarray(fx, float)
+                # '/' sign: for the re-folded off-axis kink sign(x) must equal sign(z - Cz)
                 seg = np.diff(K[:, :3], axis=0); ln = np.linalg.norm(seg, axis=1); g = ln > 1e-9
                 u = np.zeros_like(seg); u[g] = seg[g] / ln[g, None]
                 cos = np.sum(u[:-1] * u[1:], axis=1); kk = int(np.argmin(cos)) + 1
                 kx, kz = float(K[kk, 0]), float(K[kk, 2])
                 if abs(kx) > 0.5 and np.sign(kx) != np.sign(kz - center[2]):
-                    offaxis_badsign += 1
-                if str(getattr(path, "display_geometry_source", "")) == "folded_mirror_reflection_corrected":
+                    freefn_badsign += 1
+            tagged, total = 0, 0
+            for path in fixed_paths:
+                info = _kink(getattr(path, "points_world", np.empty((0, 3))), center, normal)
+                if info is None:
+                    continue
+                total += 1
+                if str(getattr(path, "display_geometry_source", "")) == "folded_mirror_rigid_reflected":
                     tagged += 1
             before = np.array(before) if before else np.array([0.0])
             freefn_after = np.array(freefn_after) if freefn_after else np.array([9.9])
-            wired_after = np.array(wired_after) if wired_after else np.array([9.9])
             if before.max() <= 1.0:
-                failures.append(f"AZ85 integration: max kink residual BEFORE is only {before.max():.3f} mm -> flip precondition gone, guard vacuous")
+                failures.append(f"AZ85 integration: max kink residual (rotation fold) only {before.max():.3f} mm -> flip precondition gone, guard vacuous")
             if freefn_after.max() >= 1e-6:
                 failures.append(f"AZ85 integration: free-fn AFTER max residual {freefn_after.max():.3e} (rays still off the '/' face)")
-            if wired_after.max() >= 1e-6:
-                failures.append(f"AZ85 integration: WIRED-method AFTER max residual {wired_after.max():.3e} (rays still off the '/' face)")
-            if offaxis_badsign != 0:
-                failures.append(f"AZ85 integration: {offaxis_badsign} corrected off-axis kink(s) on the WRONG '/' sign")
+            if freefn_badsign != 0:
+                failures.append(f"AZ85 integration: {freefn_badsign} free-fn re-folded off-axis kink(s) on the WRONG '/' sign")
             if total > 0 and tagged != total:
-                failures.append(f"AZ85 integration: only {tagged}/{total} corrected paths were tagged folded_mirror_reflection_corrected")
+                failures.append(f"AZ85 integration: only {tagged}/{total} wired Path-A paths tagged folded_mirror_rigid_reflected (bugs/0203)")
             notes.append(
-                f"AZ85 folded rays with a kink {total} | residual on '/' face: BEFORE max {before.max():.3f} mm "
-                f"-> free-fn {freefn_after.max():.2e}, wired {wired_after.max():.2e} | tagged {tagged}"
+                f"AZ85 kinked rays {total} | rotation-fold '/' residual max {before.max():.3f} mm "
+                f"-> free-fn {freefn_after.max():.2e} (badsign {freefn_badsign}) | wired rigid-flip tagged {tagged}"
             )
     except Exception as exc:  # noqa: BLE001
         failures.append(f"AZ85 integration raised {exc!r}")
@@ -214,7 +217,8 @@ def main() -> int:
     print("PASS bugs/0192 folded RA-mirror hypotenuse reflection (rays reflect off the real mesh face):")
     print("  - a synthetic rotation-folded ray re-folds onto the '/' face, +X downstream, incoming untouched")
     print("  - straight + degenerate polylines are left untouched (None); flip-plane normal is +/-Z")
-    print("  - AZ85 real trace: off-axis kinks OFF the '/' face BEFORE, ON it AFTER (free fn AND wired method)")
+    print("  - AZ85 real trace: rotation-fold kinks OFF the '/' face, free fn re-folds them ON it (correct sign)")
+    print("  - wired Path A bends via the bugs/0203 rigid flip (tagged); focus-on-detector guarded by bugs/0197")
     print(f"  - scope: 1 fold record for AZ85, 0 for {_PLAIN} (correction inert on sequential mirrors)")
     for note in notes:
         print(f"  - {note}")

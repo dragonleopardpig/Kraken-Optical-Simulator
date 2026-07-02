@@ -783,6 +783,56 @@ class TracePreviewSamplingMixin:
                     continue
         return False
 
+    def _scene_has_promoted_mirror_fold(self) -> bool:
+        """True iff a PROMOTED mirror cube folds the path (an ``OpticalSolidFaces``
+        ``function == "Mirror"`` face). Unlike ``_scene_breaks_rotational_symmetry``
+        this ignores a bare tilt / decentre and a sequential ``Mirror`` surface --
+        only the promoted right-angle fold (the AZ85 RA-mirror, bugs/0185-0203) is
+        traced through a straight-equivalent SEQUENTIAL system (bugs/0197), so its
+        revolved launch cone is provably just the rotated sequential cone.
+        """
+        from KrakenOS.UI.trace_intent import _optical_solid_faces_have_mirror_fold
+
+        for row in getattr(self, "rows", None) or []:
+            advanced = getattr(row, "advanced", None)
+            if isinstance(advanced, dict) and _optical_solid_faces_have_mirror_fold(
+                advanced.get("OpticalSolidFaces")
+            ):
+                return True
+        return False
+
+    def _folded_scene_prefers_launch_cone(self) -> bool:
+        """Whether a folded RA-mirror scene should launch a dense revolved 3D cone
+        instead of the sparse area-filling ``world_envelope``.
+
+        bugs/0203 (#2): the folded AZ85 resolves to ``use_nonseq`` (its promoted
+        mesh mirror reads as an "STL optical solid"), so ``_preview_3d_sampling_mode``
+        gave it ``world_envelope`` -- only ``Ray Count`` (~31) golden-angle pupil
+        points. Over the slender f/13 fold that disk foreshortens to a sparse sheet
+        and reads as a flat FAN, not a cone ("old bug resurface"). The envelope is
+        only needed when paths BRANCH (beam splitter / diffuse / probabilistic
+        split) and each branch's sagittal width must be preserved. A single fold has
+        no branch and is traced through its straight-equivalent SEQUENTIAL rows, so
+        it takes the dense structured cone like any sequential scene -- each pupil
+        ray is still traced individually through the fold, so nothing is lost and
+        the converged focus (bugs/0197 rigid flip) is preserved.
+        """
+        if self._is_full_pupil_mode():
+            return False
+        try:
+            trace_state = self._resolved_trace_mode(system=self.__dict__.get("last_system"))
+        except Exception:
+            return False
+        if not (bool(trace_state.get("use_folded")) or bool(trace_state.get("use_nonseq"))):
+            return False  # a plain sequential scene already revolves via the fan gate
+        if (
+            bool(trace_state.get("has_beam_splitter"))
+            or bool(trace_state.get("has_diffuse_scatter"))
+            or bool(trace_state.get("has_probabilistic_nonseq"))
+        ):
+            return False  # branching: keep the per-branch area-filling envelope
+        return self._scene_has_promoted_mirror_fold()
+
     def _launch_pupil_prefers_meridional_fan(self) -> bool:
         """Return whether the ``Ray Count`` pupil should be a uniform fan.
 
@@ -800,7 +850,17 @@ class TracePreviewSamplingMixin:
         cheap uniform Ray-Count fan. bugs/0126: that scene used to revolve Ray
         Count 20 into ``1 + (20//2)*20 = 201`` slow non-seq mesh traces, so
         "Show rays" ignored the ray count and "Trace Now" ran for ~70 s.
+
+        bugs/0203 (#2): a folded RA-mirror scene is traced through its UNFOLDED,
+        mirror-removed straight equivalent (bugs/0197). Those swapped-in rows read
+        as a plain sequential scene, which would collapse the launch to a flat
+        meridional fan -- but the REAL scene folds (breaks rotational symmetry) and
+        must keep the area-filling disk. ``_trace_preview_rays_folded_aware`` sets
+        ``_force_folded_cone_preview_trace`` around that trace so the launch follows
+        the folded scene, not the equivalent rows.
         """
+        if bool(self.__dict__.get("_force_folded_cone_preview_trace", False)):
+            return False
         try:
             trace_state = self._resolved_trace_mode(system=self.__dict__.get("last_system"))
         except Exception:

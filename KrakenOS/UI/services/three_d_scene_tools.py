@@ -84,7 +84,9 @@ from KrakenOS.UI.services.offbeam_optical_solid import offbeam_neutralized_body_
 from KrakenOS.UI.services.folded_sequential_fold import (
     correct_folded_mirror_ray_points,
     fold_promoted_mirror_specs_to_sequential,
+    mirror_reflection_flip_plane_normal,
     promoted_mirror_world_center,
+    rigid_reflect_folded_mirror_ray_points,
     scene_nonseq_trigger_is_only_promoted_full_mirrors,
 )
 from KrakenOS.UI.services.optical_solid_geometry import (
@@ -672,11 +674,19 @@ class ThreeDSceneToolsMixin:
             original_trace_rows = self.rows
             try:
                 self.rows = equivalent_rows
+                # bugs/0203 (#2): the equivalent rows are UNFOLDED + mirror-removed, so the
+                # launch sampler reads a plain sequential scene and collapses the pupil to a
+                # flat meridional fan (`_launch_pupil_prefers_meridional_fan` -> True). The
+                # REAL scene is folded (breaks rotational symmetry -> area-filling disk), so
+                # force the folded launch decision while the equivalent rows are swapped in;
+                # the display-bend then folds the disk into a 3D cone on the drawn detector.
+                self._force_folded_cone_preview_trace = True
                 self._trace_preview_rays(
                     trace_system, rays, wavelength, max_radius, sampling_mode=sampling_mode
                 )
             finally:
                 self.rows = original_trace_rows
+                self._force_folded_cone_preview_trace = False
             return rays, fold_transform
 
         # bugs/0187 fix (3): trace the fold as a SEQUENTIAL Mirror chain so the ideal Thin
@@ -709,10 +719,18 @@ class ThreeDSceneToolsMixin:
         """bugs/0197/0187 (#6): bend a folded scene's display rays after the scene bundle
         is built. ``fold_transform`` bends the straight-equivalent rays at the mirror
         (``None`` on the sequential-Mirror fallback, whose rays are already folded); the
-        reflection correction then lands the cone on the drawn detector in both paths."""
+        reflection correction then lands the cone on the drawn detector in both paths.
+
+        bugs/0203 (#5): on the straight-equivalent path the rotation fold has already made
+        the outgoing leg a rigid image of the converging cone, so a SINGLE rigid flip about
+        the folded fold-point un-flips the diagonal without shearing the focus. The
+        sequential-Mirror fallback keeps the per-ray reflection correction (its rays diverge
+        anyway -- the ideal Thin Lens loses power through that fold)."""
         if fold_transform is not None:
             self._fold_straight_equivalent_display_rays(scene_bundle, fold_transform)
-        self._apply_folded_mirror_reflection_correction(scene_bundle)
+            self._apply_folded_mirror_rigid_reflection(scene_bundle, fold_transform)
+        else:
+            self._apply_folded_mirror_reflection_correction(scene_bundle)
 
     @staticmethod
     def _saved_step_source_path_for_row(row: SurfaceRow) -> Path | None:
@@ -1147,6 +1165,61 @@ class ThreeDSceneToolsMixin:
             except Exception:
                 pass
 
+    def _apply_folded_mirror_rigid_reflection(self, scene_bundle, fold_transform) -> None:
+        """bugs/0203 (#5): un-flip the straight-equivalent path's diagonal with a SINGLE
+        rigid reflection about the FOLDED fold-point (no per-ray tau -> no cone shear).
+
+        The rotation fold (``_fold_straight_equivalent_display_rays``) already carried the
+        converging cone onto the folded branch, so reflecting the post-kink tail across the
+        physical flip plane (normal ``d_out x s``) through the folded fold-point is rigid:
+        the focus lies on the outgoing chief axis, which is IN that plane, so it stays put
+        on the drawn detector while every off-axis ray's diagonal flips at once. Replaces
+        the bugs/0192 per-ray correction on this path, which sheared the focus (some rays
+        focusing before/at/after the sensor). Scoped to a SINGLE promoted-mirror fold."""
+        if scene_bundle is None or fold_transform is None:
+            return
+        ray_paths = getattr(scene_bundle, "ray_paths", None)
+        if not ray_paths:
+            return
+        try:
+            specs = self._serializable_specs_for_rows(list(self.rows))
+            _folded, records = fold_promoted_mirror_specs_to_sequential(specs)
+            matrix = np.asarray(fold_transform, dtype=float).reshape(4, 4)
+        except Exception:
+            return
+        if len(records) != 1 or not np.all(np.isfinite(matrix)):
+            return
+        record = records[0]
+        try:
+            row_index = int(record.get("row_index", -1))
+            face_normal = np.asarray(record.get("face_normal"), dtype=float).reshape(-1)[:3]
+            chief_in = np.asarray(
+                record.get("chief_in") or [0.0, 0.0, 1.0], dtype=float
+            ).reshape(-1)[:3]
+            center = promoted_mirror_world_center(specs, row_index)
+        except Exception:
+            return
+        if center is None or face_normal.size < 3:
+            return
+        flip = mirror_reflection_flip_plane_normal(chief_in, face_normal)
+        if flip is None:
+            return
+        rotation = matrix[:3, :3]
+        translation = matrix[:3, 3]
+        fold_anchor = rotation @ np.asarray(center, dtype=float).reshape(3) + translation
+        for path in ray_paths:
+            points = getattr(path, "points_world", None)
+            if points is None:
+                continue
+            corrected = rigid_reflect_folded_mirror_ray_points(points, fold_anchor, flip)
+            if corrected is None:
+                continue
+            path.points_world = corrected
+            try:
+                path.display_geometry_source = "folded_mirror_rigid_reflected"
+            except Exception:
+                pass
+
     def _live_step_overlay_trace_rows(self) -> tuple[list[SurfaceRow], list[dict[str, object]]]:
         if self._step_path_for_label("optical") is None:
             return self.rows, []
@@ -1291,6 +1364,11 @@ class ThreeDSceneToolsMixin:
         """Sampling mode for the shared traced scene used by 2D and Open 3D."""
         if self._is_full_pupil_mode():
             return "full_pupil"
+        # bugs/0203 (#2): a non-branching folded RA-mirror scene revolves into a
+        # dense cone (like its sequential straight-equivalent), not the sparse
+        # 31-ray envelope that reads as a flat fan.
+        if self._folded_scene_prefers_launch_cone():
+            return "world_cone"
         try:
             trace_state = self._resolved_trace_mode(system=self.__dict__.get("last_system"))
         except Exception:
@@ -1345,6 +1423,11 @@ class ThreeDSceneToolsMixin:
         if self._is_full_pupil_mode():
             return "full_pupil"
         if self._launch_pupil_prefers_meridional_fan():
+            return "world_cone"
+        # bugs/0203 (#2): a non-branching folded RA-mirror scene keeps a disk pupil
+        # (not a 1D fan) but still revolves it densely so Open 3D reads a cone, not
+        # the sparse 31-ray envelope fan.
+        if self._folded_scene_prefers_launch_cone():
             return "world_cone"
         return "world_envelope"
 

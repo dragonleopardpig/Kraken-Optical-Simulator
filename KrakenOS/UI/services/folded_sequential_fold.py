@@ -195,6 +195,57 @@ def correct_folded_mirror_ray_points(
     return out
 
 
+def rigid_reflect_folded_mirror_ray_points(
+    points: Any,
+    fold_anchor: Any,
+    flip: Any,
+    *,
+    cos_fold_max: float = 0.2,
+) -> np.ndarray | None:
+    """bugs/0203 (#5): convert a rotation-folded display ray to the physical MIRROR
+    reflection with a SINGLE RIGID flip -- no per-ray translation.
+
+    The straight-equivalent path (``_fold_straight_equivalent_display_rays``) has already
+    rotated every post-station vertex onto the folded branch, so the whole outgoing leg is
+    a rigid image of the converging equivalent cone (it still focuses). The rotation fold
+    and the physical mirror differ only by the meridional flip across the plane spanned by
+    the outgoing chief and the sagittal axis (normal ``flip = d_out x s``). Reflecting the
+    post-kink tail across THAT plane through the folded fold-point ``fold_anchor`` is rigid,
+    so it preserves the focus (which lies on the outgoing chief axis -> in the flip plane ->
+    fixed) while un-flipping the off-axis diagonal for ALL rays at once.
+
+    ``correct_folded_mirror_ray_points`` instead reflected across the origin plane and then
+    re-anchored PER RAY (``tau``), which sheared the cone (the user's "focusing rays vary
+    left to right"). This preserves the tight waist on the drawn detector; see bugs/0203.
+    Returns a new array (input shape preserved) or None when the ray has no clear ~90 deg
+    fold (e.g. clipped before the mirror)."""
+    pts = np.asarray(points, dtype=float)
+    if pts.ndim != 2 or pts.shape[0] < 3 or pts.shape[1] < 3:
+        return None
+    flip_n = _unit(flip)
+    if float(np.linalg.norm(flip_n)) < 1e-9:
+        return None
+    anchor = np.asarray(fold_anchor, dtype=float).reshape(-1)[:3]
+    coords = pts[:, :3]
+    segments = np.diff(coords, axis=0)
+    lengths = np.linalg.norm(segments, axis=1)
+    valid = lengths > 1e-9
+    if int(valid.sum()) < 2:
+        return None
+    units = np.zeros_like(segments)
+    units[valid] = segments[valid] / lengths[valid, None]
+    cos_turn = np.sum(units[:-1] * units[1:], axis=1)
+    kink_seg = int(np.argmin(cos_turn))
+    if cos_turn[kink_seg] > cos_fold_max:
+        return None  # no ~90 deg fold -> not a mirror kink
+    k = kink_seg + 1
+    tail = coords[k:]
+    s = (tail - anchor) @ flip_n
+    out = pts.copy()
+    out[k:, :3] = tail - 2.0 * s[:, None] * flip_n[None, :]
+    return out
+
+
 def _is_promoted_mirror_fold(spec: dict) -> bool:
     if str(spec.get("surface", "")) in {"Object", "Image", "Mirror"}:
         return False

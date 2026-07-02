@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-06-29 (phase 180 branch-detector leak-clutter guard added; verified standalone, full marathon segfaults under Xvfb)",
+  "generated_at": "2026-07-02 (phase 181 folded-cone-focus guard added for bugs/0203; verified standalone + at-risk cone/launch phases 117/152/153 re-checked standalone; full marathon still segfaults under Xvfb so 0-180 states carried forward)",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -182,7 +182,8 @@
     "177": "pass",
     "178": "pass",
     "179": "pass",
-    "180": "pass"
+    "180": "pass",
+    "181": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -365,6 +366,7 @@
     "177": "diffuse double-pass shows the global guide only (no stray optical axes)",
     "178": "diffuse double-pass draws no per-scatter branch-detector clutter (2D full-3D)",
     "179": "beam-splitter internal-bounce draws no branch-detector clutter (2D full-3D)",
-    "180": "diffuse double-pass draws no branch-detector leak clutter (2D full-3D)"
+    "180": "diffuse double-pass draws no branch-detector leak clutter (2D full-3D)",
+    "181": "folded RA-mirror preview is a dense cone that focuses on the drawn detector (0203)"
   }
 }
