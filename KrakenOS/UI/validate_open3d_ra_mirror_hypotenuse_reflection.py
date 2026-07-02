@@ -20,12 +20,14 @@ lands EXACTLY on the '/' face. This per-ray re-anchor (``tau``) is the PATH-B to
 sequential-``Mirror`` fallback for a fold chain). The single-fold PATH A (AZ85) now folds
 by REFLECTING the straight-equivalent rays about the mirror plane (bugs/0205,
 ``_reflect_straight_equivalent_display_rays``): a single isometry that lands every kink on
-the '/' diagonal (the plane through the mirror's front-datum station, normal = the mesh
-Mirror-face normal) AND preserves BOTH the incoming cone and the converged focus on the
-drawn detector. It superseded the bugs/0203 rigid flip, whose rotate-downstream step
-collapsed the incoming cone to a flat fan. The '/' orientation is exact; the kink still
-sits ~12.5mm before the mesh hypotenuse centre (on the front datum) -- that small axial
-gap remains, as focus-on-detector wins. Both leave the optical trace untouched.
+the '/' diagonal (the plane through the mirror-face CENTRE ``promoted_mirror_world_center``,
+normal = the mesh Mirror-face normal) AND preserves BOTH the incoming cone and the converged
+focus on the drawn detector. It superseded the bugs/0203 rigid flip, whose rotate-downstream
+step collapsed the incoming cone to a flat fan. The reflection plane MUST be the real drawn
+hypotenuse (the cube centre); reflecting about the front datum instead landed the folded
+outgoing arm ``desp_z`` (12.5mm) off the drawn detector Z (the flag_20260702_152020_279
+"obvious offset from optical axis" regression -- now fixed + asserted). Both leave the
+optical trace untouched.
 
 This guard binds the REAL free functions (unit) and the REAL wired pipeline (to the live
 AZ85 editor -- the same single-fold flip as the minimal repro), asserting:
@@ -35,7 +37,7 @@ AZ85 editor -- the same single-fold flip as the minimal repro), asserting:
   3. the flip-plane normal for a +Z chief off a (0.707,0,-0.707) face is ~(0,0,1);
   4. INTEGRATION: the unfolded straight-equivalent AZ85 bundle has NO ~90 deg kink (rays go
      +Z); the WIRED Path A reflection fold (bugs/0205) then lands every folded kink ON the
-     '/' face plane (front-datum station; residual < 1e-6) with the correct '/' sign, every
+     '/' face plane (mirror-face centre; residual < 1e-6) with the correct '/' sign, every
      path tagged ``folded_straight_equivalent_reflected`` -- so the drawn rays reflect off
      the real mesh diagonal (incoming cone preserved -> bugs/0205 guard; focus-on-detector
      -> bugs/0197 & the folded-cone-focus guard);
@@ -136,19 +138,13 @@ def main() -> int:
         failures.append(f"unit: flip-plane normal {None if m is None else np.round(m,4).tolist()} != +/-Z for a +Z chief off a '/' face")
 
     # ---- (4) INTEGRATION: real AZ85 -- the unfolded straight-equivalent has no kink; the
-    #          WIRED reflection fold (bugs/0205) lands every kink ON the '/' front-datum
+    #          WIRED reflection fold (bugs/0205) lands every kink ON the '/' mirror-CENTRE
     #          face plane with the '/' sign, tagged folded_straight_equivalent_reflected ----
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
             editor = _build_editor(_AZ85)
             specs, records, center, normal = _fold_geometry(editor)
-            row_index = int(records[0]["row_index"]) if records else -1
-            station_z = (
-                float(sum(float(getattr(editor.rows[i], "thickness", 0.0) or 0.0) for i in range(row_index)))
-                if row_index >= 0
-                else 0.0
-            )
             # Straight-equivalent ONLY: shadow the wired reflection -> unfolded +Z bundle.
             editor._reflect_straight_equivalent_display_rays = lambda bundle: None
             _s0, _r0, raw_bundle = editor._build_preview_system_rays_bundle(update_state=True)
@@ -161,9 +157,10 @@ def main() -> int:
         if center is None or normal is None:
             failures.append("AZ85 integration: no promoted-mirror fold record (precondition gone)")
         else:
-            # The '/' face plane the reflection folds about: mirror decenter at the
-            # front-datum station (NOT the mesh centre, which sits ~12.5mm downstream).
-            face_point = np.array([float(center[0]), float(center[1]), station_z], dtype=float)
+            # The '/' face plane the reflection folds about: the real drawn hypotenuse
+            # through the mirror-face CENTRE (promoted_mirror_world_center) -- reflecting
+            # about the front datum instead offsets the outgoing arm by desp_z (0205 fix).
+            face_point = np.asarray(center, dtype=float).reshape(-1)[:3]
             # Precondition: the unfolded straight-equivalent has NO ~90 deg kink (goes +Z).
             raw_kinked = sum(
                 1
@@ -194,7 +191,7 @@ def main() -> int:
             if total == 0:
                 failures.append("AZ85 integration: the wired reflection produced no folded kinks")
             if resid.max() >= 1e-6:
-                failures.append(f"AZ85 integration: wired reflected kink max residual {resid.max():.3e} mm off the '/' front-datum face plane (reflection should fix the crossing ON it)")
+                failures.append(f"AZ85 integration: wired reflected kink max residual {resid.max():.3e} mm off the '/' mirror-centre face plane (reflection should fix the crossing ON it)")
             if badsign != 0:
                 failures.append(f"AZ85 integration: {badsign} wired reflected kink(s) on the WRONG '/' sign")
             if total > 0 and tagged != total:

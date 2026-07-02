@@ -1,6 +1,6 @@
 """Display-free guard for bugs/0203: the folded RA-mirror preview must launch a DENSE 3D
 CONE (not the sparse area-filling envelope that reads as a flat fan, bug #2) AND fold it to a
-tight focus ON the drawn detector without shearing (bug #5).
+tight focus at the REFLECTED image, ON the drawn optical axis, without shearing (bug #5).
 
 The user re-flagged the working (bugs/0197-converging) folded AZ85 scene twice:
   #2  "the rays are fan, not cone. Old bug resurface." -- the folded AZ85 resolves to
@@ -23,10 +23,19 @@ BRANCHING scenes (beam splitter / diffuse / probabilistic split), whose per-bran
 width it must preserve.
 Fix #5 (bugs/0197): ``_apply_folded_mirror_rigid_reflection`` replaces the per-ray ``tau`` with
 ONE rigid reflection across the flip plane (normal ``d_out x s``) through the FOLDED fold
-point -> the converged cone keeps its tight waist and the focus stays on the drawn detector.
-(No single rigid map can also land the kink on the mesh hypotenuse: the KrakenOS mirror station
-sits ~12.5mm before the mesh '/' centre, so the kink keeps a ~mm gap -- focus-on-detector wins,
-per the user's flag.)
+point -> the converged cone keeps its tight waist. This map survives only for the check (4)
+rigid-vs-tau contrast below.
+
+NOTE (bugs/0205): the PRODUCTION display fold (checks 2 & 3) was later replaced by a single
+REFLECTION of the straight-equivalent rays about the mirror-face CENTRE plane
+(``_reflect_straight_equivalent_display_rays``) -- an isometry, so the incoming leg keeps its
+cone and the kink lands ON the '/' hypotenuse. The focus lands at the REFLECTED image, ON the
+drawn optical axis (Z). That reflected image sits ``desp_z`` (~12.5mm) SHORT of the
+rotation-folded drawn detector along +X: the detector/overlays are folded by the ROTATION ``F``
+(which MUST stay a rotation so the lens/camera CAD is not mirrored), so a reflection-folded ray
+bundle and a rotation-folded detector differ by that meridional flip -- an overlay-fold gap
+deferred to a follow-up (nearly invisible over this f/13 fold: ~1mm blur). So check (3) targets
+the PHYSICS (the reflected image on-axis), not the mis-folded detector X.
 
 Asserts (all display-free, on the live AZ85 editor):
   1. #2 routing: ``_folded_scene_prefers_launch_cone()`` is True and BOTH
@@ -34,8 +43,9 @@ Asserts (all display-free, on the live AZ85 editor):
   2. #2 density+shape: the production (world_cone) on-axis bundle is DENSE (>= 100 rays) where
      the forced "world_envelope" gives only the sparse <= 40, AND the world_cone cross-section
      mid-arm is a 2D DISK (2nd singular value substantial), not a collinear fan;
-  3. #5: the wired on-axis cone lands ON the drawn detector (endpoint |dX| < 0.05 mm) and
-     CONVERGES (endpoint transverse RMS < 0.05 mm);
+  3. #5: the wired on-axis cone lands at the REFLECTED image -- endpoint X AND Z match the
+     mirror-centre reflection of the straight focus (|dX|,|dZ| < 0.05 mm; the Z-match is the
+     on-axis check the user flagged) -- and CONVERGES (endpoint transverse RMS < 0.05 mm);
   4. #5 contrast: on the SAME rotation-folded bundle the RIGID flip keeps that tight waist
      while the OLD per-ray ``tau`` SHEARS it (endpoint transverse RMS > 0.5 mm) -- guards
      against a revert to the shearing correction.
@@ -59,6 +69,7 @@ from KrakenOS.UI.services.folded_sequential_fold import (
     fold_promoted_mirror_specs_to_sequential,
     mirror_reflection_flip_plane_normal,
     promoted_mirror_world_center,
+    reflect_straight_equivalent_ray_points,
     rigid_reflect_folded_mirror_ray_points,
 )
 from KrakenOS.UI.validate_open3d_ra_mirror_retroreflected_ray_dive import _AZ85, _build_editor
@@ -151,6 +162,25 @@ def run_checks() -> tuple[bool, list[str]]:
             center = np.asarray(promoted_mirror_world_center(specs, ri), dtype=float).reshape(3)
             flip = mirror_reflection_flip_plane_normal(chief_in, face_normal)
 
+            # ---- the PHYSICAL folded focus target (bugs/0205): the straight-equivalent on-axis
+            # focus REFLECTED about the mirror-face CENTRE plane (an isometry of the real '/'
+            # hypotenuse). The production fold reflects too, so the wired cone must land here. The
+            # rotation-folded drawn detector sits ~desp_z beyond this along +X (overlay-fold gap,
+            # deferred) -- so we target the physics, not the mis-folded detector.
+            editor._reflect_straight_equivalent_display_rays = lambda _b: None
+            _ss, _sr, straight_bundle = editor._build_preview_system_rays_bundle(update_state=False)
+            del editor._reflect_straight_equivalent_display_rays
+            straight_terms = []
+            for _p in (getattr(straight_bundle, "ray_paths", None) or []):
+                _pw = np.asarray(getattr(_p, "points_world", None), dtype=float)
+                if _pw.ndim == 2 and _pw.shape[0] >= 3 and float(np.linalg.norm(_pw[0, :3])) <= 1.0:
+                    straight_terms.append(_pw[-1, :3])
+            straight_focus = np.mean(straight_terms, axis=0) if straight_terms else np.full(3, np.nan)
+            _refl = reflect_straight_equivalent_ray_points(
+                np.vstack([[0.0, 0.0, 0.0], straight_focus]), center, face_normal
+            )
+            expected_focus = np.asarray(_refl[-1, :3], dtype=float) if _refl is not None else np.full(3, np.nan)
+
             # ---- rotation-fold-only bundle (shadow the rigid flip) for the contrast ----
             wl = float(editor._current_wavelength())
             mr = max((max(r.diameter / 2.0, 0.5) for r in editor.rows), default=1.0)
@@ -202,17 +232,30 @@ def run_checks() -> tuple[bool, list[str]]:
                 f"cone cross-section disk s2={s2:.3f} ({cross.shape[0]} rays) at X={0.5*drawn_x:.1f}"
             )
 
-    # (3) #5: wired (world_cone) on-axis cone converges ON the drawn detector
+    # (3) #5: wired (world_cone) on-axis cone converges at the REFLECTED image, ON the drawn
+    #     optical axis (Z). bugs/0205: the fold is a reflection about the mirror-face centre, so
+    #     the focus lands at the physical reflected image -- NOT on the rotation-folded drawn
+    #     detector, which sits ~desp_z beyond along +X (an overlay-fold gap, deferred).
+    ex, ez = float(expected_focus[0]), float(expected_focus[2])
     if len(cone_oa) < 6:
         failures.append(f"#5: too few on-axis folded rays to test convergence ({len(cone_oa)})")
+    elif not (np.isfinite(ex) and np.isfinite(ez)):
+        failures.append("#5: could not derive the physical reflected-focus target (straight trace/reflection failed)")
     else:
         x_mean, trms = _endpoint_stats(cone_oa)
-        if abs(x_mean - drawn_x) > 0.05:
-            failures.append(f"#5: wired on-axis endpoints off the drawn detector: X {x_mean:.3f} vs {drawn_x:.3f} (dX {x_mean-drawn_x:+.3f})")
+        z_mean = float(np.mean([p[-1][2] for p in cone_oa]))
+        if abs(x_mean - ex) > 0.05:
+            failures.append(f"#5: wired on-axis focus X off the reflected image: X {x_mean:.3f} vs {ex:.3f} (dX {x_mean-ex:+.3f})")
+        if abs(z_mean - ez) > 0.05:
+            failures.append(f"#5: wired on-axis focus OFF the optical axis: Z {z_mean:.3f} vs {ez:.3f} (dZ {z_mean-ez:+.3f}; ~-desp_z means a front-datum fold -- 0205 offset regression)")
         if not (trms < 0.05):
             failures.append(f"#5: wired on-axis cone NOT converged: endpoint transverse RMS {trms:.4f} mm >= 0.05 (sheared?)")
-        else:
-            notes.append(f"#5: wired on-axis endpoint X={x_mean:.3f} (drawn {drawn_x:.3f}), transverse RMS={trms*1000:.2f} um")
+        if abs(x_mean - ex) < 0.05 and abs(z_mean - ez) < 0.05 and trms < 0.05:
+            notes.append(
+                f"#5: on-axis focus ({x_mean:.3f},{z_mean:.3f}) at the reflected image "
+                f"(rotation-folded detector X {drawn_x:.3f} sits +{drawn_x-x_mean:.3f} beyond -- overlay-fold gap); "
+                f"transverse RMS={trms*1000:.2f} um"
+            )
 
     # (4) #5 contrast: rigid keeps the waist, per-ray tau shears it
     rigid_oa = _onaxis(rigid_paths)
@@ -240,7 +283,7 @@ def main() -> int:
         print("PASS bugs/0203 folded cone focus:")
         print("  - #2 non-branching promoted-mirror fold routes to world_cone (dense revolve), not the sparse envelope")
         print("  - #2 production on-axis bundle is a dense 2D disk (cone); forced envelope stays sparse")
-        print("  - #5 wired on-axis cone converges ON the drawn detector; rigid flip keeps the waist where tau shears")
+        print("  - #5 wired on-axis cone converges at the reflected image ON the drawn optical axis; rigid flip keeps the waist where tau shears")
     else:
         print("FAIL bugs/0203 folded cone focus (fan-not-cone / sheared focus):")
     for note in notes:

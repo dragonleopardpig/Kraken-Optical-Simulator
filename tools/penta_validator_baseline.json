@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-02 (phase 183 folded-incoming-cone guard added for bugs/0205; verified standalone PASS: incoming s2 0.000 rotate-fan -> 17.194 reflection-cone, X-spread 4.229 = Y-spread, outgoing s2 48.747, focus on drawn detector; hypotenuse guard re-passes 3235/3235 rays on the '/' face residual 8e-15; full marathon still segfaults under Xvfb so 0-182 states carried forward)",
+  "generated_at": "2026-07-02 (phase 183 folded-incoming-cone guard for bugs/0205 + the offset follow-up; verified standalone PASS: incoming s2 0.000 rotate-fan -> 17.194 reflection-cone, X-spread 4.229 = Y-spread; outgoing arm now CENTRED on the folded axis Z 71.897 (was 59.397, a -12.5mm=-desp_z front-datum offset = flag_20260702_152020_279) via reflecting about promoted_mirror_world_center; guard gained assertion (5) outgoing-arm-Z==axis-Z; hypotenuse guard re-passes 3249/3249 rays on the '/' mirror-centre face residual 8e-15; phase 181 (0203 folded-cone-focus) RETARGETED from focus-on-rotation-folded-detector-X to focus-at-the-reflected-image (X 283.077, on-axis Z 71.897) + converges 0.83um -- re-PASS, Z-check also catches the front-datum offset; full marathon still segfaults under Xvfb so 0-182 states carried forward)",
   "phases": {
     "0": "pass",
     "1": "pass",

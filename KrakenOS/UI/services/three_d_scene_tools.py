@@ -1232,11 +1232,13 @@ class ThreeDSceneToolsMixin:
         the unfolded axis). Reflecting the past-mirror portion of each about the mirror
         plane preserves the incoming cone (untouched), the outgoing cone (congruent), and
         the focus (an isometry can't move it off the drawn detector). The plane is derived
-        from the scene: normal = the mirror's real face normal; point = the mirror's
-        transverse decenter at its cumulative axial station (``station_z`` -- the SAME
-        anchor ``_fold_straight_equivalent_display_rays`` and the downstream overlays use,
-        so the reflected cone stays consistent with the drawn detector). Scoped to a SINGLE
-        promoted-mirror fold; an arbitrary chain keeps the sequential-Mirror trace."""
+        from the scene: normal = the mirror's real face normal; point =
+        ``promoted_mirror_world_center`` (the reflecting hypotenuse's centre, at the cube
+        CENTRE ``station_z + desp_z``, NOT the front datum). The plane MUST be the real
+        drawn hypotenuse: reflecting about the front datum instead lands the folded outgoing
+        arm ``desp_z`` (12.5 mm on AZ85) off the drawn detector Z -- the
+        flag_20260702_152020_279 "obvious offset from optical axis" regression. Scoped to a
+        SINGLE promoted-mirror fold; an arbitrary chain keeps the sequential-Mirror trace."""
         if scene_bundle is None:
             return
         ray_paths = getattr(scene_bundle, "ray_paths", None)
@@ -1258,13 +1260,7 @@ class ThreeDSceneToolsMixin:
             return
         if center is None or face_normal.size < 3 or not (0 <= row_index < len(self.rows)):
             return
-        station_z = float(
-            sum(
-                float(getattr(self.rows[i], "thickness", 0.0) or 0.0)
-                for i in range(row_index)
-            )
-        )
-        plane_point = np.array([float(center[0]), float(center[1]), station_z], dtype=float)
+        plane_point = np.asarray(center, dtype=float).reshape(-1)[:3]
         for path in ray_paths:
             points = getattr(path, "points_world", None)
             if points is None:

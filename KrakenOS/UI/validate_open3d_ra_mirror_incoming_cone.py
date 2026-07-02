@@ -23,7 +23,10 @@ on-axis field's incoming leg (a Z-slice BELOW the mirror station, clear of the f
   3. its spread is UNCHANGED from the RAW straight-equivalent incoming cross-section (the
      reflection leaves the incoming leg where it was -- the isometry property; a rotation
      fold would have shrunk the X-spread to ~0);
-  4. the OUTGOING arm (Y,Z) cross-section stays a 2D DISK (the fold did not flatten it).
+  4. the OUTGOING arm (Y,Z) cross-section stays a 2D DISK (the fold did not flatten it);
+  5. the OUTGOING arm is CENTRED on the folded optical axis (the mirror-face centre Z), NOT
+     the front datum -- reflecting about the front datum lands the arm desp_z (12.5mm) off
+     the drawn detector Z (the flag_20260702_152020_279 "obvious offset from optical axis").
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_ra_mirror_incoming_cone
@@ -39,6 +42,10 @@ import sys
 
 import numpy as np
 
+from KrakenOS.UI.services.folded_sequential_fold import (
+    fold_promoted_mirror_specs_to_sequential,
+    promoted_mirror_world_center,
+)
 from KrakenOS.UI.validate_open3d_ra_mirror_retroreflected_ray_dive import _AZ85, _build_editor
 
 # A Z-slice comfortably BELOW the mirror station (~59.4mm) so it samples the incoming
@@ -99,6 +106,16 @@ def _run() -> tuple[list[str], list[str]]:
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
             editor = _build_editor(_AZ85)
             editor.snap_detector_to_image_plane()
+            # The folded optical axis Z = the mirror-face CENTRE Z (the plane the reflection
+            # folds about). The outgoing arm must be centred on THIS, not the front datum
+            # (12.5mm short) -- the flag_20260702_152020_279 "offset from optical axis".
+            specs = editor._serializable_specs_for_rows(list(editor.rows))
+            _folded, records = fold_promoted_mirror_specs_to_sequential(specs)
+            axis_z = None
+            if len(records) == 1:
+                _c = promoted_mirror_world_center(specs, int(records[0].get("row_index", -1)))
+                if _c is not None:
+                    axis_z = float(np.asarray(_c, dtype=float).reshape(-1)[2])
             # RAW straight-equivalent: shadow the reflection fold -> unfolded +Z bundle.
             editor._preview_scene_trace_dirty = True
             editor._reflect_straight_equivalent_display_rays = lambda bundle: None
@@ -158,10 +175,26 @@ def _run() -> tuple[list[str], list[str]]:
                 f"outgoing (Y,Z)@X={0.6 * dx:.0f} is FLAT (s2={s2_out:.3f}<=0.5) -> fan not cone"
             )
 
+        # (5) Z-registration: the outgoing arm is CENTRED on the folded optical axis (the
+        # mirror-face centre Z), NOT the front datum. Reflecting about the front datum
+        # instead offsets the arm by desp_z (12.5mm) -> the flagged "offset from optical
+        # axis". Sample the on-axis cone's mean Z at 0.6*drawn X; must equal axis_z.
+        out_z_mean = float(fin_out[:, 1].mean()) if len(fin_out) else float("nan")
+        if axis_z is None:
+            failures.append("could not derive the folded optical-axis Z (mirror-face centre) for the registration check")
+        elif not np.isfinite(out_z_mean):
+            failures.append(f"outgoing arm has no (Y,Z) cross-section at X={0.6 * dx:.0f} for the Z-registration check")
+        elif abs(out_z_mean - axis_z) > 0.25:
+            failures.append(
+                f"outgoing arm is OFF the optical axis: mean Z {out_z_mean:.3f} vs folded-axis Z {axis_z:.3f} "
+                f"(offset {out_z_mean - axis_z:+.3f}mm; ~-desp_z means it folded about the front datum -- 0205 offset regression)"
+            )
+
         notes.append(
             f"on-axis rays raw {len(raw_oa)} / folded {len(fin_oa)} | incoming s2={s2_inc:.3f} "
             f"(X {float(np.ptp(fin_inc[:, 0])) if len(fin_inc) else 0:.3f} ~ Y "
-            f"{float(np.ptp(fin_inc[:, 1])) if len(fin_inc) else 0:.3f}) | outgoing s2={s2_out:.3f} | drawn arm X={dx:.1f}"
+            f"{float(np.ptp(fin_inc[:, 1])) if len(fin_inc) else 0:.3f}) | outgoing s2={s2_out:.3f} | drawn arm X={dx:.1f} "
+            f"| outgoing arm Z {out_z_mean:.3f} vs axis Z {axis_z if axis_z is not None else float('nan'):.3f}"
         )
     except Exception as exc:  # noqa: BLE001
         failures.append(f"AZ85 incoming-cone integration raised {exc!r}")
@@ -188,6 +221,7 @@ def main() -> int:
     print("  - incoming (X,Y) cross-section is a 2D disk (s2>0.5), round, not a flat fan")
     print("  - incoming spread is unchanged from the raw straight-equivalent (reflection is an isometry)")
     print("  - outgoing arm (Y,Z) cross-section stays a 2D disk")
+    print("  - outgoing arm is centred on the folded optical axis (mirror-face centre Z), not the front datum")
     for note in notes:
         print(f"  - {note}")
     return 0

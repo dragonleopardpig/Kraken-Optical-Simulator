@@ -7,7 +7,10 @@ is an isometry, so the incoming leg — on the same side of the plane as the lau
 UNTOUCHED and keeps its cone, while the outgoing leg is congruent (still a cone) and the focus, being
 a fixed distance from an isometry, stays on the drawn detector. On the AZ85 RA-mirror the on-axis
 incoming (X,Y) cross-section goes from a collinear fan (2nd singular value `s2 = 0.000`) to a round
-disk (`s2 = 17.194`, X-spread 4.229 = Y-spread 4.229) with the focus unmoved at X = 295.577 mm.**
+disk (`s2 = 17.194`, X-spread 4.229 = Y-spread 4.229) with the focus unmoved at X = 295.577 mm. The
+reflecting plane passes through the mirror-face CENTRE (`promoted_mirror_world_center`), so the folded
+outgoing arm lands on the drawn optical axis (Z = 71.897 mm) — see the Follow-up correction, which
+fixed a −12.5 mm offset from an initial front-datum plane.**
 
 ## Origin
 
@@ -56,12 +59,11 @@ there are no baked-in AZ85 numbers. The reflection plane is derived per scene fr
 
 - **normal** = the mirror `face_normal` carried in the fold record from
   `fold_promoted_mirror_specs_to_sequential`;
-- **point** = `[decenter_x, decenter_y, station_z]`, where `station_z` is the cumulative thickness of
-  the rows *before* the mirror row (the mirror's FRONT DATUM). This is the same anchor the old
-  `_fold_straight_equivalent_display_rays` used, and it deliberately EXCLUDES the cube's `desp_z`
-  (the straight-equivalent build reseats `desp_z` onto the preceding row's thickness). Reflecting
-  about the face-CENTER Z instead would shift the focus off the drawn detector by exactly `desp_z`
-  (12.5 mm for AZ85).
+- **point** = `promoted_mirror_world_center(specs, row_index)` — the reflecting hypotenuse's centre,
+  at the cube CENTRE `station_z + desp_z` (the real drawn mirror face). It MUST be the drawn
+  hypotenuse: reflecting about the FRONT DATUM (`station_z`, excluding `desp_z`) instead lands the
+  folded outgoing arm `desp_z` (12.5 mm on AZ85) off the drawn detector Z — see the
+  **Follow-up correction** below, which is exactly that regression.
 
 Why the isometry fixes all three symptoms:
 
@@ -74,7 +76,7 @@ Why the isometry fixes all three symptoms:
 
 Wiring: `three_d_scene_tools.py` `_apply_folded_display_bend` now dispatches the AZ85 Path-A case
 (`fold_transform is not None`) to the new `_reflect_straight_equivalent_display_rays(scene_bundle)`,
-which rebuilds the fold record, computes the front-datum plane, and reflects each ray in place
+which rebuilds the fold record, computes the mirror-centre plane, and reflects each ray in place
 (tagging it `folded_straight_equivalent_reflected`). The sequential-Mirror fallback (Path B,
 `fold_transform is None`) is unchanged. The old rotate + rigid-flip methods are kept (importable) only
 for the `bugs/render_0205_incoming_cone.py` before/after proof render.
@@ -98,7 +100,10 @@ PASS bugs/0205 folded RA-mirror incoming cone (incoming leg is a preserved cone)
 - **round** — X-spread 4.229 ≈ Y-spread 4.229 (a revolved cone, not an elongated slit);
 - **isometry** — the incoming spread is unchanged (<5%) from the raw straight-equivalent bundle
   (captured by shadowing `_reflect_straight_equivalent_display_rays` to a no-op);
-- **outgoing stays a disk** — (Y,Z) at X = 0.6·(drawn arm) has `s2 = 48.747 > 0.5`.
+- **outgoing stays a disk** — (Y,Z) at X = 0.6·(drawn arm) has `s2 = 48.747 > 0.5`;
+- **outgoing arm on the optical axis** — its mean Z matches the folded axis Z (the mirror-face centre,
+  71.897 mm) within 0.25 mm (added by the Follow-up correction; a front-datum fold reads 59.397 mm,
+  a −12.5 mm offset, caught).
 
 The `bugs/0192` hypotenuse-reflection guard was updated to exercise the new reflection path and
 re-passes with a STRONGER result than the old rigid-flip: every one of **3235/3235** folded rays lands
@@ -114,3 +119,56 @@ fold (incoming is a round hexapolar disk, `s2 = 17.194`) — to
 
 Guard wired as `phase_183_folded_incoming_cone` in the comprehensive penta validator; baseline updated
 `"183": "pass"`.
+
+## Follow-up correction — reflection plane must be the mirror-face CENTRE, not the front datum
+
+The first 0205 commit (`ccb387c6`) reflected about the mirror's FRONT DATUM plane
+(`[decenter_x, decenter_y, station_z]`, excluding `desp_z`). That preserved the incoming cone (the fan
+fix) but a reflection about the wrong-Z plane is still an isometry that lands the WHOLE outgoing arm on
+the wrong axis: the folded arm centred on Z = 59.397 mm instead of the drawn detector / folded optical
+axis at Z = 71.897 mm — a **−12.5 mm = −`desp_z`** offset. The user re-flagged it immediately
+(`flag_20260702_152020_279`, *"there is an obvious offset from optical axis"*).
+
+Root cause of the wrong choice: the earlier 0197 rotate fold used `station_z` as its anchor, and I
+carried that anchor over — but rotation about an axis point and reflection about a plane are different
+operations. The rotation fold happened to still land the arm on-axis (it rotated the downstream frame
+about that point); reflection about a plane through the same point translates the arm by twice the
+plane's offset from the true face. The correct reflecting plane is the REAL drawn hypotenuse —
+`promoted_mirror_world_center` (the cube centre, `station_z + desp_z`).
+
+Fix (this commit): `_reflect_straight_equivalent_display_rays` now sets
+`plane_point = promoted_mirror_world_center(specs, row_index)` directly (dropping the `station_z`
+recomputation). Measured: outgoing on-axis arm Z 59.397 → **71.897** (offset +0.000 from the drawn
+axis), incoming cone unchanged (`s2` 17.194, still round). The phase-183 guard gained assertion **(5)**
+— the outgoing arm's mean Z must equal the folded optical-axis Z (mirror-face centre) within 0.25 mm;
+`bugs/probe_0205_guard_catches_offset.py` proves it FAILS on the front-datum path (reads 59.397,
+offset −12.500) and passes on the fix. The `bugs/0192` hypotenuse guard's integration check was
+likewise moved from the front-datum plane to `promoted_mirror_world_center` and re-passes
+(3249/3249 rays, residual 7.99e-15 mm).
+
+### Phase-181 (`bugs/0203`) retarget — focus lands at the reflected image, not on the drawn detector
+
+Moving the fold to the mirror-face CENTRE reflection also fixed the on-axis Z (71.897) but surfaced
+a second, unavoidable consequence: the phase-181 folded-cone-focus guard
+(`validate_open3d_ra_mirror_folded_cone_focus.py`) had asserted the wired on-axis endpoint lands on
+the DRAWN DETECTOR X (295.577). The reflected focus now lands at **X = 283.077** — `desp_z` (12.5 mm)
+short of the detector along +X. This is not a ray bug; it is a **fold-convention mismatch**: the rays
+are folded by a REFLECTION (det −1, the real reflecting hypotenuse), while the drawn detector and all
+folded overlays are folded by the ROTATION `F = _optical_axis_fold_world_transform_for_row` (det +1).
+A reflection and a rotation about the same 45° mirror differ by the meridional flip, and for the
+on-axis chief that difference is exactly `desp_z`. No single reflection plane can hit BOTH the
+detector's X (295.577, needs the front datum) AND the on-axis Z (71.897, needs the centre) — the
+reflected focus slides along a (+X, −Z) locus and (295.577, 71.897) is not on it (measured by
+`bugs/probe_0205_detector_vs_focus.py`).
+
+`F` **must stay a rotation** — it also folds the lens/camera STEP CAD, and a reflection would MIRROR
+those meshes (and their text labels). So reconciling the detector to the reflected image (reflection-
+folding the detector/overlay POSITIONS while keeping mesh ORIENTATION unmirrored) is a larger
+overlay-fold change, **deferred**. It is nearly invisible here: over the f/13 fold the 12.5 mm
+longitudinal gap is a ~1 mm blur, whereas the flagged defect was the 12.5 mm TRANSVERSE offset (now
+fixed). Phase-181 was therefore **retargeted** to assert the wired focus lands at the PHYSICAL
+reflected image — endpoint X AND Z match the mirror-centre reflection of the straight on-axis focus
+(283.077, 71.897) within 0.05 mm, plus transverse-RMS convergence (0.83 µm) — rather than the
+mis-folded detector X. The new Z-assertion also independently catches the front-datum offset
+regression (reads Z 59.397). It targets the physics, so a future overlay-fold fix that moves the
+detector onto 283.077 leaves the guard passing.
