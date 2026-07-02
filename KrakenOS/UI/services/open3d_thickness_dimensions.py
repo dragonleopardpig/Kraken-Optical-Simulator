@@ -43,6 +43,11 @@ class Open3DThicknessDimensionService:
         self._inline_editor_window: tk.Toplevel | None = None
         self._inline_editor_row_index: int | None = None
         self._inline_editor_committing = False
+        # bugs/0202: row_index -> (displayed exit-gap - stored thickness) for a promoted
+        # solid's trailing spacer, whose arrow measures the REAL air gap (solid exit ->
+        # next surface) while the stored thickness omits the solid's reserve dead-space.
+        # Keeps the edit dialog + apply WYSIWYG with the drawn "gap from solid" value.
+        self._trailing_spacer_gap_offset: dict[int, float] = {}
 
     def arrow_mesh(
         self,
@@ -524,6 +529,45 @@ class Open3DThicknessDimensionService:
         a0 = float(np.dot(p, axis))
         return p + axis * (pmin - a0), p + axis * (pmax - a0)
 
+    def _solid_exit_gap_for_trailing_spacer(self, rows, row_index, p0, p1):
+        """bugs/0202: the AIR spacer the in-path promote (bugs/0079) inserts AFTER a
+        promoted optical solid stores its thickness from the solid's AXIAL RESERVE
+        origin (the row reference), which sits PAST the solid's rendered EXIT face.
+        So the spacer's near arrow floated in mid-air, ~27 mm downstream of the RA-
+        mirror cube (flag_20260701_201444: "S2 thickness overlay: one side arrow still
+        point to wrong location"). When this row IS that trailing spacer and the
+        PREVIOUS row is a promoted solid, anchor the near endpoint to the solid EXIT
+        face and read the REAL air gap (solid exit -> next surface) -- the exit-side
+        mirror of the "gap to solid" entry handling. Returns ``(exit_point, label,
+        gap)`` or ``(None, None, None)`` (headless / not a trailing spacer / the body
+        has no rendered actors)."""
+        from KrakenOS.UI.scene_builder import _is_inpath_trailing_spacer_row
+        if not (0 < int(row_index) < len(rows)):
+            return None, None, None
+        if not _is_inpath_trailing_spacer_row(rows[int(row_index)]):
+            return None, None, None
+        if not self._row_optical_solid_stl(rows[int(row_index) - 1]):
+            return None, None, None
+        p0 = np.asarray(p0, dtype=float).reshape(3)
+        p1 = np.asarray(p1, dtype=float).reshape(3)
+        seg = p1 - p0
+        ns = float(np.linalg.norm(seg))
+        if ns <= 1e-9:
+            return None, None, None
+        span = self._optical_solid_span_points(int(row_index) - 1, seg / ns, p0)
+        if span is None:
+            return None, None, None
+        # span = (front=min-projection, back=max-projection) along +seg; the exit face
+        # is the downstream-most (max-projection) face = the second point.
+        exit_point = np.asarray(span[1], dtype=float).reshape(3)
+        if not np.all(np.isfinite(exit_point)):
+            return None, None, None
+        gap = float(np.linalg.norm(p1 - exit_point))
+        if not (np.isfinite(gap) and gap > 1e-6):
+            return None, None, None
+        label = f"gap from {self._row_short_name(rows[int(row_index) - 1])} = {gap:.4g} mm"
+        return exit_point, label, gap
+
     def add_overlays(self, system: Any, scene_bundle: Any = None) -> int:
         pv = self.pv
         if pv is None:
@@ -534,6 +578,8 @@ class Open3DThicknessDimensionService:
         rows = list(getattr(self.editor, "rows", []) or [])
         if len(rows) < 2:
             return 0
+        # bugs/0202: rebuilt each redraw from the live geometry (stale entries gone).
+        self._trailing_spacer_gap_offset = {}
         # bugs/0093: when a split derived a branch detector at the true focus, the
         # sequential Image is superseded AND displaced back by the inserted
         # element's thickness. Don't draw the thickness dimension that runs out to
@@ -666,6 +712,15 @@ class Open3DThicknessDimensionService:
                         if np.isfinite(gap) and gap > 1e-6:
                             p1 = np.asarray(entry, dtype=float).reshape(3)
                             solid_gap_label = f"gap to {self._row_short_name(rows[row_index + 1])} = {gap:.4g} mm"
+            # bugs/0202: the exit-side mirror of the above -- a promoted solid's
+            # trailing AIR spacer anchors its NEAR endpoint to the solid's exit face
+            # (not the reserve origin past it) and reads the real air gap.
+            exit_point, solid_exit_gap_label, _exit_gap = self._solid_exit_gap_for_trailing_spacer(
+                rows, row_index, p0, p1
+            )
+            if exit_point is not None:
+                p0 = exit_point
+                self._trailing_spacer_gap_offset[row_index] = float(_exit_gap) - float(thickness)
             # bugs/0053: a re-anchored row is a direct MEASUREMENT to a picked
             # surface/edge z -- draw a single arrow to it (no gap-splitting) and
             # label the measured distance, visually distinct from a model thickness.
@@ -712,6 +767,8 @@ class Open3DThicknessDimensionService:
                 base_hi = p0 + segment * frac_hi
                 if solid_gap_label is not None:
                     label = solid_gap_label
+                elif solid_exit_gap_label is not None:
+                    label = solid_exit_gap_label
                 elif split:
                     label = f"gap = {gap_mm:.4g} mm"
                 else:
@@ -1469,6 +1526,13 @@ class Open3DThicknessDimensionService:
         if not np.isfinite(next_value):
             self.inspector.status_var.set("Thickness must be a finite number.")
             return False
+        # bugs/0202: for a promoted solid's trailing spacer the drawn value is the REAL
+        # exit gap (solid exit -> next surface); convert it back to the stored row
+        # thickness (which omits the solid's reserve dead-space) so the front datum lands
+        # exactly the typed gap past the mirror exit -- the arrow round-trips WYSIWYG.
+        gap_offset = (getattr(self, "_trailing_spacer_gap_offset", None) or {}).get(row_index)
+        if gap_offset is not None and np.isfinite(gap_offset):
+            next_value = float(next_value) - float(gap_offset)
         # A re-anchored dimension spans Previous->Next elements: editing its value
         # MOVES the Next (downstream) element by one gap, NOT rows[row_index] with a
         # Quick-Estimation re-solve (which used to shift the wrong element). The
@@ -1596,6 +1660,12 @@ class Open3DThicknessDimensionService:
                         current = abs(ref_z - fixed_z)
             except Exception:
                 pass
+        # bugs/0202: a promoted solid's trailing spacer draws the REAL exit gap, so the
+        # dialog edits THAT (like the re-anchored measured distance above), not the
+        # reserve-shortened stored thickness -- the typed value round-trips via apply.
+        gap_offset = (getattr(self, "_trailing_spacer_gap_offset", None) or {}).get(row_index)
+        if gap_offset is not None and np.isfinite(gap_offset):
+            current = current + float(gap_offset)
         self._destroy_inline_editor()
         value_var = tk.StringVar(value=f"{current:.6g}")
         window = tk.Toplevel(self.inspector)
