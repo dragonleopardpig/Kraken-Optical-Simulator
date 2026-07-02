@@ -9999,6 +9999,43 @@ def phase_182_thickness_dimension_no_rebuild(
     return result
 
 
+def phase_183_folded_incoming_cone(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The user re-flagged the working folded AZ85 RA-mirror scene: "the launched rays seem to be a
+    Fan, but after reflection become a Cone?". The display fold ROTATED every straight-equivalent
+    vertex at/after the mirror station about the fold anchor (``_fold_straight_equivalent_display_rays``
+    -> ``_fold_ray_downstream_of_station``). Because the station sits at the FIRST surface (~59.4mm),
+    essentially the whole ray was rotated, mapping the incoming cone's meridional (X) spread into pure
+    axial (Z) displacement -> the incoming leg collapsed to a flat Y-only FAN while the meridional
+    spread migrated into the outgoing arm. The fix folds by REFLECTING the straight-equivalent rays
+    about the mirror plane (``_reflect_straight_equivalent_display_rays``): a reflection is an ISOMETRY,
+    so the incoming leg (same side of the plane as the launch point) is left UNTOUCHED (cone preserved)
+    while the outgoing leg stays congruent (focus still on the drawn detector -- guarded by phase 181).
+    ``validate_open3d_ra_mirror_incoming_cone`` asserts the wired on-axis incoming (X,Y) cross-section
+    below the station is a 2D DISK (s2 > 0.5), ROUND (X-spread ~ Y-spread), with its spread UNCHANGED
+    from the raw straight-equivalent (the isometry), and the outgoing arm stays a disk -- so a revert to
+    the rotation fold (incoming s2 -> 0) is caught.
+    """
+    result = PhaseResult(
+        name="Phase 183: folded RA-mirror incoming leg is a preserved cone, not a flat fan (0205)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_ra_mirror_incoming_cone import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-incoming-cone guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-incoming-cone phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10227,6 +10264,7 @@ def main() -> int:
             phase_180_branch_detector_leak_clutter,
             phase_181_folded_cone_focus,
             phase_182_thickness_dimension_no_rebuild,
+            phase_183_folded_incoming_cone,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

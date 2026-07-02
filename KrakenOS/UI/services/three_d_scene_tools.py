@@ -86,6 +86,7 @@ from KrakenOS.UI.services.folded_sequential_fold import (
     fold_promoted_mirror_specs_to_sequential,
     mirror_reflection_flip_plane_normal,
     promoted_mirror_world_center,
+    reflect_straight_equivalent_ray_points,
     rigid_reflect_folded_mirror_ray_points,
     scene_nonseq_trigger_is_only_promoted_full_mirrors,
 )
@@ -721,14 +722,16 @@ class ThreeDSceneToolsMixin:
         (``None`` on the sequential-Mirror fallback, whose rays are already folded); the
         reflection correction then lands the cone on the drawn detector in both paths.
 
-        bugs/0203 (#5): on the straight-equivalent path the rotation fold has already made
-        the outgoing leg a rigid image of the converging cone, so a SINGLE rigid flip about
-        the folded fold-point un-flips the diagonal without shearing the focus. The
-        sequential-Mirror fallback keeps the per-ray reflection correction (its rays diverge
-        anyway -- the ideal Thin Lens loses power through that fold)."""
+        bugs/0205: the rotate-downstream + rigid-reflect pair below collapsed the INCOMING
+        cone to a flat fan (rotating every post-station vertex mapped the incoming
+        meridional spread into pure axial displacement). A single REFLECTION of the
+        straight-equivalent rays about the mirror plane is the isometry that folds the
+        cone correctly: incoming leg untouched (cone preserved), outgoing leg congruent
+        (focus preserved on the drawn detector). The sequential-Mirror fallback keeps the
+        per-ray reflection correction (its rays diverge anyway -- the ideal Thin Lens
+        loses power through that fold)."""
         if fold_transform is not None:
-            self._fold_straight_equivalent_display_rays(scene_bundle, fold_transform)
-            self._apply_folded_mirror_rigid_reflection(scene_bundle, fold_transform)
+            self._reflect_straight_equivalent_display_rays(scene_bundle)
         else:
             self._apply_folded_mirror_reflection_correction(scene_bundle)
 
@@ -1217,6 +1220,61 @@ class ThreeDSceneToolsMixin:
             path.points_world = corrected
             try:
                 path.display_geometry_source = "folded_mirror_rigid_reflected"
+            except Exception:
+                pass
+
+    def _reflect_straight_equivalent_display_rays(self, scene_bundle) -> None:
+        """bugs/0205: fold the straight-equivalent display rays by REFLECTING them about
+        the promoted mirror's plane -- the isometry that replaces the rotate-downstream +
+        rigid-reflect pair.
+
+        The rays were traced through the flat-plate equivalent (a real converging cone on
+        the unfolded axis). Reflecting the past-mirror portion of each about the mirror
+        plane preserves the incoming cone (untouched), the outgoing cone (congruent), and
+        the focus (an isometry can't move it off the drawn detector). The plane is derived
+        from the scene: normal = the mirror's real face normal; point = the mirror's
+        transverse decenter at its cumulative axial station (``station_z`` -- the SAME
+        anchor ``_fold_straight_equivalent_display_rays`` and the downstream overlays use,
+        so the reflected cone stays consistent with the drawn detector). Scoped to a SINGLE
+        promoted-mirror fold; an arbitrary chain keeps the sequential-Mirror trace."""
+        if scene_bundle is None:
+            return
+        ray_paths = getattr(scene_bundle, "ray_paths", None)
+        if not ray_paths:
+            return
+        try:
+            specs = self._serializable_specs_for_rows(list(self.rows))
+            _folded, records = fold_promoted_mirror_specs_to_sequential(specs)
+        except Exception:
+            return
+        if len(records) != 1:
+            return
+        record = records[0]
+        try:
+            row_index = int(record.get("row_index", -1))
+            face_normal = np.asarray(record.get("face_normal"), dtype=float).reshape(-1)[:3]
+            center = promoted_mirror_world_center(specs, row_index)
+        except Exception:
+            return
+        if center is None or face_normal.size < 3 or not (0 <= row_index < len(self.rows)):
+            return
+        station_z = float(
+            sum(
+                float(getattr(self.rows[i], "thickness", 0.0) or 0.0)
+                for i in range(row_index)
+            )
+        )
+        plane_point = np.array([float(center[0]), float(center[1]), station_z], dtype=float)
+        for path in ray_paths:
+            points = getattr(path, "points_world", None)
+            if points is None:
+                continue
+            reflected = reflect_straight_equivalent_ray_points(points, plane_point, face_normal)
+            if reflected is None:
+                continue
+            path.points_world = reflected
+            try:
+                path.display_geometry_source = "folded_straight_equivalent_reflected"
             except Exception:
                 pass
 

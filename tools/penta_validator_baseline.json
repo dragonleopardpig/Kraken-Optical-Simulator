@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-02 (phase 182 thickness-dimension-no-rebuild guard added for bugs/0204; verified standalone PASS: FAST 0/0 vs SLOW 8/8 force-mesh, origins identical; full marathon still segfaults under Xvfb so 0-181 states carried forward)",
+  "generated_at": "2026-07-02 (phase 183 folded-incoming-cone guard added for bugs/0205; verified standalone PASS: incoming s2 0.000 rotate-fan -> 17.194 reflection-cone, X-spread 4.229 = Y-spread, outgoing s2 48.747, focus on drawn detector; hypotenuse guard re-passes 3235/3235 rays on the '/' face residual 8e-15; full marathon still segfaults under Xvfb so 0-182 states carried forward)",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -184,7 +184,8 @@
     "179": "pass",
     "180": "pass",
     "181": "pass",
-    "182": "pass"
+    "182": "pass",
+    "183": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -369,6 +370,7 @@
     "179": "beam-splitter internal-bounce draws no branch-detector clutter (2D full-3D)",
     "180": "diffuse double-pass draws no branch-detector leak clutter (2D full-3D)",
     "181": "folded RA-mirror preview is a dense cone that focuses on the drawn detector (0203)",
-    "182": "thickness-dimension overlay reads origins from the built system, no per-call rebuild (0204)"
+    "182": "thickness-dimension overlay reads origins from the built system, no per-call rebuild (0204)",
+    "183": "folded RA-mirror incoming leg is a preserved cone, not a flat fan (0205)"
   }
 }

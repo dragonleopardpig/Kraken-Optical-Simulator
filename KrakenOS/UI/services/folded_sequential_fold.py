@@ -246,6 +246,68 @@ def rigid_reflect_folded_mirror_ray_points(
     return out
 
 
+def reflect_straight_equivalent_ray_points(
+    points: Any,
+    plane_point: Any,
+    plane_normal: Any,
+) -> np.ndarray | None:
+    """bugs/0205: fold ONE straight-equivalent display ray by REFLECTING its
+    downstream (past-mirror) portion about the mirror plane -- a pure isometry.
+
+    The straight-equivalent rays image to a real focus along the unfolded axis (they
+    are traced through the flat-plate equivalent, no bend yet). The physical fold is
+    the reflection of that converging cone about the mirror plane. Reflection is an
+    ISOMETRY, which is exactly what makes this both correct and general:
+
+      * the incoming leg (same side of the plane as the launch point) is left
+        UNTOUCHED -> its cone is preserved. This fixes bugs/0205: rotating every
+        post-station vertex about a fold anchor instead mapped the incoming cone's
+        meridional spread into axial displacement, collapsing it to a flat fan;
+      * the outgoing leg is reflected -> still a congruent converging cone, so the
+        focus is preserved (an isometry cannot move a focus off the detector);
+      * the vertex where the ray crosses the plane is a FIXED POINT of the
+        reflection, so the kink is exact and continuous for every ray.
+
+    The plane is ``(plane_point, plane_normal)`` -- both derived from the scene by the
+    caller (the mirror's real face normal and its world station); NOTHING here is
+    axis- or scene-specific. A vertex ``p`` with signed distance ``d = (p - p0).n_hat``
+    maps to ``p - 2 d n_hat``. "Downstream" is the side of the plane OPPOSITE the ray's
+    own launch point (``points[0]``) -- decided per ray from the sign of its first
+    vertex, so no +Z / propagation-direction assumption is baked in. A crossing vertex
+    is inserted where the polyline pierces the plane so the kink lands exactly on it.
+    Extra ray columns (wavelength, intensity, ...) are preserved and interpolated at
+    the inserted vertex. Returns a new array (column count preserved) or None when the
+    ray never crosses the plane (e.g. launched on the plane, or clipped before it)."""
+    pts = np.asarray(points, dtype=float)
+    if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+        return None
+    normal = _unit(plane_normal)
+    if float(np.linalg.norm(normal)) < 1e-9:
+        return None
+    p0 = np.asarray(plane_point, dtype=float).reshape(-1)[:3]
+    coords = pts[:, :3]
+    signed = (coords - p0) @ normal
+    if abs(float(signed[0])) < 1e-9:
+        return None  # launch point sits on the plane -> incoming side is ambiguous
+    downstream = (signed * float(np.sign(signed[0]))) < 0.0
+    if not downstream.any() or downstream.all():
+        return None  # ray never crosses the mirror plane
+    rows: list[np.ndarray] = []
+    for i in range(len(pts)):
+        if downstream[i]:
+            reflected = pts[i].copy()
+            reflected[:3] = coords[i] - 2.0 * float(signed[i]) * normal
+            rows.append(reflected)
+        else:
+            rows.append(pts[i].copy())
+        if i < len(pts) - 1 and downstream[i] != downstream[i + 1]:
+            denom = float(signed[i] - signed[i + 1])
+            if abs(denom) > 1e-12:
+                t = float(signed[i]) / denom
+                rows.append(pts[i] + t * (pts[i + 1] - pts[i]))  # on plane -> fixed
+    return np.asarray(rows, dtype=float)
+
+
 def _is_promoted_mirror_fold(spec: dict) -> bool:
     if str(spec.get("surface", "")) in {"Object", "Image", "Mirror"}:
         return False
