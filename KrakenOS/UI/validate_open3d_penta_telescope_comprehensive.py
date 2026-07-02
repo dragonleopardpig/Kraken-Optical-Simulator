@@ -10036,6 +10036,42 @@ def phase_183_folded_incoming_cone(
     return result
 
 
+def phase_184_trackball_orbit_through_pole(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The user flagged that a sustained vertical scene-drag "will stop somewhere, unable to orbit
+    indefinitely in this direction" (flag 20260702_152020, issue 2). The old orbit clamped elevation
+    at +/-79 deg to dodge a discrete +Y->+Z view-up swap (the earlier "assembly flip"), trading the
+    flip for a dead-stop. The fix rewrites ``_rotate_camera_fixed_drag`` as a true trackball: the pure
+    ``_orbit_camera_pose`` Rodrigues-rotates the camera offset AND the view-up by the SAME increments
+    (azimuth about world +Y, elevation about screen-right), so the up vector is carried RIGIDLY over
+    the pole -- no discrete swap (no flip) and no clamp (orbits indefinitely). Because the rigid
+    rotation preserves the up<->view-dir angle, ``SetViewUp`` is left un-orthogonalised (VTK
+    orthogonalises at render), which keeps the FIRST step continuous too.
+    ``validate_open3d_drag_orbit_no_flip`` drives the REAL method on a bare vtkCamera and asserts a
+    sustained drag sweeps PAST 79 deg and OVER the pole (view_up.y inverts) while staying CONTINUOUS
+    (step-to-step view-up dot ~1, never a ~90 deg jump), the radius is preserved, below the pole the
+    pose is identical to VTK Azimuth/Elevation, and a horizontal drag still orbits without tilt/flip.
+    """
+    result = PhaseResult(
+        name="Phase 184: trackball scene-drag orbits continuously through the pole, no flip (0206)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_drag_orbit_no_flip import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"trackball-orbit guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("trackball-orbit phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10265,6 +10301,7 @@ def main() -> int:
             phase_181_folded_cone_focus,
             phase_182_thickness_dimension_no_rebuild,
             phase_183_folded_incoming_cone,
+            phase_184_trackball_orbit_through_pole,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

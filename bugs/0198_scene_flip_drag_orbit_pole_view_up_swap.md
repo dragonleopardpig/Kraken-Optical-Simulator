@@ -1,9 +1,13 @@
 # 0198 — BUG: drag-rotating the 3D scene suddenly flips the whole assembly
 
-**Status: RESOLVED. The CAD-style drag-orbit clamps its vertical tilt to ±79° so the
-view-up axis never discretely swaps from world +Y to +Z near the pole. Fix in
-`Kraken3DInspector._rotate_camera_fixed_drag`; guard
-`validate_open3d_drag_orbit_no_flip.py` (standalone, display-free).**
+**Status: RESOLVED, then SUPERSEDED by bugs/0206. The original fix clamped the drag's
+vertical tilt to ±79° so the view-up axis never discretely swaps from world +Y to +Z near
+the pole. bugs/0206 later found that clamp itself stops a sustained vertical drag from
+orbiting past the pole, and replaced the whole approach with a true trackball
+(`_orbit_camera_pose`) that carries view-up rigidly — no swap AND no clamp. The `±79°
+clamp` and `_safe_view_up_for_camera` described below NO LONGER EXIST; the guard
+`validate_open3d_drag_orbit_no_flip.py` was rewritten to the 0206 through-the-pole contract
+(now penta phase 184). This doc is kept for the flip's root-cause history.**
 
 ## Flag
 

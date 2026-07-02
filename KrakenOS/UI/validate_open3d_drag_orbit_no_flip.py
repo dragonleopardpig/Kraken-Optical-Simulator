@@ -1,12 +1,22 @@
-"""Guard: the CAD-style drag-orbit (`_rotate_camera_fixed_drag`) must never let the
-scene "suddenly flip" mid-drag.
+"""Guard: the trackball drag-orbit (`_rotate_camera_fixed_drag`) orbits CONTINUOUSLY
+THROUGH the pole -- a sustained vertical drag never stops and never flips.
 
-Flag 20260701_201224 ("I drag the scene, the scene rotate until suddenly the whole
-assembly flips"): a sustained vertical drag tilted the camera past ~80 deg elevation,
-where `_safe_view_up_for_camera` stops re-picking world +Y and discretely swaps the
-view-up to +Z -- a 90 deg reorient that reads as the whole assembly flipping. The fix
-clamps the drag elevation to +/-79 deg so world +Y stays a stable, valid up and the
-swap can never happen.
+Flag 20260702_152020 (issue 2, "drag from top to bottom, it will stop somewhere,
+unable to orbit indefinitely in this direction"): the old orbit clamped elevation at
++/-79 deg to dodge a discrete view-up swap (the earlier flag-20260701_201224 "assembly
+flip"). That traded the flip for a dead-stop. The trackball fix carries the view-up
+RIGIDLY with the camera offset -- both Rodrigues-rotated by the same increments -- so
+the up vector rolls smoothly OVER the pole: no discrete swap (= no flip) AND no clamp
+(= orbits indefinitely).
+
+The requirements are complementary, and this guard asserts all of them:
+  - "orbits indefinitely" : a sustained vertical drag passes THROUGH 79 deg and OVER
+    the pole -- the view-up's y-component goes negative (the camera hangs upside down,
+    a true trackball) -- and the orbit radius is preserved (a rigid rotation).
+  - "no flip" : the motion is CONTINUOUS -- the step-to-step view-up dot stays ~1.
+    A flip is a DISCONTINUITY (dot -> 0, a ~90 deg jump), NOT the up vector leaving +Y.
+  - below the pole it is pose-IDENTICAL to the old VTK Azimuth/Elevation path, so the
+    familiar drag feel is unchanged.
 
 Display-free: drives the REAL method against a standalone ``vtkCamera``.
 Run: ``.devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_drag_orbit_no_flip``
@@ -20,7 +30,7 @@ import vtk
 
 from KrakenOS.UI.open3d_inspector import Kraken3DInspector
 
-_ELEV_LIMIT = 79.0
+_DPP = 0.10
 
 
 class _FakeRenderer:
@@ -45,74 +55,135 @@ def _make_harness():
     s._rotate_camera_fixed_drag = types.MethodType(
         Kraken3DInspector._rotate_camera_fixed_drag, s
     )
-    s._safe_view_up_for_camera = Kraken3DInspector._safe_view_up_for_camera
+    s._orbit_camera_pose = Kraken3DInspector._orbit_camera_pose
     return s, cam
 
 
+def _offset(cam) -> np.ndarray:
+    return np.asarray(cam.GetPosition(), float) - np.asarray(cam.GetFocalPoint(), float)
+
+
 def _cam_elev(cam) -> float:
-    pos = np.asarray(cam.GetPosition(), float)
-    foc = np.asarray(cam.GetFocalPoint(), float)
-    d = pos - foc
+    d = _offset(cam)
     r = float(np.linalg.norm(d))
     return float(np.degrees(np.arcsin(np.clip(d[1] / r, -1.0, 1.0)))) if r > 0 else 0.0
 
 
-def _sustained_drag(dy: float, steps: int, failures: list[str], tag: str) -> None:
+def _sweep(dx: float, dy: float, steps: int) -> dict:
+    """Drive the real drag handler ``steps`` times and gather continuity metrics."""
     s, cam = _make_harness()
+    off0 = _offset(cam)
+    r0 = float(np.linalg.norm(off0))
+    prev_up = np.asarray(cam.GetViewUp(), float)
+    max_elev, min_elev = -1e9, 1e9
+    min_up_dot, max_up_step_deg = 1.0, 0.0
     min_vy = 1.0
     for _ in range(steps):
-        s._rotate_camera_fixed_drag(0.0, dy)
-        min_vy = min(min_vy, abs(cam.GetViewUp()[1]))
-    elev = _cam_elev(cam)
-    # No flip: world +Y stays the up-axis (its y-component never collapses).
-    if min_vy < 0.9:
-        failures.append(f"{tag}: view-up flipped (min |view_up.y|={min_vy:.3f}) -- the assembly flip is back")
-    # Elevation clamped just short of the pole/swap zone.
-    if abs(elev) > _ELEV_LIMIT + 0.5:
-        failures.append(f"{tag}: elevation {elev:.1f} exceeded the {_ELEV_LIMIT} deg clamp")
-    return elev, min_vy
+        s._rotate_camera_fixed_drag(dx, dy)
+        e = _cam_elev(cam)
+        max_elev, min_elev = max(max_elev, e), min(min_elev, e)
+        up = np.asarray(cam.GetViewUp(), float)
+        min_vy = min(min_vy, float(up[1]))
+        denom = (float(np.linalg.norm(prev_up)) * float(np.linalg.norm(up))) or 1.0
+        d = float(np.dot(prev_up, up) / denom)
+        min_up_dot = min(min_up_dot, d)
+        max_up_step_deg = max(max_up_step_deg, float(np.degrees(np.arccos(np.clip(d, -1.0, 1.0)))))
+        prev_up = up
+    offN = _offset(cam)
+    return dict(
+        max_elev=max_elev, min_elev=min_elev, min_up_dot=min_up_dot,
+        max_up_step_deg=max_up_step_deg, min_vy=min_vy, r0=r0,
+        rN=float(np.linalg.norm(offN)),
+        azimuth_moved=float(np.linalg.norm((offN - off0)[[0, 2]])),
+    )
+
+
+def run_checks() -> tuple[bool, list[str]]:
+    """Return ``(passed, notes)``; notes are failures on fail, else the summary."""
+    failures: list[str] = []
+    steps = 220
+
+    up = _sweep(0.0, 8.0, steps)     # sustained drag-up  (~0.8 deg/step, 176 deg swing)
+    down = _sweep(0.0, -8.0, steps)  # sustained drag-down
+
+    for tag, m in (("drag-up", up), ("drag-down", down)):
+        pole_elev = m["max_elev"] if tag == "drag-up" else m["min_elev"]
+        # (1) orbits indefinitely: sweeps PAST the old 79 deg clamp, up to the pole.
+        if abs(pole_elev) < 85.0:
+            failures.append(
+                f"{tag}: elevation only reached {pole_elev:.1f} deg -- the old ~79 deg clamp is still stopping the orbit"
+            )
+        # (2) goes OVER the pole (up vector inverts): a genuine indefinite trackball.
+        if m["min_vy"] > -0.05:
+            failures.append(
+                f"{tag}: never went over the pole (min view_up.y={m['min_vy']:.3f}) -- orbit is not indefinite"
+            )
+        # (3) NO FLIP: the view-up stays CONTINUOUS (no discrete ~90 deg jump).
+        if m["min_up_dot"] < 0.99:
+            failures.append(
+                f"{tag}: view-up jumped discontinuously (min step dot={m['min_up_dot']:.4f}) -- the assembly flip is back"
+            )
+        if m["max_up_step_deg"] > 2.0:
+            failures.append(
+                f"{tag}: view-up step change {m['max_up_step_deg']:.2f} deg (a flip is a ~90 deg jump)"
+            )
+        # (4) rigid rotation: the orbit radius is preserved.
+        if abs(m["rN"] - m["r0"]) > 1e-4:
+            failures.append(
+                f"{tag}: orbit radius drifted {m['r0']:.3f}->{m['rN']:.3f} mm (not a rigid rotation)"
+            )
+
+    # (5) below the pole, pose-IDENTICAL to the old VTK Azimuth/Elevation path.
+    s, cam = _make_harness()
+    pos0, foc0, up0 = cam.GetPosition(), cam.GetFocalPoint(), cam.GetViewUp()
+    s._rotate_camera_fixed_drag(10.0, 6.0)  # a moderate below-pole drag
+    new_pos = np.asarray(cam.GetPosition(), float)
+    ref = vtk.vtkCamera()
+    ref.SetPosition(*pos0)
+    ref.SetFocalPoint(*foc0)
+    ref.SetViewUp(*up0)
+    ref.Azimuth(-10.0 * _DPP)
+    ref.Elevation(6.0 * _DPP)
+    pose_resid = float(np.linalg.norm(new_pos - np.asarray(ref.GetPosition(), float)))
+    if pose_resid > 1e-3:
+        failures.append(
+            f"below-pole drag diverged from VTK Azimuth/Elevation (pos_resid={pose_resid:.5f} mm) -- feel changed"
+        )
+
+    # (6) a pure horizontal drag orbits in azimuth without tilting or flipping.
+    horiz = _sweep(8.0, 0.0, 30)
+    if horiz["azimuth_moved"] < 1.0:
+        failures.append("horizontal drag did not orbit the camera (azimuth dead)")
+    if abs(horiz["max_elev"] - horiz["min_elev"]) > 1.0:
+        failures.append("horizontal drag leaked into elevation (cross-coupled tilt)")
+    if horiz["min_up_dot"] < 0.99:
+        failures.append("horizontal drag flipped/jumped the view-up")
+
+    if failures:
+        return False, failures
+    notes = [
+        f"sustained drag-up reaches elev {up['max_elev']:.1f} deg, over the top "
+        f"(min view_up.y={up['min_vy']:.3f}), continuous (min step dot={up['min_up_dot']:.4f})",
+        f"sustained drag-down reaches elev {down['min_elev']:.1f} deg, over the pole "
+        f"(min view_up.y={down['min_vy']:.3f}), continuous (min step dot={down['min_up_dot']:.4f})",
+        f"max step-to-step view-up change {max(up['max_up_step_deg'], down['max_up_step_deg']):.3f} deg "
+        f"(never a ~90 deg flip); radius preserved to <1e-4 mm",
+        f"below the pole pose-identical to VTK Azimuth/Elevation (pos_resid={pose_resid:.2e} mm)",
+        "horizontal drag orbits in azimuth without tilt or flip",
+    ]
+    return True, notes
 
 
 def main() -> int:
-    failures: list[str] = []
-
-    up_elev, up_vy = _sustained_drag(8.0, 120, failures, "drag-up")
-    down_elev, down_vy = _sustained_drag(-8.0, 120, failures, "drag-down")
-
-    # Below the clamp a normal drag still tilts (not frozen) and stays flip-free.
-    s, cam = _make_harness()
-    e0 = _cam_elev(cam)
-    s._rotate_camera_fixed_drag(0.0, 50.0)  # ~5 deg tilt, well below the limit
-    e1 = _cam_elev(cam)
-    if not (2.0 < (e1 - e0) < 8.0):
-        failures.append(f"below-limit tilt did not track the drag (delta={e1 - e0:.2f} deg, expected ~5)")
-    if abs(cam.GetViewUp()[1]) < 0.9:
-        failures.append("below-limit tilt flipped the view-up")
-
-    # A pure horizontal drag orbits (azimuth) without tilting or flipping.
-    s, cam = _make_harness()
-    az_before = np.asarray(cam.GetPosition(), float) - np.asarray(cam.GetFocalPoint(), float)
-    e_before = _cam_elev(cam)
-    for _ in range(30):
-        s._rotate_camera_fixed_drag(8.0, 0.0)
-    az_after = np.asarray(cam.GetPosition(), float) - np.asarray(cam.GetFocalPoint(), float)
-    moved = float(np.linalg.norm(az_after[[0, 2]] - az_before[[0, 2]]))
-    if moved < 1.0:
-        failures.append("horizontal drag did not orbit the camera (azimuth dead)")
-    if abs(_cam_elev(cam) - e_before) > 1.0:
-        failures.append("horizontal drag leaked into elevation (cross-coupled tilt)")
-    if abs(cam.GetViewUp()[1]) < 0.9:
-        failures.append("horizontal drag flipped the view-up")
-
-    if failures:
-        print("FAIL bugs/scene-flip drag-orbit:")
-        for f in failures:
-            print("  -", f)
+    passed, notes = run_checks()
+    if not passed:
+        print("FAIL bugs/0206 trackball drag-orbit through the pole:")
+        for note in notes:
+            print("  -", note)
         return 1
-    print("PASS bugs/scene-flip drag-orbit clamp:")
-    print(f"  - sustained drag-up clamps at elev={up_elev:.1f} deg, view-up stays +Y (|vy|>={up_vy:.3f})")
-    print(f"  - sustained drag-down clamps at elev={down_elev:.1f} deg, view-up stays +Y (|vy|>={down_vy:.3f})")
-    print("  - below the clamp the tilt still tracks the drag; horizontal drag orbits without tilt or flip")
+    print("PASS bugs/0206 trackball drag-orbit (continuous, through the pole, no flip):")
+    for note in notes:
+        print("  -", note)
     return 0
 
 

@@ -4833,26 +4833,25 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.status_var.set(f"Slide along axis committed: {label} moved {applied_delta:+.6g} mm along Z.")
 
     def _rotate_camera_fixed_drag(self, dx: int | float, dy: int | float) -> None:
-        """CAD-style orbit: always rotate around world up for Azimuth.
+        """Trackball orbit: a vertical drag carries continuously THROUGH the pole.
 
-        The Azimuth axis is forced to world up ``(0, 1, 0)`` before every
-        rotation, so a left-drag *always* rotates around the world Y
-        axis regardless of accumulated state. VTK's stock orbit relies
-        on ``OrthogonalizeViewUp`` to keep view-up perpendicular to
-        view-direction, but that normalisation can flip sign near
-        degenerate angles -- and once view-up flips, the next Azimuth
-        rotates the camera in the opposite direction, which is the
-        "rotates one way then reverses half-way through the drag"
-        symptom reported in step1-5.png.
+        The camera offset (pos - focal) AND the view-up vector are rotated by
+        the SAME Rodrigues increments -- azimuth about world +Y (turntable
+        horizontal feel), elevation about the screen-right axis
+        ``cross(view_dir, view_up)``. Because the whole camera frame rotates
+        rigidly, the view-up is carried smoothly over the top: there is no
+        discrete +Y -> +Z view-up swap, hence no mid-drag 90 deg flip (the
+        symptom of flag 20260701_201224), and the old +/-79 deg clamp is gone
+        -- a sustained vertical drag now orbits indefinitely (flag
+        20260702_152020, issue 2). Going over the top intentionally inverts the
+        horizontal sense (a true trackball), matching how a physical ball rolls.
 
-        Locking view-up to world up before each rotation also matches
-        the way most CAD viewers feel: horizontal drag orbits around the
-        vertical axis, vertical drag tilts up/down, and the two never
-        cross-couple into a roll. Camera position rotates monotonically
-        with the cumulative drag direction.
+        "Grab the scene" sense: drag right -> scene rotates right under the
+        cursor (azimuth negated), drag up -> scene tilts up toward the cursor
+        (elevation sign -1). Below the pole this is pose-identical to the old
+        VTK Azimuth/Elevation path; see bugs/0206.
 
-        Rate is 0.10 deg / px so a typical 100 px drag is a gentle
-        ~10 deg camera move.
+        Rate is 0.10 deg / px so a typical 100 px drag is a gentle ~10 deg move.
         """
         if self._renderer is None:
             return
@@ -4866,113 +4865,82 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return
         if abs(dx_f) < 1e-12 and abs(dy_f) < 1e-12:
             return
-        degrees_per_pixel = 0.10
         try:
-            # Choose a view-up that's PERPENDICULAR to the current view
-            # direction. The previous code hardcoded SetViewUp(0,1,0)
-            # which is degenerate when the camera looks straight down
-            # +/-Y -- the XZ orthographic view. VTK then warns
-            # "Resetting view-up since view plane normal is parallel"
-            # and the canvas blanks out.
-            #
-            # Algorithm: prefer world +Y; if it's parallel to the
-            # view direction, fall back to +X; if THAT'S parallel,
-            # fall back to +Z. One of the three is always orthogonal
-            # to any view direction.
-            view_up = self._safe_view_up_for_camera(camera)
-            camera.SetViewUp(*view_up)
-            # "Grab the scene" drag direction (reversed from the old
-            # camera-orbit convention you found unintuitive). Drag
-            # right -> scene rotates right under the cursor; drag up
-            # -> scene tilts up toward the cursor. Achieved by
-            # NEGATING the azimuth and dropping the negation on the
-            # elevation -- both flips together so the rotation feels
-            # like dragging the actual body, not orbiting the camera
-            # around it.
-            camera.Azimuth(-dx_f * degrees_per_pixel)
-            # Clamp the vertical tilt just short of the pole. Past ~80 deg
-            # elevation the view direction comes within 15 deg of world +Y, so
-            # `_safe_view_up_for_camera` stops re-picking +Y and discretely
-            # swaps the view-up to +Z -- a 90 deg reorient that reads as the
-            # whole assembly suddenly flipping mid-drag (flag 20260701_201224).
-            # Stopping at 79 deg keeps +Y a stable, valid up so the swap (and
-            # the flip) can never happen; use the Top preset / nav-cube for an
-            # exact top-down view.
-            elevation_limit_deg = 79.0
-            requested_elev = dy_f * degrees_per_pixel
-            try:
-                cam_pos = np.asarray(camera.GetPosition(), dtype=float).reshape(3)
-                focal = np.asarray(camera.GetFocalPoint(), dtype=float).reshape(3)
-                offset = cam_pos - focal
-                radius = float(np.linalg.norm(offset))
-                if radius > 1e-9:
-                    current_elev = float(np.degrees(np.arcsin(np.clip(offset[1] / radius, -1.0, 1.0))))
-                    new_elev = current_elev + requested_elev
-                    if new_elev > elevation_limit_deg:
-                        requested_elev = elevation_limit_deg - current_elev
-                    elif new_elev < -elevation_limit_deg:
-                        requested_elev = -elevation_limit_deg - current_elev
-            except Exception:
-                requested_elev = dy_f * degrees_per_pixel
-            camera.Elevation(requested_elev)
-            # Re-lock view-up after Elevation tilts view-direction so
-            # the NEXT tick's Azimuth rotates around a stable axis.
-            camera.SetViewUp(*self._safe_view_up_for_camera(camera))
+            new_pos, new_up = self._orbit_camera_pose(
+                camera.GetPosition(),
+                camera.GetFocalPoint(),
+                camera.GetViewUp(),
+                dx_f,
+                dy_f,
+            )
+            camera.SetPosition(*new_pos)
+            # Carry the view-up rigidly -- do NOT OrthogonalizeViewUp here. The
+            # rigid rotation preserves the up<->view-dir angle, so the up never
+            # aligns with the view direction (VTK orthogonalises it afresh at
+            # render, giving a continuous rendered orientation). Orthogonalising
+            # the stored up would instead snap it whenever the incoming up was
+            # not perpendicular -- a one-off jump that reads as a flip.
+            camera.SetViewUp(*new_up)
             self._reset_camera_clipping_range_for_scene()
             self.render()
         except Exception as exc:
             self.editor.append_debug(f"3D fixed-drag rotation failed: {exc}")
 
     @staticmethod
-    def _safe_view_up_for_camera(camera) -> tuple[float, float, float]:
-        """Return a world axis that's safe to use as view-up.
+    def _rodrigues_rotate(vector, axis, theta):
+        """Rotate ``vector`` about ``axis`` (auto-normalised) by ``theta`` radians."""
+        v = np.asarray(vector, dtype=float)
+        k = np.asarray(axis, dtype=float)
+        k_norm = float(np.linalg.norm(k))
+        if k_norm < 1e-12:
+            return v
+        k = k / k_norm
+        c = float(np.cos(theta))
+        s = float(np.sin(theta))
+        return v * c + np.cross(k, v) * s + k * float(np.dot(k, v)) * (1.0 - c)
 
-        Strategy: keep the camera's CURRENT view-up if it's still
-        safe (not near-parallel to the view direction). Only fall
-        back to a fresh axis when the existing up is truly
-        degenerate. This avoids the camera "jumping" mid-drag when
-        a small rotation shifts the preferred axis (previously +Z
-        in XZ view would flip back to +Y after a few degrees,
-        producing a discontinuous 90 deg reorient).
+    @staticmethod
+    def _orbit_camera_pose(position, focal_point, view_up, dx, dy, degrees_per_pixel=0.10):
+        """Trackball orbit step: return ``(new_position, new_view_up)`` float3s.
 
-        When forced to pick fresh: prefer +Y (the inspector's
-        global convention), then +Z, then +X. One of the three is
-        always orthogonal-ish to any view direction.
+        Rotates the camera offset (``position - focal_point``) and the view-up
+        rigidly by the same increments -- azimuth ``-dx*dpp`` about world +Y,
+        elevation ``-dy*dpp`` about the screen-right axis. Because both vectors
+        share the rotation, the frame stays orthonormal: the orbit radius and
+        the view-dir/view-up angle are preserved, and there is no degenerate
+        up to force a discrete reorient at the pole (so the motion is continuous
+        over the top). Pure: no VTK, no clamp, no snap -- see bugs/0206.
         """
-        try:
-            cam_pos = np.asarray(camera.GetPosition(), dtype=float).reshape(3)
-            focal = np.asarray(camera.GetFocalPoint(), dtype=float).reshape(3)
-            current_up = np.asarray(camera.GetViewUp(), dtype=float).reshape(3)
-        except Exception:
-            return (0.0, 1.0, 0.0)
-        view_dir = focal - cam_pos
-        norm = float(np.linalg.norm(view_dir))
-        if norm < 1e-9:
-            return (0.0, 1.0, 0.0)
-        view_dir = view_dir / norm
-        current_up_norm = float(np.linalg.norm(current_up))
-        # Stickiness threshold: keep the current view-up as long as
-        # it's at least 15 deg off the view direction (|cos| < 0.966).
-        # Switching threshold (below) uses a looser 10 deg gate so
-        # we don't oscillate at the boundary.
-        if current_up_norm > 1e-9:
-            normalised_current = current_up / current_up_norm
-            if abs(float(np.dot(normalised_current, view_dir))) < 0.966:
-                return (
-                    float(normalised_current[0]),
-                    float(normalised_current[1]),
-                    float(normalised_current[2]),
-                )
-        # Current up is degenerate or missing -- pick fresh.
-        for candidate in (
-            (0.0, 1.0, 0.0),
-            (0.0, 0.0, 1.0),
-            (1.0, 0.0, 0.0),
-        ):
-            up = np.asarray(candidate, dtype=float)
-            if abs(float(np.dot(up, view_dir))) < 0.985:
-                return (float(up[0]), float(up[1]), float(up[2]))
-        return (0.0, 1.0, 0.0)
+        pos = np.asarray(position, dtype=float).reshape(3)
+        foc = np.asarray(focal_point, dtype=float).reshape(3)
+        up = np.asarray(view_up, dtype=float).reshape(3)
+        offset = pos - foc
+        radius = float(np.linalg.norm(offset))
+        up_norm = float(np.linalg.norm(up))
+        if radius < 1e-9 or up_norm < 1e-9:
+            return (
+                (float(pos[0]), float(pos[1]), float(pos[2])),
+                (float(up[0]), float(up[1]), float(up[2])),
+            )
+        up = up / up_norm
+        world_up = np.array([0.0, 1.0, 0.0])
+        az = np.radians(-float(dx) * degrees_per_pixel)
+        offset = Kraken3DInspector._rodrigues_rotate(offset, world_up, az)
+        up = Kraken3DInspector._rodrigues_rotate(up, world_up, az)
+        view_dir = -offset / np.linalg.norm(offset)
+        right = np.cross(view_dir, up)
+        right_norm = float(np.linalg.norm(right))
+        if right_norm > 1e-9:
+            right = right / right_norm
+            el = np.radians(-1.0 * float(dy) * degrees_per_pixel)
+            offset = Kraken3DInspector._rodrigues_rotate(offset, right, el)
+            up = Kraken3DInspector._rodrigues_rotate(up, right, el)
+        new_pos = foc + offset
+        up = up / (float(np.linalg.norm(up)) or 1.0)
+        return (
+            (float(new_pos[0]), float(new_pos[1]), float(new_pos[2])),
+            (float(up[0]), float(up[1]), float(up[2])),
+        )
 
     def _pan_camera_fixed_drag(self, dx: int | float, dy: int | float) -> None:
         """Pan the camera laterally in its current view plane."""
