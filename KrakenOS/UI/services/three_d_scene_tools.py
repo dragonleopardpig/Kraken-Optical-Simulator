@@ -644,20 +644,14 @@ class ThreeDSceneToolsMixin:
         # trace when the equivalent or the fold transform is unavailable, or for a CHAIN of
         # folds -- the bend after the bundle is scoped to a SINGLE fold (matching the
         # bugs/0192 correction), so a chain keeps the native sequential-Mirror fold.
-        single_fold = (
-            sum(
-                1
-                for original, folded in zip(self.rows, folded_trace_rows)
-                if str(getattr(folded, "surface", "")) == "Mirror"
-                and str(getattr(original, "surface", "")) != "Mirror"
-            )
-            == 1
-        )
-        equivalent_rows = (
-            self._folded_optical_solid_straight_equivalent_rows()
-            if single_fold
-            else None
-        )
+        # bugs/0208: the flat-plate equivalent + display REFLECTION generalises to an
+        # ARBITRARY chain of promoted-mirror folds. `_folded_optical_solid_straight_equivalent_rows`
+        # already flattens EVERY mirror (row count + air gaps preserved), and
+        # `_reflect_straight_equivalent_display_rays` reflects each straight ray about every
+        # mirror plane in reverse station order (the reverse-order composition R1(R2(...Rk(v)))
+        # of per-mirror isometries). So the old single-fold gate is dropped: use the flat-plate
+        # equivalent whenever the scene has any rotating fold (equivalent_rows is not None).
+        equivalent_rows = self._folded_optical_solid_straight_equivalent_rows()
         fold_transform = (
             self._optical_axis_fold_world_transform_for_row(self._image_plane_row_index())
             if equivalent_rows is not None
@@ -1237,8 +1231,18 @@ class ThreeDSceneToolsMixin:
         CENTRE ``station_z + desp_z``, NOT the front datum). The plane MUST be the real
         drawn hypotenuse: reflecting about the front datum instead lands the folded outgoing
         arm ``desp_z`` (12.5 mm on AZ85) off the drawn detector Z -- the
-        flag_20260702_152020_279 "obvious offset from optical axis" regression. Scoped to a
-        SINGLE promoted-mirror fold; an arbitrary chain keeps the sequential-Mirror trace."""
+        flag_20260702_152020_279 "obvious offset from optical axis" regression.
+
+        bugs/0208: GENERAL for an arbitrary CHAIN of promoted-mirror folds -- each straight ray
+        is reflected about every mirror's plane in REVERSE station order (deepest/last mirror
+        first, first mirror last). Reflecting about the last mirror's straight plane folds the
+        deepest leg as if only that mirror existed; the next reflection about the earlier
+        mirror's plane carries that folded leg onto the running branch, and so on. The algebra:
+        a leg-k vertex's folded position is R1(R2(...Rk(v))) with Ri the reflection about mirror
+        i's straight plane, so applying the primitive Rk, ..., R1 in that order lands every leg
+        on its real branch. Each Ri is an isometry (incoming cone + every fold's focus
+        preserved), and a vertex upstream of a mirror's plane is left untouched by that
+        reflection, so the legs compose cleanly."""
         if scene_bundle is None:
             return
         ray_paths = getattr(scene_bundle, "ray_paths", None)
@@ -1249,26 +1253,39 @@ class ThreeDSceneToolsMixin:
             _folded, records = fold_promoted_mirror_specs_to_sequential(specs)
         except Exception:
             return
-        if len(records) != 1:
+        if not records:
             return
-        record = records[0]
-        try:
-            row_index = int(record.get("row_index", -1))
-            face_normal = np.asarray(record.get("face_normal"), dtype=float).reshape(-1)[:3]
-            center = promoted_mirror_world_center(specs, row_index)
-        except Exception:
-            return
-        if center is None or face_normal.size < 3 or not (0 <= row_index < len(self.rows)):
-            return
-        plane_point = np.asarray(center, dtype=float).reshape(-1)[:3]
+        # Per-mirror straight reflection planes, sorted by station DESCENDING so the deepest
+        # (last) mirror is reflected first -- the reverse-order composition above.
+        planes: list[tuple[int, np.ndarray, np.ndarray]] = []
+        for record in records:
+            try:
+                row_index = int(record.get("row_index", -1))
+                face_normal = np.asarray(record.get("face_normal"), dtype=float).reshape(-1)[:3]
+                center = promoted_mirror_world_center(specs, row_index)
+            except Exception:
+                return
+            if center is None or face_normal.size < 3 or not (0 <= row_index < len(self.rows)):
+                return
+            planes.append((row_index, np.asarray(center, dtype=float).reshape(-1)[:3], face_normal))
+        planes.sort(key=lambda plane: plane[0], reverse=True)
         for path in ray_paths:
             points = getattr(path, "points_world", None)
             if points is None:
                 continue
-            reflected = reflect_straight_equivalent_ray_points(points, plane_point, face_normal)
-            if reflected is None:
+            pts = np.asarray(points, dtype=float)
+            folded_any = False
+            for _ri, plane_point, face_normal in planes:
+                reflected = reflect_straight_equivalent_ray_points(pts, plane_point, face_normal)
+                if reflected is None:
+                    # this ray never crosses this mirror's plane (e.g. clipped upstream of it) --
+                    # leave it for the remaining (earlier-mirror) reflections.
+                    continue
+                pts = reflected
+                folded_any = True
+            if not folded_any:
                 continue
-            path.points_world = reflected
+            path.points_world = pts
             try:
                 path.display_geometry_source = "folded_straight_equivalent_reflected"
             except Exception:

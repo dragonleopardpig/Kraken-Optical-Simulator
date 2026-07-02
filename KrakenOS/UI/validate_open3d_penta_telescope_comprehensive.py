@@ -10109,6 +10109,44 @@ def phase_185_folded_rays_reach_detector(
     return result
 
 
+def phase_186_chain_fold_display_rays(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Adding a SECOND RA-mirror between lens and camera used to drop the display off the
+    cone-preserving reflection path: `_reflect_straight_equivalent_display_rays` bailed at
+    `len(records)!=1`, and the routing gate only fed the flat-plate equivalent for a single
+    fold -- so a chain fell back to the sequential-Mirror trace, whose leg-2 rays sit ~desp_z
+    off the drawn lenses (the 0207 gap resurfacing) and lose the incoming cone. bugs/0208
+    generalises BOTH: the routing uses the flat-plate equivalent for any rotating fold (penta
+    prisms produce no rotating-fold records so they are untouched), and the reflection reflects
+    each straight ray about EVERY mirror plane in REVERSE station order (the composition
+    R1(R2(...Rk(v))) of per-mirror isometries). `validate_open3d_ra_mirror_chain_fold` asserts,
+    on a 2-mirror AZ85 variant + the stock 1-mirror AZ85: general fold detection (2 vs 1
+    records), both take the reflection path, one ~90 deg kink per mirror, the rays coincide with
+    the drawn lens chain on the shared +X leg (rays == CAD, 0207 preserved through fold 2), the
+    incoming leg stays a 2D disk (cone, not fan), and the single fold is unchanged (focus on the
+    detector). NOTE: this covers the display RAYS; the second mirror's CAD cube placement + the
+    detector fold-direction (pose-override chaining) is a separate follow-up.
+    """
+    result = PhaseResult(
+        name="Phase 186: folded display rays fold through a chain of RA mirrors (0208)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_ra_mirror_chain_fold import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"chain-fold guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("chain-fold phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10340,6 +10378,7 @@ def main() -> int:
             phase_183_folded_incoming_cone,
             phase_184_trackball_orbit_through_pole,
             phase_185_folded_rays_reach_detector,
+            phase_186_chain_fold_display_rays,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
