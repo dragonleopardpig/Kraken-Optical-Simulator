@@ -10147,6 +10147,43 @@ def phase_186_chain_fold_display_rays(
     return result
 
 
+def phase_187_second_optical_overlay_survives_placement(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Importing a SECOND RA fold mirror of the SAME STEP file as an already-promoted mirror
+    used to "disappear after random placed" (flag flag_20260703_073100_231): the scene refresh
+    skips any overlay whose source FILE matches a promoted row
+    (`_step_overlay_matches_promoted_row` -> `continue`), a gate added to suppress the persisted
+    save/reload ghost (commit 95615f05). A LIVE re-import of the same part shares that file but
+    is a distinct instance the user is placing, so once the carry ended (drop) the refresh
+    collapsed it onto the promoted solid and it vanished (the recording shows `step_actor_counts`
+    losing `optical` between press and release while its pose survives). bugs/0210 flags a fresh
+    duplicate import as an independent live instance so the gate keeps drawing it; the flag is
+    runtime-only, so the reload ghost (never freshly imported) still matches by file and stays
+    suppressed. `validate_open3d_second_optical_overlay_survives_placement` asserts on the AZ85
+    scene: the reload ghost stays suppressed, the live re-import is flagged and keeps drawing,
+    clearing the flag reverts to suppression (non-vacuous), a non-duplicate import is inert,
+    decoration labels are never flagged, and the refresh draw loop consults the gate.
+    """
+    result = PhaseResult(
+        name="Phase 187: second same-part optical overlay survives placement (0210)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_second_optical_overlay_survives_placement import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"second-optical-overlay guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("second-optical-overlay phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10379,6 +10416,7 @@ def main() -> int:
             phase_184_trackball_orbit_through_pole,
             phase_185_folded_rays_reach_detector,
             phase_186_chain_fold_display_rays,
+            phase_187_second_optical_overlay_survives_placement,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -777,12 +777,43 @@ class ThreeDSceneToolsMixin:
                     keys.add(key)
         return keys
 
+    def _mark_step_overlay_independent_instance(self, label: str) -> None:
+        label = str(label or "").strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET:
+            return
+        labels = getattr(self, "_step_overlay_independent_instance_labels", None)
+        if not isinstance(labels, set):
+            labels = set()
+        labels.add(label)
+        self._step_overlay_independent_instance_labels = labels
+
+    def _clear_step_overlay_independent_instance(self, label: str) -> None:
+        label = str(label or "").strip().lower()
+        labels = getattr(self, "_step_overlay_independent_instance_labels", None)
+        if isinstance(labels, set):
+            labels.discard(label)
+
+    def _step_overlay_is_independent_instance(self, label: str) -> bool:
+        label = str(label or "").strip().lower()
+        labels = getattr(self, "_step_overlay_independent_instance_labels", None)
+        return isinstance(labels, set) and label in labels
+
     def _step_overlay_matches_promoted_row(
         self,
         label: str,
         promoted_source_keys: set[str] | None = None,
     ) -> bool:
-        source_path = self._step_path_for_label(str(label or "").strip().lower())
+        label = str(label or "").strip().lower()
+        # A live re-import of a part that is ALSO promoted elsewhere is a distinct
+        # instance the user is placing (e.g. a second RA fold mirror of the same
+        # STEP file): it shares the promoted row's source PATH but is not that
+        # row's leftover overlay, so it must keep drawing (bugs/0210). Only a
+        # freshly imported duplicate sets this runtime flag; the persisted
+        # save/reload ghost (same path, no live import) never sets it and so
+        # stays suppressed (commit 95615f05 "Suppress promoted STEP overlay ghosts").
+        if self._step_overlay_is_independent_instance(label):
+            return False
+        source_path = self._step_path_for_label(label)
         key = self._step_source_key(source_path)
         if not key:
             return False

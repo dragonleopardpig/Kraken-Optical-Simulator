@@ -163,6 +163,15 @@ class StepOverlayImportService:
         self._preserve_unpromoted_step_overlay("optical")
         self._begin_history_capture()
         self.imported_optical_step_path = path
+        # bugs/0210: a fresh import that duplicates an already-promoted part
+        # (e.g. a second RA fold mirror of the same STEP) is a distinct live
+        # instance, not the promoted row's leftover overlay -- flag it so the
+        # scene refresh keeps drawing it instead of collapsing it onto the
+        # promoted solid and making it "disappear after placed".
+        if self._step_source_key(path) in self._promoted_step_source_keys_for_rows():
+            self._mark_step_overlay_independent_instance("optical")
+        else:
+            self._clear_step_overlay_independent_instance("optical")
         self.optical_step_rotation_x_deg = 0.0
         self.optical_step_rotation_y_deg = 0.0
         self.optical_step_rotation_z_deg = 0.0
@@ -324,6 +333,7 @@ class StepOverlayImportService:
         if label == "lens":
             self.lens_step_largest_component_only = True
         self._clear_step_overlay_axis_anchor(label)
+        self._clear_step_overlay_independent_instance(label)  # bugs/0210
         self._open3d_trace_refresh_service().clear_step_overlay_physics_preview(label)
         if self._selected_step_label == label:
             self._selected_step_label = None

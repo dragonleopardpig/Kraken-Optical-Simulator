@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-02 (phase 186 chain-fold display rays for bugs/0208 -- generalise the folded-mirror DISPLAY RAYS from a single fold to an arbitrary chain: routing now feeds the flat-plate equivalent for any rotating fold (was gated to single_fold) and _reflect_straight_equivalent_display_rays reflects each straight ray about EVERY mirror plane in reverse station order R1(R2(...Rk(v))). Verified standalone: 2-mirror AZ85 variant folds at both mirrors (2 records, reflection path, 2 kinks), rays coincide with the drawn lens chain on the +X leg (0.000mm, 0207 preserved through fold 2), incoming leg stays a cone (s2 29.2); single-fold AZ85 unchanged (focus on detector +0.000); guard FAILs on pre-fix (chain fell back, strays 12.5mm). PENTA-SAFE: the penta cascade produces 0 rotating-fold records + None straight-equivalent so it never enters the changed path -- confirmed penta_cascade_prism_by_prism PASSES under Xvfb. Full marathon still segfaults so 0-185 carried forward. NOTE: covers display RAYS only; the 2nd mirror's CAD cube placement + detector fold-direction (pose-override chaining, shared w/ penta) is a follow-up.) PRIOR: phase 185 rays-reach-detector (0207); 184 trackball orbit (0206); 183 incoming cone (0205).",
+  "generated_at": "2026-07-03 (phase 187 second same-part optical overlay survives placement for bugs/0210 -- importing a SECOND RA fold mirror of the SAME STEP file as an already-promoted mirror used to disappear after being placed: the scene refresh skips any overlay whose source FILE matches a promoted row (_step_overlay_matches_promoted_row -> continue, a gate added in 95615f05 to suppress the persisted save/reload ghost), and a live re-import of the same part false-positived that gate so on drop the refresh collapsed it onto the promoted solid. Fix flags a fresh duplicate import as an independent live instance so the gate keeps drawing it; the flag is runtime-only so the reload ghost stays suppressed (95615f05 contract preserved, validate_open3d_saved_step_native_trace still passes). Guard validate_open3d_second_optical_overlay_survives_placement is non-vacuous: clearing the flag reverts to suppression. PENTA-SAFE: the gate/flag are STEP-overlay label machinery the penta cascade does not exercise; standalone guard + saved_step_native_trace PASS. Full marathon still segfaults so 0-186 carried forward.) PRIOR: phase 186 chain-fold display rays for bugs/0208 -- generalise the folded-mirror DISPLAY RAYS from a single fold to an arbitrary chain: routing now feeds the flat-plate equivalent for any rotating fold (was gated to single_fold) and _reflect_straight_equivalent_display_rays reflects each straight ray about EVERY mirror plane in reverse station order R1(R2(...Rk(v))). Verified standalone: 2-mirror AZ85 variant folds at both mirrors (2 records, reflection path, 2 kinks), rays coincide with the drawn lens chain on the +X leg (0.000mm, 0207 preserved through fold 2), incoming leg stays a cone (s2 29.2); single-fold AZ85 unchanged (focus on detector +0.000); guard FAILs on pre-fix (chain fell back, strays 12.5mm). PENTA-SAFE: the penta cascade produces 0 rotating-fold records + None straight-equivalent so it never enters the changed path -- confirmed penta_cascade_prism_by_prism PASSES under Xvfb. Full marathon still segfaults so 0-185 carried forward. NOTE: covers display RAYS only; the 2nd mirror's CAD cube placement + detector fold-direction (pose-override chaining, shared w/ penta) is a follow-up.) PRIOR: phase 185 rays-reach-detector (0207); 184 trackball orbit (0206); 183 incoming cone (0205).",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -188,7 +188,8 @@
     "183": "pass",
     "184": "pass",
     "185": "pass",
-    "186": "pass"
+    "186": "pass",
+    "187": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -377,6 +378,7 @@
     "183": "folded RA-mirror incoming leg is a preserved cone, not a flat fan (0205)",
     "184": "trackball scene-drag orbits continuously through the pole, no flip (0206)",
     "185": "folded RA-mirror rays reach the drawn image plane / detector (0207)",
-    "186": "folded display rays fold through a chain of RA mirrors (0208)"
+    "186": "folded display rays fold through a chain of RA mirrors (0208)",
+    "187": "second same-part optical overlay survives placement, does not disappear (0210)"
   }
 }
