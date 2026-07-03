@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-03 (phase 190 second promoted mirror same-part Mirror carry-over for bugs/0214 -- the 0213 display fold needs a function=='Mirror' face, but the user's real session promoted the 2nd RA mirror with ZERO right-clicks so it had NONE. A clean promote auto-roles every face Transmit/Port and select_optical_solid_output_face then picks the +Z straight-through face (0084) as the output port, seating the detector/image UP (+Z) on the wrong side (flag_20260703_122209_873: image z 83..123 above the placed mirror centre z=70.6 = the flagged 'image plane and detector wrong direction'). Fix: StepOverlayPromotionService._carry_over_same_part_mirror_face, called at the end of promote_imported_step_to_optical_solid_row, inherits the authored Mirror face of an IDENTICAL part already in the scene (matched by resolved source STEP path + face id + an area cross-check) via the standard assign_optical_solid_face_function path, so re-importing the same mirror folds DOWN with no manual click. Strictly scoped: a promoted lens/prism (no mirror donor) is never turned into a reflector, a user-authored row keeps its own function, and a coincidental face-id collision across DIFFERENT parts is rejected by the area check. Guard validate_open3d_second_mirror_same_part_mirror_carryover (10/10, display-free): a clean AZ85 promote auto-carries S001/F002 -> fold normal (-0.707,0,-0.707), the detector seats DOWN at z=-62.05, the free-placed display ray reflects +X->-Z; a causal strip-to-UP contrast re-seats the detector at z=123.098 (exactly the flagged bug); plus 5 scoping cases (same-part positive, different-part, lens, already-authored, area-collision) and a wired-into-promote check. Full marathon still segfaults on llvmpipe so 0-189 carried forward. Prior: phase 189 second promoted mirror orientation-driven fold (0213); phase 188 pinned-to-placed-pose (0212); phase 187 second overlay survives placement (0210).)",
+  "generated_at": "2026-07-03 (phase 191 second-mirror incoming optical-axis placement for bugs/0215 -- flag_20260703_150248 'the optical axis is away from the optical components'. On the two-mirror AZ85 fold, _folded_axis_incoming_fold_point_z returned min(fold_branch_zs). With ONE mirror every folded row shares Z=+71.9, but a SECOND promoted mirror re-folds the tail so the twice-folded detector row lands at Z=-62 (0214 DOWN seat); min then picked -62 -- BELOW the object at Z=0 -- and clamped the incoming +Z guide there, drawing the whole axis ~134mm below the components at Z=+72. Fix: return fold_branch_zs[0] (the FIRST fold in optical/row order, the fold the incoming +Z axis actually meets before any downstream re-fold). Single-fold scenes have one constant Z so [0]==min and their guides stay byte-identical. Guard validate_open3d_second_mirror_incoming_axis_placement (5/5, display-free): two-mirror incoming fold point is the first (+71.9, near mirror) fold, a causal contrast that the old min was the negative detector Z (~-62, dragging the guide ~134mm below), the drawn axis:global far end reaches up to +76.9, the single-mirror scene is byte-identical, and the fix is wired (returns [0], not min). NOTE the 2nd/3rd axis segments (middle mirror-1->mirror-2, outgoing mirror-2->detector) remain deferred -- the headless chief ray terminates before mirror-2 (entangled with the two-mirror defocus bug). Full marathon still segfaults on llvmpipe so 0-190 carried forward. Prior: phase 190 second promoted mirror same-part Mirror carry-over (0214); phase 189 orientation-driven fold (0213).)",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -192,7 +192,8 @@
     "187": "pass",
     "188": "pass",
     "189": "pass",
-    "190": "pass"
+    "190": "pass",
+    "191": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -385,6 +386,7 @@
     "187": "second same-part optical overlay survives placement, does not disappear (0210)",
     "188": "second promoted mirror pinned to its placed pose, not swept onto the fold leg (0212)",
     "189": "second promoted mirror orientation-driven fold (0213)",
-    "190": "second promoted mirror same-part Mirror carry-over (0214)"
+    "190": "second promoted mirror same-part Mirror carry-over (0214)",
+    "191": "second-mirror incoming optical-axis placement (0215)"
   }
 }

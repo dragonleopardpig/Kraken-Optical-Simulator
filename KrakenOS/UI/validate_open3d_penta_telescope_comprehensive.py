@@ -10294,6 +10294,39 @@ def phase_190_second_mirror_same_part_mirror_carryover(
     return result
 
 
+def phase_191_second_mirror_incoming_axis_placement(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """On a TWO-mirror fold the incoming +Z optical-axis guide must clamp at the FIRST fold (the near
+    mirror), not be flung far below the scene (bugs/0215, flag_20260703_150248 "the optical axis is away
+    from the optical components"). `_folded_axis_incoming_fold_point_z` recovers the fold-plane Z per row;
+    with one mirror every folded row shares Z=+71.9, but a SECOND promoted mirror re-folds the tail so the
+    twice-folded detector row lands at Z=-62 (0214's DOWN seat). The old code returned `min(fold_branch_zs)`
+    = -62 -- BELOW the object -- and clamped the incoming guide there. Fix returns `fold_branch_zs[0]` (the
+    first fold in optical/row order). `validate_open3d_second_mirror_incoming_axis_placement` asserts the
+    two-mirror incoming fold point is the first (positive, near-mirror) fold with a causal contrast that the
+    old `min` was the negative detector Z, the drawn `axis:global` guide now reaches up to the components, a
+    single-mirror scene is byte-identical (all fold Zs equal so first == min), and the fix is wired.
+    """
+    result = PhaseResult(
+        name="Phase 191: second-mirror incoming optical-axis placement (0215)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_second_mirror_incoming_axis_placement import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"incoming-axis-placement guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("incoming-axis-placement phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10530,6 +10563,7 @@ def main() -> int:
             phase_188_second_mirror_pinned_to_placed_pose,
             phase_189_second_mirror_orientation_driven_fold,
             phase_190_second_mirror_same_part_mirror_carryover,
+            phase_191_second_mirror_incoming_axis_placement,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

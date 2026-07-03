@@ -9082,8 +9082,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         +X branch (bugs/0185); every folded row's world pose then sits at the SAME
         constant Z -- the fold plane / mirror vertex (e.g. AZ85 RA-mirror: Z=71.9).
         Applying each folded row's rigid fold transform to its straight +Z anchor
-        recovers that Z. Returns the nearest such Z, or ``None`` for an unfolded
-        scene (no row carries a fold override) so the +Z guide is left byte-identical.
+        recovers that Z. Returns the FIRST fold's Z (the fold the incoming +Z axis
+        actually reaches first, in optical order), or ``None`` for an unfolded scene
+        (no row carries a fold override) so the +Z guide is left byte-identical.
+
+        bugs/0215: a SECOND promoted mirror folds the tail AGAIN, so the detector row
+        lands at a different Z than the first fold plane (AZ85 two-mirror: fold-1 rows
+        at Z=+71.9, the twice-folded detector at Z=-62). ``min`` then picked the deepest
+        (-62) -- BELOW the object -- and clamped the incoming +Z guide there, drawing it
+        far from the components (flag_20260703_150248). The incoming axis can only reach
+        the FIRST fold, so key off row order, not the extremum.
         """
         editor = getattr(self, "editor", None)
         fold_fn = getattr(editor, "_optical_axis_fold_world_transform_for_row", None)
@@ -9113,7 +9121,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 fold_branch_zs.append(float(folded_center[2]))
         if not fold_branch_zs:
             return None
-        return min(fold_branch_zs)
+        # First fold in optical order -- the one the incoming +Z axis meets before any
+        # downstream re-fold (bugs/0215). Single-fold scenes have one constant Z, so this
+        # equals the old ``min`` and their guides stay byte-identical.
+        return fold_branch_zs[0]
 
     def _folded_traced_axis_forward_points(self, segment) -> np.ndarray | None:
         """Clamp a folded reflected optical-axis segment so it emanates FORWARD from
