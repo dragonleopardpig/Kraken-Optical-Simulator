@@ -10184,6 +10184,42 @@ def phase_187_second_optical_overlay_survives_placement(
     return result
 
 
+def phase_188_second_mirror_pinned_to_placed_pose(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """After a SECOND RA fold mirror was promoted it landed "misplaced by itself" on the image
+    plane (flag flag_20260703_082955_542 + the 090116/090206 before/after pair): inserted as a
+    plain downstream row, the fold-follower pose-override builder
+    (`build_optical_solid_output_port_pose_overrides`) recomputed its world pose from mirror 1's
+    fold frame + cumulative station and swept it down the +X leg to X~=269 (on the sensor),
+    overriding the placed center_world [210.7, 0, 71.9] at draw time (bugs/0211 diagnosis).
+    Fix A (bugs/0212): a promoted optical solid that carries a mesh but has NO assigned port faces
+    is not a fold participant, so the follower loop breaks on it WITHOUT writing the spurious
+    override -- it stays pinned where placed. A fold mirror / penta prism carries assigned faces,
+    so the guard is inert for them. `validate_open3d_second_mirror_pinned_to_placed_pose` asserts
+    on the AZ85 scene: the fold source has faces, the single fold stays intact, a fresh 2nd mirror
+    is a no-face solid, it gets NO override while the upstream chain is unchanged, the identical
+    mirror WITH faces IS overridden (causal), the placed desp is preserved, and the guard is wired.
+    """
+    result = PhaseResult(
+        name="Phase 188: second promoted mirror pinned to its placed pose (0212)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_second_mirror_pinned_to_placed_pose import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"second-mirror-pinned guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("second-mirror-pinned phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10417,6 +10453,7 @@ def main() -> int:
             phase_185_folded_rays_reach_detector,
             phase_186_chain_fold_display_rays,
             phase_187_second_optical_overlay_survives_placement,
+            phase_188_second_mirror_pinned_to_placed_pose,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

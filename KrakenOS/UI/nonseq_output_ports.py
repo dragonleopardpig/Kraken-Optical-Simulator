@@ -69,6 +69,19 @@ def _row_has_optical_solid(row) -> bool:
     return str(value or "").strip() not in {"", "None"}
 
 
+def _optical_solid_has_assigned_faces(row) -> bool:
+    """True when a promoted optical solid carries at least one *assigned* port
+    face (an input/output/interaction/mirror role). A working fold mirror or a
+    penta prism has assigned faces; a freshly promoted solid with no ports --
+    bugs/0212's inert, free-placed 2nd mirror -- has none. The face-assignment
+    state is pose independent, so any z-station gives the same count."""
+    try:
+        records = optical_solid_face_world_records(row, 0.0, assigned_only=True)
+    except Exception:
+        return False
+    return bool(records)
+
+
 def row_z_positions(rows) -> list[float]:
     prepared = [_row_like(row) for row in list(rows or [])]
     if not prepared:
@@ -1238,6 +1251,17 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
             if _row_surface(follower) == "Object":
                 follower_index += 1
                 continue
+            # bugs/0212 (Fix A): a free-placed SECOND promoted optical solid --
+            # one that carries a solid mesh but has NO assigned port faces -- is
+            # not a fold participant. It stays pinned where the user dropped it
+            # (its recorded center_world / desp), so it must NOT be repositioned
+            # onto the upstream fold leg ("misplaced by itself"). Terminate the
+            # follower chain here exactly as the no-face optical-solid branch does
+            # below, but WITHOUT first writing the spurious override that dragged
+            # the mirror off its placed pose. A fold mirror or penta prism carries
+            # assigned faces, so this guard is inert for them.
+            if _row_has_optical_solid(follower) and not _optical_solid_has_assigned_faces(follower):
+                break
             center, rotation = _downstream_pose_from_frame(follower, frame_origin, frame_rotation)
             overrides[follower_index] = {
                 "center": np.asarray(center, dtype=float),
