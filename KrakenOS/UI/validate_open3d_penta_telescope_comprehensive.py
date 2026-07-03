@@ -10259,6 +10259,41 @@ def phase_189_second_mirror_orientation_driven_fold(
     return result
 
 
+def phase_190_second_mirror_same_part_mirror_carryover(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Fix B (0213) folds a 2nd promoted mirror by its own orientation, but ONLY once it carries a
+    `function == "Mirror"` face. The user's real session (bugs/0214) promoted the 2nd RA mirror with
+    ZERO right-clicks -> no Mirror face -> `select_optical_solid_output_face` picked the +Z straight-
+    through face (bugs/0084) as the output port, so the detector/image seated UP (+Z) on the wrong side
+    (flag_20260703_122209_873). Fix: `StepOverlayPromotionService._carry_over_same_part_mirror_face`
+    (called at the end of `promote_imported_step_to_optical_solid_row`) inherits the authored Mirror
+    face of an IDENTICAL part already in the scene (matched by resolved source STEP path + face id +
+    area) via the standard assign path, so re-importing the same mirror folds DOWN with no manual click.
+    `validate_open3d_second_mirror_same_part_mirror_carryover` asserts: a clean AZ85 promote auto-carries
+    the Mirror face (fold normal, detector seating and free-placed ray fold all DOWN), a causal strip-to-
+    UP contrast reproduces the flagged bug, and the helper is strictly scoped (different part / lens /
+    already-authored / area-collision all left inert), and it is wired into the promote path.
+    """
+    result = PhaseResult(
+        name="Phase 190: second promoted mirror same-part Mirror carry-over (0214)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_second_mirror_same_part_mirror_carryover import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"same-part-mirror-carryover guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("same-part-mirror-carryover phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10494,6 +10529,7 @@ def main() -> int:
             phase_187_second_optical_overlay_survives_placement,
             phase_188_second_mirror_pinned_to_placed_pose,
             phase_189_second_mirror_orientation_driven_fold,
+            phase_190_second_mirror_same_part_mirror_carryover,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

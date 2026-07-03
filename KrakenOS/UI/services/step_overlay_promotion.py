@@ -1262,6 +1262,12 @@ class StepOverlayPromotionService:
         self._select_table_indices([resolved_insert_at], focus_index=resolved_insert_at)
         self._commit_history_capture()
         self._mark_plot_update_pending()
+        # bugs/0214: re-importing the SAME RA-mirror part a second time (the user's
+        # "add another mirror" workflow) inherits that part's authored Mirror face, so
+        # the new mirror folds by its OWN orientation without a manual right-click --
+        # instead of being read as a clear cube whose +Z face becomes a straight-through
+        # output that flings the detector to the wrong side (flag_20260703_122209_873).
+        self._carry_over_same_part_mirror_face(int(resolved_insert_at))
         self.append_debug(
             "Promoted {label} STEP overlay to optical solid S{row}: center=({x:.6g},{y:.6g},{z:.6g}) "
             "mesh={mesh}\n{diag}".format(
@@ -1295,6 +1301,83 @@ class StepOverlayPromotionService:
             "center_world": tuple(float(value) for value in center_world[:3]),
             "diagnostics": diagnostics,
         }
+
+    @staticmethod
+    def _promoted_source_step_key(advanced: object) -> str | None:
+        """Resolved source STEP path a promoted row was built from, or None. Two rows
+        with the same key are the SAME imported part (bugs/0214 same-part matching)."""
+        if not isinstance(advanced, dict):
+            return None
+        for key in ("StepOverlayPromotion", "StepNativePromotion"):
+            block = advanced.get(key)
+            if isinstance(block, dict):
+                path = block.get("source_step_path")
+                if path:
+                    try:
+                        return str(Path(str(path)).expanduser().resolve())
+                    except Exception:
+                        return str(path)
+        return None
+
+    def _carry_over_same_part_mirror_face(self, new_row_index: int) -> str | None:
+        """bugs/0214: give a freshly-promoted solid the Mirror face it already carries on
+        an IDENTICAL part elsewhere in the scene, so re-importing the same RA-mirror a
+        second time folds by its own orientation with no manual 'Full Reflecting' click.
+
+        Same part is matched by resolved source STEP path; the reflecting face is matched
+        by face id (with an area cross-check so a coincidental id collision across
+        DIFFERENT parts cannot mis-assign). Only a face the user ALREADY authored as
+        Mirror on the identical part is carried over -- a promoted lens/prism (no mirror
+        donor) is never turned into a reflector, and a row the user already marked keeps
+        its own authoring. Runs the standard assign_optical_solid_face_function path so
+        the fold and the detector/image seating see exactly a user-authored Mirror face
+        (bugs/0213). Returns the assigned face id, or None when nothing was carried."""
+        rows = list(getattr(self, "rows", []) or [])
+        if not (0 <= int(new_row_index) < len(rows)):
+            return None
+        new_adv = getattr(rows[int(new_row_index)], "advanced", {}) or {}
+        new_src = self._promoted_source_step_key(new_adv)
+        if not new_src:
+            return None
+        new_meta = normalize_optical_solid_face_metadata(
+            new_adv.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+        )
+        new_faces = list(new_meta.get("faces", []) or [])
+        if not new_faces or any(str(f.get("function", "")) == "Mirror" for f in new_faces):
+            return None
+        new_by_id = {
+            str(f.get("face_id", "") or "").strip(): f
+            for f in new_faces
+            if str(f.get("face_id", "") or "").strip()
+        }
+        for donor_index, donor in enumerate(rows):
+            if donor_index == int(new_row_index):
+                continue
+            donor_adv = getattr(donor, "advanced", {}) or {}
+            if self._promoted_source_step_key(donor_adv) != new_src:
+                continue
+            donor_meta = normalize_optical_solid_face_metadata(
+                donor_adv.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+            )
+            for donor_face in donor_meta.get("faces", []) or []:
+                if str(donor_face.get("function", "")) != "Mirror":
+                    continue
+                face_id = str(donor_face.get("face_id", "") or "").strip()
+                target = new_by_id.get(face_id)
+                if target is None:
+                    continue
+                donor_area = float(donor_face.get("area_mm2", 0.0) or 0.0)
+                target_area = float(target.get("area_mm2", 0.0) or 0.0)
+                if donor_area > 0.0 and abs(donor_area - target_area) > max(1.0, 0.02 * donor_area):
+                    continue
+                try:
+                    self.assign_optical_solid_face_function(
+                        int(new_row_index), face_id, "Full Reflecting"
+                    )
+                except Exception:
+                    return None
+                return face_id
+        return None
 
     @staticmethod
     def _inpath_plate_focus_shift(glass: str, depth: float) -> float:

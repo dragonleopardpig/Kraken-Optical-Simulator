@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-03 (phase 189 second promoted mirror orientation-driven fold for bugs/0213 (Fix B) -- 0212 (Fix A, phase 188) pinned a free-placed 2nd promoted RA mirror where dropped but INERTLY (no beam bend). The user's ask was the general case: let the user place AND orient the mirror and have the beam follow the mirror's orientation by physics (r = d - 2(d.n)n), no hard-coded fold axis. Fix B makes the pinned mirror a real fold in the two display systems that must agree: (1) the pose-override builder pins it at its authored world pose and folds the downstream detector off that mirror's WORLD-oriented interaction face (_free_placed_solid_pinned_pose in nonseq_output_ports); (2) the display rays get a POST-PASS that reflects the already-folded polyline about the mirror's REAL world plane (free_placed_mirror_world_planes in services.folded_sequential_fold, called by _reflect_straight_equivalent_display_rays; normal = n_local @ R(tilt).T). The free-placed desp encodes the folded-world drop point that _solve_mirror_tilt cannot seat (no sequential record), hence the world-plane post-pass. Guard validate_open3d_second_mirror_orientation_driven_fold (7/7): override pins the mirror + folds the detector onto the -Z leg; the display rays fold twice and land ON the folded detector (rays == detector == (210.703,0,-32.721)); a causal tilt-0 contrast flips both onto the +Z leg (direction tracks orientation); penta-safe (1 plane for the marked scene, 0 for the marker-less stock AZ85 + 0208 chain); the plane normal tracks the tilt; wired into both source modules. PENTA-SAFE: keyed on the free-placed center_world marker (layout-authored cascade prisms lack it), and a global mirror_fold_face_normal world-normal change was REJECTED because penta engages the seq fold with non-zero-tilt prisms producing 0 records; penta_cascade_prism_by_prism PASSES under Xvfb. Full marathon still segfaults on llvmpipe so 0-188 carried forward. NOTE: only the DISPLAY is orientation-driven; the numerical sequential trace still won't fold at a free-placed 2nd mirror (deeper 0207-style follow-up). Prior: phase 188 second promoted mirror pinned to its placed pose (0212, Fix A, inert pin); phase 187 second same-part optical overlay survives placement (0210); phase 186 chain-fold display rays through N mirrors (0208); phase 185 rays-reach-detector (0207); 184 trackball orbit (0206); 183 incoming cone (0205).)",
+  "generated_at": "2026-07-03 (phase 190 second promoted mirror same-part Mirror carry-over for bugs/0214 -- the 0213 display fold needs a function=='Mirror' face, but the user's real session promoted the 2nd RA mirror with ZERO right-clicks so it had NONE. A clean promote auto-roles every face Transmit/Port and select_optical_solid_output_face then picks the +Z straight-through face (0084) as the output port, seating the detector/image UP (+Z) on the wrong side (flag_20260703_122209_873: image z 83..123 above the placed mirror centre z=70.6 = the flagged 'image plane and detector wrong direction'). Fix: StepOverlayPromotionService._carry_over_same_part_mirror_face, called at the end of promote_imported_step_to_optical_solid_row, inherits the authored Mirror face of an IDENTICAL part already in the scene (matched by resolved source STEP path + face id + an area cross-check) via the standard assign_optical_solid_face_function path, so re-importing the same mirror folds DOWN with no manual click. Strictly scoped: a promoted lens/prism (no mirror donor) is never turned into a reflector, a user-authored row keeps its own function, and a coincidental face-id collision across DIFFERENT parts is rejected by the area check. Guard validate_open3d_second_mirror_same_part_mirror_carryover (10/10, display-free): a clean AZ85 promote auto-carries S001/F002 -> fold normal (-0.707,0,-0.707), the detector seats DOWN at z=-62.05, the free-placed display ray reflects +X->-Z; a causal strip-to-UP contrast re-seats the detector at z=123.098 (exactly the flagged bug); plus 5 scoping cases (same-part positive, different-part, lens, already-authored, area-collision) and a wired-into-promote check. Full marathon still segfaults on llvmpipe so 0-189 carried forward. Prior: phase 189 second promoted mirror orientation-driven fold (0213); phase 188 pinned-to-placed-pose (0212); phase 187 second overlay survives placement (0210).)",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -191,7 +191,8 @@
     "186": "pass",
     "187": "pass",
     "188": "pass",
-    "189": "pass"
+    "189": "pass",
+    "190": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -383,6 +384,7 @@
     "186": "folded display rays fold through a chain of RA mirrors (0208)",
     "187": "second same-part optical overlay survives placement, does not disappear (0210)",
     "188": "second promoted mirror pinned to its placed pose, not swept onto the fold leg (0212)",
-    "189": "second promoted mirror orientation-driven fold (0213)"
+    "189": "second promoted mirror orientation-driven fold (0213)",
+    "190": "second promoted mirror same-part Mirror carry-over (0214)"
   }
 }
