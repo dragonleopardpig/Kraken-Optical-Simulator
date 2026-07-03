@@ -10360,6 +10360,38 @@ def phase_192_multifold_reflected_axis_segments(
     return result
 
 
+def phase_193_incoming_axis_meets_fold_vertex(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The incoming +Z optical-axis guide (`axis:global`) must terminate EXACTLY at the promoted-mirror
+    fold vertex, where the reflected/middle guide begins, so the fold ELBOW sits on the mirror centre
+    (bugs/0218, flag_20260703_162409 follow-up "the optical axis is not centered at the first RA mirror").
+    `_optical_axis_records_for_3d` clamped the incoming guide to `fold_point_z + _AXIS_FOLD_POINT_GUIDE_MARGIN_MM`
+    (bugs/0189's allowance), ending it ~5 mm PAST the 71.9 vertex the +X middle starts from -- only mirror-1's
+    elbow read as off-centre (mirror-2's middle->outgoing meet had no margin). Fix: drop the +margin so the
+    incoming guide ends at the vertex and incoming->middle->outgoing form one connected polyline through the
+    mirror centres. `validate_open3d_incoming_axis_meets_fold_vertex` asserts the clean elbow on both scenes,
+    a causal contrast that the old +margin poked 5 mm past, and that the fix is wired.
+    """
+    result = PhaseResult(
+        name="Phase 193: incoming optical axis meets the fold vertex (0218)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_incoming_axis_meets_fold_vertex import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"incoming-axis-fold-vertex guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("incoming-axis-fold-vertex phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10598,6 +10630,7 @@ def main() -> int:
             phase_190_second_mirror_same_part_mirror_carryover,
             phase_191_second_mirror_incoming_axis_placement,
             phase_192_multifold_reflected_axis_segments,
+            phase_193_incoming_axis_meets_fold_vertex,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -9414,7 +9414,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         fold_point_z = self._folded_axis_incoming_fold_point_z()
         scene_is_folded = fold_point_z is not None and bool(np.isfinite(fold_point_z))
         if scene_is_folded:
-            z1 = min(z1, float(fold_point_z) + _AXIS_FOLD_POINT_GUIDE_MARGIN_MM)
+            # bugs/0218 (flag_20260703_162409): terminate the incoming +Z guide EXACTLY at
+            # the fold vertex -- where the reflected/middle guide begins. The old
+            # ``+ _AXIS_FOLD_POINT_GUIDE_MARGIN_MM`` poked it ~5 mm past the mirror-1 elbow
+            # (Z 76.9 vs the 71.9 vertex the +X middle starts from), so mirror-1's fold
+            # corner read as off-centre while mirror-2's clean vertex meet did not. Clamping
+            # to the vertex makes incoming -> middle -> outgoing one connected polyline
+            # through the mirror centres (still within the 0189 anti-over-extension bound).
+            z1 = min(z1, float(fold_point_z))
         records = [
             {
                 "axis_id": "axis:global",
