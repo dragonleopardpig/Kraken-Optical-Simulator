@@ -84,3 +84,44 @@ gate.
 Confirm the intended 2nd-fold geometry (position on the +X leg + folded detector direction), then
 build the authoring pass in-app and verify the penta cascade stays green. Until then, promoting a 2nd
 mirror parks it on the image plane — expected, given there is no 2nd-fold placement yet.
+
+## UPDATE — before/after pair proves the root cause (flags 090116 + 090206)
+
+The user captured a **before/after** pair (`flag_20260703_090116_325` "Before promotion" +
+`flag_20260703_090206_958` "After promotion, 2nd RA mirror misplaced again",
+`recording_20260703_090237.json`) that pins the mechanism exactly.
+
+**BEFORE (overlay placed, not yet promoted):** the `optical` overlay is drawn (bugs/0210 working,
+`step_actor_counts` has `optical:1`) at world centre **`[210.7, 0, 71.9]`** —
+`step_actor_bounds['optical']` = X`[198.2, 223.2]` Y`[-12.5, 12.5]` Z`[59.4, 84.4]`. That is squarely
+on the +X leg between the rear datum (X≈125) and the camera (`step_actor_bounds['camera']` =
+X`[264, 337]`). **The user placed it correctly.**
+
+**AFTER (promoted):** the promote *captures that pose* — `promotion_center_world = [210.7, 0, 71.9]`,
+`desp = [210.7, 0, -275.32]` — yet the solid is **drawn** at row 8 `row_actor_bounds` =
+X`[253.8, 284.3]` Y`[-9.0, 21.5]` Z`[54.1, 89.7]`, i.e. centre **`[269, 6.25, 71.9]`** with an
+inflated (rotated) bbox (25 mm → 30.5 mm span). It moved **+58 mm in X, +6 mm in Y, and rotated**,
+landing on the image plane (row 9 X`[259, 292]`).
+
+**Root cause (sharpened): the fold-follower pose-override supersedes the placed pose.** The promoted
+solid does **not** render at its own recorded `center_world`. Inserted as a plain downstream row,
+mirror 2 is repositioned by mirror-1's fold frame via
+`optical_solid_output_port_pose_overrides` (`nonseq_output_ports.py:661`): the override recomputes the
+row's world pose from the upstream fold frame + cumulative station (≈347 mm), carrying it down the +X
+leg to just before the image (X≈269) and applying the fold rotation. The `desp` the promote wrote
+(encoding the placed X≈210.7) is overridden at draw time. So the placement the user made is real and
+correct, but the fold-chaining treats mirror 2 as a follower of mirror 1 instead of a part pinned to
+where it was placed.
+
+**Two fix directions (need the user's choice; both touch the penta-shared override chain):**
+- **A — pin to placed pose (minimal):** exclude a *second* promoted optical solid from the upstream
+  fold-follower override so it renders at its recorded `center_world` (stays where placed, inert in
+  the beam). Simplest honest behaviour; it does *not* make it a working 2nd fold.
+- **B — real 2nd fold (task #77):** give mirror 2 its own output-port/fold frame that continues the
+  beam onto a new leg and chains the detector to follow it. This is the full authoring pass.
+
+Both change `optical_solid_output_port_pose_overrides` / the fold-follower chain that the penta
+cascade depends on, and neither can be reproduced headlessly (the recorder doesn't capture
+import/promote and `_build_editor` can't drive the full promote), so they must be built and verified
+in-app with the penta gate kept green. Awaiting the user's choice of A vs B before touching the
+shared path.
