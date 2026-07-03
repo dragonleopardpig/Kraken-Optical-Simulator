@@ -84,6 +84,7 @@ from KrakenOS.UI.services.offbeam_optical_solid import offbeam_neutralized_body_
 from KrakenOS.UI.services.folded_sequential_fold import (
     correct_folded_mirror_ray_points,
     fold_promoted_mirror_specs_to_sequential,
+    free_placed_mirror_world_planes,
     mirror_reflection_flip_plane_normal,
     promoted_mirror_world_center,
     reflect_straight_equivalent_ray_points,
@@ -1284,7 +1285,17 @@ class ThreeDSceneToolsMixin:
             _folded, records = fold_promoted_mirror_specs_to_sequential(specs)
         except Exception:
             return
-        if not records:
+        # bugs/0213: a FREE-PLACED faced mirror the user dropped on a folded leg yields NO
+        # sequential record (its desp encodes the folded-world drop-point, not the unfolded
+        # station), so it never folds via the straight-equivalent composition. Reflect the
+        # already-folded rays about its REAL world plane in a POST-pass (orientation-driven,
+        # penta carries no such marker so this list is empty for it).
+        record_rows = {int(record.get("row_index", -1)) for record in records}
+        try:
+            free_placed_planes = free_placed_mirror_world_planes(specs, exclude_row_indices=record_rows)
+        except Exception:
+            free_placed_planes = []
+        if not records and not free_placed_planes:
             return
         # Per-mirror straight reflection planes, sorted by station DESCENDING so the deepest
         # (last) mirror is reflected first -- the reverse-order composition above.
@@ -1311,6 +1322,14 @@ class ThreeDSceneToolsMixin:
                 if reflected is None:
                     # this ray never crosses this mirror's plane (e.g. clipped upstream of it) --
                     # leave it for the remaining (earlier-mirror) reflections.
+                    continue
+                pts = reflected
+                folded_any = True
+            # POST-pass: fold the already-branched rays about each free-placed mirror's REAL
+            # world plane (after the straight composition has landed them in the folded world).
+            for _ri, plane_point, world_normal in free_placed_planes:
+                reflected = reflect_straight_equivalent_ray_points(pts, plane_point, world_normal)
+                if reflected is None:
                     continue
                 pts = reflected
                 folded_any = True

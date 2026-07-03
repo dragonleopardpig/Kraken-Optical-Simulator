@@ -82,6 +82,45 @@ def _optical_solid_has_assigned_faces(row) -> bool:
     return bool(records)
 
 
+def _free_placed_solid_pinned_pose(row, z_station: float) -> tuple[np.ndarray, np.ndarray] | None:
+    """The world pose a *free-placed* promoted optical solid must keep, or None.
+
+    bugs/0213: a solid the user dropped into the scene and promoted carries a
+    recorded world drop-point (``StepOverlayPromotion``/``StepNativePromotion``
+    ``center_world``). Such a solid is NOT a sequential-station follower to be
+    swept onto an upstream fold leg -- it stays pinned where it was dropped, at
+    its OWN authored world pose (the same desp+station / tilt derivation the
+    fold *source* uses), so a downstream fold reflects off its actual
+    orientation. Layout-authored cascade prisms have no such marker, so they
+    keep following the fold chain (penta stays green). Returns
+    ``(center, rotation)`` or ``None`` when the row was not free-placed."""
+    advanced = _row_advanced(row)
+    if not isinstance(advanced, dict):
+        return None
+    free_placed = any(
+        isinstance(advanced.get(key), dict) and advanced[key].get("center_world") is not None
+        for key in ("StepOverlayPromotion", "StepNativePromotion")
+    )
+    if not free_placed:
+        return None
+    rotation = optical_solid_metadata.rotation_matrix_from_kraken_tilts(
+        float(getattr(row, "tilt_x", 0.0) or 0.0),
+        float(getattr(row, "tilt_y", 0.0) or 0.0),
+        float(getattr(row, "tilt_z", 0.0) or 0.0),
+    )
+    center = np.asarray(
+        [
+            float(getattr(row, "desp_x", 0.0) or 0.0),
+            float(getattr(row, "desp_y", 0.0) or 0.0),
+            float(z_station) + float(getattr(row, "desp_z", 0.0) or 0.0),
+        ],
+        dtype=float,
+    )
+    if not (np.all(np.isfinite(center)) and np.all(np.isfinite(rotation))):
+        return None
+    return center, rotation
+
+
 def row_z_positions(rows) -> list[float]:
     prepared = [_row_like(row) for row in list(rows or [])]
     if not prepared:
@@ -1251,18 +1290,35 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
             if _row_surface(follower) == "Object":
                 follower_index += 1
                 continue
-            # bugs/0212 (Fix A): a free-placed SECOND promoted optical solid --
-            # one that carries a solid mesh but has NO assigned port faces -- is
-            # not a fold participant. It stays pinned where the user dropped it
-            # (its recorded center_world / desp), so it must NOT be repositioned
-            # onto the upstream fold leg ("misplaced by itself"). Terminate the
-            # follower chain here exactly as the no-face optical-solid branch does
-            # below, but WITHOUT first writing the spurious override that dragged
-            # the mirror off its placed pose. A fold mirror or penta prism carries
-            # assigned faces, so this guard is inert for them.
-            if _row_has_optical_solid(follower) and not _optical_solid_has_assigned_faces(follower):
-                break
-            center, rotation = _downstream_pose_from_frame(follower, frame_origin, frame_rotation)
+            # bugs/0212 + 0213: a FREE-PLACED promoted optical solid (one the
+            # user dropped into the scene, which promote tags with a recorded
+            # world drop-point) is NOT a sequential-station follower to be swept
+            # onto the upstream fold leg ("misplaced by itself"). It stays pinned
+            # where it was dropped:
+            #   * with NO authored fold face it is inert -- pinned by its own
+            #     desp, contributing no fold (bugs/0212, Fix A);
+            #   * with an authored fold face it becomes a REAL second fold --
+            #     pinned at its placed pose while the beam reflects off its own
+            #     oriented face by physics (r = d - 2(d.n)n, via the interaction-
+            #     reflection re-frame below), so the downstream detector follows
+            #     onto the reflected leg. The fold direction is the mirror's
+            #     orientation, never a hard-coded axis (bugs/0213).
+            # Layout-authored cascade prisms carry no recorded drop-point, so
+            # they keep sweeping and the penta cascade is unchanged.
+            pinned_pose = None
+            if _row_has_optical_solid(follower):
+                if not _optical_solid_has_assigned_faces(follower):
+                    break
+                follower_z = (
+                    float(z_positions[follower_index])
+                    if follower_index < len(z_positions)
+                    else 0.0
+                )
+                pinned_pose = _free_placed_solid_pinned_pose(follower, follower_z)
+            if pinned_pose is not None:
+                center, rotation = pinned_pose
+            else:
+                center, rotation = _downstream_pose_from_frame(follower, frame_origin, frame_rotation)
             overrides[follower_index] = {
                 "center": np.asarray(center, dtype=float),
                 "rotation": np.asarray(rotation, dtype=float),

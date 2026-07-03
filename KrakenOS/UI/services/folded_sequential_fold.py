@@ -308,6 +308,72 @@ def reflect_straight_equivalent_ray_points(
     return np.asarray(rows, dtype=float)
 
 
+def free_placed_mirror_world_planes(
+    specs: list[dict],
+    exclude_row_indices: "set[int] | None" = None,
+) -> list[tuple[int, np.ndarray, np.ndarray]]:
+    """bugs/0213: REAL-world reflection planes for FREE-PLACED faced mirrors.
+
+    A mirror the user drops onto an already-folded leg and then orients (a promoted
+    solid that ``promote`` tags with a recorded ``center_world``) folds the beam off its
+    OWN oriented face by physics. But its ``desp`` encodes the FOLDED-world drop-point
+    (``desp_x`` = folded X, ``desp_z`` = ``center_world_z - station``), NOT the unfolded
+    sequential station, so ``_solve_mirror_tilt`` cannot seat it and it yields no
+    sequential-fold record -- the straight-equivalent composition (which needs each
+    mirror's UNFOLDED plane) skips it. Its display rays are instead folded by reflecting
+    the ALREADY-folded polyline about the mirror's REAL world plane:
+
+      * point  = its world centre (``promoted_mirror_world_center``: ``station + desp_z``
+        cancels back to ``center_world``);
+      * normal = the Mirror face's LOCAL normal rotated into the world by the row tilt
+        (``n_world = n_local @ R(tilt).T``) -- so the fold direction is the mirror's
+        ORIENTATION (``r = d - 2(d.n)n``), never a hard-coded axis.
+
+    Applied AFTER the records reflection lands the rays on the real folded branches (the
+    plane lives in the real folded world, not the straight frame). Layout-authored
+    cascade prisms carry no ``center_world`` marker, so they never appear here (penta is
+    untouched). Rows already covered by a sequential record (``exclude_row_indices``) are
+    skipped so a working fold is not double-folded. Returns ``(row_index, world_centre,
+    world_normal)`` per free-placed mirror, ordered by station ASCENDING (nearer folds
+    first)."""
+    from KrakenOS.UI.optical_solid_metadata import rotation_matrix_from_kraken_tilts
+
+    exclude = {int(i) for i in (exclude_row_indices or set())}
+    planes: list[tuple[int, np.ndarray, np.ndarray]] = []
+    for idx, spec in enumerate(specs or []):
+        if int(idx) in exclude:
+            continue
+        advanced = spec.get("advanced")
+        if not isinstance(advanced, dict):
+            continue
+        free_placed = any(
+            isinstance(advanced.get(key), dict) and advanced[key].get("center_world") is not None
+            for key in ("StepOverlayPromotion", "StepNativePromotion")
+        )
+        if not free_placed:
+            continue
+        local_normal = mirror_fold_face_normal(advanced)
+        if local_normal is None:
+            continue
+        center = promoted_mirror_world_center(specs, idx)
+        if center is None:
+            continue
+        rotation = rotation_matrix_from_kraken_tilts(
+            _spec_get(spec, "tilt_x"),
+            _spec_get(spec, "tilt_y"),
+            _spec_get(spec, "tilt_z"),
+        )
+        world_normal = np.asarray(local_normal, dtype=float).reshape(3) @ np.asarray(rotation, dtype=float).T
+        n_norm = float(np.linalg.norm(world_normal))
+        if n_norm <= 1e-9 or not np.all(np.isfinite(world_normal)):
+            continue
+        planes.append(
+            (int(idx), np.asarray(center, dtype=float).reshape(3), world_normal / n_norm)
+        )
+    planes.sort(key=lambda plane: plane[0])
+    return planes
+
+
 def _is_promoted_mirror_fold(spec: dict) -> bool:
     if str(spec.get("surface", "")) in {"Object", "Image", "Mirror"}:
         return False

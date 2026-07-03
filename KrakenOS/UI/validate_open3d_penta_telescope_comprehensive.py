@@ -10220,6 +10220,45 @@ def phase_188_second_mirror_pinned_to_placed_pose(
     return result
 
 
+def phase_189_second_mirror_orientation_driven_fold(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Fix A (0212) pinned a free-placed 2nd mirror but inertly. The user's architectural ask was
+    the general case: let the user place AND orient the mirror and have the beam follow the mirror's
+    orientation by physics (r = d - 2(d.n)n), with no hard-coded fold axis. Fix B (bugs/0213) makes
+    the pinned mirror a real fold in the two display systems that must agree: the pose-override
+    builder pins it at its authored world pose and folds the downstream detector off that mirror's
+    WORLD-oriented interaction face (`_free_placed_solid_pinned_pose` in `nonseq_output_ports`), and
+    the display rays get a POST-PASS that reflects the already-folded polyline about the mirror's
+    REAL world plane (`free_placed_mirror_world_planes` in `services.folded_sequential_fold`, called
+    by `_reflect_straight_equivalent_display_rays`). The free-placed mirror's desp encodes the
+    folded-world drop point that `_solve_mirror_tilt` cannot seat (no sequential record), hence the
+    world-plane post-pass. `validate_open3d_second_mirror_orientation_driven_fold` asserts on the
+    AZ85 scene: the override pins the mirror + folds the detector onto the -Z leg; the display rays
+    fold twice and land ON the folded detector (rays == detector); a causal tilt-0 contrast flips
+    both onto the +Z leg (direction tracks orientation); it is penta-safe (1 plane for the marked
+    scene, 0 for the marker-less stock AZ85 and 0208 chain); the plane normal tracks the tilt; and
+    the pin + post-pass are wired into both source modules.
+    """
+    result = PhaseResult(
+        name="Phase 189: second promoted mirror orientation-driven fold (0213)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_second_mirror_orientation_driven_fold import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"orientation-driven-fold guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("orientation-driven-fold phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10454,6 +10493,7 @@ def main() -> int:
             phase_186_chain_fold_display_rays,
             phase_187_second_optical_overlay_survives_placement,
             phase_188_second_mirror_pinned_to_placed_pose,
+            phase_189_second_mirror_orientation_driven_fold,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
