@@ -102,12 +102,14 @@ Scratch probes (untracked): `bugs/probe_0216_multifold_axis.py` (per-row anchors
 `bugs/probe_0216_records.py` (end-to-end records, rays on/off), `bugs/probe_0216_causal.py` (the old
 down-line).
 
-## In-app eyeball owed
+## In-app eyeball — CONFIRMED (2026-07-03, `flag_20260703_162409_478`)
 
 The headless guard proves the three geometric axes are emitted with rays OFF (incoming +Z, middle +X,
-outgoing −Z). Confirm the rendered dotted axes in-app on the user's two-mirror AZ85 scene — in particular
-that the outgoing leg reaches the detector (its far end clamps to the scene bounds, which include the
-detector plane when its actor is present).
+outgoing −Z). The user then confirmed the rendered dotted axes in-app on the two-mirror AZ85 scene —
+recording `flag_20260703_162409_478` *"3 Optical Axis are there."* shows all three: incoming
+(bottom-left → mirror-1), middle (mirror-1 → up through the lens stack → mirror-2), and outgoing
+(mirror-2 → up through the Image circle Ø32.6 / Sensor 23.0×23.0). The outgoing leg reaches the
+detector as designed.
 
 ## Relationship to the still-open two-mirror focus bug
 
