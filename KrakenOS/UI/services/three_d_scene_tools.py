@@ -82,6 +82,7 @@ from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timin
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.offbeam_optical_solid import offbeam_neutralized_body_transform
 from KrakenOS.UI.services.folded_sequential_fold import (
+    _is_promoted_mirror_fold,
     correct_folded_mirror_ray_points,
     fold_promoted_mirror_specs_to_sequential,
     free_placed_mirror_world_planes,
@@ -1066,6 +1067,23 @@ class ThreeDSceneToolsMixin:
                 prior = folded_rows[index - 1]
                 prior.thickness = float(getattr(prior, "thickness", 0.0) or 0.0) + reseated
         return folded_rows
+
+    def _promoted_mirror_fold_row_indices(self) -> list[int]:
+        """Row indices of every promoted full-mirror fold (bugs/0216), ascending.
+
+        Counts BOTH the sequential folds and the free-placed ones with a single predicate
+        (``_is_promoted_mirror_fold``: a promoted optical solid carrying a Mirror face) --
+        the ``Mirror``-surface count in ``_folded_reflected_axis_guide_record`` only sees
+        the sequential fold and so under-counts a free-placed 2nd mirror. These rows are
+        the fold VERTICES of the folded optical axis; the reflected-axis reconstruction
+        walks the non-mirror rows between them."""
+        try:
+            specs = self._serializable_specs_for_rows(list(self.rows))
+        except Exception:
+            return []
+        return sorted(
+            {int(index) for index, spec in enumerate(specs) if _is_promoted_mirror_fold(spec)}
+        )
 
     def _fold_straight_equivalent_display_rays(self, scene_bundle, fold_transform) -> None:
         """bugs/0197: bend the flat-plate-equivalent display rays at the promoted mirror.

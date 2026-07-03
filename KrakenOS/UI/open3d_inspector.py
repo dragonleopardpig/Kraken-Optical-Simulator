@@ -9229,6 +9229,165 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             "points": np.asarray((fold_point, far), dtype=float),
         }
 
+    def _folded_axis_row_anchor_direction(self, row_index, z_positions):
+        """World axis anchor + unit direction for a row (bugs/0216): its folded pose if the
+        row sits on a reflected branch, else the straight +Z station. ``(None, None)`` on
+        error. The anchor is ``F @ (0,0,z)`` and the direction ``R @ +Z`` of the row's fold
+        transform (``_optical_axis_fold_world_transform_for_row``); an unfolded row has no
+        transform, so it stays on the incoming +Z axis at its cumulative-thickness station."""
+        try:
+            z = float(z_positions[row_index])
+        except Exception:
+            return None, None
+        try:
+            transform = self.editor._optical_axis_fold_world_transform_for_row(row_index)
+        except Exception:
+            transform = None
+        if transform is None:
+            return (
+                np.asarray((0.0, 0.0, z), dtype=float),
+                np.asarray((0.0, 0.0, 1.0), dtype=float),
+            )
+        try:
+            matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+            anchor = (matrix @ np.asarray((0.0, 0.0, z, 1.0), dtype=float))[:3]
+            direction = matrix[:3, :3] @ np.asarray((0.0, 0.0, 1.0), dtype=float)
+        except Exception:
+            return None, None
+        norm = float(np.linalg.norm(direction))
+        if not (norm > 1e-9 and np.all(np.isfinite(anchor)) and np.all(np.isfinite(direction))):
+            return None, None
+        return anchor, direction / norm
+
+    @staticmethod
+    def _axis_branch_line_vertex(p1, d1, p2, d2):
+        """Closest-approach midpoint of two axis branch lines (bugs/0216) -- the fold vertex
+        where the beam turns. Perpendicular folds intersect exactly; near-parallel legs fall
+        back to the anchor midpoint."""
+        p1 = np.asarray(p1, dtype=float).reshape(3)
+        p2 = np.asarray(p2, dtype=float).reshape(3)
+        d1 = np.asarray(d1, dtype=float).reshape(3)
+        d2 = np.asarray(d2, dtype=float).reshape(3)
+        n1 = float(np.linalg.norm(d1))
+        n2 = float(np.linalg.norm(d2))
+        if not (n1 > 1e-9 and n2 > 1e-9):
+            return 0.5 * (p1 + p2)
+        d1 = d1 / n1
+        d2 = d2 / n2
+        r = p1 - p2
+        b = float(d1 @ d2)
+        denom = 1.0 - b * b
+        if abs(denom) < 1e-9:  # parallel legs -> no unique intersection
+            return 0.5 * (p1 + p2)
+        d = float(d1 @ r)
+        e = float(d2 @ r)
+        t = (b * e - d) / denom
+        s = (e - b * d) / denom
+        return 0.5 * ((p1 + t * d1) + (p2 + s * d2))
+
+    def _folded_multifold_axis_guide_records(self, bounds, fold_point_z):
+        """The MIDDLE + OUTGOING dotted optical-axis segments for a CHAIN of >=2 promoted
+        mirror folds (bugs/0216).
+
+        The incoming ``axis:global`` guide only spans object -> mirror-1 (clamped at the
+        first fold, bugs/0215). With ONE fold the outgoing leg is drawn by
+        :meth:`_folded_reflected_axis_guide_record`; but a SECOND promoted mirror re-folds
+        the tail, so the reflected axis zig-zags through the mirror vertices and needs one
+        segment per branch. The single-fold method mis-drew this -- its ``Mirror``-surface
+        fold count under-counts the free-placed 2nd mirror, so it drew ONE segment along the
+        twice-folded IMAGE direction (straight DOWN), which is the flag_20260703_153616
+        report "axis 2 disappears after promotion, axis 3 completely not visible".
+
+        Reconstruct the axis POLYLINE: the promoted-mirror rows are the fold vertices; the
+        NON-mirror rows between them lie on straight branches (each row's world axis anchor +
+        direction from ``_optical_axis_fold_world_transform_for_row``). Group the non-mirror
+        rows into branches by direction, intersect consecutive branch lines to recover each
+        clean fold vertex, then emit the MIDDLE segments bounded between two vertices and the
+        OUTGOING segment extended to the scene bounds (the same reach the single-fold method
+        uses for its one leg). Returns ``[]`` for < 2 folds so the single-fold path stays
+        byte-identical, or on any reconstruction failure (no worse than the old behaviour)."""
+        if fold_point_z is None or not np.isfinite(float(fold_point_z)):
+            return []
+        try:
+            mirror_rows = set(self.editor._promoted_mirror_fold_row_indices())
+        except Exception:
+            return []
+        if len(mirror_rows) < 2:
+            return []
+        try:
+            z_positions = self.editor._row_z_positions()
+            bounds_arr = np.asarray(bounds, dtype=float).reshape(6)
+        except Exception:
+            return []
+        if not np.all(np.isfinite(bounds_arr)):
+            return []
+        rows = getattr(self.editor, "rows", []) or []
+
+        # Straight branches from the NON-mirror rows (the mirror rows are the fold vertices).
+        branches = []  # each: [centroid_point, direction, [anchors]]
+        for row_index in range(len(rows)):
+            if row_index in mirror_rows or not (0 <= row_index < len(z_positions)):
+                continue
+            anchor, direction = self._folded_axis_row_anchor_direction(row_index, z_positions)
+            if direction is None:
+                continue
+            if branches and np.allclose(branches[-1][1], direction, atol=1e-3):
+                branches[-1][2].append(anchor)
+            else:
+                branches.append([anchor, direction, [anchor]])
+        if len(branches) < 2:
+            return []
+        for branch in branches:
+            branch[0] = np.mean(np.asarray(branch[2], dtype=float), axis=0)
+
+        # Fold vertices = closest-approach intersections of consecutive branch lines.
+        vertices = []
+        for j in range(len(branches) - 1):
+            vertex = self._axis_branch_line_vertex(
+                branches[j][0], branches[j][1], branches[j + 1][0], branches[j + 1][1]
+            )
+            if vertex is None or not np.all(np.isfinite(vertex)):
+                return []
+            vertices.append(np.asarray(vertex, dtype=float))
+
+        corners = np.asarray(
+            [
+                (bounds_arr[a], bounds_arr[2 + b], bounds_arr[4 + c])
+                for a in (0, 1)
+                for b in (0, 1)
+                for c in (0, 1)
+            ],
+            dtype=float,
+        )
+
+        records = []
+        last = len(branches) - 1
+        for b in range(1, len(branches)):
+            start = np.asarray(vertices[b - 1], dtype=float)
+            direction = np.asarray(branches[b][1], dtype=float)
+            if b < last:
+                end = np.asarray(vertices[b], dtype=float)  # bounded middle segment
+            else:
+                reach = float(np.max((corners - start) @ direction))  # outgoing -> scene extent
+                if not (reach > 1e-6):
+                    continue
+                end = start + direction * reach
+            if float(np.linalg.norm(end - start)) < 1e-6:
+                continue
+            axis_id = "axis:global:reflected" if b == last else f"axis:global:reflected:{b}"
+            records.append(
+                {
+                    "axis_id": axis_id,
+                    "axis_label": "Optical Axis",
+                    "axis_kind": "dotted_global_guide",
+                    "branch_path": "",
+                    "source_id": "",
+                    "ray_index": -1,
+                    "points": np.asarray((start, end), dtype=float),
+                }
+            )
+        return records
+
     def _optical_axis_records_for_3d(self, scene_bundle: SceneBundle | None) -> list[dict[str, object]]:
         try:
             bounds = np.asarray(self._renderer.ComputeVisiblePropBounds(), dtype=float).reshape(6)
@@ -9269,11 +9428,22 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         ]
         # bugs/0200: on a single mirror fold the +Z guide above stops at the mirror; add
         # the OUTGOING +X guide so the reflected path always keeps an optical-axis line.
-        reflected_guide = self._folded_reflected_axis_guide_record(
-            bounds, float(fold_point_z) if scene_is_folded else None
+        # bugs/0216: a CHAIN of >=2 promoted-mirror folds needs the MIDDLE + OUTGOING
+        # segments too (axis:global only covers object -> mirror-1); route to the multi-fold
+        # reconstruction that walks the mirror vertices. Single-fold stays byte-identical.
+        multifold_records = (
+            self._folded_multifold_axis_guide_records(bounds, float(fold_point_z))
+            if scene_is_folded
+            else []
         )
-        if reflected_guide is not None:
-            records.append(reflected_guide)
+        if multifold_records:
+            records.extend(multifold_records)
+        else:
+            reflected_guide = self._folded_reflected_axis_guide_record(
+                bounds, float(fold_point_z) if scene_is_folded else None
+            )
+            if reflected_guide is not None:
+                records.append(reflected_guide)
         try:
             show_rays = bool(self.show_rays_var.get())
         except Exception:

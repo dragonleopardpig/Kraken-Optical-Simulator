@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-03 (phase 191 second-mirror incoming optical-axis placement for bugs/0215 -- flag_20260703_150248 'the optical axis is away from the optical components'. On the two-mirror AZ85 fold, _folded_axis_incoming_fold_point_z returned min(fold_branch_zs). With ONE mirror every folded row shares Z=+71.9, but a SECOND promoted mirror re-folds the tail so the twice-folded detector row lands at Z=-62 (0214 DOWN seat); min then picked -62 -- BELOW the object at Z=0 -- and clamped the incoming +Z guide there, drawing the whole axis ~134mm below the components at Z=+72. Fix: return fold_branch_zs[0] (the FIRST fold in optical/row order, the fold the incoming +Z axis actually meets before any downstream re-fold). Single-fold scenes have one constant Z so [0]==min and their guides stay byte-identical. Guard validate_open3d_second_mirror_incoming_axis_placement (5/5, display-free): two-mirror incoming fold point is the first (+71.9, near mirror) fold, a causal contrast that the old min was the negative detector Z (~-62, dragging the guide ~134mm below), the drawn axis:global far end reaches up to +76.9, the single-mirror scene is byte-identical, and the fix is wired (returns [0], not min). NOTE the 2nd/3rd axis segments (middle mirror-1->mirror-2, outgoing mirror-2->detector) remain deferred -- the headless chief ray terminates before mirror-2 (entangled with the two-mirror defocus bug). Full marathon still segfaults on llvmpipe so 0-190 carried forward. Prior: phase 190 second promoted mirror same-part Mirror carry-over (0214); phase 189 orientation-driven fold (0213).)",
+  "generated_at": "2026-07-03 (phase 192 multi-fold reflected optical-axis segments for bugs/0216 -- flag_20260703_153616 'the 2nd optical axis disappears after promotion, Optical Axis 3 is completely not visible'. On a CHAIN of two promoted-mirror folds, axis:global covers only object->mirror-1 (clamped at the first fold, 0215). The single-fold _folded_reflected_axis_guide_record counted folds by 'Mirror' surface, which under-counts the FREE-PLACED 2nd mirror (0213), so it treated the scene as single-fold and drew ONE segment straight DOWN from the first fold with x pinned at 0 -- axis 2 (middle +X) gone, axis 3 (outgoing -Z) the wrong direction. Fix: new editor _promoted_mirror_fold_row_indices counts BOTH folds via _is_promoted_mirror_fold, and _folded_multifold_axis_guide_records reconstructs the folded axis POLYLINE -- the promoted-mirror rows are the fold vertices, the non-mirror rows between them lie on straight branches, consecutive branch lines intersect at the clean vertices, the MIDDLE segments are bounded between two vertices and the OUTGOING segment extends to the scene bounds. Reduces to the single-fold record for one mirror (byte-identical, multi-fold path returns []). Guard validate_open3d_multifold_reflected_axis_segments (8/8, display-free, rays OFF = recording state): two-mirror draws THREE dotted axes (incoming +Z, middle +X to mirror-2, outgoing -Z to the detector), a causal contrast that the old method drew ONE -Z line at x~0, _promoted_mirror_fold_row_indices counts 2 (not the under-counted 1), single-mirror byte-identical, and the fix is wired. In-app eyeball owed for all three drawn axes. Full marathon still segfaults on llvmpipe so 0-191 carried forward. Prior: phase 191 second-mirror incoming optical-axis placement (0215); phase 190 same-part Mirror carry-over (0214).)",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -193,7 +193,8 @@
     "188": "pass",
     "189": "pass",
     "190": "pass",
-    "191": "pass"
+    "191": "pass",
+    "192": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -387,6 +388,7 @@
     "188": "second promoted mirror pinned to its placed pose, not swept onto the fold leg (0212)",
     "189": "second promoted mirror orientation-driven fold (0213)",
     "190": "second promoted mirror same-part Mirror carry-over (0214)",
-    "191": "second-mirror incoming optical-axis placement (0215)"
+    "191": "second-mirror incoming optical-axis placement (0215)",
+    "192": "multi-fold reflected optical-axis segments (0216)"
   }
 }

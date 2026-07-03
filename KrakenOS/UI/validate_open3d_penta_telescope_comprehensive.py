@@ -10327,6 +10327,39 @@ def phase_191_second_mirror_incoming_axis_placement(
     return result
 
 
+def phase_192_multifold_reflected_axis_segments(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """On a CHAIN of two promoted-mirror folds the reflected optical axis must draw as THREE segments --
+    incoming +Z, MIDDLE +X between the mirrors, and OUTGOING -Z down to the detector (bugs/0216,
+    flag_20260703_153616 "the 2nd optical axis disappears after promotion, Optical Axis 3 is completely not
+    visible"). `axis:global` covers only object->mirror-1; the single-fold `_folded_reflected_axis_guide_record`
+    counted folds by `Mirror` surface, which under-counts the FREE-PLACED 2nd mirror, so it drew ONE segment
+    straight DOWN from the first fold (x pinned at 0). Fix: `_promoted_mirror_fold_row_indices` counts both
+    folds and `_folded_multifold_axis_guide_records` reconstructs the folded axis polyline through the mirror
+    vertices (branch-line intersections), emitting the middle + outgoing legs; it reduces to the single-fold
+    record for one mirror. `validate_open3d_multifold_reflected_axis_segments` asserts the three directions
+    with a causal contrast that the old method drew one -Z line at x~0, and that single-mirror is byte-identical.
+    """
+    result = PhaseResult(
+        name="Phase 192: multi-fold reflected optical-axis segments (0216)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_multifold_reflected_axis_segments import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"multifold-reflected-axis guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("multifold-reflected-axis phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10564,6 +10597,7 @@ def main() -> int:
             phase_189_second_mirror_orientation_driven_fold,
             phase_190_second_mirror_same_part_mirror_carryover,
             phase_191_second_mirror_incoming_axis_placement,
+            phase_192_multifold_reflected_axis_segments,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
