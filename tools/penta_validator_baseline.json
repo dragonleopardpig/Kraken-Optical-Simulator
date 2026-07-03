@@ -195,7 +195,8 @@
     "190": "pass",
     "191": "pass",
     "192": "pass",
-    "193": "pass"
+    "193": "pass",
+    "194": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -391,6 +392,7 @@
     "190": "second promoted mirror same-part Mirror carry-over (0214)",
     "191": "second-mirror incoming optical-axis placement (0215)",
     "192": "multi-fold reflected optical-axis segments (0216)",
-    "193": "incoming optical axis meets the fold vertex (0218)"
+    "193": "incoming optical axis meets the fold vertex (0218)",
+    "194": "folded image snaps to the ray convergence (0217)"
   }
 }

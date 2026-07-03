@@ -139,9 +139,19 @@ def _run(tilt_y: float) -> dict:
 
     oa = _onaxis(bundle)
     path = oa[0] if oa else None
+    detector_target = None
+    for target in getattr(bundle, "targets", None) or []:
+        if getattr(target, "is_detector", False):
+            detector_target = np.asarray(getattr(target, "center_world"), dtype=float).reshape(3)
+            break
     return {
         "mirror2_center": _center(overrides[mirror2_idx]) if mirror2_idx in overrides else None,
         "image_center": _center(overrides[image_idx]) if image_idx in overrides else None,
+        # bugs/0217: the DRAWN detector target -- reconciled onto the physics focus (the ray
+        # convergence) by `_reconcile_folded_image_to_ray_convergence`. The `image_center`
+        # override above is the raw GEOMETRIC placement (plate back), which the reconcile
+        # deliberately supersedes, so the display rays now land on THIS, not on `image_center`.
+        "detector_target": detector_target,
         "planes": planes,
         "kinks": _kinks(path) if path is not None else -1,
         "endpoint": np.asarray(path[-1][:3], dtype=float) if path is not None else None,
@@ -214,20 +224,22 @@ def validate_second_mirror_orientation_driven_fold() -> list[Check]:
     #    cone-preserving reflection path, and its endpoint COINCIDES with the folded
     #    detector -- the two systems land the beam at the same physics-fold point.
     ep = down["endpoint"]
+    dt = down["detector_target"]
     rays_agree = (
         down["kinks"] == 2
         and down["tag"] == "folded_straight_equivalent_reflected"
         and ep is not None
-        and imc is not None
-        and bool(np.linalg.norm(ep - imc) < 1.0)
+        and dt is not None
+        and bool(np.linalg.norm(ep - dt) < 1.0)
     )
     checks.append(
         Check(
-            "the display rays fold twice and land ON the folded detector (rays == detector)",
+            "the display rays fold twice and land ON the drawn detector (rays == detector, bugs/0217)",
             rays_agree,
             f"kinks={down['kinks']} (expect 2), tag={down['tag']!r}, endpoint="
-            f"{None if ep is None else tuple(round(float(v),3) for v in ep)} vs detector="
-            f"{None if imc is None else tuple(round(float(v),3) for v in imc)} (expect coincident)",
+            f"{None if ep is None else tuple(round(float(v),3) for v in ep)} vs detector_target="
+            f"{None if dt is None else tuple(round(float(v),3) for v in dt)} (expect coincident at the "
+            f"physics focus; the raw override image_center={None if imc is None else tuple(round(float(v),3) for v in imc)} is the superseded plate-back)",
         )
     )
 

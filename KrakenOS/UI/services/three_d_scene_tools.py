@@ -115,6 +115,20 @@ SCREENSHOT_DIR = PROJECT_ROOT / "attachment"
 _RAY_DRAW_BUDGET_DEFAULT = 300
 _RAY_DRAW_BUDGET_CONE = 2000
 
+# bugs/0217 -- gate for `_reconcile_folded_image_to_ray_convergence`. A folded
+# promoted-mirror scene whose flat-plate equivalent overshoots the image conjugate by the
+# trailing fold mirror's plate reconciles the detector + ray hard-stop onto the PHYSICS
+# focus (the outgoing cone's waist). The gate is deliberately tight so every OTHER folded
+# scene is a NO-OP: a single fold already images at its endpoints (overshoot ~ 0) and a
+# collimated cascade has no tight axial waist to snap to.
+_FOLDED_FOCUS_MIN_RAYS = 8            # need a real cone to locate a waist
+_FOLDED_FOCUS_AXIAL_LAUNCH_MM = 1.0   # only the AXIAL field (launched ~on the object axis) -- off-axis
+                                      # fields image to their own points, so a mixed bundle has no waist
+_FOLDED_FOCUS_PLANE_TOL_MM = 5.0      # a ray "reaches the image" if it ends within this of the plane
+_FOLDED_FOCUS_MIN_OVERSHOOT_MM = 2.0  # the waist must sit clearly upstream of the endpoints
+_FOLDED_FOCUS_MAX_WAIST_MM = 0.1      # ... and be a genuine point focus (not a marginally tighter blob)
+_FOLDED_FOCUS_WAIST_RATIO = 0.2       # ... much tighter than the (overshot) endpoint spread
+
 # A cemented bond / optical-contact layer (e.g. the 7.5 um "___BLANK" cement in a
 # crown+flint doublet) is a real glass volume, but only microns thick. KrakenOS
 # builds one BBB solid per glass-bearing surface, so that bond becomes a
@@ -560,6 +574,12 @@ class ThreeDSceneToolsMixin:
                 self._apply_folded_display_bend(
                     scene_bundle, straight_equivalent_fold_transform
                 )
+                # bugs/0217: the straight-equivalent overshoots a TRAILING fold mirror's
+                # plate, so the detector + ray hard-stop land ~a plate past the focus and the
+                # field beams reach the sensor spread. Snap them onto the physics focus (the
+                # outgoing cone's waist) when a real overshoot is present; a NO-OP otherwise.
+                if straight_equivalent_fold_transform is not None:
+                    self._reconcile_folded_image_to_ray_convergence(scene_bundle)
             if include_live_step_overlays:
                 self._last_live_step_overlay_trace_rows = list(self.rows)
                 self._last_live_step_overlay_trace_records = list(live_step_records)
@@ -730,6 +750,156 @@ class ThreeDSceneToolsMixin:
             self._reflect_straight_equivalent_display_rays(scene_bundle)
         else:
             self._apply_folded_mirror_reflection_correction(scene_bundle)
+
+    def _reconcile_folded_image_to_ray_convergence(self, scene_bundle) -> int:
+        """bugs/0217: on a folded promoted-mirror scene whose LAST fold mirror sits right
+        before the image, the detector target AND the ray hard-stop both land at
+        ``fold(straight-equivalent Image row)`` = the mirror plate's BACK face -- ~a plate
+        thickness PAST where the cone physically converges. The flat-plate equivalent keeps
+        the trailing fold mirror's full glass thickness AFTER the conjugate, so the straight
+        Image row overshoots the focus by ``thickness - t(1-1/n)``; the rays therefore waist
+        to a sharp focus UPSTREAM of where they stop, and the detector disc sits on the
+        diverged blob -> the field beams reach the sensor SPREAD, not focused (the two-mirror
+        AZ85 ``flag_20260703_221640`` "still defocus at detector"; ``flag_20260703_145514``).
+
+        Reconcile the DISPLAY detector + rays to the physics focus, exactly as the two-arm
+        splitter fold does (``services/two_arm_display_fold.py`` places each detector at the
+        ray convergence, not the prescription plane): find where the outgoing cone actually
+        waists along the detector's own normal and, when that waist is CLEARLY before the ray
+        endpoints (a real, tight overshoot), truncate every reaching ray onto the waist plane
+        AND move the detector target(s) onto it.
+
+        NO-OP unless a genuine overshoot is present, so it is safe for every other folded
+        scene: a single fold images AT its endpoints (the one-mirror AZ85 cone waists at the
+        detector -> overshoot ~ 0), and a collimated cascade has no converging axial cone from
+        the object point (the penta telescope -> no tight waist). Returns the number of
+        detector targets moved (0 = no-op)."""
+        if scene_bundle is None:
+            return 0
+        detectors = [t for t in (getattr(scene_bundle, "targets", None) or []) if getattr(t, "is_detector", False)]
+        ray_paths = getattr(scene_bundle, "ray_paths", None) or []
+        if not detectors or len(ray_paths) < _FOLDED_FOCUS_MIN_RAYS:
+            return 0
+        anchor = detectors[0]
+        try:
+            ref = np.asarray(anchor.center_world, dtype=float).reshape(3)
+            axis = np.asarray(anchor.normal_world, dtype=float).reshape(3)
+        except Exception:
+            return 0
+        axis_norm = float(np.linalg.norm(axis))
+        if axis_norm < 1e-9 or not (np.all(np.isfinite(ref)) and np.all(np.isfinite(axis))):
+            return 0
+        axis = axis / axis_norm
+
+        # Collect the AXIAL-field polylines whose LAST vertex lands on this detector plane,
+        # and orient ``axis`` so the beam propagates along +axis. Only the axial field: it
+        # images to ONE point (a locatable waist); a mixed multi-field bundle images to an
+        # extended patch (no tight waist) and would defeat the gate.
+        polys: list[np.ndarray] = []
+        ends: list[np.ndarray] = []
+        for path in ray_paths:
+            pw = np.asarray(getattr(path, "points_world", None), dtype=float)
+            if pw.ndim != 2 or pw.shape[0] < 2 or pw.shape[1] < 3:
+                continue
+            if float(np.linalg.norm(pw[0, :3])) > _FOLDED_FOCUS_AXIAL_LAUNCH_MM:
+                continue
+            if abs(float((pw[-1, :3] - ref) @ axis)) > _FOLDED_FOCUS_PLANE_TOL_MM:
+                continue
+            polys.append(pw)
+            ends.append(pw[-1, :3])
+        if len(polys) < _FOLDED_FOCUS_MIN_RAYS:
+            return 0
+        if float(np.mean((np.asarray(ends) - ref) @ axis)) < 0.0:
+            axis = -axis
+
+        # Restrict to each ray's OUTGOING leg -- the trailing run that keeps advancing along
+        # +axis -- so the object launch point and the pre-fold legs (all at a smaller +axis
+        # coordinate) can never masquerade as a waist.
+        legs: list[np.ndarray] = []
+        for pw in polys:
+            proj = pw[:, :3] @ axis
+            start = len(proj) - 1
+            while start > 0 and proj[start - 1] <= proj[start] + 1e-9:
+                start -= 1
+            leg_pw = pw[start:, :3]
+            if leg_pw.shape[0] >= 2:
+                legs.append(leg_pw)
+        if len(legs) < _FOLDED_FOCUS_MIN_RAYS:
+            return 0
+
+        u = np.cross(axis, np.eye(3)[int(np.argmin(np.abs(axis)))])
+        u = u / max(float(np.linalg.norm(u)), 1e-12)
+        v = np.cross(axis, u)
+
+        def _spread(s: float) -> tuple[float, np.ndarray | None]:
+            c = ref + s * axis
+            hits: list[np.ndarray] = []
+            for leg_pw in legs:
+                sd = (leg_pw - c) @ axis
+                for i in range(len(sd) - 1):
+                    if sd[i] * sd[i + 1] <= 0 and abs(sd[i + 1] - sd[i]) > 1e-9:
+                        t = -sd[i] / (sd[i + 1] - sd[i])
+                        hits.append(leg_pw[i] + t * (leg_pw[i + 1] - leg_pw[i]))
+                        break
+            if len(hits) < _FOLDED_FOCUS_MIN_RAYS:
+                return 1e18, None
+            a = np.asarray(hits, dtype=float)
+            ctr = a.mean(0)
+            rms = float(np.sqrt((((a - ctr) @ u) ** 2 + ((a - ctr) @ v) ** 2).mean()))
+            return rms, ctr
+
+        endpoint_rms, _ = _spread(0.0)
+        if not np.isfinite(endpoint_rms):
+            return 0
+        # sweep the WHOLE outgoing leg (endpoint included) for the GLOBAL tightest waist; the
+        # overshoot is how far UPSTREAM of the endpoints it sits. A scene already imaged at its
+        # endpoints (a single fold) minimises at s~0 -> overshoot ~ 0 -> NO-OP below.
+        leg_span = float(np.max([float(np.ptp(lp @ axis)) for lp in legs]))
+        best = (1e18, 0.0, None)
+        for s in np.linspace(-max(leg_span, 1.0), _FOLDED_FOCUS_PLANE_TOL_MM, 700):
+            rms, ctr = _spread(float(s))
+            if rms < best[0]:
+                best = (rms, float(s), ctr)
+        waist_rms, waist_s, waist_ctr = best
+        overshoot = -waist_s
+        if (
+            waist_ctr is None
+            or overshoot < _FOLDED_FOCUS_MIN_OVERSHOOT_MM
+            or waist_rms > _FOLDED_FOCUS_MAX_WAIST_MM
+            or waist_rms > _FOLDED_FOCUS_WAIST_RATIO * max(endpoint_rms, 1e-9)
+        ):
+            return 0
+
+        # Truncate every reaching ray onto the waist plane, and move the detector target(s)
+        # (and any image reference curve) onto it -- so the disc, the rays and the image plane
+        # all coincide at the physics focus.
+        plane_pt = np.asarray(waist_ctr, dtype=float)
+        for path in ray_paths:
+            pw = np.asarray(getattr(path, "points_world", None), dtype=float)
+            if pw.ndim != 2 or pw.shape[0] < 2 or pw.shape[1] < 3:
+                continue
+            if abs(float((pw[-1, :3] - ref) @ axis)) > _FOLDED_FOCUS_PLANE_TOL_MM:
+                continue
+            a, b = pw[-2, :3], pw[-1, :3]
+            d = b - a
+            dn = float(d @ axis)
+            if abs(dn) < 1e-9:
+                continue
+            t = float((plane_pt - a) @ axis) / dn
+            if t <= 0.0:
+                continue
+            new_pw = pw.copy()
+            new_pw[-1, :3] = a + t * d
+            path.points_world = new_pw
+        shift = waist_s * axis  # waist_s < 0: pull the plane back toward the fold
+        moved = 0
+        for target in detectors:
+            try:
+                target.center_world = np.asarray(target.center_world, dtype=float).reshape(3) + shift
+                moved += 1
+            except Exception:
+                continue
+        return moved
 
     @staticmethod
     def _saved_step_source_path_for_row(row: SurfaceRow) -> Path | None:

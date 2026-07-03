@@ -10392,6 +10392,38 @@ def phase_193_incoming_axis_meets_fold_vertex(
     return result
 
 
+def phase_194_folded_image_snaps_to_ray_convergence(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A folded promoted-mirror scene whose LAST fold mirror sits right before the image must draw its
+    detector (and terminate its rays) at the PHYSICS focus -- where the outgoing cone converges -- NOT a
+    fold-mirror plate PAST it (bugs/0217, flag_20260703_221640 "still defocus at detector", flag_20260703_145514).
+    The flat-plate equivalent keeps the trailing mirror's full glass thickness after the conjugate, so the
+    straight Image row -- and hence the detector target + ray hard-stop = fold(straight Image row) -- overshoots
+    the waist by ~a plate (28 mm on AZ85); the field beams reach the sensor SPREAD. `_reconcile_folded_image_to_
+    ray_convergence` snaps the detector + rays onto the waist (the two-arm splitter fold's physics-focus pattern).
+    `validate_open3d_folded_image_snaps_to_ray_convergence` asserts the two-mirror cone converges ON the detector,
+    a causal contrast that the reconcile moved it a real distance, that the single fold is a clean NO-OP, and wiring.
+    """
+    result = PhaseResult(
+        name="Phase 194: folded image snaps to the ray convergence (0217)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_folded_image_snaps_to_ray_convergence import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-image-convergence guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-image-convergence phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10631,6 +10663,7 @@ def main() -> int:
             phase_191_second_mirror_incoming_axis_placement,
             phase_192_multifold_reflected_axis_segments,
             phase_193_incoming_axis_meets_fold_vertex,
+            phase_194_folded_image_snaps_to_ray_convergence,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

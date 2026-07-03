@@ -1,15 +1,17 @@
 # 0217 — two-mirror folded AZ85 image is unfocused (detector a plate past the true focus)
 
-**Status: ROOT-CAUSED + PROTOTYPED, then REVERTED (needs a wider reconciliation + the user's
-call). The two-mirror optics FOCUS PERFECTLY — the folded display cone converges to a 0.7 µm waist
-at world (181.3, 0, −33.8), VERIFIED as the true physical image (reflecting the straight focus
-(0,0,359.1) about BOTH real mirror planes by hand lands (181.3,0,−33.8)). The image reads
-"unfocused" because the DRAWN detector AND the ray hard-stop both sit ~a fold-mirror plate PAST
-that focus. A validated reconcile-to-ray-convergence post-pass fixed the target scene headlessly
-(rays + bundle-target detector → −33.8, 0.7 µm) BUT regressed an existing folded guard, because
-the detector has SEVERAL representations and only some moved (see "The entanglement" below). The
-correct fix is a wider architectural change + guard updates; it is VISUAL (needs an in-app
-eyeball), so it is paused for the user's decision, not shipped half-done.**
+**Status: FIXED for the 3D view (the `flag_20260703_221640` "still defocus at detector" scene);
+the 2D image-plane LINE + a pre-existing single-fold sensor drift remain (see "Remaining"). The
+two-mirror optics FOCUS PERFECTLY — the folded display cone converges to a 0.7 µm waist at world
+(181.3, 0, −33.8), VERIFIED as the true physical image (reflecting the straight focus (0,0,359.1)
+about BOTH real mirror planes by hand lands (181.3,0,−33.8)). The image read "unfocused" because
+the DRAWN 3D detector AND the ray hard-stop both sat ~a fold-mirror plate (28 mm) PAST that focus.
+`_reconcile_folded_image_to_ray_convergence` (three_d_scene_tools.py, run after
+`_apply_folded_display_bend`) snaps the detector target + the rays onto the ray convergence — the
+two-arm splitter fold's "detector at the physics focus" pattern generalised to the RA-mirror fold.
+Guard `validate_open3d_folded_image_snaps_to_ray_convergence` (penta phase 194) proves the cone
+converges ON the detector (0.7 µm) and the single fold / penta are clean no-ops. In-app eyeball on
+the 3D two-mirror scene still owed (headless proves detector == waist == ray-stop mechanically).**
 
 ## CORRECTION to the earlier note: the detector is at −62.05, NOT −22.05
 
@@ -164,15 +166,37 @@ Also note: `validate_open3d_ra_mirror_folded_sequential_trace` already FAILS on 
 (=mirror desp_z) discrepancy, independent evidence that even the SINGLE fold's drawn sensor sits a
 half-plate past where the cone lands. Fixture/guard drift, not this bug, but same family.
 
-## Recommended fix direction (needs the user's call — it is wider + VISUAL)
+## SHIPPED (Stage 1 — the 3D view, `flag_20260703_221640`)
 
-Reconcile ALL detector representations to the ray convergence (the physics focus), in ONE place,
-so the disc, the override image center, the 2D image-plane curve, and the row/dimension anchors all
-move together; then UPDATE the guards that codified the overshoot to assert coincidence at the
-FOCUS (they should still pass once every representation moves together). This is a real
-architectural change to the folded image-plane placement (touching the 0207 output-port machinery
-+ the reference-plane path), and its success is VISUAL — the rendered rays must terminate sharply
-ON the detector — which headless proves only mechanically (detector == waist == ray-stop). Because
-it is wider than the "one Image-row" fix first scoped AND needs an in-app eyeball, it is paused for
-the user rather than shipped half-done. Scratch: `bugs/probe_0217_{focus,groundtruth,dissect,
-flagpose,airplate,postpass}.py` (untracked) carry every measurement above.
+`_reconcile_folded_image_to_ray_convergence(scene_bundle)` runs after `_apply_folded_display_bend`,
+gated to the straight-equivalent fold path. It anchors on the `is_detector` target's own plane,
+selects the AXIAL field (launch within 1 mm of the object axis), trims each ray to its OUTGOING leg
+(so the object/pre-fold legs can't masquerade as a waist), sweeps the whole leg for the GLOBAL
+tightest waist, and — only on a real overshoot (waist ≥ 2 mm upstream AND ≤ 0.1 mm AND ≤ 0.2×
+endpoint RMS) — truncates every reaching ray onto the waist plane and moves the detector target(s)
+onto it. On the two-mirror AZ85 the detector + rays snap from z=−62.05 to z=−33.84 at **0.7 µm**
+(the cone now focuses ON the detector). Clean NO-OP on the single fold (overshoot ~0) and the penta
+(collimated, no axial cone → <8 axial rays). `validate_open3d_second_mirror_orientation_driven_fold`
+was updated (it asserted rays == the RAW output-port override `image_center`, the plate-back; it now
+asserts rays == the reconciled `detector_target`, both at the physics focus — the override is the
+superseded geometric placement). Guard `validate_open3d_folded_image_snaps_to_ray_convergence` =
+penta phase 194. All 9 folded guards green. In-app eyeball on the 3D scene still owed.
+
+## Remaining (owed)
+
+1. **The 2D image-plane LINE.** The `surface_curves` role="image" curve sits at z=−22.05 (the
+   `_optical_solid_image_plane_overrides` / output-port geometric value — a THIRD representation,
+   already inconsistent with the −62.05 disc BEFORE this fix). Stage 1 moves the 3D disc + rays but
+   NOT this 2D curve (it lives in a different/projected frame). The 2D layout view will still draw
+   the image line off the focus — the `flag_20260703_145514` "image plane … wrong direction" 2D
+   complaint. Stage 2: move the 2D image curve (and any row/dimension anchor) onto the convergence
+   too. The geometric output-port override cannot know the optical focus, so this must also be a
+   display reconciliation keyed off the ray convergence.
+2. **Pre-existing single-fold sensor drift.** `validate_open3d_ra_mirror_folded_sequential_trace`
+   FAILS on clean `main` (single-mirror end-to-end cone at X=275.32 vs its `_SENSOR_X=287.82`, a
+   12.5 mm = mirror desp_z gap). Same family, but a separate fixture/guard-drift issue — the
+   single-fold reconcile is a NO-OP (its display cone already waists at its own endpoint 275.3), so
+   0217 neither fixes nor worsens it. Left for a dedicated pass.
+
+Scratch (untracked): `bugs/probe_0217_{focus,groundtruth,dissect,flagpose,airplate,postpass,
+reconcile_prototype}.py` carry every measurement + a standalone copy of the shipped post-pass.
