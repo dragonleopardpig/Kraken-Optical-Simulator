@@ -493,6 +493,27 @@ class ParaxialToolsMixin:
                 break
         raise RuntimeError("No optical block available for paraxial solve")
 
+    def _ra_mirror_fold_vertex_world(self, row_index: int, *, system=None) -> "np.ndarray | None":
+        """bugs/0221: the world point where the optical axis meets the RA-mirror HYPOTENUSE -- the
+        FOLD VERTEX = the promoted RA-mirror centre. ``_surface_reference_world_point`` returns the
+        folded element centre, which for a promoted RA mirror IS that axis-hypotenuse intersection.
+        Returns None when the row is not a promoted RA-mirror fold. Used as a manual-measurement
+        SNAP target so the user can measure e.g. object -> RA-mirror centre."""
+        rows = list(getattr(self, "rows", []) or [])
+        idx = int(row_index)
+        if not (0 <= idx < len(rows)) or not _row_is_promoted_mirror_fold(rows[idx]):
+            return None
+        try:
+            pt = self._surface_reference_world_point(
+                idx, system=system if system is not None else getattr(self, "last_system", None)
+            )
+        except Exception:
+            return None
+        pt = np.asarray(pt, dtype=float).reshape(-1)[:3]
+        if pt.size >= 3 and np.all(np.isfinite(pt)):
+            return pt.astype(float)
+        return None
+
     def _scene_folds_for_paraxial_distance(self, rows: list[SurfaceRow] | None = None) -> bool:
         """True when the layout has a fold the object/image DISTANCE must sum THROUGH -- a
         sequential ``Mirror`` row OR a promoted RA-mirror fold (a CAD solid with a Mirror face).

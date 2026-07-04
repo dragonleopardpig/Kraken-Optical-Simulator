@@ -3815,6 +3815,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     snapped = pos
                     step_label = self._actor_step_map.get(hit_key) if hit_key is not None else None
                     snapped_label = str(step_label).upper() if step_label else ""
+                    # bugs/0221: when the cursor is over a promoted RA MIRROR, snap PRECISELY to its
+                    # fold vertex (the optical axis meeting the hypotenuse = the mirror centre)
+                    # instead of the arbitrary surface point under the cursor, so a manual dimension
+                    # can measure e.g. object plane -> RA-mirror centre. The committed anchor already
+                    # re-derives this row's centre z via _surface_reference_world_point, so the live
+                    # snap now matches the commit.
+                    row_hit = self._actor_row_map.get(hit_key) if hit_key is not None else None
+                    if row_hit is not None:
+                        vertex = self.editor._ra_mirror_fold_vertex_world(int(row_hit))
+                        if vertex is not None:
+                            vertex = np.asarray(vertex, dtype=float).reshape(-1)[:3]
+                            if vertex.size >= 3 and np.all(np.isfinite(vertex)):
+                                snapped = vertex
+                                snapped_label = "RA MIRROR CENTRE"
             else:
                 hit_key = None
         except Exception:

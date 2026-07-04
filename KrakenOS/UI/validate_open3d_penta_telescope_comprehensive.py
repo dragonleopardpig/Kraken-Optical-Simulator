@@ -10491,6 +10491,36 @@ def phase_196_camera_tracks_folded_focus(
     return result
 
 
+def phase_197_ra_mirror_centre_snap(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The manual-measurement re-anchor tool can SNAP to the RA-mirror CENTRE (the optical axis
+    meeting the hypotenuse = the fold vertex), so the user can measure e.g. object plane -> RA-mirror
+    centre (bugs/0221, flag_20260704_195234 request). It snapped to the arbitrary surface point under
+    the cursor; now _ra_mirror_fold_vertex_world resolves the fold vertex for a promoted RA-mirror row
+    and _apply_dimension_anchor_pick_motion snaps the moving endpoint onto it ("RA MIRROR CENTRE").
+    `validate_open3d_ra_mirror_centre_snap` asserts the vertex resolves + equals the promoted-mirror
+    centre, is gated to RA mirrors (None elsewhere), the object->mirror-1-centre measurement, and wiring.
+    """
+    result = PhaseResult(
+        name="Phase 197: manual measurement snaps to the RA-mirror centre (0221)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_ra_mirror_centre_snap import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"ra-mirror-centre-snap guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("ra-mirror-centre-snap phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10733,6 +10763,7 @@ def main() -> int:
             phase_194_folded_image_snaps_to_ray_convergence,
             phase_195_folded_working_image_distance,
             phase_196_camera_tracks_folded_focus,
+            phase_197_ra_mirror_centre_snap,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
