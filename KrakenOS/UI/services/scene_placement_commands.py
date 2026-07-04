@@ -4072,7 +4072,7 @@ class ScenePlacementMixin:
         try:
             if label == "camera":
                 return round(
-                    float(self._current_image_plane_z() - self._current_camera_front_to_sensor_mm()),
+                    float(self._camera_track_image_plane_z() - self._current_camera_front_to_sensor_mm()),  # bugs/0220
                     6,
                 )
             if label == "led":

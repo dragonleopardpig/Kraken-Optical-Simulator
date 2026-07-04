@@ -1048,7 +1048,8 @@ class LayoutOpticalSolidWorkflowMixin:
         if label == "lens":
             return float(self._lens_front_datum_z())
         if label == "camera":
-            return float(self._current_image_plane_z() - self._current_camera_front_to_sensor_mm())
+            # bugs/0220: track the paraxial focus when the trailing mirror overshoots (see helper)
+            return float(self._camera_track_image_plane_z() - self._current_camera_front_to_sensor_mm())
         if label == "led":
             return float(self._led_step_z_translation())
         return 0.0
@@ -1183,7 +1184,7 @@ class LayoutOpticalSolidWorkflowMixin:
         if label == "camera":
             if self.imported_camera_step_path is None:
                 return None
-            camera_front_z = self._current_image_plane_z() - self._current_camera_front_to_sensor_mm()
+            camera_front_z = self._camera_track_image_plane_z() - self._current_camera_front_to_sensor_mm()  # bugs/0220
             return {
                 "path": self.imported_camera_step_path,
                 "largest_component": True,

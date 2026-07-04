@@ -101,6 +101,11 @@ def _cached_cad_mesh_path(path: Path) -> Path:
 # interior 45-deg coating as a tessellated, selectable face (bugs/0064).
 _ANALYTIC_MESH_CACHE_VERSION = "v2"
 
+# bugs/0220: the camera STEP tracks the paraxial focus (not the prescription Image row) only when
+# the focus is at least this far BEFORE the row -- the trailing-mirror-plate overshoot that the
+# bugs/0217 reconcile also snaps the detector to. Below it, the prescription plane is kept.
+_CAMERA_FOCUS_TRACK_TOL_MM = 0.5
+
 
 def _cached_analytic_cad_mesh_path(path: Path, *, largest_component: bool = False) -> Path:
     base_path = _cached_cad_mesh_path(path)
@@ -332,6 +337,35 @@ class LayoutPolylineDisplayMixin:
         for row in self.rows[:-1]:
             z_pos += float(row.thickness)
         return z_pos + float(self.rows[-1].desp_z) if self.rows[-1].surface == "Image" else z_pos
+
+    def _camera_track_image_plane_z(self) -> float:
+        """The image-plane z the CAMERA STEP tracks. Normally the prescription Image-row z
+        (``_current_image_plane_z``). But bugs/0220: on a folded promoted-mirror scene whose
+        trailing mirror's glass plate pushes the prescription Image row PAST the true optical
+        conjugate, the light images at the paraxial focus (``_paraxial_image_plane_z``) -- which is
+        where the bugs/0217 reconcile parks the detector. If the camera kept following the
+        prescription plane it would sit a plate BEHIND the detector ("detector and camera STEP
+        detached", flag_20260704_195234). So when the focus is meaningfully BEFORE the prescription
+        (the overshoot case -- exactly when 0217 fires), track the focus, keeping the camera ON the
+        detector. When the focus is AT or PAST the prescription (unfolded, or a single fold whose
+        rays stop at the row before reaching the focus -- 0217 is a no-op there), keep the
+        prescription plane so the camera does not detach the other way."""
+        prescription = self._current_image_plane_z()
+        try:
+            if not self._scene_folds_for_paraxial_distance(self.rows):
+                return prescription
+            focus = self._paraxial_image_plane_z()
+        except Exception:
+            return prescription
+        if focus is None:
+            return prescription
+        focus = float(focus)
+        if not np.isfinite(focus):
+            return prescription
+        # only when the image forms BEFORE the prescription row (the trailing-mirror overshoot)
+        if focus < prescription - _CAMERA_FOCUS_TRACK_TOL_MM:
+            return focus
+        return prescription
 
     def _row_z_positions(self) -> list[float]:
         z_positions: list[float] = [0.0]
@@ -1374,7 +1408,7 @@ class LayoutPolylineDisplayMixin:
     def _transformed_imported_camera_step_mesh(self):
         if self.imported_camera_step_path is None:
             return None
-        camera_front_z = self._current_image_plane_z() - self._current_camera_front_to_sensor_mm()
+        camera_front_z = self._camera_track_image_plane_z() - self._current_camera_front_to_sensor_mm()  # bugs/0220
         fold_transform = self._optical_axis_fold_world_transform_for_row(
             self._image_plane_row_index()
         )

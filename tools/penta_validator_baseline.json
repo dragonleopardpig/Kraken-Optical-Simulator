@@ -197,7 +197,8 @@
     "192": "pass",
     "193": "pass",
     "194": "pass",
-    "195": "pass"
+    "195": "pass",
+    "196": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -395,6 +396,7 @@
     "192": "multi-fold reflected optical-axis segments (0216)",
     "193": "incoming optical axis meets the fold vertex (0218)",
     "194": "folded image snaps to the ray convergence (0217)",
-    "195": "folded working + image distance sum through the RA mirror (0219)"
+    "195": "folded working + image distance sum through the RA mirror (0219)",
+    "196": "camera STEP tracks the folded true focus (0220)"
   }
 }

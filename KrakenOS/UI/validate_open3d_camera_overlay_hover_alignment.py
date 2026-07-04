@@ -70,6 +70,11 @@ class _FakeEditor:
     def _current_image_plane_z(self):
         return float(self.image_plane_z)
 
+    def _camera_track_image_plane_z(self):
+        # bugs/0220: the camera placement tracks the paraxial focus only on a folded overshoot;
+        # this unfolded fake has no fold, so it tracks the prescription Image-row plane.
+        return float(self.image_plane_z)
+
     def _current_camera_front_to_sensor_mm(self):
         return float(self.front_to_sensor)
 

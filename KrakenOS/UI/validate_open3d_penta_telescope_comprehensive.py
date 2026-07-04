@@ -10458,6 +10458,39 @@ def phase_195_folded_working_image_distance(
     return result
 
 
+def phase_196_camera_tracks_folded_focus(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The camera STEP must track the TRUE optical focus, not the prescription Image-row plane, on a
+    folded promoted-mirror scene whose trailing mirror overshoots the conjugate -- so it stays
+    ATTACHED to the detector the bugs/0217 reconcile parks at the focus (bugs/0220,
+    flag_20260704_195234 "detector and camera STEP detached"). The camera front is placed at
+    _current_image_plane_z() - front_to_sensor; on the two-mirror AZ85 the prescription row sits ~32
+    mm (a mirror plate) past the focus, so the camera followed the row while the detector sat at the
+    focus. _camera_track_image_plane_z tracks the paraxial focus when it is meaningfully BEFORE the
+    prescription row (the overshoot -- exactly when 0217 fires), else keeps the row (unfolded / single
+    fold whose rays stop short of the focus). `validate_open3d_camera_tracks_folded_focus` asserts the
+    two-mirror tracks the focus, the single fold keeps the row, a causal contrast, and wiring.
+    """
+    result = PhaseResult(
+        name="Phase 196: camera STEP tracks the folded true focus (0220)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_camera_tracks_folded_focus import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"camera-tracks-folded-focus guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("camera-tracks-folded-focus phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10699,6 +10732,7 @@ def main() -> int:
             phase_193_incoming_axis_meets_fold_vertex,
             phase_194_folded_image_snaps_to_ray_convergence,
             phase_195_folded_working_image_distance,
+            phase_196_camera_tracks_folded_focus,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
