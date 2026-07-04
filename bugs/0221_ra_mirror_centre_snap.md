@@ -3,9 +3,10 @@
 **Status: FEATURE SHIPPED (the snap TARGET). The manual-measurement re-anchor tool can now snap a
 dimension endpoint to the RA-mirror CENTRE — the point where the optical axis meets the mirror
 hypotenuse (the fold vertex = the promoted RA-mirror centre) — so the user can measure e.g. object
-plane → RA-mirror centre. Answers the `flag_20260704_195234` request. In-app drag verification is
-owed (the pick/drag is interactive; headless proves the snap target + measurement, not the mouse
-gesture).**
+plane → RA-mirror centre. Answers the `flag_20260704_195234` request. In-app CONFIRMED
+(`flag_20260704_223026_841`, "Manual measurement of snapping optical axis works."): the manual
+dimension snaps to the RA-mirror centre and reads 71.9 mm object-plane → RA-mirror-1 centre (the first
+optical-axis segment), with a second 60.66 mm segment on the outgoing leg.**
 
 ## The request
 

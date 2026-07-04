@@ -4,9 +4,9 @@
 off the coated hypotenuse and never enters the glass — so its glass is optically inert and the
 folded 1:1 AZ85 relay now reports magnification 1.0 (was ~1.16–1.40X). The external-vs-internal case
 is decided from the GEOMETRY so the model stays in SYNC with the drawing whichever way the prism
-sits. Headless-verified (paraxial + ray trace = 1.000). In-app re-eyeball owed: the true focus moved
-(the air model is a plate-thickness shorter than the old glass model), so the detector/camera sit a
-few mm nearer — cosmetically the cone is unchanged, still sharp on the detector (bugs/0217/0220).**
+sits. Headless-verified (paraxial + ray trace = 1.000). **In-app CONFIRMED**
+(`flag_20260704_222703_814`, "FOV is 1X now."): the object cone and the image cone at the camera
+render the same size, object `FOV 23.0×23.0` = `Sensor 23.0×23.0`, cone sharp on the detector.**
 
 ## The request
 
@@ -74,8 +74,9 @@ onto a cathetus (Transmit) face is detected `False` (keep the glass), proving th
 the user asked about; (E) wiring. Penta **phase 198**, baseline `pass`. All neighbouring folded guards
 (0215–0221 axis/vertex/cone/distance/snap/camera) stay green.
 
-## In-app follow-up owed
+## In-app confirmation
 
-Per the memory workflow (visual fixes need an in-app eyeball): confirm the FOV readout now shows 1X
-and the detector/camera sit on the (slightly nearer) sharp focus. The optics are unchanged in shape —
-only the axial focus position shifted by the removed glass path.
+DONE — `flag_20260704_222703_814` ("FOV is 1X now."). The relay renders the object cone (left) and
+the image cone at the camera (right) the same size, with the object `FOV 23.0×23.0` matching the
+`Sensor 23.0×23.0`, i.e. unit magnification; the cone stays sharp on the detector. The optics are
+unchanged in shape — only the axial focus position shifted by the removed glass path.
