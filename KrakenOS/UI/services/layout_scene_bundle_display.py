@@ -248,13 +248,29 @@ class LayoutSceneBundleDisplayMixin:
             # the Det overlay is on) vanished after a cube promotion (bugs/0104).
             if self._layout_needs_paraxial_reference(self.rows):
                 solve_rows, _last_source_index = self._paraxial_reference_rows_for_layout(self.rows)
-            _a, _b, _c, _d, _effl, ppa, ppp = self._exact_paraxial_solution_for_rows(solve_rows)
+            _a, _b, _c, _d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(solve_rows)
             h1_vertex_z, h2_vertex_z = self._paraxial_vertex_zs(solve_rows)
             h1_z = h1_vertex_z + float(ppa)
             h2_z = h2_vertex_z + float(ppp)
             image_z = sum(float(row.thickness) for row in solve_rows[:-1])
             object_principal = float(h1_z)
             image_principal = float(image_z - h2_z)
+            # bugs/0222: read the magnification at the CONJUGATE (where the object actually images),
+            # not at the prescription Image ROW. On the folded RA-mirror scene the trailing mirror
+            # pushes the Image row a plate PAST the true focus, so ``image_z - h2_z`` measured the mag at
+            # a DEFOCUSED plane and inflated it. The Gaussian conjugate from the rear principal is
+            # s_i = f*s_o/(s_o - f) with s_o = object->front-principal distance, so m = s_i/s_o =
+            # f/(s_o - f). With the external RA mirrors modelled as air (so the relay stays 1:1, s_o =
+            # 2f) this gives exactly 1.0, matching the ray trace. For an in-focus system the prescription
+            # Image row IS the conjugate, so this equals the old value.
+            f = float(effl)
+            if (
+                self._scene_folds_for_paraxial_distance()
+                and np.isfinite(object_principal)
+                and np.isfinite(f)
+                and abs(object_principal - f) > 1e-9
+            ):
+                return float(f / (object_principal - f))
             if (
                 np.isfinite(object_principal)
                 and np.isfinite(image_principal)

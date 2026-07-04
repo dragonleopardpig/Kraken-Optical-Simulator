@@ -87,14 +87,14 @@ def validate_camera_tracks_folded_focus() -> list[Check]:
     # ===================== (B) SINGLE-MIRROR: keep the prescription =================== #
     one_ok = (
         focus1 is not None
-        and focus1 > presc1 - _TOL           # focus is AT/PAST the row (rays stop short)
-        and abs(track1 - presc1) < _TOL       # camera keeps the prescription plane, UNCHANGED
+        and focus1 < presc1 - _TOL           # bugs/0222: the external-air fold also overshoots
+        and abs(track1 - focus1) < _TOL       # ... so the camera tracks the focus too, onto the detector
     )
     checks.append(Check(
-        "single-mirror: focus is past the prescription row, so the camera keeps the prescription plane (unchanged)",
+        "single-mirror: the external-air focus is BEFORE the prescription row, so the camera tracks the focus (0222)",
         one_ok,
         f"prescription={presc1:.2f} focus={None if focus1 is None else round(focus1,2)} camera_track={track1:.2f} "
-        f"(expect track==prescription)",
+        f"(expect track==focus)",
     ))
 
     # ===================== (C) CAUSAL ================================================ #

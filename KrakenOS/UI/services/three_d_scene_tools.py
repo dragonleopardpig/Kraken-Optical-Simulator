@@ -879,18 +879,23 @@ class ThreeDSceneToolsMixin:
             if pw.ndim != 2 or pw.shape[0] < 2 or pw.shape[1] < 3:
                 continue
             if abs(float((pw[-1, :3] - ref) @ axis)) > _FOLDED_FOCUS_PLANE_TOL_MM:
+                continue  # this ray does not reach the (overshot) detector plane -> leave it
+            # Clip at the waist plane wherever the ray crosses it on the outgoing leg -- NOT just by
+            # extrapolating the last segment (the waist can sit an earlier segment back when the
+            # overshoot is large, e.g. the external-air fold). Walk from the end, find the last
+            # sign change of the signed distance to the plane, interpolate the crossing, drop the tail.
+            proj = (pw[:, :3] - plane_pt) @ axis
+            crossing = None
+            cut_index = None
+            for i in range(len(proj) - 1, 0, -1):
+                if proj[i - 1] * proj[i] <= 0.0 and abs(proj[i] - proj[i - 1]) > 1e-9:
+                    tt = float(proj[i - 1] / (proj[i - 1] - proj[i]))
+                    crossing = pw[i - 1] + tt * (pw[i] - pw[i - 1])
+                    cut_index = i
+                    break
+            if crossing is None:
                 continue
-            a, b = pw[-2, :3], pw[-1, :3]
-            d = b - a
-            dn = float(d @ axis)
-            if abs(dn) < 1e-9:
-                continue
-            t = float((plane_pt - a) @ axis) / dn
-            if t <= 0.0:
-                continue
-            new_pw = pw.copy()
-            new_pw[-1, :3] = a + t * d
-            path.points_world = new_pw
+            path.points_world = np.vstack([pw[:cut_index], crossing[None, :]])
         shift = waist_s * axis  # waist_s < 0: pull the plane back toward the fold
         moved = 0
         for target in detectors:

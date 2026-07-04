@@ -10521,6 +10521,39 @@ def phase_197_ra_mirror_centre_snap(
     return result
 
 
+def phase_198_ra_mirror_external_reflection(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The promoted RA mirror is an EXTERNAL (first-surface) reflection -- the beam bounces off the
+    coated hypotenuse without entering the glass -- so its glass is optically inert and the fold's
+    first-order model must be AIR, in SYNC with the drawn reflection, leaving the 1:1 relay at
+    magnification 1.0 (bugs/0222, flag_20260704_195234). The code had modelled the mirror as a BK7
+    plate the ray transits (INTERNAL), shifting the conjugate to ~1.16-1.40X. _ra_mirror_fold_is_
+    external_reflection decides external vs internal from the GEOMETRY (which face the beam reaches
+    first), the flat-plate equivalent + paraxial reference use AIR for an external fold, and the
+    magnification is read at the conjugate. `validate_open3d_ra_mirror_external_reflection` asserts the
+    external detection, mag 1.0 (paraxial + ray-traced), the AIR-in-sync equivalent, the INTERNAL
+    contrast (a cathetus-entry flipped prism keeps the glass), and wiring.
+    """
+    result = PhaseResult(
+        name="Phase 198: RA mirror external reflection keeps the relay 1:1 (0222)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_ra_mirror_external_reflection import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"ra-mirror-external-reflection guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("ra-mirror-external-reflection phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10764,6 +10797,7 @@ def main() -> int:
             phase_195_folded_working_image_distance,
             phase_196_camera_tracks_folded_focus,
             phase_197_ra_mirror_centre_snap,
+            phase_198_ra_mirror_external_reflection,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

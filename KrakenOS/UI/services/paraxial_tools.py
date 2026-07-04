@@ -311,7 +311,13 @@ class ParaxialToolsMixin:
                 # straight-through first-order path) so first-order code traces a clean
                 # centered system.  (The reflect arm / per-branch references are the
                 # general target in bugs/DESIGN_nonseq_first_order_reference.md §5b.)
-                reference_rows.append(_transmissive_reference_row(row))
+                ref_row = _transmissive_reference_row(row)
+                if _row_is_promoted_mirror_fold(row) and self._ra_mirror_fold_is_external_reflection(index) is not False:
+                    # bugs/0222: an EXTERNAL RA-mirror reflection is optically a pure mirror -- its glass
+                    # is inert, so its first-order equivalent is AIR, keeping the relay 1:1. (An INTERNAL
+                    # prism keeps its glass.) Matches the AIR flat-plate the display+focus use.
+                    ref_row.glass = "AIR"
+                reference_rows.append(ref_row)
                 last_source_index = index
                 continue
             if row.surface not in {"Standard", "Thin Lens", "Aperture"}:
@@ -408,7 +414,7 @@ class ParaxialToolsMixin:
             return None
         equivalent: list[SurfaceRow] = []
         replaced = False
-        for row in rows:
+        for idx, row in enumerate(rows):
             if _row_is_nonseq_optical_solid(row):
                 flat = SurfaceRow(**asdict(row))
                 flat.surface = "Standard"
@@ -416,6 +422,15 @@ class ParaxialToolsMixin:
                 flat.tilt_x = flat.tilt_y = flat.tilt_z = 0.0
                 flat.desp_x = flat.desp_y = flat.desp_z = 0.0
                 flat.axis_move = 0.0
+                if _row_is_promoted_mirror_fold(row) and self._ra_mirror_fold_is_external_reflection(idx) is not False:
+                    # bugs/0222: an EXTERNAL (first-surface) RA-mirror reflection -- the beam bounces off
+                    # the coated hypotenuse and never enters the glass, so its flat-plate equivalent is
+                    # AIR, not the BK7 substrate. As glass the surrogate refracted the ray through the
+                    # plate (INTERNAL) -- out of sync with the drawn external reflection -- and shifted
+                    # the conjugate, making the 1:1 relay read >1X. AIR keeps it exactly 1:1. A genuine
+                    # INTERNAL-reflection prism (beam enters a Transmit leg) keeps its glass (the ``is
+                    # not False`` gate: only a detected internal fold refracts).
+                    flat.glass = "AIR"
                 advanced = dict(flat.advanced or {})
                 for key in (
                     "Solid_3d_stl",
@@ -513,6 +528,67 @@ class ParaxialToolsMixin:
         if pt.size >= 3 and np.all(np.isfinite(pt)):
             return pt.astype(float)
         return None
+
+    def _ra_mirror_fold_is_external_reflection(self, row_index: int) -> "bool | None":
+        """bugs/0222: True when the promoted RA-mirror fold is an EXTERNAL (first-surface) reflection
+        -- the incoming beam strikes the coated Mirror face DIRECTLY, never entering the glass -- so the
+        glass has NO optical function and the fold's first-order equivalent is AIR (the relay stays
+        1:1). False for an INTERNAL reflection (the beam enters a Transmit leg, refracts into the glass,
+        reflects off the Mirror face, and exits), where the glass index DOES matter and shifts the
+        conjugate. None when the row is not an RA-mirror fold or the geometry is unavailable.
+
+        The user's worry (flag_20260704_195234): the UI draws an EXTERNAL reflection but the code
+        modelled the mirror as a BK7 plate (INTERNAL) -- out of sync. This decides the case from the
+        GEOMETRY so the model follows the drawing whichever way the prism sits: the ENTRY face is the
+        front-facing face the beam reaches last going in (slab method); a Mirror entry face -> external
+        (air), a Transmit entry face -> internal (keep the glass)."""
+        rows = list(getattr(self, "rows", []) or [])
+        idx = int(row_index)
+        if not (0 <= idx < len(rows)) or not _row_is_promoted_mirror_fold(rows[idx]):
+            return None
+        try:
+            from KrakenOS.UI.nonseq_output_ports import optical_solid_face_world_records
+            from KrakenOS.UI.services.folded_sequential_fold import promoted_mirror_world_center
+
+            specs = self._serializable_specs_for_rows(rows)
+            mirror_indices = [i for i, r in enumerate(rows) if _row_is_promoted_mirror_fold(r)]
+            center = np.asarray(promoted_mirror_world_center(specs, idx), dtype=float).reshape(3)
+            k = mirror_indices.index(idx)
+            # incoming beam: from the previous fold vertex (or the object plane at the axis origin)
+            prev = (
+                np.zeros(3)
+                if k == 0
+                else np.asarray(promoted_mirror_world_center(specs, mirror_indices[k - 1]), dtype=float).reshape(3)
+            )
+            d = center - prev
+            dn = float(np.linalg.norm(d))
+            if dn < 1e-9:
+                return None
+            d = d / dn
+            z_positions = self._row_z_positions()
+            faces = optical_solid_face_world_records(
+                rows[idx], float(z_positions[idx]) if idx < len(z_positions) else 0.0, assigned_only=True
+            )
+        except Exception:
+            return None
+        # entry face = the front-facing face (d.n < 0) the beam crosses LAST going in (the slab-method
+        # max-t is where the ray finally lies inside the convex solid).
+        origin = center - d * 1.0e4
+        best_t = None
+        entry_function = ""
+        for face in faces or []:
+            n = np.asarray(face.get("normal_world", (0.0, 0.0, 0.0)), dtype=float).reshape(-1)[:3]
+            c = np.asarray(face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(-1)[:3]
+            denom = float(d @ n)
+            if denom >= -0.05:  # parallel / edge-on / back-facing -- the beam does not enter here
+                continue
+            t = float((c - origin) @ n) / denom
+            if best_t is None or t > best_t:
+                best_t = t
+                entry_function = str(face.get("function", "") or "")
+        if best_t is None:
+            return None
+        return "mirror" in entry_function.lower()
 
     def _scene_folds_for_paraxial_distance(self, rows: list[SurfaceRow] | None = None) -> bool:
         """True when the layout has a fold the object/image DISTANCE must sum THROUGH -- a
