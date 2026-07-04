@@ -10424,6 +10424,40 @@ def phase_194_folded_image_snaps_to_ray_convergence(
     return result
 
 
+def phase_195_folded_working_image_distance(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """On a folded promoted-RA-mirror scene the reported OBJECT working distance + IMAGE distance
+    must sum the folded axis segments THROUGH the mirror(s) to/from the lens (bugs/0219,
+    flag_20260704_195234 follow-up). They gated the folded-sum path on a literal surface=="Mirror"
+    row a promoted CAD mirror never has, so both fell back to a single adjacent segment: object WD =
+    object->mirror-1 only (59.4), image dist = mirror-2->image only (40) instead of the folded
+    lens->mirror-2->image (190.4). Fix: _scene_folds_for_paraxial_distance also detects a promoted
+    RA-mirror fold, and the gap helpers sum through the fold + its InPathTrailingSpacer to the lens
+    datums (object WD -> lens FRONT 141.85, image dist lens REAR -> mirror-2 -> image 190.37); the
+    shared reference walk is UNCHANGED so EFL/magnification/paraxial-image-plane are byte-identical.
+    `validate_open3d_folded_working_image_distance` asserts the folded sums, a causal contrast vs the
+    single-segment fallbacks, and that the solve is intact.
+    """
+    result = PhaseResult(
+        name="Phase 195: folded working + image distance sum through the RA mirror (0219)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_folded_working_image_distance import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-working-image-distance guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-working-image-distance phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10664,6 +10698,7 @@ def main() -> int:
             phase_192_multifold_reflected_axis_segments,
             phase_193_incoming_axis_meets_fold_vertex,
             phase_194_folded_image_snaps_to_ray_convergence,
+            phase_195_folded_working_image_distance,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

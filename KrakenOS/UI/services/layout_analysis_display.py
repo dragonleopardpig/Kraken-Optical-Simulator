@@ -1145,7 +1145,7 @@ class LayoutAnalysisDisplayMixin:
     def _current_object_distance(self) -> float:
         if self.rows:
             try:
-                if any(row.surface == "Mirror" for row in self.rows):
+                if self._scene_folds_for_paraxial_distance(self.rows):  # bugs/0219: promoted RA mirror too
                     distance, _first_source_index = self._paraxial_total_object_gap(self.rows)
                 else:
                     distance = float(self.rows[0].thickness)

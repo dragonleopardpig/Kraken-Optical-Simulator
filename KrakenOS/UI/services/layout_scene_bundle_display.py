@@ -225,7 +225,7 @@ class LayoutSceneBundleDisplayMixin:
     def _current_image_distance(self) -> float:
         if len(self.rows) >= 2:
             try:
-                if any(row.surface == "Mirror" for row in self.rows):
+                if self._scene_folds_for_paraxial_distance(self.rows):  # bugs/0219: promoted RA mirror too
                     distance, _last_source_index, _reference_rows = self._paraxial_total_image_gap(self.rows)
                 else:
                     distance = float(self.rows[-2].thickness)

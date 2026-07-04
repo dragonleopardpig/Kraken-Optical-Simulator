@@ -196,7 +196,8 @@
     "191": "pass",
     "192": "pass",
     "193": "pass",
-    "194": "pass"
+    "194": "pass",
+    "195": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -393,6 +394,7 @@
     "191": "second-mirror incoming optical-axis placement (0215)",
     "192": "multi-fold reflected optical-axis segments (0216)",
     "193": "incoming optical axis meets the fold vertex (0218)",
-    "194": "folded image snaps to the ray convergence (0217)"
+    "194": "folded image snaps to the ray convergence (0217)",
+    "195": "folded working + image distance sum through the RA mirror (0219)"
   }
 }

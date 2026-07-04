@@ -26,7 +26,7 @@ import KrakenOS as Kos
 from KrakenOS.UI.services.formula_help import FormulaHelpService
 from KrakenOS.UI.services.row_spec_contracts import _row_specs_signature
 from KrakenOS.UI.surface_table_model import SurfaceRow
-from KrakenOS.UI.trace_intent import BEAM_SPLITTER_SURFACE
+from KrakenOS.UI.trace_intent import BEAM_SPLITTER_SURFACE, _optical_solid_faces_have_mirror_fold
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DOCS_HTML_DIR = PROJECT_ROOT / "docs" / "build" / "html"
@@ -74,6 +74,22 @@ def _row_is_nonseq_optical_solid(row) -> bool:
     advanced = getattr(row, "advanced", None) or {}
     stl = str(advanced.get("Solid_3d_stl", "None") or "None").strip()
     return stl not in ("", "None", "none")
+
+
+def _row_is_promoted_mirror_fold(row) -> bool:
+    """A promoted CAD solid whose ``OpticalSolidFaces`` carries a Mirror face -- a right-angle
+    FOLD mirror. It bends the axis 90deg but, unlike a refractive/beam-splitter mesh solid, has
+    NO paraxial power: its optical job is purely to fold, so for a first-order / distance solve it
+    behaves like a sequential ``Mirror`` (its axial path length merges into the running air gap),
+    NOT like a transmissive plate that would be kept as a powered reference element. bugs/0219:
+    keeping it as a reference made ``last_source_index`` land ON the mirror, so the reported image
+    distance measured mirror->image (40 mm) instead of the folded lens->mirror->image (190 mm)."""
+    if str(getattr(row, "surface", "") or "") in {"Object", "Image", "Mirror"}:
+        return False
+    advanced = getattr(row, "advanced", None)
+    if not isinstance(advanced, dict):
+        return False
+    return bool(_optical_solid_faces_have_mirror_fold(advanced.get("OpticalSolidFaces")))
 
 
 def _transmissive_reference_row(row) -> SurfaceRow:
@@ -439,20 +455,55 @@ class ParaxialToolsMixin:
     ) -> tuple[float, int, list[SurfaceRow]]:
         source_rows = self.rows if rows is None else rows
         reference_rows, last_source_index = self._paraxial_reference_rows_for_layout(source_rows)
+        # bugs/0219: a TRAILING promoted RA-mirror fold is kept as a transmissive glass plate in
+        # the reference (its glass shift is REAL for the SOLVE, so the shared walk must not merge
+        # it away), but for the image DISTANCE it is a fold the beam passes THROUGH -- the distance
+        # must run from the last LENS element, not the mirror. So sum from the last non-mirror-fold
+        # reference: lens-rear -> mirror -> image (190mm), not mirror -> image (40mm). The returned
+        # ``last_source_index`` is unchanged (callers still index the full reference).
+        gap_start = int(last_source_index)
+        while gap_start > 1 and _row_is_promoted_mirror_fold(source_rows[gap_start]):
+            gap_start -= 1
         total_gap = 0.0
-        for row in source_rows[last_source_index:]:
+        for row in source_rows[gap_start:]:
             total_gap += max(float(row.thickness), 0.0)
         return float(total_gap), int(last_source_index), reference_rows
 
     def _paraxial_total_object_gap(self, rows: list[SurfaceRow] | None = None) -> tuple[float, int]:
         source_rows = self.rows if rows is None else rows
         for index, row in enumerate(source_rows[1:], start=1):
+            if _row_is_promoted_mirror_fold(row):
+                # bugs/0219: a promoted RA-mirror FOLD before the lens is a fold, not the optical
+                # block -- sum THROUGH it (object->mirror + mirror->lens) so the object working
+                # distance reaches the lens, instead of stopping at the mirror (the reported WD
+                # was object->mirror only).
+                continue
+            advanced = getattr(row, "advanced", None)
+            if isinstance(advanced, dict) and advanced.get("InPathTrailingSpacer"):
+                # bugs/0219: the promotion inserts this air spacer for the space the mirror SOLID
+                # occupies past its optical station (between the mirror and the lens). It is part
+                # of the object->lens gap, not the optical block, so sum through it too -- the
+                # object WD then reaches the lens FRONT datum, symmetric with the image distance
+                # (which measures from the lens REAR datum through the trailing mirror).
+                continue
             if row.surface in {"Standard", "Thin Lens", "Aperture"}:
                 total_gap = sum(max(float(item.thickness), 0.0) for item in source_rows[:index])
                 return float(total_gap), int(index)
             if row.surface == "Image":
                 break
         raise RuntimeError("No optical block available for paraxial solve")
+
+    def _scene_folds_for_paraxial_distance(self, rows: list[SurfaceRow] | None = None) -> bool:
+        """True when the layout has a fold the object/image DISTANCE must sum THROUGH -- a
+        sequential ``Mirror`` row OR a promoted RA-mirror fold (a CAD solid with a Mirror face).
+        bugs/0219: the distance readouts gated only on a literal ``surface=="Mirror"`` row, which a
+        promoted CAD mirror never has, so they fell back to a single un-summed segment and
+        undercounted the folded object/image distance."""
+        source_rows = self.rows if rows is None else rows
+        return any(
+            str(getattr(row, "surface", "") or "") == "Mirror" or _row_is_promoted_mirror_fold(row)
+            for row in (source_rows or [])
+        )
 
 
     def _cleanup_current_popup_menu(self) -> None:
