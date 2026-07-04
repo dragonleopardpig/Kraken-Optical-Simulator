@@ -61,26 +61,33 @@ is actually interacted with (matching whatever the other dimension overlays do �
 
 ---
 
-## 3. Full penta marathon SIGSEGVs under Xvfb → the pre-push gate is effectively INERT
+## 3. No push gating today, AND the gate wrapper fails OPEN under the Xvfb SIGSEGV
 
-**Symptom.** `validate_open3d_penta_telescope_comprehensive` (the ~199-phase marathon) SIGSEGVs partway
-through under Xvfb software rendering (llvmpipe) and prints no per-phase `[PASS]/[FAIL]` lines. Already
-known for running the validator (see the memory note on the VTK render-backend segfault); individual
-guards and short probes run fine.
+Two separate facts, both meaning a green push proves nothing:
 
-**The consequence worth recording.** `tools/penta_validator_gate.py` (the pre-push hook) parses phase
-states from the marathon's stdout and blocks a push only on a `pass → fail` flip vs
-`tools/penta_validator_baseline.json`. When the marathon segfaults it yields **zero** parsed states, so
-`compare()` finds **no** regressions and the gate passes. **Net effect: the gate does not actually
-protect against regressions under the current backend** — it fails *open*, not closed. This is why
-phases 92 and 115 above sit at `pass` in the baseline yet fail when run directly: the gate has never
-observed their failure.
+**(a) The pre-push hook is currently DISABLED.** `git config core.hooksPath` is **unset** (verified
+2026-07-04), so `.githooks/pre-push` never runs on push — pushes are ungated. (The user disabled it
+~2026-06-06 because the marathon is too slow to gate every push.) The hook file still exists but is
+inactive. This is why the 0219–0222 pushes went through in seconds with no validator output.
+
+**(b) Even run by hand, the gate fails open.** `validate_open3d_penta_telescope_comprehensive` (the
+~199-phase marathon, phases 0–198) SIGSEGVs partway through under Xvfb software rendering (llvmpipe)
+and prints no per-phase `[PASS]/[FAIL]` lines (known — see the VTK render-backend segfault memory;
+individual guards + short probes run fine). `tools/penta_validator_gate.py` parses phase states from
+that stdout and blocks only on a `pass → fail` flip vs `tools/penta_validator_baseline.json`. With
+**zero** parsed states, `compare()` finds no regressions and the gate passes — it fails *open*, not
+closed.
+
+Together these explain how phases 92 and 115 sit at `pass` in the baseline yet fail when run directly:
+nothing has observed their failure — the baseline was baked from a run that never reached/recorded
+them (or recorded them before they regressed), and nothing since re-checks them.
 
 **Fix direction.** (a) Run the marathon under a hardware/EGL backend (NVIDIA renders it clean per the
-memory note) in the gate; and/or (b) shard the marathon into crash-isolated subprocess batches so one
-segfault doesn't void every result; and/or (c) make the gate **fail closed** when it receives no phase
-output (treat "no states parsed" as an error, not an all-clear). Until then, run the individual guard
-for any phase you touch by hand — don't rely on the gate.
+memory note); and/or (b) shard the marathon into crash-isolated subprocess batches so one segfault
+doesn't void every result; and/or (c) make the gate **fail closed** when it receives no phase output
+(treat "no states parsed" as an error, not an all-clear); then re-enable the hook
+(`git config core.hooksPath .githooks`). Until then, **run the individual guard for any phase you touch
+by hand** — do not trust a clean push.
 
 ---
 
