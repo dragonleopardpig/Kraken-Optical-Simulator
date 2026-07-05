@@ -118,12 +118,25 @@ def _build_runtime_system(path: Path, rows: list[SurfaceRow]):
 def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEditor:
     editor = KrakenLayoutEditor.__new__(KrakenLayoutEditor)
     editor.headless = True
+    # bugs/0223: ROOT fix for the __new__/no-self.tk recursion. tkinter's __getattr__ does
+    # `return getattr(self.tk, name)`; with self.tk unset that recurses forever (turning every
+    # missing-attribute read into RecursionError instead of AttributeError). Point self.tk at a
+    # bare sentinel so a missing attribute raises AttributeError cleanly and getattr(..., default)
+    # returns its default -- no per-attribute whack-a-mole. This editor never issues Tk/Tcl calls
+    # (headless compute + offscreen VTK only), so the sentinel is never actually dereferenced.
+    editor.tk = object()
     # This editor is built via __new__, so tk.Tk.__init__ never runs and self.tk is
     # unset -- which turns tkinter's __getattr__ into an infinite self.tk recursion for
     # ANY missing attribute (getattr(..., default) never gets its AttributeError, it gets
     # RecursionError instead). Mirror __init__'s scene-placement defaults that downstream
     # first-order/dimension code reads via getattr, so a headless snapshot can't recurse.
     editor._optical_led_glued = False
+    # bugs/0223 (off-thread trace worker): the folded/promoted-STEP trace path reads these
+    # plan caches via getattr(self, ..., {}) -- missing on a __new__ editor with no self.tk,
+    # they recurse instead of defaulting. Seed them so a headless (worker) trace of a
+    # promoted-solid scene doesn't RecursionError.
+    editor._saved_step_native_trace_plan_cache = {}
+    editor._live_step_overlay_trace_plan_cache = {}
     editor.rows = rows
     editor.last_system = None
     editor.layout_scene_source_specs = KrakenLayoutEditor._normalize_scene_source_specs(settings.get("scene_sources", []))
