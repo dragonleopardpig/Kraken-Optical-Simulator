@@ -10587,6 +10587,39 @@ def phase_199_async_trace_equivalence(
     return result
 
 
+def phase_200_offbeam_promoted_mirror_inert(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A promoted FULL-MIRROR parked clear of the beam is optically INERT (bugs/0224,
+    flag_20260705_101311): promoting it must not move any existing row seat, the detector,
+    the axis segments or the imaging cone -- a mirror only folds the beam if the beam hits
+    it. The pose-override reflect gained a beam-hit extent gate (sign-agnostic in the plane
+    distance -- the walk's frame origin is a station marker that sits PAST a genuine fold),
+    the follower walk skips a missed free-placed mirror entirely, and the vertex-chain
+    off-beam classification drops it from the display fold planes and zeroes its flat-plate
+    equivalents. `validate_open3d_offbeam_promoted_mirror_inert` asserts the genuine
+    two-mirror fold is unchanged, the parked promote moves nothing (rows/detector/waist),
+    the classification is exact, and the wiring.
+    """
+    result = PhaseResult(
+        name="Phase 200: off-beam promoted mirror is optically inert (0224)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_offbeam_promoted_mirror_inert import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"offbeam-promoted-mirror-inert guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("offbeam-promoted-mirror-inert phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10832,6 +10865,7 @@ def main() -> int:
             phase_197_ra_mirror_centre_snap,
             phase_198_ra_mirror_external_reflection,
             phase_199_async_trace_equivalence,
+            phase_200_offbeam_promoted_mirror_inert,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

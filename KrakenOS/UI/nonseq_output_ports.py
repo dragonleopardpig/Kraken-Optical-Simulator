@@ -1137,6 +1137,24 @@ def _reflected_frame_from_interaction_face(
         if np.isfinite(distance):
             hit = origin + incoming * distance
             pre_hit_run = distance
+            # bugs/0224: a mirror face only folds the frame when the beam LINE actually
+            # crosses the face -- the hit must land within the face's transverse extent
+            # (equivalent radius from its own area; sqrt(area) comfortably covers the
+            # rectangular hypotenuse half-diagonal, +2 mm margin). Without this, a
+            # promoted RA mirror parked clear of the beam (flag_20260705_101311)
+            # reflected the running frame about its distant infinite PLANE and flung the
+            # downstream Image/detector ~140-300 mm onto a fold the beam never makes
+            # (parked prism: |hit-centroid| ~165 mm; genuine folds: a few mm). The test
+            # is deliberately SIGN-AGNOSTIC in ``distance``: the walk's frame origin is
+            # a sequential STATION marker that legitimately sits PAST the fold face
+            # (the AZ85 second mirror reads distance = -93.9 -- exactly the
+            # ``pre_hit_run`` bookkeeping below), so only the lateral offset
+            # discriminates a real fold from a parked mirror.
+            area = float(face.get("area_mm2", 0.0) or 0.0)
+            if np.isfinite(area) and area > 1e-9:
+                hit_radius = float(np.sqrt(area)) + 2.0
+                if float(np.linalg.norm(hit - point)) > hit_radius:
+                    return None  # the beam line never crosses the face -- no fold
         else:
             hit = point
     else:
@@ -1344,6 +1362,27 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
                 follower_output_face = select_optical_solid_output_face(follower_faces)
                 explicit_follower_output = select_optical_solid_explicit_output_face(follower_faces)
                 explicit_follower_input = select_optical_solid_explicit_input_face(follower_faces)
+                # bugs/0224: a FREE-PLACED full-mirror the running beam MISSES is optically
+                # INERT -- it stays pinned at its drop pose (stored above) and contributes
+                # NOTHING to the chain: no fold, and no re-sourcing of the frame from its
+                # inferred straight-through output face (which would sweep the downstream
+                # Image/detector onto the parked body). Only an EXPLICIT user-authored
+                # output port overrides this. The beam keeps travelling; later followers
+                # keep the untouched running frame.
+                if (
+                    pinned_pose is not None
+                    and explicit_follower_output is None
+                    and _solid_has_full_mirror_interaction_face(follower_faces)
+                    and _reflected_frame_from_interaction_face(
+                        follower_faces,
+                        frame_origin,
+                        frame_rotation,
+                        float(getattr(follower, "thickness", 0.0) or 0.0),
+                    )
+                    is None
+                ):
+                    follower_index += 1
+                    continue
                 traced_frame = None
                 follower_prefers_traced_exit = (
                     (explicit_follower_output is None and explicit_follower_input is not None)

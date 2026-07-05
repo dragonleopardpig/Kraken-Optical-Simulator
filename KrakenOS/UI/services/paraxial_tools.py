@@ -312,7 +312,13 @@ class ParaxialToolsMixin:
                 # centered system.  (The reflect arm / per-branch references are the
                 # general target in bugs/DESIGN_nonseq_first_order_reference.md §5b.)
                 ref_row = _transmissive_reference_row(row)
-                if _row_is_promoted_mirror_fold(row) and self._ra_mirror_fold_is_external_reflection(index) is not False:
+                if _row_is_promoted_mirror_fold(row) and index in self._offbeam_promoted_mirror_rows(rows):
+                    # bugs/0224: a promoted mirror PARKED CLEAR of the beam is optically
+                    # inert -- a zero-length air surface in the first-order reference too
+                    # (its substrate thickness must not shift the conjugates/readouts).
+                    ref_row.glass = "AIR"
+                    ref_row.thickness = 0.0
+                elif _row_is_promoted_mirror_fold(row) and self._ra_mirror_fold_is_external_reflection(index) is not False:
                     # bugs/0222: an EXTERNAL RA-mirror reflection is optically a pure mirror -- its glass
                     # is inert, so its first-order equivalent is AIR, keeping the relay 1:1. (An INTERNAL
                     # prism keeps its glass.) Matches the AIR flat-plate the display+focus use.
@@ -412,6 +418,7 @@ class ParaxialToolsMixin:
                 break
         if not has_rotating_fold:
             return None
+        offbeam_rows = self._offbeam_promoted_mirror_rows(rows)
         equivalent: list[SurfaceRow] = []
         replaced = False
         for idx, row in enumerate(rows):
@@ -422,7 +429,16 @@ class ParaxialToolsMixin:
                 flat.tilt_x = flat.tilt_y = flat.tilt_z = 0.0
                 flat.desp_x = flat.desp_y = flat.desp_z = 0.0
                 flat.axis_move = 0.0
-                if _row_is_promoted_mirror_fold(row) and self._ra_mirror_fold_is_external_reflection(idx) is not False:
+                if idx in offbeam_rows and _row_is_promoted_mirror_fold(row):
+                    # bugs/0224: a promoted mirror PARKED CLEAR of the folded beam is
+                    # optically INERT -- the beam never runs through it, so its flat
+                    # equivalent is a ZERO-length air surface (matching the pose-override
+                    # walk, which advances the frame past it by nothing). Keeping its
+                    # substrate thickness inserted a phantom plate that shifted the traced
+                    # stations/waist ~25-90 mm while the seated rows stayed put.
+                    flat.glass = "AIR"
+                    flat.thickness = 0.0
+                elif _row_is_promoted_mirror_fold(row) and self._ra_mirror_fold_is_external_reflection(idx) is not False:
                     # bugs/0222: an EXTERNAL (first-surface) RA-mirror reflection -- the beam bounces off
                     # the coated hypotenuse and never enters the glass, so its flat-plate equivalent is
                     # AIR, not the BK7 substrate. As glass the surrogate refracted the ray through the
@@ -528,6 +544,22 @@ class ParaxialToolsMixin:
         if pt.size >= 3 and np.all(np.isfinite(pt)):
             return pt.astype(float)
         return None
+
+    def _offbeam_promoted_mirror_rows(self, rows: "list[SurfaceRow] | None" = None) -> set[int]:
+        """bugs/0224: row indices of promoted FULL-MIRROR rows the folded beam never
+        reaches (parked clear of every leg) -- optically INERT everywhere (no fold, no
+        plate). Delegates to the vertex-chain walk in ``folded_sequential_fold``; any
+        failure returns an empty set (today's behaviour)."""
+        source = self.rows if rows is None else rows
+        try:
+            from KrakenOS.UI.services.folded_sequential_fold import (
+                offbeam_free_placed_mirror_row_indices,
+            )
+
+            specs = self._serializable_specs_for_rows(list(source or []))
+            return set(offbeam_free_placed_mirror_row_indices(specs))
+        except Exception:
+            return set()
 
     def _ra_mirror_fold_is_external_reflection(self, row_index: int) -> "bool | None":
         """bugs/0222: True when the promoted RA-mirror fold is an EXTERNAL (first-surface) reflection

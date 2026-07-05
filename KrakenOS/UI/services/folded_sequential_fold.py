@@ -308,6 +308,64 @@ def reflect_straight_equivalent_ray_points(
     return np.asarray(rows, dtype=float)
 
 
+def offbeam_free_placed_mirror_row_indices(specs: list[dict]) -> set[int]:
+    """bugs/0224: promoted FULL-MIRROR rows the folded beam never reaches (parked clear of
+    every leg) -- they must contribute NO fold anywhere (display bend, axis segments, pose
+    overrides): a mirror only folds the beam if the beam actually HITS it.
+
+    Walk the mirror-vertex chain in row (station) order: the incoming axis starts at +Z;
+    each ON-beam mirror's world centre must lie on the running leg's LINE (forward, within
+    the mirror's own transverse extent), and then reflects the leg about its world Mirror
+    normal (r = d - 2(d.n)n). A mirror whose centre misses the running leg is OFF-beam:
+    recorded here and the leg continues unchanged (flag_20260705_101311: a randomly parked
+    promoted RA mirror folded the Image/detector ~140-300 mm away and bent the axis
+    diagonally toward the parked prism).
+
+    Conservative: a plain sequential ``Mirror`` row folds the chain outside this walk, so
+    when one exists nothing is marked off-beam (today's behaviour)."""
+    from KrakenOS.UI.optical_solid_metadata import rotation_matrix_from_kraken_tilts
+
+    specs = list(specs or [])
+    if any(str(spec.get("surface", "")) == "Mirror" for spec in specs):
+        return set()
+    ray_origin = np.asarray((0.0, 0.0, -1.0e9), dtype=float)
+    ray_dir = np.asarray((0.0, 0.0, 1.0), dtype=float)
+    offbeam: set[int] = set()
+    for idx, spec in enumerate(specs):
+        if not _is_promoted_mirror_fold(spec):
+            continue
+        advanced = spec.get("advanced")
+        local_normal = mirror_fold_face_normal(advanced) if isinstance(advanced, dict) else None
+        center = promoted_mirror_world_center(specs, idx)
+        if local_normal is None or center is None:
+            continue
+        rotation = rotation_matrix_from_kraken_tilts(
+            _spec_get(spec, "tilt_x"), _spec_get(spec, "tilt_y"), _spec_get(spec, "tilt_z")
+        )
+        normal = np.asarray(local_normal, dtype=float).reshape(3) @ np.asarray(rotation, dtype=float).T
+        n_norm = float(np.linalg.norm(normal))
+        if n_norm <= 1e-9 or not np.all(np.isfinite(normal)):
+            continue
+        normal = normal / n_norm
+        center = np.asarray(center, dtype=float).reshape(3)
+        # transverse extent: the mirror's own footprint (generous -- a partially clipped
+        # mirror still folds; the flagged parked prism missed the leg by >100 mm)
+        radius = max(float(_spec_get(spec, "diameter", 0.0)), 5.0)
+        to_center = center - ray_origin
+        along = float(np.dot(to_center, ray_dir))
+        perpendicular = float(np.linalg.norm(to_center - along * ray_dir))
+        if along <= 1e-6 or perpendicular > radius:
+            offbeam.add(int(idx))
+            continue  # the leg passes it by -- ray unchanged
+        denominator = float(np.dot(ray_dir, normal))
+        if abs(denominator) > 1e-12:
+            distance = float(np.dot(center - ray_origin, normal) / denominator)
+            if np.isfinite(distance) and distance > 0.0:
+                ray_origin = ray_origin + ray_dir * distance
+        ray_dir = _unit(_reflect(ray_dir, normal))
+    return offbeam
+
+
 def free_placed_mirror_world_planes(
     specs: list[dict],
     exclude_row_indices: "set[int] | None" = None,
@@ -339,6 +397,10 @@ def free_placed_mirror_world_planes(
     from KrakenOS.UI.optical_solid_metadata import rotation_matrix_from_kraken_tilts
 
     exclude = {int(i) for i in (exclude_row_indices or set())}
+    # bugs/0224: a free-placed mirror the folded beam never reaches must not fold the
+    # display rays / axis segments -- drop it here so every consumer of these planes
+    # (the straight-equivalent display bend, the reflected-axis segments) inherits it.
+    exclude |= offbeam_free_placed_mirror_row_indices(specs)
     planes: list[tuple[int, np.ndarray, np.ndarray]] = []
     for idx, spec in enumerate(specs or []):
         if int(idx) in exclude:
