@@ -1,9 +1,19 @@
 # 0225 — Pick-rays mode: hovering a traced ray now highlights it
 
-**Status: FEATURE SHIPPED. With "Pick rays" checked, moving the mouse over a traced ray draws a
+**Status: FEATURE SHIPPED (rev 2). With "Pick rays" checked, moving the mouse over a traced ray draws a
 light hover highlight on that ray (and names it in the status bar); clicking still selects it and
 opens the Ray Inspector with the brighter selection highlight. In-app confirm owed (hover is a
 mouse gesture; headless proves the overlay mechanics + wiring, not the gesture).**
+
+## Rev 2 (flag_20260705_131522: "with Pick rays on, mouse hover not highlighting the rays")
+
+The first cut placed the hover branch after the ``hover_default`` pick -- a section that only runs
+during STEP-placement flows (target_label / axis-pick), so PLAIN IDLE hovering never reached it. The
+passive (idle) hover path deliberately runs no full-scene pick, so rev 2 adds
+``_passive_hover_pick_ray``: a pick-list-restricted VTK pick over only the ~8 merged ray actors
+(the same cheap pattern as the gizmo-handle hover pick), resolving the ray through the picked cell,
+with the picker state restored in a ``finally``. The branch now lives in the passive path; the
+unreachable first cut was removed.
 
 ## The request
 

@@ -9104,6 +9104,52 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             self._ray_highlight_overlay_key = None
 
+    def _passive_hover_pick_ray(self, x, y):
+        """bugs/0225 (rev 2): pick ONLY the traced-ray line actors during passive mouse
+        motion, restricted via a VTK pick list -- the same cheap pattern as the
+        gizmo-handle hover pick (`_passive_hover_pick_rotation_handle`), because the
+        passive hover path deliberately never runs a full-scene pick. Thanks to the
+        bugs/0223 merge there are only ~8 ray actors, so this is a tiny pick. Returns the
+        hovered ray index (resolved through the picked CELL for merged actors) or None."""
+        picker = self._picker  # the cell picker: GetCellId drives the merged-actor resolve
+        if picker is None or self._renderer is None:
+            return None
+        ray_keys = set(getattr(self, "_merged_ray_cell_index", {}) or {})
+        for key, value in (getattr(self, "_actor_ray_map", {}) or {}).items():
+            try:
+                if int(value) >= 0:
+                    ray_keys.add(key)  # legacy per-ray actors (merge-filter fallback)
+            except Exception:
+                continue
+        if not ray_keys:
+            return None
+        added = False
+        try:
+            picker.InitializePickList()
+            for key in sorted(str(k) for k in ray_keys):
+                actor = self._actor_by_key.get(key)
+                if actor is not None:
+                    picker.AddPickList(actor)
+                    added = True
+            if not added:
+                return None
+            picker.PickFromListOn()
+            picker.Pick(float(x), float(y), 0.0, self._renderer)
+            actor = picker.GetActor()
+            cell_id = int(picker.GetCellId())
+        except Exception:
+            return None
+        finally:
+            try:
+                picker.PickFromListOff()
+                picker.InitializePickList()
+            except Exception:
+                pass
+        actor_key = self._actor_key(actor)
+        if actor_key is None:
+            return None
+        return self._ray_index_for_actor(actor_key, cell_id)
+
     def _apply_ray_hover_overlay(self, ray_index) -> bool:
         """bugs/0225: draw the HOVERED ray (Pick-rays mode) as a light overlay -- thinner
         and paler than the click-selection highlight so the two read differently. Pass

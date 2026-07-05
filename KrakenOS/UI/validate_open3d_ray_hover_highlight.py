@@ -159,27 +159,99 @@ def validate_ray_hover_highlight() -> list[Check]:
         f"index={stub3._ray_hover_overlay_index} actors={len(stub3._renderer.actors)}",
     ))
 
+    # ============ (E) the passive pick-list ray pick (rev 2) ===================== #
+    # flag_20260705_131522: the first cut lived after the hover_default pick, which only
+    # runs during STEP-placement flows -- plain idle hovering never highlighted. Rev 2
+    # resolves the ray in the PASSIVE hover path via a pick-list-restricted pick over the
+    # merged ray actors; unit-test the pick + resolve + picker-state restore with a fake
+    # cell picker.
+    import KrakenOS.UI.open3d_inspector as OI
+    from KrakenOS.UI.open3d_inspector import Kraken3DInspector as I
+
+    stub4 = _stub_inspector()
+
+    class _FakePicker:
+        def __init__(self, actor, cell_id):
+            self._actor = actor
+            self._cell = int(cell_id)
+            self.list_on = False
+            self.list_cleared = 0
+            self.added = []
+            self.total_added = []  # cumulative -- InitializePickList resets `added` only
+
+        def InitializePickList(self):
+            self.list_cleared += 1
+            self.added = []
+
+        def AddPickList(self, actor):
+            self.added.append(actor)
+            self.total_added.append(actor)
+
+        def PickFromListOn(self):
+            self.list_on = True
+
+        def PickFromListOff(self):
+            self.list_on = False
+
+        def Pick(self, x, y, z, renderer):
+            return 1
+
+        def GetActor(self):
+            return self._actor
+
+        def GetCellId(self):
+            return self._cell
+
+    merged_actor = OI.vtkActor()
+    merged_key = stub4._actor_key(merged_actor)
+    stub4._merged_ray_cell_index = {merged_key: np.asarray([4, 4, 9, 9], dtype=np.int64)}
+    stub4._actor_ray_map = {merged_key: -1}
+    stub4._picker = _FakePicker(merged_actor, cell_id=2)
+    stub4._ray_index_for_actor = I._ray_index_for_actor.__get__(stub4)
+    stub4._passive_hover_pick_ray = I._passive_hover_pick_ray.__get__(stub4)
+    hovered = stub4._passive_hover_pick_ray(10, 20)
+    checks.append(Check(
+        "the passive pick-list ray pick resolves the hovered merged-actor ray and restores the picker",
+        bool(
+            hovered == 9  # cell 2 -> ray 9
+            and stub4._picker.list_on is False  # PickFromListOff restored
+            and stub4._picker.list_cleared >= 2  # list cleared going in AND in the finally
+            and stub4._picker.total_added == [merged_actor]
+        ),
+        f"hovered={hovered} (expect 9) list_on={stub4._picker.list_on} "
+        f"cleared={stub4._picker.list_cleared} added={len(stub4._picker.total_added)}",
+    ))
+
     # ============ (D) wired ====================================================== #
     try:
         interaction_src = _INTERACTION_SRC.read_text(encoding="utf-8")
         inspector_src = _INSPECTOR_SRC.read_text(encoding="utf-8")
     except Exception:
         interaction_src = inspector_src = ""
+    passive_block = ""
+    marker = "if target_label is None and not axis_pick_any:"
+    if marker in interaction_src:
+        start = interaction_src.index(marker)
+        passive_block = interaction_src[start : start + 12000]
     wired = (
-        "if self._ray_pick_enabled():" in interaction_src
-        and "hovered_ray = self._ray_index_for_actor(actor_key)" in interaction_src
-        and "hovered_ray == self._picked_ray_index" in interaction_src
-        and "hover_overlay_changed = self._apply_ray_hover_overlay(hovered_ray)" in interaction_src
+        "hovered_ray = self._passive_hover_pick_ray(x, y)" in passive_block
+        and "if self._ray_pick_enabled():" in passive_block
+        and "hovered_ray == self._picked_ray_index" in passive_block
+        and "hover_overlay_changed = self._apply_ray_hover_overlay(hovered_ray)" in passive_block
+        and "def _passive_hover_pick_ray" in inspector_src
         and "def _apply_ray_hover_overlay" in inspector_src
         and "_apply_ray_hover_overlay(None)  # bugs/0225" in inspector_src
+        # the unreachable first-cut branch (in the placement-flow hover_default section)
+        # must be GONE -- one code path only
+        and "hovered_ray = self._ray_index_for_actor(actor_key)" not in interaction_src
     )
     checks.append(Check(
-        "the hover branch is wired (mode gate, merged-actor cell resolve, selected-ray skip, render-on-change)",
+        "the hover lives in the PASSIVE (idle) hover path (mode gate, pick-list pick, selected-ray skip); the unreachable first cut is gone",
         wired,
-        f"mode_gate={'if self._ray_pick_enabled():' in interaction_src} "
-        f"resolve={'hovered_ray = self._ray_index_for_actor(actor_key)' in interaction_src} "
-        f"selected_skip={'hovered_ray == self._picked_ray_index' in interaction_src} "
-        f"overlay_method={'def _apply_ray_hover_overlay' in inspector_src}",
+        f"passive_pick={'hovered_ray = self._passive_hover_pick_ray(x, y)' in passive_block} "
+        f"mode_gate={'if self._ray_pick_enabled():' in passive_block} "
+        f"selected_skip={'hovered_ray == self._picked_ray_index' in passive_block} "
+        f"old_branch_gone={'hovered_ray = self._ray_index_for_actor(actor_key)' not in interaction_src}",
     ))
     return checks
 
