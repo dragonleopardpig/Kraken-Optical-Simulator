@@ -1085,6 +1085,13 @@ class ParaxialToolsMixin:
                 break
         if spacer_row is None:
             spacer_row = min(mirror_row + 1, int(first_lens) - 1)
+        # Safe gap (collision floor): the mirror must not slide so far toward the first surface
+        # that the RA-mirror SOLID (and the lens body seated on that surface) overlap. As a
+        # geometry-only floor, the mirror centre stays at least its own along-axis half-extent
+        # from the first surface -- i.e. ``far`` >= half the mirror row thickness. (This is the
+        # "camera/lens front edge meets the mirror surface" limit reduced to the parts we can
+        # read from the rows; a body STEP overlay can extend it further.)
+        far_min = 0.5 * thicknesses[mirror_row]
         return {
             "total": float(total),
             "near": float(near),
@@ -1092,6 +1099,8 @@ class ParaxialToolsMixin:
             "mirror_row": int(mirror_row),
             "near_gap_row": 0,
             "far_gap_row": int(spacer_row),
+            "far_min": float(far_min),
+            "near_min": 0.0,
         }
 
     def _apply_folded_object_split(self, fixed_leg: str, value: float) -> "tuple[bool, str]":
@@ -1109,6 +1118,16 @@ class ParaxialToolsMixin:
         if not (fixed > 0) or fixed >= total:
             return False, f"The constrained leg must be between 0 and the total {total:.4g} mm."
         near_new = fixed if fixed_leg == "near" else (total - fixed)
+        far_new = total - near_new
+        far_min = float(split.get("far_min", 0.0) or 0.0)
+        near_min = float(split.get("near_min", 0.0) or 0.0)
+        if far_new < far_min - 1e-6:
+            return False, (
+                f"Safe gap: mirror -> first surface must stay >= {far_min:.4g} mm so the mirror "
+                f"does not collide with the lens (requested {far_new:.4g} mm)."
+            )
+        if near_new < near_min - 1e-6:
+            return False, f"Object -> mirror must stay >= {near_min:.4g} mm."
         delta = near_new - float(split["near"])
         ng, fg = int(split["near_gap_row"]), int(split["far_gap_row"])
         rows = self.rows

@@ -90,6 +90,17 @@ def validate_folded_conjugate_split() -> list[Check]:
         f"rejected={not ok_bad} msg={msg_bad[:70]!r}",
     ))
 
+    # ---- (C2) SAFE GAP: the mirror cannot slide into the adjacent lens/camera ---------------- #
+    split_now = _quiet(editor._folded_object_conjugate_split)
+    far_min = float(split_now.get("far_min", 0.0)) if split_now else 0.0
+    ok_safe, _m_safe = _quiet(editor._apply_folded_object_split, "far", far_min + 8.0)
+    ok_unsafe, msg_unsafe = _quiet(editor._apply_folded_object_split, "far", far_min - 3.0)
+    checks.append(Check(
+        "SAFE GAP: mirror->surface has a collision floor -- a valid far applies, an unsafe one is rejected",
+        far_min > 0 and ok_safe and (not ok_unsafe) and "Safe gap" in msg_unsafe,
+        f"far_min={far_min:.2f} valid(far_min+8)={ok_safe} unsafe(far_min-3)_rejected={not ok_unsafe}",
+    ))
+
     # ---- (D) still images after a valid slide ----------------------------------------------- #
     _s, _r, bundle = _quiet(editor._build_preview_system_rays_bundle, update_state=True)
     det = next(

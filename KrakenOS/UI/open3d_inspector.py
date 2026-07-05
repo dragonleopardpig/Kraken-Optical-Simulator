@@ -16301,6 +16301,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         total = float(split["total"])
         near0 = float(split["near"])
         far0 = float(split["far"])
+        far_min = float(split.get("far_min", 0.0) or 0.0)
         r = int(start_row)
         ttk.Separator(dialog, orient="horizontal").grid(
             row=r, column=0, columnspan=2, sticky="ew", padx=12, pady=(4, 8)
@@ -16360,6 +16361,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         far_entry.grid(row=r + 4, column=1, sticky="w", padx=(0, 12), pady=(0, 6))
         near_var.trace_add("write", _sync)
         far_var.trace_add("write", _sync)
+        if far_min > 0:
+            ttk.Label(
+                dialog,
+                text=(
+                    f"Safe gap: {far_label.split('(')[0].strip().rstrip(':')} ≥ {far_min:.4g} mm "
+                    "(the mirror cannot slide into the adjacent lens/camera)."
+                ),
+                foreground="#a06000",
+                wraplength=340,
+                justify="left",
+            ).grid(row=r + 5, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 6))
+            r += 1  # push the Apply button down one row
 
         def _apply():
             leg = fixed_var.get()
