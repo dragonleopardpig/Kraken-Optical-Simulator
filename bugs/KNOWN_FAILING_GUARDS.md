@@ -99,6 +99,27 @@ by hand** — do not trust a clean push.
 
 ---
 
+## 4. `validate_3d_interaction_contract` — 16 drifted source-string checks (pre-existing) — OPEN
+
+**Symptom.** Standalone run fails **16** checks (e.g. "fixed drag method uses constant sensitivity",
+"Open 3D exposes STEP promotion to optical solid rows", "Open 3D renders editable table Thickness
+dimensions", "Open 3D explicit face pick badge can report face assignment physics"). Confirmed
+**pre-existing** (2026-07-05): fails identically with this session's edits reverted, and the failing
+checks are semantically unrelated to any of them.
+
+**Root cause.** This guard asserts *exact source substrings* via `inspect.getsource` across many
+inspector/service methods. Over dozens of commits the implementation strings drifted (renames,
+refactors, reworded UI text) while the guard's expected strings did not — and because the marathon /
+gate never runs (item 3), nothing flagged the drift. Not a functional regression; a stale assertion
+set. NOT a penta phase (absent from the baseline), so it gates nothing.
+
+**Fix direction.** Reconcile each failing check against current source: update the expected substring
+where the behaviour still holds (most), or file a real bug where a check reveals a genuine missing
+behaviour (audit each — 16 to triage). Sizeable but mechanical. Lower priority than item 3 (fix the
+gate first, or this will re-rot).
+
+---
+
 ## Not-a-bug / already resolved this session (for context, no action needed)
 
 - `camera_overlay_hover_alignment` failed transiently after bugs/0220 because its `_FakeEditor` lacked
