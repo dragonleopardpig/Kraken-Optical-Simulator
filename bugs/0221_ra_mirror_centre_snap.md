@@ -42,13 +42,25 @@ promoted-mirror centre for both RA mirrors, is gated to RA mirrors (None for Obj
 aperture/datum rows), the object→mirror-1-centre measurement, and wiring. Penta **phase 197**,
 baseline `pass`.
 
-## Known limitation (not this feature — a bigger, separate refactor)
+## The "Z-only" limitation was a phantom — the measure tool is already 3D-correct (verified 2026-07-05)
 
-The dimension tool is Z-AXIS-CENTRIC: a re-anchored endpoint keeps its X/Y on the optical axis and
-snaps only Z, and the measured value is `abs(z1 − z0)` (the global-Z component). This is exact for a
-measurement ALONG the incoming/outgoing legs (which run in Z) — including object → mirror-1 centre —
-but it DROPS the transverse component of the MIDDLE leg (mirror-1 → lens runs in +X, so a middle-leg
-span reads its Z-delta ≈ 0, not the real length). Making the tool measure the true folded path (or
-snap the full-3D vertex for the off-axis mirror-2) is a larger change to the Z-centric dimension
-model, tracked separately. The reported object working / image distance are already correct end-to-end
-(bugs/0219); this snap is a manual cross-check aid for the first axis segment.
+An earlier draft of this doc claimed the manual measure tool is "Z-axis-centric" — that it keeps X/Y
+on the optical axis, snaps only Z, and reports `abs(z1 − z0)`, so a MIDDLE-leg span (mirror-1 → lens,
+which runs in +X) would read its Z-delta ≈ 0 instead of the real length. **That is wrong.** Direct
+testing of the orange measure tool on the folded two-mirror scene shows it computes the true 3-D
+distance:
+
+- `_record_measure_point` stores the raw picked (optionally axis-snapped) world point; `dist` is
+  `norm(p1 − p0)` (point-to-point) — a genuine 3-D length, not a Z-delta.
+- `_anchor_measure_point` matches a pick's world-Z to the nearest row's cumulative-Z STATION and
+  `_resolve_measure_point` re-derives only Z from that station, **keeping the pick's X/Y**. On the
+  folded scene every middle-leg row sits at world-Z ≈ 71.9 (they run along +X), so a middle-leg pick
+  anchors to the same row (mirror-1) — but its X is preserved, so the measured length is right.
+- Verified span mirror-1-centre (0,0,71.9) → lens element (87.59,0,71.9): the tool returns **87.590
+  mm** (the true +X extent), not 0. Object → mirror-1-centre still reads 71.90 mm; the outgoing-leg
+  pick (181.37,0,−22.05) keeps its full 3-D position too.
+
+So there is nothing to fix here: the tool the user drives measures folded distances correctly (matching
+the in-app `flag_20260704_223026_841` "measurement works" — 71.9 mm + a 60.66 mm outgoing-leg span).
+The only residual Z-collapse is the axis-snap FALLBACK (`_project_world_onto_optical_axis` → `(0,0,z)`)
+used when NO axis polyline is rendered — an edge case that does not arise on a normal folded scene.
