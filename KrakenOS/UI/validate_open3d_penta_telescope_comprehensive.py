@@ -10693,6 +10693,37 @@ def phase_202_2d_layout_matches_3d_focus(
     return result
 
 
+def phase_203_periscope_fold_crash(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A PERISCOPE (two adjacent promoted RA mirrors, e.g. Pyrite-85) must not crash the
+    folded trace with `non-sequential surface N: int has no ray_trace` (bugs/0230). Two
+    adjacent 90-degree folds compose to a net-identity rotation + lateral offset; the general
+    flat-plate straight-equivalent path was gated on a ROTATING fold only, so the periscope
+    fell through to the single-fold sequential surrogate, which left the 2nd mirror as a
+    dummy-built mesh solid -> int-EEE crash. The gate now treats a DISPLACING fold as a fold
+    too. `validate_open3d_periscope_fold_crash` asserts the gate recognises a periscope,
+    still rejects a no-op, and leaves the AZ85 rotating fold unchanged.
+    """
+    result = PhaseResult(
+        name="Phase 203: periscope (two adjacent RA mirrors) no longer crashes the trace (0230)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_periscope_fold_crash import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"periscope-fold-crash guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("periscope-fold-crash phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10941,6 +10972,7 @@ def main() -> int:
             phase_200_offbeam_promoted_mirror_inert,
             phase_201_ray_hover_highlight,
             phase_202_2d_layout_matches_3d_focus,
+            phase_203_periscope_fold_crash,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

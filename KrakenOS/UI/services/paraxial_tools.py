@@ -410,10 +410,27 @@ class ParaxialToolsMixin:
             if transform is None:
                 continue
             try:
-                rotation = np.asarray(transform, dtype=float).reshape(4, 4)[:3, :3]
+                matrix = np.asarray(transform, dtype=float).reshape(4, 4)
             except Exception:
                 continue
-            if np.all(np.isfinite(rotation)) and not np.allclose(rotation, np.eye(3), atol=1e-6):
+            if not np.all(np.isfinite(matrix)):
+                continue
+            rotation = matrix[:3, :3]
+            translation = matrix[:3, 3]
+            # bugs/0230: a PERISCOPE (two adjacent 90-degree folds, e.g. the Pyrite-85
+            # scene's back-to-back RA mirrors) composes to a NET-IDENTITY rotation with a
+            # lateral OFFSET -- the downstream rows are translated onto the parallel branch
+            # but never rotated, so the old rotation-ONLY gate read the scene as unfolded and
+            # returned None. That fell the scene through to the sequential-Mirror surrogate
+            # (below in `_trace_preview_rays_folded_aware`), which rotation-folds the running
+            # beam the WRONG way for the second free-placed mirror, could not solve its tilt,
+            # and left it as a dummy-built mesh solid -> `int has no ray_trace` crash. A
+            # DISPLACING fold is a fold too: route it to this general flat-plate equivalent
+            # (which flattens EVERY mirror + reflects the display rays about every plane), so
+            # an arbitrary chain -- periscope included -- traces without a mesh solid.
+            rotating = not np.allclose(rotation, np.eye(3), atol=1e-6)
+            displacing = float(np.linalg.norm(translation)) > 1.0e-3
+            if rotating or displacing:
                 has_rotating_fold = True
                 break
         if not has_rotating_fold:
