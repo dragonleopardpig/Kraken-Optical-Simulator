@@ -1030,6 +1030,104 @@ class ParaxialToolsMixin:
         result["object_mode_after"] = object_mode_after
         return result
 
+    # ------------------------------------------------------------------ #
+    # Folded conjugate split (feature: split object/image distance at the fold mirror).
+    #
+    # In a folded relay the object working distance c and image distance w are BENT by an
+    # RA mirror for mechanical packaging: c = a + b (object plane -> mirror centre -> first
+    # surface), w = u + v (last surface -> mirror centre -> sensor), measured ALONG THE
+    # OPTICAL AXIS. The optics fix the total (the conjugate); the split is the mechanical
+    # freedom -- the user pins one leg (the constrained dimension) and the fold mirror SLIDES
+    # along the axis so that leg is exact, the complementary leg = total - fixed. Sliding is
+    # a pure repackaging (add delta to the gap before the mirror, subtract delta from the gap
+    # after) so the total conjugate -- and therefore the first-order image -- is untouched.
+    # ------------------------------------------------------------------ #
+
+    def _folded_object_conjugate_split(self) -> "dict | None":
+        """Split the object distance c at the OBJECT-side RA-mirror fold centre.
+
+        Returns ``{total, near, far, mirror_row, near_gap_row, far_gap_row}`` where ``near`` =
+        object plane -> mirror centre, ``far`` = mirror centre -> first optical surface (both
+        along the optical axis, ``near + far == total``), and the two AIR gap rows that slide
+        the mirror. ``None`` when there is no object-side fold to split."""
+        rows = list(getattr(self, "rows", []) or [])
+        if len(rows) < 3:
+            return None
+        try:
+            folds = [int(i) for i in self._promoted_mirror_fold_row_indices()]
+        except Exception:
+            folds = []
+        if not folds:
+            return None
+        try:
+            total, first_lens = self._paraxial_total_object_gap()
+        except Exception:
+            return None
+        mirror_row = next((m for m in folds if 0 < m < int(first_lens)), None)
+        if mirror_row is None:
+            return None
+        thicknesses = [max(float(getattr(r, "thickness", 0.0) or 0.0), 0.0) for r in rows]
+        station = float(sum(thicknesses[:mirror_row]))
+        # The object-side mirror is the FIRST fold, so the axis into it is the straight +Z; the
+        # mirror centre's along-axis position is its station plus its own along-axis decenter
+        # (desp_z), i.e. the RA-mirror fold vertex. (NOT half the row thickness -- that only
+        # coincides when desp_z happens to equal it.)
+        desp_z = float(getattr(rows[mirror_row], "desp_z", 0.0) or 0.0)
+        near = station + desp_z                               # object plane -> mirror centre
+        far = float(total) - near                             # mirror centre -> first surface
+        # The mirror slides by moving the object gap (before) against the trailing air spacer
+        # (after) -- both inside the object->first-surface span, so the total stays fixed.
+        spacer_row = None
+        for j in range(mirror_row + 1, int(first_lens)):
+            adv = getattr(rows[j], "advanced", None)
+            if isinstance(adv, dict) and adv.get("InPathTrailingSpacer"):
+                spacer_row = j
+                break
+        if spacer_row is None:
+            spacer_row = min(mirror_row + 1, int(first_lens) - 1)
+        return {
+            "total": float(total),
+            "near": float(near),
+            "far": float(far),
+            "mirror_row": int(mirror_row),
+            "near_gap_row": 0,
+            "far_gap_row": int(spacer_row),
+        }
+
+    def _apply_folded_object_split(self, fixed_leg: str, value: float) -> "tuple[bool, str]":
+        """Slide the object-side fold mirror so the fixed leg equals ``value``, keeping the
+        total object distance fixed. ``fixed_leg`` is ``"near"`` (object -> mirror centre) or
+        ``"far"`` (mirror centre -> first surface). Returns ``(ok, message)``."""
+        split = self._folded_object_conjugate_split()
+        if split is None:
+            return False, "No object-side fold mirror to split."
+        total = float(split["total"])
+        try:
+            fixed = float(value)
+        except (TypeError, ValueError):
+            return False, "The constrained distance must be a number."
+        if not (fixed > 0) or fixed >= total:
+            return False, f"The constrained leg must be between 0 and the total {total:.4g} mm."
+        near_new = fixed if fixed_leg == "near" else (total - fixed)
+        delta = near_new - float(split["near"])
+        ng, fg = int(split["near_gap_row"]), int(split["far_gap_row"])
+        rows = self.rows
+        if not (0 <= ng < len(rows) and 0 <= fg < len(rows)):
+            return False, "Object split gap rows are unavailable."
+        new_near_gap = float(rows[ng].thickness) + delta
+        new_far_gap = float(rows[fg].thickness) - delta
+        if new_near_gap < 0.0 or new_far_gap < 0.0:
+            return False, (
+                f"Constraint out of range: sliding the mirror there needs a negative gap "
+                f"(object gap {new_near_gap:.4g} / spacer {new_far_gap:.4g})."
+            )
+        rows[ng].thickness = new_near_gap
+        rows[fg].thickness = new_far_gap
+        return True, (
+            f"Object distance split: object->mirror {near_new:.4g} mm, "
+            f"mirror->first surface {total - near_new:.4g} mm (total {total:.4g} mm)."
+        )
+
     def _paraxial_variable_thickness_details(
         self,
         row_index: int,

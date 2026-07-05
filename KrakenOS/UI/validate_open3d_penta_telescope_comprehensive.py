@@ -10805,6 +10805,33 @@ def phase_206_two_fold_detector_snaps_to_focus(
     return result
 
 
+def phase_207_folded_conjugate_split(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The folded object distance c can be split at the RA-mirror fold centre (c = a + b, object
+    plane -> mirror centre -> first surface, along the optical axis); the user pins one mechanical
+    leg and the mirror SLIDES (object gap +delta vs the trailing spacer -delta) so c -- the
+    conjugate -- is untouched. `validate_open3d_folded_conjugate_split` asserts near+far==total and
+    near == the fold vertex, that a slide keeps the conjugate, out-of-range is rejected, and the
+    scene still images.
+    """
+    result = PhaseResult(name="Phase 207: folded object distance split at the fold mirror (feature)")
+    try:
+        from KrakenOS.UI.validate_open3d_folded_conjugate_split import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-conjugate-split guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-conjugate-split phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11057,6 +11084,7 @@ def main() -> int:
             phase_204_iso_up_axis,
             phase_205_trailing_fold_mirror_insert,
             phase_206_two_fold_detector_snaps_to_focus,
+            phase_207_folded_conjugate_split,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
