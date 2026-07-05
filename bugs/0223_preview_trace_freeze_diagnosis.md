@@ -96,6 +96,34 @@ cache, is lower-correctness-risk because the overlay pose is the only variable.
 Recommended order: **A first** (kills the freeze without correctness risk), then **B** (cheap, broad
 win), then **C** if placement fiddling is still slow.
 
+## Implementation findings (2026-07-05) — a naive thread will NOT work; the safe win is Fix B
+
+Attempting Fix A surfaced obstacles the initial plan missed (all verified headless):
+
+- **The trace is a per-ray PYTHON loop** (`TraceLoopTool.py:107` `for i in range(0, len(x)): System.Trace(...)`),
+  not a vectorised numpy batch. A Python **thread** holds the GIL through that loop, so it would NOT
+  free the Tk main loop — the freeze would remain. Only a **subprocess** (separate interpreter/GIL)
+  truly offloads it. (This is exactly why the existing precedent `warm_open3d_step_cache` is a
+  subprocess, not a thread.)
+- **A subprocess can't return the result cleanly.** The `system` object does **not** pickle
+  (`_install_build_hook.<locals>.build_with_output_ports` — a local closure), yet `refresh_scene`
+  needs `system`. And the picklable parts are **huge**: `scene_bundle` ≈ 49 MB + `rays` ≈ 72 MB ≈
+  **121 MB** to serialise across the process boundary per trace (~1-2 s of pickle/IPC, eating into the
+  saving). A subprocess path therefore also has to **rebuild `system` on the main thread** (a small
+  residual freeze) after receiving the trace.
+- **Good news for isolation:** two independent editors tracing the same scene produce a **byte-identical
+  bundle** (detector + all 3,249 ray endpoints match), and the only KrakenOS module global on the trace
+  path is the read-only `fraunhofer` constant — so running the trace on a snapshot editor is
+  deterministic and free of shared mutable state (whichever offload mechanism is used).
+
+**Revised recommendation.** Do **Fix B first** (consolidate the 3,249 per-ray actors → a few polyline
+actors). It is a pure display change — no threading, no GIL, no serialisation — removes the ~4 s VTK
+rebuild and the dominant ~68 s cumulative render cost, and is headless-verifiable (actor count + a
+render snapshot). It is the biggest safe win. The off-thread trace, if still wanted after Fix B, should
+be the **subprocess** variant (trace in a child → return `rays` + `scene_bundle` → rebuild `system` +
+`refresh_scene` on the main thread), accepting the ~121 MB serialisation; a thread is not worth building
+because the GIL negates it.
+
 ## Verification owed (in-app)
 
 Per task #78 and the validator SIGSEGV, the freeze-gone can only be confirmed in-app: import + place a
