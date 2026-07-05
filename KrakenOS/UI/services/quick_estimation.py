@@ -953,6 +953,36 @@ class QuickEstimationService:
         return cand
 
     def _apply_conjugate_pair(self, object_semi: Any, image_semi: Any) -> tuple[bool, str]:
+        # Folded-aware branch (feature): a promoted RA-mirror fold breaks the plain object/image
+        # gap-row assumption -- object_thickness_row/image_thickness_row land on the mirror-adjacent
+        # legs, and the whole-system principal planes are inflated by the flattened mirror plates
+        # (ppp ~ -196 mm), so the plain _conjugate_pair yields a NEGATIVE image distance and the
+        # FOV solve silently no-ops on a periscope. Solve against the LENS-only first order and
+        # write the solved distances into the true folded object/image gap TOTALS.
+        try:
+            os_f, is_f = float(object_semi), float(image_semi)
+        except (TypeError, ValueError):
+            os_f = is_f = 0.0
+        if os_f > 0 and is_f > 0:
+            folded = self.editor._folded_conjugate_gaps_for_magnification(is_f / os_f)
+            if folded is not None:
+                rows = getattr(self.editor, "rows", None) or []
+                og, ig = int(folded["object_gap_row"]), int(folded["image_gap_row"])
+                if not (0 <= og < len(rows) and 0 <= ig < len(rows)):
+                    return False, "Folded conjugate gap rows are unavailable."
+                new_obj_gap = float(rows[og].thickness) + float(folded["object_delta"])
+                new_img_gap = float(rows[ig].thickness) + float(folded["image_delta"])
+                if new_obj_gap < 0.0 or new_img_gap < 0.0:
+                    return False, (
+                        "FOV out of range on the folded arms (the object or image leg would go "
+                        "negative -- slide the fold mirrors first)."
+                    )
+                rows[og].thickness = new_obj_gap
+                rows[ig].thickness = new_img_gap
+                return True, (
+                    f"Solved (folded): object->lens {folded['object_distance']:.6g} mm, "
+                    f"lens->sensor {folded['image_distance']:.6g} mm (|m|={folded['magnitude']:.4g})."
+                )
         pair = self._conjugate_pair(object_semi, image_semi)
         if pair is None:
             return False, "No real-image conjugate for that size (near the focal point?)."

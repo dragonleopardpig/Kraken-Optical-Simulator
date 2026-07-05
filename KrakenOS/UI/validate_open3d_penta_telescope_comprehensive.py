@@ -10858,6 +10858,32 @@ def phase_208_recorder_captures_dialogs(
     return result
 
 
+def phase_209_folded_fov_solve(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The FOV "Solve for Thickness" must work on a FOLDED scene (it silently no-opped -- the
+    conjugate solve used the whole-system principal planes inflated by the mirror plates, yielding
+    a negative image distance -> "no real-image conjugate"). It now solves against the lens-only
+    first order and writes the folded object/image gaps. `validate_open3d_folded_fov_solve` asserts
+    a positive conjugate, that the solve applies + still images, non-folded scenes are untouched,
+    and the wiring."""
+    result = PhaseResult(name="Phase 209: FOV Solve-for-Thickness works on a folded scene")
+    try:
+        from KrakenOS.UI.validate_open3d_folded_fov_solve import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-fov-solve guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-fov-solve phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11112,6 +11138,7 @@ def main() -> int:
             phase_206_two_fold_detector_snaps_to_focus,
             phase_207_folded_conjugate_split,
             phase_208_recorder_captures_dialogs,
+            phase_209_folded_fov_solve,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

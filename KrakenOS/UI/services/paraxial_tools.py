@@ -1103,6 +1103,74 @@ class ParaxialToolsMixin:
             "near_min": 0.0,
         }
 
+    def _folded_conjugate_gaps_for_magnification(self, magnitude) -> "dict | None":
+        """Folded-aware FOV conjugate solve. For a target |m|, return the object/image DISTANCES
+        (object plane -> first optical surface, last optical surface -> sensor -- the folded
+        totals) and the gap-row deltas that achieve them, or None (not folded / infeasible).
+
+        The plain QE ``_conjugate_pair`` uses the whole system's principal planes -- which on a
+        folded scene are inflated by the flattened MIRROR PLATES (ppp reads ~-196 mm), so its
+        thin-lens conjugate formula yields a NEGATIVE image distance and bails ("no real-image
+        conjugate"). Here the first order is taken from the LENS BLOCK ONLY (the optical rows
+        between the first surface and the last, with the fold mirrors + object/image gaps
+        excluded), so PPA/PPP are relative to the real lens surfaces and the conjugate is
+        physical. The solved distances then map onto the folded object/image gap totals
+        (``_paraxial_total_object_gap`` / ``_paraxial_total_image_gap``)."""
+        equivalent = self._folded_optical_solid_straight_equivalent_rows()
+        if equivalent is None:
+            return None
+        try:
+            m = abs(float(magnitude))
+        except (TypeError, ValueError):
+            return None
+        if not (m > 1e-9):
+            return None
+        try:
+            object_total, first_lens = self._paraxial_total_object_gap()
+            image_total, last_src, _ref = self._paraxial_total_image_gap()
+        except Exception:
+            return None
+        # The image gap starts at the last LENS surface: walk back from the last optical
+        # reference through any trailing fold mirror (a fold the beam passes THROUGH, not the
+        # lens). first_lens .. gap_start is the pure lens block in the straight-equivalent.
+        gap_start = int(last_src)
+        while gap_start > 1 and _row_is_promoted_mirror_fold(self.rows[gap_start]):
+            gap_start -= 1
+        if not (0 <= int(first_lens) <= int(gap_start) < len(equivalent)):
+            return None
+        lens_rows = [SurfaceRow(**asdict(equivalent[i])) for i in range(int(first_lens), int(gap_start) + 1)]
+        if len(lens_rows) < 2:
+            return None
+        # The last lens row is the rear vertex/last surface; its thickness is the gap to the
+        # image side (image-arm gap), NOT internal lens spacing -- zero it so the lens-only
+        # first order (and thus PPP) is not inflated by the last-surface -> mirror distance.
+        lens_rows[-1].thickness = 0.0
+        try:
+            _a, _b, _c, _d, f, ppa, ppp = self._exact_paraxial_solution_for_rows(lens_rows)
+        except Exception:
+            return None
+        if not (np.isfinite(f) and abs(float(f)) > 1e-9):
+            return None
+        f = float(f)
+        object_distance = f * (1.0 + 1.0 / m) - float(ppa)   # object -> first lens surface
+        image_distance = f * (1.0 + m) + float(ppp)           # last lens surface -> sensor
+        if not (
+            np.isfinite(object_distance) and np.isfinite(image_distance)
+            and object_distance > 1e-6 and image_distance > 1e-6
+        ):
+            return None
+        return {
+            "object_distance": float(object_distance),
+            "image_distance": float(image_distance),
+            "magnitude": float(m),
+            "object_total": float(object_total),
+            "image_total": float(image_total),
+            "object_gap_row": 0,
+            "image_gap_row": int(gap_start),
+            "object_delta": float(object_distance) - float(object_total),
+            "image_delta": float(image_distance) - float(image_total),
+        }
+
     def _apply_folded_object_split(self, fixed_leg: str, value: float) -> "tuple[bool, str]":
         """Slide the object-side fold mirror so the fixed leg equals ``value``, keeping the
         total object distance fixed. ``fixed_leg`` is ``"near"`` (object -> mirror centre) or
