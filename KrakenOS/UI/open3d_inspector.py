@@ -614,6 +614,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.normal_target_var = tk.StringVar(value=SCENE_NORMAL_TARGET_LABELS["detector"])
         self.step_carry_grid_var = tk.StringVar(value=STEP_CARRY_GRID_FREE)
         self.rotation_step_deg_var = tk.StringVar(value="90")
+        # bugs/0231: user-selectable ISO up-axis. Which WORLD axis points UP in the Iso
+        # preset (the other two form the diagonal horizontal spread). Default "y"
+        # reproduces the historic Iso view byte-for-byte. The "Iso up" toolbar menu writes
+        # this var; set_camera_preset("iso") reads it.
+        self.iso_up_axis_var = tk.StringVar(value="y")
+        self._iso_up_axis = "y"
         # Free-input move/drag snap step (mm). Blank -> the auto span/20 grid; 0 -> SMOOTH
         # (continuous drag); any number -> snap to exactly that step. Lets the user drag the BS
         # smoothly / to a precise step instead of the coarse auto placement-handle snap.
@@ -10975,6 +10981,38 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         vertical_scale = float(vertical_span) * 0.5
         return max(horizontal_scale, vertical_scale, 1.0) * 1.08
 
+    _ISO_UP_AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
+
+    @staticmethod
+    def _iso_camera_offset_and_view_up(up_axis: str, distance: float):
+        """Iso camera offset + view-up for a user-chosen UP axis (bugs/0231).
+
+        The chosen world axis (``x``/``y``/``z``) points UP: its offset component is
+        ``+0.55*distance`` (camera above the scene) and its view-up is that unit axis. The
+        OTHER two axes carry the diagonal horizontal spread (``-0.95`` and ``+0.8`` in their
+        natural order), so all three axes stay visible in the canvas. ``y`` reproduces the
+        historic Iso exactly: offset ``(-0.95, 0.55, 0.8)*d``, view-up ``(0, 1, 0)``. Pure
+        (no VTK) so it is unit-testable; an unknown axis falls back to ``y``.
+        """
+        axis = Kraken3DInspector._ISO_UP_AXIS_INDEX.get(str(up_axis or "y").strip().lower(), 1)
+        others = [i for i in (0, 1, 2) if i != axis]
+        offset = np.zeros(3, dtype=float)
+        offset[axis] = float(distance) * 0.55
+        offset[others[0]] = -float(distance) * 0.95
+        offset[others[1]] = float(distance) * 0.8
+        view_up = tuple(1.0 if i == axis else 0.0 for i in range(3))
+        return offset, view_up
+
+    def _on_iso_up_axis_changed(self) -> None:
+        """The 'Iso up' menu picked a new up-axis: store it and re-apply the Iso view so the
+        change is immediate (selecting an Iso up-axis implies wanting the Iso view)."""
+        axis = str(self.iso_up_axis_var.get() or "y").strip().lower()
+        if axis not in self._ISO_UP_AXIS_INDEX:
+            axis = "y"
+        self._iso_up_axis = axis
+        self.iso_up_axis_var.set(axis)
+        self.set_camera_preset("iso")
+
     def set_camera_preset(self, preset: str) -> None:
         self._camera_preset = preset
         if self._renderer is None:
@@ -11040,9 +11078,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             view_up = (1.0, 0.0, 0.0)
             parallel_scale = self._parallel_scale_for_orthographic_fit(span_z, span_x, aspect)
         else:
-            offset = np.array([-distance * 0.95, distance * 0.55, distance * 0.8], dtype=float)
+            # bugs/0231: user-selectable ISO up-axis. The chosen world axis points UP
+            # (view_up); the other two carry the diagonal horizontal spread. Default "y"
+            # yields offset (-0.95, 0.55, 0.8)*d + up (0,1,0) -- the historic Iso, exactly.
+            offset, view_up = self._iso_camera_offset_and_view_up(self._iso_up_axis, distance)
             position = center + offset
-            view_up = (0.0, 1.0, 0.0)
             # bugs/0048: the Iso view must be orthographic like the cardinal
             # presets. A perspective camera sits a finite distance from the
             # scene, so an orbit can swing the far geometry (the image plane and

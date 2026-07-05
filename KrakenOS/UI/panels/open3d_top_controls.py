@@ -66,6 +66,19 @@ class Open3DTopControlsPanel:
                 command=lambda value=preset: self.inspector.set_camera_preset(value),
                 padx=(2, 0),
             )
+        # bugs/0231: user-selectable ISO up-axis. Which WORLD axis points up in the Iso
+        # view (the other two carry the diagonal horizontal spread). Picking one applies
+        # the Iso view immediately; the plain "Iso" button also uses the current choice.
+        iso_up_menu = create_popup_menu(view_toolbar)
+        for axis_label, axis_value in (("Y up (default)", "y"), ("Z up", "z"), ("X up", "x")):
+            iso_up_menu.add_radiobutton(
+                label=axis_label,
+                value=axis_value,
+                variable=self.inspector.iso_up_axis_var,
+                command=self.inspector._on_iso_up_axis_changed,
+            )
+        pack_menubutton(view_toolbar, "Iso up ▾", iso_up_menu, padx=(4, 0))
+        self.inspector._open3d_iso_up_menu = iso_up_menu
         # bugs/0158/0159: swing the whole view 90 degrees per click -- FreeCAD's
         # navigation-cube "rotate" arrows. The axis is view-aware (rotate_camera_view):
         # an oblique/Iso view turntables about the view-up (two clicks views it from

@@ -10724,6 +10724,32 @@ def phase_203_periscope_fold_crash(
     return result
 
 
+def phase_204_iso_up_axis(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The Iso view's up-axis is user-selectable (bugs/0231): the "Iso up" toolbar menu picks
+    which WORLD axis points up (X/Y/Z), the other two carry the diagonal spread. The default
+    "y" reproduces the historic Iso byte-for-byte. `validate_open3d_iso_up_axis` asserts the
+    Y-up historic pose is unchanged, each axis yields a true oblique iso with that axis up, the
+    handler stores+re-applies (unknown -> y), and the toolbar/preset wiring.
+    """
+    result = PhaseResult(name="Phase 204: user-selectable Iso up-axis (0231)")
+    try:
+        from KrakenOS.UI.validate_open3d_iso_up_axis import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"iso-up-axis guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("iso-up-axis phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10973,6 +10999,7 @@ def main() -> int:
             phase_201_ray_hover_highlight,
             phase_202_2d_layout_matches_3d_focus,
             phase_203_periscope_fold_crash,
+            phase_204_iso_up_axis,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
