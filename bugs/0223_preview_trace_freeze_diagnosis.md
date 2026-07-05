@@ -173,12 +173,38 @@ is partial. Findings:
   leaves a ~3.5 s main-thread apply. So the freeze drops ~10 s → ~3.5 s — real, but not gone. (Fix B
   cuts the per-frame render, not this apply-time mesh build.)
 
-**Plan for the worker** (`KrakenOS/UI/trace_preview_worker.py`, mirror `warm_open3d_step_cache`): read
-`{specs, settings, sampling_mode, include_live_step_overlays}` from a temp file → seed lazy caches →
-`_snapshot_editor` → trace → pickle `(rays, scene_bundle)` out. Main thread: serialise scene, `Popen`,
-poll via `after()`, on completion re-check the trace signature (discard if the scene changed mid-trace),
-rebuild `system`, `refresh_scene`, drop a "Tracing…" badge meanwhile. **Deferred to a focused session**
-(large + the cache-seeding is fragile); tracked in task #78.
+### Session-2 progress (2026-07-05) — recursion ROOT-FIXED; a cleaner architecture found
+
+- **DONE, committed (`2c426776`): the `__new__` snapshot-editor recursion is root-fixed** — `_snapshot_editor`
+  now sets `editor.tk = object()`, so tkinter's `__getattr__` raises `AttributeError` (→ getattr default)
+  instead of recursing on ANY missing attribute. No more per-cache whack-a-mole; a headless worker can
+  now trace a promoted-STEP folded scene. All snapshot-editor guards stay green.
+- **Verified: a serialized scene traces in a rebuilt editor** — `{specs}` → `_row_from_layout_item` →
+  `_snapshot_editor` → `_build_preview_system_rays_bundle` runs without error and lands the detector at
+  the right place.
+- **BUT — fidelity gap.** The rebuilt editor did NOT reproduce the same ray COUNT (33 sparse rays vs the
+  real 3,249-ray cone), because the sampling density lives in editor state that `{specs, sampling_mode,
+  wavelength}` doesn't fully carry. Replicating an editor faithfully enough to reproduce the exact trace
+  is fragile.
+
+**Revised architecture (do this instead of replicating the editor): off-thread only the `NsTraceLoop`,
+passing EXPLICIT launch rays.** The main thread already owns the exact sampling; split the trace so:
+1. Main: `build_system` (~0.4 s) + compute the launch-ray arrays (the pupil/field sampling — fast,
+   deterministic, no fidelity question). This needs a small refactor of `_trace_preview_rays` /
+   `_trace_preview_rays_folded_aware` (`three_d_scene_tools.py:622`) to expose the launch arrays instead
+   of computing-and-tracing in one call.
+2. Worker: rebuild `system` from specs (unpicklable, so rebuilt not shipped) + run `NsTraceLoop` on the
+   passed launch arrays [+ optionally `_build_scene_bundle`] → return the traced ray arrays.
+3. Transfer via **shared memory** (`multiprocessing.shared_memory` + numpy views) — the launch arrays in,
+   the traced arrays out, **zero-copy**, no 121 MB pickle. (A database is the wrong tool for these bulk
+   numeric arrays; shared memory is the right "fast data" layer — see the design discussion.)
+4. Main: `_build_scene_bundle` (or use the worker's) + `refresh_scene`, with a trace-signature re-check
+   to discard a result whose scene changed mid-trace, and a "Tracing…" badge meanwhile.
+
+This sidesteps the editor-fidelity problem entirely (the exact rays are specified by the caller) and
+moves the ~4.3 s `NsTraceLoop` off the UI thread. **Remaining work** (focused session, task #78): the
+sampling/trace split refactor, the shared-memory channel, and the main-thread orchestration. Net freeze
+target: ~10 s → ~3–4 s (the VTK apply stays on main; Fix B already trims its render).
 
 ## Verification owed (in-app)
 
