@@ -884,13 +884,26 @@ def _interaction_fold_pose_from_frame(
     if not _row_has_optical_solid(row):
         return None
     metadata = normalize_optical_solid_face_metadata(_row_advanced(row).get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}))
-    if optical_solid_metadata.optical_solid_face_by_port_role(metadata, OPTICAL_SOLID_FACE_PORT_INPUT) is not None:
-        return None
     faces = [
         face
         for face in list(metadata.get("faces", []) or [])
         if isinstance(face, dict)
     ]
+    # bugs/0230: a FULL MIRROR always folds by specular reflection -- ports or not. Promotion
+    # auto-assigns an Input port to EVERY promoted solid, so this input-port early-return (meant
+    # to defer transmissive/ported solids to output-port routing) spuriously DISABLED the
+    # interaction fold for a mirror processed as a FOLLOWER: the Pyrite periscope's 2nd mirror
+    # (an on-beam full mirror with an auto Input port) fell through to the output-face side
+    # heuristic and sent the downstream chain out its +Z transmit face (a parallel offset)
+    # instead of the physical -Z reflection, so the detector/overlays landed on the opposite
+    # branch from the folded rays. The first mirror dodges this via the outer-loop bugs/0185
+    # guard; a follower mirror has none. Skip the bail for a full mirror so its reflection
+    # drives the downstream frame (a beam splitter keeps its ports -- excluded by the predicate).
+    if (
+        optical_solid_metadata.optical_solid_face_by_port_role(metadata, OPTICAL_SOLID_FACE_PORT_INPUT) is not None
+        and not _solid_has_full_mirror_interaction_face(faces)
+    ):
+        return None
     interaction_faces = [
         face
         for face in faces

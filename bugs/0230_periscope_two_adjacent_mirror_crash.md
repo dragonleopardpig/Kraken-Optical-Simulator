@@ -75,13 +75,29 @@ Regression: `validate_open3d_offbeam_promoted_mirror_inert` (0224/0226),
 `validate_open3d_ra_mirror_retroreflected_ray_dive`,
 `validate_open3d_second_mirror_same_part_mirror_carryover` all green.
 
-## Remaining (separate follow-up — NOT the crash)
+## Fold-sign alignment (also FIXED — the follow-up, same commit family)
 
-With the crash gone, the periscope traces 3249 rays that converge on the physically-correct
-−Z branch (mirror 2's face normal (0,−0.707,−0.707) folds +Y→−Z, endpoints at z≈−92), but the
-**pose-override walk** (`build_optical_solid_output_port_pose_overrides`, nonseq_output_ports)
-seats the detector/lens/camera overlays on the **+Z** branch (z≈436) — the two disagree in the
-fold *sign* for the second mirror (an output-port inference issue, cf. bug 0084's exit-face
-priority). So the fold now appears and nothing crashes, but the drawn sensor and the ray waist
-are on opposite branches until the pose-override's mirror-2 exit direction is reconciled with
-the face-normal reflection. Tracked as the periscope focus/branch-alignment follow-up.
+With the crash gone, the periscope first traced 3249 rays onto the physically-correct −Z branch
+(mirror 2's face normal (0,−0.707,−0.707) folds +Y→−Z, endpoints z≈−92) while the
+**pose-override walk** still seated the detector/lens/camera overlays on the **+Z** branch
+(z≈436) — a fold-SIGN disagreement for the 2nd mirror, so the drawn sensor and the ray waist sat
+~527 mm apart on opposite branches.
+
+Root cause: `_interaction_fold_pose_from_frame` (nonseq_output_ports) **early-returned None when
+the solid carries an explicit Input port** — meant to defer transmissive/ported solids to
+output-port routing. But promotion auto-assigns an Input port to EVERY promoted solid, so this
+bailed the interaction fold for a mirror processed as a FOLLOWER: the walk fell to the
+output-face side-priority heuristic and sent the downstream chain out mirror 2's +Z transmit
+face (a parallel-periscope offset) instead of its −Z reflection. The FIRST mirror dodges this via
+the outer-loop bugs/0185 guard; a follower mirror has none.
+
+Fix: skip the input-port bail for a **full mirror** (`_solid_has_full_mirror_interaction_face`),
+so a full mirror always folds by its specular reflection regardless of ports (a beam splitter is
+excluded by the predicate and keeps its ports — bugs/0084-0091 unchanged). The periscope detector
+now lands at (0, 188, −91.7) = the ray-endpoint centroid (437 rays within 5 mm; was 0), and the
+overlays follow onto the same branch. AZ85 is byte-unchanged; the
+`validate_open3d_second_mirror_orientation_driven_fold` "rays == detector" assertion now passes.
+
+Pinned by `validate_open3d_periscope_fold_crash` check (E) FOLD-SIGN: a full-mirror row with an
+injected Input port still folds by its interaction reflection (`_row_uses_interaction_fold_pose`
+== True) — the old input-port bail forced it False.

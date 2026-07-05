@@ -10706,7 +10706,7 @@ def phase_203_periscope_fold_crash(
     still rejects a no-op, and leaves the AZ85 rotating fold unchanged.
     """
     result = PhaseResult(
-        name="Phase 203: periscope (two adjacent RA mirrors) no longer crashes the trace (0230)"
+        name="Phase 203: periscope (two adjacent RA mirrors) -- no crash + full-mirror fold sign (0230)"
     )
     try:
         from KrakenOS.UI.validate_open3d_periscope_fold_crash import run_checks
