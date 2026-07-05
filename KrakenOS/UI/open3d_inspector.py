@@ -16279,6 +16279,112 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return True
         return False
 
+    def _add_folded_conjugate_split_section(self, dialog, plane: str, start_row: int) -> int:
+        """Add a 'split the <plane> distance at the fold mirror' section to a Quick-Estimation
+        popup (folded scenes only). The object/image distance is BENT by an RA mirror for
+        mechanical packaging (feature). Two legs measured ALONG THE OPTICAL AXIS; the user pins
+        ONE (the mechanically-constrained dimension) and the derived box grays + auto-fills =
+        total - fixed; 'Apply' SLIDES the mirror so the pinned leg is exact while the total
+        conjugate (the optics) stays fixed. Returns the next free grid row (== start_row if the
+        arm has no fold, so nothing is added)."""
+        if plane == "object":
+            split = self.editor._folded_object_conjugate_split()
+            near_label, far_label = "Object → mirror (mm):", "Mirror → first surface (mm):"
+            header = "Split the object distance at the fold mirror"
+            apply_fn = self.editor._apply_folded_object_split
+        else:
+            split = None  # image-side split is a later increment
+            near_label = far_label = header = ""
+            apply_fn = None
+        if not split:
+            return start_row
+        total = float(split["total"])
+        near0 = float(split["near"])
+        far0 = float(split["far"])
+        r = int(start_row)
+        ttk.Separator(dialog, orient="horizontal").grid(
+            row=r, column=0, columnspan=2, sticky="ew", padx=12, pady=(4, 8)
+        )
+        ttk.Label(dialog, text=header, font=("TkDefaultFont", 10, "bold")).grid(
+            row=r + 1, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 2)
+        )
+        ttk.Label(
+            dialog,
+            text=(
+                f"Total (fixed by the optics): {total:.4g} mm. Pin ONE mechanical leg — the "
+                "other is derived and the fold mirror slides along the optical axis."
+            ),
+            foreground="#888888",
+            wraplength=340,
+            justify="left",
+        ).grid(row=r + 2, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 6))
+
+        fixed_var = tk.StringVar(value="near")
+        near_var = tk.StringVar(value=f"{near0:.6g}")
+        far_var = tk.StringVar(value=f"{far0:.6g}")
+        near_entry = ttk.Entry(dialog, textvariable=near_var, width=12)
+        far_entry = ttk.Entry(dialog, textvariable=far_var, width=12)
+        _syncing = {"busy": False}
+
+        def _sync(*_a):
+            if _syncing["busy"]:
+                return
+            _syncing["busy"] = True
+            try:
+                if fixed_var.get() == "near":
+                    near_entry.configure(state="normal")
+                    far_entry.configure(state="disabled")
+                    try:
+                        far_var.set(f"{total - float(near_var.get()):.6g}")
+                    except ValueError:
+                        pass
+                else:
+                    far_entry.configure(state="normal")
+                    near_entry.configure(state="disabled")
+                    try:
+                        near_var.set(f"{total - float(far_var.get()):.6g}")
+                    except ValueError:
+                        pass
+            finally:
+                _syncing["busy"] = False
+
+        ttk.Radiobutton(dialog, text="Fix", value="near", variable=fixed_var, command=_sync).grid(
+            row=r + 3, column=0, sticky="w", padx=(12, 0)
+        )
+        ttk.Label(dialog, text=near_label).grid(row=r + 3, column=0, sticky="e", padx=(40, 4))
+        near_entry.grid(row=r + 3, column=1, sticky="w", padx=(0, 12), pady=(0, 3))
+        ttk.Radiobutton(dialog, text="Fix", value="far", variable=fixed_var, command=_sync).grid(
+            row=r + 4, column=0, sticky="w", padx=(12, 0)
+        )
+        ttk.Label(dialog, text=far_label).grid(row=r + 4, column=0, sticky="e", padx=(40, 4))
+        far_entry.grid(row=r + 4, column=1, sticky="w", padx=(0, 12), pady=(0, 6))
+        near_var.trace_add("write", _sync)
+        far_var.trace_add("write", _sync)
+
+        def _apply():
+            leg = fixed_var.get()
+            raw = (near_var if leg == "near" else far_var).get()
+            try:
+                value = float(raw)
+            except ValueError:
+                self.status_var.set("The constrained distance must be a number.")
+                return
+            ok, message = apply_fn(leg, value)
+            self.status_var.set(message)
+            if ok:
+                try:
+                    dialog.grab_release()
+                except Exception:
+                    pass
+                dialog.destroy()
+                self.refresh_from_editor()
+
+        ttk.Button(dialog, text="Apply split (move mirror)", command=_apply).grid(
+            row=r + 5, column=0, columnspan=2, padx=12, pady=(0, 10), sticky="ew"
+        )
+        _sync()
+        return r + 6
+
     def _open_quick_estimation_fov_popup(self, plane: str) -> None:
         """A small modal box: type the plane's field width x height, then click
         either 'Solve for Thickness' (move the conjugate pair so the field fills /
@@ -16432,6 +16538,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 height_var.trace_add("write", lambda *_a: _design.recompute())
             except Exception:
                 pass
+        # Feature: split the object/image distance at the fold mirror (folded scenes only).
+        # The design block above spans button_row+2..+4 for the object plane; the image plane
+        # has none. Add the split section after whichever was used.
+        split_start_row = button_row + (5 if plane == "object" else 2)
+        try:
+            self._add_folded_conjugate_split_section(dialog, plane, split_start_row)
+        except Exception as exc:
+            self.editor.append_debug(f"Folded conjugate-split section unavailable: {exc}")
         dialog.bind("<Escape>", lambda _e: dialog.destroy())
         try:
             dialog.grab_set()

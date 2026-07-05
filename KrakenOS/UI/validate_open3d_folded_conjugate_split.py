@@ -103,6 +103,28 @@ def validate_folded_conjugate_split() -> list[Check]:
         det is not None and reach >= 8,
         f"rays={len(bundle.ray_paths)} detector={None if det is None else np.round(det, 1)} within5mm={reach}",
     ))
+
+    # ---- (E) the object-plane Solve-for-Thickness dialog wires the split section ------------- #
+    import inspect
+
+    from KrakenOS.UI.open3d_inspector import Kraken3DInspector
+
+    section_src = inspect.getsource(Kraken3DInspector._add_folded_conjugate_split_section)
+    popup_src = inspect.getsource(Kraken3DInspector._open_quick_estimation_fov_popup)
+    wired = (
+        "_folded_object_conjugate_split()" in section_src
+        and "_apply_folded_object_split" in section_src
+        and 'configure(state="disabled")' in section_src  # fix-one -> gray the other
+        and 'configure(state="normal")' in section_src
+        and "_add_folded_conjugate_split_section(dialog, plane" in popup_src
+    )
+    checks.append(Check(
+        "WIRED: the FOV Solve-for-Thickness popup adds the split section (fix-one/gray-other + apply-slides-mirror)",
+        wired,
+        f"section_compute={'_folded_object_conjugate_split()' in section_src} "
+        f"section_apply={'_apply_folded_object_split' in section_src} "
+        f"popup_calls_section={'_add_folded_conjugate_split_section(dialog, plane' in popup_src}",
+    ))
     return checks
 
 
