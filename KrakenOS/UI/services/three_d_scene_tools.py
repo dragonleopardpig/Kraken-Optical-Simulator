@@ -562,6 +562,14 @@ class ThreeDSceneToolsMixin:
                                 folded_trace_rows=folded_trace_rows,
                             )
                         )
+            if isinstance(getattr(self, "_preview_trace_bundle_capture", None), list):
+                # bugs/0223 (off-thread trace): capture run -- the launch bundles were
+                # recorded by _trace_preview_bundles and NOTHING was traced (rays is
+                # empty). Skip the scene-bundle assembly and every trace-state write;
+                # the worker process re-runs this method with the bundles replayed and
+                # returns the real (rays, scene_bundle). The `finally` below still
+                # restores self.rows.
+                return system, rays, None
             ray_path_count = len(getattr(rays, "CC", []) or [])
             with open3d_timing_span(
                 "preview_build_scene_bundle",

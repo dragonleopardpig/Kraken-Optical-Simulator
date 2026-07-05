@@ -388,6 +388,43 @@ class TracePreviewService:
         trace_start = time.perf_counter()
         self._last_preview_trace_backend = "none"
         self._last_preview_trace_note = ""
+        # bugs/0223 (off-thread trace): capture/replay choke point. EVERY preview sampling
+        # path funnels its launch bundles through this method, so:
+        #  - CAPTURE (main thread): record the exact launch arrays and skip tracing -- the
+        #    async orchestrator ships them to a worker process. The sampling above already
+        #    ran on the main thread, so there is no editor-replication fidelity question.
+        #  - REPLAY (worker process): substitute the captured launch arrays for the locally
+        #    sampled ones, then trace normally. The worker's own sampling only picked the
+        #    dispatcher branch; the rays actually traced are exactly the main thread's.
+        capture = getattr(self.editor, "_preview_trace_bundle_capture", None)
+        if isinstance(capture, list):
+            capture.append(
+                {
+                    "bundles": [tuple(np.asarray(part, dtype=float) for part in bundle) for bundle in bundles],
+                    "bundle_sources": None if bundle_sources is None else list(bundle_sources),
+                    "system_id": id(system),
+                }
+            )
+            self._last_preview_trace_backend = "async-capture"
+            open3d_timing_event(
+                "trace_preview_bundles_captured",
+                bundle_count=len(bundles),
+                total_rays=int(sum(int(len(np.asarray(bundle[0]))) for bundle in bundles)),
+            )
+            return
+        replay = getattr(self.editor, "_preview_trace_bundle_replay", None)
+        if isinstance(replay, list):
+            if not replay:
+                raise RuntimeError(
+                    "async trace replay underrun: the worker sampling made more "
+                    "_trace_preview_bundles calls than the main thread captured"
+                )
+            replay_call = replay.pop(0)
+            bundles = [
+                tuple(np.asarray(part, dtype=float) for part in bundle)
+                for bundle in replay_call.get("bundles", [])
+            ]
+            bundle_sources = replay_call.get("bundle_sources")
         bundle_lengths = [int(len(np.asarray(bundle[0]))) for bundle in bundles]
         total_rays = int(sum(bundle_lengths))
         status = "ok"
