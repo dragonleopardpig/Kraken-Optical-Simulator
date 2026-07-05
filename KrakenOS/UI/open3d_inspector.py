@@ -4933,12 +4933,24 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         """Trackball orbit step: return ``(new_position, new_view_up)`` float3s.
 
         Rotates the camera offset (``position - focal_point``) and the view-up
-        rigidly by the same increments -- azimuth ``-dx*dpp`` about world +Y,
-        elevation ``-dy*dpp`` about the screen-right axis. Because both vectors
-        share the rotation, the frame stays orthonormal: the orbit radius and
-        the view-dir/view-up angle are preserved, and there is no degenerate
-        up to force a discrete reorient at the pole (so the motion is continuous
-        over the top). Pure: no VTK, no clamp, no snap -- see bugs/0206.
+        rigidly by the same increments -- azimuth ``-dx*dpp`` about the CURRENT
+        view-up (the screen-vertical axis), elevation ``-dy*dpp`` about the
+        screen-right axis. Because both vectors share the rotation, the frame
+        stays orthonormal: the orbit radius and the view-dir/view-up angle are
+        preserved, and there is no degenerate up to force a discrete reorient at
+        the pole (so the motion is continuous over the top). Pure: no VTK, no
+        clamp, no snap -- see bugs/0206.
+
+        bugs/0229: the azimuth axis was world +Y ("turntable feel", 0206) --
+        correct only while the view-up IS +Y. Once a view is ROLLED (the 0228
+        rotate buttons spin about the into-the-monitor axis, e.g. view-up
+        (0,0,-1)), world +Y points sideways/into the screen, so a left-right
+        drag visibly spun the scene about a wrong-looking axis ("does not orbit
+        as intended", same for top-bottom whose screen-right axis derives from
+        the up). Azimuthing about the CURRENT up makes both drag directions
+        screen-relative in any roll; in an unrolled view (up == +Y) the motion
+        is identical to the old turntable, and a pure horizontal drag leaves the
+        up untouched (a rotation about itself).
         """
         pos = np.asarray(position, dtype=float).reshape(3)
         foc = np.asarray(focal_point, dtype=float).reshape(3)
@@ -4952,10 +4964,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 (float(up[0]), float(up[1]), float(up[2])),
             )
         up = up / up_norm
-        world_up = np.array([0.0, 1.0, 0.0])
         az = np.radians(-float(dx) * degrees_per_pixel)
-        offset = Kraken3DInspector._rodrigues_rotate(offset, world_up, az)
-        up = Kraken3DInspector._rodrigues_rotate(up, world_up, az)
+        offset = Kraken3DInspector._rodrigues_rotate(offset, up, az)
         view_dir = -offset / np.linalg.norm(offset)
         right = np.cross(view_dir, up)
         right_norm = float(np.linalg.norm(right))

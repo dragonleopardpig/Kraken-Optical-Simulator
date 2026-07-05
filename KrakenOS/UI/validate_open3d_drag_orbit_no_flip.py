@@ -159,6 +159,30 @@ def run_checks() -> tuple[bool, list[str]]:
     if horiz["min_up_dot"] < 0.99:
         failures.append("horizontal drag flipped/jumped the view-up")
 
+    # (7) bugs/0229: in a ROLLED view (the 0228 rotate buttons, e.g. view-up (0,0,-1))
+    # a horizontal drag must orbit about the CURRENT view-up (screen-vertical), not the
+    # old hard-coded world +Y -- the flagged "dragging left to right does not orbit as
+    # intended". Screen-relative contract: the up is untouched (a rotation about
+    # itself) and the offset's component along the up is invariant (the rotation plane
+    # is perpendicular to the screen-vertical axis).
+    from KrakenOS.UI.open3d_inspector import Kraken3DInspector as _I
+
+    rolled_up = np.asarray((0.0, 0.0, -1.0))
+    pos0 = np.asarray((-600.0, 100.0, 25.0))
+    foc0 = np.asarray((0.0, 100.0, 25.0))
+    new_pos, new_up = _I._orbit_camera_pose(tuple(pos0), tuple(foc0), tuple(rolled_up), dx=120, dy=0)
+    off0 = pos0 - foc0
+    off1 = np.asarray(new_pos) - foc0
+    up_kept = bool(np.allclose(new_up, rolled_up, atol=1e-9))
+    along_up_invariant = abs(float(np.dot(off1, rolled_up)) - float(np.dot(off0, rolled_up))) < 1e-9
+    moved = float(np.linalg.norm(off1 - off0)) > 1.0
+    if not (up_kept and along_up_invariant and moved):
+        failures.append(
+            "rolled-view horizontal drag is not screen-relative (bugs/0229): "
+            f"up_kept={up_kept} along_up_invariant={along_up_invariant} moved={moved} -- "
+            "azimuth must rotate about the CURRENT view-up, not world +Y"
+        )
+
     if failures:
         return False, failures
     notes = [
