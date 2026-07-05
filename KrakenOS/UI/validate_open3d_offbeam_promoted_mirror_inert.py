@@ -98,6 +98,17 @@ def _snapshot(editor, bundle):
     return seats, detector, endpoints
 
 
+def _camera_sensor_world(editor) -> np.ndarray:
+    """Where the folded camera SENSOR plane lands in world: the camera-track station
+    (bugs/0220/0226) carried through the Image row's fold transform."""
+    image_row = len(editor.rows) - 1
+    transform = _quiet(editor._optical_axis_fold_world_transform_for_row, image_row)
+    station = float(_quiet(editor._camera_track_image_plane_z))
+    if transform is None:
+        return np.asarray((0.0, 0.0, station), dtype=float)
+    return (np.asarray(transform, dtype=float) @ np.asarray((0.0, 0.0, station, 1.0)))[:3]
+
+
 def _waist_rms(endpoints: np.ndarray, detector: np.ndarray) -> float:
     near = endpoints[np.linalg.norm(endpoints - detector, axis=1) < 5.0]
     if len(near) < 10:
@@ -115,6 +126,7 @@ def validate_offbeam_promoted_mirror_inert() -> list[Check]:
         editor._build_preview_system_rays_bundle, update_state=True
     )
     seats_before, det_before, ends_before = _snapshot(editor, bundle_before)
+    camera_world_before = _camera_sensor_world(editor)
 
     # ============ (A) genuine folds unchanged ==================================== #
     checks.append(Check(
@@ -169,6 +181,23 @@ def validate_offbeam_promoted_mirror_inert() -> list[Check]:
             and abs(rms_before - rms_after) < 0.01
         ),
         f"waist RMS before={rms_before:.5f}mm after={rms_after:.5f}mm",
+    ))
+
+    # bugs/0226 (flag_20260705_131738 "the camera STEP shifted"): the CAMERA seats at the
+    # equivalent-frame focus but folds through the RAW-anchored fold transform; on a
+    # parked-mirror scene the frames differ by the parked plate, so the folded camera
+    # jumped a full plate up-fold while the detector stayed. Pin the camera's folded
+    # WORLD pose (fold-transform o camera_track station) inert across the parked promote,
+    # and ON the detector.
+    cam_after = _camera_sensor_world(editor)
+    camera_moved = float(np.linalg.norm(cam_after - camera_world_before))
+    camera_on_detector = (
+        float(np.linalg.norm(cam_after - det_after)) if det_after is not None else float("inf")
+    )
+    checks.append(Check(
+        "INERT promote: the folded CAMERA world pose is unchanged and sits ON the detector (0226)",
+        bool(camera_moved < 0.01 and camera_on_detector < 0.5),
+        f"camera_moved={camera_moved:.4f}mm camera_vs_detector={camera_on_detector:.3f}mm",
     ))
 
     # ============ (C) classified off-beam + excluded from the display planes ===== #

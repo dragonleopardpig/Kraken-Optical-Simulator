@@ -330,7 +330,37 @@ class LayoutPolylineDisplayMixin:
         self._external_cad_section_cache[cache_key] = dict(section_data)
         return dict(section_data)
 
+    def _offbeam_inert_thickness_before(self, row_index) -> float:
+        """bugs/0226: the total thickness of OFF-BEAM promoted mirror rows before
+        ``row_index`` (None = all rows). The beam never runs through a parked mirror
+        (bugs/0224), so every straight-frame STATION consumer -- the fold-transform
+        anchor, the prescription image plane -- must treat it as zero-length, exactly
+        like the pose-override walk and the flattened trace equivalents already do.
+        Without this the parked row's substrate thickness inflated the straight anchor,
+        shifting the folded camera STEP by the full plate (flag_20260705_131738) and
+        pushing the 2D sensor line past the focus."""
+        try:
+            offbeam = self._offbeam_promoted_mirror_rows()
+        except Exception:
+            return 0.0
+        if not offbeam:
+            return 0.0
+        end = len(self.rows) if row_index is None else int(row_index)
+        total = 0.0
+        for index in sorted(offbeam):
+            if index < end and 0 <= index < len(self.rows):
+                try:
+                    total += max(float(self.rows[index].thickness), 0.0)
+                except Exception:
+                    continue
+        return total
+
     def _current_image_plane_z(self) -> float:
+        # NOTE (bugs/0226): this is the RAW straight-frame prescription station -- the
+        # frame the fold transform (`_optical_axis_fold_world_transform_for_row`) and the
+        # bundle targets anchor in. A parked off-beam mirror's thickness stays INCLUDED
+        # here; equivalent-frame values (the paraxial focus) are converted with
+        # `_offbeam_inert_thickness_before` at their consumers instead.
         if not self.rows:
             return 0.0
         z_pos = 0.0
@@ -362,6 +392,14 @@ class LayoutPolylineDisplayMixin:
         focus = float(focus)
         if not np.isfinite(focus):
             return prescription
+        # bugs/0226 (flag_20260705_131738, "the camera STEP shifted"): the paraxial focus
+        # is computed on the straight-EQUIVALENT rows, where a parked off-beam mirror is
+        # a ZERO-length plate (bugs/0224) -- but this method's callers seat the camera on
+        # the RAW straight axis and fold it through the raw-anchored fold transform. On a
+        # scene with a parked mirror the two frames differ by exactly the parked plate's
+        # thickness, so the camera landed a full plate up-fold of the detector. Convert
+        # the equivalent-frame focus into the RAW frame before comparing/returning.
+        focus += self._offbeam_inert_thickness_before(len(self.rows) - 1)
         # only when the image forms BEFORE the prescription row (the trailing-mirror overshoot)
         if focus < prescription - _CAMERA_FOCUS_TRACK_TOL_MM:
             return focus
@@ -440,6 +478,12 @@ class LayoutPolylineDisplayMixin:
         z_positions = self._row_z_positions()
         if not (0 <= int(row_index) < len(z_positions)):
             return None
+        # NOTE (bugs/0226): the anchor stays in the RAW straight frame (parked off-beam
+        # thickness INCLUDED) because the bundle targets fold raw stations through this
+        # transform. Equivalent-frame stations (the paraxial focus the camera tracks)
+        # are converted to this frame at their consumer via
+        # `_offbeam_inert_thickness_before` -- anchoring here in the equivalent frame
+        # instead flung every raw-station consumer down-fold by the parked plate.
         straight_anchor = np.asarray((0.0, 0.0, float(z_positions[int(row_index)])), dtype=float)
         transform = np.eye(4, dtype=float)
         transform[:3, :3] = rotation
