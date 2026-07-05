@@ -817,7 +817,16 @@ class ThreeDSceneToolsMixin:
             ends.append(pw[-1, :3])
         if len(polys) < _FOLDED_FOCUS_MIN_RAYS:
             return 0
-        if float(np.mean((np.asarray(ends) - ref) @ axis)) < 0.0:
+        # bugs/0233: orient ``axis`` along the BEAM PROPAGATION at the detector using each ray's
+        # FINAL SEGMENT direction -- NOT ``(ends - ref) @ axis``, which is ~0 when the rays END
+        # ON the detector plane (a two-mirror periscope whose image row overshoots the focus by
+        # a full plate). With the projection ~0 its sign is noise and could FLIP the axis against
+        # the beam; a flipped axis makes ``proj`` DECREASE toward the endpoint, so the
+        # outgoing-leg walk below captures nothing (legs == 0) and the reconcile no-ops -- leaving
+        # the detector at the 100 mm overshoot while the camera STEP sits at the real focus (the
+        # user's "camera at correct focus, detector + image plane in defocus location").
+        seg_dir = np.mean(np.asarray([pw[-1, :3] - pw[-2, :3] for pw in polys]), axis=0)
+        if float(np.dot(seg_dir, axis)) < 0.0:
             axis = -axis
 
         # Restrict to each ray's OUTGOING leg -- the trailing run that keeps advancing along

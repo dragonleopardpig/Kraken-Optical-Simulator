@@ -10777,6 +10777,34 @@ def phase_205_trailing_fold_mirror_insert(
     return result
 
 
+def phase_206_two_fold_detector_snaps_to_focus(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """On a TWO-mirror periscope whose image row overshoots the focus, the detector must snap onto
+    the ray waist (where the camera STEP sits), not stay at the overshot image plane (bugs/0233,
+    flag "Camera STEP at correct focus, detector + image plane in defocus location"). The 0217
+    reconcile no-opped because its axis orientation used (ends-ref)@axis ~0 (rays end ON the
+    detector plane) -> noise flipped the axis -> legs==0. It now orients by the beam's final-segment
+    direction. `validate_open3d_two_fold_detector_snaps_to_focus` asserts the robust orientation,
+    that the reconcile moves an overshot detector onto the waist, and AZ85 is not spuriously moved.
+    """
+    result = PhaseResult(name="Phase 206: two-fold periscope detector snaps to the camera focus (0233)")
+    try:
+        from KrakenOS.UI.validate_open3d_two_fold_detector_snaps_to_focus import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"two-fold-detector-snaps guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("two-fold-detector-snaps phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11028,6 +11056,7 @@ def main() -> int:
             phase_203_periscope_fold_crash,
             phase_204_iso_up_axis,
             phase_205_trailing_fold_mirror_insert,
+            phase_206_two_fold_detector_snaps_to_focus,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
