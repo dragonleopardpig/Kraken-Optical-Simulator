@@ -10750,6 +10750,33 @@ def phase_204_iso_up_axis(
     return result
 
 
+def phase_205_trailing_fold_mirror_insert(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A SECOND (trailing) fold mirror promoted near the camera must fold ONLY the camera, not
+    the lens group it physically sits after (bugs/0232, flag "after second RA promoted, it should
+    only fold the camera"). The free-placed 2nd mirror was inserted right after the FIRST mirror
+    (before the lenses) so the pose-override swept the lens chain onto the fold branch. It now
+    inserts at the end (before Image). `validate_open3d_trailing_fold_mirror_insert` asserts the
+    last mirror folds only the image, the insert clamps to before-Image, and the face-assign wiring.
+    """
+    result = PhaseResult(name="Phase 205: trailing fold mirror folds only the camera (0232)")
+    try:
+        from KrakenOS.UI.validate_open3d_trailing_fold_mirror_insert import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"trailing-fold-mirror-insert guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("trailing-fold-mirror-insert phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11000,6 +11027,7 @@ def main() -> int:
             phase_202_2d_layout_matches_3d_focus,
             phase_203_periscope_fold_crash,
             phase_204_iso_up_axis,
+            phase_205_trailing_fold_mirror_insert,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

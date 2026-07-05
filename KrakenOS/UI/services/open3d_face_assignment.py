@@ -778,9 +778,39 @@ class Open3DFaceAssignmentService:
             normal_world=self._debug_vector(normal_world),
             counts_before=self._debug_actor_counts(),
         )
+        # bugs/0232: a SECOND (trailing) fold mirror -- a free-placed RA mirror the user
+        # dropped near the camera and is now assigning a Full-Reflecting face -- must land as
+        # the LAST optical element before the sensor, so its fold moves ONLY the camera. The
+        # default insert (table selection -> max(selected)+1) put it right after the FIRST
+        # mirror (row 2), BEFORE the lens group, so the pose-override swept the whole lens
+        # chain onto the fold branch (the flag "after second RA promoted, it should only fold
+        # the camera"). When the scene ALREADY has a promoted mirror fold and this assignment
+        # is a full mirror, insert at the end (a large index; _step_overlay_insert_index clamps
+        # it to before-Image). The FIRST fold has no existing mirror -> keeps its place.
+        promote_insert_at = None
+        try:
+            from KrakenOS.UI.optical_solid_metadata import (
+                OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_MIRROR,
+            )
+
+            is_full_mirror_assignment = (
+                str(function_label).strip() == OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_MIRROR
+            )
+            existing_folds = self.editor._promoted_mirror_fold_row_indices()
+            if is_full_mirror_assignment and existing_folds:
+                promote_insert_at = len(self.editor.rows)
+                self._debug_trace(
+                    "promote_step_face_assignment_trailing_fold_end_insert",
+                    label=label,
+                    existing_folds=[int(i) for i in existing_folds],
+                    insert_at=int(promote_insert_at),
+                )
+        except Exception:
+            promote_insert_at = None
         try:
             result = self.editor.promote_imported_step_to_optical_solid_row(
                 label,
+                insert_at=promote_insert_at,
                 open_face_editor=False,
                 clear_overlay=True,
                 refresh_open_3d=False,
