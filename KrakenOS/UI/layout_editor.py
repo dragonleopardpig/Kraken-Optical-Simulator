@@ -2620,6 +2620,11 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self.zemax_example_files: dict[str, Path] = {}
         self.rows: list[SurfaceRow] = []
         self._optical_led_glued = False  # BS<->LED glue flag; read via getattr(...,False) in many places
+        # bugs/0223: the off-thread preview trace completes via tk after() polling, so it
+        # only makes sense with a RUNNING mainloop -- the interactive app. Headless editors
+        # (guards, snapshots, scripts) keep the synchronous trace; without this gate an
+        # async kick under a guard never completes (no mainloop -> the poll never fires).
+        self._async_preview_trace_opt_in = not bool(headless)
         self.editor: tk.Widget | None = None
         self._editor_row_id: str | None = None
         self._editor_field: str | None = None

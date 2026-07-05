@@ -146,6 +146,135 @@ def _equivalence_case(label: str, *, promote_second: bool) -> list[Check]:
     return checks
 
 
+def _fake_inspector(editor, settings: dict):
+    import types
+
+    class _Var:
+        def __init__(self, value):
+            self.value = value
+
+        def get(self):
+            return self.value
+
+        def set(self, value):
+            self.value = value
+
+    editor._layout_settings_service = lambda: types.SimpleNamespace(
+        _collect_layout_settings=lambda: dict(settings)
+    )
+    editor._async_preview_trace_opt_in = True  # the guard exercises the async path deliberately
+    inspector = types.SimpleNamespace(
+        editor=editor,
+        status_var=_Var(""),
+        live_mode_var=_Var(False),
+        _placement_drag_state=None,
+        _step_normal_axis_pick_mode=False,
+        _step_surface_center_axis_pick_mode=False,
+        applied={},
+    )
+    inspector.refresh_scene = lambda system, rays, row_names, scene_bundle=None, reset_camera=False: (
+        inspector.applied.update(system=system, rays=rays, row_names=row_names, bundle=scene_bundle)
+    )
+    inspector.refresh_from_editor = lambda **kwargs: inspector.applied.update(sync_fallback=True)
+    return inspector
+
+
+def _orchestration_checks() -> list[Check]:
+    import types
+
+    from KrakenOS.UI.services.trace_preview_async import (
+        _poll_inspector_async_trace,
+        maybe_begin_inspector_async_trace,
+    )
+
+    checks: list[Check] = []
+    settings = _load_python_data(_LAYOUTS / _AZ85).get("settings", {})
+
+    # (F) full begin -> worker -> poll -> apply round-trip. Headless there is no Tk
+    # mainloop, so _schedule_async_poll block-waits on the worker and completes inline.
+    editor = _quiet(_build_editor, _AZ85)
+    _quiet(_promote_mirror2, editor)
+    inspector = _fake_inspector(editor, settings)
+    began = _quiet(maybe_begin_inspector_async_trace, inspector)
+    bundle = inspector.applied.get("bundle")
+    checks.append(Check(
+        "orchestration: begin -> background worker -> poll -> APPLY refreshes the scene",
+        bool(
+            began
+            and bundle is not None
+            and len(bundle.ray_paths) > 1000
+            and not inspector.applied.get("sync_fallback", False)
+            and editor._preview_scene_trace_dirty is False
+            and getattr(inspector, "_async_trace_state", "unset") is None
+            and "background trace" in str(inspector.status_var.get())
+        ),
+        f"began={began} paths={None if bundle is None else len(bundle.ray_paths)} "
+        f"sync_fallback={inspector.applied.get('sync_fallback', False)} "
+        f"status={str(inspector.status_var.get())[:60]!r}",
+    ))
+
+    # (G) the stale re-kick is BOUNDED: a completed worker whose signature no longer
+    # matches, with the re-kick budget exhausted, falls back to ONE synchronous refresh
+    # (never an infinite worker loop).
+    editor_g = _quiet(_build_editor, _AZ85)
+    inspector_g = _fake_inspector(editor_g, settings)
+    result_path = os.path.join(shm_scratch_dir(), "kraken_async_guard_stale_result.pkl")
+    with open(result_path, "wb") as handle:
+        pickle.dump({"rays": None, "scene_bundle": None}, handle)
+    inspector_g._async_trace_state = {
+        "proc": types.SimpleNamespace(poll=lambda: 0),
+        "payload_path": os.path.join(shm_scratch_dir(), "kraken_async_guard_stale_payload.pkl"),
+        "result_path": result_path,
+        "system": None,
+        "signature": ("definitely", "not", "the", "current", "signature"),
+        "dirty_at_kick": False,
+        "sampling_mode": None,
+        "launch_rays": 0,
+        "rekicks": 2,
+        "started": 0.0,
+    }
+    _quiet(_poll_inspector_async_trace, inspector_g)
+    checks.append(Check(
+        "orchestration: a stale result with the re-kick budget exhausted falls back to ONE sync refresh",
+        bool(
+            inspector_g.applied.get("sync_fallback", False)
+            and inspector_g.applied.get("bundle") is None
+            and getattr(inspector_g, "_async_trace_state", "unset") is None
+        ),
+        f"sync_fallback={inspector_g.applied.get('sync_fallback', False)} "
+        f"applied_bundle={inspector_g.applied.get('bundle') is not None}",
+    ))
+
+    # (H) a worker error result falls back to the synchronous refresh (no crash, no apply).
+    editor_h = _quiet(_build_editor, _AZ85)
+    inspector_h = _fake_inspector(editor_h, settings)
+    error_path = os.path.join(shm_scratch_dir(), "kraken_async_guard_error_result.pkl")
+    with open(error_path, "wb") as handle:
+        pickle.dump({"error": "boom (guard-injected)"}, handle)
+    inspector_h._async_trace_state = {
+        "proc": types.SimpleNamespace(poll=lambda: 1),
+        "payload_path": os.path.join(shm_scratch_dir(), "kraken_async_guard_error_payload.pkl"),
+        "result_path": error_path,
+        "system": None,
+        "signature": None,
+        "dirty_at_kick": False,
+        "sampling_mode": None,
+        "launch_rays": 0,
+        "rekicks": 0,
+        "started": 0.0,
+    }
+    _quiet(_poll_inspector_async_trace, inspector_h)
+    checks.append(Check(
+        "orchestration: a worker ERROR result falls back to the synchronous refresh",
+        bool(
+            inspector_h.applied.get("sync_fallback", False)
+            and inspector_h.applied.get("bundle") is None
+        ),
+        f"sync_fallback={inspector_h.applied.get('sync_fallback', False)}",
+    ))
+    return checks
+
+
 def validate_async_trace_equivalence() -> list[Check]:
     checks: list[Check] = []
 
@@ -206,6 +335,9 @@ def validate_async_trace_equivalence() -> list[Check]:
         "the real subprocess entry (python -m ... payload result) reproduces the same trace",
         sub_ok, sub_detail,
     ))
+
+    # ============ (F/G/H) inspector orchestration =============================== #
+    checks.extend(_orchestration_checks())
 
     # ============ (E) wiring ==================================================== #
     try:

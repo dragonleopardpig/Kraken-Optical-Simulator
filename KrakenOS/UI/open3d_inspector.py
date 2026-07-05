@@ -13211,7 +13211,29 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _active_refresh_sampling_mode(self) -> str | None:
         return self.editor._open3d_trace_refresh_service().inspector_active_sampling_mode(self)
 
+    def _maybe_begin_async_scene_trace(self, *, sampling_mode: str | None = None, force_retrace: bool = False) -> bool:
+        """bugs/0223: try to run the expensive preview trace in a WORKER PROCESS instead of
+        freezing the Tk main thread. True = the refresh will arrive asynchronously (a
+        "Tracing ... in the background" badge shows meanwhile); False = run the ordinary
+        synchronous refresh (ineligible scene, worker unavailable, or fallback)."""
+        try:
+            from KrakenOS.UI.services.trace_preview_async import maybe_begin_inspector_async_trace
+
+            return bool(
+                maybe_begin_inspector_async_trace(
+                    self, sampling_mode=sampling_mode, force_retrace=force_retrace
+                )
+            )
+        except Exception as exc:
+            try:
+                self.editor.append_debug(f"async trace begin failed: {exc!r}")
+            except Exception:
+                pass
+            return False
+
     def refresh_from_editor(self, *, sampling_mode: str | None = None, force_retrace: bool = False) -> None:
+        if self._maybe_begin_async_scene_trace(sampling_mode=sampling_mode, force_retrace=force_retrace):
+            return
         token = self._timing_start(
             "refresh_from_editor",
             sampling_mode=sampling_mode,

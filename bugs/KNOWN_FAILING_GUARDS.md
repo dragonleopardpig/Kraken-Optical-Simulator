@@ -120,6 +120,21 @@ gate first, or this will re-rot).
 
 ---
 
+## 5. `validate_step_carry_open3d_smoke` — "STEP carry Free mode did not appear in the 3D status overlay" — OPEN
+
+**Symptom.** `AssertionError: STEP carry Free mode did not appear in the 3D status overlay.`
+Confirmed **pre-existing** (2026-07-05, during bugs/0223): fails identically with the async-trace
+orchestration edits stashed out on a clean tree.
+
+**Root cause (hypothesis).** The smoke drives the real headless app's STEP-carry flow and asserts the
+mode text lands in the 3D status overlay; some earlier status/overlay rework changed the text or the
+overlay the smoke reads (same rot class as items 2/4 — nothing runs these guards, see item 3).
+
+**Fix direction.** Re-run the carry flow in-app to see the actual status text, then update the smoke's
+expected text/overlay source — or fix the carry-mode badge if the text genuinely no longer appears.
+
+---
+
 ## Not-a-bug / already resolved this session (for context, no action needed)
 
 - `camera_overlay_hover_alignment` failed transiently after bugs/0220 because its `_FakeEditor` lacked

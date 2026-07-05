@@ -1,11 +1,18 @@
-# 0223 — STEP import / preview-trace "long duration" freeze: diagnosis + fix plan
+# 0223 — STEP import / preview-trace "long duration" freeze: diagnosis + fixes
 
-**Status: DIAGNOSED, not yet fixed.** Root cause pinned with measured timings. The *correct* fix
-(move the trace off the Tk main thread) keeps behaviour identical and only needs in-app verification;
-it is NOT applied here because the freeze-gone can't be proven headless (the validator SIGSEGVs on
-llvmpipe) and the tempting shortcut (reuse the cache for promoted solids) reverses a **deliberate
-correctness guard** — see "Why the easy cache fix is unsafe" below. This doc makes the fix a small,
-safe, in-app-verifiable job.
+**Status: Fix B (ray-actor merge) SHIPPED + in-app confirmed; Fix A (off-thread subprocess trace)
+SHIPPED (core + inspector orchestration, penta phase 199) — in-app verification OWED.** The trace
+now runs in a worker process for interactive promoted-solid scenes: the main thread captures the
+exact launch arrays (sampling stays on main → no fidelity question), the worker replays them and
+returns the raykeeper + finished scene bundle, and the inspector applies it behind a signature
+staleness check with a bounded re-kick and a sync fallback. Measured on the AZ85 two-mirror cone:
+main-thread cost ≈ **2.8 s** (0.15 capture + 2.6 result-unpickle + 0.01 apply) vs **6.2 s** sync,
+with the ~12 s trace+assembly running in the background. Byte-exact equivalence proven (paths,
+detector, every endpoint at 1e-9, both AZ85 scenes). Kill switch:
+`trace_preview_async._ASYNC_PREVIEW_TRACE_ENABLED = False` restores the synchronous path; async is
+also automatically OFF for headless editors (`_async_preview_trace_opt_in`, set from
+`KrakenLayoutEditor(headless=...)`) and ineligible scenes (live transient overlays, per-branch
+multi-system captures, force_retrace flows, plain no-promoted-solid scenes).
 
 ## The request
 
@@ -205,6 +212,46 @@ This sidesteps the editor-fidelity problem entirely (the exact rays are specifie
 moves the ~4.3 s `NsTraceLoop` off the UI thread. **Remaining work** (focused session, task #78): the
 sampling/trace split refactor, the shared-memory channel, and the main-thread orchestration. Net freeze
 target: ~10 s → ~3–4 s (the VTK apply stays on main; Fix B already trims its render).
+
+## Fix A SHIPPED (2026-07-05) — the off-thread trace, final architecture
+
+Everything below in "Session-2 progress" happened; the final shipped shape is:
+
+- **Choke point** (`services/trace_preview.py::_trace_preview_bundles`): every sampling path funnels
+  its launch bundles here. CAPTURE mode records the exact `(x,y,z,L,M,N)` launch arrays and traces
+  nothing (a new short-circuit in `_build_preview_system_rays_bundle` then skips the scene-bundle
+  assembly + state writes); REPLAY mode substitutes the captured arrays for the locally sampled ones
+  (the worker's own sampling only picks the dispatcher branch). Capture over-records the dispatcher's
+  0-ray fallback cascade; the worker consumes exactly the prefix a sync run would trace (leftovers
+  benign, an UNDERRUN raises → sync fallback).
+- **Worker** (`services/trace_preview_async.py`): `python -m … payload.pkl result.pkl` under
+  `/dev/shm`; rebuilds a snapshot editor from the row specs (the tk-sentinel fix makes that safe),
+  replays, assembles the FULL scene bundle (folded bend + 0217 reconcile included), detaches
+  `rays.SYSTEM` (unpicklable build hook) and pickles `{rays, scene_bundle, …}` out atomically; always
+  writes a result (`{"error": …}` on failure). stdout/stderr → DEVNULL (an unread PIPE deadlocks a
+  chatty import).
+- **Orchestration** (`maybe_begin_inspector_async_trace` + `refresh_from_editor` early-return):
+  conservative eligibility (interactive app only via `_async_preview_trace_opt_in`; no transient live
+  overlays; promoted-solid scenes only; no force_retrace; no placement drag; capture must yield a
+  single-system payload) → Popen worker → `after()` polling with a "Tracing N rays in the
+  background…" badge → on completion a **staleness check**: the trace-signature moved OR dirty
+  flipped False→True mid-flight (dirty already set at kick is simply why we were retracing) →
+  discard + re-kick a fresh capture, **bounded at 2 re-kicks** then ONE synchronous fallback (a
+  pathological signature can never spawn workers forever); otherwise `apply_async_trace_result`
+  writes exactly the sync `update_state` block + `refresh_scene`. Requests arriving mid-flight
+  coalesce onto the running worker.
+
+Guard `validate_open3d_async_trace_equivalence` (12/12, penta **phase 199**): byte-exact equivalence
+(two-mirror + single-mirror), state binding + signature-cache HIT, no capture leak into the sync path,
+the real subprocess entry, the begin→worker→poll→apply round-trip, the bounded stale re-kick, the
+worker-error sync fallback, and wiring. Regression sweep green (`ray_toggle_scene_retention` initially
+broke because a headless real-app guard kicked async with no mainloop → fixed by the
+`_async_preview_trace_opt_in` gate; `step_carry_open3d_smoke` fails PRE-EXISTING on a clean tree —
+logged in KNOWN_FAILING_GUARDS).
+
+**Future optimisation (not yet done):** the 2.6 s main-thread result-unpickle dominates the remaining
+apply cost — slim the result (drop/lazily rebuild `TRACE_EVENTS`, or return display polylines only)
+to push the apply toward ~0.5 s.
 
 ## Verification owed (in-app)
 

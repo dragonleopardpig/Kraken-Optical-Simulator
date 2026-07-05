@@ -10554,6 +10554,39 @@ def phase_198_ra_mirror_external_reflection(
     return result
 
 
+def phase_199_async_trace_equivalence(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The off-thread (subprocess) preview trace must be EXACTLY the synchronous trace and
+    must never corrupt the synchronous path (bugs/0223). The main thread captures the
+    launch arrays (sampling stays on main -- no fidelity question), a worker process
+    replays them through a rebuilt pipeline and returns the raykeeper + finished scene
+    bundle, and the inspector applies it with a signature staleness check. `validate_
+    open3d_async_trace_equivalence` asserts byte-exact equivalence (paths, detector, every
+    endpoint) on the two-mirror AND single-mirror AZ85 scenes, state binding + cache HIT,
+    no capture leak into the sync path, the real subprocess entry, the begin->worker->
+    poll->apply orchestration, the BOUNDED stale re-kick, worker-error sync fallback, and
+    wiring.
+    """
+    result = PhaseResult(
+        name="Phase 199: off-thread preview trace equals the synchronous trace (0223)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_async_trace_equivalence import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"async-trace-equivalence guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("async-trace-equivalence phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10798,6 +10831,7 @@ def main() -> int:
             phase_196_camera_tracks_folded_focus,
             phase_197_ra_mirror_centre_snap,
             phase_198_ra_mirror_external_reflection,
+            phase_199_async_trace_equivalence,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
