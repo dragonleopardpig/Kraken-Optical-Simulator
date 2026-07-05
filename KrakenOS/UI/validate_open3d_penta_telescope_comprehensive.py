@@ -10652,6 +10652,37 @@ def phase_201_ray_hover_highlight(
     return result
 
 
+def phase_202_2d_layout_matches_3d_focus(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The 2D layout must show the SAME sharp folded focus the 3D inspector shows
+    (bugs/0227, attachment/2D.png "rays defocus at the detector"). refresh_plot applied
+    the folded display bend but never the bugs/0217 reconcile, so the 2D drew the rays a
+    plate PAST their focus to the overshot sensor line while the 3D snapped the detector
+    onto the waist. The 2D pipeline now mirrors the 3D exactly (bend -> reconcile).
+    `validate_open3d_2d_layout_matches_3d_focus` asserts 2D/3D detector parity, the 2D
+    on-axis convergence ON the sensor, the CAUSAL bend-only overshoot (~48 mm), and the
+    wiring order in refresh_plot.
+    """
+    result = PhaseResult(
+        name="Phase 202: the 2D layout matches the 3D folded focus (0227)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_2d_layout_matches_3d_focus import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"2d-layout-matches-3d-focus guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("2d-layout-matches-3d-focus phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -10899,6 +10930,7 @@ def main() -> int:
             phase_199_async_trace_equivalence,
             phase_200_offbeam_promoted_mirror_inert,
             phase_201_ray_hover_highlight,
+            phase_202_2d_layout_matches_3d_focus,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

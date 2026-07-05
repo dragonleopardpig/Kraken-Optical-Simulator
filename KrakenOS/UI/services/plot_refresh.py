@@ -220,6 +220,15 @@ class PlotRefreshService:
             bundle = self._build_scene_bundle(system, rays, max_radius)
             if folded_trace_rows is not None:
                 self._apply_folded_display_bend(bundle, straight_equivalent_fold_transform)
+                # bugs/0227 (attachment/2D.png "rays defocus at the detector"): the 3D
+                # pipeline follows the display bend with the bugs/0217 reconcile -- the
+                # detector target + the on-axis ray hard-stops snap onto the cone's real
+                # waist when the trailing fold mirror overshoots the prescription Image
+                # row. The 2D layout stopped at the bend, so it drew the rays running a
+                # plate PAST their focus to the overshot sensor line while the 3D showed
+                # them sharp ON the detector. Mirror the 3D pipeline exactly.
+                if straight_equivalent_fold_transform is not None:
+                    self._reconcile_folded_image_to_ray_convergence(bundle)
             title_bundle = bundle
             self._last_scene_bundle = bundle
             self._refresh_3d_inspector_if_open(system=system, rays=rays, scene_bundle=bundle)

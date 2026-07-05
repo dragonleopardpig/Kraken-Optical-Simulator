@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-05T04:17:44+00:00",
+  "generated_at": "2026-07-05T05:43:52+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -203,7 +203,8 @@
     "198": "pass",
     "199": "pass",
     "200": "pass",
-    "201": "pass"
+    "201": "pass",
+    "202": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -407,6 +408,7 @@
     "198": "RA mirror external reflection keeps the relay 1:1 (0222)",
     "199": "off-thread preview trace equals the synchronous trace (0223)",
     "200": "off-beam promoted mirror is optically inert (0224)",
-    "201": "Pick-rays hover highlights the hovered ray (0225)"
+    "201": "Pick-rays hover highlights the hovered ray (0225)",
+    "202": "the 2D layout matches the 3D folded focus (0227)"
   }
 }
