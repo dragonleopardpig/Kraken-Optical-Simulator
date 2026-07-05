@@ -139,7 +139,30 @@ class QuickEstimationOverlayService:
             self.editor.append_debug(f"QE overlay reference points unavailable: {exc}")
             return 0
         axis = img_pt - obj_pt
-        u, v = _basis(axis)
+        # bugs/0196: draw each disc SQUARE to its OWN plane, not perpendicular to the object->image
+        # DIAGONAL. On a folded scene obj_pt and img_pt sit on different legs, so ``img_pt-obj_pt``
+        # is a slanted vector and the FOV circle + sensor rectangle rendered TILTED off the planes
+        # -- a ghost disc floating next to each real plane ("object plane and image plane: 2 of them
+        # each"). Use the object / detector target normals (the true plane normals) from the scene
+        # bundle; fall back to the diagonal only when the bundle is unavailable.
+        obj_normal = axis
+        img_normal = axis
+        for target_row in (getattr(scene_bundle, "targets", None) or []):
+            n = getattr(target_row, "normal_world", None)
+            if n is None:
+                continue
+            try:
+                n = np.asarray(n, dtype=float).reshape(3)
+            except Exception:
+                continue
+            if not np.all(np.isfinite(n)) or float(np.linalg.norm(n)) < 1e-9:
+                continue
+            if getattr(target_row, "is_detector", False):
+                img_normal = n
+            elif getattr(target_row, "is_object", False):
+                obj_normal = n
+        u, v = _basis(obj_normal)          # object-plane in-plane basis (square to the object)
+        u_i, v_i = _basis(img_normal)      # image-plane in-plane basis (square to the sensor)
 
         target = qe.target_object_semi()
         object_semi = float(target) if target else float(fov_semi)        # object extent
@@ -150,8 +173,8 @@ class QuickEstimationOverlayService:
 
         # --- pickable plane disks so the Object/Image planes can be clicked,
         #     hover-highlighted, and double-clicked for the FOV popup (bugs/0055).
-        self._pick_disk_actor(obj_pt, axis, max(object_semi, 0.5), (0.2, 0.9, 0.35), 0)
-        self._pick_disk_actor(img_pt, axis, max(image_radius, 0.5), (0.2, 0.7, 1.0), len(rows) - 1)
+        self._pick_disk_actor(obj_pt, obj_normal, max(object_semi, 0.5), (0.2, 0.9, 0.35), 0)
+        self._pick_disk_actor(img_pt, img_normal, max(image_radius, 0.5), (0.2, 0.7, 1.0), len(rows) - 1)
 
         # --- object plane: current FOV circle (green) + previous ghost (gray) ---
         self._solid_line_actor(_circle_points(obj_pt, u, v, object_semi), (0.2, 0.9, 0.35), 2.5)
@@ -162,7 +185,7 @@ class QuickEstimationOverlayService:
 
         # --- image plane: image circle (cyan) + recommended sensor rect (yellow)
         #     + previous image circle ghost (gray) ---
-        self._solid_line_actor(_circle_points(img_pt, u, v, image_radius), (0.2, 0.7, 1.0), 2.5)
+        self._solid_line_actor(_circle_points(img_pt, u_i, v_i, image_radius), (0.2, 0.7, 1.0), 2.5)
         count += 1
         if rec:
             half_w = float(rec.get("width", 0.0)) / 2.0
@@ -170,10 +193,10 @@ class QuickEstimationOverlayService:
             if half_w > 0 and half_h > 0:
                 # _basis returns (vertical, horizontal): width->v (horizontal),
                 # height->u (vertical) so a landscape sensor reads landscape.
-                self._solid_line_actor(_rect_points(img_pt, v, u, half_w, half_h), (1.0, 0.9, 0.2), 2.5)
+                self._solid_line_actor(_rect_points(img_pt, v_i, u_i, half_w, half_h), (1.0, 0.9, 0.2), 2.5)
                 count += 1
         if prev_object_semi and abs(prev_object_semi - object_semi) > 1e-6 * max(1.0, object_semi):
             prev_image_radius = abs(float(mag)) * float(prev_object_semi)
-            self._dashed_line_actor(_circle_points(img_pt, u, v, prev_image_radius), (0.65, 0.65, 0.65), 2.0)
+            self._dashed_line_actor(_circle_points(img_pt, u_i, v_i, prev_image_radius), (0.65, 0.65, 0.65), 2.0)
             count += 1
         return count

@@ -10884,6 +10884,32 @@ def phase_209_folded_fov_solve(
     return result
 
 
+def phase_210_qe_overlay_square_to_plane(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The Quick-Estimation FOV overlay must draw each disc SQUARE to its own plane. It used the
+    object->image DIAGONAL as the normal for every disc, so on a folded scene the FOV circle + sensor
+    rectangle rendered tilted off both planes (a ghost disc beside each real plane -- "2 planes
+    each"). It now uses the object / detector target normals. `validate_open3d_qe_overlay_square_to_plane`
+    asserts each disc is coplanar with its plane (not the diagonal) and the pick disks use the plane
+    normals."""
+    result = PhaseResult(name="Phase 210: QE FOV overlay discs square to their own planes")
+    try:
+        from KrakenOS.UI.validate_open3d_qe_overlay_square_to_plane import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"qe-overlay-square guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("qe-overlay-square phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11139,6 +11165,7 @@ def main() -> int:
             phase_207_folded_conjugate_split,
             phase_208_recorder_captures_dialogs,
             phase_209_folded_fov_solve,
+            phase_210_qe_overlay_square_to_plane,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
