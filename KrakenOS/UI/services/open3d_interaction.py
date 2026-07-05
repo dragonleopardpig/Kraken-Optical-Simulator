@@ -1237,6 +1237,30 @@ class Open3DInteractionService:
             self.status_var.set(f"S{int(row_index)} move handle: hold-drag {str(axis).upper()} to slide.")
             return
         self._set_rotation_handle_hover(None)
+        # bugs/0225 (flag_20260705_100834): in Pick-rays mode, HOVERING a traced ray
+        # highlights it (clicking already selects + opens Ray Inspector; hover gave no
+        # feedback). Resolve the ray from the hovered merged actor via the live picker
+        # cell (bugs/0223 Fix B) and draw a light hover overlay -- distinct from, and
+        # never disturbing, the click-selection highlight (a hovered ray that IS the
+        # selection keeps only the selection overlay).
+        hovered_ray = None
+        try:
+            if self._ray_pick_enabled():
+                hovered_ray = self._ray_index_for_actor(actor_key)
+        except Exception:
+            hovered_ray = None
+        if hovered_ray is not None and hovered_ray == self._picked_ray_index:
+            hovered_ray = None
+        hover_overlay_changed = self._apply_ray_hover_overlay(hovered_ray)
+        if hovered_ray is not None:
+            self._set_step_hover_outline(None, None)
+            self._set_axis_pick_cursor(False)
+            self._update_hover_status("", render=False)
+            self.status_var.set(f"Ray {int(hovered_ray)}: click to open it in Ray Inspector.")
+            self.render()
+            return
+        if hover_overlay_changed:
+            self.render()  # un-hovered a ray: drop the overlay, then continue the normal hover flow
         step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
         fallback_step_pick = None
         if step_label is None:

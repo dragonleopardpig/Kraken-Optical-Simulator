@@ -425,6 +425,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._merged_ray_cell_index: dict[str, "np.ndarray"] = {}
         self._ray_display_points: dict[int, "np.ndarray"] = {}
         self._ray_highlight_overlay_key: str | None = None
+        # bugs/0225: Pick-rays HOVER highlight (flag_20260705_100834 -- "mouse hover does
+        # not show highlight of ray"). A lighter overlay than the click-selection one,
+        # tracked separately so hovering never disturbs the selected ray's highlight.
+        self._ray_hover_overlay_key: str | None = None
+        self._ray_hover_overlay_index: int | None = None
         self._actor_optical_axis_map: dict[str, dict[str, object]] = {}
         self._optical_axis_actor_map: dict[str, list[str]] = {}
         self._optical_axis_pick_records: list[dict[str, object]] = []
@@ -9099,10 +9104,51 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             self._ray_highlight_overlay_key = None
 
+    def _apply_ray_hover_overlay(self, ray_index) -> bool:
+        """bugs/0225: draw the HOVERED ray (Pick-rays mode) as a light overlay -- thinner
+        and paler than the click-selection highlight so the two read differently. Pass
+        ``None`` to clear. Returns True when the overlay actually changed (the caller
+        renders only then; hover moves are frequent)."""
+        ray_index = None if ray_index is None else int(ray_index)
+        if ray_index == self._ray_hover_overlay_index:
+            return False
+        if self._ray_hover_overlay_key is not None:
+            prior = self._actor_by_key.pop(self._ray_hover_overlay_key, None)
+            if prior is not None:
+                try:
+                    self._remove_renderer_view_prop(prior)
+                except Exception:
+                    pass
+            self._ray_hover_overlay_key = None
+        self._ray_hover_overlay_index = None
+        if ray_index is None or self._renderer is None or pv is None:
+            return True
+        pts = self._ray_display_points.get(ray_index)
+        if pts is None or len(pts) < 2:
+            return True
+        try:
+            overlay = pv.lines_from_points(np.asarray(pts, dtype=float))
+            actor = self._add_mesh_actor(
+                overlay,
+                color=(1.0, 1.0, 0.62),
+                opacity=1.0,
+                pick_row_index=None,
+                line_width=2.6,
+            )
+            if actor is not None:
+                actor.PickableOff()
+                self._ray_hover_overlay_key = self._actor_key(actor)
+                self._ray_hover_overlay_index = ray_index
+        except Exception:
+            self._ray_hover_overlay_key = None
+            self._ray_hover_overlay_index = None
+        return True
+
     def _clear_merged_ray_state(self) -> None:
         """bugs/0223 (Fix B): drop the merged-ray bookkeeping + the selection overlay on
         a scene rebuild (called alongside the _actor_ray_map/_ray_actor_map clears)."""
         self._apply_ray_highlight_overlay(None)
+        self._apply_ray_hover_overlay(None)  # bugs/0225: drop the hover overlay too
         self._pending_ray_specs = []
         self._merged_ray_cell_index.clear()
         self._ray_display_points.clear()
