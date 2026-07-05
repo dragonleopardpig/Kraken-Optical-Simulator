@@ -16254,6 +16254,22 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor._commit_history_capture()
         self.status_var.set(msg)
 
+    def _record_dialog_command(self, label: str, payload: dict | None = None) -> None:
+        """Log a DIALOG-level action (FOV plane double-click, Solve for Thickness, Apply split)
+        to the bug recorder. The recorder only hooks the 3D VTK canvas, so Tk-dialog steps --
+        the double-click that opens the popup, the typed field values, and the button presses --
+        are otherwise INVISIBLE in the replay (a flagged workflow that ran through a dialog
+        looked like bare canvas clicks). Recording them as command events makes the dialog
+        workflow reproducible from the recording."""
+        recorder = getattr(self, "_event_recorder", None)
+        if recorder is None:
+            return
+        try:
+            if recorder.is_recording():
+                recorder.record_command(str(label), dict(payload or {}))
+        except Exception:
+            pass
+
     def _maybe_open_fov_popup_from_double_click(self, event) -> bool:
         """Double-left-click on the Object/Image plane disk opens the FOV box
         (bugs/0055). Single click still just selects the row."""
@@ -16272,9 +16288,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return False
         surface = str(getattr(self.editor.rows[srow], "surface", "") or "")
         if surface == "Object":
+            self._record_dialog_command("fov_popup_open", {"plane": "object", "row": int(srow)})
             self.after(1, lambda: self._open_quick_estimation_fov_popup("object"))
             return True
         if surface == "Image":
+            self._record_dialog_command("fov_popup_open", {"plane": "image", "row": int(srow)})
             self.after(1, lambda: self._open_quick_estimation_fov_popup("image"))
             return True
         return False
@@ -16382,6 +16400,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except ValueError:
                 self.status_var.set("The constrained distance must be a number.")
                 return
+            self._record_dialog_command(
+                "fold_split_apply", {"plane": plane, "leg": leg, "value": value}
+            )
             ok, message = apply_fn(leg, value)
             self.status_var.set(message)
             if ok:
@@ -16656,6 +16677,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         height: float | None = None,
         aspect: tuple[float, float] | None = None,
     ) -> None:
+        self._record_dialog_command(
+            "fov_solve",
+            {"plane": plane, "mode": mode, "width": width, "height": height},
+        )
         qe = self._quick_estimation_service()
         self.editor._begin_history_capture()
         ok, msg = qe.fov_solve(plane, mode, width, height, aspect)

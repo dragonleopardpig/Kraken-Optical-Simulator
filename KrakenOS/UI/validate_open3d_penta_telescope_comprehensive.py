@@ -10832,6 +10832,32 @@ def phase_207_folded_conjugate_split(
     return result
 
 
+def phase_208_recorder_captures_dialogs(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The bug recorder must capture DIALOG-level actions, not just the 3D canvas -- the FOV plane
+    double-click, the Solve-for-Thickness field values, and the fold-split apply -- so a flagged
+    workflow that ran through a Tk dialog is reproducible (before, the replay only showed canvas
+    clicks). `validate_open3d_recorder_captures_dialogs` asserts record_command logs the actions +
+    the dialog action points are wired to _record_dialog_command.
+    """
+    result = PhaseResult(name="Phase 208: bug recorder captures dialog actions (recorder gap)")
+    try:
+        from KrakenOS.UI.validate_open3d_recorder_captures_dialogs import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"recorder-captures-dialogs guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("recorder-captures-dialogs phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11085,6 +11111,7 @@ def main() -> int:
             phase_205_trailing_fold_mirror_insert,
             phase_206_two_fold_detector_snaps_to_focus,
             phase_207_folded_conjugate_split,
+            phase_208_recorder_captures_dialogs,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
