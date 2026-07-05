@@ -97,17 +97,10 @@ class SelectionRepresentation:
             self._picked_ray_index = ray_index
             return
         self._inspector._clear_ray_event_label_actors(render=False)
-        collection = self._renderer.GetActors()
-        collection.InitTraversal()
-        for _ in range(collection.GetNumberOfItems()):
-            actor = collection.GetNextActor()
-            actor_key = self._actor_key(actor)
-            actor_ray_index = self._actor_ray_map.get(actor_key) if actor_key is not None else None
-            if actor_ray_index is None:
-                continue
-            self._inspector._set_ray_actor_selected(
-                actor, bool(ray_index is not None and actor_ray_index == ray_index)
-            )
+        # bugs/0223 (Fix B): rays are now MERGED per-style actors (a few instead of one
+        # per ray), so an individual ray can't be recoloured in place -- draw the selected
+        # ray as a bright OVERLAY actor instead.
+        self._inspector._apply_ray_highlight_overlay(ray_index)
         self._inspector._add_selected_ray_event_label_actors(ray_index)
         self._picked_ray_index = ray_index
 

@@ -415,6 +415,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._row_actor_map: dict[int, list[str]] = {}
         self._actor_ray_map: dict[str, int] = {}
         self._ray_actor_map: dict[int, list[str]] = {}
+        # bugs/0223 (Fix B): the ray LINE actors are merged by style into a few
+        # vtkPolyData actors (one per distinct color/opacity/width) instead of one
+        # actor per ray -- ~8 actors vs 3249 on the dense AZ85 cone, cutting the VTK
+        # rebuild + per-render cost. Picking a merged actor resolves the ray via the
+        # picked cell (cell->ray_index array), and the selection highlight is drawn as
+        # a separate overlay actor (a merged actor can't recolour just one of its rays).
+        self._pending_ray_specs: list[tuple] = []
+        self._merged_ray_cell_index: dict[str, "np.ndarray"] = {}
+        self._ray_display_points: dict[int, "np.ndarray"] = {}
+        self._ray_highlight_overlay_key: str | None = None
         self._actor_optical_axis_map: dict[str, dict[str, object]] = {}
         self._optical_axis_actor_map: dict[str, list[str]] = {}
         self._optical_axis_pick_records: list[dict[str, object]] = []
@@ -8935,6 +8945,90 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         opacity: float = 0.9,
         line_width: float = 1.2,
     ) -> None:
+        if self._renderer is None or vtkActor is None:
+            return
+        # bugs/0223 (Fix B): defer pickable ray lines to a per-style MERGED actor.
+        # Accumulate the mesh + style; _flush_merged_ray_actors() builds a few polydata
+        # actors after the loop. An unpickable ray_index=None line stays standalone.
+        if ray_index is None:
+            if vtkDataSetMapper is None:
+                return
+            actor = vtkActor()
+            mapper = vtkDataSetMapper()
+            mapper.SetInputData(mesh)
+            actor.SetMapper(mapper)
+            actor.GetProperty().SetLineWidth(float(line_width))
+            actor.GetProperty().SetColor(*color)
+            actor.GetProperty().SetOpacity(float(opacity))
+            actor.PickableOff()
+            self._renderer.AddActor(actor)
+            return
+        self._pending_ray_specs.append(
+            (mesh, int(ray_index), tuple(float(c) for c in color), float(opacity), float(line_width))
+        )
+
+    def _flush_merged_ray_actors(self) -> None:
+        """bugs/0223 (Fix B): turn the deferred per-ray specs into a few MERGED polydata
+        actors -- one per distinct (color, opacity, line_width) -- so the scene carries
+        ~8 ray actors instead of one per ray on a dense cone. Records a cell->ray_index
+        array per merged actor (for cell picking) and each ray's points (for the
+        selection overlay)."""
+        specs = self._pending_ray_specs
+        self._pending_ray_specs = []
+        if not specs or self._renderer is None or vtkActor is None:
+            return
+        try:
+            from vtkmodules.vtkFiltersCore import vtkAppendPolyData
+            from vtkmodules.vtkRenderingCore import vtkPolyDataMapper
+        except Exception:
+            vtkAppendPolyData = vtkPolyDataMapper = None
+        groups: dict[tuple, list[tuple]] = {}
+        for spec in specs:
+            _mesh, _ray, color, opacity, line_width = spec
+            groups.setdefault((color, opacity, line_width), []).append(spec)
+        for (color, opacity, line_width), group in groups.items():
+            if vtkAppendPolyData is None or vtkPolyDataMapper is None:
+                for mesh, ray_index, _c, _o, _w in group:  # graceful fallback: per-ray
+                    self._add_single_pickable_ray_actor(mesh, color, ray_index, opacity, line_width)
+                continue
+            append = vtkAppendPolyData()
+            cell_ray: list[int] = []
+            for mesh, ray_index, _c, _o, _w in group:
+                try:
+                    n_cells = int(mesh.GetNumberOfCells())
+                    if n_cells <= 0:
+                        continue
+                    append.AddInputData(mesh)
+                    cell_ray.extend([int(ray_index)] * n_cells)
+                    self._ray_display_points[int(ray_index)] = np.asarray(mesh.points, dtype=float)
+                except Exception:
+                    continue
+            if not cell_ray:
+                continue
+            try:
+                append.Update()
+                actor = vtkActor()
+                mapper = vtkPolyDataMapper()
+                mapper.SetInputData(append.GetOutput())
+                actor.SetMapper(mapper)
+                prop = actor.GetProperty()
+                prop.SetLineWidth(float(line_width))
+                prop.SetColor(*color)
+                prop.SetOpacity(float(opacity))
+                actor.PickableOn()
+                self._renderer.AddActor(actor)
+            except Exception:
+                continue
+            actor_key = self._actor_key(actor)
+            if actor_key is None:
+                continue
+            self._actor_ray_map[actor_key] = -1  # merged marker: resolve the ray by picked cell
+            self._merged_ray_cell_index[actor_key] = np.asarray(cell_ray, dtype=np.int64)
+            for ray_index in set(cell_ray):
+                self._ray_actor_map.setdefault(int(ray_index), []).append(actor_key)
+
+    def _add_single_pickable_ray_actor(self, mesh, color, ray_index, opacity, line_width) -> None:
+        """Fallback (no merge filters): one pickable actor for one ray (legacy behaviour)."""
         if self._renderer is None or vtkActor is None or vtkDataSetMapper is None:
             return
         actor = vtkActor()
@@ -8944,15 +9038,74 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         actor.GetProperty().SetLineWidth(float(line_width))
         actor.GetProperty().SetColor(*color)
         actor.GetProperty().SetOpacity(float(opacity))
-        if ray_index is None:
-            actor.PickableOff()
-        else:
-            actor_key = self._actor_key(actor)
-            if actor_key is not None:
-                self._actor_ray_map[actor_key] = int(ray_index)
-                self._ray_actor_map.setdefault(int(ray_index), []).append(actor_key)
-            actor.PickableOn()
+        actor.PickableOn()
         self._renderer.AddActor(actor)
+        actor_key = self._actor_key(actor)
+        if actor_key is not None:
+            self._actor_ray_map[actor_key] = int(ray_index)
+            self._ray_actor_map.setdefault(int(ray_index), []).append(actor_key)
+            self._ray_display_points[int(ray_index)] = np.asarray(mesh.points, dtype=float)
+
+    def _ray_index_for_actor(self, actor_key, cell_id=None):
+        """bugs/0223 (Fix B): resolve the ray a picked actor+cell belongs to. A legacy
+        per-ray actor maps straight to its ray; a MERGED actor (marked -1) resolves via
+        the picked cell (defaulting to the live picker's current cell). None if not a ray."""
+        if actor_key is None:
+            return None
+        legacy = self._actor_ray_map.get(actor_key)
+        if legacy is not None and int(legacy) >= 0:
+            return int(legacy)
+        cells = self._merged_ray_cell_index.get(actor_key)
+        if cells is None or len(cells) == 0:
+            return None
+        if cell_id is None:
+            try:
+                cell_id = int(self._picker.GetCellId())
+            except Exception:
+                return None
+        cell_id = int(cell_id)
+        if 0 <= cell_id < len(cells):
+            return int(cells[cell_id])
+        return None
+
+    def _apply_ray_highlight_overlay(self, ray_index) -> None:
+        """bugs/0223 (Fix B): draw the selected ray as a bright OVERLAY actor (a merged
+        actor can't recolour just one of its rays). Removes any prior overlay first."""
+        if self._ray_highlight_overlay_key is not None:
+            prior = self._actor_by_key.pop(self._ray_highlight_overlay_key, None)
+            if prior is not None:
+                try:
+                    self._remove_renderer_view_prop(prior)
+                except Exception:
+                    pass
+            self._ray_highlight_overlay_key = None
+        if ray_index is None or self._renderer is None or pv is None:
+            return
+        pts = self._ray_display_points.get(int(ray_index))
+        if pts is None or len(pts) < 2:
+            return
+        try:
+            overlay = pv.lines_from_points(np.asarray(pts, dtype=float))
+            actor = self._add_mesh_actor(
+                overlay,
+                color=(1.0, 0.95, 0.3),
+                opacity=1.0,
+                pick_row_index=None,
+                line_width=4.0,
+            )
+            if actor is not None:
+                actor.PickableOff()
+                self._ray_highlight_overlay_key = self._actor_key(actor)
+        except Exception:
+            self._ray_highlight_overlay_key = None
+
+    def _clear_merged_ray_state(self) -> None:
+        """bugs/0223 (Fix B): drop the merged-ray bookkeeping + the selection overlay on
+        a scene rebuild (called alongside the _actor_ray_map/_ray_actor_map clears)."""
+        self._apply_ray_highlight_overlay(None)
+        self._pending_ray_specs = []
+        self._merged_ray_cell_index.clear()
+        self._ray_display_points.clear()
 
     def _add_ray_endpoint_actor(
         self,

@@ -117,6 +117,7 @@ class Open3DSceneRefreshService:
                 self._remove_renderer_view_prop(actor)
         self._actor_ray_map.clear()
         self._ray_actor_map.clear()
+        self._clear_merged_ray_state()  # bugs/0223 (Fix B): drop merged-ray maps + overlay
         if not self.show_rays_var.get():
             self.render()
             return
@@ -164,6 +165,7 @@ class Open3DSceneRefreshService:
                     ray_index=ray_index,
                     terminal_status=terminal_status,
                 )
+        self._flush_merged_ray_actors()  # bugs/0223 (Fix B): build the merged ray actors
         self.render()
 
     def refresh_scene(
@@ -362,6 +364,7 @@ class Open3DSceneRefreshService:
         self._row_actor_map.clear()
         self._actor_ray_map.clear()
         self._ray_actor_map.clear()
+        self._clear_merged_ray_state()  # bugs/0223 (Fix B): drop merged-ray maps + overlay
         self._actor_optical_axis_map.clear()
         self._optical_axis_actor_map.clear()
         self._optical_axis_pick_records.clear()
@@ -903,6 +906,7 @@ class Open3DSceneRefreshService:
                     )
                 else:
                     suppressed_endpoint_count += 1
+            self._flush_merged_ray_actors()  # bugs/0223 (Fix B): build the merged ray actors
             if bounded_ray_count:
                 self._debug_trace("ray_display_bounded", rays=bounded_ray_count, radius=float(radius))
             if suppressed_endpoint_count:

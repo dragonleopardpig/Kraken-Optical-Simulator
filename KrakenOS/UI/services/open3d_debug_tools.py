@@ -195,7 +195,7 @@ class Open3DDebugToolsMixin:
             "cell_id": cell_id,
             "pick_world": pick_world,
             "row_index": self._actor_row_map.get(actor_key) if actor_key is not None else None,
-            "ray_index": self._actor_ray_map.get(actor_key) if actor_key is not None else None,
+            "ray_index": self._ray_index_for_actor(actor_key, cell_id),  # bugs/0223: merged cell -> ray
             "step_label": self._actor_step_map.get(actor_key) if actor_key is not None else None,
             "axis_id": axis_info.get("axis_id") if isinstance(axis_info, dict) else None,
             "step_rotate": self._actor_step_rotate_map.get(actor_key) if actor_key is not None else None,

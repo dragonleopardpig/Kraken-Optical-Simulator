@@ -492,7 +492,7 @@ class Open3DInteractionService:
             self.status_var.set(f"{step_label.upper()} feature center aligned to the optical axis. Rotation handles remain active.")
             return
         row_index = self._actor_row_map.get(actor_key) if actor_key is not None else None
-        ray_index = self._actor_ray_map.get(actor_key) if actor_key is not None else None
+        ray_index = self._ray_index_for_actor(actor_key)  # bugs/0223: merged-actor cell -> ray
         requested_label = self.editor._cad_axis_pick_label
         surface_target_label = requested_label
         if surface_target_label is None and axis_pick_any:

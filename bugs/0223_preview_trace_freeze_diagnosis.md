@@ -124,6 +124,30 @@ be the **subprocess** variant (trace in a child → return `rays` + `scene_bundl
 `refresh_scene` on the main thread), accepting the ~121 MB serialisation; a thread is not worth building
 because the GIL negates it.
 
+## Fix B IMPLEMENTED (2026-07-05) — ray-actor consolidation
+
+Shipped the ray-actor merge. `_add_ray_actor` now DEFERS each pickable ray into `_pending_ray_specs`;
+`_flush_merged_ray_actors()` (called once after each ray-build loop in `open3d_scene_refresh.py`) groups
+them by `(color, opacity, line_width)` and builds ONE `vtkPolyData` actor per style via
+`vtkAppendPolyData`. Picking a merged actor resolves the ray from the picked cell
+(`_merged_ray_cell_index[actor_key][cell_id]`, via the new `_ray_index_for_actor` used by the three pick
+consumers — `interaction_event`, `interaction`, `debug_tools`). The selection highlight is now a bright
+OVERLAY actor (`_apply_ray_highlight_overlay`, `apply_ray_selection` rewritten) because a merged actor
+can't recolour one of its rays. `_ray_actor_map` stays keyed by ray_index (so ray-count/"still visible"
+checks are unchanged); `_clear_merged_ray_state()` drops the new maps + overlay on every rebuild.
+
+Headless-verified: on the two-mirror AZ85 cone the scene drops from **3,249 ray actors to 8** (one per
+field colour), every ray stays cell-pickable (cell0→ray0, mid→ray2888 resolve correctly), all 3,249
+rays keep display points for the overlay, and an offscreen render shows the folded П-path intact in all
+8 colours. Unit test: 5 rays / 2 styles → 2 actors, cell→ray exact, out-of-range + non-ray → None.
+
+**In-app verification still owed** for the INTERACTIVE paths (only observable in the app): (a) click a
+ray → it selects + the bright overlay draws on the right ray; (b) hover a ray; (c) the ray-inspector /
+debug pick reports the correct ray_index; (d) show-rays toggle + a live placement drag still render
+rays; (e) the freeze is visibly reduced. If cell-pick feels off, the likely culprit is a stale picker
+cell in `_ray_index_for_actor` (it falls back to the live `self._picker.GetCellId()`); pass `cell_id`
+explicitly at that call site.
+
 ## Verification owed (in-app)
 
 Per task #78 and the validator SIGSEGV, the freeze-gone can only be confirmed in-app: import + place a

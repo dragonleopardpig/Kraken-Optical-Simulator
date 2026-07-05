@@ -106,7 +106,7 @@ class PickClassifier:
                 return PickTarget.ROW, int(row_index)
             except Exception:
                 return PickTarget.ROW, None
-        ray_index = inspector._actor_ray_map.get(actor_key)
+        ray_index = inspector._ray_index_for_actor(actor_key)  # bugs/0223: merged-actor cell -> ray
         if ray_index is not None:
             try:
                 return PickTarget.RAY, int(ray_index)
