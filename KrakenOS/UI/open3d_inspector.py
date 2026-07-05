@@ -16315,6 +16315,31 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             near_label = far_label = header = ""
             apply_fn = None
         if not split:
+            # bugs/0234: on a two-fold periscope the split is gated OFF (the trailing mirror can't
+            # follow the object-mirror slide). Explain the absence rather than silently omitting it,
+            # so a user who expects the repackaging control knows why it is unavailable.
+            if plane == "object":
+                try:
+                    folds = [int(i) for i in self.editor._promoted_mirror_fold_row_indices()]
+                except Exception:
+                    folds = []
+                if len(folds) > 1:
+                    r = int(start_row)
+                    ttk.Separator(dialog, orient="horizontal").grid(
+                        row=r, column=0, columnspan=2, sticky="ew", padx=12, pady=(4, 8)
+                    )
+                    ttk.Label(
+                        dialog,
+                        text=(
+                            "Fold-mirror repositioning is unavailable on a two-fold periscope: "
+                            "sliding the object mirror would move the beam off the second mirror, "
+                            "which stays pinned to its placed pose."
+                        ),
+                        foreground="#a06000",
+                        wraplength=340,
+                        justify="left",
+                    ).grid(row=r + 1, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 8))
+                    return r + 2
             return start_row
         total = float(split["total"])
         near0 = float(split["near"])

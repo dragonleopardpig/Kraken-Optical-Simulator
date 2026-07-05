@@ -1066,6 +1066,17 @@ class ParaxialToolsMixin:
         mirror_row = next((m for m in folds if 0 < m < int(first_lens)), None)
         if mirror_row is None:
             return None
+        # bugs/0234: a TRAILING fold mirror (a 2nd periscope fold DOWNSTREAM of the object mirror)
+        # is pinned to an absolute incoming-axis placement (bugs/0218), NOT the object-gap walk.
+        # Sliding the object mirror shifts the whole folded chain -- mirror 1, the lenses, the rays
+        # and the detector all follow the walk, but the trailing mirror's promoted solid stays
+        # FROZEN at its pinned pose, so the beam then folds in empty space beside the drawn 2nd
+        # mirror (flag_20260706_070942_311: "2nd RA mirror wrong location ... the rays even bend
+        # without touching the 2nd RA mirror"). Until the image arm can be carried with the slide,
+        # only offer the split when the object mirror is the ONLY fold (single-fold is safe: every
+        # downstream element there is a plain row that re-derives from the walk).
+        if any(int(f) > int(mirror_row) for f in folds):
+            return None
         thicknesses = [max(float(getattr(r, "thickness", 0.0) or 0.0), 0.0) for r in rows]
         station = float(sum(thicknesses[:mirror_row]))
         # The object-side mirror is the FIRST fold, so the axis into it is the straight +Z; the
