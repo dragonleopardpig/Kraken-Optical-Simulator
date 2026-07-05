@@ -11108,19 +11108,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         return float(np.max(np.abs(sight / norm))) >= 1.0 - tol
 
     def rotate_camera_view(self, angle_deg: float) -> None:
-        """Swing the whole view ``angle_deg`` degrees per click -- the rotate-view
-        toolbar buttons (bugs/0158, refined by bugs/0159). The axis depends on the
-        view, matching the FreeCAD navigation-cube "rotate" arrows:
+        """Spin the whole view ``angle_deg`` degrees per click about the SIGHT LINE --
+        the axis going straight INTO the monitor (``vtkCamera.Roll``) -- in EVERY view
+        (bugs/0228, flags 20260705_1354xx "It should rotate through the axis into the
+        Monitor").
 
-        * **Oblique / Iso** -- a turntable about the view-up vector, centred on the
-          focal point (``vtkCamera.Azimuth``). Two clicks (180) views the scene
-          from the OPPOSITE side: an object at NW facing SE ends at SE facing NW
-          with the image plane taking its former spot.
-        * **Face-on plane view** (the sight line is along a principal axis, e.g.
-          the YZ/XY/XZ presets) -- a ROLL about the sight line, the axis going
-          straight INTO the screen (``vtkCamera.Roll``). Azimuth there would swing
-          the camera OFF the plane onto a different face; the user wants the plane
-          to spin in place about the perpendicular-to-the-monitor axis (bugs/0159).
+        History: bugs/0158 made the rotate buttons a turntable (``Azimuth``) and
+        bugs/0159 special-cased face-on plane views to a ROLL. The user's 4-step
+        recording on the ISO scene shows the turntable is NOT what the buttons should
+        do there either -- each click orbited the scene about the world-vertical axis
+        (the object walking around the beam column) instead of spinning the picture in
+        place. The rotate buttons now ALWAYS roll about the perpendicular-to-monitor
+        axis: the sight line never changes (nothing swings to a different side), the
+        image rotates in place like a sheet of paper, and four 90-degree clicks return
+        exactly to the start in any view.
 
         The jump is treated like a SETTLED orbit -- _on_camera_interaction re-fits
         the clip range (bugs/0048), re-squares the perpendicular thickness labels
@@ -11133,17 +11134,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if camera is None:
             return
         try:
-            if self._camera_sight_line_is_axis_aligned(camera):
-                # Face-on plane view: spin about the sight line (the axis into the
-                # monitor) so the plane stays face-on and rotates in place.
-                camera.Roll(float(angle_deg))
-            else:
-                # Oblique / Iso: turntable about the view-up. Do NOT
-                # OrthogonalizeViewUp afterwards -- that would re-tilt the view-up
-                # onto the new (slanted) sight line, so each click would rotate
-                # about a drifting axis and four 90 clicks would not return to the
-                # start. Leaving the view-up fixed makes this a true turntable.
-                camera.Azimuth(float(angle_deg))
+            camera.Roll(float(angle_deg))
         except Exception:
             return
         try:

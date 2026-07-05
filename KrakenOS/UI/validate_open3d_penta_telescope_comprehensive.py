@@ -8681,21 +8681,20 @@ def phase_148_navigation_cube_click(
 def phase_149_navigation_cube_rotate(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """The rotate-view buttons swing the whole view 90 about the scene (bugs/0158).
-    Follow-up to the user's clarification: the interactive cube (0156/0157) only
-    SNAPS to a face; they want FreeCAD's rotate ARROWS that sweep 90 per click,
-    forward and reverse, so two clicks (180) views the scene from the opposite side
-    (object NW-facing-SE ends SE-facing-NW). The fix adds rotate_camera_view via
-    vtkCamera.Azimuth (deliberately NO OrthogonalizeViewUp, which would drift the
-    turntable axis); the plane-view ROLL refinement (bugs/0159) is phase 150. The
-    display-free guard pins the forwarding contract. This phase
-    ALSO drives the LIVE inspector: from an Iso reset, four 90 rotations must return
-    the sight line EXACTLY to the start; two (180) must negate the horizontal (X,Z)
-    and preserve the vertical (view-up Y) -- the opposite side -- and each click must
-    move the view.
+    """The rotate-view buttons spin the whole view 90 per click about the SIGHT LINE --
+    the axis going straight INTO the monitor (bugs/0158 -> 0159 -> 0228). History: 0158
+    added the buttons as an azimuth turntable; 0159 made face-on plane views ROLL; the
+    user's 4-step ISO recording (flags 20260705_1354xx, "It should rotate through the
+    axis into the Monitor") showed the ISO turntable orbits the object around the scene
+    instead of rotating the picture, so 0228 makes the buttons ROLL in EVERY view. The
+    display-free guard pins the forwarding contract (Roll always, Azimuth never). This
+    phase ALSO drives the LIVE inspector: from an Iso reset, the SIGHT DIRECTION must be
+    bit-invariant across every click (a roll cannot change where the camera looks), the
+    VIEW-UP must turn 90 per click (the picture actually rotates), and four clicks must
+    return the view-up exactly to the start.
     """
     result = PhaseResult(
-        name="Phase 149: rotate-view buttons swing the camera 90 (azimuth turntable)"
+        name="Phase 149: rotate-view buttons roll about the into-the-monitor axis (0228)"
     )
     try:
         from KrakenOS.UI.validate_open3d_navigation_cube_rotate import run_checks
@@ -8723,44 +8722,57 @@ def phase_149_navigation_cube_rotate(
             norm = float(np.linalg.norm(vec))
             return vec / norm if norm else vec
 
+        def view_up() -> "np.ndarray":
+            vec = np.array(cam.GetViewUp(), float)
+            norm = float(np.linalg.norm(vec))
+            return vec / norm if norm else vec
+
         inspector.set_camera_preset("iso")
-        base = direction()
-        dirs = [base]
+        base_dir = direction()
+        base_up = view_up()
+        dirs = [base_dir]
+        ups = [base_up]
         for _ in range(4):
             inspector.rotate_camera_view(90)
             dirs.append(direction())
+            ups.append(view_up())
 
-        back = float(np.linalg.norm(dirs[4] - dirs[0]))
-        d2, d0 = dirs[2], dirs[0]
-        horiz_flip = float(abs(d2[0] + d0[0]) + abs(d2[2] + d0[2]))
-        vert_keep = float(abs(d2[1] - d0[1]))
-        per_click = min(float(np.linalg.norm(dirs[k + 1] - dirs[k])) for k in range(4))
+        sight_drift = max(float(np.linalg.norm(d - base_dir)) for d in dirs)
+        up_back = float(np.linalg.norm(ups[4] - ups[0]))
+        up_per_click = min(float(np.linalg.norm(ups[k + 1] - ups[k])) for k in range(4))
+        up_half_flip = float(np.linalg.norm(ups[2] + ups[0]))
 
-        result.detail["four_clicks_return_delta"] = round(back, 4)
-        result.detail["opposite_side_residual"] = round(horiz_flip + vert_keep, 4)
-        result.detail["min_per_click_move"] = round(per_click, 4)
+        result.detail["sight_line_drift"] = round(sight_drift, 6)
+        result.detail["four_clicks_up_return"] = round(up_back, 6)
+        result.detail["min_per_click_up_move"] = round(up_per_click, 4)
+        result.detail["two_clicks_up_flip_residual"] = round(up_half_flip, 4)
 
-        # 4x90 == identity: the turntable axis must not drift (the OrthogonalizeViewUp
-        # trap, bugs/0158). 2x90 == the opposite side: the horizontal (X,Z) sight-line
-        # components negate while the vertical (view-up Y) is preserved. Each click
-        # must move the sight line (the button actually rotates the scene).
-        if back > 1e-2:
+        # A ROLL about the into-the-monitor axis: the sight direction can NEVER change
+        # (the bugs/0228 flag showed the object orbiting the scene = a changing sight
+        # line); the picture rotation shows up as the VIEW-UP turning 90 per click,
+        # negating after two clicks and returning exactly after four.
+        if sight_drift > 1e-9:
             result.passed = False
             result.notes.append(
-                f"four 90 rotations did not return to the start (delta {back:.4f}) -- the "
-                "turntable axis is drifting (OrthogonalizeViewUp re-added?)"
+                f"the sight line drifted {sight_drift:.2e} across the rotate clicks -- the "
+                "buttons are orbiting the scene (the flagged 0228 turntable) instead of "
+                "rolling about the axis into the monitor"
             )
-        if horiz_flip > 1e-2 or vert_keep > 1e-2:
+        if up_back > 1e-6:
             result.passed = False
             result.notes.append(
-                "two 90 rotations did not view from the opposite side "
-                f"(horizontal-flip {horiz_flip:.4f}, vertical-keep {vert_keep:.4f})"
+                f"four 90 rotations did not return the view-up (delta {up_back:.2e})"
             )
-        if per_click < 1e-2:
+        if up_per_click < 0.5:
             result.passed = False
             result.notes.append(
-                f"a rotate click barely moved the view (min {per_click:.4f}) -- the button "
-                "does not rotate the scene"
+                f"a rotate click barely turned the picture (min view-up move {up_per_click:.4f}; "
+                "a 90-degree roll moves a unit view-up by sqrt(2))"
+            )
+        if up_half_flip > 1e-2:
+            result.passed = False
+            result.notes.append(
+                f"two 90 rotations did not flip the picture upside-down (residual {up_half_flip:.4f})"
             )
     except Exception as exc:  # pragma: no cover - defensive
         result.passed = False
@@ -8775,15 +8787,13 @@ def phase_150_navigation_cube_plane_roll(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
     """In a face-on plane view the rotate-view buttons ROLL about the sight line
-    (bugs/0159). The user accepted the ISO azimuth (phase 149) but reported that in
-    a YZ/plane view the rotate must "spin around the perpendicular axis ... the axis
-    that go into the center of the Monitor" -- an azimuth there swings the camera
-    OFF the plane onto a neighbouring face. rotate_camera_view detects the axis-
-    aligned sight line and calls vtkCamera.Roll instead. This phase drives the LIVE
-    inspector: from the +yz plane preset, rotate_camera_view(90) four times must keep
-    the sight line FIXED (a roll never moves the camera position, so it did NOT
-    azimuth off the plane), move the view-up a real amount each click, and return the
-    view-up EXACTLY to the start after 4x90.
+    (bugs/0159; since bugs/0228 EVERY view rolls -- rotate_camera_view calls
+    vtkCamera.Roll unconditionally, so the plane-view behaviour this phase pins is
+    unchanged). An azimuth here would swing the camera OFF the plane onto a
+    neighbouring face. This phase drives the LIVE inspector: from the +yz plane
+    preset, rotate_camera_view(90) four times must keep the sight line FIXED (a roll
+    never moves the camera position), move the view-up a real amount each click, and
+    return the view-up EXACTLY to the start after 4x90.
     """
     result = PhaseResult(
         name="Phase 150: rotate-view rolls about the sight line in a plane view (0159)"

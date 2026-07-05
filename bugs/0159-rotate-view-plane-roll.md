@@ -1,3 +1,5 @@
+> **Partially SUPERSEDED by bugs/0228 (2026-07-05):** the ISO/oblique turntable this doc kept is gone -- the rotate buttons now ROLL about the into-the-monitor axis in EVERY view, per the user's 4-step recording.
+
 # 0159 — rotate-view: roll about the sight line in a plane view
 
 User report (follow-up to bugs/0158): *"the behaviour of the rotation button is
