@@ -148,6 +148,38 @@ rays; (e) the freeze is visibly reduced. If cell-pick feels off, the likely culp
 cell in `_ray_index_for_actor` (it falls back to the live `self._picker.GetCellId()`); pass `cell_id`
 explicitly at that call site.
 
+## Fix A (subprocess off-thread trace) — findings + remaining friction (2026-07-05)
+
+Prototyped the subprocess path headlessly. It is VIABLE but larger + more fragile than hoped; net win
+is partial. Findings:
+
+- **The trace IS reproducible from a serialized scene.** Pickling `{specs, settings}` → rebuilding rows
+  (`_row_from_layout_item`) → `_snapshot_editor` → `_build_preview_system_rays_bundle` reproduces the
+  bundle deterministically (two independent editors already trace byte-identical). So a worker process
+  can trace from a serialized scene.
+- **Friction 1 — the snapshot editor recurses on lazy caches.** `_snapshot_editor` builds via `__new__`
+  (no `self.tk`), so the trace path's `getattr(self, "_saved_step_native_trace_plan_cache", {})` (and
+  likely other lazy caches) hits tkinter's `__getattr__` → `RecursionError` — the SAME class as the
+  Phase 92 bug (`_optical_led_glued`). The worker must seed every lazy cache the trace reads (or the
+  trace path must stop deriving them from a Tk-widget editor). Whack-a-mole risk.
+- **Friction 2 — `system` is unpicklable** (a local closure build-hook) yet `refresh_scene` needs it →
+  the worker returns `rays` + `scene_bundle` (both pickle) and the MAIN thread rebuilds `system` from
+  specs (`build_system` ≈ 0.4 s — cheap).
+- **Friction 3 — ~121 MB result** (`scene_bundle` 49 MB + `rays` 72 MB) to serialise back per trace
+  (~1–2 s pickle/IPC).
+- **Net win is partial.** Session log: refresh = ~10 s = ~6.7 s trace (`preview_trace_rays` 4.3 s +
+  `preview_build_scene_bundle` 2.3 s) + ~3.3 s apply (`refresh_scene` 2.3 s + `ray_actor_ms` 1.3 s ray
+  MESH construction, which stays on the main thread). Off-threading the 6.7 s trace + ~2 s deserialise
+  leaves a ~3.5 s main-thread apply. So the freeze drops ~10 s → ~3.5 s — real, but not gone. (Fix B
+  cuts the per-frame render, not this apply-time mesh build.)
+
+**Plan for the worker** (`KrakenOS/UI/trace_preview_worker.py`, mirror `warm_open3d_step_cache`): read
+`{specs, settings, sampling_mode, include_live_step_overlays}` from a temp file → seed lazy caches →
+`_snapshot_editor` → trace → pickle `(rays, scene_bundle)` out. Main thread: serialise scene, `Popen`,
+poll via `after()`, on completion re-check the trace signature (discard if the scene changed mid-trace),
+rebuild `system`, `refresh_scene`, drop a "Tracing…" badge meanwhile. **Deferred to a focused session**
+(large + the cache-seeding is fragile); tracked in task #78.
+
 ## Verification owed (in-app)
 
 Per task #78 and the validator SIGSEGV, the freeze-gone can only be confirmed in-app: import + place a
