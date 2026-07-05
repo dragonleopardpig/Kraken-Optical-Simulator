@@ -118,6 +118,12 @@ def _build_runtime_system(path: Path, rows: list[SurfaceRow]):
 def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEditor:
     editor = KrakenLayoutEditor.__new__(KrakenLayoutEditor)
     editor.headless = True
+    # This editor is built via __new__, so tk.Tk.__init__ never runs and self.tk is
+    # unset -- which turns tkinter's __getattr__ into an infinite self.tk recursion for
+    # ANY missing attribute (getattr(..., default) never gets its AttributeError, it gets
+    # RecursionError instead). Mirror __init__'s scene-placement defaults that downstream
+    # first-order/dimension code reads via getattr, so a headless snapshot can't recurse.
+    editor._optical_led_glued = False
     editor.rows = rows
     editor.last_system = None
     editor.layout_scene_source_specs = KrakenLayoutEditor._normalize_scene_source_specs(settings.get("scene_sources", []))

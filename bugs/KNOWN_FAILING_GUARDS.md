@@ -1,14 +1,28 @@
-# Known failing / flaky guards — discovered incidentally, NOT yet fixed
+# Known failing / flaky guards — discovered incidentally
 
 These failures were found while shipping other bugs (0219–0222). Each was confirmed **pre-existing**
-(fails on a clean tree with the current work stashed out), so none was introduced by those fixes and
-none was in scope to fix at the time. Recorded here so they aren't rediscovered from scratch.
+(fails on a clean tree with the current work stashed out), so none was introduced by those fixes.
+Recorded here so they aren't rediscovered from scratch.
 
-Last verified: 2026-07-04 (during bugs/0222).
+**Status (2026-07-05): items 1 and 2 are now FIXED (backlog-clear pass). Item 3 (test infrastructure)
+remains open.**
+
+Last verified: 2026-07-05.
 
 ---
 
-## 1. Phase 92 — `validate_open3d_fov_solve_after_promote` — RecursionError (tkinter `__getattr__`)
+## 1. Phase 92 — `validate_open3d_fov_solve_after_promote` — RecursionError (tkinter `__getattr__`) — ✅ FIXED
+
+**FIXED 2026-07-05.** Root cause confirmed: `_snapshot_editor` (`render_layout_snapshot.py`) builds the
+editor via `KrakenLayoutEditor.__new__` — bypassing both `__init__` and `tk.Tk.__init__` — so `self.tk`
+is unset and `_optical_led_glued` (never set except by the glue setter / settings-load) is missing. On
+a `tk.Tk` subclass with no `self.tk`, `getattr(editor, "_optical_led_glued", False)` recurses through
+`__getattr__` instead of returning the default. Fix: give `_optical_led_glued` a real `False` default in
+BOTH `KrakenLayoutEditor.__init__` and `_snapshot_editor`, so it's a plain attribute that never reaches
+`__getattr__`. (In-app editors were never affected — `tk.Tk.__init__` sets `self.tk` there.) Guarded by
+the guard now passing. Details of the original diagnosis kept below for reference.
+
+**Symptom.** The guard aborts with `RecursionError: maximum recursion depth exceeded`, ~990 repeats of:
 
 **Symptom.** The guard aborts with `RecursionError: maximum recursion depth exceeded`, ~990 repeats of:
 
@@ -41,23 +55,17 @@ note `getattr(..., default)` does **not** save you here because the failure is `
 
 ---
 
-## 2. Phase 115 — `validate_open3d_object_to_led_dimension` — premature drag registration
+## 2. Phase 115 — `validate_open3d_object_to_led_dimension` — STALE GUARD — ✅ FIXED
 
-**Symptom.**
-
-```
-FAIL: object->LED overlay must register NO drag yet (register_drag=False)
-```
-
-The guard asserts the object→LED dimension overlay has **not** registered a drag handler before any
-interaction, but `register_drag` comes back `True`.
-
-**Root cause (hypothesis).** The object→LED dimension overlay wires its drag/re-anchor handler at
-BUILD time rather than lazily on hover/click, so a freshly built overlay already reports a registered
-drag. (Flagged as a `register_drag` issue in the prior session as well — long-standing.)
-
-**Fix direction.** Trace where the object→LED overlay sets `register_drag`; defer it until the overlay
-is actually interacted with (matching whatever the other dimension overlays do — they pass this guard).
+**FIXED 2026-07-05.** This was NOT a code bug — the guard was stale. The failing assertion
+(`register_drag=False`, "no drag yet") encoded the pre-**bugs/0132** contract. bugs/0132 intentionally
+added the right-click/drag "re-anchor to a surface/edge" handle to the object→LED overlay, so
+`_emit_led_object_edge_dimension` now passes `register_drag=True` on purpose (see its docstring: the
+value-drag is harmless because the sentinel row is rejected by `drag_state_from_current_pick`). The
+guard (written for bugs/0123 + 0125) was never updated when 0132 shipped. Fix: update the guard's
+check A to assert `register_drag=True` (the re-anchor handle exists) and note the 0132 supersession in
+its docstring. The original (wrong) diagnosis, that the overlay "wires its drag at build time when it
+should defer", is retracted — registering the drag at build time is the correct, shipped behaviour.
 
 ---
 

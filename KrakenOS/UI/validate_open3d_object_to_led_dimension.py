@@ -8,9 +8,12 @@ the user still needs a SEPARATE object->LED-edge dimension (the LED is an
 independent decoration). It is drawn amber from the object plane to the LED edge
 at the distance the LED edge-distance dialog sets, and a plain click on it
 re-opens that dialog (which MOVES the LED). It carries a SENTINEL row id so it
-stays out of the table-row dimension dispatch, and registers NO drag yet (the
-drag-to-re-anchor "re-measure to a different LED edge, LED stays put" is a later
-increment).
+stays out of the table-row dimension dispatch. bugs/0132 later added the
+right-click/drag "re-anchor to a surface/edge" handle, so the overlay now
+registers a drag record (register_drag=True); a value-drag is harmless because
+the sentinel row is rejected by drag_state_from_current_pick. (This guard
+originally asserted "NO drag yet" -- the pre-0132 contract; that clause is
+superseded.)
 
 bugs/0125: the dialog pins the chosen LED edge at object+distance, but a free
 carry-drag of the LED adds led_step_placement_offset_xyz on top WITHOUT updating
@@ -117,8 +120,10 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         if int(captured.get("row_index", 0)) != int(sentinel):
             notes.append(f"FAIL: overlay row_index={captured.get('row_index')!r}, expected sentinel {sentinel}")
             passed = False
-        if captured.get("register_drag", True) is not False:
-            notes.append("FAIL: object->LED overlay must register NO drag yet (register_drag=False)")
+        if captured.get("register_drag", False) is not True:
+            notes.append(
+                "FAIL: object->LED overlay must register a drag so the bugs/0132 re-anchor "
+                "handle exists (register_drag=True)")
             passed = False
         base_lo = np.asarray(captured.get("base_lo", ()), dtype=float).reshape(-1)
         base_hi = np.asarray(captured.get("base_hi", ()), dtype=float).reshape(-1)

@@ -2619,6 +2619,7 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self.example_names: list[str] = []
         self.zemax_example_files: dict[str, Path] = {}
         self.rows: list[SurfaceRow] = []
+        self._optical_led_glued = False  # BS<->LED glue flag; read via getattr(...,False) in many places
         self.editor: tk.Widget | None = None
         self._editor_row_id: str | None = None
         self._editor_field: str | None = None
