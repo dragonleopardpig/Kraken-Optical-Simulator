@@ -145,20 +145,23 @@ def validate_folded_image_mesh_reseat() -> list[Check]:
     ))
 
     # ---- (E) wiring -------------------------------------------------------------------------- #
+    # bugs/0243: the preview traces the REAL folded system, so the drawn image disc and
+    # the traced Image surface coincide NATIVELY (checks A-D above) -- the reconcile and
+    # the reseat calls are retired from the pipeline; the helper stays defined for tools.
     from KrakenOS.UI.services.layout_scene_bundle_display import LayoutSceneBundleDisplayMixin
     from KrakenOS.UI.services.three_d_scene_tools import ThreeDSceneToolsMixin
 
     preview_src = inspect.getsource(ThreeDSceneToolsMixin._build_preview_system_rays_bundle)
-    reconcile_at = preview_src.find("_reconcile_folded_image_to_ray_convergence")
-    reseat_at = preview_src.find("_reseat_superseded_image_meshes_to_folded_detector")
+    reconcile_at = preview_src.find("self._reconcile_folded_image_to_ray_convergence(")
+    reseat_at = preview_src.find("self._reseat_superseded_image_meshes_to_folded_detector(")
     wired = (
-        reconcile_at >= 0 and reseat_at > reconcile_at
+        reconcile_at < 0 and reseat_at < 0
         and hasattr(LayoutSceneBundleDisplayMixin, "_reseat_superseded_image_meshes_to_folded_detector")
     )
     checks.append(Check(
-        "WIRED: _build_preview_system_rays_bundle reseats AFTER reconcile; method on the mixin",
+        "WIRED: the preview no longer reseats/reconciles (bugs/0243: disc == trace natively); helper still defined",
         wired,
-        f"reconcile_at={reconcile_at} reseat_at={reseat_at} "
+        f"reconcile_call_at={reconcile_at} reseat_call_at={reseat_at} (expect both -1) "
         f"defined={hasattr(LayoutSceneBundleDisplayMixin, '_reseat_superseded_image_meshes_to_folded_detector')}",
     ))
     return checks

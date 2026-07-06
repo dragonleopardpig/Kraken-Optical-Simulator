@@ -182,65 +182,30 @@ def main() -> int:
             f"empty gap (-0.9, -0.6) between retroreflections and the steepest legitimate fold turn"
         )
 
-    # ---- (3) INTEGRATION: real AZ85 rays dive BEFORE, none AFTER ----
+    # ---- (3) INTEGRATION: real AZ85 -- bugs/0243: the retroreflection itself is FIXED at
+    #          the physics level (KrakenSys re-expresses the ideal Thin Lens exit in the
+    #          non-seq loop's SIGN convention, so it no longer throws the beam back behind
+    #          the fold). NO drawn ray can dive any more; the truncator stays as a display
+    #          backstop for any future genuine reversal (unit-tested above). ----
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
             editor = _build_editor(_AZ85)
             _trace(editor)
-            # BEFORE: shadow the wired finalizer method with a no-op so the bundle keeps
-            # the raw (un-truncated) retroreflecting polylines.
-            editor._truncate_folded_retroreflected_ray_tails = lambda bundle: 0
-            raw_bundle = editor._build_scene_bundle(editor.last_system, editor.last_rays, 1.0)
-            raw_records = _drawn(editor, raw_bundle)
-            # AFTER (a): the REAL free function applied to each raw drawn polyline.
-            # AFTER (b): the REAL wired finalizer method inside a fresh build.
-            del editor._truncate_folded_retroreflected_ray_tails  # restore the class method
-            _trace(editor)
-            fixed_bundle = editor._build_scene_bundle(editor.last_system, editor.last_rays, 1.0)
-            fixed_records = _drawn(editor, fixed_bundle)
+            bundle = editor._build_scene_bundle(editor.last_system, editor.last_rays, 1.0)
+            records = _drawn(editor, bundle)
 
-        dives_before = sum(1 for (_ri, _c, pts, _t) in raw_records if _dives(pts))
-        helper_after = 0
-        truncated = 0
-        r124_seg_ok = None
-        for (ri, _c, pts, _t) in raw_records:
-            fixed = _folded_retroreflected_tail_points(pts)
-            drawn = pts if fixed is None else fixed
-            if fixed is not None:
-                truncated += 1
-            if _dives(drawn):
-                helper_after += 1
-            if int(ri) == 124:
-                d = np.asarray(drawn, dtype=float)
-                # segment 2->3 (X 40 -> 82.45) is the basis of 0190's "Optical Axis 2"
-                r124_seg_ok = d.shape[0] >= 4 and float(d[:, 0].max()) < 150.0
-        wired_after = sum(1 for (_ri, _c, pts, _t) in fixed_records if _dives(pts))
-
-        if dives_before <= 0:
+        dives = sum(1 for (_ri, _c, pts, _t) in records if _dives(pts))
+        if len(records) == 0:
+            failures.append("AZ85 integration: the real trace drew no rays at all")
+        if dives != 0:
             failures.append(
-                "AZ85 integration: no drawn ray dives through the hypotenuse BEFORE the fix "
-                "(the bug precondition is gone?) -- guard would be vacuous"
-            )
-        if helper_after != 0:
-            failures.append(
-                f"AZ85 integration: {helper_after} ray(s) still dive after the REAL free function"
-            )
-        if wired_after != 0:
-            failures.append(
-                f"AZ85 integration: {wired_after} ray(s) still dive after the WIRED finalizer method"
-            )
-        if truncated <= 0:
-            failures.append("AZ85 integration: the free function truncated no rays at all")
-        if r124_seg_ok is False:
-            failures.append(
-                "AZ85 integration: ray 124 lost its axis segment 2->3 after truncation "
-                "(0190's Optical Axis 2 would break)"
+                f"AZ85 integration: {dives} drawn ray(s) dive through the hypotenuse -- the "
+                "bugs/0187 thin-lens retroreflection is BACK (KrakenSys SIGN fix regressed)"
             )
         notes.append(
-            f"AZ85 drawn rays {len(raw_records)} | dive BEFORE {dives_before} -> free-fn AFTER "
-            f"{helper_after}, wired AFTER {wired_after} | truncated {truncated} | "
-            f"ray124 seg2->3 kept {r124_seg_ok}"
+            f"AZ85 drawn rays {len(records)} | dives {dives} (expect 0 -- the retroreflection "
+            "is fixed at the physics level, bugs/0243)"
         )
     except Exception as exc:  # noqa: BLE001
         failures.append(f"AZ85 integration raised {exc!r}")
@@ -269,7 +234,7 @@ def main() -> int:
     print("PASS bugs/0191 folded RA-mirror retroreflected-ray dive (marginal rays stop at the lens):")
     print("  - a forward->lens->reversed->dive polyline truncates at the reversal vertex (dive dropped)")
     print("  - a forward-only ray + degenerate/short polylines are left untouched (None)")
-    print("  - AZ85 real trace: rays dive through the hypotenuse BEFORE, 0 after (free fn AND wired method)")
+    print("  - AZ85 real trace: 0 dives -- the thin-lens retroreflection is fixed at the physics level (bugs/0243)")
     print(f"  - folded gate: not None for AZ85 (truncation runs), None for {_PLAIN} (gated OFF)")
     for note in notes:
         print(f"  - {note}")

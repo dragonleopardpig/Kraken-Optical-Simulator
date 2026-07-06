@@ -1018,40 +1018,53 @@ class raykeeper():
             return
 
         self.nelements = self.SYSTEM.n
+
+        def _ragged_safe_asarray(seq):
+            # bugs/0243: a ray terminated mid-chain (e.g. vignetted at the aperture
+            # stop) collects real per-surface records PLUS a final __EmptyCollect
+            # placeholder whose fields are empty arrays -- a RAGGED mix that
+            # numpy>=1.24 refuses to stack (``inhomogeneous shape``). These
+            # invalid_* lists are write-only diagnostics, so keep the ragged rows
+            # as object arrays instead of crashing the whole preview trace.
+            try:
+                return np.asarray(seq)
+            except ValueError:
+                return np.asarray(list(seq), dtype=object)
+
         if (self.SYSTEM.val == 0):
             self.invalid_vld = np.append(self.vld, 0)
-            self.invalid_SURFACE.append(np.asarray(self.SYSTEM.SURFACE))
-            self.invalid_NAME.append(np.asarray(self.SYSTEM.NAME))
-            self.invalid_GLASS.append(np.asarray(self.SYSTEM.GLASS))
-            self.invalid_S_XYZ.append(np.asarray(self.SYSTEM.S_XYZ))
-            self.invalid_T_XYZ.append(np.asarray(self.SYSTEM.T_XYZ))
-            self.invalid_XYZ.append(np.asarray(self.SYSTEM.XYZ))
+            self.invalid_SURFACE.append(_ragged_safe_asarray(self.SYSTEM.SURFACE))
+            self.invalid_NAME.append(_ragged_safe_asarray(self.SYSTEM.NAME))
+            self.invalid_GLASS.append(_ragged_safe_asarray(self.SYSTEM.GLASS))
+            self.invalid_S_XYZ.append(_ragged_safe_asarray(self.SYSTEM.S_XYZ))
+            self.invalid_T_XYZ.append(_ragged_safe_asarray(self.SYSTEM.T_XYZ))
+            self.invalid_XYZ.append(_ragged_safe_asarray(self.SYSTEM.XYZ))
 
             lst = self.SYSTEM.OST_XYZ
             ll = filter(None, lst)
-            self.invalid_OST_XYZ.append(np.asarray(ll))
-            self.invalid_OST_LMN.append(np.asarray(self.SYSTEM.OST_LMN))
-            self.invalid_S_LMN.append(np.asarray(self.SYSTEM.S_LMN))
-            self.invalid_LMN.append(np.asarray(self.SYSTEM.LMN))
-            self.invalid_R_LMN.append(np.asarray(self.SYSTEM.R_LMN))
-            self.invalid_N0.append(np.asarray(self.SYSTEM.N0))
-            self.invalid_N1.append(np.asarray(self.SYSTEM.N1))
-            self.invalid_WAV.append(np.asarray(self.SYSTEM.WAV))
-            self.invalid_G_LMN.append(np.asarray(self.SYSTEM.G_LMN))
-            self.invalid_ORDER.append(np.asarray(self.SYSTEM.ORDER))
-            self.invalid_GRATING.append(np.asarray(self.SYSTEM.GRATING))
-            self.invalid_DISTANCE.append(np.asarray(self.SYSTEM.DISTANCE))
-            self.invalid_OP.append(np.asarray(self.SYSTEM.OP))
-            self.invalid_TOP_S.append(np.asarray(self.SYSTEM.TOP_S))
-            self.invalid_TOP.append(np.asarray(self.SYSTEM.TOP))
+            self.invalid_OST_XYZ.append(_ragged_safe_asarray(ll))
+            self.invalid_OST_LMN.append(_ragged_safe_asarray(self.SYSTEM.OST_LMN))
+            self.invalid_S_LMN.append(_ragged_safe_asarray(self.SYSTEM.S_LMN))
+            self.invalid_LMN.append(_ragged_safe_asarray(self.SYSTEM.LMN))
+            self.invalid_R_LMN.append(_ragged_safe_asarray(self.SYSTEM.R_LMN))
+            self.invalid_N0.append(_ragged_safe_asarray(self.SYSTEM.N0))
+            self.invalid_N1.append(_ragged_safe_asarray(self.SYSTEM.N1))
+            self.invalid_WAV.append(_ragged_safe_asarray(self.SYSTEM.WAV))
+            self.invalid_G_LMN.append(_ragged_safe_asarray(self.SYSTEM.G_LMN))
+            self.invalid_ORDER.append(_ragged_safe_asarray(self.SYSTEM.ORDER))
+            self.invalid_GRATING.append(_ragged_safe_asarray(self.SYSTEM.GRATING))
+            self.invalid_DISTANCE.append(_ragged_safe_asarray(self.SYSTEM.DISTANCE))
+            self.invalid_OP.append(_ragged_safe_asarray(self.SYSTEM.OP))
+            self.invalid_TOP_S.append(_ragged_safe_asarray(self.SYSTEM.TOP_S))
+            self.invalid_TOP.append(_ragged_safe_asarray(self.SYSTEM.TOP))
             lst = self.SYSTEM.ALPHA
             ll = filter(None, lst)
-            self.invalid_ALPHA.append(np.asarray(ll))
-            self.invalid_BULK_TRANS.append(np.asarray(self.SYSTEM.BULK_TRANS))
-            self.invalid_RP.append(np.asarray(self.SYSTEM.RP))
-            self.invalid_RS.append(np.asarray(self.SYSTEM.RS))
-            self.invalid_TP.append(np.asarray(self.SYSTEM.TP))
-            self.invalid_TS.append(np.asarray(self.SYSTEM.TS))
+            self.invalid_ALPHA.append(_ragged_safe_asarray(ll))
+            self.invalid_BULK_TRANS.append(_ragged_safe_asarray(self.SYSTEM.BULK_TRANS))
+            self.invalid_RP.append(_ragged_safe_asarray(self.SYSTEM.RP))
+            self.invalid_RS.append(_ragged_safe_asarray(self.SYSTEM.RS))
+            self.invalid_TP.append(_ragged_safe_asarray(self.SYSTEM.TP))
+            self.invalid_TS.append(_ragged_safe_asarray(self.SYSTEM.TS))
             self.invalid_TTBE.append(np.asarray(self.SYSTEM.TTBE))
             self.invalid_TT.append(np.asarray(self.SYSTEM.TT))
             self.invalid_INTERACTION_TYPE.append(np.asarray(getattr(self.SYSTEM, "INTERACTION_TYPE", []), dtype=object))

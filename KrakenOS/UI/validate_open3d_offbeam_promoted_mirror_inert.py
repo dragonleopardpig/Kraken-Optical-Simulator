@@ -59,7 +59,10 @@ _FOLD_SRC = PROJECT_ROOT / "KrakenOS" / "UI" / "services" / "folded_sequential_f
 _PARAXIAL_SRC = PROJECT_ROOT / "KrakenOS" / "UI" / "services" / "paraxial_tools.py"
 
 _PARKED_OFFSET = (100.0, 97.0, 200.0)  # mirrors the flagged random parked pose
-_KNOWN_FOLDED_DETECTOR = np.asarray((181.374, 0.0, -13.552), dtype=float)
+# bugs/0243: the detector sits at the PRESCRIPTION seat (the reconcile snap that used
+# to park it on the ray waist is retired; a stale-gap fixture is shown honestly
+# defocused until solved/snapped).
+_KNOWN_FOLDED_DETECTOR = np.asarray((181.374, 0.0, -62.05), dtype=float)
 
 
 @dataclass

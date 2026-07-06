@@ -154,49 +154,15 @@ def run_checks() -> tuple[bool, list[str]]:
             )
             env_oa = _onaxis(env_bundle)
 
-            # ---- geometry for the #5 rigid-vs-tau contrast ----
-            specs = editor._serializable_specs_for_rows(list(editor.rows))
-            _f, recs = fold_promoted_mirror_specs_to_sequential(specs)
-            ri = int(recs[0]["row_index"])
-            face_normal = np.asarray(recs[0]["face_normal"], dtype=float).reshape(3)
-            chief_in = np.asarray(recs[0].get("chief_in") or [0.0, 0.0, 1.0], dtype=float).reshape(3)
-            center = np.asarray(promoted_mirror_world_center(specs, ri), dtype=float).reshape(3)
-            flip = mirror_reflection_flip_plane_normal(chief_in, face_normal)
-
-            # ---- the PHYSICAL folded focus target (bugs/0205): the straight-equivalent on-axis
-            # focus REFLECTED about the mirror-face CENTRE plane (an isometry of the real '/'
-            # hypotenuse). The production fold reflects too, so the wired cone must land here. The
-            # rotation-folded drawn detector sits ~desp_z beyond this along +X (overlay-fold gap,
-            # deferred) -- so we target the physics, not the mis-folded detector.
-            editor._reflect_straight_equivalent_display_rays = lambda _b: None
-            _ss, _sr, straight_bundle = editor._build_preview_system_rays_bundle(update_state=False)
-            del editor._reflect_straight_equivalent_display_rays
-            straight_terms = []
-            for _p in (getattr(straight_bundle, "ray_paths", None) or []):
-                _pw = np.asarray(getattr(_p, "points_world", None), dtype=float)
-                if _pw.ndim == 2 and _pw.shape[0] >= 3 and float(np.linalg.norm(_pw[0, :3])) <= 1.0:
-                    straight_terms.append(_pw[-1, :3])
-            straight_focus = np.mean(straight_terms, axis=0) if straight_terms else np.full(3, np.nan)
-            _refl = reflect_straight_equivalent_ray_points(
-                np.vstack([[0.0, 0.0, 0.0], straight_focus]), center, face_normal
-            )
-            expected_focus = np.asarray(_refl[-1, :3], dtype=float) if _refl is not None else np.full(3, np.nan)
-
-            # ---- rotation-fold-only bundle (shadow the rigid flip) for the contrast ----
-            wl = float(editor._current_wavelength())
-            mr = max((max(r.diameter / 2.0, 0.5) for r in editor.rows), default=1.0)
-            sys_c = editor.build_system(require_solids=True)
-            ftr = editor._folded_sequential_trace_rows(editor.rows)
-            rays_c, ft = editor._trace_preview_rays_folded_aware(
-                sys_c, wl, mr, sampling_mode=editor._preview_3d_sampling_mode(), folded_trace_rows=ftr
-            )
-            rot_bundle = editor._build_scene_bundle(sys_c, rays_c, mr)
-            editor._fold_straight_equivalent_display_rays(rot_bundle, ft)
-            rot_paths = [np.asarray(getattr(p, "points_world", None), dtype=float) for p in rot_bundle.ray_paths]
-            M = np.asarray(ft, dtype=float).reshape(4, 4)
-            anchor = M[:3, :3] @ center + M[:3, 3]
-            rigid_paths = [p for p in (rigid_reflect_folded_mirror_ray_points(p, anchor, flip) for p in rot_paths) if p is not None]
-            tau_paths = [p for p in (correct_folded_mirror_ray_points(p, center, face_normal, chief_in) for p in rot_paths) if p is not None]
+            # ---- the #5 focus target (bugs/0243): the drawn detector itself. The scene
+            # is traced on the REAL folded system and the sensor was snapped to the
+            # paraxial conjugate above, so the on-axis cone must converge exactly ON
+            # the drawn detector reference point -- no reflected-image reconstruction,
+            # no rotation-fold contrast plumbing (both retired with the display bend).
+            expected_focus = np.asarray(
+                editor._surface_reference_world_point(len(editor.rows) - 1, system=system),
+                dtype=float,
+            ).reshape(3)
     except Exception as exc:  # noqa: BLE001
         return False, [f"setup raised {exc!r}"]
 
@@ -233,10 +199,9 @@ def run_checks() -> tuple[bool, list[str]]:
                 f"cone cross-section disk s2={s2:.3f} ({cross.shape[0]} rays) at X={0.5*drawn_x:.1f}"
             )
 
-    # (3) #5: wired (world_cone) on-axis cone converges at the REFLECTED image, ON the drawn
-    #     optical axis (Z). bugs/0205: the fold is a reflection about the mirror-face centre, so
-    #     the focus lands at the physical reflected image -- NOT on the rotation-folded drawn
-    #     detector, which sits ~desp_z beyond along +X (an overlay-fold gap, deferred).
+    # (3) #5: the wired (world_cone) on-axis cone converges ON the drawn detector.
+    #     bugs/0243: the real trace terminates on the folded Image seat = the drawn
+    #     detector reference, and after the snap the conjugate sits there too.
     ex, ez = float(expected_focus[0]), float(expected_focus[2])
     if len(cone_oa) < 6:
         failures.append(f"#5: too few on-axis folded rays to test convergence ({len(cone_oa)})")
@@ -246,32 +211,16 @@ def run_checks() -> tuple[bool, list[str]]:
         x_mean, trms = _endpoint_stats(cone_oa)
         z_mean = float(np.mean([p[-1][2] for p in cone_oa]))
         if abs(x_mean - ex) > 0.05:
-            failures.append(f"#5: wired on-axis focus X off the reflected image: X {x_mean:.3f} vs {ex:.3f} (dX {x_mean-ex:+.3f})")
+            failures.append(f"#5: wired on-axis focus X off the drawn detector: X {x_mean:.3f} vs {ex:.3f} (dX {x_mean-ex:+.3f})")
         if abs(z_mean - ez) > 0.05:
-            failures.append(f"#5: wired on-axis focus OFF the optical axis: Z {z_mean:.3f} vs {ez:.3f} (dZ {z_mean-ez:+.3f}; ~-desp_z means a front-datum fold -- 0205 offset regression)")
+            failures.append(f"#5: wired on-axis focus OFF the drawn detector: Z {z_mean:.3f} vs {ez:.3f} (dZ {z_mean-ez:+.3f})")
         if not (trms < 0.05):
             failures.append(f"#5: wired on-axis cone NOT converged: endpoint transverse RMS {trms:.4f} mm >= 0.05 (sheared?)")
         if abs(x_mean - ex) < 0.05 and abs(z_mean - ez) < 0.05 and trms < 0.05:
             notes.append(
-                f"#5: on-axis focus ({x_mean:.3f},{z_mean:.3f}) at the reflected image "
-                f"(drawn detector X {drawn_x:.3f} now +{drawn_x-x_mean:.3f} -- coincident since bugs/0207); "
-                f"transverse RMS={trms*1000:.2f} um"
+                f"#5: on-axis focus ({x_mean:.3f},{z_mean:.3f}) ON the drawn detector "
+                f"(X {drawn_x:.3f}); transverse RMS={trms*1000:.2f} um"
             )
-
-    # (4) #5 contrast: rigid keeps the waist, per-ray tau shears it
-    rigid_oa = _onaxis(rigid_paths)
-    tau_oa = _onaxis(tau_paths)
-    if len(rigid_oa) < 6 or len(tau_oa) < 6:
-        failures.append(f"#5 contrast: too few on-axis rays (rigid {len(rigid_oa)}, tau {len(tau_oa)})")
-    else:
-        _rx, rigid_trms = _endpoint_stats(rigid_oa)
-        _tx, tau_trms = _endpoint_stats(tau_oa)
-        if not (rigid_trms < 0.05):
-            failures.append(f"#5 contrast: RIGID flip did not converge (endpoint transverse RMS {rigid_trms:.4f} mm >= 0.05)")
-        if not (tau_trms > 0.5):
-            failures.append(f"#5 contrast: per-ray tau did NOT shear (endpoint transverse RMS {tau_trms:.4f} mm <= 0.5) -> the guard is vacuous")
-        if rigid_trms < 0.05 and tau_trms > 0.5:
-            notes.append(f"#5 contrast: rigid endRMS {rigid_trms*1000:.2f} um vs per-ray tau {tau_trms*1000:.1f} um (shear)")
 
     if failures:
         return False, failures + [f"note: {n}" for n in notes]
@@ -284,7 +233,7 @@ def main() -> int:
         print("PASS bugs/0203 folded cone focus:")
         print("  - #2 non-branching promoted-mirror fold routes to world_cone (dense revolve), not the sparse envelope")
         print("  - #2 production on-axis bundle is a dense 2D disk (cone); forced envelope stays sparse")
-        print("  - #5 wired on-axis cone converges at the reflected image ON the drawn optical axis; rigid flip keeps the waist where tau shears")
+        print("  - #5 wired on-axis cone converges ON the drawn detector (real trace, bugs/0243)")
     else:
         print("FAIL bugs/0203 folded cone focus (fan-not-cone / sheared focus):")
     for note in notes:

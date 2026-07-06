@@ -44,7 +44,11 @@ from KrakenOS.UI.validate_open3d_ra_mirror_retroreflected_ray_dive import _AZ85,
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _SRC = PROJECT_ROOT / "KrakenOS" / "UI" / "services" / "three_d_scene_tools.py"
-_KNOWN_AZ85_DETECTOR = np.asarray((181.374, 0.0, -13.552), dtype=float)
+# bugs/0243: the as-built two-fold AZ85 detector sits at the PRESCRIPTION seat -- the
+# reconcile snap is retired from the preview (the fixture's stored gaps are honestly
+# defocused until the user solves/snaps; after `snap_detector_to_image_plane` the cone
+# focuses stigmatically ON the detector, guarded by validate_open3d_folded_image_snaps).
+_KNOWN_AZ85_DETECTOR = np.asarray((181.374, 0.0, -62.05), dtype=float)
 
 
 @dataclass
@@ -121,7 +125,7 @@ def validate_two_fold_detector_snaps_to_focus() -> list[Check]:
         None,
     )
     checks.append(Check(
-        "AZ85 UNCHANGED: the two-mirror AZ85 detector stays on its known folded focus (no spurious move)",
+        "AZ85 UNCHANGED: the two-mirror AZ85 detector stays on its prescription seat (no spurious move)",
         az_det is not None and bool(np.allclose(az_det, _KNOWN_AZ85_DETECTOR, atol=0.5)),
         f"detector={None if az_det is None else np.round(az_det, 2)} (expect ~{np.round(_KNOWN_AZ85_DETECTOR, 1)})",
     ))

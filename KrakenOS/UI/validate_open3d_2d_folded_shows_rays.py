@@ -72,19 +72,19 @@ def _projected_ray_count(editor, bundle) -> int:
 
 
 def _trace_2d_routed(editor):
-    """Replicate the 2D ``refresh_plot`` trace path AFTER the bugs/0201 fix."""
+    """Replicate the 2D ``refresh_plot`` trace path. bugs/0243: the folded scene is
+    traced on the REAL system and the rays come out already folded -- there is no
+    display bend any more, so the bundle is used exactly as built."""
     wavelength = float(editor._current_wavelength())
     max_radius = max((max(r.diameter / 2.0, 0.5) for r in editor.rows), default=1.0)
     system = editor.build_system(require_solids=True)
     folded_trace_rows = editor._folded_sequential_trace_rows(editor.rows)
-    rays, fold_transform = editor._trace_preview_rays_folded_aware(
+    rays, _fold_transform = editor._trace_preview_rays_folded_aware(
         system, wavelength, max_radius,
         sampling_mode=_preview_2d_sampling_mode(editor),
         folded_trace_rows=folded_trace_rows,
     )
     bundle = editor._build_scene_bundle(system, rays, max_radius)
-    if folded_trace_rows is not None:
-        editor._apply_folded_display_bend(bundle, fold_transform)
     return system, bundle, bool(folded_trace_rows is not None)
 
 

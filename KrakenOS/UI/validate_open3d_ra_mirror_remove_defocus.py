@@ -46,7 +46,10 @@ import sys
 from KrakenOS.UI.validate_open3d_ra_mirror_retroreflected_ray_dive import _build_editor, _AZ85, _PLAIN
 
 _BS_CUBE = "machine_vision_150mm_coaxial_led.py"
-_EXPECTED_SHIFT = 7.7557  # paraxial defocus delta on the AZ85 (mm)
+# bugs/0243: the prescription-true Image seat makes the paraxial and REAL-RAY defocus
+# agree at -8.5179 mm on the as-imported AZ85 (the old +7.7557 was measured against the
+# mirror-thickness-biased seat the retired reconcile snap papered over).
+_EXPECTED_SHIFT = -8.5179
 
 
 def main() -> int:

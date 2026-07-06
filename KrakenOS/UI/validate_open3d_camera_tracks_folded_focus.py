@@ -1,24 +1,19 @@
-"""Display-free guard for bugs/0220 -- the camera STEP must track the TRUE optical focus (not the
-prescription Image-row plane) on a folded promoted-mirror scene whose trailing mirror overshoots
-the conjugate, so it stays ATTACHED to the detector the bugs/0217 reconcile parks at that focus.
+"""Display-free guard for bugs/0220 -- the camera STEP must stay ATTACHED to the drawn
+detector on a folded promoted-mirror scene.
 
-Background (flag_20260704_195234 "detector and camera STEP detached"): the camera front is placed at
-``_current_image_plane_z() - front_to_sensor``. On the two-mirror AZ85 the prescription Image row
-sits a mirror-plate (~32 mm) PAST the true focus, so the camera followed the row to 387 while the
-0217 reconcile put the detector at the focus (355) -> detached by the plate. bugs/0220:
-``_camera_track_image_plane_z`` tracks ``_paraxial_image_plane_z`` (the focus) when it is
-meaningfully BEFORE the prescription row (the overshoot -- exactly when 0217 fires), else keeps the
-prescription plane (unfolded, or a single fold whose rays stop at the row 8 mm short of the focus,
-where 0217 is a no-op and moving the camera would detach it the OTHER way).
+bugs/0243 rework: the bugs/0217 reconcile (which used to park the detector at the ray
+waist, forcing the camera to chase the FOCUS) is retired. The folded scene traces on the
+REAL system, the detector sits at the PRESCRIPTION seat, and a stale-gap fixture is shown
+honestly defocused until solved/snapped -- so the camera tracks the PRESCRIPTION plane
+again and is coincident with the detector at all times. After ``snap_detector_to_image_
+plane`` the prescription IS the focus, so camera+detector+focus coincide (the original
+bugs/0220 outcome, now achieved by moving the prescription instead of detaching planes).
 
-  (A) TWO-MIRROR: the camera tracks the paraxial FOCUS (< the prescription row) -> attaches to the
-      0217 detector.
-  (B) SINGLE-MIRROR: the focus is PAST the prescription row (rays stop short), so the camera keeps
-      the prescription plane -- UNCHANGED (no detach the other way).
-  (C) CAUSAL: the two-mirror camera-track z is the focus, NOT the prescription row it used to follow
-      (a plate behind the detector).
-  (D) WIRED: the camera placement sites call ``_camera_track_image_plane_z`` (not the raw
-      ``_current_image_plane_z``).
+  (A) TWO-MIRROR: the camera track equals the prescription plane (the detector seat).
+  (B) SINGLE-MIRROR: same.
+  (C) SNAP: after snap_detector_to_image_plane the camera track equals the (new)
+      prescription = the paraxial focus -- camera, detector and focus coincide.
+  (D) WIRED: the camera placement sites call ``_camera_track_image_plane_z``.
 
 Run: .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_camera_tracks_folded_focus
 Exit: 0 = pass, 1 = regression.
@@ -71,43 +66,44 @@ def validate_camera_tracks_folded_focus() -> list[Check]:
     presc2, track2, focus2 = _zs(_editor(_build_two_mirror))
     presc1, track1, focus1 = _zs(_editor(_build_single_mirror))
 
-    # ===================== (A) TWO-MIRROR: track the focus =========================== #
-    two_ok = (
-        focus2 is not None
-        and focus2 < presc2 - _TOL          # the trailing-mirror overshoot
-        and abs(track2 - focus2) < _TOL      # camera tracks the focus, attaches to the detector
-    )
+    # ============ (A)/(B): camera track == prescription plane (the detector seat) ===== #
     checks.append(Check(
-        "two-mirror: camera tracks the paraxial FOCUS (before the prescription row) -> attaches to the detector",
-        two_ok,
-        f"prescription={presc2:.2f} focus={None if focus2 is None else round(focus2,2)} camera_track={track2:.2f} "
-        f"(expect track==focus, focus<prescription)",
+        "two-mirror: camera tracks the prescription plane (the detector seat; bugs/0243)",
+        abs(track2 - presc2) < _TOL,
+        f"prescription={presc2:.2f} camera_track={track2:.2f} (expect equal; paraxial focus={None if focus2 is None else round(focus2,2)})",
+    ))
+    checks.append(Check(
+        "single-mirror: camera tracks the prescription plane (the detector seat; bugs/0243)",
+        abs(track1 - presc1) < _TOL,
+        f"prescription={presc1:.2f} camera_track={track1:.2f} (expect equal)",
     ))
 
-    # ===================== (B) SINGLE-MIRROR: keep the prescription =================== #
-    one_ok = (
-        focus1 is not None
-        and focus1 < presc1 - _TOL           # bugs/0222: the external-air fold also overshoots
-        and abs(track1 - focus1) < _TOL       # ... so the camera tracks the focus too, onto the detector
-    )
+    # ============ (C) SNAP: prescription -> focus, camera follows both ================= #
+    snap_ok = False
+    snap_detail = "unavailable"
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            editor_snap, _ = _build_two_mirror()
+            editor_snap._build_preview_system_rays_bundle(update_state=True)
+            editor_snap.snap_detector_to_image_plane()
+            presc_s = float(editor_snap._current_image_plane_z())
+            track_s = float(editor_snap._camera_track_image_plane_z())
+            focus_s = editor_snap._paraxial_image_plane_z()
+        snap_ok = (
+            focus_s is not None
+            and abs(presc_s - float(focus_s)) < 0.5
+            and abs(track_s - presc_s) < _TOL
+        )
+        snap_detail = (
+            f"after snap: prescription={presc_s:.2f} focus={None if focus_s is None else round(float(focus_s),2)} "
+            f"camera_track={track_s:.2f} (expect all equal -- camera+detector+focus coincide)"
+        )
+    except Exception as exc:  # noqa: BLE001
+        snap_detail = f"raised {exc!r}"
     checks.append(Check(
-        "single-mirror: the external-air focus is BEFORE the prescription row, so the camera tracks the focus (0222)",
-        one_ok,
-        f"prescription={presc1:.2f} focus={None if focus1 is None else round(focus1,2)} camera_track={track1:.2f} "
-        f"(expect track==focus)",
-    ))
-
-    # ===================== (C) CAUSAL ================================================ #
-    causal = (
-        focus2 is not None
-        and abs(track2 - presc2) > _TOL       # the camera did NOT follow the overshot prescription row
-        and abs(presc2 - focus2) > 10.0        # ... which is a real plate (~32 mm) behind the focus
-    )
-    checks.append(Check(
-        "CAUSAL: the two-mirror camera-track z is the focus, NOT the prescription row (a plate behind the detector)",
-        causal,
-        f"track={track2:.2f} vs prescription={presc2:.2f} (delta {track2-presc2:+.2f}); "
-        f"prescription is {presc2-(focus2 or presc2):+.2f} mm past the focus",
+        "SNAP: after snap_detector_to_image_plane the camera sits at the focus with the detector",
+        snap_ok, snap_detail,
     ))
 
     # ===================== (D) WIRED ================================================= #

@@ -49,9 +49,13 @@ import numpy as np
 from KrakenOS.UI.validate_open3d_ra_mirror_retroreflected_ray_dive import _build_editor, _AZ85, _PLAIN
 
 _BS_CUBE = "machine_vision_150mm_coaxial_led.py"
-_EXPECTED_IMAGE = 158.1236   # = 150.3679 (current gap) + 7.7557 (defocus) -> best focus
-_EXPECTED_OBJECT = 65.3137
-_EXPECTED_MAG = 1.1418
+# bugs/0243: with the folded scene traced on the REAL system (first-surface mirrors,
+# prescription-true Image seat), the QE solve, the paraxial defocus and the real-ray
+# best focus all agree: solve("image") = 150.3679 (gap) - 8.5179 (defocus) = 141.85 mm,
+# and the folded 1:1 relay reads |m| = 1.0 exactly (bugs/0222's conjugate magnification).
+_EXPECTED_IMAGE = 141.8500
+_EXPECTED_OBJECT = 51.6550
+_EXPECTED_MAG = 1.0
 
 
 def _solved(editor, target):

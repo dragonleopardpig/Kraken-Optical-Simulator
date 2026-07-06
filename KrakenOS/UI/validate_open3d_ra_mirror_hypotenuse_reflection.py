@@ -137,36 +137,25 @@ def main() -> int:
     if m is None or not np.allclose(np.abs(m), (0.0, 0.0, 1.0), atol=1e-6):
         failures.append(f"unit: flip-plane normal {None if m is None else np.round(m,4).tolist()} != +/-Z for a +Z chief off a '/' face")
 
-    # ---- (4) INTEGRATION: real AZ85 -- the unfolded straight-equivalent has no kink; the
-    #          WIRED reflection fold (bugs/0205) lands every kink ON the '/' mirror-CENTRE
-    #          face plane with the '/' sign, tagged folded_straight_equivalent_reflected ----
+    # ---- (4) INTEGRATION: real AZ85 -- bugs/0243: the preview traces the REAL folded
+    #          system, so every drawn ray NATIVELY kinks ON the '/' mirror-CENTRE face
+    #          plane with the '/' sign. There is no display-bend correction (and no
+    #          ``folded_straight_equivalent_*`` tag) any more -- the drawn rays ARE the
+    #          first-surface mesh reflection this guard originally had to re-fold onto ----
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
             editor = _build_editor(_AZ85)
             specs, records, center, normal = _fold_geometry(editor)
-            # Straight-equivalent ONLY: shadow the wired reflection -> unfolded +Z bundle.
-            editor._reflect_straight_equivalent_display_rays = lambda bundle: None
-            _s0, _r0, raw_bundle = editor._build_preview_system_rays_bundle(update_state=True)
-            raw_paths = list(getattr(raw_bundle, "ray_paths", []))
-            # The REAL wired reflection fold (bugs/0205) inside a fresh preview build.
-            del editor._reflect_straight_equivalent_display_rays
             _s1, _r1, fixed_bundle = editor._build_preview_system_rays_bundle(update_state=True)
             fixed_paths = list(getattr(fixed_bundle, "ray_paths", []))
 
         if center is None or normal is None:
             failures.append("AZ85 integration: no promoted-mirror fold record (precondition gone)")
         else:
-            # The '/' face plane the reflection folds about: the real drawn hypotenuse
-            # through the mirror-face CENTRE (promoted_mirror_world_center) -- reflecting
-            # about the front datum instead offsets the outgoing arm by desp_z (0205 fix).
+            # The '/' face plane: the real drawn hypotenuse through the mirror-face
+            # CENTRE (promoted_mirror_world_center).
             face_point = np.asarray(center, dtype=float).reshape(-1)[:3]
-            # Precondition: the unfolded straight-equivalent has NO ~90 deg kink (goes +Z).
-            raw_kinked = sum(
-                1
-                for p in raw_paths
-                if _kink(getattr(p, "points_world", np.empty((0, 3))), face_point, normal) is not None
-            )
             resid, badsign, tagged, total = [], 0, 0, 0
             for path in fixed_paths:
                 pts = getattr(path, "points_world", None)
@@ -183,22 +172,20 @@ def main() -> int:
                 kx, kz = float(K[kk, 0]), float(K[kk, 2])
                 if abs(kx) > 0.5 and np.sign(kx) != np.sign(kz - face_point[2]):
                     badsign += 1
-                if str(getattr(path, "display_geometry_source", "")) == "folded_straight_equivalent_reflected":
+                if str(getattr(path, "display_geometry_source", "")).startswith("folded_straight_equivalent"):
                     tagged += 1
             resid = np.array(resid) if resid else np.array([9.9])
-            if raw_kinked != 0:
-                failures.append(f"AZ85 integration: unfolded straight-equivalent already has {raw_kinked} kink(s) -> precondition gone, guard vacuous")
             if total == 0:
-                failures.append("AZ85 integration: the wired reflection produced no folded kinks")
-            if resid.max() >= 1e-6:
-                failures.append(f"AZ85 integration: wired reflected kink max residual {resid.max():.3e} mm off the '/' mirror-centre face plane (reflection should fix the crossing ON it)")
+                failures.append("AZ85 integration: the real folded trace produced no folded kinks")
+            if resid.max() >= 1e-3:
+                failures.append(f"AZ85 integration: traced kink max residual {resid.max():.3e} mm off the '/' mirror-centre face plane (the real mesh reflection must kink ON the face)")
             if badsign != 0:
-                failures.append(f"AZ85 integration: {badsign} wired reflected kink(s) on the WRONG '/' sign")
-            if total > 0 and tagged != total:
-                failures.append(f"AZ85 integration: only {tagged}/{total} wired paths tagged folded_straight_equivalent_reflected (bugs/0205)")
+                failures.append(f"AZ85 integration: {badsign} traced kink(s) on the WRONG '/' sign (the bugs/0192 opposite-diagonal symptom)")
+            if tagged != 0:
+                failures.append(f"AZ85 integration: {tagged}/{total} paths carry a display-bend tag -- the drawn rays must be the raw physics trace (bugs/0243)")
             notes.append(
-                f"AZ85 folded rays {total} | unfolded straight-equiv kinks {raw_kinked} "
-                f"| wired reflected '/' residual max {resid.max():.2e} mm (badsign {badsign}) tagged {tagged}"
+                f"AZ85 folded rays {total} | traced '/' residual max {resid.max():.2e} mm "
+                f"(badsign {badsign}) bend-tagged {tagged} (expect 0)"
             )
     except Exception as exc:  # noqa: BLE001
         failures.append(f"AZ85 integration raised {exc!r}")
@@ -225,8 +212,7 @@ def main() -> int:
     print("PASS bugs/0192 folded RA-mirror hypotenuse reflection (rays reflect off the real mesh face):")
     print("  - a synthetic rotation-folded ray re-folds onto the '/' face, +X downstream, incoming untouched")
     print("  - straight + degenerate polylines are left untouched (None); flip-plane normal is +/-Z")
-    print("  - AZ85 real trace: unfolded straight-equiv has no kink; the wired reflection lands every kink ON the '/' face (correct sign)")
-    print("  - wired Path A folds via the bugs/0205 reflection (tagged folded_straight_equivalent_reflected); focus + incoming cone preserved")
+    print("  - AZ85 real trace (bugs/0243): every drawn ray natively kinks ON the '/' face with the correct sign, no display-bend tag")
     print(f"  - scope: 1 fold record for AZ85, 0 for {_PLAIN} (correction inert on sequential mirrors)")
     for note in notes:
         print(f"  - {note}")

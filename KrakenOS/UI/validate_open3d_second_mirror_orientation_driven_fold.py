@@ -220,26 +220,26 @@ def validate_second_mirror_orientation_driven_fold() -> list[Check]:
         )
     )
 
-    # 3) THE DISPLAY RAYS AGREE: the on-axis ray folds TWICE (once per mirror) on the
-    #    cone-preserving reflection path, and its endpoint COINCIDES with the folded
-    #    detector -- the two systems land the beam at the same physics-fold point.
+    # 3) THE DISPLAY RAYS AGREE: the on-axis ray folds TWICE (once per mirror) and its
+    #    endpoint COINCIDES with the drawn detector. bugs/0243: the drawn rays ARE the
+    #    real trace (no display-bend tag), and the detector coincides with the Image
+    #    override natively -- nothing is snapped or superseded any more.
     ep = down["endpoint"]
     dt = down["detector_target"]
     rays_agree = (
         down["kinks"] == 2
-        and down["tag"] == "folded_straight_equivalent_reflected"
+        and not str(down["tag"] or "").startswith("folded_straight_equivalent")
         and ep is not None
         and dt is not None
         and bool(np.linalg.norm(ep - dt) < 1.0)
     )
     checks.append(
         Check(
-            "the display rays fold twice and land ON the drawn detector (rays == detector, bugs/0217)",
+            "the display rays fold twice and land ON the drawn detector (rays == detector, real trace)",
             rays_agree,
-            f"kinks={down['kinks']} (expect 2), tag={down['tag']!r}, endpoint="
+            f"kinks={down['kinks']} (expect 2), tag={down['tag']!r} (expect the raw trace), endpoint="
             f"{None if ep is None else tuple(round(float(v),3) for v in ep)} vs detector_target="
-            f"{None if dt is None else tuple(round(float(v),3) for v in dt)} (expect coincident at the "
-            f"physics focus; the raw override image_center={None if imc is None else tuple(round(float(v),3) for v in imc)} is the superseded plate-back)",
+            f"{None if dt is None else tuple(round(float(v),3) for v in dt)} (expect coincident)",
         )
     )
 

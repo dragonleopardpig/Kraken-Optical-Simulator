@@ -9,7 +9,9 @@ on-axis best focus (trace the spot, minimise it).
 This guard pins (display-free), on the real MV-150 beam-splitter + surrogate scene:
 
   * the paraxial image plane is NOT computable (the cube) -- so the fallback path runs;
-  * ``_real_ray_best_focus_shift_for_rows`` recovers the ~+2.7 mm defocus;
+  * ``_real_ray_best_focus_shift_for_rows`` recovers a deliberately injected -2 mm defocus
+    (bugs/0243: the as-imported fixture now measures AT focus -- the old ~+2.7 mm was the
+    branching-tracer thin-lens direction bias, fixed at the physics level);
   * ``snap_detector_to_image_plane`` moves the back-focal gap by exactly that, so the
     detector lands at best focus;
   * the snap source consults the real-ray helper.
@@ -57,6 +59,11 @@ def _check_integration(failures: list[str], notes: list[str]) -> None:
         with redirect_stdout(capture), redirect_stderr(capture):
             editor = _editor_from_layout(_MV150_BS)
             paraxial = editor._paraxial_image_plane_z()
+            # bugs/0243: the branching-tracer Thin-Lens SIGN fix removed the direction
+            # bias that used to leave this fixture ~+2.7 mm off; the as-imported scene
+            # now measures at best focus already. DEFOCUS it deliberately so the
+            # real-ray fallback still has something real to recover.
+            editor.rows[-2].thickness = float(editor.rows[-2].thickness) + 2.0
             shift = editor._real_ray_best_focus_shift_for_rows()
             before = float(editor.rows[-2].thickness)
             moved = editor.snap_detector_to_image_plane()
@@ -67,8 +74,8 @@ def _check_integration(failures: list[str], notes: list[str]) -> None:
 
     if paraxial is not None:
         notes.append("NOTE: paraxial image plane computable on this clone -- fallback not exercised")
-    if shift is None or not (1.0 < float(shift) < 5.0):
-        failures.append(f"INTEGRATION: real-ray best-focus shift {shift} is not the expected ~+2.7 mm")
+    if shift is None or not (-3.0 < float(shift) < -1.0):
+        failures.append(f"INTEGRATION: real-ray best-focus shift {shift} did not recover the injected -2 mm defocus")
         return
     if not moved:
         failures.append("INTEGRATION: snap_detector_to_image_plane did not move the detector")

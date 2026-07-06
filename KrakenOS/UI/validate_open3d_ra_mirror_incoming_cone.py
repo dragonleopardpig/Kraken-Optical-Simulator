@@ -116,26 +116,19 @@ def _run() -> tuple[list[str], list[str]]:
                 _c = promoted_mirror_world_center(specs, int(records[0].get("row_index", -1)))
                 if _c is not None:
                     axis_z = float(np.asarray(_c, dtype=float).reshape(-1)[2])
-            # RAW straight-equivalent: shadow the reflection fold -> unfolded +Z bundle.
-            editor._preview_scene_trace_dirty = True
-            editor._reflect_straight_equivalent_display_rays = lambda bundle: None
-            _s0, _r0, raw_bundle = editor._build_preview_system_rays_bundle(update_state=True)
-            raw = [np.asarray(p.points_world, dtype=float) for p in (raw_bundle.ray_paths or [])]
-            # FINAL production reflection fold.
-            del editor._reflect_straight_equivalent_display_rays
+            # bugs/0243: the preview traces the REAL folded system -- the incoming leg IS
+            # the raw launch (no straight-equivalent stand-in, no display bend), so the
+            # old raw-vs-final isometry contrast is vacuous and the checks read the one
+            # production bundle directly.
             editor._preview_scene_trace_dirty = True
             _s1, _r1, fin_bundle = editor._build_preview_system_rays_bundle(update_state=True)
             fin = [np.asarray(p.points_world, dtype=float) for p in (fin_bundle.ray_paths or [])]
 
-        raw_oa = _onaxis(raw)               # straight-equivalent: +Z rays, no +X fold
         fin_oa = _onaxis(fin, need_x=True)  # folded: reach out the +X arm
         if len(fin_oa) < 10:
             failures.append(f"only {len(fin_oa)} folded on-axis rays (need >=10 for a cross-section)")
-        if len(raw_oa) < 10:
-            failures.append(f"only {len(raw_oa)} straight-equivalent on-axis rays")
 
         fin_inc = _xsec_z(fin_oa, _Z_INCOMING, [0, 1])   # (X,Y)
-        raw_inc = _xsec_z(raw_oa, _Z_INCOMING, [0, 1])
         s2_inc = _s2(fin_inc, [0, 1])
 
         # (1) DISK not fan
@@ -151,20 +144,11 @@ def _run() -> tuple[list[str], list[str]]:
                 failures.append(
                     f"incoming cone not round: X-spread {xs:.3f} / Y-spread {ys:.3f} = {ratio:.3f} (want ~1)"
                 )
-        # (3) isometry: incoming spread unchanged from the raw straight-equivalent
-        if len(raw_inc) >= 3 and len(fin_inc) >= 3:
-            rx, ry = float(np.ptp(raw_inc[:, 0])), float(np.ptp(raw_inc[:, 1]))
-            fx, fy = float(np.ptp(fin_inc[:, 0])), float(np.ptp(fin_inc[:, 1]))
-            if rx > 1e-6 and abs(fx - rx) / rx > 0.05:
-                failures.append(
-                    f"incoming X-spread changed by the fold: raw {rx:.3f} -> final {fx:.3f} (>5%, not an isometry)"
-                )
-            if ry > 1e-6 and abs(fy - ry) / ry > 0.05:
-                failures.append(
-                    f"incoming Y-spread changed by the fold: raw {ry:.3f} -> final {fy:.3f} (>5%)"
-                )
-        else:
-            failures.append(f"too few incoming cross-section points raw {len(raw_inc)} / final {len(fin_inc)}")
+        # (3) bugs/0243: the incoming leg is the raw launch itself (the real trace has no
+        # stand-in to compare against), so the isometry contrast is retired; the disk and
+        # roundness checks above pin the launched cone directly.
+        if len(fin_inc) < 3:
+            failures.append(f"too few incoming cross-section points ({len(fin_inc)})")
 
         # (4) outgoing arm stays a disk
         dx = max((float(p[:, 0].max()) for p in fin_oa), default=0.0)
@@ -191,7 +175,7 @@ def _run() -> tuple[list[str], list[str]]:
             )
 
         notes.append(
-            f"on-axis rays raw {len(raw_oa)} / folded {len(fin_oa)} | incoming s2={s2_inc:.3f} "
+            f"on-axis rays folded {len(fin_oa)} | incoming s2={s2_inc:.3f} "
             f"(X {float(np.ptp(fin_inc[:, 0])) if len(fin_inc) else 0:.3f} ~ Y "
             f"{float(np.ptp(fin_inc[:, 1])) if len(fin_inc) else 0:.3f}) | outgoing s2={s2_out:.3f} | drawn arm X={dx:.1f} "
             f"| outgoing arm Z {out_z_mean:.3f} vs axis Z {axis_z if axis_z is not None else float('nan'):.3f}"
@@ -219,7 +203,7 @@ def main() -> int:
         return 1
     print("PASS bugs/0205 folded RA-mirror incoming cone (incoming leg is a preserved cone):")
     print("  - incoming (X,Y) cross-section is a 2D disk (s2>0.5), round, not a flat fan")
-    print("  - incoming spread is unchanged from the raw straight-equivalent (reflection is an isometry)")
+    print("  - incoming leg is the raw launch itself (bugs/0243: real trace, no stand-in)")
     print("  - outgoing arm (Y,Z) cross-section stays a 2D disk")
     print("  - outgoing arm is centred on the folded optical axis (mirror-face centre Z), not the front datum")
     for note in notes:

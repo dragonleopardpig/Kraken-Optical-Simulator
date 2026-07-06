@@ -282,6 +282,85 @@ def axially_inert_offbeam_solid_spec(spec: dict) -> dict:
     return new_spec
 
 
+def folded_beam_reached_mirror_fold_indices(row_specs: list[dict]) -> set[int]:
+    """Indices of promoted MIRROR-FOLD solids the FOLDED beam actually reaches.
+
+    bugs/0243: ``is_offbeam_solid_spec`` classifies by lateral distance from the
+    straight +Z axis -- correct for a solid PARKED clear of the beam, but a
+    free-placed 2nd fold mirror legitimately sits far off +Z ON THE FOLDED ARM.
+    Neutralising it zeroed its row thickness, so the output-port follower walk
+    seated the folded Image/detector a full mirror-thickness SHORT of the
+    prescription station: the QE/paraxial solve focused at the prescription
+    plane while the drawn+traced sensor sat a plate early -- the user's
+    persistent "still the same error" defocus after every FOV solve.
+
+    Walk the beam analytically (the same face-hit rule as the bugs/0224 pose
+    walk): start at the origin along +Z; at each promoted mirror-fold row in
+    prescription order, intersect the current leg with the mirror's face plane;
+    a FORWARD hit landing within the face extent (sqrt(area)+2mm, the 0224
+    radius) is a real fold -- record it and reflect the leg. Anything the walk
+    never reaches stays a parked body for the caller to neutralise.
+    """
+    from KrakenOS.UI.services.folded_sequential_fold import (
+        _is_promoted_mirror_fold,
+        promoted_mirror_world_center,
+    )
+
+    specs = list(row_specs or [])
+    origin = np.zeros(3, dtype=float)
+    direction = np.asarray((0.0, 0.0, 1.0), dtype=float)
+    reached: set[int] = set()
+    for index, spec in enumerate(specs):
+        if not isinstance(spec, dict) or not _is_promoted_mirror_fold(spec):
+            continue
+        advanced = spec.get("advanced") if isinstance(spec.get("advanced"), dict) else {}
+        metadata = normalize_optical_solid_face_metadata(advanced.get("OpticalSolidFaces"))
+        face = next(
+            (
+                f
+                for f in (metadata.get("faces") or [])
+                if "mirror" in str(f.get("function", "") or "").lower()
+            ),
+            None,
+        )
+        center = promoted_mirror_world_center(specs, index)
+        if face is None or center is None:
+            continue
+        normal = np.asarray(face.get("normal", (0.0, 0.0, 1.0)), dtype=float).reshape(3)
+        norm = float(np.linalg.norm(normal))
+        if norm <= 1e-12:
+            continue
+        normal = normal / norm
+        face_point = np.asarray(center, dtype=float).reshape(3) + np.asarray(
+            face.get("centroid", (0.0, 0.0, 0.0)), dtype=float
+        ).reshape(3)
+        denominator = float(np.dot(direction, normal))
+        if abs(denominator) <= 1e-9:
+            continue
+        distance = float(np.dot(face_point - origin, normal) / denominator)
+        if not np.isfinite(distance) or distance <= 1e-6:
+            continue  # the face lies behind the current leg -- not reachable forward
+        hit = origin + direction * distance
+        area = float(face.get("area_mm2", 0.0) or 0.0)
+        if np.isfinite(area) and area > 1e-9:
+            hit_radius = float(np.sqrt(area)) + 2.0
+        else:
+            hit_radius = 0.75 * max(
+                float(spec.get("thickness", 0.0) or 0.0),
+                float(spec.get("diameter", 0.0) or 0.0),
+            ) + 2.0
+        if float(np.linalg.norm(hit - face_point)) > hit_radius:
+            continue  # the leg misses the face -- a parked mirror, not a fold
+        reached.add(index)
+        direction = direction - 2.0 * float(np.dot(direction, normal)) * normal
+        norm = float(np.linalg.norm(direction))
+        if norm <= 1e-12:
+            break
+        direction = direction / norm
+        origin = hit
+    return reached
+
+
 def offbeam_inert_solid_indices(row_specs: list[dict]) -> list[int]:
     """Row indices classified as off-beam inert promoted solids (display-free)."""
     specs = list(row_specs or [])
@@ -290,10 +369,13 @@ def offbeam_inert_solid_indices(row_specs: list[dict]) -> list[int]:
     radius = beam_clear_radius(specs)
     if radius <= 0.0:
         return []
+    reached = folded_beam_reached_mirror_fold_indices(specs)
     return [
         index
         for index, spec in enumerate(specs)
-        if isinstance(spec, dict) and is_offbeam_inert_solid_spec(spec, radius)
+        if index not in reached
+        and isinstance(spec, dict)
+        and is_offbeam_inert_solid_spec(spec, radius)
     ]
 
 
@@ -316,10 +398,16 @@ def neutralize_offbeam_inert_solids(row_specs: list[dict]) -> list[dict]:
     radius = beam_clear_radius(specs)
     if radius <= 0.0:
         return row_specs
+    # bugs/0243: a free-placed FOLD mirror the folded beam reaches is NOT parked --
+    # it only looks "off-beam" to the lateral +Z test because it sits on the
+    # reflected arm. Keep its full spec (thickness included) so the output-port
+    # follower walk seats the downstream Image/detector at the true prescription
+    # station and the real trace focuses ON the drawn sensor.
+    reached = folded_beam_reached_mirror_fold_indices(specs)
     changed = False
     result: list[dict] = []
-    for spec in specs:
-        if not isinstance(spec, dict) or not is_offbeam_solid_spec(spec, radius):
+    for index, spec in enumerate(specs):
+        if index in reached or not isinstance(spec, dict) or not is_offbeam_solid_spec(spec, radius):
             result.append(spec)
             continue
         if solid_has_active_coating(spec):

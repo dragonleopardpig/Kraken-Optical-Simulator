@@ -187,11 +187,10 @@ class PlotRefreshService:
                 with redirect_stdout(capture), redirect_stderr(capture):
                     system = self.build_system(require_solids=True)
                     # bugs/0201 (#6): route the 2D preview through the same folded-aware
-                    # trace the 3D view uses. A direct mesh non-seq trace of the folded
-                    # RA-mirror scene retroreflects the ideal Thin Lenses (0 rays), so the
-                    # 2D view showed no ray tracing at all; the straight-equivalent /
-                    # sequential-Mirror trace reaches the sensor and is bent onto the drawn
-                    # detector after the bundle is built.
+                    # trace the 3D view uses. bugs/0243: that trace now runs on the REAL
+                    # system (first-surface mesh mirrors, folded output-port poses, the
+                    # Thin-Lens SIGN fix), so the rays come out already folded and no
+                    # display bend is applied afterwards.
                     folded_trace_rows = self._folded_sequential_trace_rows(self.rows)
                     rays, straight_equivalent_fold_transform = (
                         self._trace_preview_rays_folded_aware(
@@ -218,17 +217,10 @@ class PlotRefreshService:
             self.update_idletasks()
             orientation = self._current_display_orientation()
             bundle = self._build_scene_bundle(system, rays, max_radius)
-            if folded_trace_rows is not None:
-                self._apply_folded_display_bend(bundle, straight_equivalent_fold_transform)
-                # bugs/0227 (attachment/2D.png "rays defocus at the detector"): the 3D
-                # pipeline follows the display bend with the bugs/0217 reconcile -- the
-                # detector target + the on-axis ray hard-stops snap onto the cone's real
-                # waist when the trailing fold mirror overshoots the prescription Image
-                # row. The 2D layout stopped at the bend, so it drew the rays running a
-                # plate PAST their focus to the overshot sensor line while the 3D showed
-                # them sharp ON the detector. Mirror the 3D pipeline exactly.
-                if straight_equivalent_fold_transform is not None:
-                    self._reconcile_folded_image_to_ray_convergence(bundle)
+            # bugs/0243: no display bend / reconcile any more -- the folded scene is
+            # traced on the REAL system (mirrors reflect first-surface off their mesh
+            # faces, the Image surface sits at its folded pose), so the 2D rays are
+            # drawn exactly as traced, matching the 3D pipeline.
             title_bundle = bundle
             self._last_scene_bundle = bundle
             self._refresh_3d_inspector_if_open(system=system, rays=rays, scene_bundle=bundle)

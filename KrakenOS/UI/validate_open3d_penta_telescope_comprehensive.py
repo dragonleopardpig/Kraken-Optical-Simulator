@@ -11149,6 +11149,38 @@ def phase_219_folded_image_segment_split(
     return result
 
 
+def phase_220_folded_real_trace_sync(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0243: the folded promoted-RA-mirror scene is traced on the REAL system -- the mesh
+    mirrors reflect FIRST SURFACE off their coated faces (the beam never enters the prism glass,
+    the user's "external / outer reflection"), the lens/aperture/image rows are intersected at
+    their folded output-port poses, and the ideal Thin Lens answers correctly behind a fold (the
+    KrakenSys SIGN-convention fix that removes the bugs/0187 retroreflection). The
+    straight-equivalent trace + display-bend pipeline (bugs/0197/0208/0192) and the
+    reconcile/reseat snaps (bugs/0217/0239) are retired: the drawn rays ARE the physics trace.
+    `validate_open3d_folded_real_trace_sync` asserts: real rays with no display-bend tags (and
+    the mid-chain vignette records push without the numpy ragged-stack crash), first-surface
+    kinks ON both hypotenuse planes obeying the reflection law, no ray vertex inside the prism
+    glass, termination on the folded Image-surface seat, every detector ray crossing the Thin
+    Lens surrogate in-aperture, and an unfolded Thin-Lens scene refracting bit-exactly."""
+    result = PhaseResult(name="Phase 220: folded scene traced on the real system (first-surface RA mirrors)")
+    try:
+        from KrakenOS.UI.validate_open3d_folded_real_trace_sync import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-real-trace-sync guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-real-trace-sync phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11413,6 +11445,7 @@ def main() -> int:
             phase_217_folded_thin_lens_curve_on_beam,
             phase_218_folded_coverage_label_decollide,
             phase_219_folded_image_segment_split,
+            phase_220_folded_real_trace_sync,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

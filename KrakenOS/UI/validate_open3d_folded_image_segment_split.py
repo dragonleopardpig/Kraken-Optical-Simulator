@@ -21,7 +21,8 @@ Unlike the object mirror (a sequential fold), the image mirror is a free-placed 
   (C) RANGE: a constraint that would need a negative gap is rejected, not applied.
   (C2) SAFE GAP: each leg has a collision floor (half the mirror body) -- a valid far applies, an
       unsafe one is rejected.
-  (D) TRACE: after a valid slide the scene still images -- rays reach the (relocated) detector.
+  (D) TRACE: after a valid slide the scene still images -- the real traced rays (bugs/0243)
+      terminate on the folded Image-surface seat.
   (E) WIRED: the IMAGE FOV popup offers the image near/far segment checkboxes and the solve
       dispatches the pinned leg to ``_apply_folded_image_split``.
 
@@ -138,16 +139,25 @@ def validate_folded_image_segment_split() -> list[Check]:
 
     # ---- (D) still images after a valid slide ----------------------------------------------- #
     _s, _r, bundle = _quiet(editor._build_preview_system_rays_bundle, update_state=True)
-    det = next(
-        (np.asarray(t.center_world, dtype=float).reshape(3) for t in bundle.targets if getattr(t, "is_detector", False)),
-        None,
-    )
-    ends = np.asarray([np.asarray(p.points_world, dtype=float)[-1][:3] for p in bundle.ray_paths]) if bundle.ray_paths else np.zeros((0, 3))
-    reach = int((np.linalg.norm(ends - det, axis=1) < 5.0).sum()) if det is not None and len(ends) else 0
+    # bugs/0243: the drawn rays ARE the real trace and terminate on the folded
+    # Image-surface seat (the same pose-override plane the display seats the sensor
+    # with), so assert the slide left a scene that still images onto that plane.
+    # (The bundle's detector TARGET still derives from prescription-station
+    # arithmetic that can disagree with the seat around a free-placed trailing
+    # mirror; reconciling target/seat/prescription is the bugs/0244 follow-up.)
+    overrides = getattr(editor.last_system, "_optical_solid_output_port_pose_overrides", {}) or {}
+    image_pose = overrides.get(len(editor.rows) - 1)
+    reach = 0
+    if isinstance(image_pose, dict) and bundle.ray_paths:
+        seat_c = np.asarray(image_pose.get("center"), dtype=float).reshape(3)
+        seat_n = np.asarray(image_pose.get("rotation"), dtype=float).reshape(3, 3)[:, 2]
+        seat_n = seat_n / max(float(np.linalg.norm(seat_n)), 1e-12)
+        ends = np.asarray([np.asarray(p.points_world, dtype=float)[-1][:3] for p in bundle.ray_paths])
+        reach = int((np.abs((ends - seat_c[None, :]) @ seat_n) < 1e-6).sum())
     checks.append(Check(
-        "TRACE: after the slide the scene still images (rays reach the relocated detector)",
-        det is not None and reach >= 8,
-        f"rays={len(bundle.ray_paths)} detector={None if det is None else np.round(det, 1)} within5mm={reach}",
+        "TRACE: after the slide the scene still images (rays terminate on the folded Image seat)",
+        isinstance(image_pose, dict) and reach >= 8,
+        f"rays={len(bundle.ray_paths or [])} image_seat={'set' if isinstance(image_pose, dict) else 'missing'} on_seat={reach}",
     ))
 
     # ---- (E) the IMAGE FOV popup offers the image near/far checkboxes + solve dispatches ------ #

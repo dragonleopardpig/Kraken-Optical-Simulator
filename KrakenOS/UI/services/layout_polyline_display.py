@@ -369,41 +369,18 @@ class LayoutPolylineDisplayMixin:
         return z_pos + float(self.rows[-1].desp_z) if self.rows[-1].surface == "Image" else z_pos
 
     def _camera_track_image_plane_z(self) -> float:
-        """The image-plane z the CAMERA STEP tracks. Normally the prescription Image-row z
-        (``_current_image_plane_z``). But bugs/0220: on a folded promoted-mirror scene whose
-        trailing mirror's glass plate pushes the prescription Image row PAST the true optical
-        conjugate, the light images at the paraxial focus (``_paraxial_image_plane_z``) -- which is
-        where the bugs/0217 reconcile parks the detector. If the camera kept following the
-        prescription plane it would sit a plate BEHIND the detector ("detector and camera STEP
-        detached", flag_20260704_195234). So when the focus is meaningfully BEFORE the prescription
-        (the overshoot case -- exactly when 0217 fires), track the focus, keeping the camera ON the
-        detector. When the focus is AT or PAST the prescription (unfolded, or a single fold whose
-        rays stop at the row before reaching the focus -- 0217 is a no-op there), keep the
-        prescription plane so the camera does not detach the other way."""
-        prescription = self._current_image_plane_z()
-        try:
-            if not self._scene_folds_for_paraxial_distance(self.rows):
-                return prescription
-            focus = self._paraxial_image_plane_z()
-        except Exception:
-            return prescription
-        if focus is None:
-            return prescription
-        focus = float(focus)
-        if not np.isfinite(focus):
-            return prescription
-        # bugs/0226 (flag_20260705_131738, "the camera STEP shifted"): the paraxial focus
-        # is computed on the straight-EQUIVALENT rows, where a parked off-beam mirror is
-        # a ZERO-length plate (bugs/0224) -- but this method's callers seat the camera on
-        # the RAW straight axis and fold it through the raw-anchored fold transform. On a
-        # scene with a parked mirror the two frames differ by exactly the parked plate's
-        # thickness, so the camera landed a full plate up-fold of the detector. Convert
-        # the equivalent-frame focus into the RAW frame before comparing/returning.
-        focus += self._offbeam_inert_thickness_before(len(self.rows) - 1)
-        # only when the image forms BEFORE the prescription row (the trailing-mirror overshoot)
-        if focus < prescription - _CAMERA_FOCUS_TRACK_TOL_MM:
-            return focus
-        return prescription
+        """The image-plane z the CAMERA STEP tracks: the prescription Image-row z
+        (``_current_image_plane_z``).
+
+        History: bugs/0220 made this track the PARAXIAL FOCUS on a folded scene because the
+        bugs/0217 reconcile snapped the drawn detector onto the ray-convergence waist -- the
+        camera had to chase the moved detector or they detached. bugs/0243 retired that
+        reconcile: the folded scene is traced on the REAL system, the detector sits at the
+        prescription seat (which the QE/paraxial solve targets), and a defocused prescription
+        is SHOWN defocused. The camera is a physical body bolted to the sensor, so it follows
+        the prescription plane again -- always coincident with the drawn detector, before and
+        after a solve/snap (a snap moves BOTH onto the focus)."""
+        return self._current_image_plane_z()
 
     def _row_z_positions(self) -> list[float]:
         z_positions: list[float] = [0.0]

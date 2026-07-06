@@ -220,7 +220,8 @@
     "216": "pass",
     "217": "pass",
     "218": "pass",
-    "219": "pass"
+    "219": "pass",
+    "220": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -441,6 +442,7 @@
     "216": "folded solve re-seats the duplicate image MESH onto the detector",
     "217": "folded thin-lens surrogate curve follows the beam",
     "218": "folded coverage labels de-collide (Sensor / Image circle)",
-    "219": "folded image-conjugate segment split (2+2 per-segment)"
+    "219": "folded image-conjugate segment split (2+2 per-segment)",
+    "220": "folded scene traced on the real system (first-surface RA mirrors)"
   }
 }

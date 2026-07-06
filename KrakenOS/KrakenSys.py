@@ -1537,6 +1537,41 @@ class system():
         ValToSav = [EmptyGlass, Empty, pS, pS, Empty, Empty, dC, Empty, Empty, Empty, WaveLength, Empty, Empty, Empty, Empty, Empty, j, RayTraceType]
         self.__CollectData(ValToSav)
 
+    def __VignetteTerminalCollect(self, pS, dC, WaveLength, j):
+        """bugs/0243: collect the aperture-stop vignette terminal (bugs/0179) as a
+        SHAPE-CONSISTENT record. ``__EmptyCollect`` stuffs empty arrays into slots
+        that hold strings/floats/3-vectors for real hits; that is safe when it is a
+        ray's ONLY record (the whole-empty miss) or under the branching tracer
+        (which never pushes these lists), but a MID-CHAIN vignette mixes it with
+        real records and numpy>=1.24 refuses the ragged stack in raykeeper.push
+        (``inhomogeneous shape``). Keep the bugs/0179 semantics -- SURFACE gets the
+        blocking stop index ``j`` and RayTraceType stays 0 (the empty/terminal
+        marker) -- with every field matching a real record's type and shape."""
+        direction = np.asarray(dC, dtype=float).reshape(3)
+        point = np.asarray(pS, dtype=float).reshape(3)
+        zero3 = np.zeros(3, dtype=float)
+        ValToSav = [
+            "AIR",            # Glass
+            0.0,              # alpha
+            point,            # RayOrig
+            point,            # pTarget (the ray ENDS at the stop plane)
+            zero3,            # HitObjSpace
+            direction,        # LMNObjSpace
+            direction,        # SurfNorm
+            direction,        # ImpVec
+            direction,        # ResVec
+            1.0,              # PrevN
+            1.0,              # CurrN
+            WaveLength,       # WaveLength
+            zero3,            # D (groove vector)
+            0.0,              # Ord
+            0.0,              # GrSpa
+            "",               # Name
+            j,                # surface index (the blocking stop)
+            0,                # RayTraceType (terminal/empty marker)
+        ]
+        self.__CollectData(ValToSav)
+
     def __WavePrecalc(self):
         """__WavePrecalc.
         """
@@ -4503,6 +4538,12 @@ class system():
                             )
 
                     self.ang = ang
+                    # bugs/0243: same absolute->SIGN-relative conversion as the main
+                    # NsTrace loop -- the ideal Thin Lens answers with an absolute exit
+                    # direction, so behind an odd number of reflections (SIGN=-1) the
+                    # branching march would reverse it (retroreflection).
+                    if float(getattr(self.SDT[j], 'Thin_Lens', 0.0) or 0.0) != 0.0:
+                        ResVec = np.asarray(ResVec, dtype=float) * SIGN
                     SIGN = (SIGN * sign)
                     next_ray_state, media_event = self.__NsRayMediaEvent(
                         ray_state,
@@ -4785,7 +4826,7 @@ class system():
                     # map and wash out the coaxial-LED dark edges.
                     if vign_k is not None:
                         self.val = 0
-                        self.__EmptyCollect(np.asarray(vign_pt, dtype=float), ResVec, WaveLength, int(vign_k))
+                        self.__VignetteTerminalCollect(np.asarray(vign_pt, dtype=float), ResVec, WaveLength, int(vign_k))
                     break
                 ImpVec = np.asarray(ResVec)
                 (CurrN, alpha) = (self.N_Prec[j_gg], self.AlphaPrecal[j_gg])
@@ -4868,6 +4909,17 @@ class system():
                         (ResVec, CurrN, sign ,ang) = self.SDT[j].PHYSICS.calculate(ResVec_N, R_N, N_N, Np_N, D, Ord, GrSpa, self.Wave, Secuent)
                         self.ang = ang
                 self.NsTraceTimingRecord("NsTrace.coating_probability", timing_started)
+
+                # The ideal Thin Lens (paraxial_exact_physics) answers with an ABSOLUTE
+                # exit direction (aimed at its constructed focal target), unlike the Snell
+                # physics which answers in this loop's SIGN-relative (pseudo-forward)
+                # convention. After an odd number of reflections SIGN is -1, so marching
+                # ResVec*SIGN reversed the lens output and the ray RETROREFLECTED at the
+                # surrogate (bugs/0187's "thin lenses retroreflect", bugs/0243). Re-express
+                # the absolute direction in the current convention; SIGN=+1 scenes (every
+                # unfolded layout) are byte-identical.
+                if float(getattr(self.SDT[j], 'Thin_Lens', 0.0) or 0.0) != 0.0:
+                    ResVec = np.asarray(ResVec, dtype=float) * SIGN
 
                 SIGN = (SIGN * sign)
                 timing_started = self.NsTraceTimingStart()

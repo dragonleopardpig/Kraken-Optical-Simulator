@@ -1,25 +1,26 @@
-"""Display-free guard for bugs/0208: the folded display rays fold correctly through an
-ARBITRARY CHAIN of promoted-mirror cubes, not just a single fold.
+"""Display-free guard for bugs/0208: the folded display rays fold correctly through a
+CHAIN of promoted-mirror cubes, not just a single fold.
 
-The user's AZ85 has one RA-mirror between object and lens; adding a SECOND between lens and
-camera used to drop the display off the cone-preserving reflection path
-(`_reflect_straight_equivalent_display_rays` bailed at `len(records)!=1`) onto the older
-sequential-Mirror trace, whose leg-2 rays sit ~desp_z off the drawn lenses (the 0207 gap
-resurfacing). bugs/0208 generalises the reflection to reflect each straight ray about EVERY
-mirror plane in reverse station order (R1(R2(...Rk(v)))), so the rays fold at every mirror and
-each leg lands on the drawn chain.
+bugs/0243 rework: the folded scene is traced on the REAL system, so the chain contract is
+now physical instead of display-bent -- every drawn ray IS the trace, folding first-surface
+at each promoted mirror FACE the beam reaches. The old guard's synthetic second mirror (a
+copied sequential row) was seated OFF the folded arm by the pose machinery while the
+display-bend painted a second fold mid-air -- fiction the real trace rightly refuses to
+draw. The chain scene is therefore the REAL two-fold periscope fixture (the bugs/0236
+`_two_fold_editor`: free-placed promoted 2nd mirror with an assigned Mirror face, in-app
+confirmed), and the checks assert physics:
 
-Asserts (display-free), on a 2-mirror AZ85 variant (a second promoted mirror inserted on the
-+X leg) AND the stock single-fold AZ85:
-  1. general fold detection: the 2-mirror scene yields 2 fold records, the 1-mirror scene 1;
-  2. the display rays take the cone-preserving REFLECTION path (tagged
-     `folded_straight_equivalent_reflected`) for BOTH -- the chain no longer falls back;
-  3. the on-axis ray folds ONCE (1 mirror) / TWICE (2 mirrors) -- one ~90 deg kink per mirror;
+  1. fold detection: the two-fold scene reports 2 promoted mirror-fold rows, the stock
+     AZ85 exactly 1 (`_promoted_mirror_fold_row_indices`);
+  2. the drawn rays are the REAL trace -- no `folded_straight_equivalent_*` display-bend
+     tag on either scene;
+  3. the on-axis ray has one ~90 deg kink per REACHED mirror (2 on the two-fold, 1 on the
+     single fold);
   4. on the shared +X leg the on-axis ray's vertices coincide with the drawn lens-row X's
      (rays == CAD on that leg -- the 0207 consistency, preserved through the second fold);
-  5. the incoming leg stays a 2D disk (cone, not a flat fan) for the chain -- s2 substantial;
-  6. backward-compat: the single-fold AZ85 still lands the on-axis focus on its drawn detector
-     (gap < 0.05 mm).
+  5. the incoming leg stays a 2D disk (cone, not a flat fan) for the chain;
+  6. rays TERMINATE on each scene's folded Image-surface seat (the trace ends where the
+     display draws the sensor).
 
 Run: .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_ra_mirror_chain_fold
 Exit: 0 = pass, 1 = regression.
@@ -29,27 +30,13 @@ from __future__ import annotations
 import contextlib
 import io
 import sys
-from dataclasses import asdict
 
 import numpy as np
 
-from KrakenOS.UI.layout_editor import SurfaceRow
-from KrakenOS.UI.services.folded_sequential_fold import fold_promoted_mirror_specs_to_sequential
 from KrakenOS.UI.validate_open3d_ra_mirror_retroreflected_ray_dive import _AZ85, _build_editor
+from KrakenOS.UI.validate_open3d_two_fold_image_arm_follow import _two_fold_editor
 
 _AXIS_Z = 71.897137
-
-
-def _two_mirror_editor():
-    editor = _build_editor(_AZ85)
-    rows = list(editor.rows)
-    mirror2 = SurfaceRow(**asdict(rows[1]))
-    mirror2.name = "Promoted OPTICAL STEP optical solid (2nd fold)"
-    rows[7].thickness = 90.0
-    mirror2.thickness = 60.0
-    editor.rows = rows[:8] + [mirror2] + [rows[8]]
-    editor._normalize_special_rows()
-    return editor
 
 
 def _onaxis(bundle):
@@ -82,12 +69,34 @@ def _second_singular(coords2d: np.ndarray) -> float:
     return float(s[1]) if s.size >= 2 else 0.0
 
 
-def _tag(bundle) -> str:
+def _bend_tags(bundle) -> int:
+    return sum(
+        1
+        for p in (getattr(bundle, "ray_paths", None) or [])
+        if str(getattr(p, "display_geometry_source", "") or "").startswith("folded_straight_equivalent")
+    )
+
+
+def _image_seat(editor):
+    overrides = getattr(editor.last_system, "_optical_solid_output_port_pose_overrides", {}) or {}
+    pose = overrides.get(len(editor.rows) - 1)
+    if not isinstance(pose, dict):
+        return None, None
+    center = np.asarray(pose.get("center"), dtype=float).reshape(3)
+    normal = np.asarray(pose.get("rotation"), dtype=float).reshape(3, 3)[:, 2]
+    norm = float(np.linalg.norm(normal))
+    return center, (normal / norm if norm > 1e-12 else normal)
+
+
+def _on_seat_count(bundle, seat_c, seat_n) -> int:
+    if seat_c is None:
+        return 0
+    count = 0
     for p in (getattr(bundle, "ray_paths", None) or []):
-        src = str(getattr(p, "display_geometry_source", "") or "")
-        if src:
-            return src
-    return ""
+        pw = np.asarray(getattr(p, "points_world", None), dtype=float)
+        if pw.ndim == 2 and pw.shape[0] >= 2 and abs(float((pw[-1, :3] - seat_c) @ seat_n)) < 1e-6:
+            count += 1
+    return count
 
 
 def run_checks() -> tuple[bool, list[str]]:
@@ -96,14 +105,15 @@ def run_checks() -> tuple[bool, list[str]]:
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-            # ---- two-mirror chain ----
-            ed2 = _two_mirror_editor()
-            specs2 = ed2._serializable_specs_for_rows(list(ed2.rows))
-            _o2, recs2 = fold_promoted_mirror_specs_to_sequential(specs2)
+            # ---- two-mirror chain: the REAL two-fold periscope (bugs/0236 fixture) ----
+            ed2 = _two_fold_editor()
+            folds2 = list(ed2._promoted_mirror_fold_row_indices())
             sys2, _r2, b2 = ed2._build_preview_system_rays_bundle(update_state=True)
             oa2 = _onaxis(b2)
-            tag2 = _tag(b2)
-            # drawn lens-row X on the +X leg (rows 2..7, before the 2nd mirror at row 8)
+            tags2 = _bend_tags(b2)
+            seat2_c, seat2_n = _image_seat(ed2)
+            on_seat2 = _on_seat_count(b2, seat2_c, seat2_n)
+            # drawn lens-row X on the +X leg (rows 2..7, before the free-placed 2nd mirror)
             lens_x = sorted(
                 float(np.asarray(ed2._surface_reference_world_point(i, system=sys2), float).reshape(3)[0])
                 for i in range(2, 8)
@@ -111,42 +121,40 @@ def run_checks() -> tuple[bool, list[str]]:
 
             # ---- single-fold AZ85 ----
             ed1 = _build_editor(_AZ85)
-            specs1 = ed1._serializable_specs_for_rows(list(ed1.rows))
-            _o1, recs1 = fold_promoted_mirror_specs_to_sequential(specs1)
+            folds1 = list(ed1._promoted_mirror_fold_row_indices())
             sys1, _r1, b1 = ed1._build_preview_system_rays_bundle(update_state=True)
             oa1 = _onaxis(b1)
-            tag1 = _tag(b1)
-            drawn_det1 = float(
-                np.asarray(ed1._surface_reference_world_point(len(ed1.rows) - 1, system=sys1), float).reshape(3)[0]
-            )
+            tags1 = _bend_tags(b1)
+            seat1_c, seat1_n = _image_seat(ed1)
+            on_seat1 = _on_seat_count(b1, seat1_c, seat1_n)
     except Exception as exc:  # noqa: BLE001
         return False, [f"setup raised {exc!r}"]
 
     # (1) general fold detection
-    if len(recs2) != 2:
-        failures.append(f"2-mirror scene produced {len(recs2)} fold records (expected 2)")
-    if len(recs1) != 1:
-        failures.append(f"1-mirror scene produced {len(recs1)} fold records (expected 1)")
+    if len(folds2) != 2:
+        failures.append(f"two-fold scene reports {len(folds2)} promoted mirror-fold rows (expected 2)")
+    if len(folds1) != 1:
+        failures.append(f"single-fold scene reports {len(folds1)} promoted mirror-fold rows (expected 1)")
 
-    # (2) both take the reflection path
-    if tag2 != "folded_straight_equivalent_reflected":
-        failures.append(f"2-mirror rays not on the reflection path (tag={tag2!r}) -- chain fell back")
-    if tag1 != "folded_straight_equivalent_reflected":
-        failures.append(f"1-mirror rays not on the reflection path (tag={tag1!r})")
+    # (2) the drawn rays are the REAL trace (bugs/0243: no display-bend tags)
+    if tags2 != 0:
+        failures.append(f"two-fold: {tags2} rays carry a display-bend tag (must be the raw trace)")
+    if tags1 != 0:
+        failures.append(f"single-fold: {tags1} rays carry a display-bend tag (must be the raw trace)")
 
-    # (3) one ~90 deg kink per mirror
+    # (3) one ~90 deg kink per reached mirror
     if not oa2:
-        failures.append("2-mirror scene: no on-axis rays")
+        failures.append("two-fold scene: no on-axis rays")
     else:
         k2 = _sharp_kinks(oa2[0])
         if k2 != 2:
-            failures.append(f"2-mirror on-axis ray has {k2} sharp folds (expected 2 -- one per mirror)")
+            failures.append(f"two-fold on-axis ray has {k2} sharp folds (expected 2 -- one per mirror)")
     if not oa1:
-        failures.append("1-mirror scene: no on-axis rays")
+        failures.append("single-fold scene: no on-axis rays")
     else:
         k1 = _sharp_kinks(oa1[0])
         if k1 != 1:
-            failures.append(f"1-mirror on-axis ray has {k1} sharp folds (expected 1)")
+            failures.append(f"single-fold on-axis ray has {k1} sharp folds (expected 1)")
 
     # (4) rays coincide with the drawn lens chain on the shared +X leg
     if oa2:
@@ -156,16 +164,14 @@ def run_checks() -> tuple[bool, list[str]]:
             worst = max(worst, float(np.min(np.abs(vx - lx))))
         if worst > 0.05:
             failures.append(
-                f"2-mirror: on-axis ray strays {worst:.3f} mm from the drawn lens chain on the +X leg "
+                f"two-fold: on-axis ray strays {worst:.3f} mm from the drawn lens chain on the +X leg "
                 f"(rays != CAD -- desp_z gap resurfaced)"
             )
         else:
-            notes.append(f"2-mirror: rays coincide with the drawn lens chain (worst {worst:.4f} mm)")
+            notes.append(f"two-fold: rays coincide with the drawn lens chain (worst {worst:.4f} mm)")
 
     # (5) incoming leg is a 2D disk (cone) for the chain
     if oa2:
-        incoming = np.asarray([p[1, :2] for p in oa2 if p.shape[0] >= 2 and float(p[1, 2]) < _AXIS_Z - 1.0], dtype=float)
-        # sample the incoming leg (Z below the mirror axis) across rays
         inc_pts = []
         for p in oa2:
             for v in p:
@@ -174,18 +180,19 @@ def run_checks() -> tuple[bool, list[str]]:
                     break
         s2 = _second_singular(np.asarray(inc_pts, dtype=float)) if inc_pts else 0.0
         if not (s2 > 0.5):
-            failures.append(f"2-mirror incoming leg is a flat fan, not a cone (s2={s2:.4f} <= 0.5, n={len(inc_pts)})")
+            failures.append(f"two-fold incoming leg is a flat fan, not a cone (s2={s2:.4f} <= 0.5, n={len(inc_pts)})")
         else:
-            notes.append(f"2-mirror incoming leg is a 2D disk s2={s2:.3f} (cone, not fan)")
+            notes.append(f"two-fold incoming leg is a 2D disk s2={s2:.3f} (cone, not fan)")
 
-    # (6) backward-compat: single-fold focus on the drawn detector
-    if oa1:
-        end_x = float(np.mean([p[-1][0] for p in oa1]))
-        gap = drawn_det1 - end_x
-        if abs(gap) > 0.05:
-            failures.append(f"single-fold AZ85 regressed: on-axis focus {end_x:.3f} vs drawn detector {drawn_det1:.3f} (gap {gap:+.3f})")
-        else:
-            notes.append(f"single-fold AZ85 unchanged: focus on the detector (gap {gap:+.3f} mm)")
+    # (6) rays terminate on each scene's folded Image-surface seat
+    if on_seat2 < 8:
+        failures.append(f"two-fold: only {on_seat2} rays terminate on the folded Image seat")
+    else:
+        notes.append(f"two-fold: {on_seat2} rays terminate on the folded Image seat {np.round(seat2_c, 2)}")
+    if on_seat1 < 8:
+        failures.append(f"single-fold: only {on_seat1} rays terminate on the folded Image seat")
+    else:
+        notes.append(f"single-fold: {on_seat1} rays terminate on the folded Image seat {np.round(seat1_c, 2)}")
 
     if failures:
         return False, failures + [f"note: {n}" for n in notes]
@@ -193,11 +200,16 @@ def run_checks() -> tuple[bool, list[str]]:
 
 
 def main() -> int:
-    ok, notes = run_checks()
-    print("PASS" if ok else "FAIL", "bugs/0208 folded RA-mirror chain fold (N mirrors):")
-    for n in notes:
-        print(f"  - {n}")
-    return 0 if ok else 1
+    ok, lines = run_checks()
+    if not ok:
+        print("FAIL bugs/0208 folded RA-mirror chain fold (N mirrors):")
+        for line in lines:
+            print(f"  - {line}")
+        return 1
+    print("PASS bugs/0208 folded RA-mirror chain fold (real two-fold chain, real trace):")
+    for line in lines:
+        print(f"  - {line}")
+    return 0
 
 
 if __name__ == "__main__":

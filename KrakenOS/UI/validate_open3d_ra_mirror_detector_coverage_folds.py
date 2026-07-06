@@ -134,6 +134,20 @@ def main() -> int:
     n0 = np.asarray(det.normal_world, dtype=float).reshape(3).copy()
     src = str((det.metadata or {}).get("target_source", ""))
 
+    # bugs/0243: the folded sensor station is the Image-surface SEAT the pose-override
+    # machinery computes (targets, drawn disc and traced rays all coincide there), so
+    # read it from the built system instead of pinning a historical constant.
+    sensor_x = _SENSOR_X
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            _sys = editor.build_system(require_solids=True)
+        _ov = getattr(_sys, "_optical_solid_output_port_pose_overrides", {}) or {}
+        _pose = _ov.get(len(editor.rows) - 1)
+        if isinstance(_pose, dict):
+            sensor_x = float(np.asarray(_pose.get("center"), dtype=float).reshape(3)[0])
+    except Exception:
+        pass
+
     # (1) precondition: build_scene_targets emits the UNFOLDED +Z detector.
     if src != "table_row":
         failures.append(f"AZ85: image detector target_source={src!r}, expected 'table_row'")
@@ -151,8 +165,8 @@ def main() -> int:
     nf = np.asarray(det.normal_world, dtype=float).reshape(3)
     if np.allclose(cf, c0):
         failures.append("AZ85: source fold left the detector target on the unfolded axis (no fold applied)")
-    if abs(cf[0] - _SENSOR_X) > 1.0:
-        failures.append(f"AZ85: folded detector X {cf[0]:.2f} not at the +X sensor ~{_SENSOR_X}")
+    if abs(cf[0] - sensor_x) > 1.0:
+        failures.append(f"AZ85: folded detector X {cf[0]:.2f} not at the +X sensor seat ~{sensor_x:.2f}")
     if abs(cf[1]) > 1.0:
         failures.append(f"AZ85: folded detector Y {cf[1]:.2f} should be ~0")
     if abs(cf[2] - _SENSOR_Z) > 1.0:
@@ -183,10 +197,10 @@ def main() -> int:
         failures.append("AZ85: folded target produced no detector footprint even with a test sensor")
     else:
         pts = np.vstack([np.asarray(p, dtype=float).reshape(-1, 3) for p in footprint])
-        if float(np.max(np.abs(pts[:, 0] - _SENSOR_X))) > 1.0:
+        if float(np.max(np.abs(pts[:, 0] - sensor_x))) > 1.0:
             failures.append(
                 f"AZ85: detector footprint did not fold to +X (X in "
-                f"[{float(pts[:, 0].min()):.2f}, {float(pts[:, 0].max()):.2f}], expected ~{_SENSOR_X})"
+                f"[{float(pts[:, 0].min()):.2f}, {float(pts[:, 0].max()):.2f}], expected ~{sensor_x:.2f})"
             )
         if float(np.min(pts[:, 2])) < _SENSOR_Z - 10.0 or float(np.max(pts[:, 2])) > _SENSOR_Z + 10.0:
             failures.append(

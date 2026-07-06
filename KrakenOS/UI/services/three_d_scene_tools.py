@@ -578,24 +578,11 @@ class ThreeDSceneToolsMixin:
                 ray_path_count=int(ray_path_count),
             ):
                 scene_bundle = self._build_scene_bundle(system, rays, max_radius)
-            if folded_trace_rows is not None:
-                self._apply_folded_display_bend(
-                    scene_bundle, straight_equivalent_fold_transform
-                )
-                # bugs/0217: the straight-equivalent overshoots a TRAILING fold mirror's
-                # plate, so the detector + ray hard-stop land ~a plate past the focus and the
-                # field beams reach the sensor spread. Snap them onto the physics focus (the
-                # outgoing cone's waist) when a real overshoot is present; a NO-OP otherwise.
-                if straight_equivalent_fold_transform is not None:
-                    self._reconcile_folded_image_to_ray_convergence(scene_bundle)
-                    # bugs/0239: the kind="image" surface MESH (the drawn sensor DISC) was
-                    # built at the LENS-only paraxial image plane and folds ~a mirror-plate
-                    # short of the physics focus, floating off the beam as a SECOND image/
-                    # detector plane (the user's "still 2 image and detector plane" after the
-                    # folded FOV solve). Reconcile has now moved the detector TARGET onto the
-                    # real ray-convergence waist, so re-seat the disc onto that final detector
-                    # -- disc, rays and detector coincide on ONE plane (display follows physics).
-                    self._reseat_superseded_image_meshes_to_folded_detector(scene_bundle)
+            # bugs/0243: no display bend any more -- the folded scene is traced on the
+            # REAL system, so the drawn rays already fold at the mesh mirror faces and
+            # terminate on the real folded Image surface. The bugs/0197/0208 bend, the
+            # bugs/0192 reflection correction and the bugs/0217/0239 reconcile/reseat
+            # (all artifacts of tracing a straight-equivalent stand-in) are retired.
             if include_live_step_overlays:
                 self._last_live_step_overlay_trace_rows = list(self.rows)
                 self._last_live_step_overlay_trace_records = list(live_step_records)
@@ -644,108 +631,46 @@ class ThreeDSceneToolsMixin:
         sampling_mode,
         folded_trace_rows,
     ):
-        """Trace preview rays into a fresh raykeeper, routing a folded RA-mirror scene
-        through its straight equivalent (bugs/0197) or a sequential-Mirror chain
-        (bugs/0187) instead of the retroreflecting mesh non-seq trace.
+        """Trace preview rays into a fresh raykeeper.
 
-        ``folded_trace_rows`` is the result of ``_folded_sequential_trace_rows(self.rows)``
-        (``None`` for an unfolded scene). Returns ``(rays, fold_transform)``: when
-        ``folded_trace_rows`` is not ``None`` the caller MUST call
-        ``_apply_folded_display_bend(scene_bundle, fold_transform)`` after building the
-        scene bundle. ``fold_transform`` is ``None`` on the sequential-Mirror fallback
-        path (its rays are already folded); only the straight-equivalent path bends the
-        display rays afterwards.
+        bugs/0243: a folded promoted-RA-mirror scene is traced on the REAL system --
+        the same solids and surfaces the 3D view draws. The mesh mirror reflects
+        FIRST SURFACE off its coated face (KrakenSys ``force_reflection`` about the
+        analytic face normal -- the beam never enters the prism glass), the
+        lens/aperture/image rows are intersected at their folded output-port poses
+        (the same ``_optical_solid_output_port_pose_overrides`` the display seats
+        overlays with), and the ideal Thin Lens answers correctly behind a fold
+        (the KrakenSys SIGN-convention fix -- the bugs/0187 "thin lenses
+        retroreflect" that forced the old workaround). The rays leave the trace
+        ALREADY folded, so the straight-equivalent trace + display-bend pipeline
+        (bugs/0197/0208 reflect-after-bundle, bugs/0192 reflection correction,
+        bugs/0217/0239 reconcile/reseat) is retired: what is drawn IS the physics
+        trace -- no more "UI shows the ray reflect in air while the code traces
+        through glass" / "the ray never touches the lens surrogate yet it focuses".
 
-        bugs/0201 (#6): shared by the 3D preview and the 2D ``refresh_plot`` so both use
-        the folded trace -- the 2D view previously traced the mesh non-seq system
-        directly, which retroreflects the ideal Thin Lenses (0 rays), so it showed no
-        ray tracing at all on the folded RA-mirror scene.
+        ``folded_trace_rows`` (``_folded_sequential_trace_rows(self.rows)``) is kept
+        purely as the folded-scene DETECTOR; its converted rows are no longer traced.
+        Returns ``(rays, None)`` -- there is no display-bend transform any more.
+
+        bugs/0201 (#6): shared by the 3D preview and the 2D ``refresh_plot`` so both
+        trace the same system.
         """
+        rays = Kos.raykeeper(system)
         if folded_trace_rows is None:
-            rays = Kos.raykeeper(system)
             self._trace_preview_rays(
                 system, rays, wavelength, max_radius, sampling_mode=sampling_mode
             )
             return rays, None
-
-        from KrakenOS.UI.layout_editor import _build_system_from_specs
-
-        # bugs/0197: the sequential-Mirror surrogate (fallback below) folds the running
-        # frame but DROPS the ideal Thin Lens power through the fold, so the on-axis cone
-        # waists at the surrogate and DIVERGES to the sensor (the user's "focus before the
-        # surrogate, diverge after / can't focus"). Prefer the flat-plate EQUIVALENT: the
-        # UNFOLDED straight system images to a real focus (first-order conjugates are
-        # invariant under the rigid fold), so trace it here and BEND the display rays at
-        # the mirror after the bundle -- using the editor's OWN overlay fold transform, so
-        # the folded cone lands exactly on the drawn detector (a hand-rolled reflection
-        # lands 12.5mm short = the mirror's desp_z). Fall back to the sequential-Mirror
-        # trace when the equivalent or the fold transform is unavailable, or for a CHAIN of
-        # folds -- the bend after the bundle is scoped to a SINGLE fold (matching the
-        # bugs/0192 correction), so a chain keeps the native sequential-Mirror fold.
-        # bugs/0208: the flat-plate equivalent + display REFLECTION generalises to an
-        # ARBITRARY chain of promoted-mirror folds. `_folded_optical_solid_straight_equivalent_rows`
-        # already flattens EVERY mirror (row count + air gaps preserved), and
-        # `_reflect_straight_equivalent_display_rays` reflects each straight ray about every
-        # mirror plane in reverse station order (the reverse-order composition R1(R2(...Rk(v)))
-        # of per-mirror isometries). So the old single-fold gate is dropped: use the flat-plate
-        # equivalent whenever the scene has any rotating fold (equivalent_rows is not None).
-        equivalent_rows = self._folded_optical_solid_straight_equivalent_rows()
-        fold_transform = (
-            self._optical_axis_fold_world_transform_for_row(self._image_plane_row_index())
-            if equivalent_rows is not None
-            else None
-        )
-        if equivalent_rows is not None and fold_transform is not None:
-            equivalent_specs = self._serializable_specs_for_rows(equivalent_rows)
-            trace_system = _build_system_from_specs(
-                equivalent_specs,
-                build=0,
-                apply_optical_solid_output_ports=False,
-            )
-            trace_system.energy_probability = 0
-            rays = Kos.raykeeper(trace_system)
-            original_trace_rows = self.rows
-            try:
-                self.rows = equivalent_rows
-                # bugs/0203 (#2): the equivalent rows are UNFOLDED + mirror-removed, so the
-                # launch sampler reads a plain sequential scene and collapses the pupil to a
-                # flat meridional fan (`_launch_pupil_prefers_meridional_fan` -> True). The
-                # REAL scene is folded (breaks rotational symmetry -> area-filling disk), so
-                # force the folded launch decision while the equivalent rows are swapped in;
-                # the display-bend then folds the disk into a 3D cone on the drawn detector.
-                self._force_folded_cone_preview_trace = True
-                self._trace_preview_rays(
-                    trace_system, rays, wavelength, max_radius, sampling_mode=sampling_mode
-                )
-            finally:
-                self.rows = original_trace_rows
-                self._force_folded_cone_preview_trace = False
-            return rays, fold_transform
-
-        # bugs/0187 fix (3): trace the fold as a SEQUENTIAL Mirror chain so the ideal Thin
-        # Lenses reach the sensor (the mesh-mirror non-seq trace flips the propagation sign
-        # and they retroreflect). The display keeps the mesh cube + 0185 overlays; only the
-        # ray paths come from this sequential system.
-        folded_specs = self._serializable_specs_for_rows(folded_trace_rows)
-        trace_system = _build_system_from_specs(
-            folded_specs, build=0, apply_optical_solid_output_ports=False
-        )
-        trace_system.energy_probability = 0
-        rays = Kos.raykeeper(trace_system)
-        original_trace_rows = self.rows
-        # A folded Mirror row carries a tilt, so resolve_trace_intent would classify it as
-        # off-axis (non-seq) geometry. Force the sequential tracer -- a sequential Mirror
-        # folds the running frame so the ideal Thin Lenses behave (a non-seq trace of the
-        # same specs reaches 0 rays).
-        self._force_sequential_preview_trace = True
+        # bugs/0203 (#2): the fold breaks rotational symmetry, so the preview must
+        # launch the area-filling pupil disk (not the flat meridional fan). Keep the
+        # decision explicit rather than trusting the pupil heuristics on folded rows.
+        self._force_folded_cone_preview_trace = True
         try:
-            self.rows = folded_trace_rows
             self._trace_preview_rays(
-                trace_system, rays, wavelength, max_radius, sampling_mode=sampling_mode
+                system, rays, wavelength, max_radius, sampling_mode=sampling_mode
             )
         finally:
-            self.rows = original_trace_rows
-            self._force_sequential_preview_trace = False
+            self._force_folded_cone_preview_trace = False
         return rays, None
 
     def _apply_folded_display_bend(self, scene_bundle, fold_transform) -> None:
