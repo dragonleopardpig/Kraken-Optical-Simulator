@@ -1066,17 +1066,12 @@ class ParaxialToolsMixin:
         mirror_row = next((m for m in folds if 0 < m < int(first_lens)), None)
         if mirror_row is None:
             return None
-        # bugs/0234: a TRAILING fold mirror (a 2nd periscope fold DOWNSTREAM of the object mirror)
-        # is pinned to an absolute incoming-axis placement (bugs/0218), NOT the object-gap walk.
-        # Sliding the object mirror shifts the whole folded chain -- mirror 1, the lenses, the rays
-        # and the detector all follow the walk, but the trailing mirror's promoted solid stays
-        # FROZEN at its pinned pose, so the beam then folds in empty space beside the drawn 2nd
-        # mirror (flag_20260706_070942_311: "2nd RA mirror wrong location ... the rays even bend
-        # without touching the 2nd RA mirror"). Until the image arm can be carried with the slide,
-        # only offer the split when the object mirror is the ONLY fold (single-fold is safe: every
-        # downstream element there is a plain row that re-derives from the walk).
-        if any(int(f) > int(mirror_row) for f in folds):
-            return None
+        # bugs/0234 -> 0236: a TRAILING fold mirror (a 2nd periscope fold DOWNSTREAM of the object
+        # mirror) is a free-placed promoted solid pinned along global +Z (bugs/0213/0218), so
+        # sliding the object mirror used to leave it FROZEN beside the walked beam -- the split was
+        # gated off on a two-fold. It is now carried back onto the reflected leg by
+        # ``carry_free_placed_followers_after_fold`` (in ``_apply_folded_object_split``), so the
+        # object-segment constraint is available on the two-fold periscope too.
         thicknesses = [max(float(getattr(r, "thickness", 0.0) or 0.0), 0.0) for r in rows]
         station = float(sum(thicknesses[:mirror_row]))
         # The object-side mirror is the FIRST fold, so the axis into it is the straight +Z; the
@@ -1221,6 +1216,11 @@ class ParaxialToolsMixin:
             )
         rows[ng].thickness = new_near_gap
         rows[fg].thickness = new_far_gap
+        # bugs/0236: on a two-fold periscope the object mirror slides against the far spacer, which
+        # walks the reflected arm -- carry the free-placed trailing mirror (+ camera) with it so it
+        # stays on the beam instead of freezing beside it (bugs/0234). Single-fold: no-op.
+        from KrakenOS.UI.nonseq_output_ports import carry_free_placed_followers_after_fold
+        carry_free_placed_followers_after_fold(rows, [(ng, delta), (fg, -delta)])
         return True, (
             f"Object distance split: object->mirror {near_new:.4g} mm, "
             f"mirror->first surface {total - near_new:.4g} mm (total {total:.4g} mm)."

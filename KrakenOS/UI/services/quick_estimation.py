@@ -979,6 +979,14 @@ class QuickEstimationService:
                     )
                 rows[og].thickness = new_obj_gap
                 rows[ig].thickness = new_img_gap
+                # bugs/0236: the image-leg delta extends the beam along the first fold's
+                # reflected direction, but a free-placed trailing mirror is pinned along
+                # global +Z -- carry it (and any free-placed camera) back onto the beam.
+                from KrakenOS.UI.nonseq_output_ports import carry_free_placed_followers_after_fold
+                carry_free_placed_followers_after_fold(
+                    rows,
+                    [(og, float(folded["object_delta"])), (ig, float(folded["image_delta"]))],
+                )
                 return True, (
                     f"Solved (folded): object->lens {folded['object_distance']:.6g} mm, "
                     f"lens->sensor {folded['image_distance']:.6g} mm (|m|={folded['magnitude']:.4g})."

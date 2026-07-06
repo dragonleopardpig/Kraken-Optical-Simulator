@@ -1,5 +1,9 @@
 # 0234 — Object-distance fold split desyncs the trailing mirror on a two-fold periscope
 
+> **Superseded by bugs/0236.** This gate was the stopgap; 0236 delivers the promised image-arm-follow
+> increment — the trailing mirror is now carried onto the beam, the two-fold split is un-gated, and
+> the dialog note is removed. Penta phase 211 (this doc's guard) is retired; phase 213 replaces it.
+
 ## Symptom
 flag_20260706_070942_311: on the two-fold AZ85 periscope the user double-clicked the FOV plane,
 typed 55×55 mm, then clicked **Apply split (move mirror)**. They reported:

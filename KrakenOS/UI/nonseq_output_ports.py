@@ -135,6 +135,77 @@ def row_z_positions(rows) -> list[float]:
     return z_positions
 
 
+def carry_free_placed_followers_after_fold(rows, gap_deltas) -> list[int]:
+    """Carry a free-placed trailing fold mirror (+ camera) onto the beam after a folded
+    solve rewrote gap-row thicknesses. ``gap_deltas`` is an iterable of
+    ``(gap_row_index, thickness_delta)`` the solve applied. Returns the carried indices.
+
+    bugs/0236: a free-placed promoted follower is pinned by
+    ``_free_placed_solid_pinned_pose`` at ``[desp_x, desp_y, z_positions[i] + desp_z]`` --
+    its axial-station advance feeds ONLY global +Z. That is correct for a gap delta on the
+    OBJECT leg (BEFORE the first fold: the whole reflected arm slides in Z with the fold
+    vertex). But a delta on a leg AFTER the first fold (lens->trailing-mirror image gap, or
+    the object-split far spacer) extends/shifts the beam along the first fold's REFLECTED
+    direction, not global Z. z_positions dumps that post-fold delta into Z, so the pinned
+    trailing mirror advances in Z while the beam walks along the reflected leg -> the mirror
+    is thrown off the optical axis (flag_20260706_083512: Solve-for-Thickness; bugs/0234:
+    the object-segment split, gated off for the same reason).
+
+    Fix: for each free-placed follower downstream of the first fold, add
+    ``post_fold_delta * (r_hat - z_hat)`` to its desp, where ``post_fold_delta`` is the sum
+    of the applied deltas on gap rows strictly between the first fold and the follower, and
+    ``r_hat`` is the first fold's reflected leg direction. This redirects exactly the
+    post-fold portion of the walk from global Z onto the reflected leg (pre-fold deltas stay
+    in Z, correctly following the fold vertex), so the follower re-seats on the moved beam.
+    A single-fold layout (reflected leg still +Z) is a no-op."""
+    from KrakenOS.UI.services.folded_sequential_fold import mirror_fold_face_normal
+
+    prepared = list(rows or [])
+    if not prepared:
+        return []
+    deltas: dict[int, float] = {}
+    for entry in gap_deltas or ():
+        try:
+            gap_row, delta = int(entry[0]), float(entry[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        deltas[gap_row] = deltas.get(gap_row, 0.0) + delta
+    if not deltas:
+        return []
+    first_fold = None
+    first_normal = None
+    for index, row in enumerate(prepared):
+        normal = mirror_fold_face_normal(_row_advanced(row))
+        if normal is not None:
+            first_fold, first_normal = index, normal
+            break
+    if first_fold is None:
+        return []
+    zhat = np.array([0.0, 0.0, 1.0], dtype=float)
+    rhat = zhat - 2.0 * float(np.dot(zhat, first_normal)) * first_normal
+    rnorm = float(np.linalg.norm(rhat))
+    if rnorm <= 1e-9:
+        return []
+    rhat = rhat / rnorm
+    if float(np.dot(rhat, zhat)) > 1.0 - 1e-9:
+        return []  # reflected leg still +Z -> no direction to redirect the arm walk into
+    delta_dir = rhat - zhat
+    carried: list[int] = []
+    for index in range(first_fold + 1, len(prepared)):
+        row = prepared[index]
+        if _free_placed_solid_pinned_pose(row, 0.0) is None:
+            continue  # a plain follower already tracks the fold frame -- do not double-move it
+        post_fold_delta = sum(d for gr, d in deltas.items() if first_fold < gr < index)
+        if abs(post_fold_delta) < 1e-9:
+            continue
+        carry = post_fold_delta * delta_dir
+        row.desp_x = float(getattr(row, "desp_x", 0.0) or 0.0) + float(carry[0])
+        row.desp_y = float(getattr(row, "desp_y", 0.0) or 0.0) + float(carry[1])
+        row.desp_z = float(getattr(row, "desp_z", 0.0) or 0.0) + float(carry[2])
+        carried.append(index)
+    return carried
+
+
 def _scene_index_rows(system, rows) -> list[object]:
     prepared = [_row_like(row) for row in list(rows or [])]
     surfaces = list(getattr(system, "SDT", []) or []) if system is not None else []

@@ -10910,32 +10910,6 @@ def phase_210_qe_overlay_square_to_plane(
     return result
 
 
-def phase_211_folded_split_two_fold_gated(
-    app: KrakenLayoutEditor, inspector: Kraken3DInspector
-) -> PhaseResult:
-    """The object-distance fold split must be gated OFF on a two-fold periscope: sliding the object
-    mirror shifts the folded chain, but the trailing mirror is pinned to its placement and stays
-    frozen, so the beam folds beside the drawn 2nd mirror ("2nd RA mirror wrong location ... rays
-    bend without touching the 2nd RA mirror"). `validate_open3d_folded_split_two_fold_gated` asserts
-    the split is None + Apply refuses on a two-fold scene, forces the slide to show the trailing
-    mirror can't follow, and that the single-fold split is unaffected. bugs/0234."""
-    result = PhaseResult(name="Phase 211: object-distance fold split gated off on a two-fold periscope")
-    try:
-        from KrakenOS.UI.validate_open3d_folded_split_two_fold_gated import run_checks
-        passed, notes = run_checks()
-    except Exception as exc:  # pragma: no cover - defensive
-        result.passed = False
-        result.notes.append(f"folded-split-two-fold-gated guard raised: {exc!r}")
-        return result
-    result.passed = bool(passed)
-    result.detail["guard_failures"] = 0 if passed else len(notes)
-    for note in notes:
-        result.notes.append(note)
-    if not result.passed and not result.notes:
-        result.notes.append("folded-split-two-fold-gated phase failed without detail")
-    return result
-
-
 def phase_212_async_trace_fallback_reason(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
@@ -10959,6 +10933,36 @@ def phase_212_async_trace_fallback_reason(
         result.notes.append(note)
     if not result.passed and not result.notes:
         result.notes.append("async-trace-fallback-reason phase failed without detail")
+    return result
+
+
+def phase_213_two_fold_image_arm_follow(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """On a two-fold periscope a folded conjugate solve must carry the free-placed trailing fold
+    mirror onto the moved beam instead of leaving it pinned along global +Z. The trailing mirror's
+    station advance feeds only +Z, but a gap delta on a leg AFTER the first fold (Solve-for-Thickness
+    image gap, or object-split far spacer) walks the beam along the first fold's reflected leg -> the
+    pinned mirror was thrown off-axis (bugs/0234 gated the object split OFF for this reason). Fix
+    (bugs/0236): `carry_free_placed_followers_after_fold` adds `post_fold_delta * (r_hat - z_hat)` to
+    each free-placed follower after a folded solve, re-seating the mirror on the beam, and the split
+    is now UN-GATED on a two-fold. `validate_open3d_two_fold_image_arm_follow` asserts the thickness
+    solve keeps the mirror's beam offset, the split is offered + carries the mirror, a pre-fold delta
+    redirects nothing, and both solve paths call the carry with the bugs/0234 gate gone."""
+    result = PhaseResult(name="Phase 213: two-fold folded solve carries the trailing mirror onto the beam")
+    try:
+        from KrakenOS.UI.validate_open3d_two_fold_image_arm_follow import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"two-fold-image-arm-follow guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("two-fold-image-arm-follow phase failed without detail")
     return result
 
 
@@ -11218,8 +11222,8 @@ def main() -> int:
             phase_208_recorder_captures_dialogs,
             phase_209_folded_fov_solve,
             phase_210_qe_overlay_square_to_plane,
-            phase_211_folded_split_two_fold_gated,
             phase_212_async_trace_fallback_reason,
+            phase_213_two_fold_image_arm_follow,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
