@@ -216,7 +216,8 @@
     "212": "pass",
     "213": "pass",
     "214": "pass",
-    "215": "pass"
+    "215": "pass",
+    "216": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -433,6 +434,7 @@
     "212": "off-thread trace records its sync-fallback reason",
     "213": "two-fold folded solve carries the trailing mirror onto the beam",
     "214": "FOV Solve-for-Thickness applies the merged object-segment split",
-    "215": "folded solve drops the duplicate unfolded image plane"
+    "215": "folded solve drops the duplicate unfolded image plane",
+    "216": "folded solve re-seats the duplicate image MESH onto the detector"
   }
 }

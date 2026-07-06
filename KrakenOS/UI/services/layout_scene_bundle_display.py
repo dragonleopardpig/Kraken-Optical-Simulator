@@ -16,6 +16,10 @@ _PROTECTED_GLOBALS = {
 # target is a STALE unfolded duplicate and is dropped (the "two image planes" fix).
 _SUPERSEDED_IMAGE_CURVE_TOL_MM = 1.0
 
+# bugs/0239: a detector target whose in-plane radius (hypot X,Y) exceeds this is FOLDED off
+# the straight +Z axis -- the gate for re-seating the kind="image" surface MESH disc onto it.
+_FOLDED_DETECTOR_OFF_AXIS_MM = 5.0
+
 
 def _sync_layout_globals(source: dict[str, object]) -> None:
     target = globals()
@@ -943,6 +947,64 @@ class LayoutSceneBundleDisplayMixin:
         if dropped:
             bundle.surface_curves = kept
         return dropped
+
+    def _reseat_superseded_image_meshes_to_folded_detector(self, bundle) -> int:
+        """bugs/0239: translate every ``kind="image"`` surface MESH (the drawn sensor DISC) onto the
+        nearest FOLDED detector target -- the physics focus where the rays actually converge.
+
+        The image surface disc is built at the LENS-only paraxial image plane
+        (``_paraxial_image_plane_z``) and folded onto the promoted-mirror branch, but the flattened
+        mirror plates add a glass path the lens-only first order ignores, so the real ray waist --
+        where ``_fold_promoted_mirror_table_row_targets`` seats the detector target and where the
+        traced cone converges -- sits ~a plate-thickness (AZ85: ~20 mm) beyond it. The disc then
+        floats off the beam: a SECOND image/detector plane (the user's "still 2 image and detector
+        plane" after the folded FOV solve), the MESH sibling of the curve ``_drop_unfolded_superseded_
+        image_curves`` (bugs/0238) removes. Re-seating (not dropping) keeps the solid sensor disc the
+        unfolded scene draws, now coincident with the detector + rays -- display follows physics.
+
+        Fires only on a FOLDED scene (detector carried off the straight +Z axis) for a disc that has
+        DIVERGED from every detector, so plain / sequential / unfolded layouts keep every mesh byte-
+        identical. The shift is recomputed from the live centroid each pass, so it is idempotent (a
+        disc already on the detector is within tolerance and skipped). Returns the number reseated."""
+        meshes = getattr(bundle, "surface_meshes", None) or []
+        if not meshes:
+            return 0
+        det_centers: list[np.ndarray] = []
+        for target in (getattr(bundle, "targets", None) or []):
+            if not getattr(target, "is_detector", False):
+                continue
+            try:
+                center = np.asarray(target.center_world, dtype=float).reshape(3)
+            except Exception:
+                continue
+            if np.all(np.isfinite(center)) and float(np.hypot(center[0], center[1])) > _FOLDED_DETECTOR_OFF_AXIS_MM:
+                det_centers.append(center)
+        if not det_centers:
+            return 0
+        reseated = 0
+        for item in meshes:
+            if str(getattr(item, "kind", "") or "").strip().lower() != "image":
+                continue
+            mesh = getattr(item, "mesh", None)
+            pts = getattr(mesh, "points", None) if mesh is not None else None
+            if pts is None:
+                continue
+            try:
+                arr = np.asarray(pts, dtype=float).reshape(-1, 3)
+            except Exception:
+                continue
+            if not arr.size:
+                continue
+            centroid = arr.mean(axis=0)
+            nearest = min(det_centers, key=lambda dc: float(np.linalg.norm(centroid - dc)))
+            if float(np.linalg.norm(centroid - nearest)) <= _SUPERSEDED_IMAGE_CURVE_TOL_MM:
+                continue
+            try:
+                mesh.points = arr + (nearest - centroid)
+                reseated += 1
+            except Exception:
+                continue
+        return reseated
 
     def _fold_promoted_mirror_scene_placements(self, bundle) -> int:
         """Fold every row-backed scene PLACEMENT onto a promoted mirror's reflected branch.

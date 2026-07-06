@@ -11024,6 +11024,38 @@ def phase_215_folded_duplicate_image_plane(
     return result
 
 
+def phase_216_folded_image_mesh_reseat(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The MESH twin of Phase 215: after the folded FOV solve the user still saw TWO image/detector
+    planes (flag_20260706_130527_037). bugs/0238 drops the stale unfolded kind="image" CURVE, but the
+    drawn sensor DISC is a kind="image" surface MESH built at the LENS-only paraxial image plane; the
+    flattened mirror plates add a glass path the first order ignores, so the disc lands ~a plate short
+    of the real ray waist where the detector target + cone converge, floating off the beam as the
+    second plane. Fix: after `_reconcile_folded_image_to_ray_convergence` finalises the detector on
+    the waist, `_reseat_superseded_image_meshes_to_folded_detector` translates every diverged disc
+    onto it (re-seat, not drop -- the solid sensor disc stays visible, now coincident with detector +
+    rays). `validate_open3d_folded_image_mesh_reseat` asserts the single image mesh sits on the folded
+    off-axis detector, the synthetic reseat moves the diverged mesh and spares the coincident one, an
+    on-axis (plain) detector is a NO-OP, rays still image, and the reseat runs AFTER reconcile in
+    `_build_preview_system_rays_bundle`. bugs/0239."""
+    result = PhaseResult(name="Phase 216: folded solve re-seats the duplicate image MESH onto the detector")
+    try:
+        from KrakenOS.UI.validate_open3d_folded_image_mesh_reseat import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-image-mesh-reseat guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-image-mesh-reseat phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11284,6 +11316,7 @@ def main() -> int:
             phase_213_two_fold_image_arm_follow,
             phase_214_folded_fov_segment_merge,
             phase_215_folded_duplicate_image_plane,
+            phase_216_folded_image_mesh_reseat,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

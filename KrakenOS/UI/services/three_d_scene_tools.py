@@ -588,6 +588,14 @@ class ThreeDSceneToolsMixin:
                 # outgoing cone's waist) when a real overshoot is present; a NO-OP otherwise.
                 if straight_equivalent_fold_transform is not None:
                     self._reconcile_folded_image_to_ray_convergence(scene_bundle)
+                    # bugs/0239: the kind="image" surface MESH (the drawn sensor DISC) was
+                    # built at the LENS-only paraxial image plane and folds ~a mirror-plate
+                    # short of the physics focus, floating off the beam as a SECOND image/
+                    # detector plane (the user's "still 2 image and detector plane" after the
+                    # folded FOV solve). Reconcile has now moved the detector TARGET onto the
+                    # real ray-convergence waist, so re-seat the disc onto that final detector
+                    # -- disc, rays and detector coincide on ONE plane (display follows physics).
+                    self._reseat_superseded_image_meshes_to_folded_detector(scene_bundle)
             if include_live_step_overlays:
                 self._last_live_step_overlay_trace_rows = list(self.rows)
                 self._last_live_step_overlay_trace_records = list(live_step_records)
