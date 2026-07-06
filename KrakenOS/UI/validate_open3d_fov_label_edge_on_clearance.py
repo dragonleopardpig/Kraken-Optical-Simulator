@@ -80,6 +80,19 @@ def run_checks() -> "tuple[bool, list[str]]":
             f"FOV box half-diagonal {fov_diag:.3f} mm (it would overlap the plane + rays)"
         )
 
+    # 3b) bugs/0245: the NORMAL (off-plane) lift must stay CLOSE to the object plane --
+    #     a small fraction of the FOV box, NOT the full half-diagonal. The old code lifted
+    #     the label ~fov_reach (> half-diagonal) behind the object, which at a large FOV
+    #     (55x55) read as "too far from the object plane" (user). The in-plane offset (checked
+    #     in #3) still clears the rect; this bounds only the perpendicular float.
+    axis_hat = axis / float(np.linalg.norm(axis))
+    normal_dist = abs(float(np.dot(off, axis_hat)))
+    if normal_dist > fov_diag:
+        failures.append(
+            f"FAIL: FOV label floats {normal_dist:.3f} mm off the object plane along the normal, "
+            f"exceeding the FOV box half-diagonal {fov_diag:.3f} mm (bugs/0245: label too far)"
+        )
+
     # 4) it must NOT sit on the X axis line either (a real vertical component).
     if abs(float(off[1])) < 5.0:
         failures.append(

@@ -356,9 +356,15 @@ def detector_coverage_label_specs(
     if object_mode_finite and metrics.object_fov_half_width > 1e-9 and metrics.object_fov_half_height > 1e-9:
         fov_diag = float((metrics.object_fov_half_width ** 2 + metrics.object_fov_half_height ** 2) ** 0.5)
         fov_reach = fov_diag * (1.0 + _LABEL_MARGIN) + _LABEL_GAP
+        # bugs/0245: lift the label only a SMALL fraction off the object plane (edge-on
+        # clearance), NOT the full FOV half-diagonal. A full-diagonal normal lift floated
+        # the label ~fov_diag BEHIND the object, which at a large FOV (55x55: ~44 mm) read
+        # as "too far from the object plane" (user flag). The in-plane fov_reach offset
+        # below still clears the FOV rectangle corner; this matches the image-label lift.
+        _obj_lift = fov_diag * _LABEL_NORMAL_LIFT_FRACTION + _LABEL_GAP
         _onormal = np.asarray(object_axis if object_axis is not None else default_axis, dtype=float).reshape(3)
         _on = float(np.linalg.norm(_onormal))
-        obj_label_center = obj_pt - (_onormal / _on) * fov_reach if _on > 1e-9 else obj_pt
+        obj_label_center = obj_pt - (_onormal / _on) * _obj_lift if _on > 1e-9 else obj_pt
         labels.append(
             place(
                 obj_label_center,
