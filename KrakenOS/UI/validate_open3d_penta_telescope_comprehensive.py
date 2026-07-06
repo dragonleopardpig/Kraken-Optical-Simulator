@@ -11117,6 +11117,38 @@ def phase_218_folded_coverage_label_decollide(
     return result
 
 
+def phase_219_folded_image_segment_split(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """After the object-side per-segment constraint (bugs/0234-0237), the user may also pin one leg of
+    the IMAGE conjugate at the 2nd periscope fold -- the "2+2" per-segment freedom. The image distance
+    (last lens surface -> mirror -> sensor) is bent by the image-side RA mirror; the optics fix its
+    total (the focus), the split is the mechanical freedom. `_folded_image_conjugate_split` reads the
+    legs off the straight-equivalent gap ROWS (the free-placed image mirror's desp_z is a WORLD offset,
+    so the object side's station+desp_z arithmetic does not apply), and `_apply_folded_image_split`
+    pins one leg and SLIDES the mirror -- the leg INTO it +delta against the mirror->sensor leg -delta
+    -- so the total (focus) is untouched and the free-placed trailing mirror is carried onto the
+    reflected leg (bugs/0236) so it stays on the beam. `validate_open3d_folded_image_segment_split`
+    asserts the split adds up and matches the straight-equivalent legs, the slide keeps the total +
+    mirror on beam, out-of-range/unsafe-gap constraints are rejected, the scene still images, and the
+    image FOV popup + solve are wired to the near/far checkboxes. bugs/0242."""
+    result = PhaseResult(name="Phase 219: folded image-conjugate segment split (2+2 per-segment)")
+    try:
+        from KrakenOS.UI.validate_open3d_folded_image_segment_split import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-image-segment-split guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-image-segment-split phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11380,6 +11412,7 @@ def main() -> int:
             phase_216_folded_image_mesh_reseat,
             phase_217_folded_thin_lens_curve_on_beam,
             phase_218_folded_coverage_label_decollide,
+            phase_219_folded_image_segment_split,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

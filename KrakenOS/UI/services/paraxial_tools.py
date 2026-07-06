@@ -1226,6 +1226,126 @@ class ParaxialToolsMixin:
             f"mirror->first surface {total - near_new:.4g} mm (total {total:.4g} mm)."
         )
 
+    def _folded_image_conjugate_split(self) -> "dict | None":
+        """Split the image distance at the IMAGE-side RA-mirror fold (the 2nd periscope fold).
+
+        Returns ``{total, near, far, mirror_row, near_gap_row, far_gap_row, near_min, far_min}``
+        where ``near`` = last lens surface -> mirror station and ``far`` = mirror station ->
+        sensor (both along the folded beam, ``near + far == total``), and the two AIR gap rows
+        that slide the mirror. ``None`` when there is no image-side fold to split.
+
+        Unlike the object mirror (a SEQUENTIAL fold whose along-axis ``desp_z`` places its
+        vertex), the image mirror is a FREE-PLACED promoted solid (bugs/0213/0218) pinned in
+        global +Z, so its ``desp_z`` is a WORLD offset, not an along-axis decenter -- the object
+        side's ``station + desp_z`` arithmetic would give a nonsense (negative) split. The split
+        is therefore read straight off the gap ROWS, which sum to ``_paraxial_total_image_gap``
+        (and match the row-editor prescription the user edits). The slide is a pure repackaging
+        (add delta to the leg INTO the mirror, subtract it from the leg to the sensor) so the
+        image total -- and thus the focus -- is untouched; ``_apply_folded_image_split`` then
+        carries the free-placed mirror onto the reflected leg (bugs/0236) so it stays on beam."""
+        rows = list(getattr(self, "rows", []) or [])
+        if len(rows) < 3:
+            return None
+        try:
+            folds = [int(i) for i in self._promoted_mirror_fold_row_indices()]
+        except Exception:
+            folds = []
+        if not folds:
+            return None
+        try:
+            total, last_src, _ref = self._paraxial_total_image_gap()
+        except Exception:
+            return None
+        # The image gap starts at the last LENS surface -- walk back through any trailing fold
+        # mirror (a fold the beam passes THROUGH), matching ``_paraxial_total_image_gap``.
+        gap_start = int(last_src)
+        while gap_start > 1 and _row_is_promoted_mirror_fold(rows[gap_start]):
+            gap_start -= 1
+        image_row = next(
+            (i for i in range(len(rows) - 1, -1, -1) if str(getattr(rows[i], "surface", "")) == "Image"),
+            len(rows) - 1,
+        )
+        mirror_row = next((m for m in folds if int(gap_start) < m < int(image_row)), None)
+        if mirror_row is None:
+            return None
+        th = [max(float(getattr(r, "thickness", 0.0) or 0.0), 0.0) for r in rows]
+        near = float(sum(th[gap_start:mirror_row]))       # last lens surface -> mirror station
+        far = float(sum(th[mirror_row:image_row]))        # mirror station -> sensor
+        # Collision floor: keep each leg clear of the mirror SOLID so it cannot slide into the lens
+        # (near side) or the detector (far side). Use the mirror's aperture half-diameter -- a
+        # STABLE geometry-only extent that does not move with the slide. (Half the mirror ROW
+        # thickness, as on the object side, is unusable here: ``far_gap_row == mirror_row``, so it
+        # IS the far leg being slid -- the floor would shrink with it and never stop the mirror.)
+        aperture = float(getattr(rows[mirror_row], "diameter", 0.0) or 0.0)
+        body = 0.5 * aperture
+        return {
+            "total": float(total),
+            "near": float(near),
+            "far": float(far),
+            "mirror_row": int(mirror_row),
+            "near_gap_row": int(mirror_row - 1),          # last leg INTO the mirror
+            "far_gap_row": int(mirror_row),               # the mirror's own gap to the sensor
+            "near_min": float(body),
+            "far_min": float(body),
+        }
+
+    def _apply_folded_image_split(self, fixed_leg: str, value: float) -> "tuple[bool, str]":
+        """Slide the image-side fold mirror so the fixed leg equals ``value``, keeping the total
+        image distance (and thus the focus) fixed. ``fixed_leg`` is ``"near"`` (last lens surface
+        -> mirror) or ``"far"`` (mirror -> sensor). Returns ``(ok, message)``.
+
+        A single fold can pin only one image leg: the two legs are perpendicular, so with the
+        total fixed the fold point is geometrically determined once one leg is set -- the DETECTOR
+        moves onto the end of the repositioned arm (the lens/camera body stays put). The optical
+        path (and focus) is preserved because ``near + far`` is held constant."""
+        split = self._folded_image_conjugate_split()
+        if split is None:
+            return False, "No image-side fold mirror to split."
+        total = float(split["total"])
+        try:
+            fixed = float(value)
+        except (TypeError, ValueError):
+            return False, "The constrained distance must be a number."
+        if not (fixed > 0) or fixed >= total:
+            return False, f"The constrained leg must be between 0 and the total {total:.4g} mm."
+        near_new = fixed if fixed_leg == "near" else (total - fixed)
+        far_new = total - near_new
+        near_min = float(split.get("near_min", 0.0) or 0.0)
+        far_min = float(split.get("far_min", 0.0) or 0.0)
+        if near_new < near_min - 1e-6:
+            return False, (
+                f"Safe gap: last surface -> mirror must stay >= {near_min:.4g} mm so the mirror "
+                f"does not collide with the lens (requested {near_new:.4g} mm)."
+            )
+        if far_new < far_min - 1e-6:
+            return False, (
+                f"Safe gap: mirror -> sensor must stay >= {far_min:.4g} mm so the mirror does not "
+                f"collide with the detector (requested {far_new:.4g} mm)."
+            )
+        delta = near_new - float(split["near"])
+        ng, fg = int(split["near_gap_row"]), int(split["far_gap_row"])
+        rows = self.rows
+        if not (0 <= ng < len(rows) and 0 <= fg < len(rows)):
+            return False, "Image split gap rows are unavailable."
+        new_near_gap = float(rows[ng].thickness) + delta
+        new_far_gap = float(rows[fg].thickness) - delta
+        if new_near_gap < 0.0 or new_far_gap < 0.0:
+            return False, (
+                f"Constraint out of range: sliding the mirror there needs a negative gap "
+                f"(lens gap {new_near_gap:.4g} / sensor gap {new_far_gap:.4g})."
+            )
+        rows[ng].thickness = new_near_gap
+        rows[fg].thickness = new_far_gap
+        # bugs/0236: the image mirror is a free-placed promoted solid pinned along global +Z, so
+        # the delta on the leg INTO it walks the beam along the first fold's reflected direction --
+        # carry it onto that leg so the mirror stays on the beam instead of advancing in +Z.
+        from KrakenOS.UI.nonseq_output_ports import carry_free_placed_followers_after_fold
+        carry_free_placed_followers_after_fold(rows, [(ng, delta), (fg, -delta)])
+        return True, (
+            f"Image distance split: last surface->mirror {near_new:.4g} mm, "
+            f"mirror->sensor {total - near_new:.4g} mm (total {total:.4g} mm)."
+        )
+
     def _paraxial_variable_thickness_details(
         self,
         row_index: int,
