@@ -217,7 +217,8 @@
     "213": "pass",
     "214": "pass",
     "215": "pass",
-    "216": "pass"
+    "216": "pass",
+    "217": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -435,6 +436,7 @@
     "213": "two-fold folded solve carries the trailing mirror onto the beam",
     "214": "FOV Solve-for-Thickness applies the merged object-segment split",
     "215": "folded solve drops the duplicate unfolded image plane",
-    "216": "folded solve re-seats the duplicate image MESH onto the detector"
+    "216": "folded solve re-seats the duplicate image MESH onto the detector",
+    "217": "folded thin-lens surrogate curve follows the beam"
   }
 }

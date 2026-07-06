@@ -1287,6 +1287,12 @@ def arm_ray_label_plan(
     return plans
 
 
+# bugs/0240: a thin-lens glyph whose folded world outline reaches farther than this off the
+# +Z axis is on a promoted-mirror branch -- return its FULL 3-D world outline (not the X-
+# discarding 2-D projection) so the drawn lens follows the folded beam.
+_FOLDED_GLYPH_OFF_AXIS_MM = 1.0
+
+
 def thin_lens_glyph_polyline(
     row: object,
     z_pos: float,
@@ -1330,6 +1336,20 @@ def thin_lens_glyph_polyline(
     if matrix is not None:
         local = np.column_stack((np.zeros_like(outline_y), outline_y, outline_z, np.ones_like(outline_y)))
         world = (matrix @ local.T).T
+        # bugs/0240: a promoted-mirror fold carries the lens off the +Z axis. The (world_z,
+        # world_y) projection below DISCARDS the folded world X, stranding the glyph on the
+        # straight axis while the lens surface MESH folds onto the beam (the user's "lens
+        # surrogate shifted" on the two-fold periscope). When the transform genuinely folds
+        # the glyph off-axis, return the FULL 3-D world outline -- exactly as the Standard-
+        # surface curve path does in _row_layout_polylines -- so the drawn lens follows the
+        # beam. On-axis layouts fall through to the byte-identical 2-D projection below.
+        world_xyz = np.asarray(world[:, :3], dtype=float)
+        if (
+            project_fn is not None
+            and np.all(np.isfinite(world_xyz))
+            and float(np.max(np.abs(world_xyz[:, 0]))) > _FOLDED_GLYPH_OFF_AXIS_MM
+        ):
+            return world_xyz
         world_z = world[:, 2]
         world_y = world[:, 1]
     else:

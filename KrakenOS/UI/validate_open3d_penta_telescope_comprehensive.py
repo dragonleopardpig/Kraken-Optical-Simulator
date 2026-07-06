@@ -11056,6 +11056,37 @@ def phase_216_folded_image_mesh_reseat(
     return result
 
 
+def phase_217_folded_thin_lens_curve_on_beam(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """On the two-fold the imaging lens (Blackbox Thin Lens rows) appeared SHIFTED off the ray path
+    while its lens surface MESH sat on the beam (flag_20260706_130527_037). In Non-Sequential Preview
+    every surface curve is built through `_row_layout_polylines`; Standard/Aperture rows return their
+    full 3-D world outline (folded by the system transform), but the Thin-Lens branch routes through
+    `thin_lens_glyph_polyline(..., project_fn=_project_xy)`, which applied the folded transform then
+    DISCARDED the folded world X (kept only (world_z, world_y) and lifted the 2-D projection at x=0),
+    stranding the glyph on the straight +Z axis. Fix: when the transform genuinely folds the glyph
+    off-axis and a project_fn is supplied, return the FULL 3-D world outline so the drawn lens follows
+    the beam; on-axis layouts keep the 2-D projection. `validate_open3d_folded_thin_lens_curve_on_beam`
+    asserts every thin_lens curve sits on its folded mesh, the glyph returns 3-D when folded and 2-D
+    on-axis, and rays still image. bugs/0240."""
+    result = PhaseResult(name="Phase 217: folded thin-lens surrogate curve follows the beam")
+    try:
+        from KrakenOS.UI.validate_open3d_folded_thin_lens_curve_on_beam import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-thin-lens-curve guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-thin-lens-curve phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11317,6 +11348,7 @@ def main() -> int:
             phase_214_folded_fov_segment_merge,
             phase_215_folded_duplicate_image_plane,
             phase_216_folded_image_mesh_reseat,
+            phase_217_folded_thin_lens_curve_on_beam,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
