@@ -10966,6 +10966,35 @@ def phase_213_two_fold_image_arm_follow(
     return result
 
 
+def phase_214_folded_fov_segment_merge(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """On a two-fold periscope the standalone object-distance "Apply split" button never read the
+    FOV boxes, so a typed 55x55 FOV stayed frozen at 23x23 while the mirror moved (bugs/0237). Fix:
+    the split becomes an optional "Constrain object -> mirror distance" checkbox merged into the FOV
+    section, and Solve-for-Thickness fills the sensor + target FOV AND, when a segment is supplied,
+    runs `_apply_folded_object_split` on the post-solve geometry in the SAME action.
+    `validate_open3d_folded_fov_segment_merge` asserts the FOV label moves to the typed 55x55, the
+    follow-on split pins the object leg while preserving the just-solved total, the trailing mirror
+    stays on the beam, rays still image, and the popup threads the merged checkbox (no standalone
+    split section). bugs/0237."""
+    result = PhaseResult(name="Phase 214: FOV Solve-for-Thickness applies the merged object-segment split")
+    try:
+        from KrakenOS.UI.validate_open3d_folded_fov_segment_merge import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-fov-segment-merge guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-fov-segment-merge phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11224,6 +11253,7 @@ def main() -> int:
             phase_210_qe_overlay_square_to_plane,
             phase_212_async_trace_fallback_reason,
             phase_213_two_fold_image_arm_follow,
+            phase_214_folded_fov_segment_merge,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

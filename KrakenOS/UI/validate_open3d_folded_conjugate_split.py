@@ -115,26 +115,31 @@ def validate_folded_conjugate_split() -> list[Check]:
         f"rays={len(bundle.ray_paths)} detector={None if det is None else np.round(det, 1)} within5mm={reach}",
     ))
 
-    # ---- (E) the object-plane Solve-for-Thickness dialog wires the split section ------------- #
+    # ---- (E) the object-plane FOV popup merges the split as an optional segment checkbox ------ #
+    # bugs/0237: the standalone "Apply split (move mirror)" section was merged UP into the FOV
+    # popup as an optional "Constrain object -> mirror distance" checkbox that the Solve buttons
+    # honor in the same action (there is no separate Apply button any more).
     import inspect
 
     from KrakenOS.UI.open3d_inspector import Kraken3DInspector
 
-    section_src = inspect.getsource(Kraken3DInspector._add_folded_conjugate_split_section)
     popup_src = inspect.getsource(Kraken3DInspector._open_quick_estimation_fov_popup)
+    apply_src = inspect.getsource(Kraken3DInspector._apply_quick_estimation_fov_solve)
     wired = (
-        "_folded_object_conjugate_split()" in section_src
-        and "_apply_folded_object_split" in section_src
-        and 'configure(state="disabled")' in section_src  # fix-one -> gray the other
-        and 'configure(state="normal")' in section_src
-        and "_add_folded_conjugate_split_section(dialog, plane" in popup_src
+        "_folded_object_conjugate_split()" in popup_src        # gate the checkbox on a fold
+        and "Constrain object" in popup_src                    # the merged checkbox label
+        and "segment_getter" in popup_src                      # reads the pinned leg
+        and "segment=segment" in popup_src                     # threaded to the solve
+        and "_apply_folded_object_split" in apply_src          # the solve slides the mirror
+        and "segment" in apply_src
     )
     checks.append(Check(
-        "WIRED: the FOV Solve-for-Thickness popup adds the split section (fix-one/gray-other + apply-slides-mirror)",
+        "WIRED: the FOV popup merges the object-split as an optional segment checkbox the solve honors",
         wired,
-        f"section_compute={'_folded_object_conjugate_split()' in section_src} "
-        f"section_apply={'_apply_folded_object_split' in section_src} "
-        f"popup_calls_section={'_add_folded_conjugate_split_section(dialog, plane' in popup_src}",
+        f"popup_gate={'_folded_object_conjugate_split()' in popup_src} "
+        f"popup_checkbox={'Constrain object' in popup_src} "
+        f"popup_threads_segment={'segment=segment' in popup_src} "
+        f"solve_applies_split={'_apply_folded_object_split' in apply_src}",
     ))
     return checks
 

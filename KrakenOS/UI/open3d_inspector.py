@@ -16297,131 +16297,6 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return True
         return False
 
-    def _add_folded_conjugate_split_section(self, dialog, plane: str, start_row: int) -> int:
-        """Add a 'split the <plane> distance at the fold mirror' section to a Quick-Estimation
-        popup (folded scenes only). The object/image distance is BENT by an RA mirror for
-        mechanical packaging (feature). Two legs measured ALONG THE OPTICAL AXIS; the user pins
-        ONE (the mechanically-constrained dimension) and the derived box grays + auto-fills =
-        total - fixed; 'Apply' SLIDES the mirror so the pinned leg is exact while the total
-        conjugate (the optics) stays fixed. Returns the next free grid row (== start_row if the
-        arm has no fold, so nothing is added)."""
-        if plane == "object":
-            split = self.editor._folded_object_conjugate_split()
-            near_label, far_label = "Object → mirror (mm):", "Mirror → first surface (mm):"
-            header = "Split the object distance at the fold mirror"
-            apply_fn = self.editor._apply_folded_object_split
-        else:
-            split = None  # image-side split is a later increment
-            near_label = far_label = header = ""
-            apply_fn = None
-        if not split:
-            # bugs/0234 -> 0236: the two-fold periscope split is now supported (the trailing mirror
-            # is carried onto the beam by the solve), so the only remaining "no split" case is an
-            # arm with no object-side fold to split -- omit the section silently, as for a plain arm.
-            return start_row
-        total = float(split["total"])
-        near0 = float(split["near"])
-        far0 = float(split["far"])
-        far_min = float(split.get("far_min", 0.0) or 0.0)
-        r = int(start_row)
-        ttk.Separator(dialog, orient="horizontal").grid(
-            row=r, column=0, columnspan=2, sticky="ew", padx=12, pady=(4, 8)
-        )
-        ttk.Label(dialog, text=header, font=("TkDefaultFont", 10, "bold")).grid(
-            row=r + 1, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 2)
-        )
-        ttk.Label(
-            dialog,
-            text=(
-                f"Total (fixed by the optics): {total:.4g} mm. Pin ONE mechanical leg — the "
-                "other is derived and the fold mirror slides along the optical axis."
-            ),
-            foreground="#888888",
-            wraplength=340,
-            justify="left",
-        ).grid(row=r + 2, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 6))
-
-        fixed_var = tk.StringVar(value="near")
-        near_var = tk.StringVar(value=f"{near0:.6g}")
-        far_var = tk.StringVar(value=f"{far0:.6g}")
-        near_entry = ttk.Entry(dialog, textvariable=near_var, width=12)
-        far_entry = ttk.Entry(dialog, textvariable=far_var, width=12)
-        _syncing = {"busy": False}
-
-        def _sync(*_a):
-            if _syncing["busy"]:
-                return
-            _syncing["busy"] = True
-            try:
-                if fixed_var.get() == "near":
-                    near_entry.configure(state="normal")
-                    far_entry.configure(state="disabled")
-                    try:
-                        far_var.set(f"{total - float(near_var.get()):.6g}")
-                    except ValueError:
-                        pass
-                else:
-                    far_entry.configure(state="normal")
-                    near_entry.configure(state="disabled")
-                    try:
-                        near_var.set(f"{total - float(far_var.get()):.6g}")
-                    except ValueError:
-                        pass
-            finally:
-                _syncing["busy"] = False
-
-        ttk.Radiobutton(dialog, text="Fix", value="near", variable=fixed_var, command=_sync).grid(
-            row=r + 3, column=0, sticky="w", padx=(12, 0)
-        )
-        ttk.Label(dialog, text=near_label).grid(row=r + 3, column=0, sticky="e", padx=(40, 4))
-        near_entry.grid(row=r + 3, column=1, sticky="w", padx=(0, 12), pady=(0, 3))
-        ttk.Radiobutton(dialog, text="Fix", value="far", variable=fixed_var, command=_sync).grid(
-            row=r + 4, column=0, sticky="w", padx=(12, 0)
-        )
-        ttk.Label(dialog, text=far_label).grid(row=r + 4, column=0, sticky="e", padx=(40, 4))
-        far_entry.grid(row=r + 4, column=1, sticky="w", padx=(0, 12), pady=(0, 6))
-        near_var.trace_add("write", _sync)
-        far_var.trace_add("write", _sync)
-        if far_min > 0:
-            ttk.Label(
-                dialog,
-                text=(
-                    f"Safe gap: {far_label.split('(')[0].strip().rstrip(':')} ≥ {far_min:.4g} mm "
-                    "(the mirror cannot slide into the adjacent lens/camera)."
-                ),
-                foreground="#a06000",
-                wraplength=340,
-                justify="left",
-            ).grid(row=r + 5, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 6))
-            r += 1  # push the Apply button down one row
-
-        def _apply():
-            leg = fixed_var.get()
-            raw = (near_var if leg == "near" else far_var).get()
-            try:
-                value = float(raw)
-            except ValueError:
-                self.status_var.set("The constrained distance must be a number.")
-                return
-            self._record_dialog_command(
-                "fold_split_apply", {"plane": plane, "leg": leg, "value": value}
-            )
-            ok, message = apply_fn(leg, value)
-            self.status_var.set(message)
-            if ok:
-                try:
-                    dialog.grab_release()
-                except Exception:
-                    pass
-                dialog.destroy()
-                self.refresh_from_editor()
-
-        ttk.Button(dialog, text="Apply split (move mirror)", command=_apply).grid(
-            row=r + 5, column=0, columnspan=2, padx=12, pady=(0, 10), sticky="ew"
-        )
-        _sync()
-        return r + 6
-
     def _open_quick_estimation_fov_popup(self, plane: str) -> None:
         """A small modal box: type the plane's field width x height, then click
         either 'Solve for Thickness' (move the conjugate pair so the field fills /
@@ -16471,7 +16346,70 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             wraplength=320,
             justify="left",
         ).grid(row=3, column=0, columnspan=2, padx=12, pady=(0, 8), sticky="w")
+
+        # bugs/0237: on a FOLDED scene the object distance is bent by the RA fold mirror, so the
+        # user may pin the object→mirror leg as part of the SAME solve. This optional checkbox
+        # MERGES the old standalone "split the object distance" section up into this popup: tick it,
+        # type the object→mirror distance, then click a Solve button — the solve fills the sensor AND
+        # slides the fold mirror so the pinned leg is exact (the trailing mirror is carried onto the
+        # beam, bugs/0236). Unticked, the solve behaves exactly as before. Only shown on the object
+        # plane when there is an object-side fold to split.
+        segment_getter = lambda: None
         button_row = 4
+        if plane == "object":
+            try:
+                _seg_split = self.editor._folded_object_conjugate_split()
+            except Exception:
+                _seg_split = None
+            if _seg_split:
+                seg_total = float(_seg_split["total"])
+                seg_near0 = float(_seg_split["near"])
+                seg_far_min = float(_seg_split.get("far_min", 0.0) or 0.0)
+                use_seg_var = tk.BooleanVar(value=False)
+                seg_var = tk.StringVar(value=f"{seg_near0:.6g}")
+                seg_entry = ttk.Entry(dialog, textvariable=seg_var, width=12)
+
+                def _sync_seg(*_a):
+                    try:
+                        seg_entry.configure(state=("normal" if use_seg_var.get() else "disabled"))
+                    except Exception:
+                        pass
+
+                ttk.Checkbutton(
+                    dialog,
+                    text="Constrain object → mirror distance (mm):",
+                    variable=use_seg_var,
+                    command=_sync_seg,
+                ).grid(row=4, column=0, sticky="w", padx=(12, 4), pady=(0, 2))
+                seg_entry.grid(row=4, column=1, sticky="ew", padx=(0, 12), pady=(0, 2))
+                ttk.Label(
+                    dialog,
+                    text=(
+                        f"Slides the fold mirror along the optical axis (total object distance "
+                        f"{seg_total:.4g} mm stays fixed; mirror → first surface ≥ {seg_far_min:.4g} mm)."
+                    ),
+                    foreground="#888888",
+                    wraplength=320,
+                    justify="left",
+                ).grid(row=5, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 8))
+                _sync_seg()
+
+                def _segment_getter():
+                    if not use_seg_var.get():
+                        return None
+                    raw = (seg_var.get() or "").strip()
+                    if not raw:
+                        return ("error", "Enter the object → mirror distance, or untick the box.")
+                    try:
+                        val = float(raw)
+                    except (TypeError, ValueError):
+                        return ("error", "Object → mirror distance must be a number.")
+                    if not (val > 0):
+                        return ("error", "Object → mirror distance must be positive.")
+                    return ("near", val)
+
+                segment_getter = _segment_getter
+                button_row = 6
 
         def _read_dim(var, label):
             """Parse one box: blank -> (True, None) so it is derived; a present but
@@ -16501,13 +16439,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     "Enter a Width or a Height — the other is derived from the sensor aspect."
                 )
                 return
+            seg = segment_getter()
+            if seg is not None and seg[0] == "error":
+                self.status_var.set(seg[1])
+                return
+            segment = seg if (seg is not None and seg[0] == "near") else None
             aspect = (w0, h0) if (w0 and h0) else None
             try:
                 dialog.grab_release()
             except Exception:
                 pass
             dialog.destroy()
-            self._apply_quick_estimation_fov_solve(plane, mode, width, height, aspect)
+            self._apply_quick_estimation_fov_solve(plane, mode, width, height, aspect, segment=segment)
 
         ttk.Button(dialog, text="Solve for Thickness", command=lambda: run("thickness")).grid(
             row=button_row, column=0, padx=(12, 4), pady=(0, 6), sticky="ew"
@@ -16575,14 +16518,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 height_var.trace_add("write", lambda *_a: _design.recompute())
             except Exception:
                 pass
-        # Feature: split the object/image distance at the fold mirror (folded scenes only).
-        # The design block above spans button_row+2..+4 for the object plane; the image plane
-        # has none. Add the split section after whichever was used.
-        split_start_row = button_row + (5 if plane == "object" else 2)
-        try:
-            self._add_folded_conjugate_split_section(dialog, plane, split_start_row)
-        except Exception as exc:
-            self.editor.append_debug(f"Folded conjugate-split section unavailable: {exc}")
+        # bugs/0237: the object-distance fold split is no longer a standalone section — it is merged
+        # into the FOV section above as an optional "Constrain object → mirror distance" checkbox
+        # that the Solve buttons honor in the same action.
         dialog.bind("<Escape>", lambda _e: dialog.destroy())
         try:
             dialog.grab_set()
@@ -16679,14 +16617,34 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         width: float | None,
         height: float | None = None,
         aspect: tuple[float, float] | None = None,
+        segment: tuple[str, float] | None = None,
     ) -> None:
         self._record_dialog_command(
             "fov_solve",
-            {"plane": plane, "mode": mode, "width": width, "height": height},
+            {
+                "plane": plane,
+                "mode": mode,
+                "width": width,
+                "height": height,
+                "segment": [str(segment[0]), float(segment[1])] if segment else None,
+            },
         )
         qe = self._quick_estimation_service()
         self.editor._begin_history_capture()
         ok, msg = qe.fov_solve(plane, mode, width, height, aspect)
+        if ok and segment is not None and plane == "object":
+            # bugs/0237: the same solve also pins the object→mirror leg — run the folded object
+            # split on the POST-solve geometry (it recomputes the total itself) so the fold mirror
+            # slides to the requested leg while the just-solved conjugate stays fixed, and the
+            # trailing periscope mirror is carried onto the beam (bugs/0236). A split failure (e.g.
+            # the leg no longer fits the new total) is surfaced but does not undo the FOV solve.
+            try:
+                ok_seg, msg_seg = self.editor._apply_folded_object_split(
+                    str(segment[0]), float(segment[1])
+                )
+            except Exception as exc:  # noqa: BLE001 — report, keep the FOV solve
+                msg_seg = f"Segment constraint failed: {exc}"
+            msg = f"{msg} {msg_seg}"
         if ok:
             try:
                 self.editor._sync_table()

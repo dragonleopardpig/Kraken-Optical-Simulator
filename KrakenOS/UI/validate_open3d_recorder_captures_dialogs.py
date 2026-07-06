@@ -2,15 +2,15 @@
 
 The recorder only hooks the 3D VTK canvas (mouse press/release/move), so a flagged workflow that
 ran through a Tk dialog -- the FOV plane DOUBLE-CLICK that opens the popup, the typed field values,
-and the "Solve for Thickness" / "Apply split" buttons -- was INVISIBLE in the replay (it looked like
-bare canvas clicks; the user: "shouldn't your full recording recorded all these?"). The recorder
-already has a `record_command(label, payload)` API; the fix routes the dialog action points through
-a `_record_dialog_command` helper so they appear as command events.
+and the "Solve for Thickness" / "Solve for Image/Sensor Size" buttons -- was INVISIBLE in the replay
+(it looked like bare canvas clicks; the user: "shouldn't your full recording recorded all these?").
+The recorder already has a `record_command(label, payload)` API; the fix routes the dialog action
+points through a `_record_dialog_command` helper so they appear as command events.
 
   (A) CAPTURE: record_command appends a "command" event with the label + payload (the plane, the
-      solve mode + field values, the split leg + value).
-  (B) WIRED: the FOV double-click, the FOV solve, and the fold-split apply all call
-      _record_dialog_command; the helper routes to record_command.
+      solve mode + field values, and -- bugs/0237 -- the merged object->mirror segment leg).
+  (B) WIRED: the FOV double-click and the FOV solve both call _record_dialog_command; the helper
+      routes to record_command, and the merged object-split leg rides in the fov_solve payload.
 
 Run: .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_recorder_captures_dialogs
 Exit: 0 = pass, 1 = regression.
@@ -42,18 +42,21 @@ def validate_recorder_captures_dialogs() -> list[Check]:
     rec.events = []
     rec._t0 = 0.0
     rec.record_command("fov_popup_open", {"plane": "object", "row": 0})
-    rec.record_command("fov_solve", {"plane": "object", "mode": "thickness", "width": 55.0, "height": 55.0})
-    rec.record_command("fold_split_apply", {"plane": "object", "leg": "far", "value": 50.0})
+    rec.record_command(
+        "fov_solve",
+        {"plane": "object", "mode": "thickness", "width": 55.0, "height": 55.0, "segment": ["near", 50.0]},
+    )
     labels = [e.label for e in rec.events]
     kinds = {e.kind for e in rec.events}
     solve_ev = next((e for e in rec.events if e.label == "fov_solve"), None)
     checks.append(Check(
-        "CAPTURE: record_command logs the dialog actions with their field values",
-        len(rec.events) == 3
+        "CAPTURE: record_command logs the dialog actions with their field values (incl. the merged segment leg)",
+        len(rec.events) == 2
         and kinds == {"command"}
-        and labels == ["fov_popup_open", "fov_solve", "fold_split_apply"]
+        and labels == ["fov_popup_open", "fov_solve"]
         and solve_ev is not None
-        and solve_ev.payload.get("width") == 55.0,
+        and solve_ev.payload.get("width") == 55.0
+        and solve_ev.payload.get("segment") == ["near", 50.0],
         f"events={len(rec.events)} labels={labels} solve_payload={None if solve_ev is None else solve_ev.payload}",
     ))
 
@@ -61,20 +64,21 @@ def validate_recorder_captures_dialogs() -> list[Check]:
     helper = inspect.getsource(Kraken3DInspector._record_dialog_command)
     dbl = inspect.getsource(Kraken3DInspector._maybe_open_fov_popup_from_double_click)
     solve = inspect.getsource(Kraken3DInspector._apply_quick_estimation_fov_solve)
-    section = inspect.getsource(Kraken3DInspector._add_folded_conjugate_split_section)
+    # bugs/0237: the object-split leg is no longer a standalone "fold_split_apply" command — it is
+    # merged into the FOV solve, so its value rides in the "fov_solve" command's "segment" payload.
+    seg_in_solve = '"segment"' in solve
     wired = (
         "record_command" in helper
         and '_record_dialog_command("fov_popup_open"' in dbl
         and "_record_dialog_command(" in solve
         and '"fov_solve"' in solve
-        and "_record_dialog_command(" in section
-        and '"fold_split_apply"' in section
+        and seg_in_solve
     )
     checks.append(Check(
-        "WIRED: the FOV double-click, the FOV solve, and the fold-split apply record dialog commands",
+        "WIRED: the FOV double-click and the FOV solve (with its merged segment leg) record dialog commands",
         wired,
         f"helper={'record_command' in helper} dblclick={'fov_popup_open' in dbl} "
-        f"solve={'fov_solve' in solve} split={'fold_split_apply' in section}",
+        f"solve={'fov_solve' in solve} segment={seg_in_solve}",
     ))
     return checks
 
