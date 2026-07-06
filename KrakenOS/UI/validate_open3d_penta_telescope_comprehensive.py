@@ -10936,6 +10936,32 @@ def phase_211_folded_split_two_fold_gated(
     return result
 
 
+def phase_212_async_trace_fallback_reason(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The off-thread preview trace (bugs/0223) must record WHY it did/did-not kick a background
+    worker, so a scene that silently falls back to the synchronous 41s scalar folded trace can be
+    diagnosed from the next recording instead of guessed at. `validate_open3d_async_trace_fallback_reason`
+    asserts a refused kick records the exact gate (force_retrace / not_interactive_opt_in), a
+    coalesced begin records began=True, a kicked-but-failed worker records worker_failed + the
+    error/log tail, and both fields feed the bug recorder. bugs/0235."""
+    result = PhaseResult(name="Phase 212: off-thread trace records its sync-fallback reason")
+    try:
+        from KrakenOS.UI.validate_open3d_async_trace_fallback_reason import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"async-trace-fallback-reason guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("async-trace-fallback-reason phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11193,6 +11219,7 @@ def main() -> int:
             phase_209_folded_fov_solve,
             phase_210_qe_overlay_square_to_plane,
             phase_211_folded_split_two_fold_gated,
+            phase_212_async_trace_fallback_reason,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

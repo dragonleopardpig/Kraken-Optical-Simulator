@@ -216,6 +216,34 @@ def _set_async_status(inspector: Any, text: str) -> None:
             pass
 
 
+def _record_async_decision(inspector: Any, editor: Any, *, began: bool, reason: str) -> bool:
+    """bugs/0235: record WHY the last refresh did/did-not KICK a background worker."""
+    decision = {"began": bool(began), "reason": str(reason)}
+    with contextlib.suppress(Exception):
+        inspector._async_trace_last_decision = decision
+    if editor is not None:
+        with contextlib.suppress(Exception):
+            editor._last_async_trace_decision = decision
+    return began
+
+
+def _record_async_worker_outcome(inspector: Any, editor: Any, *, reason: str, detail: str = "") -> None:
+    """bugs/0235: record the completed worker's OUTCOME (applied / failed / stale). A kicked
+    worker that then fails to rebuild the scene (e.g. an imported-STEP periscope the worker
+    cannot re-import) falls back to the synchronous 41s trace -- so ``_last_async_trace_decision``
+    reads ``kicked`` while the recording shows the sync backend. This field reveals the failure
+    (and its error tail) so the next flag_* recording pins it. Survives the sync-fallback's
+    re-entrant kick check, which only rewrites ``_last_async_trace_decision``."""
+    outcome = {"reason": str(reason)}
+    if detail:
+        outcome["detail"] = str(detail)[-800:]
+    with contextlib.suppress(Exception):
+        inspector._async_trace_last_worker_outcome = outcome
+    if editor is not None:
+        with contextlib.suppress(Exception):
+            editor._last_async_trace_worker_outcome = outcome
+
+
 def maybe_begin_inspector_async_trace(
     inspector: Any,
     *,
@@ -244,41 +272,50 @@ def maybe_begin_inspector_async_trace(
     """
     import time
 
-    if not _ASYNC_PREVIEW_TRACE_ENABLED:
-        return False
     editor = getattr(inspector, "editor", None)
+
+    def _record(began: bool, reason: str) -> bool:
+        # bugs/0235: leave a breadcrumb for WHY async did/did-not engage. The flag scene
+        # (a promoted two-fold periscope WITH imported-STEP decoration overlays) falls back
+        # to the synchronous 41s scalar folded trace, but the recording only showed the
+        # sync backend -- not which gate here rejected it. Record the decision so the next
+        # flag_* recording's sampling_diagnostics pins the exact reason.
+        return _record_async_decision(inspector, editor, began=began, reason=reason)
+
+    if not _ASYNC_PREVIEW_TRACE_ENABLED:
+        return _record(False, "kill_switch_off")
     if editor is None:
-        return False
+        return _record(False, "no_editor")
     # Interactive app only: the poll runs on the Tk mainloop. Headless editors (guards,
     # snapshot scripts) would kick a worker whose completion never fires -> keep sync.
     if not getattr(editor, "_async_preview_trace_opt_in", False):
-        return False
+        return _record(False, "not_interactive_opt_in")
     if getattr(inspector, "_async_trace_fallback_sync", False):
-        return False
+        return _record(False, "fallback_latched")
     if force_retrace:
-        return False
+        return _record(False, "force_retrace")
     if getattr(inspector, "_placement_drag_state", None) is not None:
-        return False
+        return _record(False, "placement_drag")
     if getattr(inspector, "_async_trace_state", None) is not None:
-        return True  # coalesce onto the in-flight worker (see docstring)
+        return _record(True, "coalesced_inflight")  # coalesce onto the in-flight worker
     try:
         service = editor._open3d_trace_refresh_service()
         if service.inspector_should_trace_step_overlays(inspector, force_retrace=False):
-            return False
+            return _record(False, "traceable_step_overlay")
         if not service.has_promoted_step_optical_solid_rows():
-            return False
+            return _record(False, "no_promoted_step_rows")
         settings = editor._layout_settings_service()._collect_layout_settings()
     except Exception:
-        return False
+        return _record(False, "settings_error")
     try:
         payload, system = capture_async_trace_payload(
             editor, settings=dict(settings or {}), sampling_mode=sampling_mode
         )
     except Exception:
         editor._preview_trace_bundle_capture = None
-        return False
+        return _record(False, "capture_error")
     if payload is None:
-        return False
+        return _record(False, "capture_none")
     import subprocess
 
     scratch = shm_scratch_dir()
@@ -304,7 +341,7 @@ def maybe_begin_inspector_async_trace(
     except Exception:
         with contextlib.suppress(OSError):
             os.remove(payload_path)
-        return False
+        return _record(False, "spawn_failed")
     inspector._async_trace_state = {
         "proc": proc,
         "payload_path": payload_path,
@@ -325,7 +362,7 @@ def maybe_begin_inspector_async_trace(
         inspector, f"Tracing {int(payload.get('total_launch_rays', 0))} rays in the background..."
     )
     _schedule_async_poll(inspector)
-    return True
+    return _record(True, "kicked")
 
 
 def _schedule_async_poll(inspector: Any) -> None:
@@ -380,10 +417,15 @@ def _poll_inspector_async_trace(inspector: Any) -> None:
         with contextlib.suppress(OSError):
             os.remove(path)
     if result.get("error"):
+        detail = str(result["error"])
+        tail = str(result.get("log_tail", "") or "")
+        if tail:
+            detail = f"{detail} | log: {tail}"
         try:
-            editor.append_debug("async trace worker failed: " + str(result["error"])[-800:])
+            editor.append_debug("async trace worker failed: " + detail[-800:])
         except Exception:
             pass
+        _record_async_worker_outcome(inspector, editor, reason="worker_failed", detail=detail)
         _fallback_sync_refresh(inspector, state)
         return
     # Discard a result whose scene changed SINCE the capture: the trace signature moved,
@@ -408,6 +450,9 @@ def _poll_inspector_async_trace(inspector: Any) -> None:
         if rekicks >= 2 or not maybe_begin_inspector_async_trace(
             inspector, sampling_mode=state.get("sampling_mode"), _rekicks=rekicks + 1
         ):
+            _record_async_worker_outcome(
+                inspector, editor, reason="stale_rekick_exhausted", detail=f"rekicks={rekicks}"
+            )
             _fallback_sync_refresh(inspector, state)
         return
     try:
@@ -422,12 +467,16 @@ def _poll_inspector_async_trace(inspector: Any) -> None:
             inspector, result.get("sampling_mode")
         )
         elapsed = _time.perf_counter() - state["started"]
+        _record_async_worker_outcome(
+            inspector, editor, reason="applied", detail=f"{elapsed:.1f}s"
+        )
         _set_async_status(inspector, f"3D inspector updated (background trace {elapsed:.1f}s).")
     except Exception as exc:
         try:
             editor.append_debug(f"async trace apply failed: {exc!r}")
         except Exception:
             pass
+        _record_async_worker_outcome(inspector, editor, reason="apply_failed", detail=repr(exc))
         _fallback_sync_refresh(inspector, state)
 
 

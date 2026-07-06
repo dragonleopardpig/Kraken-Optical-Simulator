@@ -663,6 +663,16 @@ class Open3DEventRecorder:
                 diag["folded_sequential_engaged"] = getattr(
                     editor, "_last_preview_folded_sequential", None
                 )
+                # bugs/0235: WHY the off-thread worker trace did/did-not engage. When
+                # actual_trace_backend is the synchronous "Scalar TraceLoop" on a promoted
+                # STEP scene, async_trace_decision says which gate rejected the kick
+                # ("no_promoted_step_rows", "capture_none", ...), and async_trace_worker_outcome
+                # reveals a kicked-but-failed worker ("worker_failed" + error tail) that fell
+                # back to the sync 41s trace -- the flag_20260706_070708_237 case.
+                diag["async_trace_decision"] = getattr(editor, "_last_async_trace_decision", None)
+                diag["async_trace_worker_outcome"] = getattr(
+                    editor, "_last_async_trace_worker_outcome", None
+                )
 
                 def _bundle_mode():
                     from KrakenOS.UI.layout_plot_controller import scene_bundle_launch_sampling_mode
