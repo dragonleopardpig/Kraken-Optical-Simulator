@@ -11087,6 +11087,36 @@ def phase_217_folded_thin_lens_curve_on_beam(
     return result
 
 
+def phase_218_folded_coverage_label_decollide(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """On the two-fold the detector-coverage labels "Sensor 26.3x26.3" and "Image circle O32.6"
+    printed on top of each other (flag_20260706_130527_037). The labels are placed at distinct CLOCK
+    ANGLES in the image plane, which spreads them face-on but collapses onto a line in the edge-on
+    folded -YZ view the user works in, so the fixed-screen-size billboards stacked on the same spot.
+    Fix: STACK the co-planar image labels along the detector NORMAL (the one axis still visible edge-on)
+    by a per-label step, on top of the clock placement; face-on the normal offset is depth-only so the
+    tuned layout is unchanged, and Sensor stays at stack 0 (byte-identical anchor). `validate_open3d_
+    folded_coverage_label_decollide` asserts the labels occupy distinct rows along the normal, separate
+    edge-on where the un-stacked placement piled up, keep the Sensor anchor, preserve the face-on clock
+    spread, and keep their text + order. bugs/0241."""
+    result = PhaseResult(name="Phase 218: folded coverage labels de-collide (Sensor/Image circle)")
+    try:
+        from KrakenOS.UI.validate_open3d_folded_coverage_label_decollide import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-coverage-label guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-coverage-label phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11349,6 +11379,7 @@ def main() -> int:
             phase_215_folded_duplicate_image_plane,
             phase_216_folded_image_mesh_reseat,
             phase_217_folded_thin_lens_curve_on_beam,
+            phase_218_folded_coverage_label_decollide,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

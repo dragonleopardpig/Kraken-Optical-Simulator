@@ -42,6 +42,11 @@ _IMAGE_PLANE = (1.0, 0.0, 0.6)              # magenta -- best-focus image plane 
 _LABEL_GAP = 0.6      # mm standoff beyond the radial placement
 _LABEL_MARGIN = 0.10  # fraction of the element radius added before the gap
 _LABEL_NORMAL_LIFT_FRACTION = 0.2  # off-plane lift for the image labels (edge-on clearance only)
+# Per-label stagger ALONG the detector normal so co-planar image labels read as separate
+# rows in an edge-on folded view, where the in-plane clock spread collapses onto a line
+# (bugs/0241). A fraction of the sensor half-diagonal, floored so tiny sensors still clear.
+_LABEL_STACK_STEP_FRACTION = 0.55
+_LABEL_STACK_MIN_MM = 5.0
 
 # Coverage tolerance in mm. 1 micron is physically negligible (under a quarter
 # of the 4.5 um sensor pixel) yet wide enough to absorb the 6-significant-figure
@@ -275,17 +280,25 @@ def detector_coverage_label_specs(
     # flag "text overlaps the detector"); a normal offset moves them off it without hiding geometry.
     _inormal = np.asarray(image_axis if image_axis is not None else default_axis, dtype=float).reshape(3)
     _nn = float(np.linalg.norm(_inormal))
+    _lift_dir = _inormal / _nn if _nn > 1e-9 else np.zeros(3)
     # Lift just enough to clear the detector edge-on (a small fraction of the sensor), NOT
     # the full half-diagonal -- a full-diagonal lift PLUS the in-plane radius floated the
     # labels ~1.5x the sensor radius away (user: "Sensor / Image circle labels too far").
     _label_lift = metrics.sensor_half_diagonal * _LABEL_NORMAL_LIFT_FRACTION + _LABEL_GAP
-    img_label_center = (
-        img_pt + (_inormal / _nn) * _label_lift if _nn > 1e-9 else img_pt
-    )
+    img_label_center = img_pt + _lift_dir * _label_lift
 
-    def place(center, radius, angle_deg, text, color, u, v):
+    # bugs/0241: STACK the co-planar image labels along the detector normal. In an EDGE-ON
+    # folded view (the -YZ arm) the in-plane clock spread below collapses onto a line, so the
+    # "Sensor" and "Image circle" billboards printed on top of each other ("Sensor 2Ima6g.3e..."
+    # -- the user flag). The normal is the one axis still visible when the image plane is seen
+    # edge-on, so a per-label step along it reads them as separate rows; face-on it is depth-
+    # only, leaving the tuned clock placement below unchanged. Sensor stays at stack 0 (its
+    # tuned right-edge anchor is pinned by validate_open3d_fov_label_edge_on_clearance).
+    _stack_step = max(metrics.sensor_half_diagonal * _LABEL_STACK_STEP_FRACTION, _LABEL_STACK_MIN_MM)
+
+    def place(center, radius, angle_deg, text, color, u, v, stack=0):
         a = np.radians(float(angle_deg))
-        anchor = center + radius * (np.cos(a) * u + np.sin(a) * v)
+        anchor = center + stack * _stack_step * _lift_dir + radius * (np.cos(a) * u + np.sin(a) * v)
         return {"text": str(text), "anchor": anchor, "color": tuple(color)}
 
     labels: list[dict[str, Any]] = []
@@ -318,7 +331,7 @@ def detector_coverage_label_specs(
                 f"Image circle Ø{2 * metrics.image_circle_radius:.1f}"
                 + ("" if covering else " (short)"),
                 _IMAGE_CIRCLE_COVERS if covering else _IMAGE_CIRCLE_SHORT,
-                iu, iv,
+                iu, iv, stack=1,
             )
         )
     if metrics.sensor_is_real and not metrics.covers and metrics.sensor_half_diagonal > 1e-9:
@@ -329,7 +342,7 @@ def detector_coverage_label_specs(
                 275.0,
                 f"Needs Ø{2 * metrics.sensor_half_diagonal:.1f}",
                 _REQUIRED_RING,
-                iu, iv,
+                iu, iv, stack=2,
             )
         )
 
