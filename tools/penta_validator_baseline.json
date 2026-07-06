@@ -215,7 +215,8 @@
     "210": "pass",
     "212": "pass",
     "213": "pass",
-    "214": "pass"
+    "214": "pass",
+    "215": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -431,6 +432,7 @@
     "210": "QE FOV overlay discs square to their own planes",
     "212": "off-thread trace records its sync-fallback reason",
     "213": "two-fold folded solve carries the trailing mirror onto the beam",
-    "214": "FOV Solve-for-Thickness applies the merged object-segment split"
+    "214": "FOV Solve-for-Thickness applies the merged object-segment split",
+    "215": "folded solve drops the duplicate unfolded image plane"
   }
 }

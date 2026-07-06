@@ -12,6 +12,10 @@ _PROTECTED_GLOBALS = {
     "_sync_layout_globals",
 }
 
+# bugs/0238: a kind="image" surface curve this far (mm) from every folded detector
+# target is a STALE unfolded duplicate and is dropped (the "two image planes" fix).
+_SUPERSEDED_IMAGE_CURVE_TOL_MM = 1.0
+
 
 def _sync_layout_globals(source: dict[str, object]) -> None:
     target = globals()
@@ -728,7 +732,16 @@ class LayoutSceneBundleDisplayMixin:
             # overlay (detector_coverage_overlay.add_overlays) -- draws on the folded
             # sensor. The two-arm splitter path above already replaced the detectors with
             # their own per-arm folded centres, so it is left untouched.
-            self._fold_promoted_mirror_table_row_targets(bundle)
+            if self._fold_promoted_mirror_table_row_targets(bundle):
+                # bugs/0238: the surface curves were built on the UNFOLDED +Z axis (Non-
+                # Sequential Preview does not fold them), so once the detector TARGET is
+                # carried onto the branch its kind="image" curve is left behind on the
+                # straight axis -- a SECOND image/detector plane off the beam (the user's
+                # "two image and detector plane" on the two-fold periscope). The two-arm
+                # splitter path above drops its superseded terminal curves; do the same for
+                # the single promoted-mirror fold, but only for curves that no longer sit on
+                # the folded detector (a coincident folded-sequential curve is kept).
+                self._drop_unfolded_superseded_image_curves(bundle)
             # bugs/0193: build_scene_placements copies each row-backed placement's world
             # pose from the SAME unfolded +Z targets (scene_builder runs it before this
             # fold), so an aperture-stop / reference-grid placement on a folded row floats
@@ -879,6 +892,57 @@ class LayoutSceneBundleDisplayMixin:
         target.normal_world = np.asarray(folded_normal, dtype=float)
         target.tangent_world = np.asarray(folded_tangent, dtype=float)
         return True
+
+    def _drop_unfolded_superseded_image_curves(self, bundle) -> int:
+        """bugs/0238: drop any ``kind="image"`` surface curve that no longer coincides with
+        a folded detector target.
+
+        In Non-Sequential Preview the surface curves are built on the UNFOLDED +Z axis while
+        ``_fold_promoted_mirror_table_row_targets`` carries the detector TARGET onto the
+        promoted-mirror branch. The stale unfolded image curve then draws a SECOND image /
+        detector plane off the beam (the user's "two image and detector plane" on the
+        two-fold periscope). A curve that STILL sits on its detector -- a plain sequential
+        scene, or a folded-sequential one whose curve was itself built folded -- is within
+        the tolerance and kept, so only the genuine off-beam duplicate is removed. Returns
+        the number of curves dropped."""
+        detectors = [t for t in (getattr(bundle, "targets", None) or []) if getattr(t, "is_detector", False)]
+        det_centers: list[np.ndarray] = []
+        for target in detectors:
+            try:
+                center = np.asarray(target.center_world, dtype=float).reshape(3)
+            except Exception:
+                continue
+            if np.all(np.isfinite(center)):
+                det_centers.append(center)
+        if not det_centers:
+            return 0
+
+        def _centroid(curve):
+            pts = getattr(curve, "points_world", None)
+            if pts is None:
+                pts = getattr(curve, "points", None)
+            if pts is None:
+                return None
+            try:
+                arr = np.asarray(pts, dtype=float).reshape(-1, 3)
+            except Exception:
+                return None
+            return arr.mean(axis=0) if arr.size else None
+
+        kept: list = []
+        dropped = 0
+        for curve in (getattr(bundle, "surface_curves", None) or []):
+            if str(getattr(curve, "kind", "") or "").strip().lower() == "image":
+                centroid = _centroid(curve)
+                if centroid is not None and min(
+                    float(np.linalg.norm(centroid - dc)) for dc in det_centers
+                ) > _SUPERSEDED_IMAGE_CURVE_TOL_MM:
+                    dropped += 1
+                    continue
+            kept.append(curve)
+        if dropped:
+            bundle.surface_curves = kept
+        return dropped
 
     def _fold_promoted_mirror_scene_placements(self, bundle) -> int:
         """Fold every row-backed scene PLACEMENT onto a promoted mirror's reflected branch.

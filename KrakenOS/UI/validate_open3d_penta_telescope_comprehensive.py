@@ -10995,6 +10995,35 @@ def phase_214_folded_fov_segment_merge(
     return result
 
 
+def phase_215_folded_duplicate_image_plane(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """On a two-fold, a folded object-distance solve left TWO image/detector planes: in Non-Sequential
+    Preview the surface curves are built on the UNFOLDED +Z axis, but `_fold_promoted_mirror_table_row_targets`
+    (bugs/0188) carries the detector TARGET onto the folded branch, so the stale unfolded kind="image"
+    curve is left behind off the beam (bugs/0238). Fix: after the single-mirror fold carries the
+    detector target, `_drop_unfolded_superseded_image_curves` drops any kind="image" curve that no
+    longer coincides with a folded detector (a curve still on its detector is within tolerance and
+    kept). `validate_open3d_folded_duplicate_image_plane` asserts one detector target with no stale
+    off-beam image curve, the drop keeps the coincident curve and removes the diverged one, rays
+    still image, and the drop is wired into `_build_scene_bundle`. bugs/0238."""
+    result = PhaseResult(name="Phase 215: folded solve drops the duplicate unfolded image plane")
+    try:
+        from KrakenOS.UI.validate_open3d_folded_duplicate_image_plane import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-duplicate-image-plane guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-duplicate-image-plane phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11254,6 +11283,7 @@ def main() -> int:
             phase_212_async_trace_fallback_reason,
             phase_213_two_fold_image_arm_follow,
             phase_214_folded_fov_segment_merge,
+            phase_215_folded_duplicate_image_plane,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
