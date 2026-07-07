@@ -11294,6 +11294,34 @@ def phase_223_folded_object_plus_image_split(
     return result
 
 
+def phase_224_2d_refresh_after_solve(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0248: the main 2D 'YZ full 3D' layout must refresh after a Quick-Estimation solve /
+    FOV / constraint apply done inside the Open 3D inspector -- on Done-2D OR Close. The five
+    producers (snap-to-FOV, thickness solve, FOV solve, design + placement constraints) rewrite
+    the prescription and retrace the 3D inspector, but only ``_stl_placement_dirty`` gates the
+    main-2D redraw; none marked it, so the 2D went stale after the user's 55x55 FOV + RA-mirror
+    constraint solve. `validate_open3d_2d_refresh_after_solve` binds the real methods to a fake
+    self: each success marks the 2D stale (a FAILED solve does not); Done-2D + Close redraw the
+    2D when stale and skip it on a look-only session."""
+    result = PhaseResult(name="Phase 224: 2D layout refreshes after an inspector solve/FOV/constraint apply")
+    try:
+        from KrakenOS.UI.validate_open3d_2d_refresh_after_solve import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"2d-refresh-after-solve guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("2d-refresh-after-solve phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11562,6 +11590,7 @@ def main() -> int:
             phase_221_folded_load_perf_caches,
             phase_222_folded_fov_free_mirror_reseat,
             phase_223_folded_object_plus_image_split,
+            phase_224_2d_refresh_after_solve,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -16321,6 +16321,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor._invalidate_preview_scene_trace()
             self.editor._sync_trace_state_badge()
             self.refresh_from_editor(force_retrace=True)
+            self._mark_2d_layout_stale()
             qe.update_readout()
         else:
             self.editor._commit_history_capture()
@@ -16355,6 +16356,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor._invalidate_preview_scene_trace()
             self.editor._sync_trace_state_badge()
             self.refresh_from_editor(force_retrace=True)
+            self._mark_2d_layout_stale()
             try:
                 self._quick_estimation_service().update_readout()
             except Exception:
@@ -16861,6 +16863,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 pass
             self.refresh_from_editor(force_retrace=True)
+            self._mark_2d_layout_stale()
             qe.update_readout()
         else:
             self.editor._commit_history_capture()
@@ -16890,6 +16893,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 pass
             self.refresh_from_editor(force_retrace=True)
+            self._mark_2d_layout_stale()
             qe.update_readout()
         else:
             self.editor._commit_history_capture()
@@ -16919,6 +16923,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 pass
             self.refresh_from_editor(force_retrace=True)
+            self._mark_2d_layout_stale()
             qe.update_readout()
         else:
             self.editor._commit_history_capture()
@@ -18707,6 +18712,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor.append_debug(f"STL front placement failed: {exc}")
             return
         self._refresh_after_stl_pose_change(row_index, "Min Z On Row")
+
+    def _mark_2d_layout_stale(self) -> None:
+        """A solve/FOV/constraint apply rewrote the prescription (editor.rows) and retraced the
+        3D inspector, but the main 2D 'YZ full 3D' layout only redraws on Done-2D/Close, and only
+        when this flag is set — otherwise it stays stale (bugs/0248). Reuses the STL-placement
+        gate as the single 'main 2D is out of date' signal both finish_stl_placement / _on_close
+        check."""
+        self._stl_placement_dirty = True
 
     def finish_stl_placement(self) -> None:
         if self._stl_placement_dirty:

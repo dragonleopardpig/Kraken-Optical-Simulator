@@ -224,7 +224,8 @@
     "220": "pass",
     "221": "pass",
     "222": "pass",
-    "223": "pass"
+    "223": "pass",
+    "224": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -449,6 +450,7 @@
     "220": "folded scene traced on the real system (first-surface RA mirrors)",
     "221": "folded-load scene-invariant perf caches are byte-identical",
     "222": "folded FOV solve re-seats the free-placed trailing mirror",
-    "223": "folded object dialog pins both fold legs in one solve"
+    "223": "folded object dialog pins both fold legs in one solve",
+    "224": "2D layout refreshes after an inspector solve/FOV/constraint apply"
   }
 }
