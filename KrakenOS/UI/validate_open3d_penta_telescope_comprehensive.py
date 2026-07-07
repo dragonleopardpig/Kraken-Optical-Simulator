@@ -11240,6 +11240,36 @@ def phase_222_folded_fov_free_mirror_reseat(
     return result
 
 
+def phase_223_folded_object_plus_image_split(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0247: the OBJECT Plane FOV dialog pins BOTH fold legs in one solve. The object fold
+    (a sequential fold) and the image fold (a free-placed promoted solid) are INDEPENDENT
+    mechanical freedoms on different gap rows, so the object popup offers an object-side AND an
+    image-side checkbox group; one "Solve for Thickness" fills the sensor, slides the object
+    mirror to the pinned object leg, and slides the image mirror to the pinned image leg (each
+    carried onto the beam by the bugs/0244 leg-walk carry). `validate_open3d_folded_object_plus
+    _image_split` pins: both conjugate totals held (focus preserved) with both legs exact; the
+    free-placed image mirror re-seats at last-lens + the image leg (not the stale offset); the
+    two legs are independent (neither pin disturbs the other); and the popup/solve wiring builds
+    both groups and applies image_segment via _apply_folded_image_split on the object plane."""
+    result = PhaseResult(name="Phase 223: folded object dialog pins both fold legs in one solve")
+    try:
+        from KrakenOS.UI.validate_open3d_folded_object_plus_image_split import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-object-plus-image-split guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-object-plus-image-split phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11507,6 +11537,7 @@ def main() -> int:
             phase_220_folded_real_trace_sync,
             phase_221_folded_load_perf_caches,
             phase_222_folded_fov_free_mirror_reseat,
+            phase_223_folded_object_plus_image_split,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

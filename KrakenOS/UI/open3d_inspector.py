@@ -16347,35 +16347,36 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             justify="left",
         ).grid(row=3, column=0, columnspan=2, padx=12, pady=(0, 8), sticky="w")
 
-        # bugs/0237 → 0242: on a FOLDED scene each conjugate is bent by an RA fold mirror, so the
-        # user may PIN one leg of the fold as part of the SAME solve. The conjugate's two legs
+        # bugs/0237 → 0242 → 0247: on a FOLDED scene each conjugate is bent by an RA fold mirror,
+        # so the user may PIN one leg of a fold as part of the SAME solve. A conjugate's two legs
         # (near = first leg, far = second leg, split at the fold-mirror centre) are offered as
         # SIBLING checkboxes: tick one, type its distance, then click a Solve button — the solve
-        # fills the sensor AND slides the fold mirror so the pinned leg is exact (the trailing
-        # mirror is carried onto the beam, bugs/0236). Ticking one leg grays out the other (near +
-        # far are mutually determined: far = total − near). The OBJECT popup pins the object
-        # conjugate (object → mirror / mirror → first surface) via _folded_object_conjugate_split;
-        # the IMAGE popup pins the image conjugate (last surface → mirror / mirror → sensor) via
-        # _folded_image_conjugate_split. This is "2+2" on a two-fold periscope; the general N+n
-        # (several folds per conjugate) is future work. Unticked, the solve behaves exactly as before.
-        segment_getter = lambda: None
-        button_row = 4
-        try:
-            _seg_split = (
-                self.editor._folded_object_conjugate_split()
-                if plane == "object"
-                else self.editor._folded_image_conjugate_split()
-            )
-        except Exception:
-            _seg_split = None
-        if _seg_split:
-            seg_total = float(_seg_split["total"])
-            seg_near0 = float(_seg_split["near"])
-            seg_far0 = float(_seg_split["far"])
+        # fills the sensor AND slides that fold mirror so the pinned leg is exact (the trailing
+        # free-placed mirror is carried onto the beam, bugs/0236/0244). Ticking one leg grays out
+        # the other (near + far are mutually determined: far = total − near). The object fold and
+        # the image fold are INDEPENDENT mechanical freedoms, so the OBJECT popup offers BOTH
+        # groups — the object conjugate (object → mirror / mirror → first surface) AND, on a
+        # two-fold, the image conjugate (last surface → mirror / mirror → sensor) — letting one
+        # Solve pin one object leg and one image leg together (bugs/0247). The IMAGE popup offers
+        # only the image group. This is "2+2" on a two-fold periscope; the general N+n (several
+        # folds per conjugate) is future work. Unticked, the solve behaves exactly as before.
+        def _build_split_group(seg_split, kind, start_row, header=None):
+            """Render one conjugate's near/far pin checkboxes (kind = 'object' or 'image')
+            starting at grid `start_row`; returns (segment_getter, next_free_row). The getter
+            yields ("near"|"far", value), None (unticked), or ("error", message)."""
+            row = start_row
+            if header is not None:
+                ttk.Label(
+                    dialog, text=header, font=("TkDefaultFont", 9, "bold"), justify="left"
+                ).grid(row=row, column=0, columnspan=2, sticky="w", padx=12, pady=(2, 2))
+                row += 1
+            seg_total = float(seg_split["total"])
+            seg_near0 = float(seg_split["near"])
+            seg_far0 = float(seg_split["far"])
             seg_leg_min = float(max(
-                _seg_split.get("near_min", 0.0) or 0.0, _seg_split.get("far_min", 0.0) or 0.0
+                seg_split.get("near_min", 0.0) or 0.0, seg_split.get("far_min", 0.0) or 0.0
             ))
-            if plane == "object":
+            if kind == "object":
                 near_lbl = "Constrain object → mirror distance (mm):"
                 far_lbl = "Constrain mirror → first surface distance (mm):"
                 near_name, far_name, total_name = "object → mirror", "mirror → first surface", "object distance"
@@ -16406,21 +16407,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
             near_cb.configure(command=_sync_seg)
             far_cb.configure(command=_sync_seg)
-            near_cb.grid(row=4, column=0, sticky="w", padx=(12, 4), pady=(0, 2))
-            near_entry.grid(row=4, column=1, sticky="ew", padx=(0, 12), pady=(0, 2))
-            far_cb.grid(row=5, column=0, sticky="w", padx=(12, 4), pady=(0, 2))
-            far_entry.grid(row=5, column=1, sticky="ew", padx=(0, 12), pady=(0, 2))
+            near_cb.grid(row=row, column=0, sticky="w", padx=(12, 4), pady=(0, 2))
+            near_entry.grid(row=row, column=1, sticky="ew", padx=(0, 12), pady=(0, 2))
+            far_cb.grid(row=row + 1, column=0, sticky="w", padx=(12, 4), pady=(0, 2))
+            far_entry.grid(row=row + 1, column=1, sticky="ew", padx=(0, 12), pady=(0, 2))
             ttk.Label(
                 dialog,
                 text=(
-                    f"Slides the fold mirror along the optical axis (total {total_name} "
+                    f"Slides the {kind} fold mirror along the optical axis (total {total_name} "
                     f"{seg_total:.4g} mm stays fixed; each leg ≥ {seg_leg_min:.4g} mm). Tick one "
                     f"leg — its sibling is then determined and grayed out."
                 ),
                 foreground="#888888",
                 wraplength=320,
                 justify="left",
-            ).grid(row=6, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 8))
+            ).grid(row=row + 2, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 8))
             _sync_seg()
 
             def _segment_getter():
@@ -16441,8 +16442,34 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     return ("error", f"{name} distance must be positive.")
                 return (leg, val)
 
-            segment_getter = _segment_getter
-            button_row = 7
+            return _segment_getter, row + 3
+
+        segment_getter = lambda: None
+        image_segment_getter = lambda: None
+        next_row = 4
+        try:
+            _obj_split = self.editor._folded_object_conjugate_split()
+        except Exception:
+            _obj_split = None
+        try:
+            _img_split = self.editor._folded_image_conjugate_split()
+        except Exception:
+            _img_split = None
+        if plane == "object":
+            # the object popup pins the object conjugate and (on a two-fold) ALSO the image
+            # conjugate; bold headers separate the two groups when both are shown.
+            _both = bool(_obj_split) and bool(_img_split)
+            if _obj_split:
+                segment_getter, next_row = _build_split_group(
+                    _obj_split, "object", next_row, header=("Object-side fold" if _both else None)
+                )
+            if _img_split:
+                image_segment_getter, next_row = _build_split_group(
+                    _img_split, "image", next_row, header=("Image-side fold" if _both else None)
+                )
+        elif _img_split:
+            segment_getter, next_row = _build_split_group(_img_split, "image", next_row)
+        button_row = next_row
 
         def _read_dim(var, label):
             """Parse one box: blank -> (True, None) so it is derived; a present but
@@ -16477,13 +16504,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self.status_var.set(seg[1])
                 return
             segment = seg if (seg is not None and seg[0] in ("near", "far")) else None
+            img_seg = image_segment_getter()
+            if img_seg is not None and img_seg[0] == "error":
+                self.status_var.set(img_seg[1])
+                return
+            image_segment = img_seg if (img_seg is not None and img_seg[0] in ("near", "far")) else None
             aspect = (w0, h0) if (w0 and h0) else None
             try:
                 dialog.grab_release()
             except Exception:
                 pass
             dialog.destroy()
-            self._apply_quick_estimation_fov_solve(plane, mode, width, height, aspect, segment=segment)
+            self._apply_quick_estimation_fov_solve(
+                plane, mode, width, height, aspect, segment=segment, image_segment=image_segment
+            )
 
         ttk.Button(dialog, text="Solve for Thickness", command=lambda: run("thickness")).grid(
             row=button_row, column=0, padx=(12, 4), pady=(0, 6), sticky="ew"
@@ -16651,6 +16685,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         height: float | None = None,
         aspect: tuple[float, float] | None = None,
         segment: tuple[str, float] | None = None,
+        image_segment: tuple[str, float] | None = None,
     ) -> None:
         self._record_dialog_command(
             "fov_solve",
@@ -16660,6 +16695,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 "width": width,
                 "height": height,
                 "segment": [str(segment[0]), float(segment[1])] if segment else None,
+                "image_segment": (
+                    [str(image_segment[0]), float(image_segment[1])] if image_segment else None
+                ),
             },
         )
         qe = self._quick_estimation_service()
@@ -16685,6 +16723,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception as exc:  # noqa: BLE001 — report, keep the FOV solve
                 msg_seg = f"Segment constraint failed: {exc}"
             msg = f"{msg} {msg_seg}"
+        if ok and image_segment is not None and plane == "object":
+            # bugs/0247: the OBJECT popup may ALSO pin one image-conjugate leg. The image fold
+            # mirror is a mechanical freedom independent of the object fold mirror (a different pair
+            # of gap rows), so applying it after the object split leaves both mirrors seated on the
+            # beam (each carried by the bugs/0244 leg-walk carry). Surfaced-but-non-fatal, like the
+            # object split above.
+            try:
+                ok_img, msg_img = self.editor._apply_folded_image_split(
+                    str(image_segment[0]), float(image_segment[1])
+                )
+            except Exception as exc:  # noqa: BLE001 — report, keep the FOV + object split
+                msg_img = f"Image segment constraint failed: {exc}"
+            msg = f"{msg} {msg_img}"
         if ok:
             try:
                 self.editor._sync_table()
