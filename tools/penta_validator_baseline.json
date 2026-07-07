@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-07T00:55:29+00:00",
+  "generated_at": "2026-07-07T03:40:37+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -222,7 +222,8 @@
     "218": "pass",
     "219": "pass",
     "220": "pass",
-    "221": "pass"
+    "221": "pass",
+    "222": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -445,6 +446,7 @@
     "218": "folded coverage labels de-collide (Sensor / Image circle)",
     "219": "folded image-conjugate segment split (2+2 per-segment)",
     "220": "folded scene traced on the real system (first-surface RA mirrors)",
-    "221": "folded-load scene-invariant perf caches are byte-identical"
+    "221": "folded-load scene-invariant perf caches are byte-identical",
+    "222": "folded FOV solve re-seats the free-placed trailing mirror"
   }
 }

@@ -151,13 +151,21 @@ def carry_free_placed_followers_after_fold(rows, gap_deltas) -> list[int]:
     is thrown off the optical axis (flag_20260706_083512: Solve-for-Thickness; bugs/0234:
     the object-segment split, gated off for the same reason).
 
-    Fix: for each free-placed follower downstream of the first fold, add
-    ``post_fold_delta * (r_hat - z_hat)`` to its desp, where ``post_fold_delta`` is the sum
-    of the applied deltas on gap rows strictly between the first fold and the follower, and
-    ``r_hat`` is the first fold's reflected leg direction. This redirects exactly the
-    post-fold portion of the walk from global Z onto the reflected leg (pre-fold deltas stay
-    in Z, correctly following the fold vertex), so the follower re-seats on the moved beam.
-    A single-fold layout (reflected leg still +Z) is a no-op."""
+    Fix (bugs/0236): redirect the post-fold z_positions drift off global +Z. The Z (perp)
+    term is ``-post_fold_delta * z_hat`` -- it puts the mirror back onto the reflected leg's
+    Z (tracks the fold vertex), and is the on-beam invariant the two-fold guard checks.
+
+    Along-beam term (bugs/0244): the FREE-placed pose need NOT sit at the row-arithmetic
+    distance from the lens -- the PYRITE fixture authors the mirror ~89 mm CLOSER than its
+    prescription rear gap (a real CAD pose vs the corner-spanning bugs/0242 leg convention).
+    Sliding the pose by the RAW row delta preserves that stale offset, and a large image
+    delta then throws the mirror clean past the lens (it folds the beam before the lenses).
+    So instead RE-SEAT the along-beam coordinate at the leg-walk follower position --
+    ``pred_center . r_hat + near_leg`` from ``build_optical_solid_output_port_pose_overrides``
+    (the same walk that seats plain followers) -- keeping the perpendicular offset. On a
+    fixture with no stale offset (along == near_orig) this equals the old raw-delta slide, so
+    the two-fold AZ85 arm-follow / segment-split behaviour is unchanged. A single-fold layout
+    (reflected leg still +Z) is a no-op."""
     from KrakenOS.UI.services.folded_sequential_fold import mirror_fold_face_normal
 
     prepared = list(rows or [])
@@ -189,7 +197,7 @@ def carry_free_placed_followers_after_fold(rows, gap_deltas) -> list[int]:
     rhat = rhat / rnorm
     if float(np.dot(rhat, zhat)) > 1.0 - 1e-9:
         return []  # reflected leg still +Z -> no direction to redirect the arm walk into
-    delta_dir = rhat - zhat
+    overrides: dict[int, dict[str, object]] | None = None
     carried: list[int] = []
     for index in range(first_fold + 1, len(prepared)):
         row = prepared[index]
@@ -198,7 +206,28 @@ def carry_free_placed_followers_after_fold(rows, gap_deltas) -> list[int]:
         post_fold_delta = sum(d for gr, d in deltas.items() if first_fold < gr < index)
         if abs(post_fold_delta) < 1e-9:
             continue
-        carry = post_fold_delta * delta_dir
+        # Re-seat the ALONG-BEAM coordinate at the leg-walk follower position (pred + near_leg)
+        # instead of sliding the free pose by the raw row delta, so a stale free-pose offset
+        # cannot throw the mirror past the lens. Fall back to the raw-delta slide if the walk
+        # cannot anchor this follower.
+        rhat_coeff = float(post_fold_delta)
+        if overrides is None:
+            overrides = build_optical_solid_output_port_pose_overrides(prepared)
+        follower_center = overrides.get(index, {}).get("center")
+        pred = index - 1
+        while pred > first_fold and pred not in overrides:
+            pred -= 1
+        pred_center = overrides.get(pred, {}).get("center")
+        if follower_center is not None and pred_center is not None:
+            follower_center = np.asarray(follower_center, dtype=float).reshape(3)
+            pred_center = np.asarray(pred_center, dtype=float).reshape(3)
+            along = float(np.dot(follower_center - pred_center, rhat))
+            near_leg = sum(
+                max(float(getattr(prepared[k], "thickness", 0.0) or 0.0), 0.0)
+                for k in range(pred, index)
+            )
+            rhat_coeff = float(near_leg - along)
+        carry = rhat_coeff * rhat - float(post_fold_delta) * zhat
         row.desp_x = float(getattr(row, "desp_x", 0.0) or 0.0) + float(carry[0])
         row.desp_y = float(getattr(row, "desp_y", 0.0) or 0.0) + float(carry[1])
         row.desp_z = float(getattr(row, "desp_z", 0.0) or 0.0) + float(carry[2])

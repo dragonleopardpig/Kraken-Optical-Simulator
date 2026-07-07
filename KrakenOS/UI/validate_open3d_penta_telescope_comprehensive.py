@@ -11210,6 +11210,36 @@ def phase_221_folded_load_perf_caches(
     return result
 
 
+def phase_222_folded_fov_free_mirror_reseat(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0244: the folded FOV/conjugate solve must RE-SEAT a free-placed trailing fold
+    mirror at its prescription distance past the lens, not slide it by the raw gap delta.
+    Both PYRITE and AZ85 author the mirror CLOSER than its prescription rear gap; the bugs/0236
+    raw-delta slide preserved that stale offset, so a large rear-gap shrink drove the mirror's
+    along-beam coordinate BELOW the lens rear ("the lens crashes into the RA mirror"). The fix
+    re-seats the along-beam (r_hat) coordinate at the leg-walk follower position
+    (pred_center . r_hat + near_leg) while keeping the perpendicular drift term.
+    `validate_open3d_folded_fov_free_mirror_reseat` pins the re-seat at lens-rear + rear gap,
+    the after-vs-before-lens ordering (fix vs the old crash), the preserved perpendicular
+    offset, the end-to-end real solve ordering, and the leg-walk wiring."""
+    result = PhaseResult(name="Phase 222: folded FOV solve re-seats the free-placed trailing mirror")
+    try:
+        from KrakenOS.UI.validate_open3d_folded_fov_free_mirror_reseat import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-fov-free-mirror-reseat guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-fov-free-mirror-reseat phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11476,6 +11506,7 @@ def main() -> int:
             phase_219_folded_image_segment_split,
             phase_220_folded_real_trace_sync,
             phase_221_folded_load_perf_caches,
+            phase_222_folded_fov_free_mirror_reseat,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
