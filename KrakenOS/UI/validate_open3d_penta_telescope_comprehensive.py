@@ -11322,6 +11322,33 @@ def phase_224_2d_refresh_after_solve(
     return result
 
 
+def phase_225_nav_cube_chamfer_geometry(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0249: the navigation cube is a FreeCAD-style CHAMFERED cube -- 26 flat facets
+    (6 faces, 12 bevelled edges, 8 cut corners) mapping one-to-one onto the 26 camera
+    orientations, so a picked facet cell is a direct sign-triple lookup. The flag asked for
+    smaller labels, more per-surface contrast, and clickable chamfered edges + corners; the
+    visual half is eyeballed offscreen, and `validate_open3d_nav_cube_geometry` pins the pure
+    geometry (24 verts / 26 facets / 6-12-8 partition / outward-planar / centroid self-classify /
+    faces == presets) plus the widget wiring (cell-id picking + curved roll arrows)."""
+    result = PhaseResult(name="Phase 225: nav cube is a clickable 26-facet chamfered cube")
+    try:
+        from KrakenOS.UI.validate_open3d_nav_cube_geometry import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"nav-cube-geometry guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("nav-cube-geometry phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11591,6 +11618,7 @@ def main() -> int:
             phase_222_folded_fov_free_mirror_reseat,
             phase_223_folded_object_plus_image_split,
             phase_224_2d_refresh_after_solve,
+            phase_225_nav_cube_chamfer_geometry,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

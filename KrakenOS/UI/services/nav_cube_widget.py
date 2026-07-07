@@ -3,18 +3,18 @@
 VTK ships ``vtkCameraOrientationWidget``, but on this build it renders as three
 axis balls -- not a labelled, clickable cube. This module builds a real one:
 
-* an annotated cube (FRONT/BACK/TOP/BOTTOM/LEFT/RIGHT) parked in the upper-right
-  corner on its own renderer, whose camera MIRRORS the main scene camera so the
-  cube turns in lock-step as the user orbits;
-* a transparent unit pick-cube co-located with it, so a left-click anywhere on the
-  cube surface resolves to a LOCAL hit point that
-  :mod:`KrakenOS.UI.services.nav_cube_orientation` classifies into one of the 26
-  face/edge/corner orientations -- clicking a face is byte-identical to the matching
-  ``+yz``/``-yz``/... preset button, edges/corners give the oblique "angled" views;
+* a solid CHAMFERED cube parked in the upper-right corner on its own renderer, whose
+  camera MIRRORS the main scene camera so the cube turns in lock-step as the user
+  orbits. Its 26 flat facets (6 faces, 12 bevelled edges, 8 cut corners) are coloured
+  by kind and carry the CAD face words (FRONT/BACK/TOP/BOTTOM/LEFT/RIGHT); a left-click
+  picks a facet cell whose orientation is a direct table lookup in
+  :mod:`KrakenOS.UI.services.nav_cube_orientation` -- clicking a face is byte-identical
+  to the matching ``+yz``/``-yz``/... preset button, edges/corners give the oblique
+  "angled" views;
 * six discrete-step arrow handles on a second, screen-fixed corner renderer: two
-  roll arrows (roll the view +-45 deg about the sight line) and four orbit arrows
-  (azimuth/elevation the view +-45 deg) -- the "discrete rotation step for rotation
-  and Angled view" the plain cube lacked.
+  curved roll arrows (roll the view +-45 deg about the sight line) and four orbit
+  arrows (azimuth/elevation the view +-45 deg) -- the "discrete rotation step for
+  rotation and Angled view" the plain cube lacked.
 
 All camera MATH lives in the VTK-free ``nav_cube_orientation`` module (unit-tested
 headless); this file is the thin VTK shell around it and is verified by eyeball.
@@ -38,12 +38,25 @@ import numpy as np
 
 from KrakenOS.UI.services.nav_cube_orientation import (
     FACE_LABELS,
+    chamfered_cube_facets,
     classify_pick,
+    orientation_kind,
     orientation_pose,
 )
 
 # Arrow-handle identifiers handed back to the host's apply_step callback.
 STEP_KINDS = ("roll_ccw", "roll_cw", "az_left", "az_right", "el_up", "el_down")
+
+# --- Cube visuals (flagged 2026-07-07: labels too big, faces too low-contrast) -----
+_FACE_FRACTION = 0.72       # chamfered-cube face keep-fraction (see chamfered_cube_facets)
+_FACE_TEXT_SCALE = 0.22     # annotated-cube letters (was 0.42, overflowed the facet)
+# Faces lightest, edges mid, corners darkest, so the three clickable regions read as
+# distinct; a dark outline on every facet makes the chamfer borders crisp.
+_COLOR_FACE = (0.83, 0.87, 0.93)
+_COLOR_EDGE = (0.56, 0.65, 0.80)
+_COLOR_CORNER = (0.40, 0.50, 0.69)
+_COLOR_OUTLINE = (0.18, 0.24, 0.38)
+_KIND_COLOR = {"face": _COLOR_FACE, "edge": _COLOR_EDGE, "corner": _COLOR_CORNER}
 
 _CUBE_LAYER = 3
 _ARROW_LAYER = 4
@@ -58,9 +71,8 @@ def _import_vtk():
     """Return the VTK classes we need, or None if any is unavailable."""
     try:
         from vtkmodules.vtkRenderingAnnotation import vtkAnnotatedCubeActor
-        from vtkmodules.vtkFiltersSources import vtkCubeSource
         from vtkmodules.vtkCommonDataModel import vtkPolyData
-        from vtkmodules.vtkCommonCore import vtkPoints
+        from vtkmodules.vtkCommonCore import vtkPoints, vtkUnsignedCharArray
         from vtkmodules.vtkRenderingCore import (
             vtkActor,
             vtkCellPicker,
@@ -71,9 +83,9 @@ def _import_vtk():
         return None
     return {
         "AnnotatedCube": vtkAnnotatedCubeActor,
-        "CubeSource": vtkCubeSource,
         "PolyData": vtkPolyData,
         "Points": vtkPoints,
+        "UCharArray": vtkUnsignedCharArray,
         "Actor": vtkActor,
         "CellPicker": vtkCellPicker,
         "PolyDataMapper": vtkPolyDataMapper,
@@ -106,6 +118,8 @@ class NavigationCube:
         self._cube_renderer = None
         self._arrow_renderer = None
         self._pick_cube_actor = None
+        self._annotated_cube = None
+        self._cell_signs: list[tuple[int, int, int]] = []
         self._cube_picker = None
         self._arrow_picker = None
         # Strong refs to the arrow actors (VTK frees the Python wrapper otherwise,
@@ -137,6 +151,80 @@ class NavigationCube:
         renderer.SetPreserveColorBuffer(True)   # composite over the scene, no black box
         renderer.SetPreserveDepthBuffer(False)  # clear depth so the cube draws in front
 
+        # Solid CHAMFERED cube: 26 flat facets (6 faces, 12 bevelled edges, 8 cut
+        # corners), one per orientation, each coloured by kind so the clickable edge
+        # and corner regions read as distinct from the faces. It is BOTH the visible
+        # cube AND the pick target -- a left-click resolves to the picked cell id,
+        # whose orientation sign is a direct table lookup (self._cell_signs).
+        cube_actor = self._build_chamfered_actor()
+        renderer.AddActor(cube_actor)
+        self._pick_cube_actor = cube_actor
+
+        # The annotated cube supplies the face LETTERS only (its own cube is fully
+        # transparent); floated just outside the facets so they never z-fight.
+        annotated = self._build_annotated_labels()
+        renderer.AddActor(annotated)
+        self._annotated_cube = annotated
+
+        picker = vtk["CellPicker"]()
+        picker.SetTolerance(0.001)
+        picker.InitializePickList()
+        picker.AddPickList(cube_actor)
+        picker.PickFromListOn()
+        self._cube_picker = picker
+
+        self._add_renderer(renderer, _CUBE_LAYER)
+        self._cube_renderer = renderer
+
+    def _build_chamfered_actor(self):
+        """vtkActor for the 26-facet chamfered cube, coloured per orientation kind.
+
+        Stores ``self._cell_signs`` (facet cell-id -> sign triple) so a picked cell maps
+        straight to a camera pose without any hit-point threshold.
+        """
+        vtk = self._vtk
+        verts, facets = chamfered_cube_facets(half=0.5, face_fraction=_FACE_FRACTION)
+        points = vtk["Points"]()
+        for (x, y, z) in verts:
+            points.InsertNextPoint(float(x), float(y), float(z))
+        poly = vtk["PolyData"]()
+        poly.SetPoints(points)
+        poly.Allocate(len(facets))
+        colors = vtk["UCharArray"]()
+        colors.SetNumberOfComponents(3)
+        colors.SetName("facet_kind")
+        signs: list[tuple[int, int, int]] = []
+        for idxs, sign in facets:
+            poly.InsertNextCell(7, len(idxs), list(idxs))  # VTK_POLYGON == 7
+            rgb = _KIND_COLOR[orientation_kind(sign)]
+            colors.InsertNextTuple3(*(int(round(c * 255.0)) for c in rgb))
+            signs.append(tuple(int(s) for s in sign))
+        poly.GetCellData().SetScalars(colors)
+        self._cell_signs = signs
+
+        mapper = vtk["PolyDataMapper"]()
+        mapper.SetInputData(poly)
+        mapper.SetScalarModeToUseCellData()
+        mapper.ScalarVisibilityOn()
+        try:
+            mapper.SetColorModeToDirectScalars()
+        except Exception:
+            pass
+        actor = vtk["Actor"]()
+        actor.SetMapper(mapper)
+        prop = actor.GetProperty()
+        prop.SetAmbient(0.62)
+        prop.SetDiffuse(0.42)
+        prop.SetSpecular(0.0)
+        prop.SetEdgeVisibility(True)
+        prop.SetEdgeColor(*_COLOR_OUTLINE)
+        prop.SetLineWidth(1.2)
+        actor.PickableOn()
+        return actor
+
+    def _build_annotated_labels(self):
+        """vtkAnnotatedCubeActor carrying only the CAD face words (transparent cube)."""
+        vtk = self._vtk
         annotated = vtk["AnnotatedCube"]()
         # CAD face words (see FACE_LABELS): +Z FRONT, +Y TOP, +X RIGHT and opposites.
         annotated.SetXPlusFaceText(FACE_LABELS[(1, 0, 0)])
@@ -146,51 +234,25 @@ class NavigationCube:
         annotated.SetZPlusFaceText(FACE_LABELS[(0, 0, 1)])
         annotated.SetZMinusFaceText(FACE_LABELS[(0, 0, -1)])
         try:
-            annotated.SetFaceTextScale(0.42)
-            # The annotated cube supplies the LETTERS only: hide its own cube faces
-            # (opacity 0) so the solid pick-cube below shows through, leaving the
-            # text edges floating on each face. (Its own cube is fully transparent,
-            # which vtkCellPicker skips -- hence the separate opaque pick target.)
+            annotated.SetFaceTextScale(_FACE_TEXT_SCALE)
             annotated.GetCubeProperty().SetOpacity(0.0)
-            annotated.GetTextEdgesProperty().SetColor(0.12, 0.18, 0.32)
-            annotated.GetTextEdgesProperty().SetLineWidth(1.6)
+            annotated.GetTextEdgesProperty().SetColor(0.10, 0.14, 0.26)
+            annotated.GetTextEdgesProperty().SetLineWidth(1.4)
+            # Solid dark letters (not just outlines) so they stay legible at the small
+            # on-screen size the flag asked for.
+            for face_prop in (
+                annotated.GetXPlusFaceProperty(), annotated.GetXMinusFaceProperty(),
+                annotated.GetYPlusFaceProperty(), annotated.GetYMinusFaceProperty(),
+                annotated.GetZPlusFaceProperty(), annotated.GetZMinusFaceProperty(),
+            ):
+                face_prop.SetColor(0.10, 0.14, 0.26)
+            # Float the letters a hair outside the chamfer facets so they don't z-fight
+            # the coplanar face facet at +-0.5 -- but only a hair, or the far-side
+            # labels poke around the cube silhouette.
+            annotated.SetScale(1.015)
         except Exception:
             pass
-        self._annotated_cube = annotated
-
-        # Solid, exactly-unit cube ([-0.5, 0.5]^3): it is BOTH the visible cube face
-        # colour AND the pick target. A click on it maps the world hit straight to a
-        # cube-LOCAL point (cube axes == world axes here). It must be OPAQUE -- a
-        # fully transparent actor is invisible to vtkCellPicker.
-        source = vtk["CubeSource"]()
-        source.SetXLength(1.0)
-        source.SetYLength(1.0)
-        source.SetZLength(1.0)
-        source.SetCenter(0.0, 0.0, 0.0)
-        source.Update()
-        mapper = vtk["PolyDataMapper"]()
-        mapper.SetInputConnection(source.GetOutputPort())
-        pick_cube = vtk["Actor"]()
-        pick_cube.SetMapper(mapper)
-        pick_cube.GetProperty().SetColor(0.86, 0.90, 0.97)
-        pick_cube.GetProperty().SetOpacity(1.0)
-        pick_cube.GetProperty().SetAmbient(0.45)
-        pick_cube.GetProperty().SetDiffuse(0.65)
-        pick_cube.PickableOn()
-        renderer.AddActor(pick_cube)
-        self._pick_cube_actor = pick_cube
-        # Letters drawn AFTER (on top of) the solid faces.
-        renderer.AddActor(annotated)
-
-        picker = vtk["CellPicker"]()
-        picker.SetTolerance(0.001)
-        picker.InitializePickList()
-        picker.AddPickList(pick_cube)
-        picker.PickFromListOn()
-        self._cube_picker = picker
-
-        self._add_renderer(renderer, _CUBE_LAYER)
-        self._cube_renderer = renderer
+        return annotated
 
     def _build_arrow_renderer(self) -> None:
         vtk = self._vtk
@@ -209,23 +271,31 @@ class NavigationCube:
         orbit_color = (0.20, 0.55, 0.95)
         roll_color = (0.95, 0.60, 0.15)
         # Orbit arrows: filled triangles pointing off the four screen edges. The corner
-        # viewport is narrow (aspect < 1), so the horizontal reach (half-width ~1.4 at
-        # SetParallelScale 1.55 below) is tighter than the vertical -- keep tips within
-        # ~1.28 of centre so nothing clips.
+        # viewport is narrow (aspect < 1), so keep tips within ~1.28 of centre.
         r = 1.00
         tip = 0.28
         s = 0.16
-        specs = {
-            "az_right": ([(r, s), (r, -s), (r + tip, 0.0)], orbit_color),
-            "az_left": ([(-r, s), (-r, -s), (-r - tip, 0.0)], orbit_color),
-            "el_up": ([(-s, r), (s, r), (0.0, r + tip)], orbit_color),
-            "el_down": ([(-s, -r), (s, -r), (0.0, -r - tip)], orbit_color),
-            # Roll arrows: small triangles at the top corners, tangent hint by colour.
-            "roll_ccw": ([(-0.86, 0.86), (-1.10, 0.98), (-0.80, 1.12)], roll_color),
-            "roll_cw": ([(0.86, 0.86), (1.10, 0.98), (0.80, 1.12)], roll_color),
+        orbit_specs = {
+            "az_right": [(r, s), (r, -s), (r + tip, 0.0)],
+            "az_left": [(-r, s), (-r, -s), (-r - tip, 0.0)],
+            "el_up": [(-s, r), (s, r), (0.0, r + tip)],
+            "el_down": [(-s, -r), (s, -r), (0.0, -r - tip)],
         }
-        for kind, (pts, color) in specs.items():
-            actor = self._triangle_actor(pts, color)
+        for kind, pts in orbit_specs.items():
+            actor = self._triangle_actor(pts, orbit_color)
+            renderer.AddActor(actor)
+            picker.AddPickList(actor)
+            self._arrow_actors.append((actor, kind))
+
+        # Roll arrows: a CURVED arc segment capped by a tangential arrowhead (a rotation
+        # glyph, not a bare triangle) tucked into each top corner. (cx, cy, a0, a1) in
+        # degrees -- the arc sweeps a0 -> a1 and the head caps the a1 end.
+        roll_specs = {
+            "roll_ccw": (-0.82, 0.74, -34.0, 196.0),
+            "roll_cw": (0.82, 0.74, 214.0, -16.0),
+        }
+        for kind, (cx, cy, a0, a1) in roll_specs.items():
+            actor = self._roll_arrow_actor(cx, cy, a0, a1, roll_color)
             renderer.AddActor(actor)
             picker.AddPickList(actor)
             self._arrow_actors.append((actor, kind))
@@ -247,6 +317,47 @@ class NavigationCube:
         poly.SetPoints(points)
         poly.Allocate(1)
         poly.InsertNextCell(5, 3, [0, 1, 2])  # VTK_TRIANGLE == 5
+        mapper = vtk["PolyDataMapper"]()
+        mapper.SetInputData(poly)
+        actor = vtk["Actor"]()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetColor(*color)
+        actor.GetProperty().LightingOff()
+        actor.PickableOn()
+        return actor
+
+    def _roll_arrow_actor(self, cx, cy, a0_deg, a1_deg, color):
+        """A curved rotation glyph: an arc ribbon (built as triangles) capped by a
+        tangential arrowhead at the ``a1`` end, so the orange roll handles read as
+        'rotate' rather than as a plain triangle."""
+        vtk = self._vtk
+        radius, width = 0.30, 0.11
+        r_out, r_in = radius + width / 2.0, radius - width / 2.0
+        n = 20
+        a0, a1 = np.radians(a0_deg), np.radians(a1_deg)
+        points = vtk["Points"]()
+        outer, inner = [], []
+        for i in range(n + 1):
+            t = a0 + (a1 - a0) * (i / n)
+            ct, st = np.cos(t), np.sin(t)
+            outer.append(points.InsertNextPoint(cx + r_out * ct, cy + r_out * st, 0.0))
+            inner.append(points.InsertNextPoint(cx + r_in * ct, cy + r_in * st, 0.0))
+        poly = vtk["PolyData"]()
+        poly.SetPoints(points)
+        poly.Allocate(2 * n + 1)
+        for i in range(n):
+            poly.InsertNextCell(5, 3, [outer[i], outer[i + 1], inner[i + 1]])  # VTK_TRIANGLE
+            poly.InsertNextCell(5, 3, [outer[i], inner[i + 1], inner[i]])
+        # Arrowhead: apex one head-length along the tangent past the a1 tip; base
+        # straddles the arc radially.
+        ct1, st1 = np.cos(a1), np.sin(a1)
+        tan = a1 + (np.pi / 2.0 if a1 >= a0 else -np.pi / 2.0)
+        bx, by = cx + radius * ct1, cy + radius * st1
+        head_len, head_half = 0.24, 0.15
+        apex = points.InsertNextPoint(bx + head_len * np.cos(tan), by + head_len * np.sin(tan), 0.0)
+        base1 = points.InsertNextPoint(bx + head_half * ct1, by + head_half * st1, 0.0)
+        base2 = points.InsertNextPoint(bx - head_half * ct1, by - head_half * st1, 0.0)
+        poly.InsertNextCell(5, 3, [base1, base2, apex])
         mapper = vtk["PolyDataMapper"]()
         mapper.SetInputData(poly)
         actor = vtk["Actor"]()
@@ -376,16 +487,22 @@ class NavigationCube:
             if kind is not None:
                 self._apply_step(kind)
                 return True
-        # Then the cube surface -> face/edge/corner orientation.
+        # Then the cube surface -> face/edge/corner orientation. Each chamfer facet is
+        # one cell whose sign is a direct table lookup; fall back to the hit-point
+        # classifier only if the cell id is somehow out of range.
         if self._cube_renderer is not None and self._cube_picker is not None:
             try:
                 hit = self._cube_picker.Pick(int(x), int(y), 0, self._cube_renderer)
                 actor = self._cube_picker.GetActor()
+                cid = int(self._cube_picker.GetCellId())
             except Exception:
-                hit, actor = 0, None
+                hit, actor, cid = 0, None, -1
             if hit and actor is self._pick_cube_actor:
-                local = np.asarray(self._cube_picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
-                sign = classify_pick(local)
+                if 0 <= cid < len(self._cell_signs):
+                    sign = self._cell_signs[cid]
+                else:
+                    local = np.asarray(self._cube_picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+                    sign = classify_pick(local)
                 if sign is not None:
                     offset_unit, view_up = orientation_pose(sign)
                     self._apply_orientation(offset_unit, view_up)

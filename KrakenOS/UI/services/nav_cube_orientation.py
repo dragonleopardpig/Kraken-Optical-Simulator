@@ -112,6 +112,111 @@ def orientation_pose(sign):
     )
 
 
+def _newell_normal(points, idxs) -> np.ndarray:
+    """Outward polygon normal via Newell's method (robust for planar polygons)."""
+    n = np.zeros(3)
+    m = len(idxs)
+    for i in range(m):
+        a = np.asarray(points[idxs[i]], dtype=float)
+        b = np.asarray(points[idxs[(i + 1) % m]], dtype=float)
+        n[0] += (a[1] - b[1]) * (a[2] + b[2])
+        n[1] += (a[2] - b[2]) * (a[0] + b[0])
+        n[2] += (a[0] - b[0]) * (a[1] + b[1])
+    return n
+
+
+def chamfered_cube_facets(half: float = 0.5, face_fraction: float = 0.72):
+    """Geometry for a FreeCAD-style CHAMFERED navigation cube.
+
+    A cube of half-extent ``half`` with its 12 edges bevelled and 8 corners cut, so the
+    surface is exactly 26 flat facets -- one per orientation: 6 face quads, 12 edge quads,
+    8 corner triangles, sharing 24 vertices. ``face_fraction`` in (0, 1) is how much of each
+    face the square facet keeps (the rest becomes the chamfer): 1.0 -> a sharp cube, smaller
+    -> fatter bevels.
+
+    Returns ``(points, facets)``: ``points`` is a list of 24 ``(x, y, z)`` vertices and
+    ``facets`` a list of ``(point_indices, sign)`` in FACE, then EDGE, then CORNER order.
+    ``sign`` is the ``{-1,0,1}^3`` triple :func:`orientation_pose` maps to a camera pose, so a
+    picked facet's orientation is a direct table lookup (no threshold on the hit point). Each
+    facet is wound so its polygon normal points outward (along ``sign``).
+    """
+    A = float(half)
+    f = A * float(face_fraction)
+
+    points: list[tuple[float, float, float]] = []
+    index: dict[tuple, int] = {}
+
+    def vid(coord) -> int:
+        key = tuple(round(float(c), 6) for c in coord)
+        got = index.get(key)
+        if got is None:
+            got = len(points)
+            index[key] = got
+            points.append((float(coord[0]), float(coord[1]), float(coord[2])))
+        return got
+
+    def outward(idxs, sign):
+        normal = _newell_normal(points, idxs)
+        if float(np.dot(normal, np.asarray(sign, dtype=float))) < 0.0:
+            idxs = list(reversed(idxs))
+        return list(idxs)
+
+    facets: list[tuple[list[int], tuple[int, int, int]]] = []
+    axes = (0, 1, 2)
+
+    # --- 6 FACES: the axis-'a' face at a = sa*A keeps its four (+-f, +-f) corners --
+    for a in axes:
+        others = [ax for ax in axes if ax != a]
+        for sa in (1, -1):
+            quad = []
+            for s0, s1 in ((1, 1), (1, -1), (-1, -1), (-1, 1)):
+                coord = [0.0, 0.0, 0.0]
+                coord[a] = sa * A
+                coord[others[0]] = s0 * f
+                coord[others[1]] = s1 * f
+                quad.append(vid(coord))
+            sign = [0, 0, 0]
+            sign[a] = sa
+            facets.append((outward(quad, sign), tuple(sign)))
+
+    # --- 12 EDGES: the bevel bridging face (a, sa) and face (c, sc), free axis b ---
+    for a, c in ((0, 1), (0, 2), (1, 2)):
+        b = ({0, 1, 2} - {a, c}).pop()
+        for sa in (1, -1):
+            for sc in (1, -1):
+                quad = []
+                for sb in (1, -1):  # two vertices on face a
+                    coord = [0.0, 0.0, 0.0]
+                    coord[a] = sa * A
+                    coord[c] = sc * f
+                    coord[b] = sb * f
+                    quad.append(vid(coord))
+                for sb in (-1, 1):  # two vertices on face c
+                    coord = [0.0, 0.0, 0.0]
+                    coord[c] = sc * A
+                    coord[a] = sa * f
+                    coord[b] = sb * f
+                    quad.append(vid(coord))
+                sign = [0, 0, 0]
+                sign[a] = sa
+                sign[c] = sc
+                facets.append((outward(quad, sign), tuple(sign)))
+
+    # --- 8 CORNERS: the triangle cutting the (sx, sy, sz) vertex ------------------
+    for sx in (1, -1):
+        for sy in (1, -1):
+            for sz in (1, -1):
+                tri = [
+                    vid((sx * A, sy * f, sz * f)),
+                    vid((sx * f, sy * A, sz * f)),
+                    vid((sx * f, sy * f, sz * A)),
+                ]
+                sign = (sx, sy, sz)
+                facets.append((outward(tri, sign), sign))
+
+    return points, facets
+
+
 def roll_view_up(view_direction, view_up, angle_deg: float):
     """Rotate ``view_up`` about the sight line by ``angle_deg`` (discrete roll).
 

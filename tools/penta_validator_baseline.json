@@ -225,7 +225,8 @@
     "221": "pass",
     "222": "pass",
     "223": "pass",
-    "224": "pass"
+    "224": "pass",
+    "225": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -451,6 +452,7 @@
     "221": "folded-load scene-invariant perf caches are byte-identical",
     "222": "folded FOV solve re-seats the free-placed trailing mirror",
     "223": "folded object dialog pins both fold legs in one solve",
-    "224": "2D layout refreshes after an inspector solve/FOV/constraint apply"
+    "224": "2D layout refreshes after an inspector solve/FOV/constraint apply",
+    "225": "nav cube is a clickable 26-facet chamfered cube"
   }
 }
