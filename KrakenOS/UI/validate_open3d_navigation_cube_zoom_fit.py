@@ -29,8 +29,9 @@ records ``SetParallelProjection`` / ``SetParallelScale`` / ``SetPosition`` /
      with an End event, then a render -- in that order.
   D. No renderer / no active camera -> the fit is a safe no-op (returns False,
      touches nothing).
-  E. Source contract -- the cube wiring binds ``_on_navigation_cube_snap`` to the
-     widget's ``EndInteractionEvent``; the snap consults
+  E. Source contract -- both routed cube callbacks
+     (``_apply_navigation_cube_orientation`` / ``_apply_navigation_cube_step``) run
+     ``_on_navigation_cube_snap``; the snap consults
      ``_fit_view_to_scene_for_current_orientation`` and ``_on_camera_interaction``;
      and the fit calls ``_parallel_scale_for_orthographic_fit`` +
      ``SetParallelScale``.
@@ -258,11 +259,20 @@ def run_checks() -> "tuple[bool, list[str]]":
         failures.append("D FAIL: fit with no active camera did not return False (want a no-op)")
 
     # --- E: source contract -----------------------------------------------------
-    init_src = inspect.getsource(Kraken3DInspector.__init__)
-    if '"EndInteractionEvent", self._on_navigation_cube_snap' not in init_src:
+    # The custom cube has no VTK EndInteractionEvent observer (bugs/0156 retired the
+    # vtkCameraOrientationWidget); each snap fires through the routed inspector
+    # callbacks, so BOTH must run _on_navigation_cube_snap for the zoom-to-extent.
+    orient_src = inspect.getsource(Kraken3DInspector._apply_navigation_cube_orientation)
+    if "_on_navigation_cube_snap" not in orient_src:
         failures.append(
-            "E FAIL: the navigation cube does not bind _on_navigation_cube_snap to its "
-            "EndInteractionEvent -- a snap would not zoom-to-extent (bugs/0160)"
+            "E FAIL: _apply_navigation_cube_orientation does not call _on_navigation_cube_snap "
+            "-- a face/edge/corner pick would not zoom-to-extent (bugs/0160)"
+        )
+    step_src = inspect.getsource(Kraken3DInspector._apply_navigation_cube_step)
+    if "_on_navigation_cube_snap" not in step_src:
+        failures.append(
+            "E FAIL: _apply_navigation_cube_step does not call _on_navigation_cube_snap "
+            "-- a discrete-step arrow would not zoom-to-extent (bugs/0160)"
         )
     snap_src = inspect.getsource(Kraken3DInspector._on_navigation_cube_snap)
     if "_fit_view_to_scene_for_current_orientation" not in snap_src:

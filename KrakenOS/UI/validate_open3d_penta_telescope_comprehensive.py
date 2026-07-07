@@ -8482,57 +8482,99 @@ def phase_146_imaging_lens_decoration(
 def phase_147_navigation_cube(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """The Open 3D canvas carries a FreeCAD-style interactive navigation cube
-    (vtkCameraOrientationWidget) so the user can rotate/reverse the canvas view by
-    clicking a face/edge/corner handle (bugs/0156). The display-free guard checks the
-    lazy-import wiring, the __init__ build/enable/observe contract, that a snap routes
-    through _on_camera_interaction (re-fit clip + re-square labels like an orbit), and
-    the construction API. This phase ALSO drives the LIVE inspector: the real widget
-    must exist, be enabled, anchored upper-right (clear of the lower-left axes marker),
-    with animation OFF (instant snap, no embedded-Tk timer dependency).
+    """The Open 3D canvas carries a GENUINE FreeCAD-style navigation cube -- the custom
+    KrakenOS.UI.services.nav_cube_widget.NavigationCube, NOT VTK's axis-ball
+    vtkCameraOrientationWidget (bugs/0156). The display-free guards pin (a) the widget
+    contract + __init__ build/store wiring + the snap re-fit/re-square routing
+    (validate_open3d_navigation_cube) and (b) the pure orientation MATH -- 26
+    faces/edges/corners classify, faces == the toolbar presets, roll == vtkCamera.Roll
+    (validate_open3d_nav_cube_orientation). This phase ALSO drives the LIVE inspector:
+    the real cube must be available, its OWN cube + arrow renderers must be present on
+    the dedicated upper layers (3/4), and the cube viewport must be anchored upper-right
+    (clear of the lower-left axes marker).
     """
     result = PhaseResult(
-        name="Phase 147: Open 3D navigation cube (interactive, upper-right, snap re-squares labels)"
+        name="Phase 147: Open 3D navigation cube (genuine FreeCAD cube: faces/edges/corners + arrows)"
     )
     try:
-        from KrakenOS.UI.validate_open3d_navigation_cube import run_checks
-        passed, notes = run_checks()
+        from KrakenOS.UI.validate_open3d_navigation_cube import run_checks as widget_checks
+        from KrakenOS.UI.validate_open3d_nav_cube_orientation import run_checks as orient_checks
+        widget_passed, widget_notes = widget_checks()
+        orient_passed, orient_notes = orient_checks()
     except Exception as exc:  # pragma: no cover - defensive
         result.passed = False
         result.notes.append(f"navigation-cube guard raised: {exc!r}")
         return result
-    result.passed = bool(passed)
-    result.detail["guard_checks"] = len(notes)
-    for note in notes:
-        result.notes.append(note)
+    result.passed = bool(widget_passed and orient_passed)
+    result.detail["guard_checks"] = len(widget_notes) + len(orient_notes)
+    for note in widget_notes:
+        result.notes.append(f"widget: {note}")
+    for note in orient_notes:
+        result.notes.append(f"orientation: {note}")
 
-    # Live inspector: the real widget must be present + enabled + anchored + no-animate.
-    widget = getattr(inspector, "_camera_orientation_widget", None)
-    if widget is None:
+    # Live inspector: the real custom cube must be available with its own cube/arrow
+    # renderers on the dedicated upper layers, anchored upper-right.
+    cube = getattr(inspector, "_navigation_cube", None)
+    if cube is None or not getattr(cube, "available", False):
         result.passed = False
-        result.notes.append("live inspector did not create _camera_orientation_widget")
+        result.notes.append("live inspector _navigation_cube is missing or not available")
     else:
         try:
-            if not bool(widget.GetEnabled()):
+            from KrakenOS.UI.services.nav_cube_widget import (
+                _CUBE_LAYER,
+                _ARROW_LAYER,
+                _CUBE_VIEWPORT,
+            )
+            cube_renderer = getattr(cube, "_cube_renderer", None)
+            arrow_renderer = getattr(cube, "_arrow_renderer", None)
+            if cube_renderer is None or arrow_renderer is None:
                 result.passed = False
-                result.notes.append("navigation cube widget is present but not enabled")
-            if bool(widget.GetAnimate()):
-                result.passed = False
-                result.notes.append("navigation cube animation must be OFF for an instant snap")
-            rep = widget.GetRepresentation()
-            renderer = rep.GetRenderer() if rep is not None else None
-            if renderer is not None:
-                vx0, vy0, vx1, vy1 = renderer.GetViewport()
+                result.notes.append(
+                    "navigation cube is available but its cube/arrow renderers are missing"
+                )
+            else:
+                cube_layer = int(cube_renderer.GetLayer())
+                arrow_layer = int(arrow_renderer.GetLayer())
+                result.detail["cube_layer"] = cube_layer
+                result.detail["arrow_layer"] = arrow_layer
+                if cube_layer != _CUBE_LAYER or arrow_layer != _ARROW_LAYER:
+                    result.passed = False
+                    result.notes.append(
+                        f"cube/arrow renderers on layers {cube_layer}/{arrow_layer}, "
+                        f"want {_CUBE_LAYER}/{_ARROW_LAYER} (dedicated overlay layers)"
+                    )
+                # The two overlay renderers must be attached to the live render window.
+                render_window = inspector._vtk_widget.GetRenderWindow()
+                if render_window.GetNumberOfLayers() <= max(_CUBE_LAYER, _ARROW_LAYER):
+                    result.passed = False
+                    result.notes.append(
+                        f"render window has {render_window.GetNumberOfLayers()} layers, "
+                        f"too few for the cube/arrow overlay layers {_CUBE_LAYER}/{_ARROW_LAYER}"
+                    )
+                attached = {
+                    render_window.GetRenderers().GetItemAsObject(i)
+                    for i in range(render_window.GetRenderers().GetNumberOfItems())
+                }
+                if cube_renderer not in attached or arrow_renderer not in attached:
+                    result.passed = False
+                    result.notes.append(
+                        "cube/arrow renderers are not attached to the live render window"
+                    )
+                vx0, vy0, vx1, vy1 = cube_renderer.GetViewport()
+                result.detail["viewport"] = tuple(round(float(v), 3) for v in (vx0, vy0, vx1, vy1))
                 # upper-right: viewport origin in the right + top half of the canvas,
                 # so it never overlaps the lower-left passive axes marker.
                 if not (vx0 >= 0.5 and vy0 >= 0.5):
                     result.passed = False
                     result.notes.append(
-                        "navigation cube viewport "
-                        f"{tuple(round(float(v), 2) for v in (vx0, vy0, vx1, vy1))} "
-                        "is not anchored upper-right (would overlap the lower-left axes marker)"
+                        f"navigation cube viewport {result.detail['viewport']} is not "
+                        "anchored upper-right (would overlap the lower-left axes marker)"
                     )
-                result.detail["viewport"] = tuple(round(float(v), 3) for v in (vx0, vy0, vx1, vy1))
+                if tuple(round(float(v), 3) for v in _CUBE_VIEWPORT) != result.detail["viewport"]:
+                    result.notes.append(
+                        f"note: live viewport {result.detail['viewport']} != module "
+                        f"_CUBE_VIEWPORT {tuple(round(float(v), 3) for v in _CUBE_VIEWPORT)}"
+                    )
         except Exception as exc:
             result.passed = False
             result.notes.append(f"navigation cube live introspection raised: {exc!r}")
@@ -8545,21 +8587,21 @@ def phase_147_navigation_cube(
 def phase_148_navigation_cube_click(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """A click on the navigation cube actually snaps/rotates the camera (bugs/0157).
-    The cube (bugs/0156) rendered but was deaf: the canvas's pick-only Tk bindings
-    replace the interactor's button bindings and dispatch a plain pick directly, so
-    the interactor button events the cube observes are never fired ("I click the view
-    never change"). The fix forwards press/move/release to the cube from the Tk
-    closures when the cursor is over its gizmo. The display-free guard pins the
-    forwarding contract (gate on the cube's interaction state; Ctrl reaches orbit;
-    flag bookkeeping). This phase ALSO drives the LIVE inspector: from a top-down
-    reset, forwarding a press+release over a cube handle via the exact helper path the
-    closures use must snap the camera to a distinct standard view -- several handles
-    reach distinct directions including a reversal pair (the user's reverse-the-view
-    ask) -- and the press flag must be left clean.
+    """A click on the navigation cube actually snaps/rotates the camera (bugs/0156).
+    The app owns every left-click at the Tk level (the pick-only bindings REPLACE the
+    interactor's button bindings), so the custom cube does its OWN picking: the Tk
+    left-press runs the service's _handle_navigation_cube_left_press, which forwards the
+    interactor event position to NavigationCube.handle_left_press -- an arrow renderer
+    pick first (a discrete roll/azimuth/elevation step) then the cube surface (one of the
+    26 face/edge/corner orientations). The display-free guard pins that whole routing
+    contract (arrow-then-cube, Ctrl falls through to orbit, out-of-viewport ignored). This
+    phase ALSO drives the LIVE inspector: scanning a pixel grid over the cube's corner
+    viewport and firing the real service helper must route BOTH several distinct
+    face/edge/corner orientations AND at least one discrete-step arrow through the cube's
+    own callbacks (proving "I click the view never change" is fixed end-to-end).
     """
     result = PhaseResult(
-        name="Phase 148: navigation cube click forwards to the camera (snap + reverse)"
+        name="Phase 148: navigation cube click routes orientations + step arrows (own picking)"
     )
     try:
         from KrakenOS.UI.validate_open3d_navigation_cube_click import run_checks
@@ -8573,101 +8615,83 @@ def phase_148_navigation_cube_click(
     for note in notes:
         result.notes.append(note)
 
-    widget = getattr(inspector, "_camera_orientation_widget", None)
+    cube = getattr(inspector, "_navigation_cube", None)
     vtk_widget = getattr(inspector, "_vtk_widget", None)
     render_window = vtk_widget.GetRenderWindow() if vtk_widget is not None else None
     renderer = getattr(inspector, "_renderer", None)
     interactor = getattr(inspector, "_vtk_interactor", None)
-    if widget is None or render_window is None or renderer is None or interactor is None:
+    if cube is None or not getattr(cube, "available", False) or render_window is None \
+            or renderer is None or interactor is None:
         result.passed = False
         result.notes.append(
-            "live inspector missing widget/renderer/interactor for the click test"
+            "live inspector missing available cube/renderer/interactor for the click test"
         )
         return result
 
     try:
-        rep = widget.GetRepresentation()
+        from KrakenOS.UI.services.nav_cube_widget import _CUBE_VIEWPORT
         service = inspector._mouse_bindings_service()
-        render_window.Render()
-        inspector.update()
-        width, height = render_window.GetSize()
-        vx0, vy0, vx1, vy1 = rep.GetRenderer().GetViewport()
-        tk_x0, tk_x1 = int(vx0 * width), int(vx1 * width)
-        tk_y0, tk_y1 = int(height - 1 - vy1 * height), int(height - 1 - vy0 * height)
 
-        def camera_direction() -> "np.ndarray":
-            cam = renderer.GetActiveCamera()
-            vec = np.array(cam.GetFocalPoint()) - np.array(cam.GetPosition())
-            norm = float(np.linalg.norm(vec))
-            return vec / norm if norm else vec
+        # Wrap the widget's routed callbacks with counters so we can prove BOTH a
+        # face/edge/corner orientation AND a discrete-step arrow route through the real
+        # service helper -- independent of any hand-rolled pixel projection.
+        orient_hits: list[tuple] = []
+        step_hits: list[str] = []
+        real_orient = cube._apply_orientation
+        real_step = cube._apply_step
 
-        def reset_iso() -> None:
-            # An oblique start so a click on the dominant (top) face snaps to a
-            # different, visible direction (a top-down start makes a +Z-face click a
-            # no-op). The exact basis is irrelevant -- only that no standard snap
-            # equals it, so any handle click is a measurable change.
-            cam = renderer.GetActiveCamera()
-            cam.SetPosition(130, 110, 90)
-            cam.SetFocalPoint(0, 0, 0)
-            cam.SetViewUp(0, 0, 1)
+        def wrapped_orient(offset, view_up):
+            orient_hits.append(tuple(round(float(v), 2) for v in offset))
+            return real_orient(offset, view_up)
+
+        def wrapped_step(kind):
+            step_hits.append(kind)
+            return real_step(kind)
+
+        cube._apply_orientation = wrapped_orient
+        cube._apply_step = wrapped_step
+        try:
             render_window.Render()
             inspector.update()
+            width, height = render_window.GetSize()
+            x0, y0, x1, y1 = _CUBE_VIEWPORT
+            grid_x = np.linspace(int(x0 * width) + 2, int(x1 * width) - 2, 13).astype(int)
+            grid_y = np.linspace(int(y0 * height) + 2, int(y1 * height) - 2, 13).astype(int)
+            cam = renderer.GetActiveCamera()
+            consumed = 0
+            for tx in grid_x:
+                for ty in grid_y:
+                    # Reset to a fixed oblique view each click so the cube is aimed the
+                    # same way for every pick (VTK display coords, no Tk flip).
+                    cam.SetParallelProjection(1)
+                    cam.SetPosition(130, 110, 90)
+                    cam.SetFocalPoint(0, 0, 0)
+                    cam.SetViewUp(0, 0, 1)
+                    interactor.SetEventInformation(int(tx), int(ty), 0, 0, chr(0), 0, None)
+                    if service._handle_navigation_cube_left_press():
+                        consumed += 1
+        finally:
+            cube._apply_orientation = real_orient
+            cube._apply_step = real_step
 
-        def helper_click(tx: int, ty: int) -> None:
-            # Exactly what the Tk closures do: set the event position, then forward
-            # press-if-hit and release-if-active through the service helpers.
-            interactor.SetEventInformationFlipY(tx, ty, 0, 0, chr(0), 0, None)
-            service._press_navigation_cube_if_hit()
-            interactor.SetEventInformationFlipY(tx, ty, 0, 0, chr(0), 0, None)
-            service._release_navigation_cube_if_active()
-
-        def reversal_in(keys: set) -> bool:
-            return any(tuple(-np.array(k)) in keys and any(k) for k in keys)
-
-        # A dense pixel scan would be minutes of (segfault-prone) llvmpipe renders;
-        # the handles are large, so a coarse fixed grid lands several, and we stop as
-        # soon as the contract is met (>= 2 distinct snaps, ideally a reversal pair).
-        seen: dict[tuple, tuple] = {}
-        grid_x = np.linspace(tk_x0 + 4, tk_x1 - 4, 7).astype(int)
-        grid_y = np.linspace(tk_y0 + 4, tk_y1 - 4, 5).astype(int)
-        for tx in grid_x:
-            for ty in grid_y:
-                reset_iso()
-                base = camera_direction()
-                helper_click(int(tx), int(ty))
-                snapped = camera_direction()
-                if float(np.linalg.norm(snapped - base)) > 1e-3:
-                    seen[tuple(np.round(snapped, 2).tolist())] = (int(tx), int(ty))
-            keys_now = set(seen.keys())
-            if len(seen) >= 2 and reversal_in(keys_now):
-                break
-            if len(seen) >= 4:
-                break
-
-        keys = set(seen.keys())
-        has_reversal = reversal_in(keys)
-        result.detail["distinct_snap_dirs"] = len(seen)
-        result.detail["reversal_pair"] = bool(has_reversal)
-        # Hard gate: clicking the cube must reach >= 2 distinct standard views (the
-        # user's "I click the view never change"). The reversal pair (the NW<->SE ask)
-        # is reported -- it is pinned exhaustively by the standalone dense probe
-        # (bugs/0157: 5 dirs + 2 reversal pairs); here a coarse grid may not always
-        # land an exact opposite pair, so it is a note, not a failure.
-        if len(seen) < 2:
+        distinct_orient = len(set(orient_hits))
+        distinct_steps = sorted(set(step_hits))
+        result.detail["clicks_consumed"] = int(consumed)
+        result.detail["distinct_orientations"] = distinct_orient
+        result.detail["step_kinds"] = distinct_steps
+        # Hard gate: clicking the cube must route several distinct orientations AND at
+        # least one discrete-step arrow (the user's "I click the view never change").
+        if distinct_orient < 2:
             result.passed = False
             result.notes.append(
-                f"clicking the cube reached only {len(seen)} snap direction(s) -- the "
-                "view does not change on click (bugs/0157 regressed)"
+                f"clicking the cube routed only {distinct_orient} distinct orientation(s) -- "
+                "a face/edge/corner click does not snap the camera (bugs/0156 regressed)"
             )
-        if not has_reversal:
-            result.notes.append(
-                "note: the coarse live grid did not land an exact reversal pair "
-                "(reversal is pinned by the standalone dense probe, not this phase)"
-            )
-        if getattr(inspector, "_nav_cube_press_active", False):
+        if not step_hits:
             result.passed = False
             result.notes.append(
-                "_nav_cube_press_active left True after a click (stuck cube press)"
+                "no grid pixel landed a discrete-step arrow -- the rotation-step arrows "
+                "are unreachable (bugs/0156 regressed)"
             )
     except Exception as exc:  # pragma: no cover - defensive
         result.passed = False

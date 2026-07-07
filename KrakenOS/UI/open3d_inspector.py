@@ -392,10 +392,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._vtk_widget = None
         self._vtk_interactor = None
         self._orientation_widget = None
-        self._camera_orientation_widget = None
-        # bugs/0157: True while a left-press is being forwarded to the navigation
-        # cube, so the button-held move/release route to the cube, not the scene.
-        self._nav_cube_press_active = False
+        # bugs/0156: a genuine FreeCAD-style navigation cube (the custom
+        # NavigationCube widget) parked in the upper-right corner -- replaces VTK's
+        # axis-ball vtkCameraOrientationWidget. It owns its own corner renderers and
+        # routes a left-click itself (face/edge/corner snap or discrete-step arrow).
+        self._navigation_cube = None
         self._picker = None
         self._prop_picker = None
         self._selection_model = SelectionModel()
@@ -775,47 +776,40 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
             self._vtk_widget.Initialize()
 
-            # bugs/0156: a FreeCAD-style interactive navigation cube in the
-            # upper-right corner. Clicking a face/edge/corner handle snaps the
-            # camera to that orthographic/iso view -- the opposite handle reverses
-            # the look direction -- giving a general "rotate the canvas view"
-            # control on top of the fixed Iso/+-YZ/+-XY preset buttons. It is
-            # created AFTER Initialize() so the interactor is live when On() wires
-            # the handle observers (the path verified under Xvfb). The widget parks
-            # its own renderer in the upper-right; the passive axes marker keeps the
-            # lower-left, so they share a layer without overlapping, and the widget
-            # auto-bumps the render window layer count past the gizmo overlay.
-            # Animation is left OFF so the snap is instantaneous and never leans on
-            # the embedded-Tk timer loop -- matching the instant preset buttons.
-            # Each snap routes through the existing orbit backstop
-            # _on_camera_interaction, so the clip range re-fits and the
-            # perpendicular thickness labels re-square for the new basis exactly as
-            # a mouse orbit / preset button does (bugs/0048, 0128, 0140, 0152).
-            if (
-                vtkCameraOrientationWidget is not None
-                and self._renderer is not None
-                and self._vtk_interactor is not None
-            ):
+            # bugs/0156: a genuine FreeCAD-style navigation cube in the upper-right
+            # corner (the custom NavigationCube widget -- VTK's own
+            # vtkCameraOrientationWidget renders only as three axis balls on this
+            # build). It parks its own corner renderers (the labelled pick-cube on
+            # layer 3, the discrete-step arrows on layer 4) clear of the lower-left
+            # axes marker, and mirrors the main camera every render so it turns as
+            # the user orbits. A left-click on a cube face snaps to that ortho preset,
+            # an edge/corner to the matching oblique "angled" view, and an arrow
+            # rolls/azimuths/elevates the view 45 deg -- the discrete rotation step
+            # the plain cube lacked. Built AFTER Initialize() so the interactor is
+            # live. Clicks are routed from the Tk left-press (the app owns left-clicks;
+            # see open3d_mouse_bindings) through _handle_navigation_cube_left_press,
+            # and each snap runs _on_navigation_cube_snap (reframe + the orbit
+            # backstop _on_camera_interaction, so the clip range re-fits and the
+            # perpendicular thickness labels re-square exactly as a mouse orbit does).
+            if self._renderer is not None and self._vtk_interactor is not None:
                 try:
-                    self._camera_orientation_widget = vtkCameraOrientationWidget()
-                    self._camera_orientation_widget.SetParentRenderer(self._renderer)
-                    self._camera_orientation_widget.GetRepresentation().AnchorToUpperRight()
-                    self._camera_orientation_widget.SetAnimate(False)
-                    self._camera_orientation_widget.On()
-                    self._camera_orientation_widget.AddObserver(
-                        "InteractionEvent", self._on_camera_interaction
+                    from KrakenOS.UI.services.nav_cube_widget import NavigationCube
+
+                    self._navigation_cube = NavigationCube(
+                        render_window,
+                        self._renderer,
+                        self._vtk_interactor,
+                        apply_orientation=self._apply_navigation_cube_orientation,
+                        apply_step=self._apply_navigation_cube_step,
+                        get_main_camera=lambda: self._renderer.GetActiveCamera(),
                     )
-                    # bugs/0160: on SETTLE, reframe the view (zoom-to-extent +
-                    # recenter) like the top-bar preset buttons -- the raw snap
-                    # keeps the old parallel scale, so the scene looked tiny. The
-                    # reframe is bound ONLY to the cube widget's own End event so a
-                    # mouse orbit (which routes through _on_camera_interaction on
-                    # the main interactor) keeps its zoom.
-                    self._camera_orientation_widget.AddObserver(
-                        "EndInteractionEvent", self._on_navigation_cube_snap
-                    )
+                    if not getattr(self._navigation_cube, "available", False):
+                        self._navigation_cube = None
+                        self.editor.append_debug(
+                            "Open 3D navigation cube unavailable (widget not available)"
+                        )
                 except Exception as exc:
-                    self._camera_orientation_widget = None
+                    self._navigation_cube = None
                     self.editor.append_debug(f"Open 3D navigation cube unavailable: {exc}")
 
             self._install_pick_only_left_click_bindings()
@@ -11281,6 +11275,121 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             return False
         return True
+
+    def _apply_navigation_cube_orientation(self, offset_unit, view_up) -> None:
+        """Aim the main camera along a navigation-cube face/edge/corner pick
+        (bugs/0156), then reframe/backstop/render via _on_navigation_cube_snap so a
+        cube face is byte-identical to the matching +yz/-yz/... preset button and an
+        edge/corner gives the matching oblique "angled" view.
+
+        ``offset_unit`` is the outward unit direction of the picked orientation and
+        ``view_up`` its upright view-up (both from nav_cube_orientation.orientation_
+        pose). The camera looks from ``center + offset*distance`` toward the scene
+        centre; the reframe recomputes the exact distance/zoom for the orientation,
+        so only the view DIRECTION and UP set here matter.
+        """
+        if self._renderer is None:
+            return
+        camera = self._renderer.GetActiveCamera()
+        if camera is None:
+            return
+        bounds = self._camera_fit_bounds()
+        if (
+            bounds is not None
+            and getattr(bounds, "size", 0) == 6
+            and np.all(np.isfinite(bounds))
+            and bounds[0] <= bounds[1]
+        ):
+            center = np.array(
+                [
+                    0.5 * (bounds[0] + bounds[1]),
+                    0.5 * (bounds[2] + bounds[3]),
+                    0.5 * (bounds[4] + bounds[5]),
+                ],
+                dtype=float,
+            )
+            radius = max(
+                float(bounds[1] - bounds[0]),
+                float(bounds[3] - bounds[2]),
+                float(bounds[5] - bounds[4]),
+                1.0,
+            )
+        else:
+            center = np.asarray(camera.GetFocalPoint(), dtype=float)
+            radius = 1.0
+        offset = np.asarray(offset_unit, dtype=float).reshape(-1)[:3]
+        offset_norm = float(np.linalg.norm(offset))
+        if offset_norm <= 1e-9:
+            return
+        offset = offset / offset_norm
+        distance = max(radius * 2.2, 50.0)
+        try:
+            camera.SetParallelProjection(1)
+            camera.SetFocalPoint(*center.tolist())
+            camera.SetPosition(*(center + offset * distance).tolist())
+            camera.SetViewUp(*[float(v) for v in view_up])
+        except Exception:
+            return
+        self._on_navigation_cube_snap()
+
+    def _apply_navigation_cube_step(self, kind: str) -> None:
+        """Apply a navigation-cube discrete-step arrow (bugs/0156): roll +-45 about
+        the sight line, or azimuth/elevation the view +-45, then reframe/backstop/
+        render via _on_navigation_cube_snap. Roll leaves the sight line fixed and
+        only turns the picture (vtkCamera.Roll, matching the toolbar rotate buttons);
+        azimuth/elevation swing to a neighbouring oblique view."""
+        if self._renderer is None:
+            return
+        camera = self._renderer.GetActiveCamera()
+        if camera is None:
+            return
+        try:
+            if kind == "roll_ccw":
+                camera.Roll(45.0)
+            elif kind == "roll_cw":
+                camera.Roll(-45.0)
+            elif kind == "az_left":
+                camera.Azimuth(45.0)
+            elif kind == "az_right":
+                camera.Azimuth(-45.0)
+            elif kind == "el_up":
+                camera.Elevation(45.0)
+                camera.OrthogonalizeViewUp()
+            elif kind == "el_down":
+                camera.Elevation(-45.0)
+                camera.OrthogonalizeViewUp()
+            else:
+                return
+        except Exception:
+            return
+        self._on_navigation_cube_snap()
+
+    def _handle_navigation_cube_left_press(self) -> bool:
+        """Give the navigation cube (bugs/0156) first refusal on a left-click.
+
+        The app owns every left-click at the Tk level (the pick-only bindings
+        replace the interactor's button bindings), so the cube can't rely on VTK's
+        own button events -- open3d_mouse_bindings.left_press calls this after
+        set_event_info. Returns True when the cube consumed the click (a face/edge/
+        corner snap or a step arrow), so the caller skips the scene pick. A
+        Ctrl-click (camera orbit / multi-select modifier) never goes to the cube.
+        """
+        cube = self._navigation_cube
+        if cube is None or not getattr(cube, "available", False):
+            return False
+        interactor = self._vtk_interactor
+        if interactor is None:
+            return False
+        try:
+            if int(interactor.GetControlKey()):
+                return False
+            x, y = interactor.GetEventPosition()
+        except Exception:
+            return False
+        try:
+            return bool(cube.handle_left_press(int(x), int(y)))
+        except Exception:
+            return False
 
     def _on_navigation_cube_snap(self, *_args) -> None:
         """The navigation cube (bugs/0156/0157) settled on a new face/edge/corner

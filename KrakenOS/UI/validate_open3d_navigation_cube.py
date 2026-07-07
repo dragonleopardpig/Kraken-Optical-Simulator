@@ -1,37 +1,39 @@
 #!/usr/bin/env python3
-"""Display-free guard for bugs/0156: the Open 3D canvas carries a FreeCAD-style
-interactive navigation cube (``vtkCameraOrientationWidget``) so the user can rotate
-the canvas view by clicking a face/edge/corner handle -- including reversing the
-look direction (the user's ask: object plane at NW-facing-SE -> SE-facing-NW).
+"""Display-free guard for bugs/0156: the Open 3D canvas carries a genuine
+FreeCAD-style navigation cube -- a labelled, clickable cube (not VTK's axis-ball
+``vtkCameraOrientationWidget``, which "is far from the cube function") whose faces
+snap to the ortho presets, whose edges/corners give the oblique "angled" views, and
+which carries discrete-step rotation arrows.
 
 Why it exists (user request):
-  "refer attachment/2D.png, can we have this kind of navigation ball? I need to
-   rotate the canvas view ... add a Navigation Ball just like FreeCAD."
-  ("axis-handle interactive cube" chosen over the labelled-faces variant.)
+  "the navigation cube ... is far from the cube function ... Full FreeCAD interaction
+   (faces + edges + corners), CAD-word labels (FRONT/BACK/TOP/BOTTOM/LEFT/RIGHT),
+   plus discrete rotation-step arrows."
 
-The widget is the native VTK orientation cube. It is wired through the same lazy
-``_load_3d_backends`` plumbing as the passive axes marker, then created in
-``Kraken3DInspector.__init__`` AFTER ``Initialize()`` (so the interactor is live
-when ``On()`` registers the handle observers). It is anchored to the UPPER-RIGHT so
-it never collides with the passive axes marker in the lower-left, animation is left
-OFF (instant snap, no embedded-Tk timer dependency -- matching the preset buttons),
-and each snap routes through the existing orbit backstop ``_on_camera_interaction``
-so the clip range re-fits (bugs/0048) and the perpendicular thickness labels
-re-square for the new basis (bugs/0128, 0140) exactly as a mouse orbit does.
+The cube is the custom :class:`KrakenOS.UI.services.nav_cube_widget.NavigationCube`
+(all camera MATH in the VTK-free ``nav_cube_orientation`` module, unit-tested by
+``validate_open3d_nav_cube_orientation``). It is built in ``Kraken3DInspector.__init__``
+AFTER ``Initialize()`` (so the interactor is live) with three callbacks --
+``apply_orientation`` / ``apply_step`` / ``get_main_camera`` -- and stored on
+``self._navigation_cube``. Clicks are routed from the Tk left-press through
+``_handle_navigation_cube_left_press`` (the app owns left-clicks), and each snap runs
+``_on_navigation_cube_snap`` (reframe + the orbit backstop ``_on_camera_interaction``,
+so the clip range re-fits (bugs/0048) and the perpendicular thickness labels re-square
+(bugs/0128, 0140) exactly as a mouse orbit does).
 
 What it checks (no display required):
-  A. Import wiring -- ``_load_3d_backends`` resolves ``vtkCameraOrientationWidget``
-     to the real VTK class on BOTH layout_editor and the open3d_inspector re-export.
-  B. Source contract -- ``Kraken3DInspector.__init__`` builds the widget with
-     ``SetParentRenderer`` + ``AnchorToUpperRight`` + ``SetAnimate(False)`` + ``On()``,
-     stores it on ``self._camera_orientation_widget``, and registers BOTH
-     Interaction/EndInteraction observers bound to ``_on_camera_interaction``.
-  C. Observer target -- ``_on_camera_interaction`` re-fits the clip range AND
-     re-squares the thickness labels, so a cube snap behaves like an orbit (removing
-     either call fails here).
-  D. Behavioural VTK API -- the exact construction the inspector relies on
-     (``SetParentRenderer`` on a bare renderer, ``AnchorToUpperRight``,
-     ``SetAnimate(False)``) runs without a display and leaves animation OFF.
+  A. Module contract -- ``NavigationCube`` importable; ``STEP_KINDS`` is exactly the
+     six roll/azimuth/elevation kinds; ``_import_vtk`` resolves its VTK classes.
+  B. Defensive construction -- a ``NavigationCube`` built with no render window
+     degrades to ``available is False`` (the inspector then runs without the cube).
+  C. __init__ source -- builds ``NavigationCube(`` with the three callbacks bound to
+     ``_apply_navigation_cube_orientation`` / ``_apply_navigation_cube_step`` /
+     a ``get_main_camera`` lambda, and stores it on ``self._navigation_cube``.
+  D. Inspector methods -- ``_apply_navigation_cube_orientation`` and
+     ``_apply_navigation_cube_step`` both route through ``_on_navigation_cube_snap``;
+     ``_handle_navigation_cube_left_press`` gates Ctrl and reads the event position;
+     and ``_on_camera_interaction`` re-fits the clip range AND re-squares the
+     thickness labels (so a cube snap behaves like an orbit).
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_navigation_cube
@@ -46,84 +48,106 @@ import inspect
 def run_checks() -> "tuple[bool, list[str]]":
     failures: list[str] = []
 
-    from KrakenOS.UI import layout_editor as layout_editor_module
-    from KrakenOS.UI import open3d_inspector as open3d_inspector_module
     from KrakenOS.UI.open3d_inspector import Kraken3DInspector
+    from KrakenOS.UI.services.nav_cube_widget import (
+        NavigationCube,
+        STEP_KINDS,
+        _import_vtk,
+    )
 
-    # --- A: import wiring resolves the real VTK class on both modules ----------
-    open3d_inspector_module._load_3d_backends()
-    le_cls = getattr(layout_editor_module, "vtkCameraOrientationWidget", None)
-    oi_cls = getattr(open3d_inspector_module, "vtkCameraOrientationWidget", None)
-    if le_cls is None:
+    # --- A: module contract -----------------------------------------------------
+    want_kinds = ("roll_ccw", "roll_cw", "az_left", "az_right", "el_up", "el_down")
+    if tuple(STEP_KINDS) != want_kinds:
         failures.append(
-            "A FAIL: layout_editor._load_3d_backends did not resolve "
-            "vtkCameraOrientationWidget (import plumbing broken)"
+            f"A FAIL: STEP_KINDS {tuple(STEP_KINDS)!r} != the six discrete-step kinds "
+            f"{want_kinds!r} (roll/azimuth/elevation arrows)"
         )
-    if oi_cls is None:
+    vtk = _import_vtk()
+    if vtk is None:
         failures.append(
-            "A FAIL: open3d_inspector did not re-export vtkCameraOrientationWidget "
-            "from layout_editor (re-export plumbing broken)"
+            "A FAIL: nav_cube_widget._import_vtk() returned None -- the cube's VTK "
+            "classes (annotated cube / cube source / cell picker / renderer) are missing"
         )
-    if le_cls is not None and oi_cls is not None and le_cls is not oi_cls:
-        failures.append(
-            "A FAIL: the inspector re-export is a DIFFERENT class object than "
-            "layout_editor's -- the lazy assignment is not threading through"
-        )
+    else:
+        for key in ("AnnotatedCube", "CubeSource", "CellPicker", "PolyDataMapper", "Renderer", "Actor"):
+            if key not in vtk:
+                failures.append(f"A FAIL: _import_vtk() missing `{key}`")
 
-    # --- B: __init__ builds + enables + observes the widget -------------------
+    # --- B: defensive construction degrades cleanly -----------------------------
+    try:
+        degraded = NavigationCube(
+            None,  # no render window
+            None,  # no main renderer
+            None,
+            apply_orientation=lambda *_a: None,
+            apply_step=lambda *_a: None,
+            get_main_camera=lambda: None,
+        )
+        if degraded.available is not False:
+            failures.append(
+                f"B FAIL: NavigationCube with no render window reported available="
+                f"{degraded.available!r}, want False (the inspector must run without it)"
+            )
+    except Exception as exc:  # pragma: no cover - defensive
+        failures.append(f"B FAIL: defensive NavigationCube construction raised {exc!r}")
+
+    # --- C: __init__ builds + stores the cube with the three callbacks ----------
     init_src = inspect.getsource(Kraken3DInspector.__init__)
     required = {
-        "construct": "self._camera_orientation_widget = vtkCameraOrientationWidget()",
-        "parent": "self._camera_orientation_widget.SetParentRenderer(self._renderer)",
-        "anchor": "AnchorToUpperRight()",
-        "no-animate": "self._camera_orientation_widget.SetAnimate(False)",
-        "enable": "self._camera_orientation_widget.On()",
-        "observe-interaction": '"InteractionEvent", self._on_camera_interaction',
-        "observe-end": '"EndInteractionEvent", self._on_camera_interaction',
+        "construct": "self._navigation_cube = NavigationCube(",
+        "apply-orientation": "apply_orientation=self._apply_navigation_cube_orientation",
+        "apply-step": "apply_step=self._apply_navigation_cube_step",
+        "get-camera": "get_main_camera=",
+        "import": "from KrakenOS.UI.services.nav_cube_widget import NavigationCube",
     }
     for tag, needle in required.items():
         if needle not in init_src:
             failures.append(
-                f"B FAIL ({tag}): Kraken3DInspector.__init__ is missing `{needle}` "
-                "-- the navigation cube is not built/enabled/observed as specified"
+                f"C FAIL ({tag}): Kraken3DInspector.__init__ is missing `{needle}` "
+                "-- the navigation cube is not built/wired as specified"
             )
 
-    # --- C: the snap observer re-fits clip + re-squares labels like an orbit ---
+    # --- D: the routed inspector methods behave as the widget expects -----------
+    orient_src = inspect.getsource(Kraken3DInspector._apply_navigation_cube_orientation)
+    if "_on_navigation_cube_snap" not in orient_src:
+        failures.append(
+            "D FAIL: _apply_navigation_cube_orientation must call _on_navigation_cube_snap "
+            "so a face/edge/corner pick reframes + runs the orbit backstop like a preset"
+        )
+    step_src = inspect.getsource(Kraken3DInspector._apply_navigation_cube_step)
+    if "_on_navigation_cube_snap" not in step_src:
+        failures.append(
+            "D FAIL: _apply_navigation_cube_step must call _on_navigation_cube_snap so a "
+            "discrete-step arrow reframes + runs the orbit backstop"
+        )
+    for needle, kinds in (("Roll(", "roll"), ("Azimuth(", "azimuth"), ("Elevation(", "elevation")):
+        if needle not in step_src:
+            failures.append(
+                f"D FAIL: _apply_navigation_cube_step does not apply a {kinds} "
+                f"(`{needle}`) -- the discrete rotation step is incomplete"
+            )
+    press_src = inspect.getsource(Kraken3DInspector._handle_navigation_cube_left_press)
+    if "GetControlKey" not in press_src:
+        failures.append(
+            "D FAIL: _handle_navigation_cube_left_press does not gate on Ctrl "
+            "(GetControlKey) -- a Ctrl-click must still orbit the camera"
+        )
+    if "GetEventPosition" not in press_src:
+        failures.append(
+            "D FAIL: _handle_navigation_cube_left_press does not read the interactor "
+            "event position (GetEventPosition) to pick the cube"
+        )
     interaction_src = inspect.getsource(Kraken3DInspector._on_camera_interaction)
     if "_reorient_thickness_labels_for_camera" not in interaction_src:
         failures.append(
-            "C FAIL: _on_camera_interaction must call "
-            "_reorient_thickness_labels_for_camera so a cube snap re-squares the "
-            "thickness labels for the new basis (bugs/0128, 0140)"
+            "D FAIL: _on_camera_interaction must call _reorient_thickness_labels_for_camera "
+            "so a cube snap re-squares the thickness labels (bugs/0128, 0140)"
         )
     if "_reset_camera_clipping_range_for_scene" not in interaction_src:
         failures.append(
-            "C FAIL: _on_camera_interaction must re-fit the clip range "
-            "(_reset_camera_clipping_range_for_scene) so a cube snap can't near-clip "
-            "the scene (bugs/0048)"
+            "D FAIL: _on_camera_interaction must re-fit the clip range "
+            "(_reset_camera_clipping_range_for_scene) so a cube snap can't near-clip (bugs/0048)"
         )
-
-    # --- D: the construction path runs display-free and keeps animation off ----
-    if oi_cls is not None:
-        try:
-            import vtk
-
-            widget = oi_cls()
-            widget.SetParentRenderer(vtk.vtkRenderer())
-            rep = widget.GetRepresentation()
-            rep.AnchorToUpperRight()
-            widget.SetAnimate(False)
-            if bool(widget.GetAnimate()):
-                failures.append(
-                    "D FAIL: SetAnimate(False) did not stick -- the snap would "
-                    "depend on the embedded-Tk animation timer"
-                )
-            if rep is None or "CameraOrientationRepresentation" not in type(rep).__name__:
-                failures.append(
-                    f"D FAIL: unexpected representation type {type(rep).__name__!r}"
-                )
-        except Exception as exc:  # pragma: no cover - defensive
-            failures.append(f"D FAIL: display-free construction raised {exc!r}")
 
     return (not failures), failures
 
@@ -136,8 +160,8 @@ def main() -> int:
             print(f"  - {item}")
         return 1
     print(
-        "[PASS] bugs/0156: Open 3D carries an interactive navigation cube "
-        "(upper-right, no-animate, snap re-squares labels like an orbit)"
+        "[PASS] bugs/0156: Open 3D carries a genuine FreeCAD-style navigation cube "
+        "(labelled faces + edges/corners + discrete-step arrows, snap re-squares labels)"
     )
     return 0
 
