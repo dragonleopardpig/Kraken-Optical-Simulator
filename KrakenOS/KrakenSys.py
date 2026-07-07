@@ -399,7 +399,12 @@ class system():
         self._optical_solid_face_world_cache = {}
         self._optical_solid_face_world_signature_cache = {}
         self._optical_solid_mesh_face_id_cache = {}
+        self._optical_solid_mesh_fast_cache = {}
+        self._optical_solid_input_port_cache = {}
+        self._eee_stable_blocks = None
+        self._eee_stable_src = None
         self._ns_requires_branching_cache = None
+        self._ns_intersection_policy_cache = None
         if not hasattr(self, "_scene_boundary_faces_by_surface"):
             self._scene_boundary_faces_by_surface = {}
         if not hasattr(self, "_scene_optical_volumes_by_surface"):
@@ -1073,16 +1078,34 @@ class system():
         }
 
     def __OpticalSolidHasInputPort(self, world_faces, surface_index):
+        # The answer is a pure function of surface_index (world_faces is the cached
+        # __OpticalSolidWorldFaces(surface_index) and OpticalSolidFaces is frozen), yet the
+        # NS trace asks per optical-solid hit -- caching per surface avoids re-normalizing
+        # the face metadata thousands of times. Dropped with the other SDT-derived caches.
+        cache = getattr(self, "_optical_solid_input_port_cache", None)
+        if cache is None:
+            cache = self._optical_solid_input_port_cache = {}
+        try:
+            key = int(surface_index)
+        except Exception:
+            key = None
+        if key is not None and key in cache:
+            return cache[key]
+        result = None
         try:
             if optical_solid_face_by_port_role({"faces": list(world_faces or [])}, OPTICAL_SOLID_FACE_PORT_INPUT) is not None:
-                return True
+                result = True
         except Exception:
-            pass
-        try:
-            metadata = normalize_optical_solid_face_metadata(getattr(self.SDT[int(surface_index)], "OpticalSolidFaces", {}))
-            return optical_solid_face_by_port_role(metadata, OPTICAL_SOLID_FACE_PORT_INPUT) is not None
-        except Exception:
-            return True
+            result = None
+        if result is None:
+            try:
+                metadata = normalize_optical_solid_face_metadata(getattr(self.SDT[int(surface_index)], "OpticalSolidFaces", {}))
+                result = optical_solid_face_by_port_role(metadata, OPTICAL_SOLID_FACE_PORT_INPUT) is not None
+            except Exception:
+                result = True
+        if key is not None:
+            cache[key] = result
+        return result
 
     def __OpticalSolidFaceById(self, world_faces, face_id):
         target = str(face_id or "").strip()
@@ -1254,6 +1277,28 @@ class system():
         return override
 
 
+    def _eee_stable_block(self, index):
+        """Return an identity-STABLE pyvista wrapper for scene-mesh block ``index``.
+
+        ``MultiBlock.__getitem__`` ends in ``wrap(self.GetBlock(index))`` -- it
+        allocates a fresh Python wrapper on every access. The non-sequential mesh
+        trace reads the same blocks hundreds of thousands of times per load, so
+        the repeated ``wrap()`` dominates the trace AND the id-keyed proxy cache in
+        ``__SceneMeshWithFaceIds`` never hits (a new id each read), re-decimating
+        every optical solid on every ray step. Cache one wrapper per block and
+        reuse it. The list is rebuilt whenever ``self.EEE`` is re-bound (identity
+        guard) and is cleared alongside the other scene caches in SetData/SetSolid;
+        INORM's ray-trace-compatibility swap is geometry-neutral, so a wrapper that
+        lags that swap still traces to identical intersections.
+        """
+        eee = self.EEE
+        stable = getattr(self, "_eee_stable_blocks", None)
+        if stable is None or getattr(self, "_eee_stable_src", None) is not eee or len(stable) != eee.n_blocks:
+            stable = [eee[i] for i in range(eee.n_blocks)]
+            self._eee_stable_blocks = stable
+            self._eee_stable_src = eee
+        return stable[int(index)]
+
     def __ReplaceSceneMesh(self, mesh_index, mesh):
         if mesh is None:
             return None
@@ -1265,10 +1310,13 @@ class system():
                 meshes[int(mesh_index)] = mesh
             except Exception:
                 pass
+        stable = getattr(self, "_eee_stable_blocks", None)
+        if stable is not None and getattr(self, "_eee_stable_src", None) is self.EEE and 0 <= int(mesh_index) < len(stable):
+            stable[int(mesh_index)] = mesh
         return None
 
     def __SceneMeshWithFaceIds(self, mesh_index, context):
-        mesh = self.EEE[int(mesh_index)]
+        mesh = self._eee_stable_block(int(mesh_index))
         try:
             surface_index = int(self.GlassOnSide[int(mesh_index)])
             is_optical_solid = self.SDT[surface_index].Solid_3d_stl != 'None'
@@ -1276,6 +1324,15 @@ class system():
             return mesh
         if not is_optical_solid:
             return mesh
+        # Fast path: with identity-stable block wrappers the (index, id) of a solid's
+        # resolved proxy stays constant across a trace, so once the proxy is built we
+        # skip rebuilding + hashing the (large) world-face signature on every ray step.
+        fast_cache = getattr(self, "_optical_solid_mesh_fast_cache", None)
+        if fast_cache is None:
+            fast_cache = self._optical_solid_mesh_fast_cache = {}
+        fast_hit = fast_cache.get((int(mesh_index), id(mesh)))
+        if fast_hit is not None:
+            return fast_hit
         try:
             if not hasattr(self, "_optical_solid_mesh_face_id_cache"):
                 self._optical_solid_mesh_face_id_cache = {}
@@ -1284,6 +1341,8 @@ class system():
             cache_key = (int(mesh_index), id(mesh), face_signature)
             cached = self._optical_solid_mesh_face_id_cache.get(cache_key)
             if cached is not None:
+                fast_cache[(int(mesh_index), id(mesh))] = cached
+                fast_cache[(int(mesh_index), id(cached))] = cached
                 return cached
             # Trace against a lossless decimated proxy when the solid is a planar
             # polyhedron (beam-splitter cube / prism): ray intersection needs no
@@ -1295,15 +1354,18 @@ class system():
                 world_faces,
                 context=context,
             )
-            mesh = assign_mesh_cell_face_ids(
+            resolved = assign_mesh_cell_face_ids(
                 proxy,
                 world_faces,
                 context=context,
                 prefer_plane_match=(proxy is not mesh),
             )
-            self.__ReplaceSceneMesh(mesh_index, mesh)
-            self._optical_solid_mesh_face_id_cache[cache_key] = mesh
-            self._optical_solid_mesh_face_id_cache[(int(mesh_index), id(mesh), face_signature)] = mesh
+            self.__ReplaceSceneMesh(mesh_index, resolved)
+            self._optical_solid_mesh_face_id_cache[cache_key] = resolved
+            self._optical_solid_mesh_face_id_cache[(int(mesh_index), id(resolved), face_signature)] = resolved
+            fast_cache[(int(mesh_index), id(mesh))] = resolved
+            fast_cache[(int(mesh_index), id(resolved))] = resolved
+            mesh = resolved
         except Exception:
             pass
         return mesh
@@ -1317,12 +1379,21 @@ class system():
             ray_stop,
             context=context,
         )
-        if mesh is not self.EEE[mesh_index]:
+        if mesh is not self._eee_stable_block(mesh_index):
             self.__ReplaceSceneMesh(mesh_index, mesh)
         return points, hits
 
     def __NonSequentialIntersectionPolicy(self):
-        return NonSequentialIntersectionPolicy.from_surfaces(getattr(self, "SDT", []))
+        # The policy is derived purely from SDT (surface Diameter/Thickness scale),
+        # which is frozen for the duration of a trace, yet __NonSequentialChooserToot
+        # asks for it on every non-empty hit (~10^5 times per 3D load). Rebuilding it
+        # each call rescans every surface (_surface_scale). Cache it and drop the cache
+        # alongside the other SDT-derived caches in SetData/SetSolid.
+        policy = getattr(self, "_ns_intersection_policy_cache", None)
+        if policy is None:
+            policy = NonSequentialIntersectionPolicy.from_surfaces(getattr(self, "SDT", []))
+            self._ns_intersection_policy_cache = policy
+        return policy
 
     def __NonSequentialNearHitTolerance(self):
         return self.__NonSequentialIntersectionPolicy().near_hit_tolerance
@@ -1437,7 +1508,7 @@ class system():
                     int(jj),
                     A_RayOrig,
                     A_Proto_pTarget,
-                    self.EEE[int(jj)],
+                    self._eee_stable_block(int(jj)),
                     hit_points,
                     hit_cells,
                 )
@@ -1811,7 +1882,12 @@ class system():
         self._optical_solid_face_world_cache = {}
         self._optical_solid_face_world_signature_cache = {}
         self._optical_solid_mesh_face_id_cache = {}
+        self._optical_solid_mesh_fast_cache = {}
+        self._optical_solid_input_port_cache = {}
+        self._eee_stable_blocks = None
+        self._eee_stable_src = None
         self._ns_requires_branching_cache = None
+        self._ns_intersection_policy_cache = None
         self.SuTo = SUT(self.SDT)
         self.Object_Num = np.arange(0, self.n, 1)
         self.__SurFuncSuscrip()
@@ -1824,7 +1900,12 @@ class system():
         self._optical_solid_face_world_cache = {}
         self._optical_solid_face_world_signature_cache = {}
         self._optical_solid_mesh_face_id_cache = {}
+        self._optical_solid_mesh_fast_cache = {}
+        self._optical_solid_input_port_cache = {}
+        self._eee_stable_blocks = None
+        self._eee_stable_src = None
         self._ns_requires_branching_cache = None
+        self._ns_intersection_policy_cache = None
         self.__SurFuncSuscrip()
         self.Pr3D.Prerequisites3SMath()
         self.Pr3D.Prerequisites3D_UDA()

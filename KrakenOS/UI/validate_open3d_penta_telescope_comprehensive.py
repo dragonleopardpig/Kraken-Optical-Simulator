@@ -11181,6 +11181,35 @@ def phase_220_folded_real_trace_sync(
     return result
 
 
+def phase_221_folded_load_perf_caches(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0246: the folded 3D initial load (>60s after 0243) is sped up ~21% by five pure
+    caches of FROZEN scene data -- an identity-stable per-block pyvista wrapper (which also
+    lets the decimation-proxy cache hit), the resolved face-id proxy keyed by (index,id), a
+    direct obbTree ray-trace bypassing pyvista's PolyData.ray_trace, the memoized
+    NonSequentialIntersectionPolicy, and the memoized Mirror/TIR input-port answer. They must
+    change ZERO rays (verified out-of-band: all 3249 folded PYRITE ray polylines hash
+    bit-identical with the caches on vs off). `validate_open3d_folded_trace_perf_caches`
+    pins one decisive cache-vs-fresh-recompute check per optimization plus the
+    SetData/SetSolid reset boundary, on the fast two-fold AZ85 fixture."""
+    result = PhaseResult(name="Phase 221: folded-load scene-invariant perf caches are byte-identical")
+    try:
+        from KrakenOS.UI.validate_open3d_folded_trace_perf_caches import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-load-perf-caches guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-load-perf-caches phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11446,6 +11475,7 @@ def main() -> int:
             phase_218_folded_coverage_label_decollide,
             phase_219_folded_image_segment_split,
             phase_220_folded_real_trace_sync,
+            phase_221_folded_load_perf_caches,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

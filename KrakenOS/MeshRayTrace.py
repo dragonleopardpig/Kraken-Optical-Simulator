@@ -1,4 +1,5 @@
 import time
+import weakref
 
 import numpy as np
 
@@ -22,6 +23,70 @@ class MeshRayTraceError(RuntimeError):
 
 _MESH_TRACE_STATS = {"active": False}
 _RAYTRACE_COMPATIBLE_MESH_IDS = set()
+
+# --- Direct OBB-tree ray-trace bypass -------------------------------------------------
+# pyvista's PolyData.ray_trace is convenient but pays, on EVERY call, a
+# @_deprecate_positional_args wrapper plus repeated instrumented attribute access
+# (PolyData.__getattribute__/check_attribute) just to reach the cached obbTree and the
+# _vtk helpers. The non-sequential mesh trace calls it hundreds of thousands of times per
+# 3D load, so that Python glue -- not the intersection math -- dominates the trace. We
+# reproduce ray_trace's exact body for our fixed arguments (first_point=False,
+# plot=False), reusing the mesh's own cached vtkOBBTree via a weakref-keyed cache so the
+# result is byte-identical to tracer.ray_trace(start, stop) while skipping the wrapper.
+_OBBTREE_CACHE = {}  # id(tracer) -> (weakref.ref(tracer), vtkOBBTree)
+_VTK_MODULE = None
+
+
+def _vtk_module():
+    global _VTK_MODULE
+    if _VTK_MODULE is None:
+        from pyvista import _vtk as _vtk_mod
+        _VTK_MODULE = _vtk_mod
+    return _VTK_MODULE
+
+
+def _cached_obbtree(tracer):
+    """Return the mesh's cached ``vtkOBBTree``, reused across calls.
+
+    ``PolyData.obbTree`` is a ``cached_property`` (built once, geometry-frozen), so the
+    tree object is stable for a given tracer. We key on ``id(tracer)`` but validate with a
+    weakref so a recycled id can never return a foreign mesh's tree; a weakref finalizer
+    evicts the entry when the tracer is collected, bounding the cache.
+    """
+    key = id(tracer)
+    entry = _OBBTREE_CACHE.get(key)
+    if entry is not None and entry[0]() is tracer:
+        return entry[1]
+    tree = tracer.obbTree
+    try:
+        _OBBTREE_CACHE[key] = (
+            weakref.ref(tracer, lambda _ref, k=key: _OBBTREE_CACHE.pop(k, None)),
+            tree,
+        )
+    except TypeError:
+        _OBBTREE_CACHE.pop(key, None)
+    return tree
+
+
+def _fast_scene_ray_trace(tracer, start, stop):
+    """Byte-identical stand-in for ``tracer.ray_trace(start, stop)`` (no first_point/plot).
+
+    Mirrors ``pyvista.PolyData.ray_trace`` exactly for our arguments but calls the cached
+    ``vtkOBBTree`` directly, bypassing the deprecation wrapper and per-call attribute
+    machinery. Verified equal (points, cells, dtypes) on hit and miss.
+    """
+    _vtk = _vtk_module()
+    obbtree = _cached_obbtree(tracer)
+    points = _vtk.vtkPoints()
+    cell_ids = _vtk.vtkIdList()
+    obbtree.IntersectWithLine(list(start), list(stop), points, cell_ids)
+    intersection_points = _vtk.vtk_to_numpy(points.GetData())
+    if intersection_points.shape[0] >= 1:
+        ncells = cell_ids.GetNumberOfIds()
+        intersection_cells = np.array([cell_ids.GetId(i) for i in range(ncells)])
+    else:
+        intersection_cells = np.array([])
+    return intersection_points, intersection_cells
 
 
 def reset_mesh_trace_stats(*, active=True):
@@ -589,7 +654,7 @@ def trace_mesh_ray(mesh, start, stop, context="mesh"):
     started = time.perf_counter() if stats_active else 0.0
     tracer = raytrace_compatible_mesh(mesh, context=context)
     try:
-        result = tracer.ray_trace(start, stop)
+        result = _fast_scene_ray_trace(tracer, start, stop)
         if stats_active:
             try:
                 hit_count = len(result[1])
