@@ -49,10 +49,12 @@ STEP_KINDS = ("roll_ccw", "roll_cw", "az_left", "az_right", "el_up", "el_down")
 
 # --- Cube visuals (flagged 2026-07-07: labels too big, faces too low-contrast) -----
 _FACE_FRACTION = 0.72       # chamfered-cube face keep-fraction (see chamfered_cube_facets)
-# Annotated-cube letters. vtkAnnotatedCubeActor sizes text to the FULL cube face, but the
-# flat facet is only _FACE_FRACTION of it, so the scale must stay well under that to keep a
-# 5-char word (FRONT/RIGHT) inside the facet (0.42 -> 0.22 -> 0.15, per two flags).
-_FACE_TEXT_SCALE = 0.15
+# Annotated-cube letters. vtkAnnotatedCubeActor uses ONE scale for every face word, sized
+# to the FULL cube face -- but the flat facet is only _FACE_FRACTION of it and the words
+# differ in length, so the scale must clear the LONGEST word: 6-char BOTTOM. At 0.15 the 5-
+# and 6-char words (FRONT/RIGHT/BOTTOM) still spilled past the facet, so 0.42 -> 0.22 ->
+# 0.15 -> 0.115 (per three flags); short words (TOP) just render smaller.
+_FACE_TEXT_SCALE = 0.115
 # Faces lightest, edges mid, corners darkest, so the three clickable regions read as
 # distinct; a dark outline on every facet makes the chamfer borders crisp.
 _COLOR_FACE = (0.83, 0.87, 0.93)
@@ -60,11 +62,18 @@ _COLOR_EDGE = (0.56, 0.65, 0.80)
 _COLOR_CORNER = (0.40, 0.50, 0.69)
 _COLOR_OUTLINE = (0.18, 0.24, 0.38)
 _COLOR_HOVER = (0.30, 0.68, 1.00)   # facet under the mouse -- bright blue highlight
+_ARROW_HOVER_MIX = 0.5              # arrow-under-mouse: lerp its base colour this far to white
 _KIND_COLOR = {"face": _COLOR_FACE, "edge": _COLOR_EDGE, "corner": _COLOR_CORNER}
 
 _CUBE_LAYER = 3
 _ARROW_LAYER = 4
-_CUBE_VIEWPORT = (0.80, 0.78, 0.995, 0.995)
+# The nav-cube corner: a slightly larger viewport (so the shrunk cube keeps readable text)
+# with the cube framed SMALL inside it -- _CUBE_FRAME_SCALE is the cube camera's parallel
+# half-height, and bigger => cube smaller on screen => the fixed-size arrows clear the cube
+# silhouette instead of sitting on it (flagged 2026-07-07). Was 0.92 (cube nearly filled
+# the corner, so a rotated corner poked past the orbit arrows).
+_CUBE_VIEWPORT = (0.78, 0.75, 0.995, 0.995)
+_CUBE_FRAME_SCALE = 1.22
 # World half-extent that must stay visible in the arrow renderer (the arrows reach
 # ~1.28 from centre); the camera parallel scale is fitted to this each render so the
 # arrows never clip whatever the corner viewport's pixel aspect turns out to be.
@@ -134,6 +143,10 @@ class NavigationCube:
         # Strong refs to the arrow actors (VTK frees the Python wrapper otherwise,
         # so id()/is comparisons break); paired with their step kind.
         self._arrow_actors: list[tuple[object, str]] = []
+        # Arrow hover: each arrow's base colour (by actor address) to restore, and the
+        # arrow actor currently brightened under the mouse (None = none).
+        self._arrow_base_colors: dict[str, tuple[float, float, float]] = {}
+        self._arrow_hover_actor = None
         self._start_observer = None
 
         vtk = _import_vtk()
@@ -299,6 +312,7 @@ class NavigationCube:
             renderer.AddActor(actor)
             picker.AddPickList(actor)
             self._arrow_actors.append((actor, kind))
+            self._remember_arrow_color(actor, orbit_color)
 
         # Roll arrows: a SHORT curved arc capped by a tangential arrowhead (a rotation
         # glyph, not a near-full loop), flanking the top like FreeCAD's. (cx, cy, a0, a1)
@@ -312,6 +326,7 @@ class NavigationCube:
             renderer.AddActor(actor)
             picker.AddPickList(actor)
             self._arrow_actors.append((actor, kind))
+            self._remember_arrow_color(actor, roll_color)
 
         # Fixed, screen-aligned camera: arrows never rotate with the scene. The
         # parallel scale is (re)fitted to the live viewport aspect each render by
@@ -449,7 +464,7 @@ class NavigationCube:
         cube_cam.SetFocalPoint(0.0, 0.0, 0.0)
         cube_cam.SetPosition(*(-view * 10.0).tolist())
         cube_cam.SetViewUp(*up.tolist())
-        cube_cam.SetParallelScale(0.92)  # frame the unit cube with a little margin
+        cube_cam.SetParallelScale(_CUBE_FRAME_SCALE)  # frame the cube SMALL so arrows clear it
         try:
             self._cube_renderer.ResetCameraClippingRange()
         except Exception:
@@ -467,8 +482,16 @@ class NavigationCube:
         x0, y0, x1, y1 = _CUBE_VIEWPORT
         return (x0 * w) <= x <= (x1 * w) and (y0 * h) <= y <= (y1 * h)
 
-    def _arrow_kind_for(self, picked) -> "str | None":
-        """Map a picked prop back to its step kind by VTK object identity."""
+    def _remember_arrow_color(self, actor, color) -> None:
+        """Record an arrow's base colour (keyed by VTK address) so hover can restore it."""
+        try:
+            self._arrow_base_colors[actor.GetAddressAsString("")] = tuple(color)
+        except Exception:
+            pass
+
+    def _arrow_entry_for(self, picked):
+        """Map a picked prop back to the STORED (actor, kind) by VTK object identity, so a
+        pick (which may hand back a different wrapper) resolves to the actor we hold refs to."""
         if picked is None:
             return None
         try:
@@ -477,13 +500,55 @@ class NavigationCube:
             picked_addr = None
         for actor, kind in self._arrow_actors:
             if actor is picked:
-                return kind
+                return actor, kind
             try:
                 if picked_addr is not None and actor.GetAddressAsString("") == picked_addr:
-                    return kind
+                    return actor, kind
             except Exception:
                 continue
         return None
+
+    def _arrow_kind_for(self, picked) -> "str | None":
+        """Map a picked prop back to its step kind by VTK object identity."""
+        entry = self._arrow_entry_for(picked)
+        return entry[1] if entry is not None else None
+
+    def _arrow_base_color(self, actor):
+        try:
+            return self._arrow_base_colors.get(actor.GetAddressAsString(""))
+        except Exception:
+            return None
+
+    def _set_arrow_hover(self, actor) -> bool:
+        """Brighten the hovered arrow toward white, restoring the previously-hovered one;
+        re-render only on a change. Returns True while an arrow is highlighted."""
+        if actor is self._arrow_hover_actor:
+            return actor is not None
+        prev = self._arrow_hover_actor
+        if prev is not None:
+            base = self._arrow_base_color(prev)
+            if base is not None:
+                try:
+                    prev.GetProperty().SetColor(*base)
+                except Exception:
+                    pass
+        self._arrow_hover_actor = actor
+        if actor is not None:
+            base = self._arrow_base_color(actor)
+            if base is not None:
+                hi = tuple(c * (1.0 - _ARROW_HOVER_MIX) + _ARROW_HOVER_MIX for c in base)
+                try:
+                    actor.GetProperty().SetColor(*hi)
+                except Exception:
+                    pass
+        try:
+            self._render_window.Render()
+        except Exception:
+            pass
+        return actor is not None
+
+    def _clear_arrow_hover(self) -> None:
+        self._set_arrow_hover(None)
 
     def handle_left_press(self, x: int, y: int) -> bool:
         """Give the cube first refusal on a left-click. Returns True if consumed."""
@@ -523,11 +588,26 @@ class NavigationCube:
         return False
 
     def handle_hover(self, x: int, y: int) -> bool:
-        """Highlight the cube facet under the mouse (face/edge/corner). Returns True while
-        a facet is highlighted. The host forwards mouse-motion here; anything off the cube
-        (outside the viewport, or over an arrow / empty space) clears the highlight."""
+        """Highlight the nav-cube control under the mouse -- an arrow glyph (brightened) or a
+        cube facet (face/edge/corner, blue). Returns True while something is highlighted. The
+        host forwards mouse-motion here; anything off the widget clears both highlights."""
         if not self.available or not self._point_in_viewport(int(x), int(y)):
+            self._set_arrow_hover(None)
             return self._set_hover(-1)
+        # Arrows sit on top -- highlight them first, and drop any facet highlight.
+        if self._arrow_renderer is not None and self._arrow_picker is not None:
+            try:
+                self._arrow_picker.Pick(int(x), int(y), 0, self._arrow_renderer)
+                picked = self._arrow_picker.GetActor()
+            except Exception:
+                picked = None
+            entry = self._arrow_entry_for(picked)
+            if entry is not None:
+                self._set_hover(-1)
+                self._set_arrow_hover(entry[0])
+                return True
+        self._set_arrow_hover(None)
+        # Then the cube surface -> face/edge/corner facet.
         cid = -1
         if self._cube_renderer is not None and self._cube_picker is not None:
             try:
@@ -541,6 +621,7 @@ class NavigationCube:
 
     def clear_hover(self) -> None:
         """Drop any highlight (host calls this when the pointer leaves the 3D pane)."""
+        self._set_arrow_hover(None)
         self._set_hover(-1)
 
     def _set_hover(self, cid: int) -> bool:

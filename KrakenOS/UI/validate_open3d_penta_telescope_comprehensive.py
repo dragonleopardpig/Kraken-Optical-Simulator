@@ -11376,6 +11376,32 @@ def phase_226_nav_cube_hover_highlight(
     return result
 
 
+def phase_227_nav_cube_arrow_hover(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0251: the nav-cube step ARROWS brighten on hover (restoring the last), the long
+    face words (5/6-char FRONT/RIGHT/BOTTOM) fit the facet, and the cube is framed small
+    enough that the arrows clear its silhouette. `validate_open3d_nav_cube_arrows` drives
+    _set_arrow_hover / _clear_arrow_hover against fake actors (highlight one / move / clear /
+    same-actor no-op / distinctly lighter) and pins the label + cube-frame sizing constants
+    plus the handle_hover arrow wiring; the live hover feel is eyeballed offscreen."""
+    result = PhaseResult(name="Phase 227: nav cube arrows highlight on hover")
+    try:
+        from KrakenOS.UI.validate_open3d_nav_cube_arrows import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"nav-cube-arrows guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("nav-cube-arrows phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11647,6 +11673,7 @@ def main() -> int:
             phase_224_2d_refresh_after_solve,
             phase_225_nav_cube_chamfer_geometry,
             phase_226_nav_cube_hover_highlight,
+            phase_227_nav_cube_arrow_hover,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

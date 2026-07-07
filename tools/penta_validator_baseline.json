@@ -227,7 +227,8 @@
     "223": "pass",
     "224": "pass",
     "225": "pass",
-    "226": "pass"
+    "226": "pass",
+    "227": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -455,6 +456,7 @@
     "223": "folded object dialog pins both fold legs in one solve",
     "224": "2D layout refreshes after an inspector solve/FOV/constraint apply",
     "225": "nav cube is a clickable 26-facet chamfered cube",
-    "226": "nav cube highlights the hovered facet"
+    "226": "nav cube highlights the hovered facet",
+    "227": "nav cube arrows highlight on hover"
   }
 }

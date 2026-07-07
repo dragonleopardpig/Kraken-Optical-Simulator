@@ -76,6 +76,11 @@ def _bare_cube(W, base):
     cube._base_colors = [tuple(int(c) for c in t) for t in base]
     cube._hover_cell = -1
     cube._render_window = _FakeWin()
+    # clear_hover() also drops the arrow highlight (bugs/0251), so the fixture needs the
+    # arrow-hover state to be a valid (empty) object even for these facet-only checks.
+    cube._arrow_actors = []
+    cube._arrow_base_colors = {}
+    cube._arrow_hover_actor = None
     return cube
 
 
