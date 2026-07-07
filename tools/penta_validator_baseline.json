@@ -228,7 +228,8 @@
     "224": "pass",
     "225": "pass",
     "226": "pass",
-    "227": "pass"
+    "227": "pass",
+    "228": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -457,6 +458,7 @@
     "224": "2D layout refreshes after an inspector solve/FOV/constraint apply",
     "225": "nav cube is a clickable 26-facet chamfered cube",
     "226": "nav cube highlights the hovered facet",
-    "227": "nav cube arrows highlight on hover"
+    "227": "nav cube arrows highlight on hover",
+    "228": "nav cube corners reproduce the ISO view per octant"
   }
 }

@@ -14,10 +14,18 @@ identical to pressing the matching ``+YZ``/``-YZ``/... toolbar button::
 
     +X face -> +yz    -X -> -yz    +Z -> +xy    -Z -> -xy    +Y -> +xz    -Y -> -xz
 
-Edges and corners use a projected-up rule: the scene's visual vertical (world
-``+Y``) projected onto the plane perpendicular to the view direction, so the
-oblique ("angled") views stay upright; when the view runs along ``+/-Y`` the
-fallback vertical is world ``+Z``.
+Edges use a projected-up rule: the scene's visual vertical (world ``+Y``)
+projected onto the plane perpendicular to the view direction, so the oblique
+("angled") views stay upright; when the view runs along ``+/-Y`` the fallback
+vertical is world ``+Z``.
+
+Corners reproduce the ISO toolbar view for their octant (bugs/0252): the world
+UP axis takes a small ``0.55`` elevation and the other two axes the ``0.95`` /
+``0.8`` horizontal spread (mirroring
+``open3d_inspector._iso_camera_offset_and_view_up``), each carrying the picked
+octant's sign, with ``view_up`` world ``+Y``. So all 8 corners frame the scene
+the same upright, wide-screen-friendly way the ISO button does -- instead of a
+steeper symmetric ``(+-1, +-1, +-1)`` diagonal.
 
 CAD face labels (the user's choice): ``+Z = FRONT``, ``+Y = TOP``, ``+X = RIGHT``
 and their opposites.
@@ -56,6 +64,15 @@ ORIENTATION_KEYS: tuple[tuple[int, int, int], ...] = tuple(
 _WORLD_UP = np.array([0.0, 1.0, 0.0])
 _WORLD_UP_FALLBACK = np.array([0.0, 0.0, 1.0])
 
+# bugs/0252 -- ISO-style corner weights. Mirrors
+# ``open3d_inspector._iso_camera_offset_and_view_up``: the world UP axis takes the
+# small +0.55 elevation and the other two axes the 0.95 / 0.8 horizontal spread, so a
+# corner reproduces the ISO toolbar view for its octant (world-+Y up) rather than a
+# steeper symmetric diagonal. The ISO octant (-1,+1,+1) yields exactly (-0.95,0.55,0.8).
+_ISO_UP_WEIGHT = 0.55
+_ISO_HORIZONTAL_WEIGHTS = (0.95, 0.8)
+_ISO_UP_AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
+
 
 def orientation_kind(sign) -> str:
     """``"face"`` / ``"edge"`` / ``"corner"`` from the count of extreme axes."""
@@ -92,16 +109,42 @@ def _projected_up(offset_unit) -> np.ndarray:
     return np.array([1.0, 0.0, 0.0])
 
 
-def orientation_pose(sign):
+def iso_corner_pose(sign, up_axis: str = "y"):
+    """``(offset_unit, view_up)`` for a CORNER, matching the ISO toolbar view (bugs/0252).
+
+    The chosen world ``up_axis`` takes the small ``0.55`` elevation; the other two axes
+    carry the ``0.95`` / ``0.8`` horizontal spread, each with the picked octant's sign.
+    ``view_up`` is that world up axis. Reproduces
+    ``open3d_inspector._iso_camera_offset_and_view_up`` so a corner is the ISO view for
+    its octant (the ISO octant ``(-1,+1,+1)`` gives exactly ``(-0.95,0.55,0.8)`` normalized).
+    """
+    axis = _ISO_UP_AXIS_INDEX.get(str(up_axis or "y").strip().lower(), 1)
+    others = [i for i in (0, 1, 2) if i != axis]
+    triple = tuple(int(np.sign(s)) or 1 for s in np.asarray(sign, dtype=float).reshape(3))
+    offset = np.zeros(3, dtype=float)
+    offset[axis] = triple[axis] * _ISO_UP_WEIGHT
+    offset[others[0]] = triple[others[0]] * _ISO_HORIZONTAL_WEIGHTS[0]
+    offset[others[1]] = triple[others[1]] * _ISO_HORIZONTAL_WEIGHTS[1]
+    norm = float(np.linalg.norm(offset))
+    if norm > 1e-12:
+        offset = offset / norm
+    view_up = tuple(1.0 if i == axis else 0.0 for i in range(3))
+    return (tuple(float(v) for v in offset), view_up)
+
+
+def orientation_pose(sign, up_axis: str = "y"):
     """``(offset_unit, view_up)`` unit tuples for a sign triple from a pick.
 
-    Faces return their cardinal-preset pose verbatim; edges/corners return the
-    normalized outward direction with a projected, upright view-up.
+    Faces return their cardinal-preset pose verbatim; corners return the ISO-style
+    per-octant pose (bugs/0252); edges return the normalized outward direction with a
+    projected, upright view-up.
     """
     key = tuple(int(s) for s in sign)
     if key in _FACE_POSE:
         offset, view_up = _FACE_POSE[key]
         return (tuple(offset), tuple(view_up))
+    if orientation_kind(key) == "corner":
+        return iso_corner_pose(key, up_axis=up_axis)
     offset = np.asarray(key, dtype=float)
     norm = float(np.linalg.norm(offset))
     offset = offset / norm if norm > 1e-12 else offset

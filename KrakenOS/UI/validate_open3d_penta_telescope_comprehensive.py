@@ -11402,6 +11402,33 @@ def phase_227_nav_cube_arrow_hover(
     return result
 
 
+def phase_228_nav_cube_corner_iso(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0252: clicking a nav-cube CORNER frames the scene the same way the ISO toolbar
+    button does, for every octant (world-+Y up, ~23.9 deg elevation, ISO 0.95/0.55/0.8
+    spread) rather than a steeper symmetric (+-1,+-1,+-1) diagonal -- so all 8 corners give
+    the upright, wide-screen-friendly ISO picture. `validate_open3d_nav_cube_corner_iso`
+    pins the pure-math corner poses (== iso_corner_pose, ISO octant == the ISO button dir),
+    keeps faces cardinal + edges projected-up, and checks the widget forwards the ISO
+    up-axis into the corner pose. Display-free."""
+    result = PhaseResult(name="Phase 228: nav cube corners reproduce the ISO view per octant")
+    try:
+        from KrakenOS.UI.validate_open3d_nav_cube_corner_iso import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"nav-cube-corner-iso guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("nav-cube-corner-iso phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11674,6 +11701,7 @@ def main() -> int:
             phase_225_nav_cube_chamfer_geometry,
             phase_226_nav_cube_hover_highlight,
             phase_227_nav_cube_arrow_hover,
+            phase_228_nav_cube_corner_iso,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

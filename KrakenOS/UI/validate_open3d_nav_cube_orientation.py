@@ -40,6 +40,7 @@ from KrakenOS.UI.services.nav_cube_orientation import (
     FACE_LABELS,
     ORIENTATION_KEYS,
     classify_pick,
+    iso_corner_pose,
     orientation_kind,
     orientation_pose,
     roll_view_up,
@@ -195,34 +196,56 @@ def _check_face_preset_parity() -> Check:
 def _check_edges_corners_upright() -> Check:
     bad: list[str] = []
     n_edge = n_corner = 0
+    iso_octant = (-1, 1, 1)
+    iso_dir = np.array([-0.95, 0.55, 0.8], dtype=float)
+    iso_dir = iso_dir / float(np.linalg.norm(iso_dir))
     for sign in ORIENTATION_KEYS:
         kind = orientation_kind(sign)
         if kind == "face":
             continue
-        n_edge += kind == "edge"
-        n_corner += kind == "corner"
         offset, view_up = orientation_pose(sign)
         offset = np.asarray(offset, dtype=float)
         view_up = np.asarray(view_up, dtype=float)
-        triple = np.asarray(sign, dtype=float)
-        triple /= float(np.linalg.norm(triple))
-        outward = float(np.dot(offset, triple))          # points along the sign triple
         off_unit = abs(float(np.linalg.norm(offset)) - 1.0)
         up_unit = abs(float(np.linalg.norm(view_up)) - 1.0)
-        perp = abs(float(np.dot(offset, view_up)))       # up perpendicular to sight line
         upright = float(view_up[1])                       # positive world-+Y => upright
-        if outward < 1.0 - 1e-6 or off_unit > 1e-6 or up_unit > 1e-6 or perp > 1e-6 or upright <= 1e-6:
-            bad.append(
-                f"{sign}: outward={outward:.4f} off_unit_err={off_unit:.1e} "
-                f"up_unit_err={up_unit:.1e} perp={perp:.1e} up.Y={upright:.4f}"
-            )
+        if kind == "edge":
+            n_edge += 1
+            triple = np.asarray(sign, dtype=float)
+            triple /= float(np.linalg.norm(triple))
+            outward = float(np.dot(offset, triple))       # points along the sign triple
+            perp = abs(float(np.dot(offset, view_up)))    # up perpendicular to sight line
+            if outward < 1.0 - 1e-6 or off_unit > 1e-6 or up_unit > 1e-6 or perp > 1e-6 or upright <= 1e-6:
+                bad.append(
+                    f"edge {sign}: outward={outward:.4f} off_unit_err={off_unit:.1e} "
+                    f"up_unit_err={up_unit:.1e} perp={perp:.1e} up.Y={upright:.4f}"
+                )
+        else:  # corner -- bugs/0252 ISO-style per-octant pose (world-+Y up, sign-consistent)
+            n_corner += 1
+            want_off, want_up = iso_corner_pose(sign)
+            matches_iso = np.allclose(offset, want_off, atol=1e-9) and np.allclose(view_up, want_up, atol=1e-9)
+            octant_ok = bool(np.all(np.sign(offset).astype(int) == np.asarray(sign, dtype=int)))
+            up_world_y = abs(view_up[0]) < 1e-9 and abs(view_up[2]) < 1e-9 and upright > 1.0 - 1e-9
+            if not (matches_iso and octant_ok and up_world_y and off_unit <= 1e-6 and up_unit <= 1e-6):
+                bad.append(
+                    f"corner {sign}: iso_match={matches_iso} octant_ok={octant_ok} "
+                    f"up={np.round(view_up, 3).tolist()} off_unit_err={off_unit:.1e}"
+                )
+    # The ISO octant corner reproduces the ISO toolbar direction exactly (cube corner == ISO button).
+    iso_off, iso_up = orientation_pose(iso_octant)
+    if not (np.allclose(iso_off, iso_dir, atol=1e-9) and np.allclose(iso_up, [0.0, 1.0, 0.0], atol=1e-9)):
+        bad.append(
+            f"ISO octant {iso_octant}: offset {np.round(iso_off, 4).tolist()} != ISO dir "
+            f"{np.round(iso_dir, 4).tolist()} / up {np.round(iso_up, 3).tolist()}"
+        )
     ok = not bad and n_edge == 12 and n_corner == 8
     return Check(
-        "EDGES & CORNERS STAY UPRIGHT: each of the 12 edges + 8 corners points outward "
-        "along its sign triple with a unit view_up perpendicular to the sight line and a "
-        "positive world-+Y component (projected-up rule)",
+        "EDGES PROJECTED-UP + CORNERS ISO (bugs/0252): the 12 edges point outward with a "
+        "unit view_up perpendicular to the sight line (projected-up); the 8 corners reproduce "
+        "the ISO toolbar view for their octant (world-+Y up, sign-consistent), and the ISO "
+        "octant (-1,+1,+1) equals the ISO button direction (-0.95,0.55,0.8)",
         ok,
-        f"edges={n_edge} corners={n_corner} " + ("; ".join(bad) if bad else "all upright/outward"),
+        f"edges={n_edge} corners={n_corner} " + ("; ".join(bad) if bad else "edges upright/outward, corners ISO-matched"),
     )
 
 

@@ -802,6 +802,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                         apply_orientation=self._apply_navigation_cube_orientation,
                         apply_step=self._apply_navigation_cube_step,
                         get_main_camera=lambda: self._renderer.GetActiveCamera(),
+                        iso_up_axis=lambda: getattr(self, "_iso_up_axis", "y"),
                     )
                     if not getattr(self._navigation_cube, "available", False):
                         self._navigation_cube = None

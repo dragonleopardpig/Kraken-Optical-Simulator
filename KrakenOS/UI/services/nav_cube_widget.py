@@ -118,6 +118,7 @@ class NavigationCube:
         apply_orientation: Callable[[tuple, tuple], None],
         apply_step: Callable[[str], None],
         get_main_camera: Callable[[], object],
+        iso_up_axis: Callable[[], str] | None = None,
     ) -> None:
         self.available = False
         self._render_window = render_window
@@ -126,6 +127,9 @@ class NavigationCube:
         self._apply_orientation = apply_orientation
         self._apply_step = apply_step
         self._get_main_camera = get_main_camera
+        # bugs/0252: corner picks reproduce the ISO view for their octant; honour the
+        # user's chosen ISO up-axis (bugs/0231) so cube corners match the ISO button.
+        self._iso_up_axis = iso_up_axis
 
         self._vtk = None
         self._cube_renderer = None
@@ -582,7 +586,13 @@ class NavigationCube:
                     local = np.asarray(self._cube_picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
                     sign = classify_pick(local)
                 if sign is not None:
-                    offset_unit, view_up = orientation_pose(sign)
+                    up_axis = "y"
+                    if self._iso_up_axis is not None:
+                        try:
+                            up_axis = str(self._iso_up_axis() or "y")
+                        except Exception:
+                            up_axis = "y"
+                    offset_unit, view_up = orientation_pose(sign, up_axis=up_axis)
                     self._apply_orientation(offset_unit, view_up)
                     return True
         return False
