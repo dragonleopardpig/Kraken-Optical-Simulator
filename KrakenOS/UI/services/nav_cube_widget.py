@@ -49,13 +49,17 @@ STEP_KINDS = ("roll_ccw", "roll_cw", "az_left", "az_right", "el_up", "el_down")
 
 # --- Cube visuals (flagged 2026-07-07: labels too big, faces too low-contrast) -----
 _FACE_FRACTION = 0.72       # chamfered-cube face keep-fraction (see chamfered_cube_facets)
-_FACE_TEXT_SCALE = 0.22     # annotated-cube letters (was 0.42, overflowed the facet)
+# Annotated-cube letters. vtkAnnotatedCubeActor sizes text to the FULL cube face, but the
+# flat facet is only _FACE_FRACTION of it, so the scale must stay well under that to keep a
+# 5-char word (FRONT/RIGHT) inside the facet (0.42 -> 0.22 -> 0.15, per two flags).
+_FACE_TEXT_SCALE = 0.15
 # Faces lightest, edges mid, corners darkest, so the three clickable regions read as
 # distinct; a dark outline on every facet makes the chamfer borders crisp.
 _COLOR_FACE = (0.83, 0.87, 0.93)
 _COLOR_EDGE = (0.56, 0.65, 0.80)
 _COLOR_CORNER = (0.40, 0.50, 0.69)
 _COLOR_OUTLINE = (0.18, 0.24, 0.38)
+_COLOR_HOVER = (0.30, 0.68, 1.00)   # facet under the mouse -- bright blue highlight
 _KIND_COLOR = {"face": _COLOR_FACE, "edge": _COLOR_EDGE, "corner": _COLOR_CORNER}
 
 _CUBE_LAYER = 3
@@ -120,6 +124,11 @@ class NavigationCube:
         self._pick_cube_actor = None
         self._annotated_cube = None
         self._cell_signs: list[tuple[int, int, int]] = []
+        # Hover highlight: the mutable per-cell colour array, each cell's base colour to
+        # restore, and the currently-highlighted cell (-1 = none).
+        self._cell_colors = None
+        self._base_colors: list[tuple[int, int, int]] = []
+        self._hover_cell = -1
         self._cube_picker = None
         self._arrow_picker = None
         # Strong refs to the arrow actors (VTK frees the Python wrapper otherwise,
@@ -194,13 +203,17 @@ class NavigationCube:
         colors.SetNumberOfComponents(3)
         colors.SetName("facet_kind")
         signs: list[tuple[int, int, int]] = []
+        base: list[tuple[int, int, int]] = []
         for idxs, sign in facets:
             poly.InsertNextCell(7, len(idxs), list(idxs))  # VTK_POLYGON == 7
-            rgb = _KIND_COLOR[orientation_kind(sign)]
-            colors.InsertNextTuple3(*(int(round(c * 255.0)) for c in rgb))
+            rgb = tuple(int(round(c * 255.0)) for c in _KIND_COLOR[orientation_kind(sign)])
+            colors.InsertNextTuple3(*rgb)
             signs.append(tuple(int(s) for s in sign))
+            base.append(rgb)
         poly.GetCellData().SetScalars(colors)
         self._cell_signs = signs
+        self._cell_colors = colors      # mutated on hover, then Modified()+Render()
+        self._base_colors = base        # restore target when the hover moves off a facet
 
         mapper = vtk["PolyDataMapper"]()
         mapper.SetInputData(poly)
@@ -287,12 +300,12 @@ class NavigationCube:
             picker.AddPickList(actor)
             self._arrow_actors.append((actor, kind))
 
-        # Roll arrows: a CURVED arc segment capped by a tangential arrowhead (a rotation
-        # glyph, not a bare triangle) tucked into each top corner. (cx, cy, a0, a1) in
-        # degrees -- the arc sweeps a0 -> a1 and the head caps the a1 end.
+        # Roll arrows: a SHORT curved arc capped by a tangential arrowhead (a rotation
+        # glyph, not a near-full loop), flanking the top like FreeCAD's. (cx, cy, a0, a1)
+        # in degrees -- the arc sweeps a0 -> a1 (~110 deg) and the head caps the a1 end.
         roll_specs = {
-            "roll_ccw": (-0.82, 0.74, -34.0, 196.0),
-            "roll_cw": (0.82, 0.74, 214.0, -16.0),
+            "roll_ccw": (-0.46, 0.88, 18.0, 128.0),
+            "roll_cw": (0.46, 0.88, 162.0, 52.0),
         }
         for kind, (cx, cy, a0, a1) in roll_specs.items():
             actor = self._roll_arrow_actor(cx, cy, a0, a1, roll_color)
@@ -331,9 +344,9 @@ class NavigationCube:
         tangential arrowhead at the ``a1`` end, so the orange roll handles read as
         'rotate' rather than as a plain triangle."""
         vtk = self._vtk
-        radius, width = 0.30, 0.11
+        radius, width = 0.28, 0.10
         r_out, r_in = radius + width / 2.0, radius - width / 2.0
-        n = 20
+        n = 14
         a0, a1 = np.radians(a0_deg), np.radians(a1_deg)
         points = vtk["Points"]()
         outer, inner = [], []
@@ -353,7 +366,7 @@ class NavigationCube:
         ct1, st1 = np.cos(a1), np.sin(a1)
         tan = a1 + (np.pi / 2.0 if a1 >= a0 else -np.pi / 2.0)
         bx, by = cx + radius * ct1, cy + radius * st1
-        head_len, head_half = 0.24, 0.15
+        head_len, head_half = 0.20, 0.13
         apex = points.InsertNextPoint(bx + head_len * np.cos(tan), by + head_len * np.sin(tan), 0.0)
         base1 = points.InsertNextPoint(bx + head_half * ct1, by + head_half * st1, 0.0)
         base2 = points.InsertNextPoint(bx - head_half * ct1, by - head_half * st1, 0.0)
@@ -508,6 +521,45 @@ class NavigationCube:
                     self._apply_orientation(offset_unit, view_up)
                     return True
         return False
+
+    def handle_hover(self, x: int, y: int) -> bool:
+        """Highlight the cube facet under the mouse (face/edge/corner). Returns True while
+        a facet is highlighted. The host forwards mouse-motion here; anything off the cube
+        (outside the viewport, or over an arrow / empty space) clears the highlight."""
+        if not self.available or not self._point_in_viewport(int(x), int(y)):
+            return self._set_hover(-1)
+        cid = -1
+        if self._cube_renderer is not None and self._cube_picker is not None:
+            try:
+                hit = self._cube_picker.Pick(int(x), int(y), 0, self._cube_renderer)
+                actor = self._cube_picker.GetActor()
+                if hit and actor is self._pick_cube_actor:
+                    cid = int(self._cube_picker.GetCellId())
+            except Exception:
+                cid = -1
+        return self._set_hover(cid)
+
+    def clear_hover(self) -> None:
+        """Drop any highlight (host calls this when the pointer leaves the 3D pane)."""
+        self._set_hover(-1)
+
+    def _set_hover(self, cid: int) -> bool:
+        """Recolour the highlighted cell, restoring the previous one; re-render only on a
+        change so a bare mouse-move over one facet doesn't spin the render loop."""
+        if self._cell_colors is None or cid == self._hover_cell:
+            return 0 <= self._hover_cell < len(self._base_colors)
+        prev = self._hover_cell
+        if 0 <= prev < len(self._base_colors):
+            self._cell_colors.SetTuple3(prev, *self._base_colors[prev])
+        self._hover_cell = cid
+        if 0 <= cid < len(self._base_colors):
+            self._cell_colors.SetTuple3(cid, *(int(round(c * 255.0)) for c in _COLOR_HOVER))
+        self._cell_colors.Modified()
+        try:
+            self._render_window.Render()
+        except Exception:
+            pass
+        return 0 <= cid < len(self._base_colors)
 
     # -------------------------------------------------------------- teardown ---
 

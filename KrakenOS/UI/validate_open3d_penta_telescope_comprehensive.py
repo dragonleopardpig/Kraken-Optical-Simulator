@@ -11349,6 +11349,33 @@ def phase_225_nav_cube_chamfer_geometry(
     return result
 
 
+def phase_226_nav_cube_hover_highlight(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0250: hovering a clickable nav-cube facet (face/edge/corner) highlights it, the
+    labels fit the facet, and the roll arcs are short FreeCAD-style arcs (not a near-full
+    loop). The highlight is a per-cell colour swap on the bugs/0249 mesh, so
+    `validate_open3d_nav_cube_hover` drives _set_hover / clear_hover against a fake colour
+    array (highlight one / move / clear / same-cell no-op / distinct hover colour) and pins
+    the label+arc sizing constants plus the host/bindings hover wiring; the live hover feel
+    is eyeballed offscreen."""
+    result = PhaseResult(name="Phase 226: nav cube highlights the hovered facet")
+    try:
+        from KrakenOS.UI.validate_open3d_nav_cube_hover import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"nav-cube-hover guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("nav-cube-hover phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11619,6 +11646,7 @@ def main() -> int:
             phase_223_folded_object_plus_image_split,
             phase_224_2d_refresh_after_solve,
             phase_225_nav_cube_chamfer_geometry,
+            phase_226_nav_cube_hover_highlight,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

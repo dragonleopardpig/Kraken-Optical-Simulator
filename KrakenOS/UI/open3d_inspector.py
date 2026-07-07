@@ -11391,6 +11391,36 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             return False
 
+    def _handle_navigation_cube_hover(self) -> bool:
+        """Passive-hover companion to _handle_navigation_cube_left_press (bugs/0250):
+        highlight the cube facet under the cursor so it reads as selectable. Returns True
+        while a facet is highlighted (so the caller skips the scene's own hover highlight).
+        Uses the same interactor event position as the click path."""
+        cube = self._navigation_cube
+        if cube is None or not getattr(cube, "available", False):
+            return False
+        interactor = self._vtk_interactor
+        if interactor is None:
+            return False
+        try:
+            x, y = interactor.GetEventPosition()
+        except Exception:
+            return False
+        try:
+            return bool(cube.handle_hover(int(x), int(y)))
+        except Exception:
+            return False
+
+    def _clear_navigation_cube_hover(self) -> None:
+        """Drop any nav-cube hover highlight (cursor left the cube / the 3D pane)."""
+        cube = self._navigation_cube
+        if cube is None or not getattr(cube, "available", False):
+            return
+        try:
+            cube.clear_hover()
+        except Exception:
+            pass
+
     def _on_navigation_cube_snap(self, *_args) -> None:
         """The navigation cube (bugs/0156/0157) settled on a new face/edge/corner
         orientation. Reframe the view to zoom-to-extent like the top-bar preset

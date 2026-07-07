@@ -432,6 +432,18 @@ class Open3DMouseBindingsService:
                 except Exception:
                     pass
                 return
+            # bugs/0250: highlight the navigation-cube facet (face/edge/corner) under the
+            # cursor. Push the live cursor into the interactor first (like left_press), then
+            # ask the cube; if it's highlighting, the pointer is over the cube -- skip the
+            # scene's thickness-handle hover. Otherwise clear any cube highlight and fall
+            # through to the normal scene hover.
+            try:
+                set_event_info(event)
+                if self._handle_navigation_cube_hover():
+                    return
+                self._clear_navigation_cube_hover()
+            except Exception:
+                pass
             try:
                 self._update_thickness_hover_highlight(int(event.x), int(event.y))
             except Exception:
