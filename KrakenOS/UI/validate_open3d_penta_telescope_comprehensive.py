@@ -11405,14 +11405,15 @@ def phase_227_nav_cube_arrow_hover(
 def phase_228_nav_cube_corner_iso(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """bugs/0252: clicking a nav-cube CORNER frames the scene the same way the ISO toolbar
-    button does, for every octant (world-+Y up, ~23.9 deg elevation, ISO 0.95/0.55/0.8
-    spread) rather than a steeper symmetric (+-1,+-1,+-1) diagonal -- so all 8 corners give
-    the upright, wide-screen-friendly ISO picture. `validate_open3d_nav_cube_corner_iso`
-    pins the pure-math corner poses (== iso_corner_pose, ISO octant == the ISO button dir),
-    keeps faces cardinal + edges projected-up, and checks the widget forwards the ISO
-    up-axis into the corner pose. Display-free."""
-    result = PhaseResult(name="Phase 228: nav cube corners reproduce the ISO view per octant")
+    """bugs/0257 (supersedes 0252): clicking a nav-cube CORNER uses the SYMMETRIC
+    (+-1,+-1,+-1) diagonal + projected-world-up STANDARD pose -- the 0252 ISO "wide-screen"
+    bias is DROPPED (user: "drop the widescreen") so the corner ROLL can be snapped to the
+    nearest of six clean orientations at click time (FreeCAD getNearestOrientation, phase 230)
+    instead of a binary up/down flip. `validate_open3d_nav_cube_corner_iso` pins the symmetric
+    corner poses (unit outward diagonal, upright projected-up, ~35.26 deg elevation NOT the
+    dropped ISO 23.9 deg, and NO LONGER the ISO button dir), keeps faces cardinal + edges
+    projected-up, and checks iso_corner_pose is gone / nearest_orientation_up exists. Display-free."""
+    result = PhaseResult(name="Phase 228: nav cube corners use the symmetric diagonal standard (ISO wide-screen dropped)")
     try:
         from KrakenOS.UI.validate_open3d_nav_cube_corner_iso import run_checks
         passed, notes = run_checks()
@@ -11459,17 +11460,18 @@ def phase_229_nav_cube_freecad_style(
 def phase_230_nav_cube_corner_local_up(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """bugs/0254 + 0255 + 0256: a nav-cube CORNER click gives a LOCAL ISO -- its roll matches the
-    CURRENT view's up/down sense (letters that were rolled upside down stay upside down) WHILE
-    keeping the bugs/0252 wide-screen framing, by returning the absolute ISO up FLIPPED 180 deg when
-    the view is GLOBALLY upside down. 0256 makes that flip ONE corner-independent decision
-    (dot(current_up, abs_up) < 0) so every corner flips together -- 0255 keyed it off each corner's
-    own projected up, so adjacent corners could disagree ("Right Top reversed" but "Right Bottom
-    completely wrong"). `validate_open3d_nav_cube_corner_local_up` pins the global-flip math (unit,
-    perpendicular to the sight line, always collinear with the projected ISO up so +/-abs_up fit the
-    same, all 8 corners flip to one side for a given view, a tumbled ~90 deg view stays upright), the
-    degenerate fallback, and the inspector/widget wiring that applies it to corners only. Display-free."""
-    result = PhaseResult(name="Phase 230: nav cube corner ISO -- one global up/down flip for all corners keeps the current sense and the wide-screen fit")
+    """bugs/0257 (supersedes 0254+0255+0256): a nav-cube CORNER click KEEPS the CURRENT view's roll,
+    SNAPPED to the nearest of SIX clean orientations about the corner diagonal (0/60/120/180/240/300
+    deg) -- a faithful port of FreeCAD's NaviCube getNearestOrientation. 0254-0256 tried a BINARY
+    up/down flip (0 or 180 only), which always read "wrong orientation" after a rotation because any
+    view whose natural nearest roll is 60/120/240/300 cannot be reached by a flip. The user checked
+    FreeCAD and said "drop the widescreen"; nav_cube_orientation.nearest_orientation_up aligns the
+    current view axis to the diagonal (roll preserved), measures the residual roll from the standard
+    up, and rounds it to the nearest 60 deg. `validate_open3d_nav_cube_corner_local_up` pins the
+    clean-60-multiple invariant across many views, the nearest-of-6 snap table, idempotence on the
+    six clean rolls, the cross-axis (click-from-a-face) case, the degenerate fallbacks, and the
+    inspector/widget wiring (reads GetViewUp + GetDirectionOfProjection, corners only). Display-free."""
+    result = PhaseResult(name="Phase 230: nav cube corner roll snaps to the nearest of six clean orientations (FreeCAD getNearestOrientation)")
     try:
         from KrakenOS.UI.validate_open3d_nav_cube_corner_local_up import run_checks
         passed, notes = run_checks()

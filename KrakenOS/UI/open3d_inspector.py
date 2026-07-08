@@ -11289,11 +11289,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         centre; the reframe recomputes the exact distance/zoom for the orientation,
         so only the view DIRECTION and UP set here matter.
 
-        ``sign`` (the picked ``{-1,0,1}^3`` triple) lets a CORNER snap give a LOCAL ISO
-        view (bugs/0254): its roll is made relative to the CURRENT view so the visible
-        labels keep their present up/down sense (e.g. a corner click after you rolled
-        "RIGHT" upside down keeps it upside down) instead of resetting to the absolute
-        world-up ISO. Faces/edges keep their absolute ``view_up``.
+        ``sign`` (the picked ``{-1,0,1}^3`` triple) lets a CORNER snap keep the CURRENT
+        view's roll, snapped to the nearest of six clean orientations about the corner
+        diagonal (FreeCAD NaviCube getNearestOrientation, bugs/0257) -- so clicking a
+        corner after you rotated the scene lands at the roll closest to how you were
+        already looking. Faces/edges keep their absolute ``view_up``.
         """
         if self._renderer is None:
             return
@@ -11334,20 +11334,28 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return
         offset = offset / offset_norm
         distance = max(radius * 2.2, 50.0)
-        # bugs/0254+0255: a CORNER pick gives a LOCAL ISO -- keep the current up/down sense
-        # by flipping the absolute ISO up 180 deg when the current view is upside down, so
-        # the visible labels stay however they are (e.g. upside down) WHILE the long optical
-        # axis still spreads across the wide screen (+/-abs_up fit the same). Only corners are
-        # relative; faces/edges keep their absolute view_up.
+        # bugs/0257: a CORNER pick keeps the CURRENT view's roll, snapped to the nearest of six
+        # clean orientations about the corner diagonal (FreeCAD NaviCube getNearestOrientation) --
+        # so clicking a corner after you rotated the scene lands at the roll closest to how you
+        # were already looking. Only corners snap; faces/edges keep their absolute view_up.
         if sign is not None and current_up is not None and float(np.linalg.norm(current_up)) > 1e-9:
             try:
                 from KrakenOS.UI.services.nav_cube_orientation import (
+                    nearest_orientation_up,
                     orientation_kind,
-                    relative_up_about_sight,
                 )
 
                 if orientation_kind(tuple(int(s) for s in sign)) == "corner":
-                    view_up = relative_up_about_sight(offset, current_up, fallback_up=view_up)
+                    try:
+                        view_dir = np.asarray(
+                            camera.GetDirectionOfProjection(), dtype=float
+                        ).reshape(3)
+                    except Exception:
+                        view_dir = -offset
+                    # current_sight_axis is the live OUT-of-screen direction (-view_dir).
+                    view_up = nearest_orientation_up(
+                        offset, view_up, -view_dir, current_up, steps=6
+                    )
             except Exception:
                 pass
         try:

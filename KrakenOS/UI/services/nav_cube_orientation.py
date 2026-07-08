@@ -19,21 +19,19 @@ projected onto the plane perpendicular to the view direction, so the oblique
 ("angled") views stay upright; when the view runs along ``+/-Y`` the fallback
 vertical is world ``+Z``.
 
-Corners reproduce the ISO toolbar view for their octant (bugs/0252): the world
-UP axis takes a small ``0.55`` elevation and the other two axes the ``0.95`` /
-``0.8`` horizontal spread (mirroring
-``open3d_inspector._iso_camera_offset_and_view_up``), each carrying the picked
-octant's sign, with ``view_up`` world ``+Y``. So all 8 corners frame the scene
-the same upright, wide-screen-friendly way the ISO button does -- instead of a
-steeper symmetric ``(+-1, +-1, +-1)`` diagonal.
+Corners use a SYMMETRIC diagonal (bugs/0257, dropping the 0252 wide-screen bias): the
+outward direction is the picked octant's ``(+-1, +-1, +-1)`` normalized and the roll-0
+STANDARD up is world ``+Y`` projected perpendicular to it -- exactly the edge rule, but
+with three extreme axes. So the pure pose is upright and octant-symmetric.
 
-The corner ``view_up`` returned here is the ABSOLUTE (global) ISO up; at snap time
-the inspector makes its ROLL relative -- :func:`relative_up_about_sight` returns this
-absolute up FLIPPED 180 deg when the current view is GLOBALLY upside down (ONE decision
-for all corners, so adjacent corners never disagree -- bugs/0256), so a corner ISO keeps
-the picture's up/down sense (a "RIGHT" you rolled upside down stays upside down -- bugs/0254)
-WHILE keeping the wide-screen framing, because +/-abs_up fit the same as the absolute ISO
-(bugs/0252/0255). The absolute up here is that reference; a tumbled ~90 deg view stays upright.
+At snap time the inspector does NOT keep this absolute up: it ports FreeCAD's NaviCube
+``getNearestOrientation`` via :func:`nearest_orientation_up` -- align the CURRENT camera's
+view axis to the corner's diagonal (preserving the current roll), then SNAP the residual
+roll to the nearest of six clean orientations (0/60/120/180/240/300 deg about the sight
+line). So clicking a corner after you have rotated the scene gives the corner view whose
+roll is closest to how you were already looking -- matching FreeCAD exactly -- instead of a
+binary up/down flip (bugs/0254-0256, which only ever chose 0 or 180 and so landed visibly
+wrong whenever the natural snap was 60/120/240/300).
 
 CAD face labels (the user's choice): ``+Z = FRONT``, ``+Y = TOP``, ``+X = RIGHT``
 and their opposites.
@@ -72,20 +70,6 @@ ORIENTATION_KEYS: tuple[tuple[int, int, int], ...] = tuple(
 _WORLD_UP = np.array([0.0, 1.0, 0.0])
 _WORLD_UP_FALLBACK = np.array([0.0, 0.0, 1.0])
 
-# bugs/0256 -- deadband for the corner-ISO global up/down flip. Only flip to the upside-down
-# ISO when the live view clearly points against the absolute ISO up; a ~90 deg tumbled view
-# (dot ~ 0, no well-defined up/down) stays upright rather than guessing a side.
-_UPSIDE_DOWN_EPS = 1e-6
-
-# bugs/0252 -- ISO-style corner weights. Mirrors
-# ``open3d_inspector._iso_camera_offset_and_view_up``: the world UP axis takes the
-# small +0.55 elevation and the other two axes the 0.95 / 0.8 horizontal spread, so a
-# corner reproduces the ISO toolbar view for its octant (world-+Y up) rather than a
-# steeper symmetric diagonal. The ISO octant (-1,+1,+1) yields exactly (-0.95,0.55,0.8).
-_ISO_UP_WEIGHT = 0.55
-_ISO_HORIZONTAL_WEIGHTS = (0.95, 0.8)
-_ISO_UP_AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
-
 
 def orientation_kind(sign) -> str:
     """``"face"`` / ``"edge"`` / ``"corner"`` from the count of extreme axes."""
@@ -122,102 +106,121 @@ def _projected_up(offset_unit) -> np.ndarray:
     return np.array([1.0, 0.0, 0.0])
 
 
-def iso_corner_pose(sign, up_axis: str = "y"):
-    """``(offset_unit, view_up)`` for a CORNER, matching the ISO toolbar view (bugs/0252).
+def _unit(vec):
+    """Unit vector for ``vec``, or ``None`` when it is (near) zero-length."""
+    v = np.asarray(vec, dtype=float).reshape(3)
+    n = float(np.linalg.norm(v))
+    return (v / n) if n > 1e-12 else None
 
-    The chosen world ``up_axis`` takes the small ``0.55`` elevation; the other two axes
-    carry the ``0.95`` / ``0.8`` horizontal spread, each with the picked octant's sign.
-    ``view_up`` is that world up axis. Reproduces
-    ``open3d_inspector._iso_camera_offset_and_view_up`` so a corner is the ISO view for
-    its octant (the ISO octant ``(-1,+1,+1)`` gives exactly ``(-0.95,0.55,0.8)`` normalized).
+
+def _perp_unit(vec, axis):
+    """``vec`` projected perpendicular to unit ``axis``, normalized -- or ``None``."""
+    v = np.asarray(vec, dtype=float).reshape(3)
+    perp = v - float(np.dot(v, axis)) * axis
+    n = float(np.linalg.norm(perp))
+    return (perp / n) if n > 1e-6 else None
+
+
+def _rotate_between(vec, frm, to):
+    """Rotate ``vec`` by the MINIMAL rotation taking unit ``frm`` onto unit ``to``.
+
+    Returns ``vec`` unchanged when ``frm``/``to`` already coincide and ``None`` when they are
+    ANTIparallel (the rotation axis is undefined), so the caller can fall back deterministically.
     """
-    axis = _ISO_UP_AXIS_INDEX.get(str(up_axis or "y").strip().lower(), 1)
-    others = [i for i in (0, 1, 2) if i != axis]
-    triple = tuple(int(np.sign(s)) or 1 for s in np.asarray(sign, dtype=float).reshape(3))
-    offset = np.zeros(3, dtype=float)
-    offset[axis] = triple[axis] * _ISO_UP_WEIGHT
-    offset[others[0]] = triple[others[0]] * _ISO_HORIZONTAL_WEIGHTS[0]
-    offset[others[1]] = triple[others[1]] * _ISO_HORIZONTAL_WEIGHTS[1]
-    norm = float(np.linalg.norm(offset))
-    if norm > 1e-12:
-        offset = offset / norm
-    view_up = tuple(1.0 if i == axis else 0.0 for i in range(3))
-    return (tuple(float(v) for v in offset), view_up)
+    frm = np.asarray(frm, dtype=float).reshape(3)
+    to = np.asarray(to, dtype=float).reshape(3)
+    axis = np.cross(frm, to)
+    sin_a = float(np.linalg.norm(axis))
+    cos_a = float(np.dot(frm, to))
+    v = np.asarray(vec, dtype=float).reshape(3)
+    if sin_a <= 1e-9:
+        return v if cos_a >= 0.0 else None
+    axis = axis / sin_a
+    angle = float(np.arctan2(sin_a, cos_a))
+    return (
+        v * np.cos(angle)
+        + np.cross(axis, v) * np.sin(angle)
+        + axis * float(np.dot(axis, v)) * (1.0 - np.cos(angle))
+    )
 
 
-def relative_up_about_sight(offset_unit, current_up, fallback_up=None):
-    """View-up for a CORNER ISO that keeps the wide-screen framing while matching the
-    current view's up/down sense CONSISTENTLY across all corners (bugs/0256, refines 0254/0255).
+def nearest_orientation_up(
+    sight_axis,
+    standard_up,
+    current_sight_axis,
+    current_up,
+    steps: int = 6,
+):
+    """View-up for a CORNER click, porting FreeCAD's NaviCube ``getNearestOrientation``
+    (bugs/0257, NaviCube.cpp:954).
 
-    ``fallback_up`` is the absolute ISO up (world ``+Y``). This returns that absolute up
-    projected onto the plane perpendicular to the new sight line (``-offset_unit``),
-    FLIPPED 180 deg iff the current view is GLOBALLY upside down -- the live camera up points
-    against the absolute ISO up (``dot(current_up, fallback_up) < -eps``). So:
+    A corner click aims the camera along ``sight_axis`` (the octant diagonal, out of screen).
+    Rather than resetting the roll, FreeCAD keeps the CURRENT view's roll and SNAPS it to the
+    nearest of ``steps`` clean orientations about that axis -- SIX for a corner (0/60/120/180/
+    240/300 deg) -- so a corner clicked after you rotated the scene lands at the roll closest to
+    how you were already looking. (bugs/0254-0256 only ever chose 0 or 180 deg, so any view
+    whose natural snap was 60/120/240/300 looked wrong no matter how the flip was tuned.)
 
-      * the flip is a SINGLE global decision (current up vs the absolute up itself, NOT their
-        projections onto each corner's own sight plane), so every corner flips together --
-        adjacent corners can no longer disagree. bugs/0255 keyed the flip off the per-corner
-        projected up, so from a tumbled start neighbouring corners could land on opposite
-        sides ("Right Top reversed" but the adjacent "Right Bottom completely wrong");
-      * an upside-down view stays upside down -- the visible labels keep their up/down sense,
-        e.g. a "RIGHT" you rolled upside down stays upside down (the bugs/0254 ask);
-      * the long optical axis still spreads across the wide screen, because ``+abs_up`` and
-        ``-abs_up`` give the SAME orthographic fit as the absolute ISO (bugs/0252/0255) -- the
-        result is always collinear with the ISO up, only a 180 deg flip, never an intermediate
-        roll that would rotate the axis off-horizontal and force a zoomed-out fit;
-      * a near-90 deg (tumbled) view has no well-defined up/down (``dot`` ~ 0), so it stays
-        UPRIGHT rather than guessing a side (the ``_UPSIDE_DOWN_EPS`` deadband at the boundary).
+    Args:
+      sight_axis: the target out-of-screen direction (the pose's ``offset_unit``).
+      standard_up: the roll-0 reference up for that axis (world +Y projected perpendicular to
+        it -- itself one of the six clean corner rolls, so the snapped set matches FreeCAD's).
+      current_sight_axis: the live camera's out-of-screen direction (``-view_direction``).
+      current_up: the live camera's view-up.
+      steps: clean-roll count (6 for corners; 4 for faces/edges, though only corners call this).
 
-    Without a usable ``fallback_up`` (or when it is parallel to the sight line) it degrades
-    to projecting ``current_up`` itself; a fully degenerate up falls back to the world up.
-    Returns a unit ``(x, y, z)`` tuple perpendicular to the sight line.
+    Mirrors NaviCube.cpp: minimally rotate the current camera so its view axis aligns to
+    ``sight_axis`` (this preserves the roll), measure the residual roll of that intermediate up
+    from ``standard_up`` about the axis, round it to the nearest ``2*pi/steps``, and roll
+    ``standard_up`` by it. Returns a unit ``(x, y, z)`` perpendicular to ``sight_axis``.
     """
-    look = -np.asarray(offset_unit, dtype=float).reshape(3)
-    look_norm = float(np.linalg.norm(look))
-    if look_norm <= 1e-12:
-        return tuple(float(v) for v in _projected_up(offset_unit))
-    look = look / look_norm
+    a = _unit(sight_axis)
+    if a is None:
+        return tuple(float(v) for v in _projected_up(sight_axis))
+    s = _perp_unit(standard_up, a)
+    if s is None:
+        s = _projected_up(a)  # world-up projected perpendicular to a (already unit, perp)
+    e2 = _perp_unit(np.cross(a, s), a)  # completes (s, e2, a) right-handed; roll basis
+    if e2 is None:
+        return tuple(float(v) for v in s)
 
-    def _perp(vec):
-        vec = np.asarray(vec, dtype=float).reshape(3)
-        perp = vec - float(np.dot(vec, look)) * look
-        return perp, float(np.linalg.norm(perp))
+    # Minimally rotate the current up so the current view axis lands on ``a`` (roll preserved),
+    # then keep only its component in the sight plane -> the intermediate roll reference. An
+    # antiparallel current axis (undefined rotation) falls back to the raw current up.
+    c = _unit(current_sight_axis)
+    inter = np.asarray(current_up, dtype=float).reshape(3)
+    if c is not None:
+        rotated = _rotate_between(inter, c, a)
+        if rotated is not None:
+            inter = rotated
+    iup = _perp_unit(inter, a)
+    if iup is None:
+        return tuple(float(v) for v in s)
 
-    if fallback_up is not None:
-        abs_perp, abs_norm = _perp(fallback_up)
-        if abs_norm > 1e-6:
-            abs_unit = abs_perp / abs_norm
-            # GLOBAL up/down decision: compare the live camera up with the ABSOLUTE ISO up
-            # ITSELF (corner-independent), not their per-corner projections, so every corner
-            # flips together. A tumbled ~90 deg view (dot ~ 0) stays upright (deadband).
-            abs_ref = np.asarray(fallback_up, dtype=float).reshape(3)
-            abs_ref_norm = float(np.linalg.norm(abs_ref))
-            cur = np.asarray(current_up, dtype=float).reshape(3)
-            cur_norm = float(np.linalg.norm(cur))
-            if abs_ref_norm > 1e-6 and cur_norm > 1e-6:
-                if float(np.dot(cur / cur_norm, abs_ref / abs_ref_norm)) < -_UPSIDE_DOWN_EPS:
-                    abs_unit = -abs_unit
-            return tuple(float(v) for v in abs_unit)
-
-    cur_perp, cur_norm = _perp(current_up)
-    if cur_norm > 1e-6:
-        return tuple(float(v) for v in (cur_perp / cur_norm))
-    return tuple(float(v) for v in _projected_up(offset_unit))
+    # Signed residual roll from ``s`` to the intermediate up about ``a``, snapped to nearest step.
+    phi = float(np.arctan2(float(np.dot(iup, e2)), float(np.dot(iup, s))))
+    step = 2.0 * np.pi / int(max(1, steps))
+    theta = float(np.floor(phi / step + 0.5)) * step  # round half toward +inf (deterministic)
+    result = s * np.cos(theta) + e2 * np.sin(theta)
+    result_unit = _unit(result)
+    if result_unit is None:
+        return tuple(float(v) for v in s)
+    return tuple(float(v) for v in result_unit)
 
 
 def orientation_pose(sign, up_axis: str = "y"):
     """``(offset_unit, view_up)`` unit tuples for a sign triple from a pick.
 
-    Faces return their cardinal-preset pose verbatim; corners return the ISO-style
-    per-octant pose (bugs/0252); edges return the normalized outward direction with a
-    projected, upright view-up.
+    Faces return their cardinal-preset pose verbatim; edges AND corners return the normalized
+    outward direction with a projected, upright view-up -- for a corner that is the roll-0
+    STANDARD (the inspector then snaps a corner's roll to the current view via
+    :func:`nearest_orientation_up`). ``up_axis`` is accepted for call-site compatibility but no
+    longer changes the pose (corners are the symmetric diagonal now -- bugs/0257).
     """
     key = tuple(int(s) for s in sign)
     if key in _FACE_POSE:
         offset, view_up = _FACE_POSE[key]
         return (tuple(offset), tuple(view_up))
-    if orientation_kind(key) == "corner":
-        return iso_corner_pose(key, up_axis=up_axis)
     offset = np.asarray(key, dtype=float)
     norm = float(np.linalg.norm(offset))
     offset = offset / norm if norm > 1e-12 else offset

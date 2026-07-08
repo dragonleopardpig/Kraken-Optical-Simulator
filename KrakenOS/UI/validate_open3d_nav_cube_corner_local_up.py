@@ -1,51 +1,40 @@
 #!/usr/bin/env python3
-"""Display-free guard for bugs/0254 + 0255: a navigation-cube CORNER click gives a LOCAL ISO view
-whose ROLL matches the CURRENT view's up/down sense (e.g. a corner click after you rolled "RIGHT"
-upside down keeps it upside down) WHILE keeping the bugs/0252 wide-screen framing.
+"""Display-free guard for bugs/0257 (supersedes bugs/0254+0255+0256): a navigation-cube CORNER
+click keeps the CURRENT view's roll, SNAPPED to the nearest of SIX clean orientations about the
+corner diagonal -- a faithful port of FreeCAD's NaviCube ``getNearestOrientation``.
 
-Why it exists (user flags 2026-07-08):
-  0254: "clicking the Corner ... their tilting is refer to the global instead of local. ... I click
-   the 'Right' face, then rotate the scene until the 'Right' is upside down. Now ... an ISO view by
-   clicking the Corner ... it is more intuitive to just have an ISO view relative to the current
-   one, meaning the 'Right' and all other visible alphabet remain upside down."
-  0255 (after testing 0254): "clicking the corner button works but it does not apply the previous
-   'wide screen' adjustment." -- a CONTINUOUS relative roll rotated the long optical axis off
-   horizontal, so the orthographic zoom-fit (which only divides the horizontal span by the aspect)
-   zoomed out to fit the axis in the short screen dimension, losing the wide screen.
-  0256 (after testing 0255): "Right Top corner ... reversed" then the adjacent "Right Bottom corner
-   ... completely wrong." 0255 decided the 180 deg flip from the current up projected onto EACH
-   corner's OWN sight plane, so from a tumbled start adjacent corners could land on opposite sides.
+Why the whole model changed (user, 2026-07-08):
+  0254/0255/0256 tried to make a corner's roll "relative" with a BINARY up/down flip -- keep the
+  absolute ISO up, or flip it 180 deg when the view was upside down. Every variant (continuous roll,
+  per-corner flip, one global flip) still read "wrong orientation" after the scene was rotated,
+  because a binary flip only ever offers TWO rolls (0 or 180): any view whose natural nearest clean
+  roll is 60/120/240/300 deg lands visibly wrong no matter how the flip is tuned. The user checked
+  FreeCAD -- whose NaviCube snaps a corner to the nearest of SIX rolls -- and said "drop the
+  widescreen". So the fix ports FreeCAD exactly.
 
-The fix keeps the corner's ISO SIGHT DIRECTION (the picked octant's diagonal) and returns the
-ABSOLUTE ISO up (``iso_corner_pose``'s world-+Y up) projected onto the plane perpendicular to that
-sight line, FLIPPED 180 deg iff the current view is GLOBALLY upside down -- the live camera up
-points against the absolute ISO up (``dot(current_up, fallback_up) < -eps``), ONE corner-independent
-decision, so every corner flips together (``relative_up_about_sight``). The result is still always
-COLLINEAR with the absolute ISO up (+/- a flip): +/-abs_up give the SAME wide-screen fit, so the
-framing is preserved; a tumbled ~90 deg view (dot ~ 0, no well-defined up/down) stays upright. The
-pure-math corner pose (``iso_corner_pose``) is unchanged -- it supplies the sight direction + the
-absolute reference up -- so the bugs/0249/0252/0253 guards stay green; THIS guard pins the
-global-flip math and the widget/inspector wiring that applies it to corners only. (Refines penta
-Phase 230, no new phase.)
+The fix (:func:`nav_cube_orientation.nearest_orientation_up`, NaviCube.cpp:954): minimally rotate the
+CURRENT camera so its view axis lands on the corner diagonal (this preserves the roll), measure the
+residual roll of that intermediate up from the corner's roll-0 STANDARD up (world +Y projected
+perpendicular to the diagonal -- itself one of the six clean rolls), round it to the nearest
+``2*pi/6`` = 60 deg, and roll the standard up by it. Corners only; faces/edges keep their absolute up.
 
 What it checks (no display required, pure math + source contract):
-  A. relative_up_about_sight for every corner: the result is unit, perpendicular to the new sight
-     line, and COLLINEAR with the absolute ISO up projected onto the sight plane (|dot| == 1, so
-     the wide-screen fit is preserved -- the crux of 0255). An upside-down current up (world -Y)
-     flips it (dot with the projected ISO up < 0, world-Y stays negative) and it differs from the
-     absolute world-up ISO up; an UPRIGHT current up (world +Y) stays upright (dot > 0).
-  E. GLOBAL consistency (the crux of 0256): a given current up drives ALL 8 corners to the SAME
-     side (never the split that gave "Right Top reversed" but "Right Bottom completely wrong") --
-     clearly-upside-down flips all, clearly-upright flips none -- and every corner stays collinear
-     with the ISO up (wide-screen fit intact) regardless of side.
-  F. Tumbled deadband: a ~90 deg view (current up . world up ~ 0, e.g. flag 1's up = (0,0,-1)) has
-     no well-defined up/down, so every corner stays UPRIGHT rather than guessing a side.
-  B. Degenerate fallback: when the current up is (near) parallel to the sight line the projection
-     is degenerate; the helper falls back to a finite, unit, perpendicular up (reference / world).
-  C. Source contract -- inspector: _apply_navigation_cube_orientation takes a ``sign`` arg, reads
-     the live camera up (GetViewUp) and applies relative_up_about_sight ONLY for a corner
-     (orientation_kind == "corner"); faces/edges keep their absolute up.
-  D. Source contract -- widget: handle_left_press forwards the picked ``sign`` as the third
+  A. Invariant for many (current axis, current up) samples per corner: the result is unit,
+     perpendicular to the corner sight line, and a CLEAN 60-deg multiple roll from the standard up.
+  B. Nearest-of-6 snap table: rolling the standard by k deg about the diagonal and clicking snaps
+     to the nearest 60-deg gridpoint (output within 30 deg of k AND a 60-multiple) -- the crux that
+     a binary 0/180 flip could never do.
+  C. Idempotence: a current view that IS one of the six clean rolls comes back byte-for-byte (the
+     roll is preserved, not reset) for every corner.
+  D. Cross-axis (the real scenario): clicking a corner from a FACE/oblique view returns a clean
+     snapped roll -- so a corner clicked after you rotated the scene is well-defined and upright-ish.
+  E. Degenerate fallback: an antiparallel current axis, or a current up parallel to the sight line,
+     still yields a finite unit vector perpendicular to the sight line.
+  F. Source contract -- inspector: _apply_navigation_cube_orientation takes a ``sign`` arg, reads
+     BOTH the live camera up (GetViewUp) and view direction (GetDirectionOfProjection), and calls
+     nearest_orientation_up ONLY for a corner (orientation_kind == "corner"); faces/edges keep
+     their absolute up.
+  G. Source contract -- widget: handle_left_press forwards the picked ``sign`` as the third
      apply_orientation argument.
 """
 from __future__ import annotations
@@ -57,12 +46,13 @@ from pathlib import Path
 import numpy as np
 
 from KrakenOS.UI.services.nav_cube_orientation import (
-    iso_corner_pose,
-    orientation_kind,
-    relative_up_about_sight,
+    nearest_orientation_up,
+    orientation_pose,
+    roll_view_up,
 )
 
 _CORNER_SIGNS = list(product((1, -1), repeat=3))  # the 8 octant corners
+_STEP_DEG = 60.0
 
 
 def _module_source(dotted: str) -> str:
@@ -73,147 +63,147 @@ def _module_source(dotted: str) -> str:
     return Path(spec.origin).read_text()
 
 
+def _unit(v):
+    v = np.asarray(v, dtype=float)
+    return v / float(np.linalg.norm(v))
+
+
+def _measured_roll(a, s, up):
+    """Roll of ``up`` about +``a`` measured from ``s`` (0..360 deg)."""
+    e2 = _unit(np.cross(a, s))
+    return float(np.degrees(np.arctan2(float(np.dot(up, e2)), float(np.dot(up, s))))) % 360.0
+
+
+def _snap_dist_to_grid(angle_deg):
+    """Angular distance from ``angle_deg`` to the nearest 60-deg gridpoint (0..30)."""
+    r = angle_deg % _STEP_DEG
+    return min(r, _STEP_DEG - r)
+
+
 def run_checks():
     """Return ``(passed, notes)`` -- notes is a list of failure strings (empty on pass)."""
     failures: list[str] = []
 
-    # --- A + E: flip-snap keeps the up/down sense AND the wide-screen fit -------------
+    # --- A: invariant across many current views for every corner ------------------
+    sample_axes = [
+        (0.0, 0.0, 1.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0),
+        (-0.3, 0.9, 0.3), (0.6, 0.2, -0.75), (0.0, -1.0, 0.0), (0.5, 0.5, 0.5),
+    ]
+    sample_ups = [
+        (0.0, 1.0, 0.0), (0.0, 0.0, -1.0), (1.0, 0.0, 0.0), (0.0, -1.0, 0.0),
+    ]
     for sign in _CORNER_SIGNS:
-        offset, abs_up = iso_corner_pose(sign, up_axis="y")
-        look = -np.asarray(offset, dtype=float)
-        look = look / float(np.linalg.norm(look))
-        # The absolute ISO up projected onto the sight plane -- the wide-screen roll. The
-        # result must always be +/- this (collinear), never an intermediate tilt.
-        abs_perp = np.asarray(abs_up, dtype=float) - float(np.dot(abs_up, look)) * look
-        abs_proj = abs_perp / float(np.linalg.norm(abs_perp))
+        a, s = orientation_pose(sign)
+        a = np.asarray(a, dtype=float)
+        s = np.asarray(s, dtype=float)
+        for ax in sample_axes:
+            ax_u = _unit(ax)
+            for up in sample_ups:
+                up_v = np.asarray(up, dtype=float)
+                # skip an up parallel to this current axis (no view-up defined) -- covered in E
+                if float(np.linalg.norm(up_v - float(np.dot(up_v, ax_u)) * ax_u)) < 1e-6:
+                    continue
+                out = np.asarray(nearest_orientation_up(a, s, ax_u, up_v, steps=6), dtype=float)
+                if abs(float(np.linalg.norm(out)) - 1.0) > 1e-6:
+                    failures.append(f"A FAIL: corner {sign} axis {np.round(ax_u,2).tolist()} up {up}: result not unit")
+                    continue
+                if abs(float(np.dot(out, a))) > 1e-6:
+                    failures.append(f"A FAIL: corner {sign} axis {np.round(ax_u,2).tolist()} up {up}: result not perpendicular to sight")
+                roll = _measured_roll(a, s, out)
+                if _snap_dist_to_grid(roll) > 1e-4:
+                    failures.append(
+                        f"A FAIL: corner {sign} axis {np.round(ax_u,2).tolist()} up {up}: result roll "
+                        f"{roll:.2f} is not a clean 60-deg multiple"
+                    )
 
-        def _rel(cur):
-            return np.asarray(relative_up_about_sight(offset, cur, fallback_up=abs_up), dtype=float)
+    # --- B: nearest-of-6 snap table (pure roll about the diagonal) ----------------
+    a, s = orientation_pose((1, 1, 1))
+    a = np.asarray(a, dtype=float)
+    s = np.asarray(s, dtype=float)
+    for k in (0, 10, 20, 45, 59, 75, 90, 100, 130, 170, 190, 235, 250, 290, 320, 350):
+        cur_up = np.asarray(roll_view_up(a, s, k), dtype=float)   # roll standard by k about +a
+        out = np.asarray(nearest_orientation_up(a, s, a, cur_up, steps=6), dtype=float)
+        roll = _measured_roll(a, s, out)
+        if _snap_dist_to_grid(roll) > 1e-4:
+            failures.append(f"B FAIL: roll {k} -> {roll:.2f} is not a 60-deg multiple")
+        # the snapped roll must be the NEAREST gridpoint to k (within half a step)
+        gap = abs((roll - k + 180.0) % 360.0 - 180.0)
+        if gap > _STEP_DEG / 2.0 + 1e-6:
+            failures.append(f"B FAIL: roll {k} snapped to {roll:.2f}, farther than 30 deg (not nearest)")
 
-        # "upside down" current view: world -Y (never parallel to a corner sight)
-        cur_down = np.array([0.0, -1.0, 0.0])
-        rel = _rel(cur_down)
-        if abs(float(np.linalg.norm(rel)) - 1.0) > 1e-6:
-            failures.append(f"A FAIL: corner {sign} relative up not unit ({np.linalg.norm(rel):.4f})")
-        if abs(float(np.dot(rel, look))) > 1e-6:
-            failures.append(f"A FAIL: corner {sign} relative up not perpendicular to the sight line")
-        if abs(abs(float(np.dot(rel, abs_proj))) - 1.0) > 1e-6:
-            failures.append(
-                f"A FAIL: corner {sign} relative up is NOT collinear with the absolute ISO up "
-                f"(|dot| {abs(float(np.dot(rel, abs_proj))):.4f} != 1) -- wide-screen fit broken"
-            )
-        if float(np.dot(rel, abs_proj)) >= 0.0:
-            failures.append(
-                f"A FAIL: corner {sign} upside-down view did NOT flip (dot with ISO up "
-                f"{float(np.dot(rel, abs_proj)):.3f} >= 0)"
-            )
-        if float(rel[1]) >= 0.0:
-            failures.append(
-                f"A FAIL: corner {sign} upside-down view did NOT stay upside down "
-                f"(relative up world-Y {rel[1]:.3f} >= 0)"
-            )
-        if np.allclose(rel, np.asarray(abs_up, dtype=float)):
-            failures.append(
-                f"A FAIL: corner {sign} relative up equals the ABSOLUTE ISO up -- did not flip"
-            )
+    # --- C: idempotence -- a clean-roll current view returns the same vector ------
+    for sign in _CORNER_SIGNS:
+        a, s = orientation_pose(sign)
+        a = np.asarray(a, dtype=float)
+        s = np.asarray(s, dtype=float)
+        for k in (0.0, 60.0, 120.0, 180.0, 240.0, 300.0):
+            cur_up = np.asarray(roll_view_up(a, s, k), dtype=float)
+            out = np.asarray(nearest_orientation_up(a, s, a, cur_up, steps=6), dtype=float)
+            if not np.allclose(out, cur_up, atol=1e-7):
+                failures.append(
+                    f"C FAIL: corner {sign} clean roll {k:.0f} not preserved "
+                    f"(out {np.round(out,3).tolist()} != {np.round(cur_up,3).tolist()})"
+                )
 
-        # an UPRIGHT current view (world +Y) should still read upright (no regression)
-        rel_up = _rel(np.array([0.0, 1.0, 0.0]))
-        if float(np.dot(rel_up, abs_proj)) <= 0.0 or float(rel_up[1]) <= 0.0:
-            failures.append(
-                f"A FAIL: corner {sign} upright view did not stay upright "
-                f"(dot ISO up {float(np.dot(rel_up, abs_proj)):.3f}, world-Y {rel_up[1]:.3f})"
-            )
-
-    # --- E + F: the flip is GLOBAL and consistent across corners (bugs/0256) ---------
-    def _corner_side(corner_sign, cur):
-        """(+1 upright / -1 flipped, |collinear err|) for a corner given a current up."""
-        offset, abs_up = iso_corner_pose(corner_sign, up_axis="y")
-        look = -np.asarray(offset, dtype=float)
-        look = look / float(np.linalg.norm(look))
-        abs_perp = np.asarray(abs_up, dtype=float) - float(np.dot(abs_up, look)) * look
-        abs_proj = abs_perp / float(np.linalg.norm(abs_perp))
-        rel = np.asarray(relative_up_about_sight(offset, cur, fallback_up=abs_up), dtype=float)
-        d = float(np.dot(rel, abs_proj))
-        return (1 if d >= 0.0 else -1), abs(abs(d) - 1.0)
-
-    # E: a given current up must drive ALL 8 corners to ONE side. 0255 keyed the flip off the
-    #    PER-CORNER projected up, so adjacent corners could disagree ("Right Top reversed" yet
-    #    the neighbouring "Right Bottom completely wrong"). Now it is one global decision.
-    for label, cur, want in (
-        ("clearly upside down", np.array([0.15, -0.96, -0.2]), -1),
-        ("clearly upright", np.array([0.1, 0.97, 0.2]), 1),
-        ("rolled 135 deg", np.array([0.0, -0.7071, -0.7071]), -1),
+    # --- D: cross-axis -- click a corner from a face/oblique view -----------------
+    for label, cur_axis, cur_up in (
+        ("front +Z", (0.0, 0.0, 1.0), (0.0, 1.0, 0.0)),
+        ("top +Y", (0.0, 1.0, 0.0), (0.0, 0.0, -1.0)),
+        ("oblique", (-0.3, 0.9, 0.3), (0.0, 0.3, -0.95)),
     ):
-        sides = [_corner_side(s, cur)[0] for s in _CORNER_SIGNS]
-        if len(set(sides)) != 1:
-            failures.append(
-                f"E FAIL: '{label}' current up gives INCONSISTENT corner flips {sides} -- "
-                "adjacent corners disagree (the 0255 bug)"
-            )
-        elif sides[0] != want:
-            failures.append(
-                f"E FAIL: '{label}' flipped to the wrong side (got {sides[0]:+d}, want {want:+d})"
-            )
-        worst = max(_corner_side(s, cur)[1] for s in _CORNER_SIGNS)
-        if worst > 1e-6:
-            failures.append(
-                f"E FAIL: '{label}' broke the wide-screen fit (max |collinear err| {worst:.1e})"
-            )
+        for sign in _CORNER_SIGNS:
+            a, s = orientation_pose(sign)
+            a = np.asarray(a, dtype=float)
+            s = np.asarray(s, dtype=float)
+            out = np.asarray(nearest_orientation_up(a, s, _unit(cur_axis), _unit(cur_up), steps=6), dtype=float)
+            roll = _measured_roll(a, s, out)
+            if abs(float(np.linalg.norm(out)) - 1.0) > 1e-6 or abs(float(np.dot(out, a))) > 1e-6:
+                failures.append(f"D FAIL: '{label}' corner {sign} result not a unit perpendicular up")
+            elif _snap_dist_to_grid(roll) > 1e-4:
+                failures.append(f"D FAIL: '{label}' corner {sign} roll {roll:.2f} not a clean 60-deg multiple")
 
-    # F: a tumbled ~90 deg view (current up . world up ~ 0, no well-defined up/down) stays
-    #    UPRIGHT for every corner rather than guessing -- the flag_...812 "Upside down Left"
-    #    up = (0,0,-1) case that made 0255 pick inconsistently (bugs/0256 deadband).
-    for label, cur in (
-        ("tumbled -Z (flag 1)", np.array([0.0, 0.0, -1.0])),
-        ("tumbled +Z", np.array([0.0, 0.0, 1.0])),
-    ):
-        sides = [_corner_side(s, cur)[0] for s in _CORNER_SIGNS]
-        if any(s != 1 for s in sides):
-            failures.append(
-                f"F FAIL: '{label}' (dot world-up ~ 0) did not stay upright for all corners {sides}"
-            )
+    # --- E: degenerate fallbacks --------------------------------------------------
+    a, s = orientation_pose((1, 1, 1))
+    a = np.asarray(a, dtype=float)
+    s = np.asarray(s, dtype=float)
+    # antiparallel current axis (rotation axis undefined)
+    out = np.asarray(nearest_orientation_up(a, s, -a, s, steps=6), dtype=float)
+    if not np.all(np.isfinite(out)) or abs(float(np.linalg.norm(out)) - 1.0) > 1e-6 or abs(float(np.dot(out, a))) > 1e-6:
+        failures.append(f"E FAIL: antiparallel current axis did not fall back to a unit perpendicular up ({out})")
+    # current up parallel to the sight line (no roll defined)
+    out2 = np.asarray(nearest_orientation_up(a, s, a, a, steps=6), dtype=float)
+    if not np.all(np.isfinite(out2)) or abs(float(np.linalg.norm(out2)) - 1.0) > 1e-6 or abs(float(np.dot(out2, a))) > 1e-6:
+        failures.append(f"E FAIL: current up parallel to sight did not fall back to a unit perpendicular up ({out2})")
 
-    # --- B: degenerate fallback (current up parallel to the sight line) -------------
-    offset, abs_up = iso_corner_pose((1, 1, 1), up_axis="y")
-    look = -np.asarray(offset, dtype=float)
-    look = look / float(np.linalg.norm(look))
-    rel_fb = np.asarray(relative_up_about_sight(offset, look, fallback_up=abs_up), dtype=float)
-    if not np.all(np.isfinite(rel_fb)) or abs(float(np.linalg.norm(rel_fb)) - 1.0) > 1e-6:
-        failures.append(f"B FAIL: degenerate (parallel) up did not fall back to a unit vector ({rel_fb})")
-    if abs(float(np.dot(rel_fb, look))) > 1e-6:
-        failures.append("B FAIL: degenerate fallback up is not perpendicular to the sight line")
-    rel_fb2 = np.asarray(relative_up_about_sight(offset, look, fallback_up=None), dtype=float)
-    if not np.all(np.isfinite(rel_fb2)) or abs(float(np.linalg.norm(rel_fb2)) - 1.0) > 1e-6:
-        failures.append("B FAIL: degenerate up with no fallback did not use the world-projected up")
-
-    # --- C: inspector source contract ----------------------------------------------
+    # --- F: inspector source contract ---------------------------------------------
     try:
         insp = _module_source("KrakenOS.UI.open3d_inspector")
         if "def _apply_navigation_cube_orientation(self, offset_unit, view_up, sign" not in insp:
-            failures.append("C FAIL: _apply_navigation_cube_orientation does not take a `sign` argument")
-        if "relative_up_about_sight(" not in insp:
-            failures.append("C FAIL: the inspector never calls relative_up_about_sight -- corner roll is not local")
+            failures.append("F FAIL: _apply_navigation_cube_orientation does not take a `sign` argument")
+        if "nearest_orientation_up(" not in insp:
+            failures.append("F FAIL: the inspector never calls nearest_orientation_up -- corner roll is not snapped")
         if "GetViewUp()" not in insp:
-            failures.append("C FAIL: the inspector does not read the live camera up (GetViewUp) for the relative roll")
+            failures.append("F FAIL: the inspector does not read the live camera up (GetViewUp)")
+        if "GetDirectionOfProjection()" not in insp:
+            failures.append("F FAIL: the inspector does not read the live view direction (GetDirectionOfProjection) for the roll snap")
         if 'orientation_kind(' not in insp or '"corner"' not in insp:
             failures.append(
-                "C FAIL: the relative up is not gated on a CORNER (orientation_kind == 'corner') -- "
+                "F FAIL: the roll snap is not gated on a CORNER (orientation_kind == 'corner') -- "
                 "faces/edges must keep their absolute up"
             )
     except Exception as exc:  # pragma: no cover - defensive
-        failures.append(f"C FAIL: could not read inspector source: {exc!r}")
+        failures.append(f"F FAIL: could not read inspector source: {exc!r}")
 
-    # --- D: widget forwards the picked sign ----------------------------------------
+    # --- G: widget forwards the picked sign ---------------------------------------
     try:
         wid = _module_source("KrakenOS.UI.services.nav_cube_widget")
         if "self._apply_orientation(offset_unit, view_up, " not in wid:
             failures.append(
-                "D FAIL: handle_left_press does not forward the picked sign as the 3rd "
+                "G FAIL: handle_left_press does not forward the picked sign as the 3rd "
                 "apply_orientation argument -- the host can't tell a corner apart"
             )
     except Exception as exc:  # pragma: no cover - defensive
-        failures.append(f"D FAIL: could not read nav_cube_widget source: {exc!r}")
+        failures.append(f"G FAIL: could not read nav_cube_widget source: {exc!r}")
 
     return (not failures), failures
 
@@ -221,10 +211,10 @@ def run_checks():
 def main() -> int:
     passed, notes = run_checks()
     if passed:
-        print("[PASS] nav cube corner ISO: one global up/down flip for all corners keeps the "
-              "current sense AND the wide-screen fit (bugs/0254+0255+0256)")
+        print("[PASS] nav cube corner roll snaps to the nearest of six clean orientations "
+              "(FreeCAD getNearestOrientation port, bugs/0257)")
         return 0
-    print("[FAIL] bugs/0254+0255+0256 nav-cube local-corner-ISO guard:")
+    print("[FAIL] bugs/0257 nav-cube corner nearest-of-6 guard:")
     for note in notes:
         print(f"   - {note}")
     return 1
