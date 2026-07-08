@@ -337,8 +337,8 @@ class NavigationCube:
         # rotation handles (bugs/0253). (a0, a1) in degrees; the arc sweeps a0 -> a1 and the
         # head caps the a1 end: left arc CCW -> head down-left, right arc CW -> head down-right.
         roll_specs = {
-            "roll_ccw": (100.0, 160.0),   # upper-left, sweeps CCW, head points down-left
-            "roll_cw": (80.0, 20.0),      # upper-right, sweeps CW, head points down-right
+            "roll_ccw": (110.0, 150.0),   # upper-left, sweeps CCW, head points down-left
+            "roll_cw": (70.0, 30.0),      # upper-right, sweeps CW, head points down-right
         }
         for kind, (a0, a1) in roll_specs.items():
             actor = self._roll_arrow_actor(a0, a1, roll_color)

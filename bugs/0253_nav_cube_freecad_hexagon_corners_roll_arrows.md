@@ -50,10 +50,16 @@ centre, which is exactly what a roll about the sight line spins around), sitting
 the cube silhouette:
 * `_ROLL_ARROW_RADIUS = 1.18`, `_ROLL_ARROW_WIDTH = 0.17`, with a chunky tangential arrowhead
   (`_ROLL_ARROW_HEAD_LEN/HALF = 0.30/0.20`).
-* `roll_ccw` sweeps `100°→160°` (upper-**left**, flanking the Up arrow, head points **down-left**
-  along the top edge); `roll_cw` sweeps `80°→20°` (upper-**right**, head **down-right**). Each
+* `roll_ccw` sweeps `110°→150°` (upper-**left**, flanking the Up arrow, head points **down-left**
+  along the top edge); `roll_cw` sweeps `70°→30°` (upper-**right**, head **down-right**). Each
   arc's mid-angle sits between the Up arrow (90°) and the Left/Right arrow (180°/0°) — "the
   middle of the Up and Left/Right arrow".
+
+**Follow-up (same day, after in-app "they look correct, but can make the rotation arrow shorter?").**
+Each arc's sweep was trimmed 60°→**40°**, kept centred on the same mid-angles (130°/50°), so the tails
+pull further from the Up arrow and the heads stop short of the Left/Right arrows — visibly shorter, same
+concentric FreeCAD look. The guard now pins `sweep ≤ 45°` per arc (the user has asked twice for a short
+rotation arc: bugs/0250 "curve segment too much", then this trim).
 
 `_roll_arrow_actor` dropped its `(cx, cy)` offset (it's origin-centred now) and takes just
 `(a0, a1, color)`. The head direction is the arc tangent at the `a1` end, so it points down

@@ -153,6 +153,15 @@ def run_checks():
                     f"D FAIL: roll arcs do not flank the top (mid-angles {mids}) -- expected "
                     "roll_ccw upper-left (>90 deg) and roll_cw upper-right (<90 deg)"
                 )
+            # the user asked TWICE for a SHORT rotation arc (bugs/0250 "curve segment too much",
+            # then the 0253 follow-up "make the rotation arrow shorter") -- keep each sweep small
+            spans = {k: abs(a1 - a0) for k, (a0, a1) in specs.items()}
+            long = {k: round(s, 1) for k, s in spans.items() if s > 45.0}
+            if long:
+                failures.append(
+                    f"D FAIL: roll arc sweep too long {long} deg -- keep each <= 45 deg (the user "
+                    "asked twice for short rotation arcs: bugs/0250 + the 0253 follow-up)"
+                )
     except Exception as exc:  # pragma: no cover - defensive
         failures.append(f"D FAIL: could not inspect nav_cube_widget roll wiring: {exc!r}")
 
