@@ -822,6 +822,12 @@ class Open3DSceneRefreshService:
         pixel_grid_actors = 0
         if bool(getattr(self, "show_pixel_grid_var", None) is not None and self.show_pixel_grid_var.get()):
             pixel_grid_actors = self._add_pixel_grid_overlays(system, scene_bundle)
+        # On-detector relative-illumination heatmap (idea #3): coaxial-LED dark edges on the sensor.
+        # Read live here so its toggle is a render-only refresh (bugs/0166); the traced+binned map
+        # behind it is lazy + cached on the editor.
+        source_illumination_actors = 0
+        if bool(getattr(self, "show_source_illumination_var", None) is not None and self.show_source_illumination_var.get()):
+            source_illumination_actors = self._add_source_illumination_overlays(system, scene_bundle)
         # One combined, expanding legend for every analysis overlay queued above (replaces the
         # per-overlay billboards that overlapped when several were on).
         analysis_overlay_label_actors = self._add_grouped_analysis_overlay_label()

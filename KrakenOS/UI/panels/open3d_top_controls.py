@@ -135,6 +135,9 @@ class Open3DTopControlsPanel:
                 MenuCheckbutton("Spot map", self.inspector.show_spot_field_map_var, self.inspector._on_scene_visibility_changed),
                 # Camera pixel grid (idea #1): the spot footprint on the camera's real pixels.
                 MenuCheckbutton("Pixel grid", self.inspector.show_pixel_grid_var, self.inspector._on_scene_visibility_changed),
+                # On-detector illumination heatmap (idea #3): coaxial-LED fold-axis dark edges
+                # draped on the sensor as a smooth quad (relative illumination, centre = 1.0).
+                MenuCheckbutton("Illumination", self.inspector.show_source_illumination_var, self.inspector._on_scene_visibility_changed),
             ),
         )
         pack_menubutton(view_toolbar, "Overlays", overlay_menu, padx=(8, 0))

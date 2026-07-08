@@ -172,6 +172,12 @@ SURFACES = [
         "glass": "AIR",
         "advanced": {
             "Display2D": {"label": "FOV 39x39"},
+            # The detector active area = the 39x39 FOV (this unfolded plane IS the sensor). Declaring
+            # it makes the relative-illumination map / heatmap span the sensor rectangle the Monitor
+            # shows (+/-19.5 mm) instead of the 78 mm display diameter, so the dark edges land AT the
+            # sensor edge. The physical trace aperture stays the surface diameter -- this only sets
+            # the analysis/heatmap window.
+            "Detector": {"active_width_mm": FOV_MM, "active_height_mm": FOV_MM},
             "Note": (
                 "Relative-illumination target. The 39x39 mm FOV is +/-19.5 mm; the fold (X) edges sit "
                 "in the penumbra roll-off (dark edges) while the perp (Y) edges stay uniformly lit."

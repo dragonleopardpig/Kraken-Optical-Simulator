@@ -11488,6 +11488,41 @@ def phase_230_nav_cube_corner_local_up(
     return result
 
 
+def phase_231_source_illumination_overlay(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The 2-D coaxial-LED dark edges (phase 175) now drape onto the DETECTOR plane as a smooth 3D
+    illumination heatmap (viz idea #3), so they read directly on the sensor -- what the Monitor
+    shows -- normalised to the sensor CENTRE = 1.0 and coloured by the camera chroma (Mono/NIR grey,
+    Colour false colour). `validate_open3d_source_illumination_overlay` is a display-free guard:
+    PURE GEOMETRY (a synthetic fold-dip density drapes bin-centre points onto the plane, normalises
+    to the centre, reads fold clearly darker than perp, and the Gaussian de-speckle cuts per-bin
+    counting noise while keeping the dip); INTEGRATION on the real coaxial-LED BS scene
+    (`source_illumination_overlay_spec` returns a heatmap ON the detector whose fold edge is dark,
+    perp is not, with a clear gap, in the sensor grey ramp, CACHED per bugs/0166); and the render-only
+    contract (`refresh_scene` reads `show_source_illumination_var` + calls
+    `_add_source_illumination_overlays`, which draws the baked heatmap via `direct_point_scalars`
+    without rebuilding the system, and the Overlays menu exposes the toggle).
+    """
+    result = PhaseResult(
+        name="Phase 231: coaxial area-LED dark edges drape on the detector as a smooth illumination heatmap"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_source_illumination_overlay import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"source-illumination-overlay guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("source-illumination-overlay phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11763,6 +11798,7 @@ def main() -> int:
             phase_228_nav_cube_corner_iso,
             phase_229_nav_cube_freecad_style,
             phase_230_nav_cube_corner_local_up,
+            phase_231_source_illumination_overlay,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

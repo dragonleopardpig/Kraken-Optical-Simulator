@@ -647,6 +647,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # Camera pixel grid (idea #1): the registered camera's pixel lattice under each spot,
         # so the spot footprint reads in pixels. Needs a registered camera (a pixel pitch).
         self.show_pixel_grid_var = tk.BooleanVar(value=False)
+        # On-detector relative-illumination heatmap (idea #3): the source-illumination map draped
+        # on the sensor as a smooth quad, so the coaxial-LED fold-axis dark edges read directly on
+        # the detector. Lazy + cached on the editor; render-only toggle (bugs/0166).
+        self.show_source_illumination_var = tk.BooleanVar(value=False)
         self.slide_along_axis_mode_var = tk.BooleanVar(value=False)
         self.show_live_controls_panel_var = tk.BooleanVar(value=True)
         self.show_scene_components_panel_var = tk.BooleanVar(value=True)
@@ -1724,6 +1728,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             show_astigmatism=bool(self.show_astigmatism_var.get()),
             show_spot_field_map=bool(self.show_spot_field_map_var.get()),
             show_pixel_grid=bool(self.show_pixel_grid_var.get()),
+            show_source_illumination=bool(self.show_source_illumination_var.get()),
             counts=self._debug_actor_counts(),
         )
         # bugs/0166: reference-surface / detector / thickness / terminal-diagnostic /
@@ -5352,15 +5357,28 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         backface_culling: bool = True,
         glassy: bool = False,
         overlay_on_top: bool = False,
+        direct_point_scalars: bool = False,
     ):
         if self._renderer is None or vtkActor is None or vtkDataSetMapper is None:
             return None
         mapper = vtkDataSetMapper()
         mapper.SetInputData(mesh)
-        try:
-            mapper.ScalarVisibilityOff()
-        except Exception:
-            pass
+        if direct_point_scalars:
+            # The mesh carries a baked per-point RGB(A) uint8 array as its active point scalars
+            # (e.g. the relative-illumination heatmap): map it straight to colour, interpolated
+            # across each cell for the "smooth textured" look, instead of a single flat colour.
+            try:
+                mapper.SetScalarModeToUsePointData()
+                mapper.ScalarVisibilityOn()
+                mapper.SetColorModeToDirectScalars()
+                mapper.InterpolateScalarsBeforeMappingOn()
+            except Exception:
+                pass
+        else:
+            try:
+                mapper.ScalarVisibilityOff()
+            except Exception:
+                pass
         actor = vtkActor()
         actor.SetMapper(mapper)
         prop = actor.GetProperty()
@@ -5393,6 +5411,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 prop.SetInterpolationToPhong()
                 prop.SetSpecular(0.18)
                 prop.SetSpecularPower(12.0)
+        if direct_point_scalars:
+            # A baked heatmap must show its exact per-point colour: centre (relative 1.0) reads as
+            # full white, the fold edges as their true grey. Scene lighting would multiply that by a
+            # lambert/ambient term and dim it, so render the quad UNLIT (the DirectScalars RGB is the
+            # final pixel colour). Mirrors pyvista add_mesh(lighting=False) used in the render check.
+            try:
+                prop.SetLighting(False)
+            except Exception:
+                pass
         if pick_step_label is not None or pick_row_index is not None or track_row_index is not None:
             try:
                 actor._kraken_round_lens_like_step_body = bool(self._mesh_round_lens_axis(mesh) is not None)
@@ -12664,6 +12691,81 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
         return count
+
+    def _illumination_scalars_to_rgb(self, scalars, cmap_name, clim) -> np.ndarray:
+        """Bake per-point relative-illumination scalars into a contiguous uint8 RGB array via a
+        matplotlib colormap, so the detector quad renders through DirectScalars (no VTK LUT) as a
+        smooth heatmap. Falls back to a plain grey ramp when matplotlib is unavailable."""
+        values = np.asarray(scalars, dtype=float).reshape(-1)
+        try:
+            lo, hi = float(clim[0]), float(clim[1])
+        except Exception:
+            lo, hi = 0.0, 1.0
+        span = (hi - lo) if (hi - lo) > 1e-9 else 1.0
+        norm = np.clip((values - lo) / span, 0.0, 1.0)
+        try:
+            import matplotlib
+
+            cmap = matplotlib.colormaps.get_cmap(str(cmap_name or "gray"))
+            rgb = (np.asarray(cmap(norm))[:, :3] * 255.0).astype(np.uint8)
+        except Exception:
+            grey = (norm * 255.0).astype(np.uint8)
+            rgb = np.repeat(grey[:, None], 3, axis=1)
+        return np.ascontiguousarray(rgb)
+
+    def _add_source_illumination_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
+        """Drape the on-detector relative-illumination heatmap (3D viz idea #3) as a smooth textured
+        quad on the sensor plane, so the coaxial-LED fold-axis dark edges read directly on the
+        detector -- what the Monitor shows -- instead of only in the separate 2-D report. Render-only;
+        the traced+binned map and its signature cache live on the editor
+        (``source_illumination_overlay_spec``), so toggling this is a cached-scene re-render (0166)."""
+        if self._renderer is None or pv is None or scene_bundle is None:
+            return 0
+        try:
+            spec = self.editor.source_illumination_overlay_spec(system, scene_bundle)
+        except Exception as exc:
+            self.editor.append_debug(f"Source illumination overlay failed: {exc}")
+            return 0
+        if not spec:
+            return 0
+        try:
+            points = np.asarray(spec["points"], dtype=float)
+            nx, ny = int(spec["dims"][0]), int(spec["dims"][1])
+            if points.ndim != 2 or points.shape[0] != nx * ny or points.shape[1] < 3:
+                return 0
+            # The module's points are row-major (x fastest, then y): exactly StructuredGrid's
+            # (nx, ny, 1) point order, so the scalars line up 1:1 with the grid vertices.
+            grid = pv.StructuredGrid()
+            grid.points = points[:, :3]
+            grid.dimensions = (nx, ny, 1)
+            rgb = self._illumination_scalars_to_rgb(
+                spec.get("scalars"), spec.get("cmap"), spec.get("clim", (0.0, 1.0))
+            )
+            grid.point_data["illumination_rgb"] = rgb
+            grid.set_active_scalars("illumination_rgb")
+        except Exception as exc:
+            self.editor.append_debug(f"Source illumination overlay grid failed: {exc}")
+            return 0
+        self._add_mesh_actor(
+            grid,
+            color=(1.0, 1.0, 1.0),
+            opacity=float(spec.get("opacity", 0.85)),
+            backface_culling=False,
+            direct_point_scalars=True,
+        )
+        try:
+            fold = float(spec.get("x_edge_ratio", 0.0))
+            perp = float(spec.get("y_edge_ratio", 0.0))
+            dark_axis = "fold (X)" if fold <= perp else "perp (Y)"
+            self._queue_analysis_overlay_label(
+                "Relative illumination on detector (centre = 1.0)\n"
+                f"edge/centre  fold {fold:.2f} · perp {perp:.2f}  → darker: {dark_axis}",
+                center=spec.get("center"),
+                normal=spec.get("normal"),
+            )
+        except Exception:
+            pass
+        return 1
 
     def _add_spot_field_map_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
         """Draw the per-field RMS spot circles on the detector, coloured good->bad

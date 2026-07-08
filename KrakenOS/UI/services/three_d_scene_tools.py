@@ -58,6 +58,11 @@ from KrakenOS.UI.services.best_focus_surface import (
 )
 from KrakenOS.UI.services.distortion_grid import build_distortion_grid
 from KrakenOS.UI.services.spot_field_map import build_spot_field_map
+from KrakenOS.UI.services.source_illumination_overlay import build_source_illumination_overlay
+from KrakenOS.UI.source_illumination_analysis import (
+    source_illumination_map_data_from_samples,
+    source_illumination_map_extent,
+)
 from KrakenOS.UI.services.pixel_grid import build_pixel_grid_overlay
 from KrakenOS.UI.services.legacy_3d_scene import Legacy3DSceneService
 from KrakenOS.UI.services.missing_assets_scan import (
@@ -3501,6 +3506,118 @@ class ThreeDSceneToolsMixin:
             "center": center,
             "normal": np.asarray(medial_spec["normal"], dtype=float),
         }
+
+    # ------------------------------------------------------------------
+    # Detector relative-illumination heatmap (coaxial-LED dark edges on the sensor, viz idea #3)
+
+    def _source_illumination_anchor_target(self, scene_bundle):
+        """The detector/sensor plane the illumination heatmap drapes onto.
+
+        Unlike ``_best_focus_surface_anchor_target`` (which returns None on beam-splitter
+        branch-detector scenes), this resolves the SAME target the relative-illumination analysis
+        bins on, so the coaxial-LED BS scene -- the whole point of this overlay -- is supported.
+        Preference: the analysis target index (dialog / auto detector pick), else the detector
+        target with the largest active sensor area, else the flat image-plane anchor.
+        """
+        if scene_bundle is None:
+            return None
+        targets = list(getattr(scene_bundle, "targets", []) or [])
+        if not targets:
+            return None
+        try:
+            target_index = int(self._source_illumination_target_index())
+        except Exception:
+            target_index = None
+        if target_index is not None:
+            for attr in ("trace_surface", "row_index"):
+                for target in targets:
+                    try:
+                        if int(getattr(target, attr, -1)) == target_index:
+                            return target
+                    except Exception:
+                        continue
+        detectors = [t for t in targets if bool(getattr(t, "is_detector", False))]
+        if detectors:
+            return max(
+                detectors,
+                key=lambda t: (
+                    float(getattr(t, "active_width_mm", 0.0) or 0.0) * float(getattr(t, "active_height_mm", 0.0) or 0.0),
+                    int(getattr(t, "row_index", -1)),
+                ),
+            )
+        return self._best_focus_surface_anchor_target(scene_bundle)
+
+    def source_illumination_overlay_spec(self, system, scene_bundle, *, wavelength=None):
+        """Build the detector relative-illumination heatmap spec (the coaxial-LED dark edges drawn
+        on the sensor), or None. Lazy + signature-cached + render-only, like the other detector
+        overlays (bugs/0166): it REUSES the existing preview trace's ray records -- it never re-traces.
+        """
+        if system is None or scene_bundle is None:
+            return None
+        target = self._source_illumination_anchor_target(scene_bundle)
+        if target is None:
+            return None
+        try:
+            signature = (
+                self._preview_trace_signature(),
+                int(getattr(target, "trace_surface", getattr(target, "row_index", -1))),
+                "source_illumination",
+            )
+        except Exception:
+            signature = None
+        cache = self.__dict__.get("_source_illumination_overlay_cache")
+        if signature is not None and isinstance(cache, tuple) and len(cache) == 2 and cache[0] == signature:
+            return cache[1]
+        spec = self._compute_source_illumination_overlay_spec(system, target)
+        if signature is not None:
+            self._source_illumination_overlay_cache = (signature, spec)
+        return spec
+
+    def _compute_source_illumination_overlay_spec(self, system, target):
+        try:
+            surface_index = int(getattr(target, "trace_surface", getattr(target, "row_index", -1)))
+        except Exception:
+            return None
+        try:
+            records = self._collect_ray_analysis_records()
+        except Exception:
+            records = None
+        try:
+            samples = self._source_illumination_hit_samples(system, surface_index, ray_records=records)
+        except Exception:
+            return None
+        x_values = np.asarray(samples.get("x", []), dtype=float)
+        y_values = np.asarray(samples.get("y", []), dtype=float)
+        if x_values.size < 50:  # too few hits to bin a meaningful map
+            return None
+        target_model = self._source_illumination_target_model(samples)
+        # Bin count aims for ~10 hits/bin WITHIN the sensor extent so the map reads smooth, not
+        # noise: the area LED floods far past the sensor, so only a fraction land in-extent (e.g.
+        # ~5k of 60k rays on the 39x39 FOV). Above ~48 bins the coaxial map collapses to speckle.
+        try:
+            x0, x1, y0, y1 = source_illumination_map_extent(samples, x_values, y_values, target_model)
+            in_extent = int(np.sum((x_values >= x0) & (x_values <= x1) & (y_values >= y0) & (y_values <= y1)))
+        except Exception:
+            in_extent = int(x_values.size)
+        bins = int(np.clip(round(np.sqrt(max(in_extent, 1) / 10.0)), 16, 48))
+        try:
+            map_data = source_illumination_map_data_from_samples(samples, target_model=target_model, bins=bins)
+        except Exception:
+            return None
+        chroma = "Mono"
+        try:
+            record = self._current_camera_record()
+            if isinstance(record, dict):
+                chroma = record.get("chroma", "Mono") or "Mono"
+        except Exception:
+            pass
+        return build_source_illumination_overlay(
+            map_data,
+            center=np.asarray(getattr(target, "center_world", (0.0, 0.0, 0.0)), dtype=float),
+            normal=np.asarray(getattr(target, "normal_world", (0.0, 0.0, 1.0)), dtype=float),
+            tangent=np.asarray(getattr(target, "tangent_world", (0.0, 1.0, 0.0)), dtype=float),
+            chroma=chroma,
+        )
 
     # ------------------------------------------------------------------
     # Spot RMS field map (3D spot-quality viz, idea #1/#3 foundation)
