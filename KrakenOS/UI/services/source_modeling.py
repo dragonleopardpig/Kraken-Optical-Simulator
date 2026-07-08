@@ -18,6 +18,7 @@ from KrakenOS.UI.scene_source_analysis import (
     scene_source_feature_text,
     scene_source_from_spec,
     scene_source_setting_value,
+    scene_source_spec_is_face_bound_marker,
     scene_sources_summary_text,
     source_panel_summary_text,
     source_spec_bool,
@@ -998,6 +999,7 @@ class SourceModelingMixin:
         scene_source_specs = self._scene_source_specs_for_trace(
             self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []))
         )
+        marker_sources: list[SceneSource3D] = []
         if scene_source_specs:
             sources = [
                 self._scene_source_from_spec(
@@ -1008,8 +1010,23 @@ class SourceModelingMixin:
                 )
                 for index, spec in enumerate(scene_source_specs)
             ]
-            if any(bool(source.enabled) and bool(source.physical) for source in sources):
+            # A face-bound illumination source (bugs/0264) is a DESIGNATION MARKER, not a trace
+            # driver: the image plane / detector / optical axis are imaging conjugates fixed by the
+            # object, so a marker must never REPLACE the imaging trace (bugs/0266). Only a non-marker
+            # physical source short-circuits to source-driven tracing; a marker-only scene falls
+            # through to the imaging reference below, and the markers ride along (display/table) --
+            # the reference stays sources[0] so imaging rays are tagged with the imaging source, not
+            # the marker.
+            if any(
+                bool(source.enabled)
+                and bool(source.physical)
+                and not scene_source_spec_is_face_bound_marker(source)
+                for source in sources
+            ):
                 return sources
+            marker_sources = [
+                source for source in sources if scene_source_spec_is_face_bound_marker(source)
+            ]
         stats = self._source_statistics(sample_count=sample_count, wavelength=wavelength_value)
         source_model = str(stats.get("source_model", self._current_source_model()))
         physical = source_model != SOURCE_MODEL_DEFAULT
@@ -1053,7 +1070,8 @@ class SourceModelingMixin:
                     str(key): self._scene_source_setting_value(value)
                     for key, value in stats.items()
                 },
-            )
+            ),
+            *marker_sources,
         ]
 
     @staticmethod
@@ -1584,6 +1602,11 @@ class SourceModelingMixin:
         sources = []
         for source in self._collect_scene_sources(wavelength=wavelength):
             if not bool(source.enabled) or not bool(source.physical):
+                continue
+            if scene_source_spec_is_face_bound_marker(source):
+                # bugs/0266: a face-bound illumination marker must not be launched into the imaging
+                # preview trace -- it designates + tracks a face for display, it does not replace the
+                # object-driven imaging trace that fixes the image plane / detector / optical axis.
                 continue
             bundle = self._build_scene_source_bundle(source)
             if bundle is None or len(np.asarray(bundle[0])) <= 0:

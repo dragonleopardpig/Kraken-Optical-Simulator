@@ -76,6 +76,29 @@ def source_spec_bool(spec: dict[str, object], key: str, default: bool) -> bool:
     return bool(value)
 
 
+def scene_source_spec_is_face_bound_marker(spec: object) -> bool:
+    """A face-anchored illumination source (Feature B, bugs/0264) is a *designation marker*, not a
+    trace driver. The user marks a CAD/STL face as an emitter and it tracks that face -- but the image
+    plane, detector, and optical axis are IMAGING conjugates fixed by the object, so a face-bound
+    illumination source must NEVER replace the imaging trace (bugs/0266: doing so relocated the image
+    plane + detector onto the beam-splitter's illumination face and exploded the optical axis).
+
+    Detected by a resolved ``face_anchor_row`` >= 0. The key survives spec normalization AND rides in
+    ``SceneSource3D.settings``, so this one predicate covers both the dict-spec and the dataclass form.
+    """
+    if isinstance(spec, dict):
+        raw = spec.get("face_anchor_row", None)
+    else:
+        settings = getattr(spec, "settings", None)
+        raw = settings.get("face_anchor_row", None) if isinstance(settings, dict) else None
+    if raw is None:
+        return False
+    try:
+        return int(round(float(raw))) >= 0
+    except (TypeError, ValueError):
+        return False
+
+
 def source_spec_float(spec: dict[str, object], keys, default: float = 0.0, *, minimum: float | None = None) -> float:
     if isinstance(keys, str):
         keys = (keys,)

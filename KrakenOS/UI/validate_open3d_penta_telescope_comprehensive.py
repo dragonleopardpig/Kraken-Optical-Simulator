@@ -11625,6 +11625,44 @@ def phase_234_analysis_overlay_label_placement(
     return result
 
 
+def phase_235_illumination_source_no_imaging_hijack(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Phase 233 lets a user mark a CAD/STL face as an illumination source; THIS phase pins the regression
+    that shipped with it (bugs/0266). A face-bound marker is physical+enabled, and the live preview trace
+    treats the first non-empty _build_scene_source_bundles result as a launch that REPLACES the imaging
+    trace (_trace_preview_rays early-returns), so marking a face silently swapped the object-driven imaging
+    trace for a lone illumination bundle -- the image plane / detector / optical axis then relocated onto
+    the beam-splitter's illumination face (the flag: "after setting illumination surface, the image plane
+    and detector shifted to the illumination plane of the BS"). The fix keys on a resolved face_anchor_row
+    (scene_source_spec_is_face_bound_marker): a marker designates + tracks a face for display but is
+    excluded from every source-driven imaging launch, so a marker-only scene falls through to the imaging
+    trace and the conjugates stay put; a deliberate scene source is untouched.
+    `validate_open3d_illumination_source_no_imaging_hijack` is a display-free guard: PREDICATE (dict + dataclass
+    forms), WIRING (the three launch paths consult the predicate; _trace_preview_rays still early-returns;
+    scene_sources_from_settings deliberately keeps round-tripping markers), and BEHAVIOUR (headless,
+    STEP-free: marker-only -> 0 imaging bundles + imaging reference first with the marker appended;
+    deliberate -> >=1 bundle; mixed -> deliberate only).
+    """
+    result = PhaseResult(
+        name="Phase 235: a face-bound illumination marker does not hijack the imaging trace (image plane stays put)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_illumination_source_no_imaging_hijack import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"illumination-hijack guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("illumination-hijack phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11904,6 +11942,7 @@ def main() -> int:
             phase_232_source_illumination_rays,
             phase_233_face_illumination_source,
             phase_234_analysis_overlay_label_placement,
+            phase_235_illumination_source_no_imaging_hijack,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

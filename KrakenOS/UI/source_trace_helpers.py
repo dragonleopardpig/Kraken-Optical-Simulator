@@ -13,6 +13,7 @@ from KrakenOS.UI.scene_source_analysis import (
     normalize_scene_source_specs,
     scene_source_from_spec,
     scene_source_setting_value,
+    scene_source_spec_is_face_bound_marker,
     source_spec_float,
 )
 
@@ -1210,7 +1211,11 @@ def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: di
     sources = [
         source
         for source in scene_sources_from_settings(settings, wavelength=wavelength)
-        if bool(source.enabled) and bool(source.physical)
+        if bool(source.enabled)
+        and bool(source.physical)
+        # bugs/0266: a face-bound illumination marker is a display designation, not an imaging-trace
+        # driver -- it must not hijack the saved-layout render's object-driven trace.
+        and not scene_source_spec_is_face_bound_marker(source)
     ]
     if sources:
         trace_loop = kos_module.NsTraceLoop if use_nonseq and hasattr(kos_module, "NsTraceLoop") else kos_module.TraceLoop
