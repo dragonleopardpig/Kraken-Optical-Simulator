@@ -28,10 +28,11 @@ the same upright, wide-screen-friendly way the ISO button does -- instead of a
 steeper symmetric ``(+-1, +-1, +-1)`` diagonal.
 
 The corner ``view_up`` returned here is the ABSOLUTE (global) ISO up; at snap time
-the inspector makes it LOCAL -- :func:`relative_up_about_sight` projects the camera's
-CURRENT up onto the new sight line so a corner ISO keeps the picture's current roll
-(the visible labels stay however they are now -- e.g. upside down) rather than
-resetting to world-up (bugs/0254). The absolute up here is the fallback.
+the inspector makes its ROLL relative -- :func:`relative_up_about_sight` returns this
+absolute up FLIPPED 180 deg when the current view is upside down, so a corner ISO keeps
+the picture's current up/down sense (a "RIGHT" you rolled upside down stays upside down)
+WHILE keeping the wide-screen framing, because +/-abs_up fit the same as the absolute ISO
+(bugs/0254 ask, bugs/0255 keeps the wide screen). The absolute up here is that reference.
 
 CAD face labels (the user's choice): ``+Z = FRONT``, ``+Y = TOP``, ``+X = RIGHT``
 and their opposites.
@@ -139,33 +140,49 @@ def iso_corner_pose(sign, up_axis: str = "y"):
 
 
 def relative_up_about_sight(offset_unit, current_up, fallback_up=None):
-    """View-up that PRESERVES the current camera roll for a new sight direction (bugs/0254).
+    """View-up for a CORNER ISO that keeps the wide-screen framing while matching the
+    current up/down sense (bugs/0255, refines 0254).
 
-    Projects ``current_up`` onto the plane perpendicular to the new view direction
-    (``-offset_unit``) and normalizes it. Used for a CORNER snap so the ISO view is LOCAL
-    (relative to the view you are in) rather than GLOBAL: the picture keeps its current
-    up/down sense, so the visible face labels stay however they are now -- e.g. if you
-    rolled "RIGHT" upside down, it stays upside down after the corner click -- instead of
-    snapping back to the absolute world-up ISO.
+    ``fallback_up`` is the absolute ISO up (world ``+Y``). This returns that absolute up
+    projected onto the plane perpendicular to the new sight line (``-offset_unit``),
+    FLIPPED 180 deg about the sight line when the current view is upside down relative to
+    it (the current up projects to the opposite side). So:
 
-    Only the ROLL becomes relative; the sight direction is still the picked octant's ISO
-    diagonal. Falls back to ``fallback_up`` (the absolute pose up) projected, then to the
-    world-projected up, when ``current_up`` is (near) parallel to the sight line. Returns a
-    unit ``(x, y, z)`` tuple perpendicular to the sight line.
+      * an upside-down view stays upside down -- the visible labels keep their up/down
+        sense, e.g. a "RIGHT" you rolled upside down stays upside down (the bugs/0254 ask);
+      * the long optical axis still spreads across the wide screen, because ``+abs_up`` and
+        ``-abs_up`` give the SAME orthographic fit as the absolute ISO (bugs/0252) -- the
+        result is always collinear with the ISO up, only a 180 deg flip and never an
+        intermediate roll that would rotate the axis off-horizontal and force a zoomed-out
+        fit. An intermediate current roll therefore snaps to the nearer of upright / flipped.
+
+    Without a usable ``fallback_up`` (or when it is parallel to the sight line) it degrades
+    to projecting ``current_up`` itself; a fully degenerate up falls back to the world up.
+    Returns a unit ``(x, y, z)`` tuple perpendicular to the sight line.
     """
     look = -np.asarray(offset_unit, dtype=float).reshape(3)
     look_norm = float(np.linalg.norm(look))
     if look_norm <= 1e-12:
         return tuple(float(v) for v in _projected_up(offset_unit))
     look = look / look_norm
-    for candidate in (current_up, fallback_up):
-        if candidate is None:
-            continue
-        vec = np.asarray(candidate, dtype=float).reshape(3)
-        proj = vec - float(np.dot(vec, look)) * look
-        proj_norm = float(np.linalg.norm(proj))
-        if proj_norm > 1e-6:
-            return tuple(float(v) for v in (proj / proj_norm))
+
+    def _perp(vec):
+        vec = np.asarray(vec, dtype=float).reshape(3)
+        perp = vec - float(np.dot(vec, look)) * look
+        return perp, float(np.linalg.norm(perp))
+
+    if fallback_up is not None:
+        abs_perp, abs_norm = _perp(fallback_up)
+        if abs_norm > 1e-6:
+            abs_unit = abs_perp / abs_norm
+            cur_perp, cur_norm = _perp(current_up)
+            if cur_norm > 1e-6 and float(np.dot(cur_perp, abs_unit)) < 0.0:
+                abs_unit = -abs_unit
+            return tuple(float(v) for v in abs_unit)
+
+    cur_perp, cur_norm = _perp(current_up)
+    if cur_norm > 1e-6:
+        return tuple(float(v) for v in (cur_perp / cur_norm))
     return tuple(float(v) for v in _projected_up(offset_unit))
 
 

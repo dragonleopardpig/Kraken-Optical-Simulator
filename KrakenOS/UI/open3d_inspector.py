@@ -11334,10 +11334,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return
         offset = offset / offset_norm
         distance = max(radius * 2.2, 50.0)
-        # bugs/0254: a CORNER pick gives a LOCAL ISO -- preserve the current roll by
-        # projecting the current view-up onto the new sight line, so the visible labels
-        # keep their up/down sense instead of snapping to the absolute world-up ISO. Only
-        # corners are relative; faces/edges keep their absolute view_up.
+        # bugs/0254+0255: a CORNER pick gives a LOCAL ISO -- keep the current up/down sense
+        # by flipping the absolute ISO up 180 deg when the current view is upside down, so
+        # the visible labels stay however they are (e.g. upside down) WHILE the long optical
+        # axis still spreads across the wide screen (+/-abs_up fit the same). Only corners are
+        # relative; faces/edges keep their absolute view_up.
         if sign is not None and current_up is not None and float(np.linalg.norm(current_up)) > 1e-9:
             try:
                 from KrakenOS.UI.services.nav_cube_orientation import (

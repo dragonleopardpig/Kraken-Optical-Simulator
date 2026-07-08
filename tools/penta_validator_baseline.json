@@ -463,6 +463,6 @@
     "227": "nav cube arrows highlight on hover",
     "228": "nav cube corners reproduce the ISO view per octant",
     "229": "nav cube matches FreeCAD (hexagon corners + concentric roll arrows)",
-    "230": "nav cube corner ISO is local (roll relative to the current view)"
+    "230": "nav cube corner ISO keeps the current up/down sense and the wide-screen fit"
   }
 }
