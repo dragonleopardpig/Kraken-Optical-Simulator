@@ -97,19 +97,29 @@ def _check_wiring(failures: list[str]) -> None:
             "(the complement of _build_scene_source_bundles)"
         )
 
-    # The spec compute is STUB-ONLY: it must NOT trace and must NOT reference the imaging trace state,
-    # so it cannot re-break bugs/0266 (image plane / detector / optical axis stay put).
+    # The spec compute runs an ISOLATED trace (the rays reflect) but must NOT touch the imaging trace
+    # state, so it cannot re-break bugs/0266 (image plane / detector / optical axis stay put).
     compute_src = _src(
         ThreeDSceneToolsMixin._compute_illumination_marker_rays_overlay_spec,
         "_compute_illumination_marker_rays_overlay_spec",
     )
-    for forbidden in ("_trace_preview_bundles(", "raykeeper(", "build_system(", "_build_preview_system_rays_bundle(",
-                      "last_rays", "_last_scene_bundle"):
+    for required in ("_trace_preview_bundles(", "raykeeper(", "_isolated_ray_analysis_records(", "_force_nonseq_preview_trace"):
+        if required not in compute_src:
+            failures.append(
+                f"WIRING: _compute_illumination_marker_rays_overlay_spec must {required!r} "
+                "-- it traces the marker into a SEPARATE keeper (forced non-seq) so the rays reflect"
+            )
+    for forbidden in ("_ray_analysis_records_for_trace(", "_last_scene_bundle =", "build_system(", "_build_preview_system_rays_bundle("):
         if forbidden in compute_src:
             failures.append(
-                f"WIRING: _compute_illumination_marker_rays_overlay_spec must not reference {forbidden!r} "
-                "-- it is a render-only stub builder that never traces / touches the imaging state (0266)"
+                f"WIRING: _compute_illumination_marker_rays_overlay_spec must NOT reference {forbidden!r} "
+                "-- the isolated trace must not mutate/replace the imaging scene bundle (bugs/0266)"
             )
+    # The non-mutating record extractor is the 0266 linchpin: it must NOT write _last_scene_bundle.
+    from KrakenOS.UI.services.analysis_reports import AnalysisReportsMixin
+    isolated_src = _src(AnalysisReportsMixin._isolated_ray_analysis_records, "_isolated_ray_analysis_records")
+    if "_last_scene_bundle =" in isolated_src or "self._last_scene_bundle" in isolated_src.replace("NEVER writes ``self._last_scene_bundle``", ""):
+        failures.append("WIRING: _isolated_ray_analysis_records must never assign self._last_scene_bundle (0266)")
 
     consumer_src = _src(Kraken3DInspector._add_illumination_marker_ray_overlays, "_add_illumination_marker_ray_overlays")
     for forbidden in ("build_system(", "_build_preview_system_rays_bundle("):
@@ -131,33 +141,32 @@ def _check_wiring(failures: list[str]) -> None:
 def _check_pure(failures: list[str]) -> None:
     from KrakenOS.UI.services.source_illumination_rays_overlay import build_illumination_marker_rays_overlay
 
-    starts = np.array([[0.0, 0.0, 0.0], [1.0, 2.0, 3.0], [5.0, 0.0, 0.0]])
-    ends = np.array([[0.0, 0.0, 10.0], [1.0, 2.0, 13.0], [5.0, 0.0, 20.0]])
-    spec = build_illumination_marker_rays_overlay(starts, ends)
-    if spec is None:
-        failures.append("PURE: valid stub segments produced no spec")
-        return
-    if spec.get("kind") != "illumination_marker_rays":
-        failures.append(f"PURE: wrong kind {spec.get('kind')!r}")
-    pts = np.asarray(spec.get("points"))
-    lines = np.asarray(spec.get("lines"))
-    if pts.shape != (6, 3):
-        failures.append(f"PURE: expected 6 points (2 per segment), got {pts.shape}")
-    if lines.size != 9 or int(spec.get("drawn", 0)) != 3 or int(spec.get("total", 0)) != 3:
-        failures.append(f"PURE: expected 3 segments / 9 line ints, got drawn={spec.get('drawn')} lines={lines.size}")
+    def _rec(sx, sy, sz, hits):
+        return {"source_x": sx, "source_y": sy, "source_z": sz, "hits": [{"x": h[0], "y": h[1], "z": h[2]} for h in hits]}
 
-    # zero-span + non-finite dropped
-    if build_illumination_marker_rays_overlay(np.zeros((1, 3)), np.zeros((1, 3))) is not None:
-        failures.append("PURE: a zero-length segment must be dropped")
-    if build_illumination_marker_rays_overlay(np.array([[0.0, 0.0, 0.0]]), np.array([[np.nan, 0.0, 5.0]])) is not None:
-        failures.append("PURE: a non-finite segment must be dropped")
+    # A traced ray that REFLECTS: origin -> hit -> hit (3 vertices). A ray with one distant hit is also kept.
+    records = [
+        _rec(0.0, 0.0, 0.0, [(0.0, 0.0, 10.0), (5.0, 0.0, 15.0)]),  # reflected (3-vertex polyline)
+        _rec(1.0, 0.0, 0.0, [(1.0, 0.0, 8.0)]),
+    ]
+    spec = build_illumination_marker_rays_overlay(records)
+    if spec is None or spec.get("kind") != "illumination_marker_rays":
+        failures.append("PURE: valid traced records produced no spec")
+        return
+    pts = np.asarray(spec.get("points"))
+    if pts.shape[0] != 5 or int(spec.get("drawn", 0)) != 2 or int(spec.get("total", 0)) != 2:
+        failures.append(f"PURE: expected 5 vertices / 2 polylines, got points={pts.shape} drawn={spec.get('drawn')}")
+
+    # source-aperture collapse (a dot at the emitter) + non-finite dropped
+    if build_illumination_marker_rays_overlay([_rec(0.0, 0.0, 0.0, [(0.0, 0.0, 0.0)])]) is not None:
+        failures.append("PURE: a ray collapsed at the source (zero span) must be dropped")
+    if build_illumination_marker_rays_overlay([_rec(0.0, 0.0, 0.0, [(np.nan, 0.0, 9.0)])]) is not None:
+        failures.append("PURE: a non-finite ray must be dropped")
 
     # subsample cap respected
-    n = 50
-    s = np.zeros((n, 3))
-    e = np.tile([0.0, 0.0, 10.0], (n, 1))
-    capped = build_illumination_marker_rays_overlay(s, e, max_rays=10)
-    if capped is None or int(capped.get("drawn", 0)) != 10 or int(capped.get("total", 0)) != n:
+    many = [_rec(0.0, 0.0, 0.0, [(0.0, 0.0, 10.0)]) for _ in range(50)]
+    capped = build_illumination_marker_rays_overlay(many, max_rays=10)
+    if capped is None or int(capped.get("drawn", 0)) != 10 or int(capped.get("total", 0)) != 50:
         failures.append(f"PURE: subsample cap not respected (drawn={None if capped is None else capped.get('drawn')})")
 
 
@@ -178,22 +187,6 @@ def _check_behaviour(failures: list[str], notes: list[str]) -> None:
                 "(0266: the marker must not drive the imaging trace)"
             )
 
-        # The overlay spec is drawable and leaves the imaging trace state untouched.
-        sentinel_rays = object()
-        sentinel_bundle = object()
-        app.last_rays = sentinel_rays
-        app._last_scene_bundle = sentinel_bundle
-        spec = app.illumination_marker_rays_overlay_spec(None, None)
-        if not spec or spec.get("kind") != "illumination_marker_rays":
-            failures.append("BEHAVIOUR: marker-only overlay spec was not drawable")
-        elif int(spec.get("drawn", 0)) < 1:
-            failures.append("BEHAVIOUR: marker-only overlay spec drew 0 emission rays")
-        if app.last_rays is not sentinel_rays or app._last_scene_bundle is not sentinel_bundle:
-            failures.append(
-                "BEHAVIOUR: building the emission overlay mutated the imaging trace state "
-                "(last_rays / _last_scene_bundle) -- 0266 REGRESSION"
-            )
-
         # (2) Mixed scene: marker builder keeps only the marker; imaging keeps only the deliberate source.
         app.layout_scene_source_specs = [_deliberate_spec(), _marker_spec(row_index=1)]
         mb2, _ = app._build_illumination_marker_bundles(0.55)
@@ -207,7 +200,7 @@ def _check_behaviour(failures: list[str], notes: list[str]) -> None:
             failures.append("BEHAVIOUR: a marker-free scene must yield no emission overlay")
 
         if not failures:
-            notes.append("behaviour OK: marker-only -> emission bundle + 0 imaging bundles, imaging state untouched; mixed 1/1")
+            notes.append("behaviour OK: marker-only -> emission bundle + 0 imaging bundles; mixed 1/1; marker-free -> none")
     finally:
         try:
             app.destroy()
@@ -257,9 +250,13 @@ def _check_binding(failures: list[str], notes: list[str]) -> None:
         if not faces:
             failures.append("BINDING: promoted optical solid exposed no faces")
             return
-        face_id = str(faces[0].get("face_id", "") or "").strip()
-        app.assign_optical_solid_face_function(row_index, face_id, "Uncoated", direct_context=True)
-        if not app.create_illumination_source_at_face(row_index, face_id=face_id):
+        # Make a few faces reflective so the isolated marker trace is genuinely non-sequential (the rays
+        # must reflect). Mark a DIFFERENT face as the illumination source, aimed INTO the solid.
+        for f in faces[:3]:
+            app.assign_optical_solid_face_function(row_index, str(f.get("face_id", "") or ""), "Full Reflecting", direct_context=True)
+        illum_face_id = str(faces[-1].get("face_id", "") or "").strip()
+        app.assign_optical_solid_face_function(row_index, illum_face_id, "Uncoated", direct_context=True)
+        if not app.create_illumination_source_at_face(row_index, face_id=illum_face_id, aim="inward"):
             failures.append("BINDING: create_illumination_source_at_face returned no source id")
             return
 
@@ -272,11 +269,34 @@ def _check_binding(failures: list[str], notes: list[str]) -> None:
             failures.append(
                 f"BINDING: the emission was not sized to the full face -- radius {radius:.2f} <= the stored 2 mm disk"
             )
-        spec = app.illumination_marker_rays_overlay_spec(None, None)
+
+        system = app.build_system()
+        # 0266 isolation: the isolated marker trace must NOT touch the imaging scene state.
+        sentinel_rays = object()
+        sentinel_bundle = object()
+        app.last_rays = sentinel_rays
+        app._last_scene_bundle = sentinel_bundle
+        spec = app.illumination_marker_rays_overlay_spec(system, None)
+        if app.last_rays is not sentinel_rays or app._last_scene_bundle is not sentinel_bundle:
+            failures.append("BINDING: the isolated marker trace mutated imaging state (last_rays/_last_scene_bundle) -- 0266 REGRESSION")
         if not spec or int(spec.get("drawn", 0)) < 1:
-            failures.append("BINDING: a real marked face produced no drawable emission overlay")
+            failures.append("BINDING: a real marked face produced no drawable TRACED emission overlay")
         else:
-            notes.append(f"binding OK: face {face_id} floods full-surface emission (radius {radius:.1f} mm, {spec['drawn']} rays)")
+            # REFLECTION: at least one drawn polyline has >2 vertices (origin + >=2 hits = a bend/reflection),
+            # proving the emission is traced THROUGH the scene, not drawn as a straight stub.
+            lines = np.asarray(spec.get("lines"), dtype=np.int64)
+            reflected = False
+            k = 0
+            while k < lines.size:
+                cnt = int(lines[k])
+                if cnt > 2:
+                    reflected = True
+                    break
+                k += 1 + cnt
+            if not reflected:
+                failures.append("BINDING: no traced emission ray reflected (every polyline is a single segment) -- rays are not traced through the scene")
+            else:
+                notes.append(f"binding OK: face {illum_face_id} floods full-surface emission that REFLECTS (radius {radius:.1f} mm, {spec['drawn']} rays); imaging state untouched")
     finally:
         try:
             app.destroy()

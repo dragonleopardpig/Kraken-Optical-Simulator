@@ -455,6 +455,12 @@ class TracePreviewService:
                 # sequential Mirror chain; trace it sequentially regardless of the tilted-mirror
                 # off-axis classification (a non-seq trace of the folded specs reaches 0 rays).
                 trace_state = {**trace_state, "use_nonseq": False, "use_folded": False, "active": "Sequential"}
+            elif getattr(self.editor, "_force_nonseq_preview_trace", False):
+                # bugs/0270: the additive illumination-marker EMISSION is a second source flooding a marked
+                # face -- geometrically NON-sequential (it reflects through the scene) no matter what mode the
+                # imaging trace resolved to. Force NsTraceLoop for the isolated marker trace so the marked-face
+                # rays propagate + reflect (a sequential launch stops them at S0).
+                trace_state = {**trace_state, "use_nonseq": True, "use_folded": False, "active": "Non-sequential"}
             sampling_mode = str(self.editor.__dict__.get("_active_preview_sampling_mode", "") or "ui_preview")
             launch_metadata = self._launch_metadata_for_trace(trace_state, sampling_mode=sampling_mode)
 

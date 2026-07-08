@@ -3692,13 +3692,13 @@ class ThreeDSceneToolsMixin:
 
     def illumination_marker_rays_overlay_spec(self, system, scene_bundle, *, wavelength=None):
         """Build the additive full-surface illumination-EMISSION overlay for face-bound markers, or None
-        (bugs/0267). Lazy + signature-cached + render-only (0166): it draws the SOURCE emission -- a
-        straight ray per sampled point on the marked face, out along its launch direction, flooding the
-        whole face -- built purely from the marker launch bundles. It does NOT trace through the optics
-        (illumination refracting/scattering onto the detector is the Stage-3 coupling; a mid-system face
-        source stops at S0 in the imaging trace), and it never touches ``last_rays`` / ``_last_scene_bundle``
-        so the imaging image-plane / detector / optical axis stay fixed (bugs/0266). ``system`` /
-        ``scene_bundle`` are unused today but kept for signature parity with the sibling overlays."""
+        (bugs/0267 + bugs/0270). Lazy + signature-cached. It runs its OWN isolated trace -- a marked face is
+        excluded from the imaging trace (bugs/0266), so its rays are traced fresh into a SEPARATE keeper (and
+        REFLECT through the scene like real illumination) whose records never touch ``last_rays`` /
+        ``_last_scene_bundle``. The imaging image-plane / detector / optical axis therefore stay fixed on the
+        object-driven trace. ``scene_bundle`` is unused today but kept for signature parity."""
+        if system is None:
+            return None
         if wavelength is None:
             try:
                 wavelength = float(self._current_wavelength())
@@ -3719,42 +3719,48 @@ class ThreeDSceneToolsMixin:
         cache = self.__dict__.get("_illumination_marker_rays_overlay_cache")
         if signature is not None and isinstance(cache, tuple) and len(cache) == 2 and cache[0] == signature:
             return cache[1]
-        spec = self._compute_illumination_marker_rays_overlay_spec(float(wavelength))
+        spec = self._compute_illumination_marker_rays_overlay_spec(system, float(wavelength))
         if signature is not None:
             self._illumination_marker_rays_overlay_cache = (signature, spec)
         return spec
 
-    def _compute_illumination_marker_rays_overlay_spec(self, wavelength: float):
+    def _compute_illumination_marker_rays_overlay_spec(self, system, wavelength: float):
+        # Never trace during the async imaging-trace capture/replay window (bugs/0223): our launch bundles
+        # would pollute the captured imaging bundles. The overlay recomputes on the next refresh.
+        if (
+            self.__dict__.get("_preview_trace_bundle_capture") is not None
+            or self.__dict__.get("_preview_trace_bundle_replay") is not None
+        ):
+            return None
         try:
             bundles, sources = self._build_illumination_marker_bundles(wavelength)
         except Exception:
             return None
         if not bundles:
             return None
-        starts: list[np.ndarray] = []
-        ends: list[np.ndarray] = []
-        for bundle, source in zip(bundles, sources):
-            try:
-                x, y, z, l_dir, m_dir, n_dir = (np.asarray(part, dtype=float) for part in bundle)
-            except Exception:
-                continue
-            if x.size == 0:
-                continue
-            origins = np.column_stack([x, y, z])
-            dirs = np.column_stack([l_dir, m_dir, n_dir])
-            norms = np.linalg.norm(dirs, axis=1, keepdims=True)
-            norms[norms < 1e-9] = 1.0
-            dirs = dirs / norms
-            # Emission-ray length scales with the emitting face so the flood reads relative to its
-            # own aperture (a big face throws long rays, a small face short ones).
-            radius = float((getattr(source, "settings", None) or {}).get("radius", 2.0))
-            length = max(6.0 * radius, 10.0)
-            starts.append(origins)
-            ends.append(origins + dirs * length)
-        if not starts:
+        try:
+            rays_illum = Kos.raykeeper(system)
+        except Exception:
+            return None
+        # Force the isolated marker trace non-sequential (bugs/0270): a face flood is a second source that
+        # reflects through the scene. The flag is read via the trace service's ``.editor`` (== this editor).
+        # Restore afterwards so the imaging trace's own mode resolution is untouched.
+        prior_force = self.__dict__.get("_force_nonseq_preview_trace", False)
+        self.__dict__["_force_nonseq_preview_trace"] = True
+        try:
+            self._trace_preview_bundles(system, rays_illum, wavelength, bundles, bundle_sources=sources)
+        except Exception:
+            return None
+        finally:
+            self.__dict__["_force_nonseq_preview_trace"] = prior_force
+        try:
+            records = self._isolated_ray_analysis_records(system, rays_illum)
+        except Exception:
+            return None
+        if not records:
             return None
         try:
-            return build_illumination_marker_rays_overlay(np.vstack(starts), np.vstack(ends))
+            return build_illumination_marker_rays_overlay(records)
         except Exception:
             return None
 

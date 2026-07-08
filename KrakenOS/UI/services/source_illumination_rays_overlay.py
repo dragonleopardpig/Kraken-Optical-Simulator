@@ -234,9 +234,34 @@ def build_source_illumination_rays_overlay(
     }
 
 
+def _marker_record_polyline(record, min_span):
+    """World-coord polyline for one TRACED illumination-marker ray: its source origin followed by each
+    surface hit -- so the REFLECTED path shows, not just a launch stub. None when degenerate. The span
+    gate is axis-AGNOSTIC (bbox diagonal), so a face emitting along ANY axis is kept and only rays that
+    collapse at the source aperture (a dot at the emitter) are dropped."""
+    try:
+        start = (
+            float(record.get("source_x", 0.0)),
+            float(record.get("source_y", 0.0)),
+            float(record.get("source_z", 0.0)),
+        )
+    except Exception:
+        return None
+    points = [start]
+    for hit in (record.get("hits") or []):
+        points.append(
+            (float(hit.get("x", np.nan)), float(hit.get("y", np.nan)), float(hit.get("z", np.nan)))
+        )
+    arr = np.asarray(points, dtype=float)
+    if arr.shape[0] < 2 or not np.all(np.isfinite(arr)):
+        return None
+    if float(np.linalg.norm(arr.max(axis=0) - arr.min(axis=0))) < float(min_span):
+        return None
+    return arr
+
+
 def build_illumination_marker_rays_overlay(
-    starts,
-    ends,
+    records,
     *,
     color=ILLUM_MARKER_RAY_COLOR,
     max_rays=ILLUM_RAY_MAX_PER_CLASS,
@@ -244,40 +269,31 @@ def build_illumination_marker_rays_overlay(
     min_span=ILLUM_MARKER_RAY_MIN_SPAN_MM,
 ):
     """Bake the additive full-surface EMISSION from a marked CAD/STL face into one emission-coloured
-    line set (bugs/0267): a straight segment per sampled ray, from its origin on the face out along its
-    launch direction. This is the SOURCE emission -- honest source physics (the face flooding rays
-    across its whole surface) -- NOT a through-system trace (illumination refracting/scattering onto
-    the detector is the Stage-3 coupling; a mid-system face source stops at S0 in the imaging trace).
-    ``starts`` / ``ends`` are (N,3) world-coord arrays. Returns a spec dict (points (N,3) + VTK line
-    cells + colour + counts) or None when nothing is drawable."""
-    starts = np.asarray(starts, dtype=float)
-    ends = np.asarray(ends, dtype=float)
-    if starts.ndim != 2 or starts.shape[1] < 3 or starts.shape != ends.shape or starts.shape[0] < 1:
+    polyline set (bugs/0267 + bugs/0270): each ray is its TRACED path -- origin on the face + every surface
+    hit -- so the rays REFLECT through the scene like real illumination (verified: a mid-system face source
+    propagates + reflects in a non-sequential scene; the earlier 'Stop @ S0' was a bare-scene artifact).
+    Isolated from the imaging trace, so it never touches the image plane / detector / optical axis (0266).
+    Returns a spec dict (points (N,3) + VTK line cells + colour + counts) or None when nothing is drawable."""
+    if not records:
         return None
-    seg = np.stack([starts[:, :3], ends[:, :3]], axis=1)  # (N, 2, 3)
-    finite = np.all(np.isfinite(seg), axis=(1, 2))
-    spans = np.linalg.norm(seg[:, 1, :] - seg[:, 0, :], axis=1)
-    keep = finite & (spans >= float(min_span))
-    seg = seg[keep]
-    if seg.shape[0] < 1:
-        return None
-    total = int(seg.shape[0])
     rng = np.random.default_rng(int(seed))
-    if max_rays is not None and seg.shape[0] > int(max_rays):
-        idx = rng.choice(seg.shape[0], int(max_rays), replace=False)
-        seg = seg[idx]
-    drawn = int(seg.shape[0])
-    points = seg.reshape(-1, 3)  # (2*drawn, 3)
-    cells = np.empty((drawn, 3), dtype=np.int64)
-    cells[:, 0] = 2
-    cells[:, 1] = np.arange(0, 2 * drawn, 2, dtype=np.int64)
-    cells[:, 2] = np.arange(1, 2 * drawn, 2, dtype=np.int64)
-    lines = cells.reshape(-1)
+    polylines = []
+    for record in records:
+        arr = _marker_record_polyline(record, min_span)
+        if arr is not None:
+            polylines.append(arr)
+    if not polylines:
+        return None
+    total = len(polylines)
+    drawn = _subsample(polylines, max_rays, rng)
+    points, lines = _merge_polylines(drawn)
+    if points.shape[0] < 2 or lines.size < 3:
+        return None
     return {
         "kind": "illumination_marker_rays",
         "points": points,
         "lines": lines,
         "color": tuple(float(c) for c in color),
-        "total": total,
-        "drawn": drawn,
+        "total": int(total),
+        "drawn": int(len(drawn)),
     }

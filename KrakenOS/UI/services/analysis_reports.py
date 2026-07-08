@@ -780,6 +780,37 @@ class AnalysisReportsMixin:
                 pass
         return self._collect_ray_analysis_records()
 
+    def _isolated_ray_analysis_records(self, system, rays) -> list[dict[str, object]]:
+        """Per-ray analysis records for an ISOLATED trace (the additive illumination-marker emission,
+        bugs/0267 + bugs/0270) that must NOT disturb the imaging scene state. Unlike
+        ``_ray_analysis_records_for_trace`` this NEVER writes ``self._last_scene_bundle`` -- so the imaging
+        image-plane / detector / optical-axis derivation stays fixed on the object-driven trace (bugs/0266
+        preserved) even though the marker rays are traced (and reflect) for display. Returns [] on failure."""
+        if rays is None or system is None:
+            return []
+        try:
+            preview_bundle_count = self.__dict__.get("_preview_field_bundle_count")
+            preview_ray_count = self.__dict__.get("_preview_field_ray_count")
+            field_count = max(
+                1,
+                int(preview_bundle_count if preview_bundle_count is not None else self._current_field_count()),
+            )
+            ray_count_per_field = max(1, int(preview_ray_count if preview_ray_count is not None else 1))
+            bundle = build_scene_bundle(
+                rows=self.rows,
+                system=system,
+                rays=rays,
+                sources=self._collect_scene_sources(wavelength=self._current_wavelength()),
+                field_count=field_count,
+                ray_count_per_field=ray_count_per_field,
+                source_row_order=normalize_source_row_order(
+                    getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT)
+                ),
+            )
+            return scene_bundle_ray_analysis_records(bundle) or []
+        except Exception:
+            return []
+
     def _active_ray_analysis_records(self) -> list[dict[str, object]]:
         return self._ray_analysis_records_for_trace(system=self.last_system, rays=self.last_rays)
 
