@@ -45,30 +45,14 @@ class Open3DTopControlsPanel:
         ttk.Label(view_toolbar, text="View").pack(side="left", padx=(0, 6))
         pack_command_button(view_toolbar, "Refresh", command=self.inspector.refresh_from_editor)
         pack_command_button(view_toolbar, "Snapshot", command=self.inspector.save_snapshot, padx=(8, 0))
-        ttk.Label(view_toolbar, text="Camera").pack(side="left", padx=(10, 4))
-        # All 6 cardinal viewports (+/-PLANE = looking AT the plane
-        # FROM the +/- normal direction), plus an Iso default at the
-        # front. "+YZ" puts the camera on +X side looking -X; "-YZ"
-        # puts it on the -X side; etc.
-        for label, preset in (
-            ("Iso", "iso"),
-            ("+YZ", "+yz"),
-            ("-YZ", "-yz"),
-            ("+XY", "+xy"),
-            ("-XY", "-xy"),
-            ("+XZ", "+xz"),
-            ("-XZ", "-xz"),
-        ):
-            pack_command_button(
-                view_toolbar,
-                label,
-                width=max(4, len(label)),
-                command=lambda value=preset: self.inspector.set_camera_preset(value),
-                padx=(2, 0),
-            )
-        # bugs/0231: user-selectable ISO up-axis. Which WORLD axis points up in the Iso
-        # view (the other two carry the diagonal horizontal spread). Picking one applies
-        # the Iso view immediately; the plain "Iso" button also uses the current choice.
+        # Camera-nav cleanup: the cardinal + Iso camera-preset buttons and the +-90
+        # rotate buttons were removed from this toolbar -- the Nav Cube is the single
+        # camera-navigation control now (its faces/corners drive set_camera_preset's
+        # presets; its roll arrows drive the view roll). What stays is the "Iso up"
+        # axis chooser (bugs/0231), which the Nav Cube has no equivalent for: which
+        # WORLD axis points up in the Iso view (the other two carry the diagonal
+        # horizontal spread). Picking one applies the Iso view immediately; the Nav
+        # Cube's corner-Iso views also use the current choice.
         iso_up_menu = create_popup_menu(view_toolbar)
         for axis_label, axis_value in (("Y up (default)", "y"), ("Z up", "z"), ("X up", "x")):
             iso_up_menu.add_radiobutton(
@@ -79,20 +63,6 @@ class Open3DTopControlsPanel:
             )
         pack_menubutton(view_toolbar, "Iso up ▾", iso_up_menu, padx=(4, 0))
         self.inspector._open3d_iso_up_menu = iso_up_menu
-        # bugs/0158/0159: swing the whole view 90 degrees per click -- FreeCAD's
-        # navigation-cube "rotate" arrows. The axis is view-aware (rotate_camera_view):
-        # an oblique/Iso view turntables about the view-up (two clicks views it from
-        # the OPPOSITE side, NW-facing-SE -> SE-facing-NW); a face-on plane view rolls
-        # about the sight line (the axis into the monitor) so the plane spins in place.
-        ttk.Label(view_toolbar, text="Rotate").pack(side="left", padx=(10, 4))
-        for label, angle in (("↺", -90), ("↻", 90)):
-            pack_command_button(
-                view_toolbar,
-                label,
-                width=3,
-                command=lambda value=angle: self.inspector.rotate_camera_view(value),
-                padx=(2, 0),
-            )
         pack_commit_checkbutton(
             view_toolbar,
             "Show rays",

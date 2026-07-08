@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Display-free guard for bugs/0158+0159+0228: the rotate-view toolbar buttons spin
-the whole view 90 degrees per click, forward and reverse, about the SIGHT LINE --
-the axis going straight INTO the monitor (``camera.Roll``) -- in EVERY view.
+"""Display-free guard for bugs/0158+0159+0228: rotating the view spins the whole
+picture 90 degrees per click, forward and reverse, about the SIGHT LINE -- the axis
+going straight INTO the monitor (``camera.Roll``) -- in EVERY view. (The dedicated
++-90 toolbar buttons were later retired; the Nav Cube's roll arrows drive this now.)
 
 History of the contract:
   0158: "click a rotate button ... rotate the whole scene 90 degree" -- first cut
@@ -31,9 +32,11 @@ records ``Azimuth`` / ``Roll`` calls:
   F. It never calls ``OrthogonalizeViewUp``.
   G. No renderer / no active camera -> a safe no-op (no rotation, no render).
   H. If the rotation raises, the method returns BEFORE the refit/render.
-  I. Source contract -- ``build_view_toolbar`` wires both rotate buttons to
-     ``rotate_camera_view``; the method source calls ``.Roll(`` and calls
-     NEITHER ``.Azimuth(`` nor ``.OrthogonalizeViewUp(``.
+  I. Source contract -- ``rotate_camera_view`` source calls ``.Roll(`` and calls
+     NEITHER ``.Azimuth(`` nor ``.OrthogonalizeViewUp(``; and (the +-90 toolbar
+     buttons having been retired) the Nav Cube's roll arrows own view rotation now:
+     ``_apply_navigation_cube_step`` rolls +-45 about the sight line (``camera.Roll``)
+     for its roll_ccw/roll_cw steps.
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_navigation_cube_rotate
@@ -237,7 +240,6 @@ def run_checks() -> "tuple[bool, list[str]]":
 
     # --- I: source contract -------------------------------------------------------
     from KrakenOS.UI.open3d_inspector import Kraken3DInspector
-    from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
 
     method_src = inspect.getsource(Kraken3DInspector.rotate_camera_view)
     if ".Roll(" not in method_src:
@@ -249,14 +251,17 @@ def run_checks() -> "tuple[bool, list[str]]":
         )
     if ".OrthogonalizeViewUp(" in method_src:
         failures.append("I FAIL: rotate_camera_view calls OrthogonalizeViewUp")
-    toolbar_src = inspect.getsource(Open3DTopControlsPanel.build_view_toolbar)
-    if "rotate_camera_view(value)" not in toolbar_src:
-        failures.append("I FAIL: build_view_toolbar does not wire the rotate_camera_view buttons")
-    for needle, which in ((", -90)", "reverse"), (", 90)", "forward")):
-        if needle not in toolbar_src:
-            failures.append(
-                f"I FAIL: build_view_toolbar lacks the {which} rotate angle ({needle.strip(', )')})"
-            )
+    # The +-90 rotate buttons were retired from build_view_toolbar; the Nav Cube's two
+    # roll arrows own view rotation now. Assert the cube's step handler rolls +-45 about
+    # the sight line (camera.Roll) for roll_ccw/roll_cw -- the same roll-not-turntable
+    # contract the old toolbar buttons carried.
+    nav_step_src = inspect.getsource(Kraken3DInspector._apply_navigation_cube_step)
+    for needle, which in (('"roll_ccw"', "CCW"), ('"roll_cw"', "CW")):
+        if needle not in nav_step_src:
+            failures.append(f"I FAIL: _apply_navigation_cube_step lacks the {which} roll arrow ({needle})")
+    for needle, which in (("camera.Roll(45.0)", "CCW"), ("camera.Roll(-45.0)", "CW")):
+        if needle not in nav_step_src:
+            failures.append(f"I FAIL: nav-cube {which} roll arrow does not call {needle}")
 
     return (not failures), failures
 
@@ -264,12 +269,12 @@ def run_checks() -> "tuple[bool, list[str]]":
 def main() -> int:
     passed, failures = run_checks()
     if not passed:
-        print("[FAIL] bugs/0158+0159+0228 rotate-view buttons (roll about the into-the-monitor axis)")
+        print("[FAIL] bugs/0158+0159+0228 rotate-view roll (roll about the into-the-monitor axis)")
         for item in failures:
             print(f"  - {item}")
         return 1
     print(
-        "[PASS] bugs/0228: the rotate-view buttons ROLL every view about the sight line "
+        "[PASS] bugs/0228: rotating the view ROLLs every view about the sight line "
         "(the axis into the monitor); the sight line is invariant and 4x90 returns to start"
     )
     return 0
