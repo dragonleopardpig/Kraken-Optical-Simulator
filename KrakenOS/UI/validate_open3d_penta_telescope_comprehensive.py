@@ -11594,6 +11594,37 @@ def phase_233_face_illumination_source(
     return result
 
 
+def phase_234_analysis_overlay_label_placement(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The illumination heatmap/rays legend (and every field-aberration overlay legend) queues into ONE
+    grouped billboard. It used to anchor just below the figure's top edge and grow DOWNWARD, draping the
+    multi-line block back over the detector -- the user flagged it (20260708_161012, "the text label
+    overlap the underlying figure, can space out?"). The legend now anchors just ABOVE the figure edge and
+    grows UPWARD (bottom-justified). `validate_open3d_analysis_overlay_label_placement` is a display-free
+    guard: GEOMETRY on the pure anchor helper (canonical + tilted-camera + no-screen-axes fallback: the
+    anchor clears the figure top edge along screen-up with margin, keeps a rightward bias, lifts only
+    slightly along the plane normal; degenerate reach stays finite) and WIRING (the drawing method
+    delegates to the helper and flips the block to bottom vertical justification)."""
+    result = PhaseResult(
+        name="Phase 234: analysis-overlay legend anchors above the figure and grows upward (no overlap)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_analysis_overlay_label_placement import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"analysis-overlay-label guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("analysis-overlay-label phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11872,6 +11903,7 @@ def main() -> int:
             phase_231_source_illumination_overlay,
             phase_232_source_illumination_rays,
             phase_233_face_illumination_source,
+            phase_234_analysis_overlay_label_placement,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

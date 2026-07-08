@@ -12428,11 +12428,32 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
 
+    @staticmethod
+    def _analysis_overlay_label_anchor(center, normal, sright, sup, reach):
+        """World anchor for the grouped analysis-overlay legend. Sits just ABOVE the on-plane
+        figure's top edge (``reach`` ~ the image/figure radius) with a modest rightward bias,
+        so the block -- drawn bottom-justified, GROWING UPWARD -- clears the detector/image
+        figure instead of overlapping it (flag 20260708_161012: "the text label overlap the
+        underlying figure, can space out?"). Pure geometry so it can be checked display-free."""
+        center = np.asarray(center, dtype=float).reshape(3)
+        n_hat = np.asarray(normal, dtype=float).reshape(3)
+        n_norm = float(np.linalg.norm(n_hat))
+        n_hat = n_hat / n_norm if n_norm > 1e-12 else np.array([0.0, 0.0, 1.0])
+        reach = float(reach)
+        if not np.isfinite(reach) or reach <= 0.0:
+            reach = 1.0
+        standoff = max(reach * 0.02, 0.4)
+        if sright is not None and sup is not None:
+            sright = np.asarray(sright, dtype=float).reshape(3)
+            sup = np.asarray(sup, dtype=float).reshape(3)
+            return center + sright * (reach * 0.6) + sup * (reach * 1.15) + n_hat * standoff
+        return center + np.array([0.0, 1.0, 0.0]) * (reach * 1.15) + n_hat * standoff
+
     def _add_grouped_analysis_overlay_label(self) -> int:
-        """Draw ONE combined billboard stacking every queued analysis-overlay label, at the
-        image-plane top-right corner (out of the way of the spots/grid). The block grows
-        downward as more overlays are enabled -- one label, expanding, instead of N
-        overlapping ones (the user's request)."""
+        """Draw ONE combined billboard stacking every queued analysis-overlay label, anchored
+        just ABOVE the image-plane figure's top edge and GROWING UPWARD as more overlays are
+        enabled -- one label, expanding away from the figure, instead of N overlapping ones and
+        instead of the block draping back over the detector (flag 20260708_161012)."""
         if self._renderer is None or vtkBillboardTextActor3D is None:
             return 0
         sections = getattr(self, "_analysis_overlay_label_sections", None) or []
@@ -12465,10 +12486,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         reach = img_radius if img_radius > 1e-6 else float(scene_radius)
         if not np.isfinite(reach) or reach <= 0.0:
             reach = max(float(scene_radius), 1.0)
-        if sright is not None and sup is not None:
-            anchor = center + sright * (reach * 1.05) + sup * (reach * 0.95) + n_hat * max(reach * 0.02, 0.4)
-        else:
-            anchor = center + np.array([0.0, 1.0, 0.0]) * reach + n_hat * max(reach * 0.02, 0.4)
+        anchor = self._analysis_overlay_label_anchor(center, n_hat, sright, sup, reach)
         text = "\n\n".join(sections)
         try:
             actor = vtkBillboardTextActor3D()
@@ -12486,7 +12504,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 pass
             try:
                 text_prop.SetJustificationToLeft()
-                text_prop.SetVerticalJustificationToTop()
+                # Bottom-justified so the multi-line block grows UPWARD, away from the figure
+                # its anchor sits above (flag 20260708_161012 -- no more label/figure overlap).
+                text_prop.SetVerticalJustificationToBottom()
             except Exception:
                 pass
             text_prop.SetColor(0.12, 0.14, 0.18)
