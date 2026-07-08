@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-08T05:05:49+00:00",
+  "generated_at": "2026-07-08T06:04:38+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -232,7 +232,8 @@
     "228": "pass",
     "229": "pass",
     "230": "pass",
-    "231": "pass"
+    "231": "pass",
+    "232": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -465,6 +466,7 @@
     "228": "nav cube corners use the symmetric diagonal standard (ISO wide-screen dropped)",
     "229": "nav cube matches FreeCAD (hexagon corners + concentric roll arrows)",
     "230": "nav cube corner roll snaps to the nearest of six clean orientations (FreeCAD getNearestOrientation)",
-    "231": "coaxial area-LED dark edges drape on the detector as a smooth illumination heatmap"
+    "231": "coaxial area-LED dark edges drape on the detector as a smooth illumination heatmap",
+    "232": "coaxial-LED LED->BS->object rays split green=reaches FOV / red=clipped at the BS-exit stop"
   }
 }

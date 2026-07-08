@@ -11523,6 +11523,43 @@ def phase_231_source_illumination_overlay(
     return result
 
 
+def phase_232_source_illumination_rays(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Feature A drapes the dark edges on the sensor (phase 231); THIS phase pins the MECHANISM behind
+    them -- the REAL traced LED->beam-splitter->object rays coloured by fate: green reach the FOV, red
+    terminate early at the foreshortened BS-exit stop (the 55*cos45~39 clip that darkens the two
+    fold-axis FOV edges). `validate_open3d_source_illumination_rays` is a display-free guard: PURE
+    GEOMETRY (synthetic records split reaching/clipped by the reach flags, drop the source-plane dots,
+    filter a foreign role, well-formed VTK line cell-arrays, clip plane = clipped-terminal median z,
+    and -- load-bearing -- the fold axis is named by the SURVIVOR-aperture envelope, so a fixture whose
+    clipped rays spread WIDER on the perpendicular axis than the fold axis they are cut on still
+    resolves to the fold axis X); INTEGRATION on the real coaxial-LED BS scene
+    (`source_illumination_rays_overlay_spec` returns BOTH reaching and clipped rays, clip plane at the
+    BS-exit stop ~75 clearly upstream of the ~130 detector, fold axis X, CACHED per bugs/0166); and the
+    render-only contract (`refresh_scene` reads `show_source_illumination_rays_var` + calls
+    `_add_source_illumination_ray_overlays` without rebuilding the system, and the Overlays menu
+    exposes the toggle).
+    """
+    result = PhaseResult(
+        name="Phase 232: coaxial-LED LED->BS->object rays split green=reaches FOV / red=clipped at the BS-exit stop"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_source_illumination_rays import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"source-illumination-rays guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("source-illumination-rays phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11799,6 +11836,7 @@ def main() -> int:
             phase_229_nav_cube_freecad_style,
             phase_230_nav_cube_corner_local_up,
             phase_231_source_illumination_overlay,
+            phase_232_source_illumination_rays,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
