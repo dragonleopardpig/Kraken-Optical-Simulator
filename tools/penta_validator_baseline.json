@@ -229,7 +229,8 @@
     "225": "pass",
     "226": "pass",
     "227": "pass",
-    "228": "pass"
+    "228": "pass",
+    "229": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -459,6 +460,7 @@
     "225": "nav cube is a clickable 26-facet chamfered cube",
     "226": "nav cube highlights the hovered facet",
     "227": "nav cube arrows highlight on hover",
-    "228": "nav cube corners reproduce the ISO view per octant"
+    "228": "nav cube corners reproduce the ISO view per octant",
+    "229": "nav cube matches FreeCAD (hexagon corners + concentric roll arrows)"
   }
 }

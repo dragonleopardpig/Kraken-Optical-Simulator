@@ -11429,6 +11429,33 @@ def phase_228_nav_cube_corner_iso(
     return result
 
 
+def phase_229_nav_cube_freecad_style(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0253: the nav cube matches FreeCAD -- each corner is cut into a big clickable
+    HEXAGON (so faces become octagons, edges rectangles) instead of a small triangle, and the
+    two orange roll handles are big arcs CONCENTRIC with the cube (flanking the Up arrow,
+    heads pointing down along the top edges) rather than small 'ears' on top.
+    `validate_open3d_nav_cube_freecad_style` pins the facet shapes (8/4/6 over 48 verts), the
+    canonical (half,p,q)-permutation corner hexagon, that the hexagon is >=2x the old triangle,
+    and the concentric roll-arrow source contract. Display-free."""
+    result = PhaseResult(name="Phase 229: nav cube matches FreeCAD (hexagon corners + concentric roll arrows)")
+    try:
+        from KrakenOS.UI.validate_open3d_nav_cube_freecad_style import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"nav-cube-freecad-style guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("nav-cube-freecad-style phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11702,6 +11729,7 @@ def main() -> int:
             phase_226_nav_cube_hover_highlight,
             phase_227_nav_cube_arrow_hover,
             phase_228_nav_cube_corner_iso,
+            phase_229_nav_cube_freecad_style,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

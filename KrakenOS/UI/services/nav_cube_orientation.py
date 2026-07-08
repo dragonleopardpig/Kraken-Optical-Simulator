@@ -168,23 +168,38 @@ def _newell_normal(points, idxs) -> np.ndarray:
     return n
 
 
-def chamfered_cube_facets(half: float = 0.5, face_fraction: float = 0.72):
+def chamfered_cube_facets(
+    half: float = 0.5,
+    face_fraction: float = 0.74,
+    corner_fraction: float = 0.44,
+):
     """Geometry for a FreeCAD-style CHAMFERED navigation cube.
 
-    A cube of half-extent ``half`` with its 12 edges bevelled and 8 corners cut, so the
-    surface is exactly 26 flat facets -- one per orientation: 6 face quads, 12 edge quads,
-    8 corner triangles, sharing 24 vertices. ``face_fraction`` in (0, 1) is how much of each
-    face the square facet keeps (the rest becomes the chamfer): 1.0 -> a sharp cube, smaller
-    -> fatter bevels.
+    A cube of half-extent ``half`` with both its 12 edges AND 8 corners bevelled, so the
+    surface is exactly 26 flat facets -- one per orientation: 6 face OCTAGONS, 12 edge
+    RECTANGLES, 8 corner HEXAGONS, sharing 48 vertices. Cutting the corners (not just the
+    edges) turns each corner into a bigger, easier-to-click hexagon and each face into an
+    octagon -- exactly FreeCAD's navigation cube (bugs/0253).
 
-    Returns ``(points, facets)``: ``points`` is a list of 24 ``(x, y, z)`` vertices and
+    Two knobs in (0, 1), with ``corner_fraction < face_fraction``:
+      * ``face_fraction`` -- the octagon's flat half-width along an axis is
+        ``p = face_fraction * half`` (bigger -> larger faces, thinner chamfers).
+      * ``corner_fraction`` -- the corner cut starts ``q = corner_fraction * half`` from each
+        axis (smaller -> bigger corner hexagons / longer octagon diagonal cuts).
+
+    Every vertex is a signed permutation of the magnitudes ``(half, p, q)`` (all distinct), so
+    there are exactly ``3! * 2**3 = 48`` of them, each shared by one face, one edge and one
+    corner facet.
+
+    Returns ``(points, facets)``: ``points`` is a list of 48 ``(x, y, z)`` vertices and
     ``facets`` a list of ``(point_indices, sign)`` in FACE, then EDGE, then CORNER order.
     ``sign`` is the ``{-1,0,1}^3`` triple :func:`orientation_pose` maps to a camera pose, so a
     picked facet's orientation is a direct table lookup (no threshold on the hit point). Each
     facet is wound so its polygon normal points outward (along ``sign``).
     """
     A = float(half)
-    f = A * float(face_fraction)
+    p = A * float(face_fraction)      # octagon flat half-width (was the square half-width)
+    q = A * float(corner_fraction)    # corner-cut inset (starts the octagon's diagonal cut)
 
     points: list[tuple[float, float, float]] = []
     index: dict[tuple, int] = {}
@@ -204,58 +219,60 @@ def chamfered_cube_facets(half: float = 0.5, face_fraction: float = 0.72):
             idxs = list(reversed(idxs))
         return list(idxs)
 
+    def at(a, va, o0, v0, o1, v1) -> int:
+        """Vertex with axis ``a`` = ``va`` and the other two axes ``o0``/``o1`` = ``v0``/``v1``."""
+        coord = [0.0, 0.0, 0.0]
+        coord[a] = va
+        coord[o0] = v0
+        coord[o1] = v1
+        return vid(coord)
+
     facets: list[tuple[list[int], tuple[int, int, int]]] = []
     axes = (0, 1, 2)
 
-    # --- 6 FACES: the axis-'a' face at a = sa*A keeps its four (+-f, +-f) corners --
+    # --- 6 FACES: the axis-'a' face at a = sa*A is an OCTAGON (square of half-width p with
+    #     its four corners cut back to the inset q) ---------------------------------------
     for a in axes:
-        others = [ax for ax in axes if ax != a]
+        o0, o1 = [ax for ax in axes if ax != a]
         for sa in (1, -1):
-            quad = []
-            for s0, s1 in ((1, 1), (1, -1), (-1, -1), (-1, 1)):
-                coord = [0.0, 0.0, 0.0]
-                coord[a] = sa * A
-                coord[others[0]] = s0 * f
-                coord[others[1]] = s1 * f
-                quad.append(vid(coord))
+            octa = [
+                at(a, sa * A, o0, p, o1, q), at(a, sa * A, o0, q, o1, p),
+                at(a, sa * A, o0, -q, o1, p), at(a, sa * A, o0, -p, o1, q),
+                at(a, sa * A, o0, -p, o1, -q), at(a, sa * A, o0, -q, o1, -p),
+                at(a, sa * A, o0, q, o1, -p), at(a, sa * A, o0, p, o1, -q),
+            ]
             sign = [0, 0, 0]
             sign[a] = sa
-            facets.append((outward(quad, sign), tuple(sign)))
+            facets.append((outward(octa, sign), tuple(sign)))
 
-    # --- 12 EDGES: the bevel bridging face (a, sa) and face (c, sc), free axis b ---
+    # --- 12 EDGES: the bevel bridging face (a, sa) and face (c, sc), free axis b -- a
+    #     RECTANGLE with two vertices on each face at the octagons' shared flat edge -------
     for a, c in ((0, 1), (0, 2), (1, 2)):
         b = ({0, 1, 2} - {a, c}).pop()
         for sa in (1, -1):
             for sc in (1, -1):
-                quad = []
-                for sb in (1, -1):  # two vertices on face a
-                    coord = [0.0, 0.0, 0.0]
-                    coord[a] = sa * A
-                    coord[c] = sc * f
-                    coord[b] = sb * f
-                    quad.append(vid(coord))
-                for sb in (-1, 1):  # two vertices on face c
-                    coord = [0.0, 0.0, 0.0]
-                    coord[c] = sc * A
-                    coord[a] = sa * f
-                    coord[b] = sb * f
-                    quad.append(vid(coord))
+                rect = [
+                    at(a, sa * A, c, sc * p, b, q), at(a, sa * A, c, sc * p, b, -q),
+                    at(c, sc * A, a, sa * p, b, -q), at(c, sc * A, a, sa * p, b, q),
+                ]
                 sign = [0, 0, 0]
                 sign[a] = sa
                 sign[c] = sc
-                facets.append((outward(quad, sign), tuple(sign)))
+                facets.append((outward(rect, sign), tuple(sign)))
 
-    # --- 8 CORNERS: the triangle cutting the (sx, sy, sz) vertex ------------------
+    # --- 8 CORNERS: the (sx, sy, sz) vertex is cut into a HEXAGON -- its 6 vertices are the
+    #     signed permutations of (A, p, q), alternating a face-octagon diagonal edge with an
+    #     edge-bevel edge around the corner -------------------------------------------------
     for sx in (1, -1):
         for sy in (1, -1):
             for sz in (1, -1):
-                tri = [
-                    vid((sx * A, sy * f, sz * f)),
-                    vid((sx * f, sy * A, sz * f)),
-                    vid((sx * f, sy * f, sz * A)),
+                hexa = [
+                    vid((sx * A, sy * p, sz * q)), vid((sx * A, sy * q, sz * p)),
+                    vid((sx * p, sy * q, sz * A)), vid((sx * q, sy * p, sz * A)),
+                    vid((sx * q, sy * A, sz * p)), vid((sx * p, sy * A, sz * q)),
                 ]
                 sign = (sx, sy, sz)
-                facets.append((outward(tri, sign), sign))
+                facets.append((outward(hexa, sign), sign))
 
     return points, facets
 

@@ -48,7 +48,10 @@ from KrakenOS.UI.services.nav_cube_orientation import (
 STEP_KINDS = ("roll_ccw", "roll_cw", "az_left", "az_right", "el_up", "el_down")
 
 # --- Cube visuals (flagged 2026-07-07: labels too big, faces too low-contrast) -----
-_FACE_FRACTION = 0.72       # chamfered-cube face keep-fraction (see chamfered_cube_facets)
+_FACE_FRACTION = 0.74       # chamfered-cube octagon-face keep-fraction (see chamfered_cube_facets)
+# bugs/0253 -- corners are hexagons (FreeCAD style), not triangles: the corner cut starts this
+# fraction of the half-extent from each axis; smaller => bigger, easier-to-click corner hexagon.
+_CORNER_FRACTION = 0.44
 # Annotated-cube letters. vtkAnnotatedCubeActor uses ONE scale for every face word, sized
 # to the FULL cube face -- but the flat facet is only _FACE_FRACTION of it and the words
 # differ in length, so the scale must clear the LONGEST word: 6-char BOTTOM. At 0.15 the 5-
@@ -78,6 +81,14 @@ _CUBE_FRAME_SCALE = 1.22
 # ~1.28 from centre); the camera parallel scale is fitted to this each render so the
 # arrows never clip whatever the corner viewport's pixel aspect turns out to be.
 _ARROW_FIT_HALF = 1.42
+# bugs/0253 -- roll arrows are big arcs CONCENTRIC with the cube (roll spins about the
+# sight line = screen centre), flanking the Up arrow at the upper-left/right and capped by a
+# tangential arrowhead pointing down along the top edge -- FreeCAD's rotation handles, not the
+# old small "ears" perched on the cube. Radius sits just outside the cube silhouette.
+_ROLL_ARROW_RADIUS = 1.18
+_ROLL_ARROW_WIDTH = 0.17
+_ROLL_ARROW_HEAD_LEN = 0.30
+_ROLL_ARROW_HEAD_HALF = 0.20
 
 
 def _import_vtk():
@@ -209,7 +220,9 @@ class NavigationCube:
         straight to a camera pose without any hit-point threshold.
         """
         vtk = self._vtk
-        verts, facets = chamfered_cube_facets(half=0.5, face_fraction=_FACE_FRACTION)
+        verts, facets = chamfered_cube_facets(
+            half=0.5, face_fraction=_FACE_FRACTION, corner_fraction=_CORNER_FRACTION
+        )
         points = vtk["Points"]()
         for (x, y, z) in verts:
             points.InsertNextPoint(float(x), float(y), float(z))
@@ -318,15 +331,17 @@ class NavigationCube:
             self._arrow_actors.append((actor, kind))
             self._remember_arrow_color(actor, orbit_color)
 
-        # Roll arrows: a SHORT curved arc capped by a tangential arrowhead (a rotation
-        # glyph, not a near-full loop), flanking the top like FreeCAD's. (cx, cy, a0, a1)
-        # in degrees -- the arc sweeps a0 -> a1 (~110 deg) and the head caps the a1 end.
+        # Roll arrows: two big arcs CONCENTRIC with the cube (roll spins about the sight
+        # line = the screen centre), flanking the Up arrow in the upper-left / upper-right and
+        # capped by a tangential arrowhead pointing DOWN along the top edge -- FreeCAD's
+        # rotation handles (bugs/0253). (a0, a1) in degrees; the arc sweeps a0 -> a1 and the
+        # head caps the a1 end: left arc CCW -> head down-left, right arc CW -> head down-right.
         roll_specs = {
-            "roll_ccw": (-0.46, 0.88, 18.0, 128.0),
-            "roll_cw": (0.46, 0.88, 162.0, 52.0),
+            "roll_ccw": (100.0, 160.0),   # upper-left, sweeps CCW, head points down-left
+            "roll_cw": (80.0, 20.0),      # upper-right, sweeps CW, head points down-right
         }
-        for kind, (cx, cy, a0, a1) in roll_specs.items():
-            actor = self._roll_arrow_actor(cx, cy, a0, a1, roll_color)
+        for kind, (a0, a1) in roll_specs.items():
+            actor = self._roll_arrow_actor(a0, a1, roll_color)
             renderer.AddActor(actor)
             picker.AddPickList(actor)
             self._arrow_actors.append((actor, kind))
@@ -358,22 +373,23 @@ class NavigationCube:
         actor.PickableOn()
         return actor
 
-    def _roll_arrow_actor(self, cx, cy, a0_deg, a1_deg, color):
-        """A curved rotation glyph: an arc ribbon (built as triangles) capped by a
-        tangential arrowhead at the ``a1`` end, so the orange roll handles read as
-        'rotate' rather than as a plain triangle."""
+    def _roll_arrow_actor(self, a0_deg, a1_deg, color):
+        """A big rotation glyph CONCENTRIC with the cube (centred on the origin = screen
+        centre): an arc ribbon (built as triangles) capped by a tangential arrowhead at the
+        ``a1`` end, so the orange roll handles read as 'rotate about the sight line' the way
+        FreeCAD's do (bugs/0253) rather than as small 'ears' on the cube."""
         vtk = self._vtk
-        radius, width = 0.28, 0.10
+        radius, width = _ROLL_ARROW_RADIUS, _ROLL_ARROW_WIDTH
         r_out, r_in = radius + width / 2.0, radius - width / 2.0
-        n = 14
+        n = 20
         a0, a1 = np.radians(a0_deg), np.radians(a1_deg)
         points = vtk["Points"]()
         outer, inner = [], []
         for i in range(n + 1):
             t = a0 + (a1 - a0) * (i / n)
             ct, st = np.cos(t), np.sin(t)
-            outer.append(points.InsertNextPoint(cx + r_out * ct, cy + r_out * st, 0.0))
-            inner.append(points.InsertNextPoint(cx + r_in * ct, cy + r_in * st, 0.0))
+            outer.append(points.InsertNextPoint(r_out * ct, r_out * st, 0.0))
+            inner.append(points.InsertNextPoint(r_in * ct, r_in * st, 0.0))
         poly = vtk["PolyData"]()
         poly.SetPoints(points)
         poly.Allocate(2 * n + 1)
@@ -384,8 +400,8 @@ class NavigationCube:
         # straddles the arc radially.
         ct1, st1 = np.cos(a1), np.sin(a1)
         tan = a1 + (np.pi / 2.0 if a1 >= a0 else -np.pi / 2.0)
-        bx, by = cx + radius * ct1, cy + radius * st1
-        head_len, head_half = 0.20, 0.13
+        bx, by = radius * ct1, radius * st1
+        head_len, head_half = _ROLL_ARROW_HEAD_LEN, _ROLL_ARROW_HEAD_HALF
         apex = points.InsertNextPoint(bx + head_len * np.cos(tan), by + head_len * np.sin(tan), 0.0)
         base1 = points.InsertNextPoint(bx + head_half * ct1, by + head_half * st1, 0.0)
         base2 = points.InsertNextPoint(bx - head_half * ct1, by - head_half * st1, 0.0)

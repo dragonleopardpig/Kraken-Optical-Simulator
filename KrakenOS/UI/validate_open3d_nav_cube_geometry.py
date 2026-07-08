@@ -15,8 +15,9 @@ makes the chamfer clickable, so a future edit can't silently break the facet<->s
 contract or fall back to the old opaque-unit-cube picking.
 
 What it checks (no display required):
-  A. chamfered_cube_facets(0.5, face_fraction) yields exactly 24 shared vertices and
-     26 facets.
+  A. chamfered_cube_facets(0.5, ...) yields exactly 48 shared vertices and 26 facets,
+     shaped like FreeCAD's cube: 6 face OCTAGONS, 12 edge RECTANGLES, 8 corner HEXAGONS
+     (bugs/0253 -- the corners are cut into big clickable hexagons, not small triangles).
   B. The facets partition into 6 faces + 12 edges + 8 corners by orientation kind.
   C. The 26 facet signs are exactly the 26 ORIENTATION_KEYS -- every orientation is
      covered once, none duplicated.
@@ -51,7 +52,11 @@ from KrakenOS.UI.services.nav_cube_orientation import (
     orientation_pose,
 )
 
-_FACE_FRACTION = 0.72  # must match nav_cube_widget._FACE_FRACTION
+_FACE_FRACTION = 0.74    # must match nav_cube_widget._FACE_FRACTION
+_CORNER_FRACTION = 0.44  # must match nav_cube_widget._CORNER_FRACTION (bugs/0253)
+
+# FreeCAD-style facet shapes: a face is an octagon, an edge a rectangle, a corner a hexagon.
+_KIND_SIDES = {"face": 8, "edge": 4, "corner": 6}
 
 
 def _newell(points, idxs) -> np.ndarray:
@@ -69,13 +74,23 @@ def _newell(points, idxs) -> np.ndarray:
 def run_checks():
     """Return ``(passed, notes)`` -- notes is a list of failure strings (empty on pass)."""
     failures: list[str] = []
-    points, facets = chamfered_cube_facets(half=0.5, face_fraction=_FACE_FRACTION)
+    points, facets = chamfered_cube_facets(
+        half=0.5, face_fraction=_FACE_FRACTION, corner_fraction=_CORNER_FRACTION
+    )
 
-    # --- A: 24 vertices, 26 facets -------------------------------------------------
-    if len(points) != 24:
-        failures.append(f"A FAIL: expected 24 shared vertices, got {len(points)}")
+    # --- A: 48 vertices, 26 facets, FreeCAD facet shapes (8 / 4 / 6) ---------------
+    if len(points) != 48:
+        failures.append(f"A FAIL: expected 48 shared vertices, got {len(points)}")
     if len(facets) != 26:
         failures.append(f"A FAIL: expected 26 facets, got {len(facets)}")
+    for idxs, sign in facets:
+        kind = orientation_kind(sign)
+        want_sides = _KIND_SIDES.get(kind)
+        if want_sides is not None and len(idxs) != want_sides:
+            failures.append(
+                f"A FAIL: {kind} facet {tuple(int(s) for s in sign)} has {len(idxs)} sides, "
+                f"expected {want_sides} (face=octagon, edge=rectangle, corner=hexagon)"
+            )
 
     # --- B: 6 faces + 12 edges + 8 corners ----------------------------------------
     kinds = {"face": 0, "edge": 0, "corner": 0, "none": 0}
