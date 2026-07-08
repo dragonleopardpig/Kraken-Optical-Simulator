@@ -76,6 +76,14 @@ class LayoutSettingsService:
         setattr(self.editor, name, value)
 
     def _collect_layout_settings(self) -> dict[str, object]:
+        # Face-bound illumination sources cache their world origin/direction; refresh them from the
+        # live face pose before this snapshot packs "scene_sources", so a bound emitter tracks the
+        # element it sits on across moves/rotations. No-op unless a source carries a face anchor.
+        if hasattr(self, "resync_face_bound_scene_sources"):
+            try:
+                self.resync_face_bound_scene_sources()
+            except Exception:
+                pass
         le = _layout_module()
         OPERAND_REGISTRY = le.OPERAND_REGISTRY
         PUPIL_PATTERN_DEFAULT = le.PUPIL_PATTERN_DEFAULT

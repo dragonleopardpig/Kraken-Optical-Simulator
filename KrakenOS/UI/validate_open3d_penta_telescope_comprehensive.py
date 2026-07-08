@@ -11560,6 +11560,40 @@ def phase_232_source_illumination_rays(
     return result
 
 
+def phase_233_face_illumination_source(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Phases 231/232 draw the coaxial illumination once a source carries role="illumination"; THIS phase
+    pins the ergonomic path that lets a USER author that source (bugs/0264, the follow-up flagged in
+    bugs/0263). Marking a CAD/STL face as an illumination source (right-click "Set as Illumination Source"
+    or the face-roles dialog button) creates a real face-anchored SceneSource3D: origin at the face
+    centroid, aimed along the OUTWARD face normal, tagged with the face anchor so it tracks the element on
+    moves. `validate_open3d_face_illumination_source` is a display-free guard: WIRING (the editor exposes
+    create_illumination_source_at_face + resync_face_bound_scene_sources; _collect_layout_settings fires
+    the resync; the right-click menu + face dialog offer the entry points) and BINDING on the real promoted
+    prism STEP (role/physical/enabled + anchor keys + origin==centroid + unit outward direction; re-marking
+    updates in place; a row move is tracked by _collect_layout_settings; the settings round-trip yields an
+    active physical illumination emitter, so the rays overlay has something to draw).
+    """
+    result = PhaseResult(
+        name="Phase 233: mark a CAD/STL face as an illumination source (face-anchored emitter tracks moves)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_face_illumination_source import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"face-illumination-source guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("face-illumination-source phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11837,6 +11871,7 @@ def main() -> int:
             phase_230_nav_cube_corner_local_up,
             phase_231_source_illumination_overlay,
             phase_232_source_illumination_rays,
+            phase_233_face_illumination_source,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

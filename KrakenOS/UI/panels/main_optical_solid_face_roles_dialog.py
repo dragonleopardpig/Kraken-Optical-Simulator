@@ -1810,6 +1810,34 @@ class MainOpticalSolidFaceRolesDialog:
             validation_var.set(f'Saved {face_id}; opening Scene Source Manager with this face preselected.')
             self.open_scene_source_manager(aim_row_index=int(row_index), aim_face_id=face_id)
 
+        def use_selected_face_as_illumination_source() -> None:
+            index = selected_record_index()
+            if index is None:
+                validation_var.set('Select one CAD/STL face first.')
+                return
+            parsed = parse_form()
+            if parsed is None:
+                return
+            record = records[index]
+            record.update(parsed)
+            refreshed = le.normalize_optical_solid_face_record(record)
+            record.clear()
+            record.update(refreshed)
+            face_id = str(record.get('face_id', '') or '').strip()
+            if not face_id:
+                validation_var.set('Selected face has no face ID.')
+                return
+            refresh_tree(f'face_{index}')
+            render_face_preview(index)
+            if not save_roles():
+                return
+            source_id = self.create_illumination_source_at_face(int(row_index), face_id=face_id)
+            if not source_id:
+                validation_var.set(f'Could not bind an illumination source to {face_id} (face anchor unavailable).')
+                return
+            validation_var.set(f'Bound illumination source {source_id} to {face_id}; the face now emits (toggle "Illum rays" in Open 3D).')
+            self._refresh_open_3d_views(force_retrace=True)
+
         def copy_summary() -> None:
             temp_row = le.SurfaceRow(**asdict(self.rows[row_index]))
             temp_row.advanced = dict(temp_row.advanced or {})
@@ -1880,6 +1908,7 @@ class MainOpticalSolidFaceRolesDialog:
         ttk.Button(footer, text='Open 3D Placement', command=open_placement_view).pack(side='left')
         ttk.Button(footer, text='Native Surface Props', command=lambda: self.open_advanced_surface_editor(row_index)).pack(side='left', padx=(8, 0))
         ttk.Button(footer, text='Use Face As Source Target', command=use_selected_face_as_source_target).pack(side='left', padx=(8, 0))
+        ttk.Button(footer, text='Set as Illumination Source', command=use_selected_face_as_illumination_source).pack(side='left', padx=(8, 0))
         ttk.Button(footer, text='Save Roles', command=save_roles).pack(side='right')
         ttk.Button(footer, text='Copy Summary', command=copy_summary).pack(side='right', padx=(0, 8))
         ttk.Button(footer, text='Close', command=window.destroy).pack(side='right', padx=(0, 8))

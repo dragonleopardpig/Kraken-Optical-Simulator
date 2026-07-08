@@ -176,6 +176,15 @@ class Open3DFaceAssignmentService:
                         face_id=picked_face_id,
                     ),
                 )
+            menu.add_command(
+                label="Set as Illumination Source",
+                command=lambda idx=int(row_index), picked_face_id=face_id, picked_point=point[:3].copy(), picked_normal=normal: self._assign_row_face_illumination_from_context(
+                    idx,
+                    picked_point,
+                    picked_normal,
+                    face_id=picked_face_id,
+                ),
+            )
             menu.add_separator()
             self.append_element_context_actions(menu, row_index=int(row_index))
         elif row_index is not None and self.editor._is_any_promoted_optical_solid_row(self.editor.rows[int(row_index)]):
@@ -486,6 +495,61 @@ class Open3DFaceAssignmentService:
             counts_after=self._debug_actor_counts(),
         )
         self.status_var.set(message)
+
+    def _assign_row_face_illumination_from_context(
+        self,
+        row_index: int,
+        point_world,
+        normal_world,
+        *,
+        face_id: str = "",
+    ) -> None:
+        """Right-click "Set as Illumination Source": bind a face-anchored illumination emitter to the
+        picked CAD/STL face and retrace so the "Illum rays" overlay lights up. A raw (unassigned) face
+        has no world-anchor record yet, so register it with the default face function first, then bind."""
+        le = _layout_module()
+        _short_error_message = le._short_error_message
+        refresh_sampling_mode = self._active_refresh_sampling_mode()
+        face_id = str(face_id or "").strip()
+        try:
+            source_id = self.editor.create_illumination_source_at_face(
+                int(row_index),
+                face_id=face_id,
+                point_world=point_world,
+                normal_world=normal_world,
+            )
+            if not source_id:
+                assigned = self.editor.assign_optical_solid_face_function_at_world_point(
+                    int(row_index),
+                    point_world,
+                    le.OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
+                    normal_world=normal_world,
+                    direct_context=True,
+                )
+                resolved_face_id = str((assigned or {}).get("face_id", "") or face_id).strip()
+                source_id = self.editor.create_illumination_source_at_face(
+                    int(row_index),
+                    face_id=resolved_face_id,
+                    point_world=point_world,
+                    normal_world=normal_world,
+                )
+        except Exception as exc:
+            self.status_var.set(f"Set as Illumination Source failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D illumination-source bind failed: {exc}")
+            return
+        if not source_id:
+            self.status_var.set(f"S{int(row_index)}: could not bind an illumination source to that face.")
+            return
+        self.editor._select_table_row(int(row_index))
+        self._stl_placement_dirty = True
+        try:
+            self.refresh_from_editor(sampling_mode=refresh_sampling_mode, force_retrace=True)
+            self.highlight_row(int(row_index))
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D refresh after illumination bind failed: {exc}")
+        self.status_var.set(
+            f"S{int(row_index)}: bound illumination source {source_id}. Toggle 'Illum rays' to see the emission."
+        )
 
     def _hide_step_overlay_from_context(self, label: str) -> None:
         """Hide a decoration STEP overlay (LED source / camera body) from the

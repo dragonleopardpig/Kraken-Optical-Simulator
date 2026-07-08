@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 import KrakenOS as Kos
+from KrakenOS.UI.optical_solid_metadata import optical_solid_face_marker_label
 from KrakenOS.UI.scene_geometry import SceneSource3D
 from KrakenOS.UI.scene_row_mapping import SOURCE_ROW_ORDER_DEFAULT, normalize_source_row_order
 from KrakenOS.UI.scene_source_analysis import (
@@ -682,6 +683,155 @@ class SourceModelingMixin:
         )
         return True
 
+    def _outward_face_normal(self, row_index: int, origin, normal) -> np.ndarray:
+        """Unit face normal flipped to point AWAY from the solid body centre, so a face-bound
+        emitter floods the scene rather than shining into the element it sits on."""
+        normal = np.asarray(normal, dtype=float).reshape(-1)[:3]
+        norm = float(np.linalg.norm(normal))
+        if not np.isfinite(norm) or norm <= 1e-12:
+            return np.asarray((0.0, 0.0, 1.0), dtype=float)
+        normal = normal / norm
+        try:
+            body_center = np.asarray(
+                self._surface_reference_world_point(int(row_index)), dtype=float
+            ).reshape(-1)[:3]
+        except Exception:
+            return normal
+        outward = np.asarray(origin, dtype=float).reshape(-1)[:3] - body_center
+        if float(np.dot(normal, outward)) < 0.0:
+            normal = -normal
+        return normal
+
+    def create_illumination_source_at_face(
+        self,
+        row_index: int,
+        *,
+        face_id: str = "",
+        point_world=None,
+        normal_world=None,
+        record_history: bool = True,
+    ) -> str | None:
+        """Bind a new illumination ``SceneSource3D`` to a CAD/STL face: origin at the face centroid,
+        aimed along the OUTWARD face normal (away from the solid body), tagged with the face anchor
+        (``face_anchor_row`` + ``face_anchor_face_id``) so it tracks the face on later moves. Re-marking
+        the SAME face updates the existing source in place instead of piling up duplicates. Returns the
+        source_id, or None when no CAD/STL face can be resolved at the pick."""
+        row_index = int(row_index)
+        face_key = str(face_id or "").strip()
+        face = self._scene_source_face_anchor_record(row_index, face_key) if face_key else None
+        if face is None and point_world is not None:
+            face = self.scene_source_face_anchor_at_world_point(row_index, point_world, normal_world)
+        if face is None:
+            status_var = self.__dict__.get("status_var")
+            if status_var is not None:
+                status_var.set("Set as Illumination Source failed: no CAD/STL face at that pick.")
+            return None
+        face_key = str(face.get("face_id", "") or face_key).strip()
+        face_label = optical_solid_face_marker_label(face)
+
+        origin = np.asarray(
+            face.get("anchor_world", face.get("centroid_world", (0.0, 0.0, 0.0))),
+            dtype=float,
+        ).reshape(-1)[:3]
+        normal = self._outward_face_normal(
+            row_index, origin, face.get("normal_world", (0.0, 0.0, 1.0))
+        )
+
+        specs = self._scene_source_specs_for_direct_editing()
+        geometry = {
+            "source_x": float(origin[0]),
+            "source_y": float(origin[1]),
+            "source_z": float(origin[2]),
+            "source_l": float(normal[0]),
+            "source_m": float(normal[1]),
+            "source_n": float(normal[2]),
+        }
+        existing = next(
+            (
+                index
+                for index, spec in enumerate(specs)
+                if "face_anchor_row" in spec
+                and self._source_spec_int(spec, "face_anchor_row", -1) == row_index
+                and str(spec.get("face_anchor_face_id", "") or "").strip() == face_key
+            ),
+            None,
+        )
+        if existing is not None:
+            spec = dict(specs[existing])
+            spec.update(geometry)
+            spec["role"] = "illumination"
+            spec["physical"] = True
+            spec["enabled"] = True
+            specs[existing] = spec
+            new_id = str(spec.get("source_id", "") or "")
+        else:
+            spec = self._default_scene_source_spec(len(specs))
+            spec.update(
+                {
+                    "source_id": f"illum_face:{row_index}:{face_key or 'auto'}",
+                    "name": f"Illumination @ R{row_index} face {face_label}",
+                    "role": "illumination",
+                    "physical": True,
+                    "enabled": True,
+                    "model": "Collimated disk source",
+                    "radius": 2.0,
+                    "cone_deg": 20.0,
+                    "ray_count": 400,
+                    "face_anchor_row": row_index,
+                    "face_anchor_face_id": face_key,
+                }
+            )
+            spec.update(geometry)
+            specs.append(spec)
+            specs = self._dedupe_scene_source_ids(specs)
+            new_id = str(specs[-1].get("source_id", "") or "")
+        self._apply_scene_source_row_action_specs(
+            specs,
+            record_history=record_history,
+            status=f"Illumination source bound to R{row_index} face {face_label}.",
+        )
+        return new_id
+
+    def resync_face_bound_scene_sources(self, *, system=None) -> bool:
+        """Refresh origin/direction of every scene source bound to a CAD/STL face so it tracks the
+        face's live world pose (the element may have moved/rotated since the source was created).
+        Geometry-only, history-free, mutated in place. No-op when no source carries a face anchor;
+        unresolvable faces (row deleted / face gone) keep their last-known snapshot. Returns True
+        when at least one source moved."""
+        specs = getattr(self, "layout_scene_source_specs", None)
+        if not specs:
+            return False
+        changed = False
+        for spec in specs:
+            if not isinstance(spec, dict) or "face_anchor_row" not in spec:
+                continue
+            row_index = self._source_spec_int(spec, "face_anchor_row", -1)
+            if row_index < 0:
+                continue
+            face_key = str(spec.get("face_anchor_face_id", "") or "").strip()
+            try:
+                origin = np.asarray(
+                    self._surface_reference_world_point(row_index, face_id=face_key, system=system),
+                    dtype=float,
+                ).reshape(-1)[:3]
+                normal = self._surface_reference_world_normal(row_index, face_id=face_key, system=system)
+            except Exception:
+                continue
+            normal = self._outward_face_normal(row_index, origin, normal)
+            geometry = {
+                "source_x": float(origin[0]),
+                "source_y": float(origin[1]),
+                "source_z": float(origin[2]),
+                "source_l": float(normal[0]),
+                "source_m": float(normal[1]),
+                "source_n": float(normal[2]),
+            }
+            for key, value in geometry.items():
+                if spec.get(key) != value:
+                    spec[key] = value
+                    changed = True
+        return changed
+
     @classmethod
     def _normalize_scene_source_specs(cls, value) -> list[dict[str, object]]:
         return normalize_scene_source_specs(value)
@@ -689,6 +839,13 @@ class SourceModelingMixin:
     @staticmethod
     def _source_spec_bool(spec: dict[str, object], key: str, default: bool) -> bool:
         return source_spec_bool(spec, key, default)
+
+    @staticmethod
+    def _source_spec_int(spec: dict[str, object], key: str, default: int) -> int:
+        try:
+            return int(round(source_spec_float(spec, key, float(default))))
+        except Exception:
+            return int(default)
 
     @staticmethod
     def _source_spec_float(spec: dict[str, object], keys, default: float = 0.0, *, minimum: float | None = None) -> float:
