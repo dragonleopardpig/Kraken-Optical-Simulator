@@ -10,7 +10,8 @@ This guard is display-free (pure numpy + a headless trace, no VTK). It pins:
 
   * PURE GEOMETRY (``build_source_illumination_rays_overlay``): synthetic records split into reaching
     (green) vs clipped (red) by the reach flags; degenerate source-plane dots are dropped; a foreign
-    ``source_role`` is filtered out; the merged VTK line cell-arrays are well formed; the clip plane
+    ``source_role`` is filtered out WHEN illumination rays exist; the merged VTK line cell-arrays are
+    well formed; the clip plane
     is the clipped-terminal median z; and -- the load-bearing one -- the FOLD AXIS is named by
     comparing the clipped terminals against the SURVIVOR aperture envelope, NOT by raw spread. The
     fixture deliberately makes the clipped rays spread WIDER on the perpendicular axis (they fill it)
@@ -18,6 +19,10 @@ This guard is display-free (pure numpy + a headless trace, no VTK). It pins:
     axis; the survivor-envelope test must still return the fold axis. The limiting BS-exit-stop clear
     aperture (Feature B1), read off the survivors, is a well-formed rectangle outline at the clip
     plane, NARROWER on the fold axis than across, and the clipped rays reach BEYOND it on the fold axis.
+  * ROLE FALLBACK: a scene whose LED ``source_role`` did NOT round-trip to the literal "illumination"
+    (blank / None / a different tag) must STILL draw the rays -- fall back to every traced ray rather
+    than collapse to None -- while staying dormant when the role DOES match. This is the live-app bug
+    (flags 20260708_1516..1519) where the heatmap rendered but this overlay drew nothing.
   * INTEGRATION on the real coaxial-LED BS scene: ``source_illumination_rays_overlay_spec`` returns
     BOTH reaching and clipped rays, the clip plane sits at the BS-exit stop (~75, clearly upstream of
     the ~130 detector), the fold axis is X (the foreshortened 55->39 axis), the stop aperture is
@@ -219,6 +224,55 @@ def _check_pure_geometry(failures: list[str]) -> None:
         failures.append("PURE: an all-degenerate record set did not return None")
 
 
+def _check_role_fallback(failures: list[str]) -> None:
+    """A user-built scene whose LED source role did NOT round-trip to the literal 'illumination' must
+    STILL draw the rays -- fall back to every traced ray rather than silently collapsing to None. This
+    is the live-app bug behind flags 20260708_1516..1519: the heatmap (Feature A, role-agnostic)
+    rendered while THIS overlay drew nothing, because the strict role gate matched no record. The
+    fallback must also stay DORMANT whenever some record DOES match the role -- the foreign imaging ray
+    in the fixture stays filtered -- so a normal tagged scene is unchanged."""
+    records, n_reach, n_clip = _synthetic_records()
+
+    # Dormancy: with the role present, the fallback must NOT fire -- the foreign 'imaging' ray stays
+    # out, so the tagged counts are exactly the illumination split (48/48), never 49/48.
+    tagged = sir.build_source_illumination_rays_overlay(records)
+    if tagged is None:
+        failures.append("FALLBACK: baseline (tagged) overlay is None -- fixture broken")
+        return
+    if int(tagged["reaching_total"]) != n_reach or int(tagged["clipped_total"]) != n_clip:
+        failures.append(
+            "FALLBACK: the fallback is NOT dormant when the role matches -- the foreign imaging ray "
+            f"leaked in (reaching {tagged['reaching_total']}!={n_reach} / clipped "
+            f"{tagged['clipped_total']}!={n_clip})"
+        )
+
+    # The bug: blank/foreign the role on every record. Each variant must still draw BOTH classes, not
+    # None, and never fewer rays than the role-gated path (the fallback sees >= as many records).
+    for blanker, label in ((lambda r: "", "''"), (lambda r: None, "None"), (lambda r: "led", "'led'")):
+        mangled = [dict(r) for r in records]
+        for r in mangled:
+            r["source_role"] = blanker(r)
+        spec = sir.build_source_illumination_rays_overlay(mangled)
+        if spec is None:
+            failures.append(
+                f"FALLBACK: role={label} collapsed the overlay to None instead of falling back to "
+                "all traced rays (the live-app 'Illum rays draws nothing' bug)"
+            )
+            continue
+        if not (int(spec["reaching_total"]) > 0 and int(spec["clipped_total"]) > 0):
+            failures.append(
+                f"FALLBACK: role={label} fell back but lost a class "
+                f"(reaching {spec['reaching_total']}, clipped {spec['clipped_total']})"
+            )
+        if (int(spec["reaching_total"]) < int(tagged["reaching_total"])
+                or int(spec["clipped_total"]) < int(tagged["clipped_total"])):
+            failures.append(
+                f"FALLBACK: role={label} drew FEWER rays than the tagged path "
+                f"({spec['reaching_total']}/{spec['clipped_total']} < "
+                f"{tagged['reaching_total']}/{tagged['clipped_total']})"
+            )
+
+
 def _check_integration(failures: list[str], notes: list[str]) -> None:
     editor, system, bundle = _build_coaxial_overlay(_TRACE_RAYS)
     if editor is None:
@@ -303,6 +357,7 @@ def run_checks() -> "tuple[bool, list[str]]":
     failures: list[str] = []
     notes: list[str] = []
     _check_pure_geometry(failures)
+    _check_role_fallback(failures)
     _check_integration(failures, notes)
     _check_source_contracts(failures)
     return (not failures), (failures + notes)

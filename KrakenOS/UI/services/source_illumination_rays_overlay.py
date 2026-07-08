@@ -139,16 +139,30 @@ def build_source_illumination_rays_overlay(
     if not records:
         return None
     rng = np.random.default_rng(int(seed))
-    reaching = []
-    clipped = []
-    for record in records:
-        if role is not None:
-            if str(record.get("source_role", "")).strip().lower() != str(role).strip().lower():
+
+    def _role_matches(record):
+        if role is None:
+            return True
+        return str(record.get("source_role", "")).strip().lower() == str(role).strip().lower()
+
+    def _split(selected):
+        reaching_arr, clipped_arr = [], []
+        for record in selected:
+            arr = _record_polyline(record, min_z_span)
+            if arr is None:
                 continue
-        arr = _record_polyline(record, min_z_span)
-        if arr is None:
-            continue
-        (reaching if _reaches_fov(record) else clipped).append(arr)
+            (reaching_arr if _reaches_fov(record) else clipped_arr).append(arr)
+        return reaching_arr, clipped_arr
+
+    # Prefer rays tagged with the illumination role, but if that yields nothing drawable -- a
+    # user-built scene whose LED source role did not round-trip to the literal "illumination" --
+    # fall back to every traced ray rather than silently drawing nothing. This matches Feature A's
+    # heatmap, which bins all detector hits role-agnostically. Without the fallback the overlay
+    # collapses to None the moment the role tag is absent/different (flags 20260708_1516..1519).
+    role_matched = [record for record in records if _role_matches(record)]
+    reaching, clipped = _split(role_matched)
+    if not reaching and not clipped and len(role_matched) < len(records):
+        reaching, clipped = _split(records)
     if not reaching and not clipped:
         return None
 
