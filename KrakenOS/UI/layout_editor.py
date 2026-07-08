@@ -776,6 +776,27 @@ def resolve_optical_solid_face_coating_for_face(face):
         return resolve_optical_solid_face_coating(face.get("coating"))
     return resolve_optical_solid_face_coating(face)
 
+
+def resolve_optical_solid_face_diffuse_scatter_for_face(face):
+    """Resolve a promoted-solid FACE record to a normalized DiffuseScatter settings dict when its function
+    is the 'Diffuse Scatter' role (bugs/0271), else None (no scatter -- the trace is unchanged, the additive
+    contract). A scatter face with no authored params falls back to DIFFUSE_SCATTER_DEFAULT_SETTINGS. This is
+    what wires a marked CAD face to the existing non-seq scatter engine at trace time (see
+    ``surface.OpticalSolidFaceDiffuseScatter`` + KrakenSys ``__OpticalSolidFaceInteraction`` / scatter loop)."""
+    if not isinstance(face, dict):
+        return None
+    function = _normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+    if function != "Diffuse Scatter":
+        return None
+    settings = face.get("diffuse_scatter")
+    if not isinstance(settings, dict) or not settings:
+        settings = DIFFUSE_SCATTER_DEFAULT_SETTINGS
+    normalized = _normalize_diffuse_scatter_settings(settings)
+    # Match the engine gate: no scatter when reflectance or sample_count is zero.
+    if not normalized or float(normalized.get("reflectance", 0.0)) <= 0.0 or int(normalized.get("sample_count", 0)) <= 0:
+        return None
+    return normalized
+
 from KrakenOS.UI.services.beam_scatter_metadata import (
     BEAM_SPLITTER_ADVANCED_ATTR,
     DIFFUSE_SCATTER_ADVANCED_ATTR,
@@ -2038,13 +2059,21 @@ def _build_system_from_specs(
         solid_faces = getattr(surface, "OpticalSolidFaces", None)
         if solid_faces:
             face_coatings: dict[str, tuple] = {}
+            face_scatter: dict[str, dict] = {}
             for face in normalize_optical_solid_face_metadata(solid_faces).get("faces", []) or []:
                 face_id = str(face.get("face_id", "") or "").strip()
                 resolved = resolve_optical_solid_face_coating_for_face(face)
                 if face_id and resolved is not None:
                     face_coatings[face_id] = resolved
+                scatter = resolve_optical_solid_face_diffuse_scatter_for_face(face)
+                if face_id and scatter is not None:
+                    face_scatter[face_id] = scatter
             if face_coatings:
                 surface.OpticalSolidFaceCoatingTables = face_coatings
+            # bugs/0271: per-face diffuse-scatter settings the non-seq trace applies via
+            # __OpticalSolidFaceInteraction, so a marked CAD face scatters like a Diffuse Object surface.
+            if face_scatter:
+                surface.OpticalSolidFaceDiffuseScatter = face_scatter
         # bugs/0021: a file-backed Solid_3d_stl whose cached mesh is missing on
         # this machine (a layout opened on another box without the CAD cache,
         # or one the user Skipped in the missing-assets dialog) must NOT reach

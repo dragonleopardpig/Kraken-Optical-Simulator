@@ -33,6 +33,7 @@ OPTICAL_SOLID_FACE_SIDE_VALUES = (
 )
 OPTICAL_SOLID_FACE_FUNCTION_DEFAULT = OPTICAL_SOLID_FACE_ROLE_DEFAULT
 OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT = "Transmit/Port"
+OPTICAL_SOLID_FACE_FUNCTION_SCATTER = "Diffuse Scatter"
 OPTICAL_SOLID_FACE_FUNCTION_VALUES = (
     OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
     OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT,
@@ -40,11 +41,16 @@ OPTICAL_SOLID_FACE_FUNCTION_VALUES = (
     "TIR",
     "Beam Splitter",
     "Absorber/Mechanical",
+    OPTICAL_SOLID_FACE_FUNCTION_SCATTER,
 )
 OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_UNCOATED = "Uncoated"
 OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_MIRROR = "Full Reflecting"
 OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_SPLITTER = "Partial Reflecting / Transmitting"
 OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ABSORB = "Absorbing / Mechanical"
+# bugs/0271: a REAL per-face optical interaction (unlike the illumination sentinels) -- a diffuse
+# scatterer (Lambertian / Oren-Nayar / Cosine-Lobe / BSDF). Wired to the trace at build time via a
+# per-face DiffuseScatter dict, so it is a genuine internal function value + UI<->internal mapping.
+OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_SCATTER = "Diffuse / Scatter Object"
 # bugs/0268 + bugs/0269: UI-ONLY sentinels for the Face Editor dropdown. Deliberately absent from the
 # internal VALUES + the UI<->internal maps, so they are not coatings -- normalize_optical_solid_face_function()
 # maps them to the default ("Unassigned") if they ever reach persistence. The Face Editor intercepts them
@@ -59,6 +65,7 @@ OPTICAL_SOLID_FACE_FUNCTION_UI_VALUES = (
     OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_MIRROR,
     OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_SPLITTER,
     OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ABSORB,
+    OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_SCATTER,
     OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION,
     OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION_OUTWARD,
 )
@@ -68,6 +75,7 @@ OPTICAL_SOLID_FACE_FUNCTION_UI_TO_INTERNAL = {
     OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_MIRROR: "Mirror",
     OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_SPLITTER: "Beam Splitter",
     OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ABSORB: "Absorber/Mechanical",
+    OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_SCATTER: OPTICAL_SOLID_FACE_FUNCTION_SCATTER,
 }
 OPTICAL_SOLID_FACE_FUNCTION_INTERNAL_TO_UI = {
     OPTICAL_SOLID_FACE_FUNCTION_DEFAULT: OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
@@ -76,6 +84,7 @@ OPTICAL_SOLID_FACE_FUNCTION_INTERNAL_TO_UI = {
     "TIR": OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_UNCOATED,
     "Beam Splitter": OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_SPLITTER,
     "Absorber/Mechanical": OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ABSORB,
+    OPTICAL_SOLID_FACE_FUNCTION_SCATTER: OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_SCATTER,
 }
 OPTICAL_SOLID_FACE_PORT_DEFAULT = "Auto"
 OPTICAL_SOLID_FACE_PORT_INPUT = "Input Port"
@@ -112,6 +121,7 @@ OPTICAL_SOLID_FACE_ROLE_COLORS = {
     "Mirror": (0.66, 0.70, 0.76),
     "Beam Splitter": (0.88, 0.18, 0.22),
     "Absorber/Mechanical": (0.12, 0.14, 0.18),
+    "Diffuse Scatter": (0.62, 0.36, 0.86),
 }
 OPTICAL_SOLID_VIRTUAL_PLANE_KIND_VALUES = (OPTICAL_SOLID_VIRTUAL_PLANE_KIND_SPLITTER,)
 OPTICAL_SOLID_VIRTUAL_PLANE_KIND_COLORS = {
@@ -430,6 +440,12 @@ def normalize_optical_solid_face_record(record: dict[str, object]) -> dict[str, 
     if coating_table:
         normalized["coating_table"] = coating_table
         normalized["coating_met"] = int(round(float_or_default(record.get("coating_met"), 0.0)))
+    # bugs/0271: a per-face diffuse-scatter settings dict, persisted ONLY when the face function is a
+    # "Diffuse Scatter" role. Stored RAW here (normalized at build/trace time) to avoid a circular import
+    # -- beam_scatter_metadata pulls in scatter_backend, and this module is lower-level.
+    diffuse_scatter = record.get("diffuse_scatter")
+    if isinstance(diffuse_scatter, dict) and diffuse_scatter:
+        normalized["diffuse_scatter"] = dict(diffuse_scatter)
     for key in (
         "component_face_id",
         "source_face_id",

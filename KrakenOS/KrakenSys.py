@@ -1248,6 +1248,17 @@ class system():
                     self._collect_face_coating_override = (entry[0], entry[1])
         except Exception:
             pass
+        # bugs/0271: per-face diffuse scatter (resolved at build into surface.OpticalSolidFaceDiffuseScatter,
+        # keyed by face_id) carried onto the override so the non-seq scatter loop spawns Lambertian/BRDF
+        # child rays off a marked CAD face, just like a Diffuse Object surface.
+        try:
+            face_scatter = getattr(self.SDT[int(surface_index)], "OpticalSolidFaceDiffuseScatter", None)
+            if isinstance(face_scatter, dict) and override["face_id"]:
+                scatter_entry = face_scatter.get(override["face_id"])
+                if isinstance(scatter_entry, dict) and scatter_entry:
+                    override["diffuse_scatter"] = scatter_entry
+        except Exception:
+            pass
         diagnostics = [
             str(item)
             for item in list(matched.get("diagnostics", []) or [])
@@ -1274,6 +1285,14 @@ class system():
                 override["external_reflection"] = True
         if function == "Absorber/Mechanical":
             override["force_absorption"] = True
+        if function == "Diffuse Scatter":
+            # bugs/0271: a diffuse scatterer is opaque (like the Diffuse Object MIRROR base) -- the parent
+            # ray reflects specularly and the scatter loop spawns the diffuse child rays. Without
+            # force_reflection the parent would refract THROUGH an opaque scatterer.
+            override["force_reflection"] = True
+            has_input_port = self.__OpticalSolidHasInputPort(world_faces, surface_index)
+            if not has_input_port:
+                override["external_reflection"] = True
         return override
 
 
@@ -2746,8 +2765,19 @@ class system():
             "split_mode": str(settings.get("split_mode", settings.get("mode", "Deterministic paths"))),
         }
 
-    def __DiffuseScatterSettings(self, j):
-        settings = getattr(self.SDT[j], "DiffuseScatter", None)
+    def __DiffuseScatterSettings(self, j, face_override=None):
+        # bugs/0271: a promoted-solid face marked "Diffuse Scatter" carries its own settings on the face
+        # override; it WINS over the surface-level DiffuseScatter (mirrors __BeamSplitterSettings), so a
+        # marked CAD face scatters like a Diffuse Object surface.
+        settings = None
+        if isinstance(face_override, dict):
+            face_function = normalize_optical_solid_face_function(face_override.get("function"), legacy_role=face_override.get("role"))
+            if face_function == "Diffuse Scatter":
+                candidate = face_override.get("diffuse_scatter")
+                if isinstance(candidate, dict) and candidate:
+                    settings = candidate
+        if settings is None:
+            settings = getattr(self.SDT[j], "DiffuseScatter", None)
         if not isinstance(settings, dict) or not settings:
             return None
         model = str(settings.get("model", "Lambertian") or "Lambertian").strip()
@@ -2891,6 +2921,14 @@ class system():
             settings = self.__DiffuseScatterSettings(j)
             if settings is not None and settings["reflectance"] > 0.0 and settings["sample_count"] > 0:
                 return True
+            # bugs/0271: a promoted-solid face marked "Diffuse Scatter" scatters via a per-face override
+            # (surface.OpticalSolidFaceDiffuseScatter, resolved + normalized at build). The entries are
+            # already normalized, so gate on them directly (mirrors __NsTraceHasDeterministicBeamSplitter).
+            face_scatter = getattr(self.SDT[j], "OpticalSolidFaceDiffuseScatter", None)
+            if isinstance(face_scatter, dict):
+                for entry in face_scatter.values():
+                    if isinstance(entry, dict) and float(entry.get("reflectance", 0.0)) > 0.0 and int(entry.get("sample_count", 0)) > 0:
+                        return True
         return False
 
     def __LambertianScatterDirections(self, incident, normal, settings):
@@ -4284,7 +4322,7 @@ class system():
                         self._collect_bulk_override = 1.0
                     else:
                         self.__ApplySnellReflectionInteractionOverride(trans_sign, Glass, N, Np, j)
-                    diffuse_settings = self.__DiffuseScatterSettings(j)
+                    diffuse_settings = self.__DiffuseScatterSettings(j, face_override=face_override)
                     can_scatter = (
                         diffuse_settings is not None
                         and diffuse_settings["reflectance"] > 0.0

@@ -11769,6 +11769,40 @@ def phase_238_face_illumination_direction(
     return result
 
 
+def phase_239_optical_solid_face_scatter(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The non-seq diffuse-scatter engine (Lambertian / Oren-Nayar / Cosine-Lobe / BSDF) existed only at the
+    row/surface level; a tooltip said it was "not wired on imported CAD faces yet". THIS phase pins the new
+    promoted-CAD-face role (bugs/0271, Stage 2): "Diffuse / Scatter Object" is a REAL internal function value
+    (unlike the illumination sentinels) that resolves at BUILD into surface.OpticalSolidFaceDiffuseScatter and
+    is carried onto the face override in KrakenSys.__OpticalSolidFaceInteraction, so the non-seq scatter loop
+    spawns Lambertian/BRDF child rays off a marked face -- exactly like a Diffuse Object surface.
+    `validate_optical_solid_face_scatter` is a display-free guard: METADATA (real internal value + UI label +
+    two-way map, so the dropdown selects it via the normal apply path), RESOLVER (scatter face -> normalized
+    settings, non-scatter -> None), BUILD (marking a face lands its settings on the surface map), PHYSICS (a
+    ray onto the face spawns sample_count /scatter branches, power == reflectance/sample_count), and ADDITIVE
+    (an Uncoated face spawns none). BUILD/PHYSICS SKIP without the STEP fixture.
+    """
+    result = PhaseResult(
+        name="Phase 239: a promoted CAD face marked Diffuse / Scatter Object scatters like a Diffuse Object surface"
+    )
+    try:
+        from KrakenOS.UI.validate_optical_solid_face_scatter import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"face-scatter guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("face-scatter phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12052,6 +12086,7 @@ def main() -> int:
             phase_236_illumination_marker_emission,
             phase_237_face_illumination_dropdown,
             phase_238_face_illumination_direction,
+            phase_239_optical_solid_face_scatter,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
