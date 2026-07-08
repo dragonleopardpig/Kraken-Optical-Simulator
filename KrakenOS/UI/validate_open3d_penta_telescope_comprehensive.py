@@ -11701,6 +11701,40 @@ def phase_236_illumination_marker_emission(
     return result
 
 
+def phase_237_face_illumination_dropdown(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The Face Editor showed a marked illumination face as "Absorbing" with no "Illumination Source"
+    dropdown option -- the illumination SceneSource3D and the face optical-function metadata were two
+    disjoint systems. THIS phase pins the bridge (bugs/0268): "Illumination Source" is a UI-only sentinel
+    in the function dropdown; selecting it binds a face illumination source (intercepted before the coating
+    apply, which would else reset the face to Unassigned), selecting a real coating while bound unbinds it,
+    and the dropdown preselects a bound marker instead of the underlying coating. The sentinel is absent
+    from the internal VALUES + the UI<->internal maps so it normalizes to the default if it ever persists.
+    `validate_open3d_face_illumination_dropdown` is a display-free guard: METADATA (sentinel in the UI
+    values + combobox alias, NOT in the internal maps, normalizes to default), WIRING (editor exposes the
+    reverse-lookup + unbind; the dialog references the sentinel, binds, unbinds on change-away, preselects a
+    bound marker), and BEHAVIOUR (reverse-lookup exact-match; unbind drops only the marker + is idempotent).
+    """
+    result = PhaseResult(
+        name="Phase 237: the Face Editor exposes + reflects the Illumination Source role"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_face_illumination_dropdown import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"face-illumination-dropdown guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("face-illumination-dropdown phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11982,6 +12016,7 @@ def main() -> int:
             phase_234_analysis_overlay_label_placement,
             phase_235_illumination_source_no_imaging_hijack,
             phase_236_illumination_marker_emission,
+            phase_237_face_illumination_dropdown,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

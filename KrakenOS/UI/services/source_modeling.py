@@ -797,6 +797,47 @@ class SourceModelingMixin:
         )
         return new_id
 
+    def face_bound_illumination_source_id(self, row_index: int, face_id: str) -> str | None:
+        """The source_id of the illumination marker bound to (row_index, face_id), or None (bugs/0268).
+        The reverse of ``create_illumination_source_at_face``'s in-place-update lookup, exposed so the Face
+        Editor can reflect a bound face as an "Illumination Source" and unbind it on change-away."""
+        row_index = int(row_index)
+        face_key = str(face_id or "").strip()
+        for spec in getattr(self, "layout_scene_source_specs", []) or []:
+            if (
+                "face_anchor_row" in spec
+                and self._source_spec_int(spec, "face_anchor_row", -1) == row_index
+                and str(spec.get("face_anchor_face_id", "") or "").strip() == face_key
+            ):
+                source_id = str(spec.get("source_id", "") or "")
+                return source_id or None
+        return None
+
+    def unbind_face_illumination_source(self, row_index: int, face_id: str, *, record_history: bool = True) -> bool:
+        """Remove the illumination marker(s) bound to (row_index, face_id); True if any were removed
+        (bugs/0268). Unlike ``delete_scene_source_by_id`` this has no last-source floor -- an emptied scene
+        source list is fine (the imaging trace falls back to the pupil/field reference, bugs/0266)."""
+        row_index = int(row_index)
+        face_key = str(face_id or "").strip()
+        specs = self._scene_source_specs_for_direct_editing()
+        kept = [
+            spec
+            for spec in specs
+            if not (
+                "face_anchor_row" in spec
+                and self._source_spec_int(spec, "face_anchor_row", -1) == row_index
+                and str(spec.get("face_anchor_face_id", "") or "").strip() == face_key
+            )
+        ]
+        if len(kept) == len(specs):
+            return False
+        self._apply_scene_source_row_action_specs(
+            kept,
+            record_history=record_history,
+            status=f"Illumination source unbound from R{row_index} face {face_key}.",
+        )
+        return True
+
     def resync_face_bound_scene_sources(self, *, system=None) -> bool:
         """Refresh origin/direction of every scene source bound to a CAD/STL face so it tracks the
         face's live world pose (the element may have moved/rotated since the source was created).

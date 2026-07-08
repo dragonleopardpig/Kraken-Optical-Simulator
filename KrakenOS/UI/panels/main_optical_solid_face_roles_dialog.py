@@ -1459,6 +1459,11 @@ class MainOpticalSolidFaceRolesDialog:
             try:
                 side_var.set(le._normalize_optical_solid_face_side(record.get('side_2d')))
                 function_var.set(le._optical_solid_face_function_display(record.get('function'), legacy_role=record.get('role')))
+                # bugs/0268: if this face is bound as an illumination source, reflect that as the current
+                # role instead of the underlying coating (which misleadingly read e.g. "Absorbing").
+                _illum_face_id = str(record.get('face_id', '') or '').strip()
+                if _illum_face_id and self.face_bound_illumination_source_id(int(row_index), _illum_face_id):
+                    function_var.set(le.optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION)
                 port_var.set(le._normalize_optical_solid_face_port_role(record.get('port_role')))
                 fit_reference_var.set(le._normalize_optical_solid_face_fit_reference(record.get('fit_reference')))
                 update_face_property_field_states()
@@ -1601,6 +1606,32 @@ class MainOpticalSolidFaceRolesDialog:
         def auto_apply_selected_face_identity(_event=None) -> None:
             if form_loading:
                 return
+            illum_label = le.optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION
+            sel_index = selected_record_index()
+            selected_face_id = ''
+            if sel_index is not None and 0 <= sel_index < len(records) and isinstance(records[sel_index], dict):
+                selected_face_id = str(records[sel_index].get('face_id', '') or '').strip()
+            if str(function_var.get()) == illum_label:
+                # bugs/0268: "Illumination Source" is a scene source, NOT a coating -- bind it and skip the
+                # coating apply (which would reset the face's real function to Unassigned).
+                if not selected_face_id:
+                    validation_var.set('Select one CAD/STL face first to make it an Illumination Source.')
+                    return
+                source_id = self.create_illumination_source_at_face(int(row_index), face_id=selected_face_id)
+                if source_id:
+                    validation_var.set(
+                        f'{selected_face_id} is now an Illumination Source ({source_id}); it floods full-surface '
+                        'emission (Overlays -> "Illum emission").'
+                    )
+                    self.status_var.set(f'Illumination source bound on S{row_index}.')
+                    self._refresh_open_3d_views(force_retrace=True)
+                else:
+                    validation_var.set(f'Could not bind an illumination source to {selected_face_id} (face anchor unavailable).')
+                return
+            # Not illumination: if this face WAS an Illumination Source, unbind it before applying a coating.
+            if selected_face_id and self.face_bound_illumination_source_id(int(row_index), selected_face_id):
+                self.unbind_face_illumination_source(int(row_index), selected_face_id)
+                self._refresh_open_3d_views(force_retrace=True)
             if apply_current_form_to_selection(quiet=True):
                 index = selected_record_index()
                 record = records[index] if index is not None and 0 <= index < len(records) else {}
