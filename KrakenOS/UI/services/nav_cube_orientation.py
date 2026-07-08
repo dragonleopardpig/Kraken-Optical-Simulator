@@ -29,10 +29,11 @@ steeper symmetric ``(+-1, +-1, +-1)`` diagonal.
 
 The corner ``view_up`` returned here is the ABSOLUTE (global) ISO up; at snap time
 the inspector makes its ROLL relative -- :func:`relative_up_about_sight` returns this
-absolute up FLIPPED 180 deg when the current view is upside down, so a corner ISO keeps
-the picture's current up/down sense (a "RIGHT" you rolled upside down stays upside down)
+absolute up FLIPPED 180 deg when the current view is GLOBALLY upside down (ONE decision
+for all corners, so adjacent corners never disagree -- bugs/0256), so a corner ISO keeps
+the picture's up/down sense (a "RIGHT" you rolled upside down stays upside down -- bugs/0254)
 WHILE keeping the wide-screen framing, because +/-abs_up fit the same as the absolute ISO
-(bugs/0254 ask, bugs/0255 keeps the wide screen). The absolute up here is that reference.
+(bugs/0252/0255). The absolute up here is that reference; a tumbled ~90 deg view stays upright.
 
 CAD face labels (the user's choice): ``+Z = FRONT``, ``+Y = TOP``, ``+X = RIGHT``
 and their opposites.
@@ -70,6 +71,11 @@ ORIENTATION_KEYS: tuple[tuple[int, int, int], ...] = tuple(
 
 _WORLD_UP = np.array([0.0, 1.0, 0.0])
 _WORLD_UP_FALLBACK = np.array([0.0, 0.0, 1.0])
+
+# bugs/0256 -- deadband for the corner-ISO global up/down flip. Only flip to the upside-down
+# ISO when the live view clearly points against the absolute ISO up; a ~90 deg tumbled view
+# (dot ~ 0, no well-defined up/down) stays upright rather than guessing a side.
+_UPSIDE_DOWN_EPS = 1e-6
 
 # bugs/0252 -- ISO-style corner weights. Mirrors
 # ``open3d_inspector._iso_camera_offset_and_view_up``: the world UP axis takes the
@@ -141,20 +147,26 @@ def iso_corner_pose(sign, up_axis: str = "y"):
 
 def relative_up_about_sight(offset_unit, current_up, fallback_up=None):
     """View-up for a CORNER ISO that keeps the wide-screen framing while matching the
-    current up/down sense (bugs/0255, refines 0254).
+    current view's up/down sense CONSISTENTLY across all corners (bugs/0256, refines 0254/0255).
 
     ``fallback_up`` is the absolute ISO up (world ``+Y``). This returns that absolute up
     projected onto the plane perpendicular to the new sight line (``-offset_unit``),
-    FLIPPED 180 deg about the sight line when the current view is upside down relative to
-    it (the current up projects to the opposite side). So:
+    FLIPPED 180 deg iff the current view is GLOBALLY upside down -- the live camera up points
+    against the absolute ISO up (``dot(current_up, fallback_up) < -eps``). So:
 
-      * an upside-down view stays upside down -- the visible labels keep their up/down
-        sense, e.g. a "RIGHT" you rolled upside down stays upside down (the bugs/0254 ask);
+      * the flip is a SINGLE global decision (current up vs the absolute up itself, NOT their
+        projections onto each corner's own sight plane), so every corner flips together --
+        adjacent corners can no longer disagree. bugs/0255 keyed the flip off the per-corner
+        projected up, so from a tumbled start neighbouring corners could land on opposite
+        sides ("Right Top reversed" but the adjacent "Right Bottom completely wrong");
+      * an upside-down view stays upside down -- the visible labels keep their up/down sense,
+        e.g. a "RIGHT" you rolled upside down stays upside down (the bugs/0254 ask);
       * the long optical axis still spreads across the wide screen, because ``+abs_up`` and
-        ``-abs_up`` give the SAME orthographic fit as the absolute ISO (bugs/0252) -- the
-        result is always collinear with the ISO up, only a 180 deg flip and never an
-        intermediate roll that would rotate the axis off-horizontal and force a zoomed-out
-        fit. An intermediate current roll therefore snaps to the nearer of upright / flipped.
+        ``-abs_up`` give the SAME orthographic fit as the absolute ISO (bugs/0252/0255) -- the
+        result is always collinear with the ISO up, only a 180 deg flip, never an intermediate
+        roll that would rotate the axis off-horizontal and force a zoomed-out fit;
+      * a near-90 deg (tumbled) view has no well-defined up/down (``dot`` ~ 0), so it stays
+        UPRIGHT rather than guessing a side (the ``_UPSIDE_DOWN_EPS`` deadband at the boundary).
 
     Without a usable ``fallback_up`` (or when it is parallel to the sight line) it degrades
     to projecting ``current_up`` itself; a fully degenerate up falls back to the world up.
@@ -175,9 +187,16 @@ def relative_up_about_sight(offset_unit, current_up, fallback_up=None):
         abs_perp, abs_norm = _perp(fallback_up)
         if abs_norm > 1e-6:
             abs_unit = abs_perp / abs_norm
-            cur_perp, cur_norm = _perp(current_up)
-            if cur_norm > 1e-6 and float(np.dot(cur_perp, abs_unit)) < 0.0:
-                abs_unit = -abs_unit
+            # GLOBAL up/down decision: compare the live camera up with the ABSOLUTE ISO up
+            # ITSELF (corner-independent), not their per-corner projections, so every corner
+            # flips together. A tumbled ~90 deg view (dot ~ 0) stays upright (deadband).
+            abs_ref = np.asarray(fallback_up, dtype=float).reshape(3)
+            abs_ref_norm = float(np.linalg.norm(abs_ref))
+            cur = np.asarray(current_up, dtype=float).reshape(3)
+            cur_norm = float(np.linalg.norm(cur))
+            if abs_ref_norm > 1e-6 and cur_norm > 1e-6:
+                if float(np.dot(cur / cur_norm, abs_ref / abs_ref_norm)) < -_UPSIDE_DOWN_EPS:
+                    abs_unit = -abs_unit
             return tuple(float(v) for v in abs_unit)
 
     cur_perp, cur_norm = _perp(current_up)

@@ -11459,15 +11459,17 @@ def phase_229_nav_cube_freecad_style(
 def phase_230_nav_cube_corner_local_up(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """bugs/0254 + 0255: a nav-cube CORNER click gives a LOCAL ISO -- its roll matches the CURRENT
-    view's up/down sense (letters that were rolled upside down stay upside down) WHILE keeping the
-    bugs/0252 wide-screen framing, by returning the absolute ISO up FLIPPED 180 deg when the view is
-    upside down (never a continuous tilt). `validate_open3d_nav_cube_corner_local_up` pins the
-    flip-snap math (unit, perpendicular to the sight line, always collinear with the projected ISO
-    up so +/-abs_up fit the same, upside-down flips, upright stays upright, an intermediate roll
-    snaps to +/- and never leaks a tilt), the degenerate fallback, and the inspector/widget wiring
-    that applies it to corners only. Display-free."""
-    result = PhaseResult(name="Phase 230: nav cube corner ISO keeps the current up/down sense and the wide-screen fit")
+    """bugs/0254 + 0255 + 0256: a nav-cube CORNER click gives a LOCAL ISO -- its roll matches the
+    CURRENT view's up/down sense (letters that were rolled upside down stay upside down) WHILE
+    keeping the bugs/0252 wide-screen framing, by returning the absolute ISO up FLIPPED 180 deg when
+    the view is GLOBALLY upside down. 0256 makes that flip ONE corner-independent decision
+    (dot(current_up, abs_up) < 0) so every corner flips together -- 0255 keyed it off each corner's
+    own projected up, so adjacent corners could disagree ("Right Top reversed" but "Right Bottom
+    completely wrong"). `validate_open3d_nav_cube_corner_local_up` pins the global-flip math (unit,
+    perpendicular to the sight line, always collinear with the projected ISO up so +/-abs_up fit the
+    same, all 8 corners flip to one side for a given view, a tumbled ~90 deg view stays upright), the
+    degenerate fallback, and the inspector/widget wiring that applies it to corners only. Display-free."""
+    result = PhaseResult(name="Phase 230: nav cube corner ISO -- one global up/down flip for all corners keeps the current sense and the wide-screen fit")
     try:
         from KrakenOS.UI.validate_open3d_nav_cube_corner_local_up import run_checks
         passed, notes = run_checks()
