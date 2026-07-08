@@ -45,11 +45,14 @@ OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_UNCOATED = "Uncoated"
 OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_MIRROR = "Full Reflecting"
 OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_SPLITTER = "Partial Reflecting / Transmitting"
 OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ABSORB = "Absorbing / Mechanical"
-# bugs/0268: a UI-ONLY sentinel for the Face Editor dropdown. It is deliberately absent from the internal
-# VALUES + the UI<->internal maps, so it is not a coating -- normalize_optical_solid_face_function() maps it
-# to the default ("Unassigned") if it ever reaches persistence. The Face Editor intercepts it before apply
-# and (un)binds a face illumination SceneSource3D instead (illumination is a scene source, not a coating).
-OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION = "Illumination Source"
+# bugs/0268 + bugs/0269: UI-ONLY sentinels for the Face Editor dropdown. Deliberately absent from the
+# internal VALUES + the UI<->internal maps, so they are not coatings -- normalize_optical_solid_face_function()
+# maps them to the default ("Unassigned") if they ever reach persistence. The Face Editor intercepts them
+# before apply and (un)binds a face illumination SceneSource3D instead (illumination is a scene source, not a
+# coating). Two aim variants: the default "Illumination Source" shines INTO the solid the face sits on (the
+# coupling case -- e.g. lighting into a beam-splitter cube), and "(outward)" floods away into the scene.
+OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION = "Illumination Source (into solid)"
+OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION_OUTWARD = "Illumination Source (outward)"
 OPTICAL_SOLID_FACE_FUNCTION_UI_VALUES = (
     OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
     OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_UNCOATED,
@@ -57,6 +60,7 @@ OPTICAL_SOLID_FACE_FUNCTION_UI_VALUES = (
     OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_SPLITTER,
     OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ABSORB,
     OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION,
+    OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION_OUTWARD,
 )
 OPTICAL_SOLID_FACE_FUNCTION_UI_TO_INTERNAL = {
     OPTICAL_SOLID_FACE_FUNCTION_DEFAULT: OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,

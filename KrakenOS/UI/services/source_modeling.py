@@ -707,6 +707,16 @@ class SourceModelingMixin:
             normal = -normal
         return normal
 
+    def _face_aimed_normal(self, row_index: int, origin, normal, aim: str = "inward") -> np.ndarray:
+        """Unit face-emission normal aimed per ``aim`` (bugs/0269): 'outward' floods the scene (away from
+        the solid body centre, the bugs/0264 behaviour); 'inward' (the DEFAULT) shines INTO the solid the
+        face sits on -- the coupling case the user wanted, e.g. lighting into a beam-splitter cube so it
+        folds down to the FOV. Built off ``_outward_face_normal`` so the outward reference is consistent."""
+        outward = self._outward_face_normal(int(row_index), origin, normal)
+        if str(aim or "").strip().lower() == "outward":
+            return outward
+        return -outward
+
     def create_illumination_source_at_face(
         self,
         row_index: int,
@@ -714,6 +724,7 @@ class SourceModelingMixin:
         face_id: str = "",
         point_world=None,
         normal_world=None,
+        aim: str = "inward",
         record_history: bool = True,
     ) -> str | None:
         """Bind a new illumination ``SceneSource3D`` to a CAD/STL face: origin at the face centroid,
@@ -738,8 +749,9 @@ class SourceModelingMixin:
             face.get("anchor_world", face.get("centroid_world", (0.0, 0.0, 0.0))),
             dtype=float,
         ).reshape(-1)[:3]
-        normal = self._outward_face_normal(
-            row_index, origin, face.get("normal_world", (0.0, 0.0, 1.0))
+        aim_key = "outward" if str(aim or "").strip().lower() == "outward" else "inward"
+        normal = self._face_aimed_normal(
+            row_index, origin, face.get("normal_world", (0.0, 0.0, 1.0)), aim_key
         )
 
         specs = self._scene_source_specs_for_direct_editing()
@@ -767,6 +779,7 @@ class SourceModelingMixin:
             spec["role"] = "illumination"
             spec["physical"] = True
             spec["enabled"] = True
+            spec["face_anchor_aim"] = aim_key
             specs[existing] = spec
             new_id = str(spec.get("source_id", "") or "")
         else:
@@ -784,6 +797,7 @@ class SourceModelingMixin:
                     "ray_count": 400,
                     "face_anchor_row": row_index,
                     "face_anchor_face_id": face_key,
+                    "face_anchor_aim": aim_key,
                 }
             )
             spec.update(geometry)
@@ -811,6 +825,20 @@ class SourceModelingMixin:
             ):
                 source_id = str(spec.get("source_id", "") or "")
                 return source_id or None
+        return None
+
+    def face_bound_illumination_aim(self, row_index: int, face_id: str) -> str | None:
+        """The aim ('inward' | 'outward') of the illumination marker bound to (row_index, face_id), or None
+        if no marker is bound (bugs/0269). Lets the Face Editor preselect the matching dropdown variant."""
+        row_index = int(row_index)
+        face_key = str(face_id or "").strip()
+        for spec in getattr(self, "layout_scene_source_specs", []) or []:
+            if (
+                "face_anchor_row" in spec
+                and self._source_spec_int(spec, "face_anchor_row", -1) == row_index
+                and str(spec.get("face_anchor_face_id", "") or "").strip() == face_key
+            ):
+                return "outward" if str(spec.get("face_anchor_aim", "inward") or "inward").strip().lower() == "outward" else "inward"
         return None
 
     def unbind_face_illumination_source(self, row_index: int, face_id: str, *, record_history: bool = True) -> bool:
@@ -863,7 +891,10 @@ class SourceModelingMixin:
                 normal = self._surface_reference_world_normal(row_index, face_id=face_key, system=system)
             except Exception:
                 continue
-            normal = self._outward_face_normal(row_index, origin, normal)
+            # bugs/0269: respect the stored aim (default inward -- legacy 0268 markers had none and are
+            # coupling into a solid), so the resync never re-forces the outward direction the user changed.
+            aim = "outward" if str(spec.get("face_anchor_aim", "inward") or "inward").strip().lower() == "outward" else "inward"
+            normal = self._face_aimed_normal(row_index, origin, normal, aim)
             geometry = {
                 "source_x": float(origin[0]),
                 "source_y": float(origin[1]),

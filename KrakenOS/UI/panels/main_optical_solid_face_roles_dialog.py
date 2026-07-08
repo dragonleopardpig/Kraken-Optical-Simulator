@@ -554,7 +554,16 @@ class MainOpticalSolidFaceRolesDialog:
         def raw_tree_values(record: dict[str, object]) -> dict[str, str]:
             function = le._normalize_optical_solid_face_function(record.get('function'), legacy_role=record.get('role'))
             authored_port = le._optical_solid_face_authored_port_role(record)
-            return {'face': str(record.get('face_id', '') or ''), 'group': group_label_by_face_id.get(str(record.get('face_id', '') or ''), ''), 'side': le._normalize_optical_solid_face_side(record.get('side_2d')), 'function': le._optical_solid_face_function_display(function, legacy_role=record.get('role')), 'port': authored_port, 'suggestion': le._optical_solid_face_suggestion_label(record), 'fit_ref': '' if le._normalize_optical_solid_face_fit_reference(record.get('fit_reference')) == le.OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT else le._normalize_optical_solid_face_fit_reference(record.get('fit_reference')), 'area': f"{float(record.get('area_mm2', 0.0) or 0.0):.6g}", 'triangles': str(int(record.get('triangle_count', 0) or 0)), 'normal': format_vector(record.get('normal', [0, 0, 1])), 'centroid': format_vector(record.get('centroid', [0, 0, 0])), 'split': f"{float(record.get('split_ratio', 0.5) or 0.0):.4g}" if function == 'Beam Splitter' else '', 'flip': 'yes' if bool(record.get('flip_normal', False)) else ''}
+            function_display = le._optical_solid_face_function_display(function, legacy_role=record.get('role'))
+            # bugs/0269: a face bound as an illumination source reads "Illumination Source" (+ aim) in the
+            # tree -- its underlying coating (often "Unassigned") would otherwise mask the role the user set.
+            _tree_face_id = str(record.get('face_id', '') or '').strip()
+            _tree_aim = self.face_bound_illumination_aim(int(row_index), _tree_face_id) if _tree_face_id else None
+            if _tree_aim is not None:
+                function_display = (le.optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION_OUTWARD
+                                    if _tree_aim == 'outward'
+                                    else le.optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION)
+            return {'face': str(record.get('face_id', '') or ''), 'group': group_label_by_face_id.get(str(record.get('face_id', '') or ''), ''), 'side': le._normalize_optical_solid_face_side(record.get('side_2d')), 'function': function_display, 'port': authored_port, 'suggestion': le._optical_solid_face_suggestion_label(record), 'fit_ref': '' if le._normalize_optical_solid_face_fit_reference(record.get('fit_reference')) == le.OPTICAL_SOLID_FACE_FIT_REFERENCE_DEFAULT else le._normalize_optical_solid_face_fit_reference(record.get('fit_reference')), 'area': f"{float(record.get('area_mm2', 0.0) or 0.0):.6g}", 'triangles': str(int(record.get('triangle_count', 0) or 0)), 'normal': format_vector(record.get('normal', [0, 0, 1])), 'centroid': format_vector(record.get('centroid', [0, 0, 0])), 'split': f"{float(record.get('split_ratio', 0.5) or 0.0):.4g}" if function == 'Beam Splitter' else '', 'flip': 'yes' if bool(record.get('flip_normal', False)) else ''}
 
         def wrap_cell_text(column: str, value: str) -> str:
             text = str(value)
@@ -1459,11 +1468,16 @@ class MainOpticalSolidFaceRolesDialog:
             try:
                 side_var.set(le._normalize_optical_solid_face_side(record.get('side_2d')))
                 function_var.set(le._optical_solid_face_function_display(record.get('function'), legacy_role=record.get('role')))
-                # bugs/0268: if this face is bound as an illumination source, reflect that as the current
-                # role instead of the underlying coating (which misleadingly read e.g. "Absorbing").
+                # bugs/0268 + bugs/0269: if this face is bound as an illumination source, reflect that (and
+                # its aim) as the current role instead of the underlying coating (which read e.g. "Absorbing").
                 _illum_face_id = str(record.get('face_id', '') or '').strip()
-                if _illum_face_id and self.face_bound_illumination_source_id(int(row_index), _illum_face_id):
-                    function_var.set(le.optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION)
+                _illum_aim = self.face_bound_illumination_aim(int(row_index), _illum_face_id) if _illum_face_id else None
+                if _illum_aim is not None:
+                    function_var.set(
+                        le.optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION_OUTWARD
+                        if _illum_aim == 'outward'
+                        else le.optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION
+                    )
                 port_var.set(le._normalize_optical_solid_face_port_role(record.get('port_role')))
                 fit_reference_var.set(le._normalize_optical_solid_face_fit_reference(record.get('fit_reference')))
                 update_face_property_field_states()
@@ -1606,22 +1620,27 @@ class MainOpticalSolidFaceRolesDialog:
         def auto_apply_selected_face_identity(_event=None) -> None:
             if form_loading:
                 return
-            illum_label = le.optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION
+            illum_inward = le.optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION
+            illum_outward = le.optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ILLUMINATION_OUTWARD
             sel_index = selected_record_index()
             selected_face_id = ''
             if sel_index is not None and 0 <= sel_index < len(records) and isinstance(records[sel_index], dict):
                 selected_face_id = str(records[sel_index].get('face_id', '') or '').strip()
-            if str(function_var.get()) == illum_label:
-                # bugs/0268: "Illumination Source" is a scene source, NOT a coating -- bind it and skip the
-                # coating apply (which would reset the face's real function to Unassigned).
+            current_function = str(function_var.get())
+            if current_function in (illum_inward, illum_outward):
+                # bugs/0268 + bugs/0269: an Illumination Source is a scene source, NOT a coating -- bind it
+                # with the chosen aim and skip the coating apply (which would reset the face's real function
+                # to Unassigned). "into solid" aims INTO the element (the coupling case); "(outward)" floods.
+                aim = 'outward' if current_function == illum_outward else 'inward'
                 if not selected_face_id:
                     validation_var.set('Select one CAD/STL face first to make it an Illumination Source.')
                     return
-                source_id = self.create_illumination_source_at_face(int(row_index), face_id=selected_face_id)
+                source_id = self.create_illumination_source_at_face(int(row_index), face_id=selected_face_id, aim=aim)
                 if source_id:
+                    where = 'into the solid' if aim == 'inward' else 'outward into the scene'
                     validation_var.set(
-                        f'{selected_face_id} is now an Illumination Source ({source_id}); it floods full-surface '
-                        'emission (Overlays -> "Illum emission").'
+                        f'{selected_face_id} is now an Illumination Source ({source_id}), aimed {where}; '
+                        'toggle Overlays -> "Illum emission".'
                     )
                     self.status_var.set(f'Illumination source bound on S{row_index}.')
                     self._refresh_open_3d_views(force_retrace=True)

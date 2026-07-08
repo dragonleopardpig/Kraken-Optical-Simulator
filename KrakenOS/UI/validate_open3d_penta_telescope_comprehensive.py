@@ -11735,6 +11735,40 @@ def phase_237_face_illumination_dropdown(
     return result
 
 
+def phase_238_face_illumination_direction(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A face-bound illumination source used to always flood OUTWARD (bugs/0264), so marking a beam-splitter
+    face aimed the emission into empty space instead of INTO the cube (the user: "it should illuminate into
+    the BS instead"). THIS phase pins the aim control (bugs/0269): a stored ``face_anchor_aim`` --
+    "Illumination Source (into solid)" (the DEFAULT coupling case) vs "(outward)" -- that
+    create_illumination_source_at_face records via ``_face_aimed_normal`` and resync_face_bound_scene_sources
+    respects (so the resync never re-forces outward). The Face Editor offers both dropdown variants,
+    preselects the bound aim, and shows the role in the left-table Function column.
+    `validate_open3d_face_illumination_direction` is a display-free guard: METADATA (both variants in the UI
+    values + combobox alias, NOT internal coating tokens), WIRING (create takes an aim + stores it; resync
+    consults it; the dialog offers the outward variant + preselects the aim), BINDING (inward aims INTO the
+    body, outward away, aim stored + reported, resync preserves it, default inward; SKIPs without the STEP).
+    """
+    result = PhaseResult(
+        name="Phase 238: an illumination source aims into the solid (default) or outward and the resync preserves it"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_face_illumination_direction import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"face-illumination-direction guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("face-illumination-direction phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12017,6 +12051,7 @@ def main() -> int:
             phase_235_illumination_source_no_imaging_hijack,
             phase_236_illumination_marker_emission,
             phase_237_face_illumination_dropdown,
+            phase_238_face_illumination_direction,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
