@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 380" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="arrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#16a34a"/>
+    </marker>
+    <marker id="arrAmb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#b45309"/>
+    </marker>
+    <marker id="arrAmbs" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M10,0 L0,5 L10,10 Z" fill="#b45309"/>
+    </marker>
+    <style>
+      .ttl  { fill:#111827; font-size:16px; font-weight:700; }
+      .sub  { fill:#374151; font-size:11.5px; }
+      .lbl  { fill:#111827; font-size:12px; }
+      .lblb { fill:#111827; font-size:12px; font-weight:700; }
+      .plane{ stroke:#6b7280; stroke-width:1; stroke-dasharray:5,4; }
+      .led  { fill:#fde047; stroke:#ca8a04; stroke-width:1.5; }
+      .det  { fill:#475569; fill-opacity:0.20; stroke:#475569; stroke-width:2; }
+      .wall { fill:#b45309; fill-opacity:0.35; stroke:#b45309; stroke-width:1.5; }
+      .reach{ stroke:#16a34a; stroke-width:1.8; fill:none; }
+      .clip { stroke:#b91c1c; stroke-width:1.8; fill:none; }
+      .aper { stroke:#b45309; stroke-width:1.6; }
+    </style>
+  </defs>
+  <text x="360" y="22" text-anchor="middle" class="ttl">What the “Illum rays” overlay draws — rays coloured by fate</text>
+  <text x="360" y="40" text-anchor="middle" class="sub">green rays clear the BS-exit stop and reach the FOV;  red rays aimed at the fold-axis edges are clipped at the stop</text>
+
+  <!-- planes -->
+  <line x1="95"  y1="110" x2="95"  y2="308" class="plane"/>
+  <line x1="380" y1="110" x2="380" y2="308" class="plane"/>
+  <line x1="645" y1="110" x2="645" y2="308" class="plane"/>
+
+  <!-- LED emitter (z=0) -->
+  <rect x="88" y="115" width="12" height="190" class="led"/>
+  <text x="95" y="326" text-anchor="middle" class="lbl">LED emitter</text>
+  <text x="95" y="341" text-anchor="middle" class="sub">z = 0</text>
+
+  <!-- BS-exit stop walls (z=75): opening y 178..242 -->
+  <rect x="374" y="115" width="12" height="63" class="wall"/>
+  <rect x="374" y="242" width="12" height="63" class="wall"/>
+  <text x="380" y="326" text-anchor="middle" class="lbl">BS-exit stop</text>
+  <text x="380" y="341" text-anchor="middle" class="sub">z = 75</text>
+
+  <!-- detector / FOV (z=130) -->
+  <rect x="639" y="150" width="12" height="120" class="det"/>
+  <text x="645" y="326" text-anchor="middle" class="lbl">FOV / detector</text>
+  <text x="645" y="341" text-anchor="middle" class="sub">z = 130</text>
+
+  <!-- green rays: LED -> through the opening -> detector -->
+  <path d="M100 170 L380 190 L645 205" class="reach" marker-end="url(#arrG)"/>
+  <path d="M100 190 L380 200 L645 210" class="reach" marker-end="url(#arrG)"/>
+  <path d="M100 212 L380 214 L645 216" class="reach" marker-end="url(#arrG)"/>
+  <path d="M100 232 L380 226 L645 222" class="reach" marker-end="url(#arrG)"/>
+
+  <!-- red rays: LED edges -> hit the stop wall, terminate short -->
+  <path d="M100 125 L380 165" class="clip"/>
+  <path d="M100 142 L380 173" class="clip"/>
+  <path d="M100 298 L380 252" class="clip"/>
+  <path d="M100 282 L380 247" class="clip"/>
+  <circle cx="380" cy="165" r="2.6" fill="#b91c1c"/>
+  <circle cx="380" cy="173" r="2.6" fill="#b91c1c"/>
+  <circle cx="380" cy="252" r="2.6" fill="#b91c1c"/>
+  <circle cx="380" cy="247" r="2.6" fill="#b91c1c"/>
+
+  <!-- amber clear-aperture dimension at the stop -->
+  <line x1="404" y1="178" x2="404" y2="242" class="aper" marker-start="url(#arrAmbs)" marker-end="url(#arrAmb)"/>
+  <text x="410" y="214" class="lblb" fill="#b45309">clear aperture</text>
+  <text x="410" y="229" class="sub" fill="#b45309">≈ 39 mm (fold axis)</text>
+
+  <!-- legend -->
+  <line x1="150" y1="360" x2="180" y2="360" class="reach"/>
+  <text x="186" y="364" class="lbl">reaches FOV</text>
+  <line x1="300" y1="360" x2="330" y2="360" class="clip"/>
+  <text x="336" y="364" class="lbl">clipped at BS-exit stop</text>
+  <line x1="510" y1="360" x2="540" y2="360" class="aper"/>
+  <text x="546" y="364" class="lbl">clear aperture</text>
+</svg>

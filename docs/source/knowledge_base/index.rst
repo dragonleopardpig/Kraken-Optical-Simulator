@@ -15,3 +15,4 @@ real sensor.
    lens_design_intro
    ir_subpixel_detection
    step_overlay_promotion
+   coaxial_led_dark_edges
