@@ -59,6 +59,7 @@ from KrakenOS.UI.services.best_focus_surface import (
 from KrakenOS.UI.services.distortion_grid import build_distortion_grid
 from KrakenOS.UI.services.spot_field_map import build_spot_field_map
 from KrakenOS.UI.services.source_illumination_overlay import build_source_illumination_overlay
+from KrakenOS.UI.services.source_illumination_rays_overlay import build_source_illumination_rays_overlay
 from KrakenOS.UI.source_illumination_analysis import (
     source_illumination_map_data_from_samples,
     source_illumination_map_extent,
@@ -3618,6 +3619,44 @@ class ThreeDSceneToolsMixin:
             tangent=np.asarray(getattr(target, "tangent_world", (0.0, 1.0, 0.0)), dtype=float),
             chroma=chroma,
         )
+
+    def source_illumination_rays_overlay_spec(self, system, scene_bundle, *, wavelength=None):
+        """Build the coaxial-LED illumination-ray overlay spec (the REAL traced LED->BS->object rays,
+        green where they reach the FOV / red where the BS-exit stop clips them), or None. Lazy +
+        signature-cached + render-only (bugs/0166): it REUSES the preview trace's per-ray records and
+        never re-traces -- this is the mechanism behind Feature A's on-detector dark-edge heatmap."""
+        if system is None or scene_bundle is None:
+            return None
+        try:
+            signature = (self._preview_trace_signature(), "source_illumination_rays")
+        except Exception:
+            signature = None
+        cache = self.__dict__.get("_source_illumination_rays_overlay_cache")
+        if signature is not None and isinstance(cache, tuple) and len(cache) == 2 and cache[0] == signature:
+            return cache[1]
+        spec = self._compute_source_illumination_rays_overlay_spec(scene_bundle)
+        if signature is not None:
+            self._source_illumination_rays_overlay_cache = (signature, spec)
+        return spec
+
+    def _compute_source_illumination_rays_overlay_spec(self, scene_bundle):
+        try:
+            records = self._collect_ray_analysis_records()
+        except Exception:
+            return None
+        if not records:
+            return None
+        detector_z = None
+        try:
+            target = self._source_illumination_anchor_target(scene_bundle)
+            if target is not None:
+                detector_z = float(np.asarray(getattr(target, "center_world", (0.0, 0.0, 0.0)), dtype=float)[2])
+        except Exception:
+            detector_z = None
+        try:
+            return build_source_illumination_rays_overlay(records, detector_z=detector_z)
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     # Spot RMS field map (3D spot-quality viz, idea #1/#3 foundation)

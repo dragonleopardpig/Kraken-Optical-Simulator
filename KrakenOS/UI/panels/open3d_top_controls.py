@@ -108,6 +108,9 @@ class Open3DTopControlsPanel:
                 # On-detector illumination heatmap (idea #3): coaxial-LED fold-axis dark edges
                 # draped on the sensor as a smooth quad (relative illumination, centre = 1.0).
                 MenuCheckbutton("Illumination", self.inspector.show_source_illumination_var, self.inspector._on_scene_visibility_changed),
+                # The REAL traced LED->BS->object rays, green=reaches FOV / red=clipped at the
+                # foreshortened BS-exit stop (the 55*cos45~39 dark-edge mechanism, drawn directly).
+                MenuCheckbutton("Illum rays", self.inspector.show_source_illumination_rays_var, self.inspector._on_scene_visibility_changed),
             ),
         )
         pack_menubutton(view_toolbar, "Overlays", overlay_menu, padx=(8, 0))

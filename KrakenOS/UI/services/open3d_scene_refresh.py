@@ -828,6 +828,13 @@ class Open3DSceneRefreshService:
         source_illumination_actors = 0
         if bool(getattr(self, "show_source_illumination_var", None) is not None and self.show_source_illumination_var.get()):
             source_illumination_actors = self._add_source_illumination_overlays(system, scene_bundle)
+        # The REAL traced LED->BS->object rays, coloured by fate: green reach the FOV, red are
+        # clipped at the foreshortened BS-exit stop (the 55*cos45~39 mechanism that darkens the two
+        # fold-axis edges). Live-read here so its toggle is a render-only refresh (bugs/0166); the
+        # per-ray records behind it come from the same cached preview trace.
+        source_illumination_rays_actors = 0
+        if bool(getattr(self, "show_source_illumination_rays_var", None) is not None and self.show_source_illumination_rays_var.get()):
+            source_illumination_rays_actors = self._add_source_illumination_ray_overlays(system, scene_bundle)
         # One combined, expanding legend for every analysis overlay queued above (replaces the
         # per-overlay billboards that overlapped when several were on).
         analysis_overlay_label_actors = self._add_grouped_analysis_overlay_label()

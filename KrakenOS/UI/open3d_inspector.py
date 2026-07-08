@@ -651,6 +651,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # on the sensor as a smooth quad, so the coaxial-LED fold-axis dark edges read directly on
         # the detector. Lazy + cached on the editor; render-only toggle (bugs/0166).
         self.show_source_illumination_var = tk.BooleanVar(value=False)
+        # Coaxial-LED illumination RAYS (Feature B2): the REAL traced LED->BS->object rays, green where
+        # they reach the FOV / red where the BS-exit stop clips them -- the mechanism behind the
+        # dark-edge heatmap above. Lazy + cached on the editor; render-only toggle (bugs/0166).
+        self.show_source_illumination_rays_var = tk.BooleanVar(value=False)
         self.slide_along_axis_mode_var = tk.BooleanVar(value=False)
         self.show_live_controls_panel_var = tk.BooleanVar(value=True)
         self.show_scene_components_panel_var = tk.BooleanVar(value=True)
@@ -1729,6 +1733,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             show_spot_field_map=bool(self.show_spot_field_map_var.get()),
             show_pixel_grid=bool(self.show_pixel_grid_var.get()),
             show_source_illumination=bool(self.show_source_illumination_var.get()),
+            show_source_illumination_rays=bool(self.show_source_illumination_rays_var.get()),
             counts=self._debug_actor_counts(),
         )
         # bugs/0166: reference-surface / detector / thickness / terminal-diagnostic /
@@ -12766,6 +12771,61 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
         return 1
+
+    def _add_source_illumination_ray_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
+        """Draw the coaxial-LED illumination rays coloured by fate (Feature B2): the REAL traced
+        LED->beam-splitter->object rays, GREEN where they reach the FOV and RED where the BS-exit stop
+        clips them short -- the mechanism that darkens the two fold-axis FOV edges in production.
+        Render-only; the classified+subsampled polylines and their signature cache live on the editor
+        (``source_illumination_rays_overlay_spec``), so toggling is a cached-scene re-render (0166)."""
+        if self._renderer is None or pv is None or scene_bundle is None:
+            return 0
+        try:
+            spec = self.editor.source_illumination_rays_overlay_spec(system, scene_bundle)
+        except Exception as exc:
+            self.editor.append_debug(f"Source illumination rays overlay failed: {exc}")
+            return 0
+        if not spec:
+            return 0
+        count = 0
+        # Clipped (red) first so the reaching (green) rays draw over them and read as the primary.
+        for pts_key, lines_key, color_key, width, opacity in (
+            ("clipped_points", "clipped_lines", "clipped_color", 1.0, 0.55),
+            ("reaching_points", "reaching_lines", "reaching_color", 1.4, 0.85),
+        ):
+            try:
+                points = np.asarray(spec.get(pts_key), dtype=float)
+                lines = np.asarray(spec.get(lines_key), dtype=np.int64)
+                if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3 or lines.size < 3:
+                    continue
+                mesh = pv.PolyData(points[:, :3], lines=lines)
+                self._add_mesh_actor(
+                    mesh,
+                    color=tuple(spec.get(color_key, (0.5, 0.5, 0.5))),
+                    opacity=float(opacity),
+                    line_width=float(width),
+                )
+                count += 1
+            except Exception:
+                continue
+        if count == 0:
+            return 0
+        try:
+            reaching = int(spec.get("reaching_total", 0))
+            clipped = int(spec.get("clipped_total", 0))
+            axis = spec.get("clip_axis")
+            axis_text = f"  (fold axis {axis})" if axis else ""
+            z = spec.get("clip_plane_z")
+            anchor_z = float(z) if z is not None else float(spec.get("detector_z") or 0.0)
+            self._queue_analysis_overlay_label(
+                "Coaxial-LED illumination rays\n"
+                f"green {reaching} -> reaches FOV  ·  red {clipped} -> clipped at BS-exit stop{axis_text}",
+                center=(0.0, 0.0, anchor_z),
+                normal=(0.0, 0.0, 1.0),
+            )
+        except Exception:
+            pass
+        return count
 
     def _add_spot_field_map_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
         """Draw the per-field RMS spot circles on the detector, coloured good->bad
