@@ -24,7 +24,10 @@ Four display-free parts:
   emission bundle while the IMAGING bundle builder still yields 0 (0266 intact); a mixed scene splits
   1 marker / 1 imaging; the overlay spec is drawable AND leaves the imaging trace state untouched.
 * BINDING (real promoted-prism STEP fixture; SKIPs when the STEP is not checked out) -- a real marked face
-  is sized to its full surface (radius >> the stored 2 mm) and the emission overlay is drawable.
+  is sized to its full surface (radius >> the stored 2 mm); the emission overlay is drawable, REFLECTS off
+  surfaces, and EXITS the solid -- the drawn span reaches well beyond the solid, because the emission draws
+  the engine-traced ``points_world`` (source -> hits -> refracted terminal), not a source+hits
+  reconstruction that stops at the exit face (flag_20260709_072825_805: "the rays not exiting the BS cube").
 """
 
 from __future__ import annotations
@@ -121,6 +124,17 @@ def _check_wiring(failures: list[str]) -> None:
     if "_last_scene_bundle =" in isolated_src or "self._last_scene_bundle" in isolated_src.replace("NEVER writes ``self._last_scene_bundle``", ""):
         failures.append("WIRING: _isolated_ray_analysis_records must never assign self._last_scene_bundle (0266)")
 
+    # EXIT CONTINUATION (flag_20260709_072825_805): the isolated extractor must attach the engine-traced
+    # world polyline, and the overlay must PREFER it, so the emission draws the ray refracting OUT of the
+    # solid instead of stopping dead at the exit face (a source+hits reconstruction drops the terminal
+    # free-flight point, which lives in the terminal event -- not in the surface-only ``hits``).
+    if "traced_polyline_world" not in isolated_src:
+        failures.append("WIRING: _isolated_ray_analysis_records must attach traced_polyline_world (the engine-traced exit path)")
+    from KrakenOS.UI.services import source_illumination_rays_overlay as _siro
+    marker_poly_src = _src(_siro._marker_record_polyline, "_marker_record_polyline")
+    if "traced_polyline_world" not in marker_poly_src:
+        failures.append("WIRING: _marker_record_polyline must prefer traced_polyline_world (draw the true traced path, incl. the exit continuation)")
+
     consumer_src = _src(Kraken3DInspector._add_illumination_marker_ray_overlays, "_add_illumination_marker_ray_overlays")
     for forbidden in ("build_system(", "_build_preview_system_rays_bundle("):
         if forbidden in consumer_src:
@@ -168,6 +182,22 @@ def _check_pure(failures: list[str]) -> None:
     capped = build_illumination_marker_rays_overlay(many, max_rays=10)
     if capped is None or int(capped.get("drawn", 0)) != 10 or int(capped.get("total", 0)) != 50:
         failures.append(f"PURE: subsample cap not respected (drawn={None if capped is None else capped.get('drawn')})")
+
+    # EXIT CONTINUATION (flag_20260709_072825_805): a record carrying the engine-traced polyline must be
+    # drawn from THAT (source -> exit face -> refracted terminal free-flight point) so the ray continues
+    # OUT of the solid -- NOT the source+hits reconstruction, which stops at the exit face.
+    traced = np.array([[12.5, 0.0, 14.0], [-12.5, 2.0, 6.0], [-82.0, 3.0, -7.0]], dtype=float)
+    exit_rec = _rec(12.5, 0.0, 14.0, [(-12.5, 2.0, 6.0)])  # source+hits alone would stop at the exit face
+    exit_rec["traced_polyline_world"] = traced
+    exit_spec = build_illumination_marker_rays_overlay([exit_rec])
+    if exit_spec is None:
+        failures.append("PURE: a record with a traced polyline produced no spec")
+    else:
+        epts = np.asarray(exit_spec.get("points"))
+        if epts.shape[0] != 3:
+            failures.append(f"PURE: exit continuation not drawn -- expected the 3 traced vertices, got {epts.shape}")
+        elif float(epts[:, 0].min()) > -80.0:
+            failures.append("PURE: the traced polyline was not used -- the ray stops at the exit face instead of continuing out of the solid")
 
 
 def _check_behaviour(failures: list[str], notes: list[str]) -> None:
@@ -295,8 +325,27 @@ def _check_binding(failures: list[str], notes: list[str]) -> None:
                 k += 1 + cnt
             if not reflected:
                 failures.append("BINDING: no traced emission ray reflected (every polyline is a single segment) -- rays are not traced through the scene")
-            else:
-                notes.append(f"binding OK: face {illum_face_id} floods full-surface emission that REFLECTS (radius {radius:.1f} mm, {spec['drawn']} rays); imaging state untouched")
+
+            # EXIT CONTINUATION (flag_20260709_072825_805): the drawn emission must reach well BEYOND the
+            # solid -- a ray refracts out of the exit face and flies onward. Pre-fix the polyline stopped
+            # dead at the exit face (drawn span ~ the solid's own span). Compare bbox diagonals: the drawn
+            # emission must exceed the solid's own span by a clear margin.
+            face_pts = np.asarray([f["centroid_world"] for f in faces], dtype=float)
+            solid_diag = float(np.linalg.norm(face_pts.max(axis=0) - face_pts.min(axis=0)))
+            drawn_pts = np.asarray(spec.get("points"), dtype=float)
+            drawn_diag = float(np.linalg.norm(drawn_pts.max(axis=0) - drawn_pts.min(axis=0))) if drawn_pts.size else 0.0
+            if drawn_diag <= solid_diag + 20.0:
+                failures.append(
+                    f"BINDING: the emission does not exit the solid -- drawn span {drawn_diag:.1f} mm is not "
+                    f"clear of the solid span {solid_diag:.1f} mm (rays stop at the exit face, flag_20260709_072825_805)"
+                )
+
+            if not failures:
+                notes.append(
+                    f"binding OK: face {illum_face_id} floods full-surface emission that REFLECTS and EXITS the "
+                    f"solid (drawn span {drawn_diag:.0f} mm vs solid {solid_diag:.0f} mm, radius {radius:.1f} mm, "
+                    f"{spec['drawn']} rays); imaging state untouched"
+                )
     finally:
         try:
             app.destroy()

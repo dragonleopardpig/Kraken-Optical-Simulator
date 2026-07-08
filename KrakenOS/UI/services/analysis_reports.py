@@ -807,7 +807,21 @@ class AnalysisReportsMixin:
                     getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT)
                 ),
             )
-            return scene_bundle_ray_analysis_records(bundle) or []
+            records = scene_bundle_ray_analysis_records(bundle) or []
+            # Attach the ENGINE-traced world polyline (source -> every surface hit -> the refracted
+            # terminal free-flight point) so a consumer draws the ray's TRUE path. The record's own
+            # ``hits`` list holds only SURFACE events; the terminal free-flight point (where the ray
+            # flies onward after refracting out of the solid) lives in the separate terminal event and
+            # is absent from ``hits`` -- so a source+hits reconstruction stops dead at the exit face
+            # (flag_20260709_072825_805: "the illumination rays not exiting the BS cube"). Records are
+            # 1:1 with bundle.ray_paths in build order, so zip them; guarded by a length match.
+            paths = list(getattr(bundle, "ray_paths", []) or [])
+            if len(paths) == len(records):
+                for path, record in zip(paths, records):
+                    pts = np.asarray(getattr(path, "points_world", ()), dtype=float)
+                    if pts.ndim == 2 and pts.shape[0] >= 2 and bool(np.all(np.isfinite(pts))):
+                        record["traced_polyline_world"] = pts
+            return records
         except Exception:
             return []
 

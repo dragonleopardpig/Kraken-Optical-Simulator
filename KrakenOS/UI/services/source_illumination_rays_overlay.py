@@ -235,10 +235,20 @@ def build_source_illumination_rays_overlay(
 
 
 def _marker_record_polyline(record, min_span):
-    """World-coord polyline for one TRACED illumination-marker ray: its source origin followed by each
-    surface hit -- so the REFLECTED path shows, not just a launch stub. None when degenerate. The span
-    gate is axis-AGNOSTIC (bbox diagonal), so a face emitting along ANY axis is kept and only rays that
-    collapse at the source aperture (a dot at the emitter) are dropped."""
+    """World-coord polyline for one TRACED illumination-marker ray. Prefers the ENGINE-traced
+    ``traced_polyline_world`` (source -> every surface hit -> the refracted terminal free-flight point)
+    so the ray's TRUE path shows -- it REFLECTS off surfaces AND continues OUT of the solid after
+    refracting at the exit face (flag_20260709_072825_805). Falls back to a source+surface-hit
+    reconstruction (used by unit tests / records without an attached traced polyline), which stops at
+    the last surface. None when degenerate. The span gate is axis-AGNOSTIC (bbox diagonal), so a face
+    emitting along ANY axis is kept and only rays that collapse at the source aperture are dropped."""
+    traced = record.get("traced_polyline_world")
+    if traced is not None:
+        arr = np.asarray(traced, dtype=float)
+        if arr.ndim == 2 and arr.shape[0] >= 2 and np.all(np.isfinite(arr)):
+            if float(np.linalg.norm(arr.max(axis=0) - arr.min(axis=0))) < float(min_span):
+                return None
+            return arr
     try:
         start = (
             float(record.get("source_x", 0.0)),
