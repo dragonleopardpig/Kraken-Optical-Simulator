@@ -20,6 +20,14 @@ import numpy as np
 ILLUM_RAY_REACHING_COLOR = (0.16, 0.72, 0.28)
 ILLUM_RAY_CLIPPED_COLOR = (0.90, 0.28, 0.12)
 
+# The limiting BS-exit-stop clear aperture (amber outline) -- the opening the green rays pass through,
+# foreshortened on the fold axis (the 55*cos45~39 rectangle the red rays are cut on).
+ILLUM_APERTURE_COLOR = (0.98, 0.78, 0.12)
+
+# The clear aperture is read off the survivors as a robust high percentile of where they cross the
+# stop -- it encloses the passing rays without chasing a lone edge outlier.
+ILLUM_APERTURE_PERCENTILE = 98.0
+
 # Per-class draw cap: the production trace launches ~60k LED rays; a few hundred polylines per class is
 # plenty to read the fan and keeps the overlay light. Subsampling is deterministic (seeded).
 ILLUM_RAY_MAX_PER_CLASS = 240
@@ -87,6 +95,16 @@ def _terminals(polylines):
     return np.asarray([pl[-1] for pl in polylines], dtype=float) if polylines else np.empty((0, 3), dtype=float)
 
 
+def _rectangle_loop(half, z):
+    """Closed-loop rectangle (points (5,3), VTK line cell [5,0,1,2,3,4]) of half-extents ``half`` = (hx,
+    hy) centred on the axis at plane ``z`` -- an outline the inspector renders like any other polyline."""
+    hx, hy = float(half[0]), float(half[1])
+    corners = np.array(
+        [[-hx, -hy, z], [hx, -hy, z], [hx, hy, z], [-hx, hy, z], [-hx, -hy, z]], dtype=float
+    )
+    return corners, np.array([5, 0, 1, 2, 3, 4], dtype=np.int64)
+
+
 def _plane_crossings(polylines, z):
     """(x, y) where each polyline first crosses the plane ``z`` (linear interpolation on the
     straddling segment). Polylines that never reach the plane contribute nothing. Returns (K, 2)."""
@@ -114,8 +132,10 @@ def build_source_illumination_rays_overlay(
     detector_z=None,
 ):
     """Split the LED illumination rays into reaching (green) and clipped (red) polylines and bake the
-    VTK line arrays. Returns a spec dict (arrays + colours + counts + the clip-plane z + which in-plane
-    axis the clipping falls on), or None when there is nothing drawable."""
+    VTK line arrays, plus the limiting BS-exit-stop clear aperture (amber outline) read off the
+    survivors -- the foreshortened rectangle the red rays are cut on. Returns a spec dict (arrays +
+    colours + counts + the clip-plane z + which in-plane axis the clipping falls on + the aperture
+    half-extents), or None when there is nothing drawable."""
     if not records:
         return None
     rng = np.random.default_rng(int(seed))
@@ -149,10 +169,20 @@ def build_source_illumination_rays_overlay(
     clip_terminals = _terminals(clipped)
     clip_plane_z = float(np.median(clip_terminals[:, 2])) if clip_terminals.size else None
     clip_axis = None
-    if clip_plane_z is not None and clipped_total >= 8:
+    aperture_half = None
+    clipped_half = None
+    aperture_points = np.empty((0, 3), dtype=float)
+    aperture_lines = np.empty((0,), dtype=np.int64)
+    if clip_plane_z is not None:
         survivor_xy = _plane_crossings(reaching, clip_plane_z)
         clipped_xy = _plane_crossings(clipped, clip_plane_z)
+        if survivor_xy.shape[0] >= 8:
+            # The clear aperture the green rays actually pass through -- the limiting BS-exit-stop
+            # opening, foreshortened on the fold axis. This is the rectangle the red rays are cut on.
+            aperture_half = np.percentile(np.abs(survivor_xy), ILLUM_APERTURE_PERCENTILE, axis=0)
+            aperture_points, aperture_lines = _rectangle_loop(aperture_half, clip_plane_z)
         if survivor_xy.shape[0] >= 8 and clipped_xy.shape[0] >= 8:
+            clipped_half = np.percentile(np.abs(clipped_xy), ILLUM_APERTURE_PERCENTILE, axis=0)
             survivor_env = np.percentile(np.abs(survivor_xy), 95, axis=0)
             clipped_env = np.percentile(np.abs(clipped_xy), 95, axis=0)
             margin = clipped_env - survivor_env  # [x, y]: how far red sticks out past green per axis
@@ -166,13 +196,18 @@ def build_source_illumination_rays_overlay(
         "reaching_lines": reaching_lines,
         "clipped_points": clipped_points,
         "clipped_lines": clipped_lines,
+        "aperture_points": aperture_points,
+        "aperture_lines": aperture_lines,
         "reaching_color": ILLUM_RAY_REACHING_COLOR,
         "clipped_color": ILLUM_RAY_CLIPPED_COLOR,
+        "aperture_color": ILLUM_APERTURE_COLOR,
         "reaching_total": int(reaching_total),
         "clipped_total": int(clipped_total),
         "reaching_drawn": int(len(reaching_draw)),
         "clipped_drawn": int(len(clipped_draw)),
         "clip_plane_z": clip_plane_z,
         "clip_axis": clip_axis,
+        "aperture_half": None if aperture_half is None else [float(aperture_half[0]), float(aperture_half[1])],
+        "clipped_half": None if clipped_half is None else [float(clipped_half[0]), float(clipped_half[1])],
         "detector_z": None if detector_z is None else float(detector_z),
     }

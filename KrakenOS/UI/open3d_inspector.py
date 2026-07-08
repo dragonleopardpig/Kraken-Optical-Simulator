@@ -12810,16 +12810,42 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 continue
         if count == 0:
             return 0
+        # The limiting BS-exit-stop clear aperture (Feature B1): the amber rectangle the green rays
+        # pass through and the red rays are cut on, foreshortened on the fold axis (55*cos45~39).
+        try:
+            ap_points = np.asarray(spec.get("aperture_points"), dtype=float)
+            ap_lines = np.asarray(spec.get("aperture_lines"), dtype=np.int64)
+            if ap_points.ndim == 2 and ap_points.shape[0] >= 2 and ap_points.shape[1] >= 3 and ap_lines.size >= 3:
+                ap_mesh = pv.PolyData(ap_points[:, :3], lines=ap_lines)
+                self._add_mesh_actor(
+                    ap_mesh,
+                    color=tuple(spec.get("aperture_color", (0.98, 0.78, 0.12))),
+                    opacity=0.9,
+                    line_width=2.5,
+                )
+                count += 1
+        except Exception:
+            pass
         try:
             reaching = int(spec.get("reaching_total", 0))
             clipped = int(spec.get("clipped_total", 0))
             axis = spec.get("clip_axis")
             axis_text = f"  (fold axis {axis})" if axis else ""
+            aperture_half = spec.get("aperture_half")
+            aperture_text = ""
+            if aperture_half and axis in ("X", "Y"):
+                fold_half = aperture_half[0] if axis == "X" else aperture_half[1]
+                perp_half = aperture_half[1] if axis == "X" else aperture_half[0]
+                aperture_text = (
+                    f"\nBS-exit stop clear aperture ~{2 * fold_half:.0f} mm on the fold axis "
+                    f"vs ~{2 * perp_half:.0f} mm across"
+                )
             z = spec.get("clip_plane_z")
             anchor_z = float(z) if z is not None else float(spec.get("detector_z") or 0.0)
             self._queue_analysis_overlay_label(
                 "Coaxial-LED illumination rays\n"
-                f"green {reaching} -> reaches FOV  ·  red {clipped} -> clipped at BS-exit stop{axis_text}",
+                f"green {reaching} -> reaches FOV  ·  red {clipped} -> clipped at BS-exit stop{axis_text}"
+                f"{aperture_text}",
                 center=(0.0, 0.0, anchor_z),
                 normal=(0.0, 0.0, 1.0),
             )

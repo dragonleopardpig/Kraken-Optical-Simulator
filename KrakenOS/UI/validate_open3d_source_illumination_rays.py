@@ -15,11 +15,14 @@ This guard is display-free (pure numpy + a headless trace, no VTK). It pins:
     comparing the clipped terminals against the SURVIVOR aperture envelope, NOT by raw spread. The
     fixture deliberately makes the clipped rays spread WIDER on the perpendicular axis (they fill it)
     than on the fold axis they are cut on, so a naive "widest-spread" heuristic would name the wrong
-    axis; the survivor-envelope test must still return the fold axis.
+    axis; the survivor-envelope test must still return the fold axis. The limiting BS-exit-stop clear
+    aperture (Feature B1), read off the survivors, is a well-formed rectangle outline at the clip
+    plane, NARROWER on the fold axis than across, and the clipped rays reach BEYOND it on the fold axis.
   * INTEGRATION on the real coaxial-LED BS scene: ``source_illumination_rays_overlay_spec`` returns
     BOTH reaching and clipped rays, the clip plane sits at the BS-exit stop (~75, clearly upstream of
-    the ~130 detector), the fold axis is X (the foreshortened 55->39 axis), and it is CACHED (a
-    second call returns the same object -- bugs/0166).
+    the ~130 detector), the fold axis is X (the foreshortened 55->39 axis), the stop aperture is
+    foreshortened on the fold axis with the clipped rays overhanging it, and it is CACHED (a second
+    call returns the same object -- bugs/0166).
   * RENDER-ONLY / TOGGLE contract: ``refresh_scene`` reads ``show_source_illumination_rays_var`` and
     calls ``_add_source_illumination_ray_overlays``; that renderer never rebuilds the system; and the
     Overlays menu exposes the toggle.
@@ -161,6 +164,37 @@ def _check_pure_geometry(failures: list[str]) -> None:
             "regressed to naming the widest-spread axis (Y) instead of the foreshortened fold axis"
         )
 
+    # Limiting BS-exit-stop aperture (Feature B1): a well-formed rectangle outline at the clip plane,
+    # read off the survivors, NARROWER on the fold axis (x) than across (y), with the clipped rays
+    # reaching BEYOND it on the fold axis (that is what "clipped" means here).
+    ap_pts = np.asarray(spec.get("aperture_points"), dtype=float)
+    ap_lines = np.asarray(spec.get("aperture_lines"), dtype=np.int64)
+    if ap_pts.shape != (5, 3):
+        failures.append(f"PURE: aperture_points shape {ap_pts.shape} != (5, 3) closed rectangle loop")
+    else:
+        if not np.allclose(ap_pts[:, 2], 75.0, atol=1e-6):
+            failures.append("PURE: aperture rectangle is not on the clip plane z=75")
+        if not np.allclose(ap_pts[0], ap_pts[-1]):
+            failures.append("PURE: aperture rectangle loop is not closed (first != last vertex)")
+        err = _validate_line_cells(ap_pts, ap_lines)
+        if err is not None:
+            failures.append(f"PURE: aperture_lines malformed -- {err}")
+    aperture_half = spec.get("aperture_half")
+    clipped_half = spec.get("clipped_half")
+    if not aperture_half or not clipped_half:
+        failures.append("PURE: aperture_half / clipped_half missing (survivor aperture not measured)")
+    else:
+        if not (aperture_half[0] < aperture_half[1] - 1.0):
+            failures.append(
+                f"PURE: aperture not foreshortened on the fold axis "
+                f"(x half {aperture_half[0]:.1f} !< y half {aperture_half[1]:.1f})"
+            )
+        if not (clipped_half[0] > aperture_half[0] + 1.0):
+            failures.append(
+                f"PURE: clipped rays do not reach past the aperture on the fold axis "
+                f"(clipped x {clipped_half[0]:.1f} !> aperture x {aperture_half[0]:.1f})"
+            )
+
     # Subsample cap: totals stay full, drawn is capped, and the cap is deterministic.
     capped = sir.build_source_illumination_rays_overlay(records, max_per_class=10, seed=7)
     if capped is None:
@@ -218,11 +252,27 @@ def _check_integration(failures: list[str], notes: list[str]) -> None:
         failures.append(
             f"INTEGRATION: fold/clip axis {spec.get('clip_axis')!r} != 'X' (foreshortened 55->39 axis)"
         )
+    aperture_half = spec.get("aperture_half")
+    clipped_half = spec.get("clipped_half")
+    if not aperture_half or not clipped_half:
+        failures.append("INTEGRATION: limiting-aperture half-extents not measured on the real scene")
+    else:
+        if not (aperture_half[0] < aperture_half[1]):
+            failures.append(
+                f"INTEGRATION: BS-exit-stop aperture not foreshortened on the fold axis "
+                f"(x half {aperture_half[0]:.1f} !< y half {aperture_half[1]:.1f})"
+            )
+        if not (clipped_half[0] > aperture_half[0]):
+            failures.append("INTEGRATION: clipped rays do not overhang the aperture on the fold axis")
     if editor.source_illumination_rays_overlay_spec(system, bundle) is not spec:
         failures.append("INTEGRATION: rays overlay is not cached (re-traces every call) -- breaks bugs/0166")
+    ap = spec.get("aperture_half")
+    ap_text = ""
+    if ap:
+        ap_text = f", stop aperture ~{2 * ap[0]:.0f}x{2 * ap[1]:.0f} mm (fold x perp)"
     notes.append(
         f"integration: {_TRACE_RAYS} rays -> reaching {spec['reaching_total']} / clipped "
-        f"{spec['clipped_total']} at z={float(z):.1f}, fold axis {spec.get('clip_axis')}"
+        f"{spec['clipped_total']} at z={float(z):.1f}, fold axis {spec.get('clip_axis')}{ap_text}"
     )
 
 
