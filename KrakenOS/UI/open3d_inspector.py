@@ -11277,7 +11277,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return False
         return True
 
-    def _apply_navigation_cube_orientation(self, offset_unit, view_up) -> None:
+    def _apply_navigation_cube_orientation(self, offset_unit, view_up, sign=None) -> None:
         """Aim the main camera along a navigation-cube face/edge/corner pick
         (bugs/0156), then reframe/backstop/render via _on_navigation_cube_snap so a
         cube face is byte-identical to the matching +yz/-yz/... preset button and an
@@ -11288,12 +11288,22 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         pose). The camera looks from ``center + offset*distance`` toward the scene
         centre; the reframe recomputes the exact distance/zoom for the orientation,
         so only the view DIRECTION and UP set here matter.
+
+        ``sign`` (the picked ``{-1,0,1}^3`` triple) lets a CORNER snap give a LOCAL ISO
+        view (bugs/0254): its roll is made relative to the CURRENT view so the visible
+        labels keep their present up/down sense (e.g. a corner click after you rolled
+        "RIGHT" upside down keeps it upside down) instead of resetting to the absolute
+        world-up ISO. Faces/edges keep their absolute ``view_up``.
         """
         if self._renderer is None:
             return
         camera = self._renderer.GetActiveCamera()
         if camera is None:
             return
+        try:
+            current_up = np.asarray(camera.GetViewUp(), dtype=float).reshape(3)
+        except Exception:
+            current_up = None
         bounds = self._camera_fit_bounds()
         if (
             bounds is not None
@@ -11324,6 +11334,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return
         offset = offset / offset_norm
         distance = max(radius * 2.2, 50.0)
+        # bugs/0254: a CORNER pick gives a LOCAL ISO -- preserve the current roll by
+        # projecting the current view-up onto the new sight line, so the visible labels
+        # keep their up/down sense instead of snapping to the absolute world-up ISO. Only
+        # corners are relative; faces/edges keep their absolute view_up.
+        if sign is not None and current_up is not None and float(np.linalg.norm(current_up)) > 1e-9:
+            try:
+                from KrakenOS.UI.services.nav_cube_orientation import (
+                    orientation_kind,
+                    relative_up_about_sight,
+                )
+
+                if orientation_kind(tuple(int(s) for s in sign)) == "corner":
+                    view_up = relative_up_about_sight(offset, current_up, fallback_up=view_up)
+            except Exception:
+                pass
         try:
             camera.SetParallelProjection(1)
             camera.SetFocalPoint(*center.tolist())

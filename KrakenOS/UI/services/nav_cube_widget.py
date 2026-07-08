@@ -21,8 +21,9 @@ headless); this file is the thin VTK shell around it and is verified by eyeball.
 
 The host wires three callbacks:
 
-* ``apply_orientation(offset_unit, view_up)`` -- snap the main camera to a picked
-  face/edge/corner (host reframes + renders);
+* ``apply_orientation(offset_unit, view_up, sign)`` -- snap the main camera to a picked
+  face/edge/corner (host reframes + renders); ``sign`` lets the host make a corner's
+  ISO roll LOCAL/relative to the current view (bugs/0254);
 * ``apply_step(kind)`` -- one of ``roll_ccw``/``roll_cw``/``az_left``/``az_right``/
   ``el_up``/``el_down`` from an arrow;
 * ``get_main_camera()`` -- the live main ``vtkCamera`` to mirror each render.
@@ -126,7 +127,7 @@ class NavigationCube:
         main_renderer,
         interactor,
         *,
-        apply_orientation: Callable[[tuple, tuple], None],
+        apply_orientation: Callable[[tuple, tuple, tuple], None],
         apply_step: Callable[[str], None],
         get_main_camera: Callable[[], object],
         iso_up_axis: Callable[[], str] | None = None,
@@ -609,7 +610,9 @@ class NavigationCube:
                         except Exception:
                             up_axis = "y"
                     offset_unit, view_up = orientation_pose(sign, up_axis=up_axis)
-                    self._apply_orientation(offset_unit, view_up)
+                    # Pass the sign so the host can make a CORNER's ISO roll relative to the
+                    # current view (local ISO, bugs/0254); faces/edges keep the absolute up.
+                    self._apply_orientation(offset_unit, view_up, tuple(int(s) for s in sign))
                     return True
         return False
 

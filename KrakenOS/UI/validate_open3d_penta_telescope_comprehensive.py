@@ -11456,6 +11456,32 @@ def phase_229_nav_cube_freecad_style(
     return result
 
 
+def phase_230_nav_cube_corner_local_up(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0254: a nav-cube CORNER click gives a LOCAL ISO -- its roll stays relative to the
+    CURRENT view (letters that were rolled upside down stay upside down) instead of snapping to
+    the absolute world-up ISO. `validate_open3d_nav_cube_corner_local_up` pins the
+    relative_up_about_sight math (unit, perpendicular to the new sight line, same roll side as
+    the current up, upside-down stays upside down, upright stays upright), the degenerate
+    fallback, and the inspector/widget wiring that applies it to corners only. Display-free."""
+    result = PhaseResult(name="Phase 230: nav cube corner ISO is local (roll relative to the current view)")
+    try:
+        from KrakenOS.UI.validate_open3d_nav_cube_corner_local_up import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"nav-cube-corner-local-up guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("nav-cube-corner-local-up phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11730,6 +11756,7 @@ def main() -> int:
             phase_227_nav_cube_arrow_hover,
             phase_228_nav_cube_corner_iso,
             phase_229_nav_cube_freecad_style,
+            phase_230_nav_cube_corner_local_up,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

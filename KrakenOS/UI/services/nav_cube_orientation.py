@@ -27,6 +27,12 @@ octant's sign, with ``view_up`` world ``+Y``. So all 8 corners frame the scene
 the same upright, wide-screen-friendly way the ISO button does -- instead of a
 steeper symmetric ``(+-1, +-1, +-1)`` diagonal.
 
+The corner ``view_up`` returned here is the ABSOLUTE (global) ISO up; at snap time
+the inspector makes it LOCAL -- :func:`relative_up_about_sight` projects the camera's
+CURRENT up onto the new sight line so a corner ISO keeps the picture's current roll
+(the visible labels stay however they are now -- e.g. upside down) rather than
+resetting to world-up (bugs/0254). The absolute up here is the fallback.
+
 CAD face labels (the user's choice): ``+Z = FRONT``, ``+Y = TOP``, ``+X = RIGHT``
 and their opposites.
 """
@@ -130,6 +136,37 @@ def iso_corner_pose(sign, up_axis: str = "y"):
         offset = offset / norm
     view_up = tuple(1.0 if i == axis else 0.0 for i in range(3))
     return (tuple(float(v) for v in offset), view_up)
+
+
+def relative_up_about_sight(offset_unit, current_up, fallback_up=None):
+    """View-up that PRESERVES the current camera roll for a new sight direction (bugs/0254).
+
+    Projects ``current_up`` onto the plane perpendicular to the new view direction
+    (``-offset_unit``) and normalizes it. Used for a CORNER snap so the ISO view is LOCAL
+    (relative to the view you are in) rather than GLOBAL: the picture keeps its current
+    up/down sense, so the visible face labels stay however they are now -- e.g. if you
+    rolled "RIGHT" upside down, it stays upside down after the corner click -- instead of
+    snapping back to the absolute world-up ISO.
+
+    Only the ROLL becomes relative; the sight direction is still the picked octant's ISO
+    diagonal. Falls back to ``fallback_up`` (the absolute pose up) projected, then to the
+    world-projected up, when ``current_up`` is (near) parallel to the sight line. Returns a
+    unit ``(x, y, z)`` tuple perpendicular to the sight line.
+    """
+    look = -np.asarray(offset_unit, dtype=float).reshape(3)
+    look_norm = float(np.linalg.norm(look))
+    if look_norm <= 1e-12:
+        return tuple(float(v) for v in _projected_up(offset_unit))
+    look = look / look_norm
+    for candidate in (current_up, fallback_up):
+        if candidate is None:
+            continue
+        vec = np.asarray(candidate, dtype=float).reshape(3)
+        proj = vec - float(np.dot(vec, look)) * look
+        proj_norm = float(np.linalg.norm(proj))
+        if proj_norm > 1e-6:
+            return tuple(float(v) for v in (proj / proj_norm))
+    return tuple(float(v) for v in _projected_up(offset_unit))
 
 
 def orientation_pose(sign, up_axis: str = "y"):
