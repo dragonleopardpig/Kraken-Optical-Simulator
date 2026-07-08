@@ -11663,6 +11663,44 @@ def phase_235_illumination_source_no_imaging_hijack(
     return result
 
 
+def phase_236_illumination_marker_emission(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Phase 235 keeps a face-bound illumination marker OUT of the imaging trace (bugs/0266); the cost was
+    that marking a face gave the user NO visual feedback ("the rays seem not changing, no full-surface rays
+    from that surface"). THIS phase pins the fix (bugs/0267): the marked CAD/STL face now floods a straight
+    emission ray from every sampled point on its WHOLE surface (an area-matched disk sized from the live
+    face record, not the stored 2 mm launch disk), out along the launch direction. It is the SOURCE
+    emission -- honest source physics, NOT a through-system trace (illumination refracting/scattering onto
+    the detector is the Stage-3 coupling; a mid-system face source stops at S0 in the imaging trace). It is
+    built purely from the marker LAUNCH bundles and never traces, so it cannot touch last_rays /
+    _last_scene_bundle -- the imaging image plane / detector / optical axis stay fixed (0266 preserved).
+    `validate_open3d_illumination_marker_emission` is a display-free guard: WIRING (bundle builder keeps
+    ONLY markers; the spec compute is stub-only -- no trace, no imaging-state reference; render-only
+    consumer; refresh + Overlays-menu wiring), PURE (2-vertex segment per ray, zero-span/non-finite dropped,
+    subsample cap), BEHAVIOUR (marker-only -> emission bundle + 0 imaging bundles + imaging state untouched;
+    mixed 1/1; marker-free -> nothing), and BINDING (real promoted face sized to its full surface,
+    radius >> 2 mm; SKIPs without the STEP fixture).
+    """
+    result = PhaseResult(
+        name="Phase 236: a marked face floods a full-surface illumination emission (isolated from imaging)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_illumination_marker_emission import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"illumination-marker-emission guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("illumination-marker-emission phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -11943,6 +11981,7 @@ def main() -> int:
             phase_233_face_illumination_source,
             phase_234_analysis_overlay_label_placement,
             phase_235_illumination_source_no_imaging_hijack,
+            phase_236_illumination_marker_emission,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

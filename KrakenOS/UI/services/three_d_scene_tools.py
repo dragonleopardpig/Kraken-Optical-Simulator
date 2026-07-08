@@ -59,7 +59,10 @@ from KrakenOS.UI.services.best_focus_surface import (
 from KrakenOS.UI.services.distortion_grid import build_distortion_grid
 from KrakenOS.UI.services.spot_field_map import build_spot_field_map
 from KrakenOS.UI.services.source_illumination_overlay import build_source_illumination_overlay
-from KrakenOS.UI.services.source_illumination_rays_overlay import build_source_illumination_rays_overlay
+from KrakenOS.UI.services.source_illumination_rays_overlay import (
+    build_illumination_marker_rays_overlay,
+    build_source_illumination_rays_overlay,
+)
 from KrakenOS.UI.source_illumination_analysis import (
     source_illumination_map_data_from_samples,
     source_illumination_map_extent,
@@ -3655,6 +3658,103 @@ class ThreeDSceneToolsMixin:
             detector_z = None
         try:
             return build_source_illumination_rays_overlay(records, detector_z=detector_z)
+        except Exception:
+            return None
+
+    def _illumination_marker_fingerprint(self) -> tuple:
+        """A hashable fingerprint of the enabled face-bound illumination markers (identity + placement)
+        for the emission overlay cache key. The full-surface radius is derived from the face record at
+        build time (its geometry rides in the row-specs signature), so the stored marker fields are
+        enough here to invalidate the cache when a face is (un)marked, re-anchored, or the emitter moves."""
+        from KrakenOS.UI.scene_source_analysis import scene_source_spec_is_face_bound_marker
+
+        specs = self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []))
+        fingerprint = []
+        for spec in specs:
+            if not scene_source_spec_is_face_bound_marker(spec):
+                continue
+            if not (bool(spec.get("enabled", True)) and bool(spec.get("physical", True))):
+                continue
+            fingerprint.append(
+                (
+                    self._source_spec_int(spec, "face_anchor_row", -1),
+                    str(spec.get("face_anchor_face_id", "") or ""),
+                    round(float(spec.get("source_x", 0.0) or 0.0), 4),
+                    round(float(spec.get("source_y", 0.0) or 0.0), 4),
+                    round(float(spec.get("source_z", 0.0) or 0.0), 4),
+                    round(float(spec.get("source_l", 0.0) or 0.0), 4),
+                    round(float(spec.get("source_m", 0.0) or 0.0), 4),
+                    round(float(spec.get("source_n", 0.0) or 0.0), 4),
+                    int(spec.get("ray_count", 0) or 0),
+                )
+            )
+        return tuple(fingerprint)
+
+    def illumination_marker_rays_overlay_spec(self, system, scene_bundle, *, wavelength=None):
+        """Build the additive full-surface illumination-EMISSION overlay for face-bound markers, or None
+        (bugs/0267). Lazy + signature-cached + render-only (0166): it draws the SOURCE emission -- a
+        straight ray per sampled point on the marked face, out along its launch direction, flooding the
+        whole face -- built purely from the marker launch bundles. It does NOT trace through the optics
+        (illumination refracting/scattering onto the detector is the Stage-3 coupling; a mid-system face
+        source stops at S0 in the imaging trace), and it never touches ``last_rays`` / ``_last_scene_bundle``
+        so the imaging image-plane / detector / optical axis stay fixed (bugs/0266). ``system`` /
+        ``scene_bundle`` are unused today but kept for signature parity with the sibling overlays."""
+        if wavelength is None:
+            try:
+                wavelength = float(self._current_wavelength())
+            except Exception:
+                return None
+        try:
+            # _preview_trace_signature captures only the PRIMARY UI source, NOT the scene-source list
+            # where face markers live -- so fold in a marker fingerprint or the cache would go stale the
+            # moment a face is (un)marked (its signature would not change and a prior None would persist).
+            signature = (
+                self._preview_trace_signature(),
+                self._illumination_marker_fingerprint(),
+                round(float(wavelength), 6),
+                "illum_marker_rays",
+            )
+        except Exception:
+            signature = None
+        cache = self.__dict__.get("_illumination_marker_rays_overlay_cache")
+        if signature is not None and isinstance(cache, tuple) and len(cache) == 2 and cache[0] == signature:
+            return cache[1]
+        spec = self._compute_illumination_marker_rays_overlay_spec(float(wavelength))
+        if signature is not None:
+            self._illumination_marker_rays_overlay_cache = (signature, spec)
+        return spec
+
+    def _compute_illumination_marker_rays_overlay_spec(self, wavelength: float):
+        try:
+            bundles, sources = self._build_illumination_marker_bundles(wavelength)
+        except Exception:
+            return None
+        if not bundles:
+            return None
+        starts: list[np.ndarray] = []
+        ends: list[np.ndarray] = []
+        for bundle, source in zip(bundles, sources):
+            try:
+                x, y, z, l_dir, m_dir, n_dir = (np.asarray(part, dtype=float) for part in bundle)
+            except Exception:
+                continue
+            if x.size == 0:
+                continue
+            origins = np.column_stack([x, y, z])
+            dirs = np.column_stack([l_dir, m_dir, n_dir])
+            norms = np.linalg.norm(dirs, axis=1, keepdims=True)
+            norms[norms < 1e-9] = 1.0
+            dirs = dirs / norms
+            # Emission-ray length scales with the emitting face so the flood reads relative to its
+            # own aperture (a big face throws long rays, a small face short ones).
+            radius = float((getattr(source, "settings", None) or {}).get("radius", 2.0))
+            length = max(6.0 * radius, 10.0)
+            starts.append(origins)
+            ends.append(origins + dirs * length)
+        if not starts:
+            return None
+        try:
+            return build_illumination_marker_rays_overlay(np.vstack(starts), np.vstack(ends))
         except Exception:
             return None
 

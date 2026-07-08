@@ -236,7 +236,8 @@
     "232": "pass",
     "233": "pass",
     "234": "pass",
-    "235": "pass"
+    "235": "pass",
+    "236": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -473,6 +474,7 @@
     "232": "coaxial-LED LED->BS->object rays split green=reaches FOV / red=clipped at the BS-exit stop",
     "233": "mark a CAD/STL face as an illumination source (face-anchored emitter tracks moves)",
     "234": "analysis-overlay legend anchors above the figure and grows upward (no overlap)",
-    "235": "a face-bound illumination marker does not hijack the imaging trace (image plane stays put)"
+    "235": "a face-bound illumination marker does not hijack the imaging trace (image plane stays put)",
+    "236": "a marked face floods a full-surface illumination emission (isolated from imaging)"
   }
 }

@@ -835,6 +835,13 @@ class Open3DSceneRefreshService:
         source_illumination_rays_actors = 0
         if bool(getattr(self, "show_source_illumination_rays_var", None) is not None and self.show_source_illumination_rays_var.get()):
             source_illumination_rays_actors = self._add_source_illumination_ray_overlays(system, scene_bundle)
+        # The additive full-surface EMISSION from a marked CAD/STL face (bugs/0267): the marked face
+        # floods its whole surface with traced rays. Live-read here so its toggle is a render-only
+        # refresh (bugs/0166); the ISOLATED trace behind it is lazy + cached on the editor and never
+        # touches the imaging trace, so the image plane / detector / optical axis stay put (bugs/0266).
+        illumination_marker_rays_actors = 0
+        if bool(getattr(self, "show_illumination_marker_rays_var", None) is not None and self.show_illumination_marker_rays_var.get()):
+            illumination_marker_rays_actors = self._add_illumination_marker_ray_overlays(system, scene_bundle)
         # One combined, expanding legend for every analysis overlay queued above (replaces the
         # per-overlay billboards that overlapped when several were on).
         analysis_overlay_label_actors = self._add_grouped_analysis_overlay_label()

@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import random
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 
 import KrakenOS as Kos
-from KrakenOS.UI.optical_solid_metadata import optical_solid_face_marker_label
+from KrakenOS.UI.optical_solid_metadata import (
+    optical_solid_face_effective_radius_mm,
+    optical_solid_face_marker_label,
+)
 from KrakenOS.UI.scene_geometry import SceneSource3D
 from KrakenOS.UI.scene_row_mapping import SOURCE_ROW_ORDER_DEFAULT, normalize_source_row_order
 from KrakenOS.UI.scene_source_analysis import (
@@ -1613,6 +1617,62 @@ class SourceModelingMixin:
                 continue
             bundles.append(bundle)
             sources.append(source)
+        return bundles, sources
+
+    def _illumination_marker_full_surface_source(self, source: SceneSource3D) -> SceneSource3D:
+        """Return a copy of a face-bound illumination marker sized to flood the WHOLE marked face
+        (bugs/0267): an area-matched disk whose radius is the live face record's effective radius,
+        replacing the stored 2 mm launch disk. World placement (face centroid + outward normal) is
+        already baked into ``source.origin`` / ``source.direction`` by
+        ``create_illumination_source_at_face`` + ``resync_face_bound_scene_sources``, so NO imaging
+        conjugate is touched. Falls back to the stored source untouched when the face record cannot
+        be resolved (e.g. the promoted solid is not in the scene)."""
+        settings = dict(source.settings or {})
+        row = self._source_spec_int(settings, "face_anchor_row", -1)
+        face_id = str(settings.get("face_anchor_face_id", "") or "").strip()
+        if row < 0 or not face_id:
+            return source
+        face = self._scene_source_face_anchor_record(row, face_id)
+        if not isinstance(face, dict):
+            return source
+        radius = float(optical_solid_face_effective_radius_mm(face))
+        if not (radius > 1e-6):
+            return source
+        sized_settings = dict(settings)
+        sized_settings["radius"] = radius
+        # A modest cone keeps the flood visibly diverging rather than a perfect pencil sheet.
+        sized_settings.setdefault("cone_deg", 20.0)
+        return replace(
+            source,
+            model="Collimated disk source",
+            settings=sized_settings,
+            ray_count=max(int(source.ray_count), 240),
+        )
+
+    def _build_illumination_marker_bundles(
+        self, wavelength: float
+    ) -> tuple[list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]], list[SceneSource3D]]:
+        """Launch bundles for face-bound illumination MARKERS only -- the additive full-surface
+        illumination emission (bugs/0267). This is the deliberate COMPLEMENT of
+        ``_build_scene_source_bundles`` (which EXCLUDES markers per bugs/0266 so they never hijack the
+        imaging trace): here we keep ONLY markers and flood the whole marked face. The caller traces
+        these into a SEPARATE keeper whose records never feed the imaging image-plane / detector /
+        optical-axis derivation, so the 0266 fix is preserved. Returns ``(bundles, sources)``."""
+        if not self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", [])):
+            return [], []
+        bundles = []
+        sources = []
+        for source in self._collect_scene_sources(wavelength=wavelength):
+            if not bool(source.enabled) or not bool(source.physical):
+                continue
+            if not scene_source_spec_is_face_bound_marker(source):
+                continue
+            sized = self._illumination_marker_full_surface_source(source)
+            bundle = self._build_scene_source_bundle(sized)
+            if bundle is None or len(np.asarray(bundle[0])) <= 0:
+                continue
+            bundles.append(bundle)
+            sources.append(sized)
         return bundles, sources
 
     def _trace_terminal_policy_metadata(self, trace_state: dict[str, object] | None = None) -> dict[str, object]:

@@ -655,6 +655,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # they reach the FOV / red where the BS-exit stop clips them -- the mechanism behind the
         # dark-edge heatmap above. Lazy + cached on the editor; render-only toggle (bugs/0166).
         self.show_source_illumination_rays_var = tk.BooleanVar(value=False)
+        # Additive full-surface illumination EMISSION from a marked CAD/STL face (bugs/0267): the marked
+        # face floods its whole surface with traced rays, isolated from the imaging trace (bugs/0266).
+        # Defaults ON so marking a face gives immediate visual feedback -- cheap when no marker exists
+        # (the bundle builder returns empty). Lazy + cached on the editor; render-only toggle (0166).
+        self.show_illumination_marker_rays_var = tk.BooleanVar(value=True)
         self.slide_along_axis_mode_var = tk.BooleanVar(value=False)
         self.show_live_controls_panel_var = tk.BooleanVar(value=True)
         self.show_scene_components_panel_var = tk.BooleanVar(value=True)
@@ -12872,6 +12877,46 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
         return count
+
+    def _add_illumination_marker_ray_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
+        """Draw the additive full-surface EMISSION from face-bound illumination markers (bugs/0267):
+        every ray the marked CAD/STL face floods out, traced through the system, in the emission
+        colour. The isolated trace + its signature cache live on the editor
+        (``illumination_marker_rays_overlay_spec``) and NEVER touch the imaging trace, so this stays
+        render-only here and toggling is a cached-scene re-render (0166)."""
+        if self._renderer is None or pv is None:
+            return 0
+        try:
+            spec = self.editor.illumination_marker_rays_overlay_spec(system, scene_bundle)
+        except Exception as exc:
+            self.editor.append_debug(f"Illumination marker rays overlay failed: {exc}")
+            return 0
+        if not spec:
+            return 0
+        try:
+            points = np.asarray(spec.get("points"), dtype=float)
+            lines = np.asarray(spec.get("lines"), dtype=np.int64)
+            if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3 or lines.size < 3:
+                return 0
+            mesh = pv.PolyData(points[:, :3], lines=lines)
+            self._add_mesh_actor(
+                mesh,
+                color=tuple(spec.get("color", (0.35, 0.85, 1.0))),
+                opacity=0.7,
+                line_width=1.2,
+            )
+        except Exception:
+            return 0
+        try:
+            total = int(spec.get("total", 0))
+            self._queue_analysis_overlay_label(
+                f"Illumination emission (marked face)\nfull-surface flood · {total} emission rays",
+                center=(0.0, 0.0, 0.0),
+                normal=(0.0, 0.0, 1.0),
+            )
+        except Exception:
+            pass
+        return 1
 
     def _add_spot_field_map_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
         """Draw the per-field RMS spot circles on the detector, coloured good->bad

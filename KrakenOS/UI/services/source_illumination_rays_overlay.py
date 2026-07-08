@@ -38,6 +38,13 @@ ILLUM_RAY_SUBSAMPLE_SEED = 7
 # of the BS-clipping story and would render as a zero-length artefact.
 ILLUM_RAY_MIN_Z_SPAN_MM = 1.0
 
+# Additive full-surface illumination emission from a marked CAD/STL face (bugs/0267). A distinct
+# emissive cyan so the marked-face flood reads apart from the green/red coaxial-fate rays. The span
+# gate here is axis-AGNOSTIC (bbox diagonal): a marked face can emit along ANY axis (e.g. a beam
+# splitter's +X illumination face), so a z-only gate would wrongly drop a sideways flood.
+ILLUM_MARKER_RAY_COLOR = (0.35, 0.85, 1.0)
+ILLUM_MARKER_RAY_MIN_SPAN_MM = 1.0
+
 
 def _record_polyline(record, min_z_span):
     """World-coord polyline for one ray: the LED origin followed by each surface hit. None when the ray
@@ -224,4 +231,53 @@ def build_source_illumination_rays_overlay(
         "aperture_half": None if aperture_half is None else [float(aperture_half[0]), float(aperture_half[1])],
         "clipped_half": None if clipped_half is None else [float(clipped_half[0]), float(clipped_half[1])],
         "detector_z": None if detector_z is None else float(detector_z),
+    }
+
+
+def build_illumination_marker_rays_overlay(
+    starts,
+    ends,
+    *,
+    color=ILLUM_MARKER_RAY_COLOR,
+    max_rays=ILLUM_RAY_MAX_PER_CLASS,
+    seed=ILLUM_RAY_SUBSAMPLE_SEED,
+    min_span=ILLUM_MARKER_RAY_MIN_SPAN_MM,
+):
+    """Bake the additive full-surface EMISSION from a marked CAD/STL face into one emission-coloured
+    line set (bugs/0267): a straight segment per sampled ray, from its origin on the face out along its
+    launch direction. This is the SOURCE emission -- honest source physics (the face flooding rays
+    across its whole surface) -- NOT a through-system trace (illumination refracting/scattering onto
+    the detector is the Stage-3 coupling; a mid-system face source stops at S0 in the imaging trace).
+    ``starts`` / ``ends`` are (N,3) world-coord arrays. Returns a spec dict (points (N,3) + VTK line
+    cells + colour + counts) or None when nothing is drawable."""
+    starts = np.asarray(starts, dtype=float)
+    ends = np.asarray(ends, dtype=float)
+    if starts.ndim != 2 or starts.shape[1] < 3 or starts.shape != ends.shape or starts.shape[0] < 1:
+        return None
+    seg = np.stack([starts[:, :3], ends[:, :3]], axis=1)  # (N, 2, 3)
+    finite = np.all(np.isfinite(seg), axis=(1, 2))
+    spans = np.linalg.norm(seg[:, 1, :] - seg[:, 0, :], axis=1)
+    keep = finite & (spans >= float(min_span))
+    seg = seg[keep]
+    if seg.shape[0] < 1:
+        return None
+    total = int(seg.shape[0])
+    rng = np.random.default_rng(int(seed))
+    if max_rays is not None and seg.shape[0] > int(max_rays):
+        idx = rng.choice(seg.shape[0], int(max_rays), replace=False)
+        seg = seg[idx]
+    drawn = int(seg.shape[0])
+    points = seg.reshape(-1, 3)  # (2*drawn, 3)
+    cells = np.empty((drawn, 3), dtype=np.int64)
+    cells[:, 0] = 2
+    cells[:, 1] = np.arange(0, 2 * drawn, 2, dtype=np.int64)
+    cells[:, 2] = np.arange(1, 2 * drawn, 2, dtype=np.int64)
+    lines = cells.reshape(-1)
+    return {
+        "kind": "illumination_marker_rays",
+        "points": points,
+        "lines": lines,
+        "color": tuple(float(c) for c in color),
+        "total": total,
+        "drawn": drawn,
     }
