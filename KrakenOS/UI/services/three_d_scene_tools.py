@@ -3594,9 +3594,22 @@ class ThreeDSceneToolsMixin:
         # error is feeding it an imaging sample. Gate on the SAME predicate _build_scene_source_bundles
         # uses to decide whether the preview traces scene sources at all, so the map is drawn iff the
         # rays it bins are genuine source-illumination rays -- general for any loaded scene.
+        #
+        # bugs/0282 (flag_20260709_200037_370, "it still look like symetrical dark, not 2-sided dark"):
+        # a face-bound illumination MARKER (bugs/0264, "Set as Illumination Source" on a CAD face) makes
+        # the spec list non-empty, so the plain non-empty check re-opened this gate -- but a marker is a
+        # DISPLAY designation EXCLUDED from the imaging trace (bugs/0266: _build_scene_source_bundles
+        # skips it, and a marker-only scene falls through to the non-physical Pupil/field reference which
+        # is also not launched). It floods ZERO rays onto the detector, so the heatmap re-binned the same
+        # sparse imaging fan and re-fabricated the exact radial "symmetric dark" 0280 killed (reproduced:
+        # bundles launched=0, 117 imaging hits at +-6.8mm -> centre 1.00 / edge 0.22 / corner 0.08). Gate
+        # on at least one NON-marker source, matching exactly what _build_scene_source_bundles LAUNCHES.
         try:
-            has_scene_source = bool(
-                self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []) or [])
+            from KrakenOS.UI.scene_source_analysis import scene_source_spec_is_face_bound_marker
+
+            specs = self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []) or [])
+            has_scene_source = any(
+                not scene_source_spec_is_face_bound_marker(spec) for spec in specs
             )
         except Exception:
             has_scene_source = True  # can't tell -> preserve prior behavior; never hide a real LED map

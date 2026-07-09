@@ -12089,6 +12089,40 @@ def phase_247_normal_to_sensor_gesture_leave(
     return result
 
 
+def phase_248_illumination_heatmap_marker_gated(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The detector source-illumination heatmap must require a REAL (non-marker) scene source, not just
+    a non-empty spec list (flag_20260709_200037_370 "it still look like symetrical dark, not 2-sided
+    dark" / bugs/0282). A follow-up to bugs/0280: the user marked the beam-splitter face as an
+    illumination source on a pure imaging scene; a face-bound MARKER makes _normalize_scene_source_specs
+    non-empty so 0280's plain gate re-opened, but a marker is EXCLUDED from the imaging trace (bugs/0266)
+    and floods nothing onto the detector -- so the heatmap re-binned the sparse imaging fan and
+    re-fabricated the radial "symmetric dark" 0280 killed. Fix: _compute_source_illumination_overlay_spec
+    gates on at least one NON-marker source (what _build_scene_source_bundles actually launches).
+    `validate_open3d_illumination_heatmap_marker_gated` on the coaxial-LED fixture: REAL-SOURCE (LED still
+    draws + fold darker than perp), MARKER-ONLY (a marker-only list -> None despite >=50 detector hits),
+    MIXED (real + marker -> draws), PREDICATE (marker vs real-LED classification).
+    """
+    result = PhaseResult(
+        name="Phase 248: source-illumination heatmap needs a real source, not a face marker"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_illumination_heatmap_marker_gated import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"illumination-heatmap-marker-gated guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("illumination-heatmap-marker-gated phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12381,6 +12415,7 @@ def main() -> int:
             phase_245_normal_to_sensor_isolation,
             phase_246_illumination_heatmap_source_gated,
             phase_247_normal_to_sensor_gesture_leave,
+            phase_248_illumination_heatmap_marker_gated,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
