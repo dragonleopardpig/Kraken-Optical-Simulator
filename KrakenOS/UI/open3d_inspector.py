@@ -11169,6 +11169,103 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         self.render()
 
+    def view_normal_to_sensor(self) -> bool:
+        """Snap the camera face-on to the detector/sensor plane and frame it to fill the canvas.
+
+        The relative-illumination heatmap drapes onto the detector, but the ISO view sees it
+        edge-on so the user has to hand-zoom every time to read the dark edges. This looks straight
+        DOWN the sensor normal (orthographic, like the cardinal presets) with the parallel scale set
+        to the sensor's own width/height -- so the orange sensor square + its overlay fill the view.
+        Returns False (and logs) when there is no detector plane to aim at.
+        """
+        if self._renderer is None:
+            return False
+        camera = self._renderer.GetActiveCamera()
+        if camera is None:
+            return False
+        bundle = self.__dict__.get("_current_scene_bundle")
+        target = None
+        if bundle is not None:
+            try:
+                target = self.editor._source_illumination_anchor_target(bundle)
+            except Exception:
+                target = None
+        if target is None:
+            try:
+                self.editor.append_debug("Normal to Sensor: no detector/sensor plane in the scene")
+            except Exception:
+                pass
+            return False
+        try:
+            center = np.asarray(getattr(target, "center_world"), dtype=float).reshape(-1)[:3]
+        except Exception:
+            return False
+        normal = self._normalized_vector(getattr(target, "normal_world", None))
+        if normal is None or center.size < 3 or not np.all(np.isfinite(center)):
+            return False
+        tangent = self._normalized_vector(getattr(target, "tangent_world", None))
+        if tangent is None:
+            seed = np.array([1.0, 0.0, 0.0]) if abs(float(normal[0])) < 0.9 else np.array([0.0, 1.0, 0.0])
+            tangent = self._normalized_vector(np.cross(normal, seed))
+        # Sensor local +y (height) is normal x tangent -- the overlay's own bitangent. Use it as the
+        # view-up so the heatmap sits upright; fall back to world +Y on a degenerate cross product.
+        up = self._normalized_vector(np.cross(normal, tangent)) if tangent is not None else None
+        if up is None:
+            up = np.array([0.0, 1.0, 0.0], dtype=float)
+        width = float(getattr(target, "active_width_mm", 0.0) or 0.0)
+        height = float(getattr(target, "active_height_mm", 0.0) or 0.0)
+        if width <= 0.0 or height <= 0.0:
+            # A vendor-glued camera (the MV-150 coaxial case this view exists for) declares its
+            # sensor size in the detector-dims OVERRIDE the orange square is drawn from, not on the
+            # target row (bugs/0276). Consult it so we frame the real 39x39 sensor, not the fallback.
+            overrides = {}
+            try:
+                overrides = self.editor._camera_detector_active_dims_overrides() or {}
+            except Exception:
+                overrides = {}
+            override_dims = None
+            for attr in ("row_index", "trace_surface"):
+                try:
+                    key = int(getattr(target, attr))
+                except Exception:
+                    continue
+                if key in overrides:
+                    override_dims = overrides[key]
+                    break
+            if override_dims:
+                width = float(override_dims[0]) if width <= 0.0 else width
+                height = float(override_dims[1]) if height <= 0.0 else height
+        if width <= 0.0 or height <= 0.0:
+            diameter = float(getattr(target, "diameter_mm", 0.0) or getattr(target, "diameter", 0.0) or 0.0)
+            width = width if width > 0.0 else (diameter if diameter > 0.0 else 10.0)
+            height = height if height > 0.0 else (diameter if diameter > 0.0 else 10.0)
+        scene_center, scene_radius = self._scene_bounds()
+        # Sit on whichever side of the sensor faces the rest of the system, so we look at the
+        # illuminated (front) face. Distance is visually irrelevant under parallel projection but
+        # must clear the scene so nothing clips (bugs/0048); mirror the preset's radius*2.2.
+        to_scene = np.asarray(scene_center, dtype=float) - center
+        view_normal = normal if float(np.dot(normal, to_scene)) >= 0.0 else -normal
+        distance = max(float(scene_radius) * 2.2, float(max(width, height)) * 2.5, 50.0)
+        position = center + view_normal * distance
+        aspect = self._render_aspect()
+        parallel_scale = self._parallel_scale_for_orthographic_fit(width, height, aspect)
+        camera.SetPosition(*position.tolist())
+        camera.SetFocalPoint(*center.tolist())
+        camera.SetViewUp(*up.tolist())
+        try:
+            camera.SetParallelProjection(1)
+            camera.SetParallelScale(float(parallel_scale))
+        except Exception:
+            pass
+        self._camera_preset = "sensor_normal"
+        self._reset_camera_clipping_range_for_scene()
+        try:
+            self._reorient_thickness_labels_for_camera()
+        except Exception:
+            pass
+        self.render()
+        return True
+
     def _camera_sight_line_is_axis_aligned(self, camera, tol: float = 1.0e-3) -> bool:
         """True when the camera looks straight down a principal axis -- a face-on
         plane view (the YZ/XY/XZ presets, whose sight line is +-X/+-Y/+-Z).

@@ -116,6 +116,14 @@ class Open3DTopControlsPanel:
                 MenuCheckbutton("Illum emission", self.inspector.show_illumination_marker_rays_var, self.inspector._on_scene_visibility_changed),
             ),
         )
+        # flag_20260709_114618_526: face-on the sensor so the on-detector overlays (illumination
+        # heatmap etc.) fill the canvas without hand-zooming the Iso view. Snaps the camera down the
+        # detector normal, centred + framed to the sensor.
+        overlay_menu.add_separator()
+        add_menu_commands(
+            overlay_menu,
+            (MenuCommand("Normal to Sensor", self.inspector.view_normal_to_sensor),),
+        )
         pack_menubutton(view_toolbar, "Overlays", overlay_menu, padx=(8, 0))
         self.inspector._open3d_overlay_menu = overlay_menu
         # The Live-panel / Components checkboxes are replaced by the 2D-style
