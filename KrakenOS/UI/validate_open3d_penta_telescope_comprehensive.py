@@ -12020,6 +12020,42 @@ def phase_245_normal_to_sensor_isolation(
     return result
 
 
+def phase_246_illumination_heatmap_source_gated(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The detector source-illumination heatmap must draw ONLY when the preview traced a scene
+    ILLUMINATION source, never for a pure imaging scene (flag_20260709_150933_595 / bugs/0280). The
+    user loaded a full MV-150 imaging system (scene_sources: []); with no scene source the preview
+    traces the sparse IMAGING pupil fan, whose rays converge to the central image region (~+/-6.8 mm
+    of the 23 mm sensor) and never reach the rim. The heatmap binned those rays' DENSITY as relative
+    illumination -> the un-sampled rim read dark -> a false radial "4 sided dark edges" that is
+    neither illumination coverage nor lens vignetting (the builder is correct: a uniform full-sensor
+    sample reads 1.0 everywhere). Fix: `_compute_source_illumination_overlay_spec` gates on the SAME
+    predicate `_build_scene_source_bundles` uses (`_normalize_scene_source_specs(layout_scene_source_specs)`).
+    `validate_open3d_illumination_heatmap_source_gated` is a display-free guard on the coaxial-LED
+    fixture: SOURCE-PRESENT (the map still builds + still reads fold darker than perp -- no 0275-0277
+    regression) + SOURCE-ABSENT (clearing ONLY the scene-source specs makes the SAME path return None
+    despite >=50 detector hits -- the gate keys off source presence, not hit count).
+    """
+    result = PhaseResult(
+        name="Phase 246: source-illumination heatmap draws only with a scene illumination source"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_illumination_heatmap_source_gated import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"illumination-heatmap-source-gated guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("illumination-heatmap-source-gated phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12310,6 +12346,7 @@ def main() -> int:
             phase_243_illumination_heatmap_override,
             phase_244_illumination_heatmap_full_sensor,
             phase_245_normal_to_sensor_isolation,
+            phase_246_illumination_heatmap_source_gated,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

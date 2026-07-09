@@ -3582,6 +3582,26 @@ class ThreeDSceneToolsMixin:
             surface_index = int(getattr(target, "trace_surface", getattr(target, "row_index", -1)))
         except Exception:
             return None
+        # This heatmap bins SOURCE-illumination rays at the detector and reads their local hit
+        # DENSITY as relative illumination -- valid only when the preview traced a scene
+        # illumination source that floods the sensor area (the coaxial-LED case: ~60k rays tiling
+        # the FOV). With NO scene source the preview instead traces the sparse IMAGING pupil/field
+        # fan (flag_20260709_150933_595: attachment/machine_vision_150mm_test.py, scene_sources: []),
+        # whose rays converge to the central image region (~±6.8 mm of the 23 mm sensor) and never
+        # reach the rim -- so binning their density paints the un-sampled rim dark and fabricates a
+        # radial "4 sided dark edges" that is neither illumination coverage nor lens vignetting.
+        # The builder is correct (a uniform full-sensor sample reads 1.0 everywhere, bugs/0280); the
+        # error is feeding it an imaging sample. Gate on the SAME predicate _build_scene_source_bundles
+        # uses to decide whether the preview traces scene sources at all, so the map is drawn iff the
+        # rays it bins are genuine source-illumination rays -- general for any loaded scene.
+        try:
+            has_scene_source = bool(
+                self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []) or [])
+            )
+        except Exception:
+            has_scene_source = True  # can't tell -> preserve prior behavior; never hide a real LED map
+        if not has_scene_source:
+            return None
         try:
             records = self._collect_ray_analysis_records()
         except Exception:
