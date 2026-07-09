@@ -11884,6 +11884,43 @@ def phase_241_source_object_coupling(
     return result
 
 
+def phase_242_illumination_heatmap_extent(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The relative-illumination heatmap (phase 231) must drape onto the SENSOR, not the detector's
+    round catch DIAMETER (flag_20260709_093800_013 / bugs/0275). The MV-150 coaxial folded detector
+    has a 78 mm (2xFOV) clear-aperture diameter but a 39x39 mm active sensor;
+    `source_illumination_map_extent` used to fall back to that diameter when a detector declared no
+    explicit active area, draping a 78x78 mm square PAST the image circle whose symmetric dark border
+    buried the real fold/perp dark-edge asymmetry. bugs/0163 already ruled a detector's round diameter
+    is not a sensor size (the orange square is drawn only from explicit dims); this pins the heatmap
+    window to the same rule. `validate_open3d_illumination_heatmap_extent` is a display-free guard:
+    PURE (explicit local dims -> +/-half regardless of the data spread; a diameter-only detector does
+    NOT span +/-diameter/2 but falls to the illuminated data footprint; non-local coords ignore the
+    sensor; deterministic), LAYOUT static (the folded coaxial detector declares active_width/height =
+    FOV_MM while its trace diameter stays the wider catch aperture), and INTEGRATION on the clean
+    coaxial-LED fixture (the real overlay quad spans the 39x39 sensor ~+/-18 mm, not the catch
+    diameter, and still reads fold darker than perp).
+    """
+    result = PhaseResult(
+        name="Phase 242: relative-illumination heatmap window pins to the sensor, not the round catch diameter"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_illumination_heatmap_extent import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"illumination-heatmap-extent guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("illumination-heatmap-extent phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12170,6 +12207,7 @@ def main() -> int:
             phase_239_optical_solid_face_scatter,
             phase_240_illumination_face_imaging_absorb,
             phase_241_source_object_coupling,
+            phase_242_illumination_heatmap_extent,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

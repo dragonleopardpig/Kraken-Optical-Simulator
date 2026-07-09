@@ -560,11 +560,12 @@ def source_illumination_map_extent(
     if samples.get("coord") == "local" and bool(model.get("is_detector", False)):
         active_width = float(model.get("active_width_mm", 0.0) or 0.0)
         active_height = float(model.get("active_height_mm", 0.0) or 0.0)
-        diameter = float(model.get("diameter_mm", 0.0) or 0.0)
-        if active_width <= 0.0 and diameter > 0.0:
-            active_width = diameter
-        if active_height <= 0.0 and diameter > 0.0:
-            active_height = diameter
+        # bugs/0163 + flag_20260709_093800_013: a detector's round clear-aperture DIAMETER is not a
+        # sensor size. Only an explicit rectangular active area (both dims > 0 -- the orange sensor
+        # footprint) defines the heatmap window. Do NOT fall back to the diameter, or the map draws a
+        # square up to 2x the real sensor (e.g. a 78 mm catch aperture over the 39x39 FOV): it spills
+        # past the image circle and buries the fold/perp dark-edge asymmetry under a symmetric dark
+        # border. Without explicit dims, fall through to the illuminated data footprint below.
         if active_width > 0.0 and active_height > 0.0:
             return (-0.5 * active_width, 0.5 * active_width, -0.5 * active_height, 0.5 * active_height)
 

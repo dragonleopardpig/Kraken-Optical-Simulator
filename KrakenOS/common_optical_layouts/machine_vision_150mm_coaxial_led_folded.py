@@ -345,6 +345,13 @@ SURFACES = [
         "glass": "AIR",
         "advanced": {
             "Element": CAMERA_SENSOR,
+            # Declare the 39x39 mm active sensor (mirrors the unfolded layout). Without it the
+            # relative-illumination heatmap spans the 78 mm (2xFOV) catch diameter -- a square
+            # beyond the image circle whose symmetric dark border hides the fold/perp asymmetry
+            # (flag_20260709_093800_013). Explicit dims pin the heatmap to the +/-19.5 mm sensor the
+            # Monitor shows, so the fold dark edges land AT the sensor edge. Trace aperture is
+            # unchanged (still the surface diameter); this only sets the analysis/heatmap window.
+            "Detector": {"active_width_mm": FOV_MM, "active_height_mm": FOV_MM},
             "Note": "Detector/image plane for the branch that returns from the object and transmits through the splitter.",
         },
     },
