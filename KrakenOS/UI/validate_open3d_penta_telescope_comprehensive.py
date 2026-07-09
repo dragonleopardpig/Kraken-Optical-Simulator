@@ -11989,6 +11989,35 @@ def phase_244_illumination_heatmap_full_sensor(
     return result
 
 
+def phase_245_normal_to_sensor_isolation(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Overlays > Normal to Sensor must show ONLY the sensor + its on-detector overlays, hiding the
+    LED plate / lens bodies / rays / axis guide so the illumination heatmap fills the canvas
+    (flag_20260709_125338_765). `validate_open3d_normal_to_sensor_isolation` drives the real
+    _isolate_scene_to_sensor_plane / _restore_sensor_isolation against stub actors (display-free):
+    the detector body (row map) + coplanar overlays (proximity) stay; the four off-plane props hide;
+    leaving the view (set_camera_preset) restores them; a re-invoke is idempotent (no stale hides).
+    """
+    result = PhaseResult(
+        name="Phase 245: Normal to Sensor isolates the detector (hides the rest of the scene)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_normal_to_sensor_isolation import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"normal-to-sensor-isolation guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("normal-to-sensor-isolation phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12278,6 +12307,7 @@ def main() -> int:
             phase_242_illumination_heatmap_extent,
             phase_243_illumination_heatmap_override,
             phase_244_illumination_heatmap_full_sensor,
+            phase_245_normal_to_sensor_isolation,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

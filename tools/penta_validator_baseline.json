@@ -245,7 +245,8 @@
     "241": "pass",
     "242": "pass",
     "243": "pass",
-    "244": "pass"
+    "244": "pass",
+    "245": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -491,6 +492,7 @@
     "241": "the source -> object irradiance rolloff couples onto the actual detector image, not just the overlay",
     "242": "relative-illumination heatmap window pins to the sensor, not the round catch diameter",
     "243": "relative-illumination heatmap window honours the vendor-camera sensor override",
-    "244": "relative-illumination heatmap fills the sensor with 2 dark + 2 uniform edges"
+    "244": "relative-illumination heatmap fills the sensor with 2 dark + 2 uniform edges",
+    "245": "Normal to Sensor isolates the detector (hides the rest of the scene)"
   }
 }

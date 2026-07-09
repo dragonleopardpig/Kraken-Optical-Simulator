@@ -11052,6 +11052,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         camera = self._renderer.GetActiveCamera()
         if camera is None:
             return
+        # Leaving the Normal-to-Sensor view: un-hide the LED plate / lens / rays the sensor-isolation
+        # hid (flag_20260709_125338_765), so any cardinal/iso preset frames the whole scene again.
+        self._restore_sensor_isolation()
         bounds = self._camera_fit_bounds()
         center = np.array(
             [
@@ -11258,6 +11261,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
         self._camera_preset = "sensor_normal"
+        # flag_20260709_125338_765: "Normal to Sensor should only show the sensor, hide all others."
+        # The point of this view is to READ the on-detector heatmap, so strip the LED plate / lens /
+        # rays / axis guide -- everything not coplanar with the sensor -- leaving the detector + its
+        # overlays alone on the canvas. Any other view (set_camera_preset) brings them back.
+        det_row = None
+        for attr in ("row_index", "trace_surface"):
+            try:
+                det_row = int(getattr(target, attr))
+                break
+            except Exception:
+                continue
+        self._isolate_scene_to_sensor_plane(
+            center, normal, det_row, band=max(3.0, 0.1 * float(max(width, height)))
+        )
         self._reset_camera_clipping_range_for_scene()
         try:
             self._reorient_thickness_labels_for_camera()
@@ -11265,6 +11282,79 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         self.render()
         return True
+
+    def _isolate_scene_to_sensor_plane(self, center, normal, det_row_index, *, band: float) -> int:
+        """Hide every 3D actor that is not the detector body or an on-sensor-plane overlay, so the
+        Normal-to-Sensor view shows only the sensor + its heatmap (flag_20260709_125338_765).
+
+        Kept: the detector row's own actors (by row map, whatever their depth) PLUS anything whose
+        whole extent sits within ``band`` mm of the sensor plane along its normal -- the heatmap quad
+        and the orange sensor square, which are drawn coplanar with the detector. Hidden: the LED
+        plate, lens bodies, ray polylines, and the optical-axis guide, which are all displaced along
+        the axis (the nearest is ~200 mm off in the coaxial scene). Records what it hid on
+        ``_sensor_isolation_restore`` so ``set_camera_preset`` can bring it all back. The nav cube
+        lives in a separate overlay renderer and is never touched."""
+        if self._renderer is None:
+            return 0
+        self._restore_sensor_isolation()  # start from a clean slate on re-invoke
+        keep_ids: set[int] = set()
+        try:
+            for actor_key in self._row_actor_map.get(int(det_row_index), []) or []:
+                actor = self._actor_by_key.get(actor_key)
+                if actor is not None:
+                    keep_ids.add(id(actor))
+        except Exception:
+            pass
+        n_hat = np.asarray(normal, dtype=float).reshape(3)
+        c = np.asarray(center, dtype=float).reshape(3)
+        hidden: list[object] = []
+        try:
+            collection = self._renderer.GetActors()
+            collection.InitTraversal()
+        except Exception:
+            return 0
+        while True:
+            try:
+                actor = collection.GetNextItem()
+            except Exception:
+                break
+            if actor is None:
+                break
+            if id(actor) in keep_ids:
+                continue
+            try:
+                if not int(actor.GetVisibility()):
+                    continue
+                b = np.asarray(actor.GetBounds(), dtype=float)
+            except Exception:
+                continue
+            if b.size != 6 or not np.all(np.isfinite(b)) or b[0] > b[1]:
+                continue
+            corners = np.array(
+                [(b[i], b[2 + j], b[4 + k]) for i in (0, 1) for j in (0, 1) for k in (0, 1)],
+                dtype=float,
+            )
+            max_offset = float(np.max(np.abs((corners - c) @ n_hat)))
+            if max_offset > float(band):
+                try:
+                    actor.SetVisibility(False)
+                    hidden.append(actor)
+                except Exception:
+                    pass
+        self._sensor_isolation_restore = hidden
+        return len(hidden)
+
+    def _restore_sensor_isolation(self) -> None:
+        """Re-show whatever _isolate_scene_to_sensor_plane hid, so leaving the Normal-to-Sensor view
+        (any camera preset) returns the full scene. Stale actors from a since-rebuilt scene re-show
+        harmlessly (they are no longer in the renderer)."""
+        hidden = self.__dict__.get("_sensor_isolation_restore") or []
+        for actor in hidden:
+            try:
+                actor.SetVisibility(True)
+            except Exception:
+                pass
+        self._sensor_isolation_restore = []
 
     def _camera_sight_line_is_axis_aligned(self, camera, tol: float = 1.0e-3) -> bool:
         """True when the camera looks straight down a principal axis -- a face-on
