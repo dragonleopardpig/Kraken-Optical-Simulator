@@ -953,6 +953,27 @@ class SourceModelingMixin:
             angular_weight_default=SOURCE_ANGULAR_WEIGHT_DEFAULT,
         )
 
+    def _drawable_scene_source_descriptors(self, wavelength: float | None = None) -> list[SceneSource3D]:
+        """The scene sources that render as first-class Open 3D glyphs and list in the browser's
+        "Scene Sources" group (bugs/0283): every enabled, NON-marker source in
+        ``layout_scene_source_specs``, resolved through the same ``scene_source_from_spec`` path the
+        trace uses so the glyph geometry matches the launch geometry. A face-bound MARKER is excluded
+        (it draws on its anchored face, bugs/0264) and a disabled source emits nothing, so both are
+        skipped. Wavelength is irrelevant to the glyph geometry; a default keeps the descriptor cheap."""
+        specs = self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []) or [])
+        wl = float(wavelength) if wavelength else 0.55
+        descriptors: list[SceneSource3D] = []
+        for index, spec in enumerate(specs):
+            if scene_source_spec_is_face_bound_marker(spec):
+                continue
+            if not source_spec_bool(spec, "enabled", True):
+                continue
+            try:
+                descriptors.append(self._scene_source_from_spec(spec, index, wavelength=wl))
+            except Exception:
+                continue
+        return descriptors
+
     def _source_statistics(self, sample_count: int | None = None, wavelength: float | None = None) -> dict[str, object]:
         source_model = self._current_source_model()
         ray_count = max(1, int(sample_count if sample_count is not None else self._current_ray_count()))

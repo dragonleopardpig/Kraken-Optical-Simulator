@@ -18,6 +18,7 @@ class Open3DStepAdminPanel:
         ("lens", "Imaging Lens", ("lens",)),
         ("camera_detector", "Camera / Detector", ("camera",)),
         ("led", "LED (decoration)", ("led",)),
+        ("sources", "Scene Sources", ()),
     )
 
     def _display_toggle_specs(self):
@@ -455,6 +456,22 @@ class Open3DStepAdminPanel:
             consumed.add(int(row_index))
         return records
 
+    def _scene_source_browser_rows(self) -> list[tuple[str, str]]:
+        """(source_id, name) for each scene source that draws as a first-class glyph (bugs/0283) --
+        the same enabled, non-marker set the 3D glyph builder uses, so the browser row and the drawn
+        object stay in lock-step."""
+        rows: list[tuple[str, str]] = []
+        try:
+            descriptors = self.editor._drawable_scene_source_descriptors()
+        except Exception:
+            return []
+        for source in descriptors or []:
+            source_id = str(getattr(source, "source_id", "") or "")
+            if not source_id:
+                continue
+            rows.append((source_id, str(getattr(source, "name", "") or "Scene source")))
+        return rows
+
     def _scene_row_records(self) -> list[tuple[int, str, str]]:
         records: list[tuple[int, str, str]] = []
         rows = list(getattr(self.editor, "rows", []) or [])
@@ -640,6 +657,12 @@ class Open3DStepAdminPanel:
                     tree.insert(parent, "end", iid=f"scene-row:{row_index}", text=f"S{row_index}: {name}",
                                 tags=self._item_hidden_tag(rows=[row_index]))
                     category_counts[count_key] += 1
+            # bugs/0283: scene sources (emitting LEDs etc.) as first-class rows under "Scene Sources",
+            # each hide/unhide-able like a scene element.
+            for source_id, source_name in self._scene_source_browser_rows():
+                tree.insert(category_iids["sources"], "end", iid=f"source:{source_id}", text=source_name,
+                            tags=self._item_hidden_tag(source_id=source_id))
+                category_counts["sources"] += 1
             for key, parent_iid in category_iids.items():
                 if category_counts.get(key, 0) <= 0:
                     tree.insert(parent_iid, "end", iid=f"empty:{key}", text="(empty)")
@@ -732,6 +755,12 @@ class Open3DStepAdminPanel:
             self._selected_item_id = iid
             self._update_properties("")
             return
+        if iid.startswith("source:"):
+            # bugs/0283: a scene source is a hide/unhide target in the browser. A 3D
+            # selection / move gizmo is a later increment; for now it carries no properties.
+            self._selected_item_id = iid
+            self._update_properties("")
+            return
         if iid == self._selected_item_id and iid == self._current_browser_selection_iid():
             self._update_properties(iid)
             return
@@ -791,17 +820,20 @@ class Open3DStepAdminPanel:
         return "break"
 
     def _selection_rows_and_label(self, iid: str) -> tuple[list[int], str | None]:
-        rows, label, _display = self._resolve_iid_target(iid)
+        rows, label, _display, _source = self._resolve_iid_target(iid)
         return rows, label
 
-    def _resolve_iid_target(self, iid: str) -> tuple[list[int], str | None, str | None]:
+    def _resolve_iid_target(self, iid: str) -> tuple[list[int], str | None, str | None, str | None]:
         rows: list[int] = []
         label: str | None = None
         display_key: str | None = None
+        source_id: str | None = None
         if iid.startswith("display:"):
             display_key = iid.split(":", 1)[1]
         elif iid.startswith("overlay:"):
             label = iid.split(":", 1)[1]
+        elif iid.startswith("source:"):
+            source_id = iid.split(":", 1)[1]
         elif iid.startswith("scene-row:") or iid.startswith("row:"):
             try:
                 rows = [int(iid.split(":", 1)[1])]
@@ -811,26 +843,29 @@ class Open3DStepAdminPanel:
             span = self._parse_element_iid(iid)
             if span is not None:
                 rows = self._element_visible_indices(span[0], span[1])
-        return rows, label, display_key
+        return rows, label, display_key, source_id
 
-    def _element_is_hidden(self, rows: list[int], label: str | None, display_key: str | None = None) -> bool:
+    def _element_is_hidden(self, rows: list[int], label: str | None, display_key: str | None = None,
+                           source_id: str | None = None) -> bool:
         inspector = self.inspector
         if display_key is not None:
             var = self._display_var_for_key(display_key)
             return var is not None and not bool(var.get())
+        if source_id is not None:
+            return inspector.is_source_hidden(source_id)
         if label is not None:
             return inspector.is_step_label_hidden(label)
         return bool(rows) and all(inspector.is_scene_row_hidden(r) for r in rows)
 
     def _item_hidden_tag(self, rows: list[int] | None = None, label: str | None = None,
-                         display_key: str | None = None) -> tuple[str, ...]:
+                         display_key: str | None = None, source_id: str | None = None) -> tuple[str, ...]:
         try:
-            return ("hidden",) if self._element_is_hidden(rows or [], label, display_key) else ()
+            return ("hidden",) if self._element_is_hidden(rows or [], label, display_key, source_id) else ()
         except Exception:
             return ()
 
     def _set_element_hidden(self, rows: list[int], label: str | None, hidden: bool,
-                            display_key: str | None = None) -> None:
+                            display_key: str | None = None, source_id: str | None = None) -> None:
         inspector = self.inspector
         if display_key is not None:
             var = self._display_var_for_key(display_key)
@@ -842,6 +877,9 @@ class Open3DStepAdminPanel:
             except Exception:
                 pass
             inspector.status_var.set(("Hid " if hidden else "Showing ") + f"{display_key} in 3D.")
+        elif source_id is not None:
+            inspector.set_source_hidden(source_id, hidden)
+            inspector.status_var.set(("Hid " if hidden else "Unhid ") + "the scene source.")
         elif label is not None:
             inspector.set_step_label_hidden(label, hidden)
             inspector.status_var.set(("Hid " if hidden else "Unhid ") + "the selected scene element.")
@@ -853,10 +891,10 @@ class Open3DStepAdminPanel:
         self.refresh()  # re-tag the tree so hidden items grey out
 
     def _show_element_context_menu(self, event, iid: str) -> None:
-        rows, label, display_key = self._resolve_iid_target(iid)
-        if not rows and label is None and display_key is None:
+        rows, label, display_key, source_id = self._resolve_iid_target(iid)
+        if not rows and label is None and display_key is None and source_id is None:
             return
-        hidden = self._element_is_hidden(rows, label, display_key)
+        hidden = self._element_is_hidden(rows, label, display_key, source_id)
         tree = self._tree
         name = ""
         try:
@@ -888,10 +926,10 @@ class Open3DStepAdminPanel:
             menu.add_separator()
         show_word = "Show" if display_key is not None else "Unhide"
         if hidden:
-            menu.add_command(label=show_word, command=lambda: self._set_element_hidden(rows, label, False, display_key))
+            menu.add_command(label=show_word, command=lambda: self._set_element_hidden(rows, label, False, display_key, source_id))
         else:
-            menu.add_command(label="Hide", command=lambda: self._set_element_hidden(rows, label, True, display_key))
-        if display_key is None:  # rays / overlays can't be deleted
+            menu.add_command(label="Hide", command=lambda: self._set_element_hidden(rows, label, True, display_key, source_id))
+        if display_key is None and source_id is None:  # rays / overlays / sources can't be deleted here
             menu.add_separator()
             menu.add_command(label="Delete", command=self._delete_selected)
         try:

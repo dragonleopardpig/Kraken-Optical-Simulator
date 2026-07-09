@@ -370,6 +370,8 @@ class Open3DSceneRefreshService:
         self._optical_axis_pick_records.clear()
         self._optical_axis_highlight_actor = None
         self._actor_by_key.clear()
+        self._source_actor_map.clear()  # bugs/0283: rebuilt with the glyphs each refresh
+        self._actor_source_map.clear()
         self._actor_step_map.clear()
         self._step_actor_map.clear()
         self._actor_step_follow_map.clear()
@@ -842,6 +844,11 @@ class Open3DSceneRefreshService:
         illumination_marker_rays_actors = 0
         if bool(getattr(self, "show_illumination_marker_rays_var", None) is not None and self.show_illumination_marker_rays_var.get()):
             illumination_marker_rays_actors = self._add_illumination_marker_ray_overlays(system, scene_bundle)
+        # bugs/0283: each enabled, non-marker scene source (an emitting LED etc.) drawn as a first-class
+        # glyph (emitting-aperture panel + direction arrow), keyed by source_id for the browser's Scene
+        # Sources group. Always drawn -- per-source visibility is re-applied by
+        # _apply_scene_element_visibility below, so this is not a toggle-gated analysis overlay.
+        scene_source_glyph_actors = self._add_scene_source_glyphs(system, scene_bundle)
         # One combined, expanding legend for every analysis overlay queued above (replaces the
         # per-overlay billboards that overlapped when several were on).
         analysis_overlay_label_actors = self._add_grouped_analysis_overlay_label()

@@ -249,7 +249,8 @@
     "245": "pass",
     "246": "pass",
     "247": "pass",
-    "248": "pass"
+    "248": "pass",
+    "249": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -499,6 +500,7 @@
     "245": "Normal to Sensor isolates the detector and survives overlay toggles",
     "246": "source-illumination heatmap draws only with a scene illumination source",
     "247": "leaving Normal to Sensor via nav-cube/orbit restores the full scene",
-    "248": "source-illumination heatmap needs a real source, not a face marker"
+    "248": "source-illumination heatmap needs a real source, not a face marker",
+    "249": "scene sources are first-class Open 3D objects (browser + glyph + hide/unhide)"
   }
 }

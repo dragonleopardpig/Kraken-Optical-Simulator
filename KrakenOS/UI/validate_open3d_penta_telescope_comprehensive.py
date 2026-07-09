@@ -12123,6 +12123,40 @@ def phase_248_illumination_heatmap_marker_gated(
     return result
 
 
+def phase_249_scene_source_object(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A parametric scene source (the "real emitting LED" behind the illumination trace) must be a
+    first-class Open 3D object: drawn as a 3D glyph in the viewport and listed under a "Scene Sources"
+    browser group with per-source hide/unhide -- the foundation for adding/moving/resizing it (piece 1,
+    increment 0283). `_drawable_scene_source_descriptors` enumerates the ENABLED, NON-marker sources
+    (face-bound markers stay on their face and out of this list, matching the imaging-trace exclusion of
+    bugs/0266); each becomes an amber emitting-aperture panel + border loop + emission-direction arrow,
+    registered by source_id so the browser can hide/unhide it and the visibility survives every scene
+    rebuild. `validate_open3d_scene_source_object` (display-free): DESCRIPTORS (marker + disabled
+    excluded, the LED resolves origin/dir/rx/ry from its spec) + BASIS (glyph frame orthonormal, aperture
+    plane perpendicular to emission) + VISIBILITY (Hide -> invisible -> survives a refresh -> Unhide) +
+    RESOLVER (source:/scene-row: iids) + WIRING (glyph draw + browser group + hide/unhide plumbed).
+    """
+    result = PhaseResult(
+        name="Phase 249: scene sources are first-class Open 3D objects (browser + glyph + hide/unhide)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_scene_source_object import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"scene-source-object guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("scene-source-object phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12416,6 +12450,7 @@ def main() -> int:
             phase_246_illumination_heatmap_source_gated,
             phase_247_normal_to_sensor_gesture_leave,
             phase_248_illumination_heatmap_marker_gated,
+            phase_249_scene_source_object,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

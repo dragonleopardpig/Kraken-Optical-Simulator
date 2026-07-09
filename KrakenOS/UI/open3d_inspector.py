@@ -449,6 +449,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # actors are kept invisible (re-applied after every refresh).
         self._hidden_scene_rows: set[int] = set()
         self._hidden_step_labels: set[str] = set()
+        # bugs/0283: scene sources as first-class Open 3D objects. Their glyph
+        # actors (emitting aperture + direction arrow) are keyed by source_id so
+        # the browser's "Scene Sources" group can hide/unhide them exactly like a
+        # scene row -- re-applied after every refresh via _apply_scene_element_visibility.
+        self._hidden_source_ids: set[str] = set()
+        self._source_actor_map: dict[str, list[str]] = {}
+        self._actor_source_map: dict[str, str] = {}
         self._actor_step_follow_map: dict[str, str] = {}
         self._step_follow_actor_map: dict[str, list[str]] = {}
         self._actor_step_rotate_map: dict[str, tuple[str, str, float]] = {}
@@ -5361,6 +5368,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         pick_thickness_dimension: int | None = None,
         follow_step_label: str | None = None,
         track_row_index: int | None = None,
+        track_source_id: str | None = None,
         line_width: float = 1.0,
         wireframe: bool = False,
         flat_shading: bool = False,
@@ -5456,6 +5464,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     self._row_actor_map.setdefault(int(tracked_row), []).append(actor_key)
                 except Exception:
                     pass
+            if track_source_id is not None:
+                sid = str(track_source_id)
+                if sid:
+                    self._actor_source_map[actor_key] = sid
+                    self._source_actor_map.setdefault(sid, []).append(actor_key)
         if (
             pick_row_index is None
             and pick_step_label is None
@@ -13016,6 +13029,103 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             rgb = np.repeat(grey[:, None], 3, axis=1)
         return np.ascontiguousarray(rgb)
 
+    @staticmethod
+    def _scene_source_glyph_basis(direction):
+        """Orthonormal (d, u, v): d = the unit emission direction, u/v span the emitting aperture
+        plane perpendicular to it. Used to place the source glyph exactly along the launch direction
+        so the drawn aperture is the plane the trace samples over (display follows physics)."""
+        d = np.asarray(direction, dtype=float).reshape(3)
+        norm = float(np.linalg.norm(d))
+        d = d / norm if norm > 1e-9 else np.asarray((0.0, 0.0, 1.0))
+        helper = np.asarray((0.0, 0.0, 1.0)) if abs(float(d[2])) < 0.9 else np.asarray((1.0, 0.0, 0.0))
+        u = np.cross(helper, d)
+        un = float(np.linalg.norm(u))
+        u = u / un if un > 1e-9 else np.asarray((1.0, 0.0, 0.0))
+        v = np.cross(d, u)
+        vn = float(np.linalg.norm(v))
+        v = v / vn if vn > 1e-9 else np.asarray((0.0, 1.0, 0.0))
+        return d, u, v
+
+    def _add_scene_source_glyphs(self, system, scene_bundle: SceneBundle | None) -> int:
+        """bugs/0283: draw each enabled, non-marker scene source (an emitting LED etc.) as a
+        first-class Open 3D glyph -- a translucent emitting-aperture panel + a direction arrow --
+        registered under its source_id so the browser's "Scene Sources" group hides/unhides it like a
+        scene row. Geometry is read through the SAME scene_source_from_spec path the trace uses, so the
+        glyph sits where the source actually launches from. A face-bound MARKER is excluded here (it is
+        drawn on its anchored face, bugs/0264); a disabled source emits nothing, so it is skipped."""
+        if self._renderer is None or pv is None:
+            return 0
+        try:
+            descriptors = self.editor._drawable_scene_source_descriptors()
+        except Exception as exc:
+            self.editor.append_debug(f"Scene source glyphs skipped: {exc}")
+            return 0
+        count = 0
+        for source in descriptors or []:
+            try:
+                if self._add_one_scene_source_glyph(source):
+                    count += 1
+            except Exception as exc:  # pragma: no cover - defensive
+                sid = getattr(source, "source_id", "?")
+                self.editor.append_debug(f"Scene source glyph failed for {sid}: {exc}")
+        return count
+
+    def _add_one_scene_source_glyph(self, source) -> bool:
+        source_id = str(getattr(source, "source_id", "") or "")
+        if not source_id:
+            return False
+        settings = dict(getattr(source, "settings", {}) or {})
+        origin = np.asarray(getattr(source, "origin", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
+        d, u, v = self._scene_source_glyph_basis(getattr(source, "direction", (0.0, 0.0, 1.0)))
+
+        def _half(key: str) -> float:
+            try:
+                value = float(settings.get(key, settings.get("radius", 1.0)) or 1.0)
+            except Exception:
+                value = 1.0
+            return max(value, 0.5)
+
+        rx, ry = _half("radius_x"), _half("radius_y")
+        corners = np.asarray(
+            [
+                origin - rx * u - ry * v,
+                origin + rx * u - ry * v,
+                origin + rx * u + ry * v,
+                origin - rx * u + ry * v,
+            ],
+            dtype=float,
+        )
+        amber = (1.0, 0.80, 0.20)
+        drawn = False
+        # Translucent emitting panel (flat-shaded so it reads as an evenly-lit emitter face).
+        panel = pv.PolyData(corners, faces=np.asarray([4, 0, 1, 2, 3]))
+        if self._add_mesh_actor(
+            panel, color=amber, opacity=0.28, backface_culling=False,
+            flat_shading=True, track_source_id=source_id,
+        ) is not None:
+            drawn = True
+        # Bright aperture border loop so the semi-transparent panel reads as a defined rectangle.
+        border = pv.PolyData()
+        border.points = corners
+        border.lines = np.asarray([5, 0, 1, 2, 3, 0])
+        if self._add_mesh_actor(
+            border, color=amber, opacity=0.95, line_width=2.0,
+            wireframe=True, backface_culling=False, track_source_id=source_id,
+        ) is not None:
+            drawn = True
+        # Emission-direction arrow (which way the source shines).
+        arrow_len = 1.6 * max(rx, ry, 1.0)
+        try:
+            arrow = pv.Arrow(start=origin, direction=d, scale=float(arrow_len))
+            if self._add_mesh_actor(
+                arrow, color=amber, opacity=0.9, backface_culling=False,
+                track_source_id=source_id,
+            ) is not None:
+                drawn = True
+        except Exception:
+            pass
+        return drawn
+
     def _add_source_illumination_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
         """Drape the on-detector relative-illumination heatmap (3D viz idea #3) as a smooth textured
         quad on the sensor plane, so the coaxial-LED fold-axis dark edges read directly on the
@@ -13436,6 +13546,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 pass
         return keys
 
+    def _all_actor_keys_for_source(self, source_id) -> set:
+        """Every glyph actor tied to a scene source (bugs/0283): the panel, the border loop,
+        and the direction arrow all register under the same source_id."""
+        sid = str(source_id)
+        keys: set = set(self.__dict__.get("_source_actor_map", {}).get(sid, []) or [])
+        for key, mapped in (self.__dict__.get("_actor_source_map", {}) or {}).items():
+            if str(mapped) == sid:
+                keys.add(key)
+        return keys
+
     def _apply_scene_element_visibility(self) -> None:
         """Re-hide the elements the browser marked hidden (actors are rebuilt
         each full refresh, so visibility must be re-applied)."""
@@ -13443,12 +13563,33 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._set_actor_keys_visible(self._all_actor_keys_for_row(int(row_index)), False)
         for label in list(self._hidden_step_labels):
             self._set_actor_keys_visible(self._all_actor_keys_for_step_label(str(label)), False)
+        for source_id in list(self._hidden_source_ids):
+            self._set_actor_keys_visible(self._all_actor_keys_for_source(str(source_id)), False)
 
     def is_scene_row_hidden(self, row_index: int) -> bool:
         return int(row_index) in self._hidden_scene_rows
 
     def is_step_label_hidden(self, label: str) -> bool:
         return str(label).strip().lower() in self._hidden_step_labels
+
+    def is_source_hidden(self, source_id) -> bool:
+        return str(source_id) in self._hidden_source_ids
+
+    def set_source_hidden(self, source_id, hidden: bool) -> None:
+        """Hide/unhide a scene source's glyph from the browser's Scene Sources group. The source still
+        traces (its emission is a separate concern); this only toggles the glyph's visibility, mirroring
+        set_scene_rows_hidden. The hidden set is re-applied after each full rebuild by
+        _apply_scene_element_visibility, so it survives a refresh."""
+        sid = str(source_id)
+        if hidden:
+            self._hidden_source_ids.add(sid)
+        else:
+            self._hidden_source_ids.discard(sid)
+        self._set_actor_keys_visible(self._all_actor_keys_for_source(sid), not hidden)
+        try:
+            self.render()
+        except Exception:
+            pass
 
     def set_scene_rows_hidden(self, rows, hidden: bool) -> None:
         for row_index in rows or []:
