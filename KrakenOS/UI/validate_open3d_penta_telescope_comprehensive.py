@@ -12056,6 +12056,39 @@ def phase_246_illumination_heatmap_source_gated(
     return result
 
 
+def phase_247_normal_to_sensor_gesture_leave(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Leaving Normal-to-Sensor via a nav-cube pick or a free mouse orbit (NOT a preset button) must
+    drop the sensor isolation, or the ISO view shows only the detector (flag_20260709_162334_323 "ISO
+    view, all elements missing except detector"). Before, only set_camera_preset restored the hidden
+    props, so a nav-cube/orbit exit left _camera_preset == 'sensor_normal' with the props hidden and
+    _reapply_sensor_isolation_if_active (phase 245 / bugs/0279) re-hid them on every refresh. Both the
+    nav-cube snap and the orbit route through _on_camera_interaction, which now calls
+    _leave_sensor_normal_on_gesture(view_dir). `validate_open3d_normal_to_sensor_gesture_leave` drives
+    that method against stub actors (display-free): TURN-AWAY (an off-normal ISO sight line re-shows the
+    four props, clears the intent, drops the preset, one-shot) + STAY (a face-on pure zoom keeps the
+    isolation, so entering the view never self-cancels) + PRESET-GUARD + NO-PARAMS.
+    """
+    result = PhaseResult(
+        name="Phase 247: leaving Normal to Sensor via nav-cube/orbit restores the full scene"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_normal_to_sensor_gesture_leave import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"normal-to-sensor-gesture-leave guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("normal-to-sensor-gesture-leave phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12347,6 +12380,7 @@ def main() -> int:
             phase_244_illumination_heatmap_full_sensor,
             phase_245_normal_to_sensor_isolation,
             phase_246_illumination_heatmap_source_gated,
+            phase_247_normal_to_sensor_gesture_leave,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

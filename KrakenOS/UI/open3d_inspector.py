@@ -10803,10 +10803,25 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         and only re-renders when it actually had to move the camera.
         """
         moved = False
+        # flag_20260709_162334_323 ("ISO view, all elements missing except detector"):
+        # a mouse orbit or nav-cube face/edge/corner pick BOTH land here, so this is the
+        # one universal hook that can drop the Normal-to-Sensor isolation when the sight
+        # line turns off the sensor normal. set_camera_preset already restores on cardinal
+        # /iso buttons; without this, leaving the view via the cube/orbit left the actors
+        # hidden and _reapply_sensor_isolation_if_active re-hid them every refresh.
         try:
-            moved = self._ensure_parallel_camera_clears_scene()
+            camera = self._renderer.GetActiveCamera() if self._renderer is not None else None
+            if camera is not None and self._leave_sensor_normal_on_gesture(
+                camera.GetDirectionOfProjection()
+            ):
+                moved = True
         except Exception:
-            moved = False
+            pass
+        try:
+            if self._ensure_parallel_camera_clears_scene():
+                moved = True
+        except Exception:
+            pass
         try:
             self._reset_camera_clipping_range_for_scene()
         except Exception:
@@ -11392,6 +11407,40 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self.render()
             except Exception:
                 pass
+
+    def _leave_sensor_normal_on_gesture(self, view_dir) -> bool:
+        """A free camera gesture -- a mouse orbit or a nav-cube face/edge/corner pick, BOTH routed
+        through _on_camera_interaction -- has turned the sight line OFF the sensor normal while the
+        Normal-to-Sensor isolation is active: bring the hidden LED plate / lens / rays / axis back and
+        drop the preset, exactly as a cardinal/iso preset button already does (flag_20260709_162334_323
+        "ISO view, all elements missing except detector"). Only set_camera_preset called
+        _restore_sensor_isolation before, so a nav-cube pick left _camera_preset == "sensor_normal" with
+        the actors hidden -- and _reapply_sensor_isolation_if_active then RE-hid them on every refresh.
+
+        Gated on the sight line actually turning away (|cos(view_dir, normal)| < ~1): a pure ZOOM that
+        stays face-on keeps the isolation, and a spurious per-frame fire while still face-on is inert, so
+        entering the view (which sets the camera straight down the normal) never self-cancels. One-shot:
+        _restore_sensor_isolation nulls the intent so later frames no-op. Returns True iff it left."""
+        if str(getattr(self, "_camera_preset", None)) != "sensor_normal":
+            return False
+        params = self.__dict__.get("_sensor_isolation_params")
+        if not params:
+            return False
+        try:
+            normal = np.asarray(params.get("normal"), dtype=float).reshape(3)
+            direction = np.asarray(view_dir, dtype=float).reshape(3)
+            n_norm = float(np.linalg.norm(normal))
+            d_norm = float(np.linalg.norm(direction))
+            if n_norm <= 1e-9 or d_norm <= 1e-9:
+                return False
+            aligned = abs(float(np.dot(normal / n_norm, direction / d_norm)))
+        except Exception:
+            return False
+        if aligned >= 0.999:  # still looking straight down the sensor normal (a pure zoom): stay isolated
+            return False
+        self._restore_sensor_isolation()
+        self._camera_preset = None
+        return True
 
     def _camera_sight_line_is_axis_aligned(self, camera, tol: float = 1.0e-3) -> bool:
         """True when the camera looks straight down a principal axis -- a face-on

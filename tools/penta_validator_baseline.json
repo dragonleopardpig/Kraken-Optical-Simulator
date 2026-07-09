@@ -247,7 +247,8 @@
     "243": "pass",
     "244": "pass",
     "245": "pass",
-    "246": "pass"
+    "246": "pass",
+    "247": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -495,6 +496,7 @@
     "243": "relative-illumination heatmap window honours the vendor-camera sensor override",
     "244": "relative-illumination heatmap fills the sensor with 2 dark + 2 uniform edges",
     "245": "Normal to Sensor isolates the detector and survives overlay toggles",
-    "246": "source-illumination heatmap draws only with a scene illumination source"
+    "246": "source-illumination heatmap draws only with a scene illumination source",
+    "247": "leaving Normal to Sensor via nav-cube/orbit restores the full scene"
   }
 }
