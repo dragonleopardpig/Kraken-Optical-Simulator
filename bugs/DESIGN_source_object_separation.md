@@ -119,7 +119,13 @@ full scatter fan-out in the live preview.
 2. **"Diffuse / Scatter Object" face role** — wire the existing `DiffuseScatter` / `main_diffuse_scatter_dialog.py`
    onto promoted CAD faces.
 3. **Coupling (Option B)** — irradiance-weighted imaging; the dark-edge rolloff then appears in the actual image,
-   not just the overlay.
+   not just the overlay. **SHIPPED (bugs/0274, phase 241):** `services/source_object_coupling.py` bins the
+   source→object irradiance (coarse 16×16 grid for a smooth rolloff) and
+   `_illumination_weighted_detector_spot_samples` multiplies each detector ray's base weight by the sampled
+   irradiance at its object origin; additive/read-only over the imaging trace (0266 held — reuses the exact base
+   detector samples, only re-scales the display weight). Portable coaxial-scatter fixture proves fold-edge dark
+   (0.268) / perp uniform on the *actual* image, deepening the base dip (0.616→0.268). *In-app eyeball owed:* a
+   dedicated "Illumination-weighted image" analysis-mode toggle is the follow-up.
 4. **(Optional) Option A truth-mode toggle** — full unified scatter trace for validation.
 
 Stages 1–2 (the authoring UI) are needed for either coupling model, so they're not wasted whichever way A vs B

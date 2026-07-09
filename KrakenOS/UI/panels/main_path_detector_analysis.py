@@ -151,6 +151,129 @@ class MainPathDetectorAnalysis:
             "analysis_sources": analysis_sources,
         }
 
+    def _source_object_coupling_object_index(self) -> int | None:
+        """bugs/0274: the object/scatter surface whose source -> object irradiance modulates the
+        imaging detector image.  Prefer an explicit diffuse-scatter object; fall back to an Object
+        Target.  Returns None when the scene has no object surface to couple through."""
+        from KrakenOS.UI.trace_intent import (
+            DIFFUSE_OBJECT_SURFACE,
+            DIFFUSE_SCATTER_ADVANCED_ATTR,
+            OBJECT_TARGET_SURFACE,
+        )
+
+        fallback: int | None = None
+        for index, row in enumerate(list(getattr(self, "rows", []) or [])):
+            surface = str(getattr(row, "surface", "") or "")
+            advanced = getattr(row, "advanced", {}) or {}
+            advanced = advanced if isinstance(advanced, dict) else {}
+            if surface == DIFFUSE_OBJECT_SURFACE or DIFFUSE_SCATTER_ADVANCED_ATTR in advanced:
+                return index
+            if surface == OBJECT_TARGET_SURFACE and fallback is None:
+                fallback = index
+        return fallback
+
+    def _illumination_weighted_detector_spot_samples(
+        self,
+        system,
+        filter_text: str,
+        *,
+        ray_records: list[dict[str, object]] | None = None,
+        object_surface_index: int | None = None,
+        bins: int | None = None,
+        require_detector: bool = False,
+    ) -> dict[str, object]:
+        """bugs/0274 (Stage 3, Option B): branch-detector spot samples with each imaging ray's weight
+        multiplied by the source -> object irradiance at its object origin, so the illumination
+        rolloff (e.g. the MV-150 coaxial dark edges) rides the ACTUAL detector image.
+
+        Additive over ``_branch_detector_spot_samples`` (which is left untouched) and read-only over
+        the imaging trace: the source -> object map is binned from the same records but only re-weights
+        display; it NEVER redefines the image plane / detector / optical axis (bugs/0266).  Returns the
+        base result unchanged (``coupling_applied=False``) when the scene has no object surface or the
+        object receives no source illumination.  On success also returns ``base_weights`` (the
+        un-coupled control) and ``irradiance`` alongside the coupled ``weights``."""
+        from KrakenOS.UI.services.source_object_coupling import (
+            DEFAULT_COUPLING_BINS,
+            imaging_ray_object_origin,
+            object_irradiance_map,
+            sample_irradiance,
+        )
+
+        source_records = list(ray_records if ray_records is not None else self._collect_ray_analysis_records())
+        if object_surface_index is None:
+            object_surface_index = self._source_object_coupling_object_index()
+        base = dict(
+            self._branch_detector_spot_samples(
+                system, filter_text, require_detector=require_detector, ray_records=source_records
+            )
+        )
+        base.setdefault("coupling_applied", False)
+        base["object_surface_index"] = object_surface_index
+        if object_surface_index is None:
+            return base
+        irradiance_map = object_irradiance_map(
+            self,
+            system,
+            int(object_surface_index),
+            ray_records=source_records,
+            bins=int(bins) if bins else DEFAULT_COUPLING_BINS,
+        )
+        if not irradiance_map:
+            return base
+
+        filtered = [
+            record
+            for record in source_records
+            if self._ray_record_branch_filter_matches(record, filter_text)
+        ]
+        detector_records = [
+            record for record in filtered if self._surface_index_is_detector(record.get("last_surface"))
+        ]
+        samples = detector_records if detector_records else filtered
+        x_values: list[float] = []
+        y_values: list[float] = []
+        weights: list[float] = []
+        base_weights: list[float] = []
+        irradiances: list[float] = []
+        coord_modes: set[str] = set()
+        coupled_ray_count = 0
+        for record in samples:
+            x_value, y_value, coord_mode = self._record_terminal_hit_local_xy(system, record)
+            if not (np.isfinite(x_value) and np.isfinite(y_value)):
+                continue
+            branch_power = self._safe_positive_float(record.get("branch_power"), np.nan)
+            if not np.isfinite(branch_power):
+                branch_power = self._safe_positive_float(record.get("transmission"), 1.0)
+            source_weight = self._safe_positive_float(record.get("source_weight"), 1.0)
+            source_power = self._safe_positive_float(record.get("source_power"), 1.0)
+            base_weight = float(max(branch_power * source_weight * source_power, 0.0))
+            object_x, object_y, ok = imaging_ray_object_origin(self, system, int(object_surface_index), record)
+            irradiance = sample_irradiance(irradiance_map, object_x, object_y) if ok else 0.0
+            if ok:
+                coupled_ray_count += 1
+            x_values.append(float(x_value))
+            y_values.append(float(y_value))
+            base_weights.append(base_weight)
+            irradiances.append(float(irradiance))
+            weights.append(base_weight * float(irradiance))
+            coord_modes.add(coord_mode)
+
+        coord = "local" if coord_modes == {"local"} else "world"
+        return {
+            "x": np.asarray(x_values, dtype=float),
+            "y": np.asarray(y_values, dtype=float),
+            "weights": np.asarray(weights, dtype=float),
+            "base_weights": np.asarray(base_weights, dtype=float),
+            "irradiance": np.asarray(irradiances, dtype=float),
+            "coord": coord,
+            "coupling_applied": True,
+            "object_surface_index": int(object_surface_index),
+            "coupled_ray_count": int(coupled_ray_count),
+            "matched_ray_count": len(filtered),
+            "used_detector_only": bool(detector_records),
+            "irradiance_hit_count": int(irradiance_map.get("hit_count", 0)),
+        }
+
     def _plot_branch_detector_spot_analysis(
         self,
         analysis_ax,

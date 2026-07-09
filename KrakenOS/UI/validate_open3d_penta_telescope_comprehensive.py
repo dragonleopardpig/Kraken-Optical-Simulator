@@ -11844,6 +11844,46 @@ def phase_240_illumination_face_imaging_absorb(
     return result
 
 
+def phase_241_source_object_coupling(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Stage 3 of the Source + Object separation (bugs/0274): a marked face is an illumination SOURCE
+    and the object is a SCATTERER, so the source's non-uniformity (e.g. the MV-150 coaxial dark
+    edges, bugs/0179) must ride the ACTUAL detector image -- not just the standalone "Relative
+    illumination" overlay. Option B factorizes the coupling: trace the source onto the object ONCE and
+    bin its irradiance (reusing the 0259-0262 relative-illumination machinery), then weight each
+    object -> lens imaging ray by the local source irradiance at its object origin. The coupling is
+    ADDITIVE and read-only over the imaging trace: it only re-weights imaging rays for display; it
+    NEVER redefines the image plane / detector / optical axis (bugs/0266).
+    `validate_open3d_source_object_coupling` is a display-free guard: SYNTHETIC sampler math (nearest-
+    bin, peak at centre, dark at the fold edge, 0.0 off-grid/non-finite/None-map; couple multiplies a
+    base weight by the sampled irradiance and skips records with no object origin) and a REAL trace on
+    a portable rayfile-free coaxial-scatter fixture (seeded source + a Diffuse Object at the FOV plane
+    + a detector): the object index auto-detects, the source -> object map is asymmetric (fold darker
+    than perp), the coupled detector image shows the fold-axis dark edges while the perp axis stays
+    uniform, coupling is NOT a no-op and DEEPENS the fold dip versus the base, and the bugs/0266
+    guardrail holds (coupling reuses the exact base detector samples -- identical terminal geometry and
+    un-coupled control weights -- and never promotes the object to the image plane).
+    """
+    result = PhaseResult(
+        name="Phase 241: source -> object irradiance couples the illumination rolloff onto the detector image"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_source_object_coupling import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"source-object-coupling guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("source-object-coupling phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12129,6 +12169,7 @@ def main() -> int:
             phase_238_face_illumination_direction,
             phase_239_optical_solid_face_scatter,
             phase_240_illumination_face_imaging_absorb,
+            phase_241_source_object_coupling,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -1898,6 +1898,28 @@ class AnalysisReportsMixin:
             ray_records=ray_records,
         )
 
+    def _source_object_coupling_object_index(self) -> int | None:
+        return self._main_path_detector_analysis()._source_object_coupling_object_index()
+
+    def _illumination_weighted_detector_spot_samples(
+        self,
+        system,
+        filter_text: str,
+        *,
+        ray_records: list[dict[str, object]] | None = None,
+        object_surface_index: int | None = None,
+        bins: int | None = None,
+        require_detector: bool = False,
+    ) -> dict[str, object]:
+        return self._main_path_detector_analysis()._illumination_weighted_detector_spot_samples(
+            system,
+            filter_text,
+            ray_records=ray_records,
+            object_surface_index=object_surface_index,
+            bins=bins,
+            require_detector=require_detector,
+        )
+
     def _plot_branch_detector_spot_analysis(
         self,
         analysis_ax,
