@@ -1777,13 +1777,51 @@ class AnalysisReportsMixin:
         if not bool(model["is_detector"]):
             return model
         settings = self._detector_settings_for_surface(target_index)
-        model["active_width_mm"] = float(settings.get("active_width_mm", 0.0) or 0.0)
-        model["active_height_mm"] = float(settings.get("active_height_mm", 0.0) or 0.0)
+        active_width = float(settings.get("active_width_mm", 0.0) or 0.0)
+        active_height = float(settings.get("active_height_mm", 0.0) or 0.0)
+        # bugs/0276 (flag_20260709_104624_302): a vendor-glued camera stores its
+        # sensor size in the runtime detector-dims override -- the same source the
+        # orange sensor square uses via scene_builder -- NOT in row.advanced["Detector"].
+        # Mirror scene_builder so the heatmap window pins to the sensor the user
+        # sees; without this it falls through to the cropped data footprint and
+        # reads SMALLER than the sensor (the fold dark edges get clipped away).
+        if active_width <= 1e-12 or active_height <= 1e-12:
+            override_w, override_h = self._source_illumination_detector_override_dims(target_index)
+            if active_width <= 1e-12 and override_w > 1e-12:
+                active_width = override_w
+            if active_height <= 1e-12 and override_h > 1e-12:
+                active_height = override_h
+        model["active_width_mm"] = active_width
+        model["active_height_mm"] = active_height
         try:
             model["diameter_mm"] = self._safe_positive_float(getattr(self.rows[int(target_index)], "diameter", 0.0), 0.0)
         except Exception:
             model["diameter_mm"] = 0.0
         return model
+
+    def _source_illumination_detector_override_dims(self, target_index) -> tuple[float, float]:
+        """Vendor-camera sensor dims for ``target_index`` from the runtime override
+        (``_camera_detector_active_dims_overrides``) -- the same source scene_builder
+        uses for the orange sensor square. Returns (0.0, 0.0) when unavailable."""
+        getter = getattr(self, "_camera_detector_active_dims_overrides", None)
+        if not callable(getter):
+            return (0.0, 0.0)
+        try:
+            overrides = getter()
+        except Exception:
+            return (0.0, 0.0)
+        if not overrides:
+            return (0.0, 0.0)
+        try:
+            entry = overrides.get(int(target_index))
+        except Exception:
+            entry = None
+        if not entry:
+            return (0.0, 0.0)
+        try:
+            return (max(float(entry[0]), 0.0), max(float(entry[1]), 0.0))
+        except Exception:
+            return (0.0, 0.0)
 
     def _source_illumination_map_extent(
         self,

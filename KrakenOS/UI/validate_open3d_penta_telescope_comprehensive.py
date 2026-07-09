@@ -11921,6 +11921,42 @@ def phase_242_illumination_heatmap_extent(
     return result
 
 
+def phase_243_illumination_heatmap_override(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The heatmap window (phase 242) must also honour the VENDOR-CAMERA sensor override, not just
+    an explicit `advanced['Detector']` block (flag_20260709_104624_302 / bugs/0276). A vendor-glued
+    camera stores its sensor size in the runtime `_camera_detector_active_dims_overrides` -- the same
+    source `scene_builder` uses to draw the orange sensor square -- NOT in the surface row. After 0275
+    removed the catch-diameter fallback, `_source_illumination_target_model` (which read only the row
+    block) saw active dims 0 and the window fell through to the illuminated data footprint, reading the
+    wrong size (SMALLER than the sensor in-app, clipping the fold dark edges). The fix mirrors
+    scene_builder and consults the override. `validate_open3d_illumination_heatmap_override` is a
+    display-free guard: MODEL differential (a detector whose dims live ONLY in the override reports the
+    sensor dims; drop the override and they collapse to 0) + INTEGRATION on the coaxial-LED fixture
+    (override-only dims -> the real overlay quad spans the 39x39 sensor ~+/-18 mm, not the data
+    footprint, and the fold edge columns read darker than the perpendicular edge rows: 2 dark +
+    2 uniform).
+    """
+    result = PhaseResult(
+        name="Phase 243: relative-illumination heatmap window honours the vendor-camera sensor override"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_illumination_heatmap_override import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"illumination-heatmap-override guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("illumination-heatmap-override phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12208,6 +12244,7 @@ def main() -> int:
             phase_240_illumination_face_imaging_absorb,
             phase_241_source_object_coupling,
             phase_242_illumination_heatmap_extent,
+            phase_243_illumination_heatmap_override,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -243,7 +243,8 @@
     "239": "pass",
     "240": "pass",
     "241": "pass",
-    "242": "pass"
+    "242": "pass",
+    "243": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -487,6 +488,7 @@
     "239": "a promoted CAD face marked Diffuse / Scatter Object scatters like a Diffuse Object surface",
     "240": "an illumination-marked face absorbs imaging rays so the reflection-arm detector drops",
     "241": "the source -> object irradiance rolloff couples onto the actual detector image, not just the overlay",
-    "242": "relative-illumination heatmap window pins to the sensor, not the round catch diameter"
+    "242": "relative-illumination heatmap window pins to the sensor, not the round catch diameter",
+    "243": "relative-illumination heatmap window honours the vendor-camera sensor override"
   }
 }
