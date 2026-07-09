@@ -18,8 +18,8 @@ Checks (display-free; numpy + one headless trace, no VTK/Tk):
     heatmap target-model reports the sensor dims; drop the override and it collapses to 0
     (proving the override consult is load-bearing, not the row block).
   * INTEGRATION -- the real overlay quad, dims-in-override-only, spans the 39x39 sensor
-    (half ~18.3 mm, NOT the ~15 mm data footprint, NOT the 78 mm catch diameter) and still
-    reads the fold edge columns darker than the perpendicular edge rows (2 dark + 2 uniform).
+    (half ~19.5 mm to the rim since bugs/0277, NOT the ~15 mm data footprint, NOT the 78 mm catch
+    diameter) and still reads the fold edge columns darker than the perpendicular edge rows.
 """
 from __future__ import annotations
 
@@ -122,10 +122,11 @@ def _check_model_and_integration(failures: list[str], notes: list[str]) -> None:
     u = np.asarray(spec["tangent"], dtype=float)
     v = np.asarray(spec["bitangent"], dtype=float)
     half = max(float(np.max(np.abs((pts - center) @ u))), float(np.max(np.abs((pts - center) @ v))))
-    # 39x39 sensor -> bin-centre half ~18.3 mm. Without the override the window falls to the
-    # raw data footprint, which is the WRONG size either way: it can crop inside the sensor
-    # (the user's flag) or overrun it (this wide-catch fixture, ~50 mm) depending on how far
-    # the off-sensor scatter reaches -- so guard both bounds.
+    # 39x39 sensor -> quad half ~19.5 mm (to the rim since bugs/0277; was the bin-centre ~18.3).
+    # Without the override the window falls to the raw data footprint, which is the WRONG size
+    # either way: it can crop inside the sensor (the user's flag) or overrun it (this wide-catch
+    # fixture, ~50 mm) depending on how far the off-sensor scatter reaches -- so guard both bounds.
+    # This 0276 guard keeps LOOSE bounds (window-pinning); bugs/0277's guard owns the tight rim gap.
     if half <= half_sensor - 2.5:
         failures.append(
             f"INTEGRATION: quad half {half:.1f} mm crops inside the {half_sensor:.1f} mm sensor "

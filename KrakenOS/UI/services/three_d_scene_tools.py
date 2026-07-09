@@ -3603,7 +3603,12 @@ class ThreeDSceneToolsMixin:
             in_extent = int(np.sum((x_values >= x0) & (x_values <= x1) & (y_values >= y0) & (y_values <= y1)))
         except Exception:
             in_extent = int(x_values.size)
-        bins = int(np.clip(round(np.sqrt(max(in_extent, 1) / 10.0)), 16, 48))
+        # bugs/0277 (flag_20260709_114618_526): floor was 16. A sparse coaxial scene lands only ~800
+        # rays in the sensor, so sqrt(800/10)=9 -> the 16 floor FORCED ~3 hits/bin (32%+ Poisson
+        # noise) and the UNIFORM perp axis speckled dark ("4 dark edges rather than 2"). Drop the floor
+        # to 10 so the adaptive target is honoured: coarser but well-populated bins read as the true
+        # smooth fold/perp gradient. Denser scenes still climb toward 48 (more rays -> finer), no regress.
+        bins = int(np.clip(round(np.sqrt(max(in_extent, 1) / 10.0)), 10, 48))
         try:
             map_data = source_illumination_map_data_from_samples(samples, target_model=target_model, bins=bins)
         except Exception:

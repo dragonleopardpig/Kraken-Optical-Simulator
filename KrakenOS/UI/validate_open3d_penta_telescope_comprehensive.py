@@ -11957,6 +11957,38 @@ def phase_243_illumination_heatmap_override(
     return result
 
 
+def phase_244_illumination_heatmap_full_sensor(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Beyond pinning the heatmap WINDOW to the sensor (phase 243 / bugs/0276), the draped quad must
+    FILL the sensor to the rim AND read 2 dark fold edges + 2 UNIFORM perp edges, not "4 dark edges"
+    (flag_20260709_114618_526 / bugs/0277). Two defects remained after 0276: the quad vertices sat at
+    bin CENTRES so the quad stopped ~1.2 mm short of the orange square, and the over-filled perp axis
+    speckled DARK at the sparse coaxial density (~3 hits/bin under the old 16-bin floor -> Poisson
+    noise). Fixes: pin the outer vertices to the window edges (full-rim); drop the bin floor 16 -> 10
+    and raise the de-speckle sigma 1.0 -> 1.5. `validate_open3d_illumination_heatmap_full_sensor` is a
+    display-free guard: FULL-SENSOR (quad half ~= 19.5 mm to the rim, not the bin-centre ~18.3) +
+    2-DARK/2-UNIFORM (fold <= 0.85 dark, perp >= 0.85 uniform, clear separation) at that density.
+    """
+    result = PhaseResult(
+        name="Phase 244: relative-illumination heatmap fills the sensor with 2 dark + 2 uniform edges"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_illumination_heatmap_full_sensor import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"illumination-heatmap-full-sensor guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("illumination-heatmap-full-sensor phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12245,6 +12277,7 @@ def main() -> int:
             phase_241_source_object_coupling,
             phase_242_illumination_heatmap_extent,
             phase_243_illumination_heatmap_override,
+            phase_244_illumination_heatmap_full_sensor,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

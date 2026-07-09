@@ -34,9 +34,13 @@ EDGE_BAND_FRACTION = 0.70
 # Gaussian smoothing (in BIN units) applied to the binned density before draping. The true on-detector
 # illumination field is smooth; per-bin Monte-Carlo counting noise (Poisson, ~1/sqrt(hits-per-bin) ->
 # ~35% at the adaptive ~10 hits/bin) otherwise swamps the ~30% fold-edge dip and the quad renders as
-# speckle. sigma ~1 bin averages neighbours to recover the underlying structure while leaving the
-# many-bin-wide fold roll-off (and its edge-ratio) essentially untouched.
-ILLUMINATION_SMOOTH_SIGMA_BINS = 1.0
+# speckle. sigma averages neighbours to recover the underlying structure while leaving the many-bin-wide
+# fold roll-off (and its edge-ratio) essentially untouched. bugs/0277 (flag_20260709_114618_526): a
+# sparse coaxial scene lands only ~800 rays in the 39x39 sensor, so even the UNIFORM (over-filled) perp
+# axis speckled DARK at sigma 1.0 -> the user read "4 dark edges" instead of 2. sigma 1.5 (with the
+# lower bin floor in three_d_scene_tools) lifts the perp edge back over the 0.85 "uniform" bar (measured
+# fold 0.77 < perp 0.91) while the fold stays dark.
+ILLUMINATION_SMOOTH_SIGMA_BINS = 1.5
 
 
 def _gaussian_smooth(grid: np.ndarray, sigma_bins: float) -> np.ndarray:
@@ -143,6 +147,18 @@ def build_source_illumination_overlay(
 
     xc = 0.5 * (x_edges[:-1] + x_edges[1:])  # (nx,)
     yc = 0.5 * (y_edges[:-1] + y_edges[1:])  # (ny,)
+    # bugs/0277 (flag_20260709_114618_526): the draped quad is a point grid at bin CENTRES, so it
+    # stops half a bin short of the window on every side -- a ~1.2 mm dark gap to the orange sensor
+    # square (the user: "still not fully covered the sensor"). Pin the OUTER vertices to the window
+    # edges so the quad spans the full sensor; the edge cell just holds its outermost bin's value out
+    # to the rim. Only the vertex POSITIONS move -- the density/relative grid and edge ratios are
+    # untouched (they read the bins, not the point coords).
+    if xc.size >= 2:
+        xc[0] = float(x_edges[0])
+        xc[-1] = float(x_edges[-1])
+    if yc.size >= 2:
+        yc[0] = float(y_edges[0])
+        yc[-1] = float(y_edges[-1])
 
     center = np.asarray(center, dtype=float).reshape(3)
     n_hat = _unit(normal)

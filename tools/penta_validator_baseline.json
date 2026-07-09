@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-08T08:22:07+00:00",
+  "generated_at": "2026-07-09T04:30:01+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -244,7 +244,8 @@
     "240": "pass",
     "241": "pass",
     "242": "pass",
-    "243": "pass"
+    "243": "pass",
+    "244": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -489,6 +490,7 @@
     "240": "an illumination-marked face absorbs imaging rays so the reflection-arm detector drops",
     "241": "the source -> object irradiance rolloff couples onto the actual detector image, not just the overlay",
     "242": "relative-illumination heatmap window pins to the sensor, not the round catch diameter",
-    "243": "relative-illumination heatmap window honours the vendor-camera sensor override"
+    "243": "relative-illumination heatmap window honours the vendor-camera sensor override",
+    "244": "relative-illumination heatmap fills the sensor with 2 dark + 2 uniform edges"
   }
 }
