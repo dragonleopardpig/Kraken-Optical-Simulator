@@ -493,6 +493,6 @@
     "242": "relative-illumination heatmap window pins to the sensor, not the round catch diameter",
     "243": "relative-illumination heatmap window honours the vendor-camera sensor override",
     "244": "relative-illumination heatmap fills the sensor with 2 dark + 2 uniform edges",
-    "245": "Normal to Sensor isolates the detector (hides the rest of the scene)"
+    "245": "Normal to Sensor isolates the detector and survives overlay toggles"
   }
 }

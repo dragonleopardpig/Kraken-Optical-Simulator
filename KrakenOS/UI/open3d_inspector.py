@@ -11296,7 +11296,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         lives in a separate overlay renderer and is never touched."""
         if self._renderer is None:
             return 0
-        self._restore_sensor_isolation()  # start from a clean slate on re-invoke
+        self._show_sensor_isolation_hidden()  # re-show a prior isolate's actors; keep the intent
         keep_ids: set[int] = set()
         try:
             for actor_key in self._row_actor_map.get(int(det_row_index), []) or []:
@@ -11342,12 +11342,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 except Exception:
                     pass
         self._sensor_isolation_restore = hidden
+        # Persist the intent so a later scene rebuild -- an overlay toggle re-creates every actor
+        # visible, wiping these hides (flag_20260709_150713_387) -- can re-apply it while the view is
+        # still active. Stored as plain numbers so it survives across rebuilt actor objects.
+        self._sensor_isolation_params = {
+            "center": [float(v) for v in c.tolist()],
+            "normal": [float(v) for v in n_hat.tolist()],
+            "det_row": det_row_index,
+            "band": float(band),
+        }
         return len(hidden)
 
-    def _restore_sensor_isolation(self) -> None:
-        """Re-show whatever _isolate_scene_to_sensor_plane hid, so leaving the Normal-to-Sensor view
-        (any camera preset) returns the full scene. Stale actors from a since-rebuilt scene re-show
-        harmlessly (they are no longer in the renderer)."""
+    def _show_sensor_isolation_hidden(self) -> None:
+        """Re-show whatever _isolate_scene_to_sensor_plane last hid, WITHOUT forgetting the isolation
+        intent (so a re-invoke or a post-rebuild re-apply starts from a clean slate). Stale actors
+        from a since-rebuilt scene re-show harmlessly -- they are no longer in the renderer."""
         hidden = self.__dict__.get("_sensor_isolation_restore") or []
         for actor in hidden:
             try:
@@ -11355,6 +11364,34 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 pass
         self._sensor_isolation_restore = []
+
+    def _restore_sensor_isolation(self) -> None:
+        """Leave the Normal-to-Sensor view: re-show the hidden actors AND drop the isolation intent so
+        a later scene rebuild no longer re-hides them. set_camera_preset calls this at the top, so any
+        cardinal / iso / nav-cube view returns the full scene."""
+        self._show_sensor_isolation_hidden()
+        self._sensor_isolation_params = None
+
+    def _reapply_sensor_isolation_if_active(self) -> None:
+        """Re-hide the off-sensor-plane actors after a scene rebuild, so the Normal-to-Sensor
+        isolation survives ANY overlay toggle (flag_20260709_150713_387 + the follow-up "none of the
+        overlays should re-enable other elements"): every toggle routes through refresh_scene, which
+        re-creates the actors visible. No-op unless the view is still active
+        (_camera_preset == "sensor_normal") and an isolation is recorded, so ordinary refreshes in
+        other views are untouched."""
+        if str(getattr(self, "_camera_preset", None)) != "sensor_normal":
+            return
+        params = self.__dict__.get("_sensor_isolation_params")
+        if not params:
+            return
+        hidden = self._isolate_scene_to_sensor_plane(
+            params["center"], params["normal"], params["det_row"], band=params["band"]
+        )
+        if hidden:
+            try:
+                self.render()
+            except Exception:
+                pass
 
     def _camera_sight_line_is_axis_aligned(self, camera, tol: float = 1.0e-3) -> bool:
         """True when the camera looks straight down a principal axis -- a face-on
@@ -13888,13 +13925,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         scene_bundle: SceneBundle | None = None,
         reset_camera: bool = False,
     ) -> None:
-        return self._scene_refresh_service().refresh_scene(
+        result = self._scene_refresh_service().refresh_scene(
             system,
             rays,
             row_names,
             scene_bundle=scene_bundle,
             reset_camera=reset_camera,
         )
+        # flag_20260709_150713_387: a scene rebuild (any Overlays toggle routes here) re-creates every
+        # actor visible, wiping the one-shot Normal-to-Sensor isolation. Re-apply it so NO overlay
+        # re-enables the LED plate / lens / rays -- the sensor stays alone until the user picks another
+        # view. Skipped on reset_camera (a full reframe is a context change, not a toggle).
+        if not reset_camera:
+            self._reapply_sensor_isolation_if_active()
+        return result
 
     def _refresh_rays_only(self, rays, scene_bundle: SceneBundle | None = None) -> None:
         # bugs/0024: rays-only partial refresh (skips the body/handle rebuild),

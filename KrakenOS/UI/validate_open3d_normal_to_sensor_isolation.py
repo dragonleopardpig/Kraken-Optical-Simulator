@@ -12,6 +12,11 @@ polyline). The guard asserts:
   * RESTORE -- leaving the view re-shows every hidden prop and clears the restore list.
   * RE-INVOKE -- a second isolate does not double-hide (it restores first), so the restore list holds
     exactly the off-plane props once, not stale duplicates.
+  * RE-APPLY -- an overlay toggle rebuilds every actor fresh + visible (flag_20260709_150713_387: the
+    Illumination overlay, and the follow-up "none of the overlays should re-enable other elements");
+    after the rebuild the view RE-HIDES the off-plane props (any overlay), keeps the sensor, and
+    renders. Leaving the view clears the intent so a later rebuild is inert, and the re-apply no-ops
+    once the camera preset is no longer sensor-normal.
 """
 from __future__ import annotations
 
@@ -63,8 +68,23 @@ class _StubInspector:
     # without constructing a full VTK/Tk inspector.
     _isolate_scene_to_sensor_plane = Kraken3DInspector._isolate_scene_to_sensor_plane
     _restore_sensor_isolation = Kraken3DInspector._restore_sensor_isolation
+    _show_sensor_isolation_hidden = Kraken3DInspector._show_sensor_isolation_hidden
+    _reapply_sensor_isolation_if_active = Kraken3DInspector._reapply_sensor_isolation_if_active
+    _camera_preset = "sensor_normal"
 
     def __init__(self, actors, row_actor_map, actor_by_key):
+        self._renderer = _StubRenderer(actors)
+        self._row_actor_map = row_actor_map
+        self._actor_by_key = actor_by_key
+        self._render_calls = 0
+
+    def render(self):
+        # _reapply_sensor_isolation_if_active renders when it re-hides anything.
+        self._render_calls += 1
+
+    def rebuild_scene(self, actors, row_actor_map, actor_by_key):
+        # Mirror a refresh_scene rebuild: an overlay toggle re-creates every actor fresh + visible,
+        # so the renderer collection and row/key maps point at brand-new objects.
         self._renderer = _StubRenderer(actors)
         self._row_actor_map = row_actor_map
         self._actor_by_key = actor_by_key
@@ -129,10 +149,67 @@ def _check(failures: list[str], notes: list[str]) -> None:
         notes.append("re-invoke: idempotent, restore list holds the 4 off-plane props once")
 
 
+def _check_reapply(failures: list[str], notes: list[str]) -> None:
+    # flag_20260709_150713_387 + "none of the overlays should re-enable other elements": an overlay
+    # toggle rebuilds the scene (fresh, all-visible actors), wiping the one-shot isolation. The view
+    # must RE-APPLY the isolation after the rebuild, for ANY overlay, until the user leaves the view.
+    center = (0.0, 0.0, 657.0)
+    normal = (0.0, 0.0, 1.0)
+    band = max(3.0, 0.1 * 23.0)
+    keep = {"detector", "heatmap", "sensor_square"}
+    hide = {"lens", "led", "optical_axis", "ray"}
+
+    actors, row_actor_map, actor_by_key, _ = _build_stub_scene()
+    insp = _StubInspector(actors, row_actor_map, actor_by_key)
+    insp._isolate_scene_to_sensor_plane(center, normal, 8, band=band)
+
+    # An overlay toggle routes through refresh_scene, which re-creates every actor fresh + visible.
+    actors2, ram2, abk2, by_name2 = _build_stub_scene()
+    insp.rebuild_scene(actors2, ram2, abk2)
+    if any(not by_name2[n].GetVisibility() for n in hide):
+        failures.append("REBUILD: a freshly rebuilt scene should start fully visible")
+
+    insp._reapply_sensor_isolation_if_active()
+    for name in keep:
+        if not by_name2[name].GetVisibility():
+            failures.append(f"REAPPLY: '{name}' should stay visible after re-isolation")
+    for name in hide:
+        if by_name2[name].GetVisibility():
+            failures.append(f"REAPPLY: '{name}' should be re-hidden after a rebuild (overlay toggle)")
+    if insp._render_calls < 1:
+        failures.append("REAPPLY: re-hiding actors after a rebuild should trigger a render")
+    if not [f for f in failures if f[:7] in ("REAPPLY", "REBUILD")]:
+        notes.append("reapply: an overlay-toggle rebuild re-hides the 4 off-plane props, keeps the sensor")
+
+    # Leaving the view (set_camera_preset -> _restore) drops the intent: a later rebuild is inert.
+    insp._restore_sensor_isolation()
+    actors3, ram3, abk3, by_name3 = _build_stub_scene()
+    insp.rebuild_scene(actors3, ram3, abk3)
+    insp._reapply_sensor_isolation_if_active()
+    if any(not by_name3[n].GetVisibility() for n in hide):
+        failures.append("INTENT-CLEAR: after leaving the view a rebuild must NOT re-hide anything")
+    if not [f for f in failures if f.startswith("INTENT-CLEAR")]:
+        notes.append("intent-clear: leaving the view stops the re-apply (restore cleared the params)")
+
+    # Preset guard: once the camera is no longer sensor-normal, reapply is inert even with params set.
+    actors4, ram4, abk4, _ = _build_stub_scene()
+    insp4 = _StubInspector(actors4, ram4, abk4)
+    insp4._isolate_scene_to_sensor_plane(center, normal, 8, band=band)
+    actors5, ram5, abk5, by_name5 = _build_stub_scene()
+    insp4.rebuild_scene(actors5, ram5, abk5)
+    insp4._camera_preset = "iso"
+    insp4._reapply_sensor_isolation_if_active()
+    if any(not by_name5[n].GetVisibility() for n in hide):
+        failures.append("PRESET-GUARD: reapply must be inert when the camera left the sensor-normal preset")
+    if not [f for f in failures if f.startswith("PRESET-GUARD")]:
+        notes.append("preset-guard: reapply no-ops once the camera preset is no longer sensor_normal")
+
+
 def run_checks() -> tuple[bool, list[str]]:
     failures: list[str] = []
     notes: list[str] = []
     _check(failures, notes)
+    _check_reapply(failures, notes)
     return (not failures), (failures + notes)
 
 
