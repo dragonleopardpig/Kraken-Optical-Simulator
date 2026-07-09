@@ -3747,12 +3747,25 @@ class ThreeDSceneToolsMixin:
         # Restore afterwards so the imaging trace's own mode resolution is untouched.
         prior_force = self.__dict__.get("_force_nonseq_preview_trace", False)
         self.__dict__["_force_nonseq_preview_trace"] = True
+        # bugs/0273: an illumination-marked face ABSORBS imaging rays (it is the opaque LED plate) so the
+        # BS reflection branch drops its sensor. But THIS pass EMITS from that very face -- suppress the
+        # face-absorption on the system while the marker launch traces, else the flood self-absorbs at
+        # launch. Restored in the finally so the imaging trace keeps the absorb (and the drop).
+        prior_suppress = getattr(system, "_suppress_illumination_face_absorption", False)
+        try:
+            system._suppress_illumination_face_absorption = True
+        except Exception:
+            pass
         try:
             self._trace_preview_bundles(system, rays_illum, wavelength, bundles, bundle_sources=sources)
         except Exception:
             return None
         finally:
             self.__dict__["_force_nonseq_preview_trace"] = prior_force
+            try:
+                system._suppress_illumination_face_absorption = prior_suppress
+            except Exception:
+                pass
         try:
             records = self._isolated_ray_analysis_records(system, rays_illum)
         except Exception:

@@ -2074,6 +2074,15 @@ def _build_system_from_specs(
             # __OpticalSolidFaceInteraction, so a marked CAD face scatters like a Diffuse Object surface.
             if face_scatter:
                 surface.OpticalSolidFaceDiffuseScatter = face_scatter
+        # bugs/0273: faces carrying a face-bound illumination marker are the opaque LED emitter plate,
+        # resolved onto the row spec in _serializable_specs_for_rows. Stash them so the non-seq imaging
+        # trace ABSORBS rays reaching such a face (__OpticalSolidFaceInteraction -> force_absorption),
+        # dropping the beam-splitter reflection branch's phantom detector like an Absorber/Mechanical face.
+        illum_block = spec.get("illumination_block_face_ids")
+        if illum_block:
+            surface.OpticalSolidFaceIlluminationBlock = frozenset(
+                str(face_id).strip() for face_id in illum_block if str(face_id).strip()
+            )
         # bugs/0021: a file-backed Solid_3d_stl whose cached mesh is missing on
         # this machine (a layout opened on another box without the CAD cache,
         # or one the user Skipped in the missing-assets dialog) must NOT reach

@@ -240,7 +240,8 @@
     "236": "pass",
     "237": "pass",
     "238": "pass",
-    "239": "pass"
+    "239": "pass",
+    "240": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -481,6 +482,7 @@
     "236": "a marked face floods a full-surface illumination emission (isolated from imaging)",
     "237": "the Face Editor exposes + reflects the Illumination Source role",
     "238": "an illumination source aims into the solid (default) or outward and the resync preserves it",
-    "239": "a promoted CAD face marked Diffuse / Scatter Object scatters like a Diffuse Object surface"
+    "239": "a promoted CAD face marked Diffuse / Scatter Object scatters like a Diffuse Object surface",
+    "240": "an illumination-marked face absorbs imaging rays so the reflection-arm detector drops"
   }
 }

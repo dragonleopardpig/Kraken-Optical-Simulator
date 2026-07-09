@@ -1259,6 +1259,20 @@ class system():
                     override["diffuse_scatter"] = scatter_entry
         except Exception:
             pass
+        # bugs/0273: a face carrying an illumination marker is the opaque LED emitter plate (resolved at
+        # build into surface.OpticalSolidFaceIlluminationBlock). Imaging rays reaching it are BLOCKED by
+        # the plate -> force_absorption terminates the ray, so the beam-splitter reflection branch that
+        # exits through this face is fully absorbed and derive_branch_detectors drops its phantom
+        # detector/image plane (bugs/0108 mechanism), just like an Absorber/Mechanical face. Suppressed
+        # during the isolated illumination-emission trace (that pass EMITS from this face; it must not
+        # absorb its own launch) via a system-level flag.
+        if not bool(getattr(self, "_suppress_illumination_face_absorption", False)):
+            try:
+                illum_block = getattr(self.SDT[int(surface_index)], "OpticalSolidFaceIlluminationBlock", None)
+                if illum_block and override["face_id"] and override["face_id"] in illum_block:
+                    override["force_absorption"] = True
+            except Exception:
+                pass
         diagnostics = [
             str(item)
             for item in list(matched.get("diagnostics", []) or [])

@@ -552,10 +552,42 @@ class AnalysisComputeWorkflowMixin:
     def _serializable_specs_for_rows(self, rows: list[SurfaceRow]) -> list[dict]:
         metal_catalogs = _normalize_metal_catalog_specs(getattr(self, "metal_catalogs", []))
         specs = surface_rows_to_specs(rows, metal_catalogs=metal_catalogs)
+        block_by_row = self._illumination_block_face_ids_by_row()
+        row_positions = {id(row): idx for idx, row in enumerate(getattr(self, "rows", []) or [])}
         for row, spec in zip(rows, specs):
             if type(self)._is_open3d_promoted_optical_solid_row(row):
                 spec["axis_move"] = 0.0
+            # bugs/0273: an illumination-marked face is backed by the opaque LED emitter plate, so the
+            # IMAGING trace must ABSORB rays reaching it -- that drops the beam-splitter reflection
+            # branch's phantom detector/image plane (like an Absorber/Mechanical face). The marker is a
+            # scene SOURCE keyed by (row, face_id), disjoint from the face-function metadata, so it is
+            # resolved here (where self.layout_scene_source_specs is in scope) onto the row spec, which
+            # the module-level _build_system_from_specs stashes on surface.OpticalSolidFaceIlluminationBlock.
+            face_ids = block_by_row.get(row_positions.get(id(row), -1))
+            if face_ids:
+                spec["illumination_block_face_ids"] = sorted(face_ids)
         return specs
+
+    def _illumination_block_face_ids_by_row(self) -> dict[int, set[str]]:
+        """bugs/0273: {row_index -> {face_id}} for the promoted-solid faces carrying an ENABLED
+        face-bound illumination marker. Such a face is the LED emitter plate (opaque), so the imaging
+        trace absorbs rays reaching it and the beam-splitter reflection branch drops its sensor."""
+        from KrakenOS.UI.scene_source_analysis import scene_source_spec_is_face_bound_marker
+
+        out: dict[int, set[str]] = {}
+        for spec in list(getattr(self, "layout_scene_source_specs", []) or []):
+            if not isinstance(spec, dict) or not scene_source_spec_is_face_bound_marker(spec):
+                continue
+            if not bool(spec.get("enabled", True)) or not bool(spec.get("physical", True)):
+                continue
+            try:
+                row_index = int(spec.get("face_anchor_row", -1))
+            except (TypeError, ValueError):
+                row_index = -1
+            face_id = str(spec.get("face_anchor_face_id", "") or "").strip()
+            if row_index >= 0 and face_id:
+                out.setdefault(row_index, set()).add(face_id)
+        return out
 
     def _mtf_worker_count(self, ray_count: int) -> int:
         cpu_total = max(1, int(os.cpu_count() or 1))

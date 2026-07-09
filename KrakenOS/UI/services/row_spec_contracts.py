@@ -69,6 +69,7 @@ def _row_specs_signature(row_specs: list[dict]):
                 float(spec.get("desp_y", 0.0)),
                 float(spec.get("desp_z", 0.0)),
                 float(spec.get("axis_move", 0.0)),
+                _surface_signature_token(spec.get("illumination_block_face_ids")),
             )
         )
     return metal_signature, tuple(signature)

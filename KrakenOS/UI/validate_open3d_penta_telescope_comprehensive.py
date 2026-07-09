@@ -11803,6 +11803,47 @@ def phase_239_optical_solid_face_scatter(
     return result
 
 
+def phase_240_illumination_face_imaging_absorb(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A beam-splitter face promoted to an Illumination Source still showed its phantom Image Plane +
+    detector on the IMAGING reflecting arm (flag_20260709_075456_691). The "Illumination Source" label binds
+    a scene-level SceneSource3D marker (bugs/0264/0268), DISJOINT from the OpticalSolidFaces face-function
+    metadata, so the marked face KEPT its beam-splitter optical behaviour in the imaging trace and its
+    reflection branch spawned a branch detector/image plane (bugs/0088). The user: the reflection-arm sensor
+    is dropped only for an Absorption face; an Illumination face is the opaque LED emitter plate, so it must
+    drop the same way. THIS phase pins the fix (bugs/0273, display follows physics): the build resolves
+    illumination-marked faces onto surface.OpticalSolidFaceIlluminationBlock, KrakenSys
+    __OpticalSolidFaceInteraction forces absorption there, and the absorbed reflection leaf feeds the
+    existing bugs/0108 chain (_leaf_fully_absorbed -> derive_branch_detectors drops the phantom detector).
+    The isolated illumination-emission pass (bugs/0272) suppresses the hook via
+    _suppress_illumination_face_absorption so the flood does not self-absorb at launch.
+    `validate_open3d_illumination_face_imaging_absorb` is a display-free guard: WIRING (the cache signature
+    keys on the new spec so marking a face invalidates build_system -- else the fix silently no-ops like
+    bugs/0267; the interaction hook keys on the block AND honours the suppress flag; the emission overlay sets
+    the flag) and BINDING (real promoted face: row spec + surface attr set; marked face forces absorption
+    while an unmarked reflecting face does not; suppress flag disables it; a real absorb terminal event drops
+    the reflection branch detector; the emission still exits the solid -- SKIPs without the STEP fixture).
+    """
+    result = PhaseResult(
+        name="Phase 240: an illumination-marked face absorbs imaging rays so the reflection-arm detector drops"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_illumination_face_imaging_absorb import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"illumination-face-imaging-absorb guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("illumination-face-imaging-absorb phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12087,6 +12128,7 @@ def main() -> int:
             phase_237_face_illumination_dropdown,
             phase_238_face_illumination_direction,
             phase_239_optical_solid_face_scatter,
+            phase_240_illumination_face_imaging_absorb,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
