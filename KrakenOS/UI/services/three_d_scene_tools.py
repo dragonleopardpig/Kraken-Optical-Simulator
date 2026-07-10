@@ -3739,21 +3739,43 @@ class ThreeDSceneToolsMixin:
                     continue
         return hw, hh
 
-    def _compute_coupled_object_illumination_overlay_spec(self, system, target):
-        """bugs/0286 (flag_20260710_085240_847, "Illumination overlay still show nothing"): the on-sensor
-        illumination heatmap when NO illumination ray reaches the sensor.
+    def _object_surface_plane_z(self, object_index) -> float:
+        """World z of the object surface, in the same cumulative-thickness frame the paraxial solve uses
+        (``_current_finite_paraxial_magnification``). 0.0 for the usual row-0 object."""
+        try:
+            return float(sum(float(self.rows[i].thickness) for i in range(int(object_index))))
+        except Exception:
+            return 0.0
 
-        On the real vendor scene the coaxial LED / marked face floods the OBJECT, not the detector --
-        0 rays reach the sensor even through a mirror -- so the density-on-sensor heatmap cannot build.
-        But the lens IMAGES the object onto the sensor, so bin the dense illumination landing WITHIN the
-        imaged object aperture and PROJECT that dark-edge map onto the sensor extent. This is the
-        specular-relay ("mirror object") model the user asked for: a mirror at the FOV preserves the
-        coaxial dark edges sharply (a diffuse object would blur them), which is exactly what a
-        rescale-to-sensor draw of the object map reproduces. Returns None when no source floods the
-        imaged FOV (e.g. a 45-deg splitter-face marker sprays entirely off-aperture) -- the sensor then
-        stays correctly blank (display follows physics)."""
+    def _compute_coupled_object_illumination_overlay_spec(self, system, target):
+        """bugs/0286 + bugs/0288: the on-sensor illumination heatmap when NO illumination ray reaches the
+        sensor.
+
+        On the real vendor scene the coaxial LED / marked face floods the OBJECT, not the detector -- 0
+        rays reach the sensor even through a mirror -- so the density-on-sensor heatmap cannot build. But
+        the lens IMAGES the object onto the sensor, so bin the illumination landing within the imaged
+        object aperture and project that map onto the sensor.
+
+        bugs/0288 (flags 170554_093 "still a small patch launching from object plane" + 170627_720 "heat
+        map") corrects HOW that projection is drawn, and WHAT counts as object illumination:
+
+        * The samples now come from ``object_plane_illumination_samples``, which accepts an object-surface
+          event only when it genuinely lies ON the object plane, and otherwise GEOMETRICALLY relays the
+          ray's terminal segment onto that plane (the bugs/0287 trace-order-wall bypass). Previously a
+          scene source's LAUNCH event -- recorded as an object-surface event wherever the emitter sits --
+          was binned as "illumination on the object".
+        * The projection uses the scene's own paraxial magnification, so the footprint draws at its TRUE
+          imaged size with a DARK surround, instead of being rescaled to always fill the sensor. A 10 mm
+          LED patch on a 32.6 mm object is now a small bright square on a dark sensor -- the honest
+          "limited projected area" -- not a full-sensor radial bowl.
+
+        Falls back to the bugs/0286 rescale only when the scene has no computable paraxial conjugate
+        (nothing better is available then). Returns None when no source floods the imaged FOV -- the
+        sensor stays correctly blank (display follows physics)."""
         from KrakenOS.UI.services.source_object_coupling import (
-            object_illumination_projection_map,
+            object_footprint_irradiance_map,
+            object_plane_illumination_samples,
+            project_footprint_onto_sensor,
             project_object_map_onto_sensor,
         )
 
@@ -3771,13 +3793,27 @@ class ThreeDSceneToolsMixin:
             object_radius = float(self.rows[int(object_index)].diameter) / 2.0
         except Exception:
             object_radius = 0.0
-        map_data = object_illumination_projection_map(
-            self, system, int(object_index), ray_records=records, object_radius=object_radius
+        samples = object_plane_illumination_samples(
+            self,
+            system,
+            int(object_index),
+            ray_records=records,
+            object_plane_z=self._object_surface_plane_z(object_index),
+            object_radius=object_radius,
         )
+        map_data = object_footprint_irradiance_map(samples, int(object_index))
         if map_data is None:
             return None
         half_w, half_h = self._detector_target_half_extent(target)
-        projected = project_object_map_onto_sensor(map_data, half_w, half_h)
+        try:
+            magnification = self._current_finite_paraxial_magnification()
+        except Exception:
+            magnification = None
+        if magnification is not None and np.isfinite(magnification) and abs(float(magnification)) > 1e-9:
+            # True-scale draw: a footprint that misses the sensor yields None -> correctly blank.
+            projected = project_footprint_onto_sensor(map_data, magnification, half_w, half_h)
+        else:
+            projected = project_object_map_onto_sensor(map_data, half_w, half_h)
         if projected is None:
             return None
         chroma = "Mono"

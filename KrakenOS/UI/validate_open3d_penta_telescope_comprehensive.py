@@ -12283,6 +12283,54 @@ def phase_252_coupled_object_illumination_projection(
     return result
 
 
+def phase_253_illumination_footprint_projection(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The illumination footprint draws on the sensor at its TRUE imaged size (bugs/0288,
+    flag_20260710_170554_093 "still a small patch launching from object plane" +
+    flag_20260710_170627_720 "heat map"). Adding an LED to the real MV-150 vendor scene drew a
+    full-sensor radial bowl. Two defects. (1) WHAT COUNTS AS OBJECT ILLUMINATION: KrakenOS records a
+    scene source's LAUNCH as an object-surface (index 0) event wherever the emitter sits, so the 0286
+    coupled map binned a coaxial LED parked at the beam splitter (z~230, x~90 mm) as "illumination on
+    the object". `object_plane_illumination_samples` accepts a direct object-surface event only when its
+    WORLD position lies on the object plane, and otherwise GEOMETRICALLY RELAYS the ray's terminal traced
+    segment onto that plane -- the bugs/0287 trace-order-wall bypass (KrakenOS traces in surface-index
+    order, so a flood reflecting off a beam splitter back toward surface 0 is never re-tested against it).
+    Absorbed rays illuminate nothing; backward segments are skipped; near-parallel blow-ups fall out at the
+    object-aperture clip (this is why the naive 0287 relay read "+-1000 mm"). (2) HOW IT IS DRAWN:
+    `project_object_map_onto_sensor` rescaled the footprint's own edges to the sensor half-extent, so the
+    footprint ALWAYS filled the sensor and under-fill was invisible. `project_footprint_onto_sensor`
+    instead samples the object footprint at `o = s/|m|` per sensor cell using the scene's OWN paraxial
+    magnification, so the lit region lands at its real size with a DARK surround: under-fill -> dark
+    edges, over-fill -> uniform. The geometry decides; the bugs/0286 rescale survives only as the
+    no-paraxial-conjugate fallback. `validate_open3d_illumination_footprint_projection` (display-free):
+    TERMINAL RAY tiers (traced polyline > last two hits > launch) + SAMPLES (on-plane DIRECT kept,
+    off-plane launch rejected, relay lands geometrically, absorb / backward / blow-up / off-aperture
+    dropped) + BILINEAR penumbra sampler (exact at bin centres, 0 outside, monotone ramp) + PROJECTION
+    (imaged patch = footprint*|m|, rim dark, soft not hard, over-fill uniform, |m|-scale-covariant so
+    nothing is hardcoded, degenerate inputs -> None) + FOOTPRINT MAP + WIRING (render-only) + REAL VENDOR
+    SCENE when present (DIRECT-only samples, |m|~0.59, patch lights <25% of the 23 mm sensor where the
+    0286 rescale lit far more, rim dark).
+    """
+    result = PhaseResult(
+        name="Phase 253: illumination footprint projects onto the sensor at its true imaged size"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_illumination_footprint_projection import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"illumination-footprint-projection guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("illumination-footprint-projection phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12580,6 +12628,7 @@ def main() -> int:
             phase_250_add_illumination_source,
             phase_251_illumination_flood_phantom_branch_detector,
             phase_252_coupled_object_illumination_projection,
+            phase_253_illumination_footprint_projection,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

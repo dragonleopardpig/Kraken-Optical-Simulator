@@ -201,7 +201,14 @@ def _check_dispatcher_contract(failures: list[str]) -> None:
         failures.append("CONTRACT: dispatcher tries the coupled fallback BEFORE the direct density heatmap")
 
     coupled = inspect.getsource(ThreeDSceneToolsMixin._compute_coupled_object_illumination_overlay_spec)
-    for needed in ("object_illumination_projection_map", "project_object_map_onto_sensor"):
+    # bugs/0288 reworked the coupled pipeline: on-plane/relayed samples -> footprint map -> TRUE-scale
+    # projection, with the bugs/0286 rescale kept only as the no-paraxial-conjugate fallback.
+    for needed in (
+        "object_plane_illumination_samples",
+        "object_footprint_irradiance_map",
+        "project_footprint_onto_sensor",
+        "project_object_map_onto_sensor",
+    ):
         if needed not in coupled:
             failures.append(f"CONTRACT: coupled compute does not call {needed}")
     # Render-only (bugs/0166/0266): it must not re-run the trace or rebuild the system.
