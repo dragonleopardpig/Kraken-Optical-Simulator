@@ -83,9 +83,11 @@ def _check_wiring(failures: list[str]) -> None:
     try:
         from KrakenOS.UI.services.three_d_scene_tools import ThreeDSceneToolsMixin
 
+        # bugs/0286 extracted the isolated emission trace (and its suppress-flag window) into
+        # _isolated_illumination_marker_records; read the compute plus the helper it delegates to.
         overlay_src = inspect.getsource(
             ThreeDSceneToolsMixin._compute_illumination_marker_rays_overlay_spec
-        )
+        ) + inspect.getsource(ThreeDSceneToolsMixin._isolated_illumination_marker_records)
         if "_suppress_illumination_face_absorption" not in overlay_src:
             failures.append(
                 "WIRING: the emission overlay compute no longer sets _suppress_illumination_face_absorption "

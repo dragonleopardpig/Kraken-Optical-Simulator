@@ -102,9 +102,14 @@ def _check_wiring(failures: list[str]) -> None:
 
     # The spec compute runs an ISOLATED trace (the rays reflect) but must NOT touch the imaging trace
     # state, so it cannot re-break bugs/0266 (image plane / detector / optical axis stay put).
+    # bugs/0286 extracted the trace body into _isolated_illumination_marker_records (shared with the
+    # on-sensor projection), so read BOTH: the compute plus the helper it delegates to.
     compute_src = _src(
         ThreeDSceneToolsMixin._compute_illumination_marker_rays_overlay_spec,
         "_compute_illumination_marker_rays_overlay_spec",
+    ) + _src(
+        ThreeDSceneToolsMixin._isolated_illumination_marker_records,
+        "_isolated_illumination_marker_records",
     )
     for required in ("_trace_preview_bundles(", "raykeeper(", "_isolated_ray_analysis_records(", "_force_nonseq_preview_trace"):
         if required not in compute_src:
