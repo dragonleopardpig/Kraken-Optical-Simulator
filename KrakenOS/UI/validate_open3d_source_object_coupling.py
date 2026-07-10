@@ -165,7 +165,17 @@ def _build_coupling_fixture(ray_count: int):
     from KrakenOS.UI.scene_builder import build_scene_bundle
 
     settings = copy.deepcopy(cx.SETTINGS)
-    settings["scene_sources"][0]["ray_count"] = int(ray_count)
+    led = settings["scene_sources"][0]
+    led["ray_count"] = int(ray_count)
+    # Pin the fixture LED's perp (Y) half-size independently of the production layout.
+    # This guard exercises the source->object->detector COUPLING machinery ("fold dark,
+    # perp uniform"), not the exact production LED dimension (which is 74 mm perp as of
+    # 2026-07-10).  The edge/centre metric on this low-ray-count scatter fixture is noisy,
+    # and it was calibrated at a 78 mm perp LED that over-fills the +/-19.5 window with a
+    # comfortable margin; a fixed perp size keeps the "perp stays uniform" signal stable and
+    # decoupled from production LED tweaks.  The fold (X) half stays the layout's 27.5 mm.
+    led["radius_y"] = 39.0
+    led["radius"] = 39.0
     s0, s1, s2 = copy.deepcopy(cx.SURFACES)
     s2_obj = copy.deepcopy(s2)
     s2_obj.update({"surface": "Diffuse Object", "name": "Diffuse object at FOV plane",

@@ -11,11 +11,11 @@ sees on the production floor, so the 3D inspector renders rays that:
 
 REAL SETUP (user, production floor)
 -----------------------------------
-A 55x78 mm area LED shines from the SIDE (the +X face of the 55x55x78 mm beam-splitter
+A 55x74 mm area LED shines from the SIDE (the +X face of the 55x55x78 mm beam-splitter
 cube) -> reflects off the 45 deg BS diagonal -> down to a 39x39 mm FOV -> the object
 scatters back up -> through the BS -> the MV-150 imaging lens + 25 MP camera. The camera
 image shows 2 DARK EDGES on the fold (X) axis and is uniform on the perp (Y) axis: the
-~30 mm fold clear-aperture under-fills the 39 mm FOV while the 78 mm dimension covers it.
+~30 mm fold clear-aperture under-fills the 39 mm FOV while the 74 mm dimension covers it.
 
 GEOMETRY (X-fold; matches the MV-150 test scene's +X absorber face)
 -------------------------------------------------------------------
@@ -25,9 +25,9 @@ reflects -X -> -Z, sending the beam down to the object. After the diffuse double
 return beam transmits straight through (+Z) to the imaging lens and image.
 
 Because the fold happens in the X-Z plane, the LED's local extents map to the object as:
-    LED local-Y (perp)        -> object Y  (perp, 78 mm, uniform)
+    LED local-Y (perp)        -> object Y  (perp, 74 mm, uniform)
     LED local-Z (via the fold) -> object X  (fold, 55 mm, the 2 dark edges)
-So the Random rectangle source uses radius_x = 39 (perp/Y) and radius_y = 27.5 (fold/Z).
+So the Random rectangle source uses radius_x = 37 (perp/Y) and radius_y = 27.5 (fold/Z).
 
 This file is a VISUALIZATION of the folded path. The dark-edge magnitude is governed by
 the BS clear-aperture stop; tuning that to match the unfolded layout's 0.66 fold ratio is
@@ -37,9 +37,9 @@ a follow-up (the unfolded layout remains the quantitative relative-illumination 
 TITLE = "Machine Vision 150mm Coaxial LED (Folded)"
 
 # Fold axis = X (the 55 mm LED over the under-filling ~30 mm fold stop -> dark edges).
-# Perp axis = Y (the 78 mm LED over the 78 mm aperture -> uniform).
+# Perp axis = Y (the 74 mm LED over the 78 mm aperture -> uniform).
 LED_HALF_X = 27.5   # 55 mm area LED, fold axis (maps to object X through the fold)
-LED_HALF_Y = 39.0   # 78 mm area LED, perp axis (maps to object Y directly)
+LED_HALF_Y = 37.0   # 74 mm area LED, perp axis (maps to object Y directly)
 LED_CONE_DEG = 30.0  # directional MV area-LED cone
 LED_RAY_COUNT = 60   # this is the VISUAL companion layout; the diffuse double-pass fans
                      # each launched ray into many paths, so a modest count keeps the 3D
@@ -52,7 +52,7 @@ OBJECT_ARM = 130.0   # BS -> object/FOV (reflected, -Z arm)
 RETURN_TO_LENS = 150.0  # object -> imaging lens (transmitted return arm)
 FOV_MM = 39.0
 
-# Apertures sized to pass the 78 mm LED without spurious clipping (the limiting fold stop
+# Apertures sized to pass the 74 mm LED without spurious clipping (the limiting fold stop
 # is a follow-up; see module docstring).
 WIDE_DIAM = 92.0
 
@@ -79,14 +79,14 @@ SETTINGS = {
     "scene_sources": [
         {
             "source_id": "source:coaxial-area-led-folded",
-            "name": "Coaxial 55x78 area LED (side port, folded)",
+            "name": "Coaxial 55x74 area LED (side port, folded)",
             "model": "Random rectangle source",
             "role": "illumination",
             "physical": True,
             "enabled": True,
             "origin": [LED_STANDOFF, 0.0, BS_Z],
             "direction": [-1.0, 0.0, 0.0],
-            "radius_x": LED_HALF_Y,   # local-X -> world Y -> object perp (78 mm)
+            "radius_x": LED_HALF_Y,   # local-X -> world Y -> object perp (74 mm)
             "radius_y": LED_HALF_X,   # local-Y -> world Z -> object fold X (55 mm)
             "radius": LED_HALF_Y,
             "cone_deg": LED_CONE_DEG,
@@ -94,7 +94,7 @@ SETTINGS = {
             "power": 1.0,
             "wavelength": 0.55,
             "Note": (
-                "55 mm (fold) x 78 mm (perp) area LED at the +X side port of the BS cube, "
+                "55 mm (fold) x 74 mm (perp) area LED at the +X side port of the BS cube, "
                 "emitting -X. The 45 deg diagonal folds it down (-Z) to the object; the fold "
                 "maps the 55 mm dimension onto the object X axis (the 2 dark edges)."
             ),
@@ -207,7 +207,7 @@ SURFACES = [
         "advanced": {
             "Display2D": {"show_reference_plane": False},
             "Note": (
-                "Rays are launched by SETTINGS['scene_sources'][0], the 55x78 coaxial area LED at "
+                "Rays are launched by SETTINGS['scene_sources'][0], the 55x74 coaxial area LED at "
                 "the +X side port. The Object row is reference geometry only."
             ),
         },

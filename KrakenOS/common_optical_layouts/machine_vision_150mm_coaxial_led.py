@@ -2,11 +2,11 @@
 
 REAL SETUP (user, production floor)
 -----------------------------------
-A 55x78 mm area LED shines from the SIDE -> reflects off the 45 deg diagonal of a
+A 55x74 mm area LED shines from the SIDE -> reflects off the 45 deg diagonal of a
 55x55x78 mm beam-splitter cube -> down to a 39x39 mm FOV -> the object reflects back up ->
 through the BS -> the MV-150 imaging lens + 25 MP camera. The camera image shows 2 DARK
 EDGES on one axis and is uniform on the other: the 55 mm illumination dimension under-fills
-the FOV while the 78 mm dimension covers it.
+the FOV while the 74 mm dimension covers it.
 
 WHY UNFOLDED / ON-AXIS (answers the user's Q4 "LED at the reflected position")
 ------------------------------------------------------------------------------
@@ -14,10 +14,10 @@ Reflecting the side LED in the 45 deg BS diagonal gives a VIRTUAL area source si
 ON-AXIS directly above the FOV -- optically identical to the folded real LED. So this layout
 models the simpler unfolded stack along +Z, which is exactly the "reflected position":
 
-    z = 0   : 55x78 mm directional-cone area LED (SETTINGS['scene_sources'][0]), emitting +Z
+    z = 0   : 55x74 mm directional-cone area LED (SETTINGS['scene_sources'][0]), emitting +Z
     z = 75  : beam-splitter EXIT aperture -- the LIMITING STOP. Its fold-axis CLEAR APERTURE
               (~30 mm, smaller than the 55 mm face's 55*cos45 ~ 39 mm fold-foreshortened
-              outline) UNDER-fills the 39 mm FOV; the perp axis stays 78 mm
+              outline) UNDER-fills the 39 mm FOV; the perp axis stays 74 mm
     z = 130 : FOV / detector plane (39x39 mm), the relative-illumination target
 
 WHY ONE AXIS GOES DARK (answers Q5 "simulate the 2 dark edges from relative illumination")
@@ -30,16 +30,16 @@ than the 39 mm FOV, so the fully-lit (umbra) patch PINCHES to ~+/-6 mm and the F
 deep in the penumbra roll-off (edge ~ 0.66 of centre) -> the 2 dark edges. On the perp axis
 the 78 mm stop exceeds the 39 mm FOV -> lit uniformly across the FOV.
 
-The fold axis is X (the 55 mm / dark-edge axis); the perpendicular axis is Y (the 78 mm /
+The fold axis is X (the 55 mm / dark-edge axis); the perpendicular axis is Y (the 74 mm /
 uniform axis). The rectangular BS-exit stop is a 4-vertex User-Defined Aperture (UDA).
 """
 
 TITLE = "Machine Vision 150mm Coaxial LED Dark-Edge"
 
 # Fold axis = X (the 55 mm LED over the under-filling ~30 mm fold stop -> dark edges).
-# Perp axis = Y (the 78 mm LED over the 78 mm stop -> uniform).
+# Perp axis = Y (the 74 mm LED over the 78 mm stop -> uniform).
 LED_HALF_X = 27.5   # 55 mm area LED, fold axis
-LED_HALF_Y = 39.0   # 78 mm area LED, perp axis
+LED_HALF_Y = 37.0   # 74 mm area LED, perp axis
 STOP_HALF_X = 15.0  # BS clear-aperture fold stop ~30 mm: UNDER-fills the 39 mm FOV
 STOP_HALF_Y = 39.0  # BS exit face 78 mm on the perp axis -> covers the FOV
 LED_CONE_DEG = 30.0  # directional MV area-LED cone; >24 deg keeps it stop-limited (not cone-limited)
@@ -71,7 +71,7 @@ SETTINGS = {
     "scene_sources": [
         {
             "source_id": "source:coaxial-area-led",
-            "name": "Coaxial 55x78 area LED (reflected/unfolded)",
+            "name": "Coaxial 55x74 area LED (reflected/unfolded)",
             "model": "Random rectangle source",
             "role": "illumination",
             "physical": True,
@@ -86,7 +86,7 @@ SETTINGS = {
             "power": 1.0,
             "wavelength": 0.55,
             "Note": (
-                "55 mm (X, fold) x 78 mm (Y, perp) area LED at the BS-reflected on-axis position. "
+                "55 mm (X, fold) x 74 mm (Y, perp) area LED at the BS-reflected on-axis position. "
                 "The 55 mm dimension overfills the ~30 mm fold clear-aperture stop, which itself "
                 "under-fills the 39 mm FOV -> the 2 dark edges."
             ),
@@ -121,7 +121,7 @@ SURFACES = [
         "advanced": {
             "Display2D": {"show_reference_plane": False},
             "Note": (
-                "Rays are launched by SETTINGS['scene_sources'][0], the 55x78 coaxial area LED at "
+                "Rays are launched by SETTINGS['scene_sources'][0], the 55x74 coaxial area LED at "
                 "this plane. The Object row is reference geometry only."
             ),
         },
