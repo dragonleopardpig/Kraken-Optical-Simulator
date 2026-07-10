@@ -3569,6 +3569,10 @@ class ThreeDSceneToolsMixin:
         try:
             signature = (
                 self._preview_trace_signature(),
+                # bugs/0286: the coupled fallback also bins face-bound MARKER emission, whose (un)marking
+                # does NOT move the primary preview signature -- fold in the marker fingerprint so a
+                # marker change invalidates this cache (else a prior None / stale map would persist).
+                self._illumination_marker_fingerprint(),
                 int(getattr(target, "trace_surface", getattr(target, "row_index", -1))),
                 "source_illumination",
             )
@@ -3583,6 +3587,17 @@ class ThreeDSceneToolsMixin:
         return spec
 
     def _compute_source_illumination_overlay_spec(self, system, target):
+        """bugs/0286: prefer the DIRECT density-on-sensor heatmap (the source floods the detector --
+        the coaxial-LED teaching scene, ~60k rays tiling the sensor). When NO illumination reaches the
+        sensor -- the real MV-150 vendor scene, where the flood lands on the OBJECT and 0 rays make it
+        to the sensor even through a mirror -- fall back to PROJECTING the illumination-on-object
+        dark-edge map onto the sensor (the specular-relay 'mirror object' model)."""
+        spec = self._compute_detector_density_illumination_overlay_spec(system, target)
+        if spec is not None:
+            return spec
+        return self._compute_coupled_object_illumination_overlay_spec(system, target)
+
+    def _compute_detector_density_illumination_overlay_spec(self, system, target):
         try:
             surface_index = int(getattr(target, "trace_surface", getattr(target, "row_index", -1)))
         except Exception:
@@ -3660,6 +3675,120 @@ class ThreeDSceneToolsMixin:
             pass
         return build_source_illumination_overlay(
             map_data,
+            center=np.asarray(getattr(target, "center_world", (0.0, 0.0, 0.0)), dtype=float),
+            normal=np.asarray(getattr(target, "normal_world", (0.0, 0.0, 1.0)), dtype=float),
+            tangent=np.asarray(getattr(target, "tangent_world", (0.0, 1.0, 0.0)), dtype=float),
+            chroma=chroma,
+        )
+
+    def _coupled_object_illumination_records(self, system, wavelength: float) -> list:
+        """bugs/0286: the illumination rays that land on the object, for the on-sensor projection.
+
+        A LAUNCHED physical source (the bugs/0284 LED) rides the imaging records; a face-bound MARKER
+        (bugs/0264) is excluded from the imaging trace (bugs/0266) so it is traced fresh into an
+        isolated keeper. Union of both, or EMPTY when no live illumination source is present -- so a
+        pure imaging scene never fabricates a map from its sparse pupil/field fan (the bugs/0280/0282
+        lesson: gate on a genuine source, exactly as the density heatmap does)."""
+        try:
+            from KrakenOS.UI.scene_source_analysis import scene_source_spec_is_face_bound_marker
+
+            specs = self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []) or [])
+        except Exception:
+            return []
+
+        def _live(spec):
+            return bool(spec.get("enabled", True)) and bool(spec.get("physical", True))
+
+        has_nonmarker = any(_live(s) and not scene_source_spec_is_face_bound_marker(s) for s in specs)
+        has_marker = any(_live(s) and scene_source_spec_is_face_bound_marker(s) for s in specs)
+        records: list = []
+        if has_nonmarker:
+            try:
+                records.extend(self._collect_ray_analysis_records())
+            except Exception:
+                pass
+        if has_marker:
+            try:
+                records.extend(self._isolated_illumination_marker_records(system, float(wavelength)))
+            except Exception:
+                pass
+        return records
+
+    def _detector_target_half_extent(self, target) -> tuple[float, float]:
+        """Half-width / half-height (mm) of the sensor's active area: the target's own active dims,
+        else the vendor-glued camera's detector-dims OVERRIDE (bugs/0276, where the MV-150 sensor size
+        lives off-row), else (0, 0)."""
+        hw = float(getattr(target, "active_width_mm", 0.0) or 0.0) / 2.0
+        hh = float(getattr(target, "active_height_mm", 0.0) or 0.0) / 2.0
+        if hw > 0.0 and hh > 0.0:
+            return hw, hh
+        try:
+            overrides = self._camera_detector_active_dims_overrides() or {}
+        except Exception:
+            overrides = {}
+        for attr in ("row_index", "trace_surface"):
+            try:
+                key = int(getattr(target, attr))
+            except Exception:
+                continue
+            if key in overrides:
+                dims = overrides[key]
+                try:
+                    return float(dims[0]) / 2.0, float(dims[1]) / 2.0
+                except Exception:
+                    continue
+        return hw, hh
+
+    def _compute_coupled_object_illumination_overlay_spec(self, system, target):
+        """bugs/0286 (flag_20260710_085240_847, "Illumination overlay still show nothing"): the on-sensor
+        illumination heatmap when NO illumination ray reaches the sensor.
+
+        On the real vendor scene the coaxial LED / marked face floods the OBJECT, not the detector --
+        0 rays reach the sensor even through a mirror -- so the density-on-sensor heatmap cannot build.
+        But the lens IMAGES the object onto the sensor, so bin the dense illumination landing WITHIN the
+        imaged object aperture and PROJECT that dark-edge map onto the sensor extent. This is the
+        specular-relay ("mirror object") model the user asked for: a mirror at the FOV preserves the
+        coaxial dark edges sharply (a diffuse object would blur them), which is exactly what a
+        rescale-to-sensor draw of the object map reproduces. Returns None when no source floods the
+        imaged FOV (e.g. a 45-deg splitter-face marker sprays entirely off-aperture) -- the sensor then
+        stays correctly blank (display follows physics)."""
+        from KrakenOS.UI.services.source_object_coupling import (
+            object_illumination_projection_map,
+            project_object_map_onto_sensor,
+        )
+
+        object_index = self._source_object_coupling_object_index()
+        if object_index is None:
+            return None
+        try:
+            wavelength = float(self._current_wavelength())
+        except Exception:
+            return None
+        records = self._coupled_object_illumination_records(system, wavelength)
+        if not records:
+            return None
+        try:
+            object_radius = float(self.rows[int(object_index)].diameter) / 2.0
+        except Exception:
+            object_radius = 0.0
+        map_data = object_illumination_projection_map(
+            self, system, int(object_index), ray_records=records, object_radius=object_radius
+        )
+        if map_data is None:
+            return None
+        half_w, half_h = self._detector_target_half_extent(target)
+        projected = project_object_map_onto_sensor(map_data, half_w, half_h)
+        if projected is None:
+            return None
+        chroma = "Mono"
+        try:
+            record = self._current_camera_record()
+            if isinstance(record, dict):
+                chroma = record.get("chroma", "Mono") or "Mono"
+        except Exception:
+            pass
+        return build_source_illumination_overlay(
+            projected,
             center=np.asarray(getattr(target, "center_world", (0.0, 0.0, 0.0)), dtype=float),
             normal=np.asarray(getattr(target, "normal_world", (0.0, 0.0, 1.0)), dtype=float),
             tangent=np.asarray(getattr(target, "tangent_world", (0.0, 1.0, 0.0)), dtype=float),
@@ -3767,24 +3896,31 @@ class ThreeDSceneToolsMixin:
             self._illumination_marker_rays_overlay_cache = (signature, spec)
         return spec
 
-    def _compute_illumination_marker_rays_overlay_spec(self, system, wavelength: float):
+    def _isolated_illumination_marker_records(self, system, wavelength: float) -> list:
+        """Trace the face-bound illumination MARKERS into an ISOLATED keeper and return their per-ray
+        records (bugs/0267/0270). Shared by the emission-ray overlay (bugs/0270) and the on-sensor
+        illumination projection (bugs/0286): a marked face is excluded from the imaging trace
+        (bugs/0266), so its flood is traced fresh into a SEPARATE keeper whose records never touch
+        ``last_rays`` / ``_last_scene_bundle`` -- the imaging image-plane / detector / optical axis stay
+        pinned to the object-driven trace. Returns ``[]`` during the async capture/replay window
+        (bugs/0223) or when no marker bundles exist."""
         # Never trace during the async imaging-trace capture/replay window (bugs/0223): our launch bundles
         # would pollute the captured imaging bundles. The overlay recomputes on the next refresh.
         if (
             self.__dict__.get("_preview_trace_bundle_capture") is not None
             or self.__dict__.get("_preview_trace_bundle_replay") is not None
         ):
-            return None
+            return []
         try:
             bundles, sources = self._build_illumination_marker_bundles(wavelength)
         except Exception:
-            return None
+            return []
         if not bundles:
-            return None
+            return []
         try:
             rays_illum = Kos.raykeeper(system)
         except Exception:
-            return None
+            return []
         # Force the isolated marker trace non-sequential (bugs/0270): a face flood is a second source that
         # reflects through the scene. The flag is read via the trace service's ``.editor`` (== this editor).
         # Restore afterwards so the imaging trace's own mode resolution is untouched.
@@ -3802,7 +3938,7 @@ class ThreeDSceneToolsMixin:
         try:
             self._trace_preview_bundles(system, rays_illum, wavelength, bundles, bundle_sources=sources)
         except Exception:
-            return None
+            return []
         finally:
             self.__dict__["_force_nonseq_preview_trace"] = prior_force
             try:
@@ -3810,9 +3946,12 @@ class ThreeDSceneToolsMixin:
             except Exception:
                 pass
         try:
-            records = self._isolated_ray_analysis_records(system, rays_illum)
+            return self._isolated_ray_analysis_records(system, rays_illum)
         except Exception:
-            return None
+            return []
+
+    def _compute_illumination_marker_rays_overlay_spec(self, system, wavelength: float):
+        records = self._isolated_illumination_marker_records(system, wavelength)
         if not records:
             return None
         try:

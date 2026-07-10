@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-09T04:30:01+00:00",
+  "generated_at": "2026-07-10T02:44:16+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -252,7 +252,8 @@
     "248": "pass",
     "249": "pass",
     "250": "pass",
-    "251": "pass"
+    "251": "pass",
+    "252": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -505,6 +506,7 @@
     "248": "source-illumination heatmap needs a real source, not a face marker",
     "249": "scene sources are first-class Open 3D objects (browser + glyph + hide/unhide)",
     "250": "Add Illumination Source (LED) mints a first-class scene source from the browser",
-    "251": "an illumination flood draws no phantom detector plane beside the beam splitter"
+    "251": "an illumination flood draws no phantom detector plane beside the beam splitter",
+    "252": "object illumination projects onto the sensor as dark edges when no ray reaches it"
   }
 }

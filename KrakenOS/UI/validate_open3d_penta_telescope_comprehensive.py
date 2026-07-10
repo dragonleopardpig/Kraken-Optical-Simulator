@@ -12236,6 +12236,53 @@ def phase_251_illumination_flood_phantom_branch_detector(
     return result
 
 
+def phase_252_coupled_object_illumination_projection(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The on-sensor illumination heatmap when NO illumination ray reaches the sensor
+    (flag_20260710_085240_847 "Illumination overlay still show nothing", Piece 2 / Approach A). On the
+    real MV-150 vendor scene the coaxial LED / marked beam-splitter face floods the OBJECT at the FOV, not
+    the detector -- 0 rays reach the sensor even through a mirror -- so the DIRECT density-on-sensor
+    heatmap (>=50 sensor hits) cannot build and the sensor draws blank. But the imaging lens IMAGES the
+    object onto the sensor, so bin the dense illumination landing WITHIN the imaged object aperture and
+    PROJECT that dark-edge map onto the sensor extent (rescale the object-map grid edges to the sensor
+    active size -- the bugs/0275 guardrail). This is the user's "make the Object a mirror" model: a mirror
+    at the FOV relays the coaxial dark edges to the sensor sharply (a diffuse object would blur them),
+    which a rescale-to-sensor draw of the object map reproduces; the projection is numerically independent
+    of what the object reflects into, so plain Object / Mirror / Object Target are all couplable.
+    `source_illumination_overlay_spec` becomes a dispatcher: DIRECT density first (the coaxial-LED teaching
+    scene, unregressed), else the coupled PROJECTION fallback, gated exactly like the density path
+    (bugs/0280/0282: a live NON-marker source must be present, else a pure imaging scene fabricates a map
+    from its sparse pupil/field fan). A 45-deg splitter-face marker that sprays entirely off the imaged
+    aperture yields no map -> the sensor stays correctly blank (display follows physics).
+    `validate_open3d_coupled_object_illumination_projection` (display-free): PROJECTION MATH
+    (aperture-clip + data-footprint binning, peak-normalised, outliers dropped, too-few / all-off-aperture
+    -> None; edges rescaled to the sensor, not the FOV) + OBJECT RECOGNITION (Diffuse > Mirror/Object
+    Target > plain Object) + DISPATCHER CONTRACT (density before coupled; coupled compute render-only) +
+    COUPLED FALLBACK end-to-end on the portable coaxial-scatter fixture (heatmap at the detector active
+    size, object not promoted to the detector plane, bugs/0266) + DENSITY NON-REGRESSION (coaxial teaching
+    scene still returns the direct density overlay) + REAL VENDOR SCENE when present (+LED -> PRESENT dark
+    edges at the 23 mm sensor; marked face -> None; no source -> None).
+    """
+    result = PhaseResult(
+        name="Phase 252: object illumination projects onto the sensor as dark edges when no ray reaches it"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_coupled_object_illumination_projection import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"coupled-object-illumination-projection guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("coupled-object-illumination-projection phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12532,6 +12579,7 @@ def main() -> int:
             phase_249_scene_source_object,
             phase_250_add_illumination_source,
             phase_251_illumination_flood_phantom_branch_detector,
+            phase_252_coupled_object_illumination_projection,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

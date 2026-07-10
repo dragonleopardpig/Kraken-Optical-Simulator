@@ -153,24 +153,39 @@ class MainPathDetectorAnalysis:
 
     def _source_object_coupling_object_index(self) -> int | None:
         """bugs/0274: the object/scatter surface whose source -> object irradiance modulates the
-        imaging detector image.  Prefer an explicit diffuse-scatter object; fall back to an Object
-        Target.  Returns None when the scene has no object surface to couple through."""
+        imaging detector image.  Preference order:
+
+          1. an explicit diffuse-scatter object (``Diffuse Object`` / ``DiffuseScatter``);
+          2. bugs/0286: a specular ``Mirror`` (or ``Object Target``) at the FOV -- a mirror relays the
+             coaxial illumination dark edges to the sensor SHARPLY, without the Lambertian blur a
+             diffuse object imposes (the user's request: model the FOV part as a mirror to read the
+             dark edges more clearly);
+          3. bugs/0286: the plain sequential ``Object`` plane (the real MV-150 vendor scene's row 0),
+             so the on-sensor illumination projection has a couplable surface even with no explicit
+             scatter/mirror object placed.
+
+        Returns None when the scene has no object surface at all."""
         from KrakenOS.UI.trace_intent import (
             DIFFUSE_OBJECT_SURFACE,
             DIFFUSE_SCATTER_ADVANCED_ATTR,
             OBJECT_TARGET_SURFACE,
         )
 
-        fallback: int | None = None
+        reflective: int | None = None
+        plain_object: int | None = None
         for index, row in enumerate(list(getattr(self, "rows", []) or [])):
             surface = str(getattr(row, "surface", "") or "")
             advanced = getattr(row, "advanced", {}) or {}
             advanced = advanced if isinstance(advanced, dict) else {}
             if surface == DIFFUSE_OBJECT_SURFACE or DIFFUSE_SCATTER_ADVANCED_ATTR in advanced:
                 return index
-            if surface == OBJECT_TARGET_SURFACE and fallback is None:
-                fallback = index
-        return fallback
+            if surface in {"Mirror", OBJECT_TARGET_SURFACE} and reflective is None:
+                reflective = index
+            if surface == "Object" and plain_object is None:
+                plain_object = index
+        if reflective is not None:
+            return reflective
+        return plain_object
 
     def _illumination_weighted_detector_spot_samples(
         self,
