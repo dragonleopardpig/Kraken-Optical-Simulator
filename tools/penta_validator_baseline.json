@@ -250,7 +250,8 @@
     "246": "pass",
     "247": "pass",
     "248": "pass",
-    "249": "pass"
+    "249": "pass",
+    "250": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -501,6 +502,7 @@
     "246": "source-illumination heatmap draws only with a scene illumination source",
     "247": "leaving Normal to Sensor via nav-cube/orbit restores the full scene",
     "248": "source-illumination heatmap needs a real source, not a face marker",
-    "249": "scene sources are first-class Open 3D objects (browser + glyph + hide/unhide)"
+    "249": "scene sources are first-class Open 3D objects (browser + glyph + hide/unhide)",
+    "250": "Add Illumination Source (LED) mints a first-class scene source from the browser"
   }
 }

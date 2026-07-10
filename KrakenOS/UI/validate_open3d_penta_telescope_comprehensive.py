@@ -12157,6 +12157,42 @@ def phase_249_scene_source_object(
     return result
 
 
+def phase_250_add_illumination_source(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A first-class scene source (the emitting LED of bugs/0283) must be CREATABLE from the browser:
+    right-click the "Scene Sources" group -> "Add Illumination Source (LED)" (increment 0284). The editor
+    appends a physical ``Random rectangle source`` seated at the current source-panel pose and the
+    inspector re-traces, so the 0283 glyph + browser row appear immediately. The one physics trap guarded:
+    the add starts from the REAL normalized specs, never `_scene_source_specs_for_direct_editing` -- whose
+    empty-scene fallback injects a NON-physical `Pupil / field` reference that would draw a supernatural
+    glyph and (bugs/0282) mis-gate the illumination heatmap; adding to a pure-imaging scene must yield
+    exactly `[led]`. The same reasoning tightens the drawable filter to PHYSICAL-only, matching exactly
+    what `_build_scene_source_bundles` launches. `validate_open3d_add_illumination_source` (display-free):
+    ADD-SCHEMA (empty scene -> one physical enabled Random-rectangle LED at the source pose, 5mm square,
+    30 deg) + NO-FALLBACK (empty -> [led] not [pupil_field, led]; existing source preserved) + UNIQUE-ID
+    (led-1, led-2) + DRAWABLE-GATE (Pupil/field ref + marker excluded, physical LED drawable) + WIRING
+    (browser menu -> inspector -> editor add + real-spec start plumbed end-to-end).
+    """
+    result = PhaseResult(
+        name="Phase 250: Add Illumination Source (LED) mints a first-class scene source from the browser"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_add_illumination_source import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"add-illumination-source guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("add-illumination-source phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12451,6 +12487,7 @@ def main() -> int:
             phase_247_normal_to_sensor_gesture_leave,
             phase_248_illumination_heatmap_marker_gated,
             phase_249_scene_source_object,
+            phase_250_add_illumination_source,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

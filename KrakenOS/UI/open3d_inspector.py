@@ -6341,6 +6341,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.delete_selected_step()
         return "break"
 
+    def add_illumination_led_source(self) -> str | None:
+        """bugs/0284: create a new illumination LED scene source (the browser's Scene Sources ->
+        "Add Illumination Source (LED)" entry point) and rebuild so its 0283 glyph + browser row appear.
+        A physical scene source drives the preview trace (trace_preview replaces the imaging rays with
+        the source's illumination), so this re-traces via refresh_from_editor -- the emitter starts
+        illuminating the moment it is added. Returns the new source_id (None if the add failed)."""
+        try:
+            source_id = self.editor.add_illumination_led_source()
+        except Exception as exc:
+            self.status_var.set(f"Add illumination LED failed: {exc}")
+            return None
+        self.refresh_from_editor(force_retrace=True)
+        self.status_var.set(
+            f"Added illumination LED source ({source_id}); drag to move it (resize handles coming)."
+        )
+        return source_id
+
     def _selected_imported_step_label_candidates(self) -> tuple[object, ...]:
         return (
             self.editor._selected_step_label,

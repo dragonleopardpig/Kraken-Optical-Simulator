@@ -955,11 +955,14 @@ class SourceModelingMixin:
 
     def _drawable_scene_source_descriptors(self, wavelength: float | None = None) -> list[SceneSource3D]:
         """The scene sources that render as first-class Open 3D glyphs and list in the browser's
-        "Scene Sources" group (bugs/0283): every enabled, NON-marker source in
+        "Scene Sources" group (bugs/0283): every enabled, PHYSICAL, NON-marker source in
         ``layout_scene_source_specs``, resolved through the same ``scene_source_from_spec`` path the
-        trace uses so the glyph geometry matches the launch geometry. A face-bound MARKER is excluded
-        (it draws on its anchored face, bugs/0264) and a disabled source emits nothing, so both are
-        skipped. Wavelength is irrelevant to the glyph geometry; a default keeps the descriptor cheap."""
+        trace uses so the glyph geometry matches the launch geometry. Exclusions mirror exactly what
+        ``_build_scene_source_bundles`` actually LAUNCHES, so the glyph never shows a supernatural
+        emitter (display follows physics): a face-bound MARKER draws on its anchored face (bugs/0264);
+        a disabled source emits nothing; a NON-physical ``Pupil / field`` reference is a paraxial
+        sampling stand-in, not an emitter, so it must not draw an LED glyph. Wavelength is irrelevant to
+        the glyph geometry; a default keeps the descriptor cheap."""
         specs = self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []) or [])
         wl = float(wavelength) if wavelength else 0.55
         descriptors: list[SceneSource3D] = []
@@ -968,11 +971,76 @@ class SourceModelingMixin:
                 continue
             if not source_spec_bool(spec, "enabled", True):
                 continue
+            if not source_spec_bool(spec, "physical", True):
+                continue
             try:
                 descriptors.append(self._scene_source_from_spec(spec, index, wavelength=wl))
             except Exception:
                 continue
         return descriptors
+
+    def add_illumination_led_source(self, *, record_history: bool = True) -> str:
+        """Add a new physical area-LED illumination source as a first-class scene source (bugs/0284) --
+        the "Add Illumination Source (LED)" entry point behind the browser's Scene Sources group. The
+        LED is a ``Random rectangle source`` emitter seated at the current source-panel origin, aimed
+        along the current source direction, so the 0283 glyph (aperture panel + arrow) and browser row
+        pick it up on the next rebuild.
+
+        Starts from the REAL normalized specs (NOT ``_scene_source_specs_for_direct_editing``, whose
+        empty-scene fallback injects the current Source panel). That matters: the panel fallback on a
+        pure-imaging scene is a NON-physical ``Pupil / field`` reference; injecting it would both draw a
+        supernatural glyph and (bugs/0282) mis-gate the illumination heatmap. So adding to an imaging
+        scene yields exactly ``[led]``. A physical scene source drives the preview trace
+        (``trace_preview`` replaces the imaging rays with the source's illumination), which is the point:
+        the emitter starts illuminating the moment it is added. Returns the new source_id."""
+        specs = [
+            dict(spec)
+            for spec in self._normalize_scene_source_specs(
+                getattr(self, "layout_scene_source_specs", []) or []
+            )
+        ]
+        existing_ids = {str(spec.get("source_id", "") or "") for spec in specs}
+        ordinal = 1
+        while f"source:led-{ordinal}" in existing_ids:
+            ordinal += 1
+        source_id = f"source:led-{ordinal}"
+        ox, oy, oz = self._current_source_origin()
+        dl, dm, dn = self._current_source_direction()
+        half = max(float(self._current_source_radius() or 0.0), 5.0)
+        cone = float(self._current_source_cone_angle() or 0.0)
+        if not (cone > 0.0):
+            cone = 30.0
+        specs.append(
+            {
+                "source_id": source_id,
+                "name": f"Illumination LED {ordinal}",
+                "model": "Random rectangle source",
+                "role": "illumination",
+                "physical": True,
+                "enabled": True,
+                "source_x": float(ox),
+                "source_y": float(oy),
+                "source_z": float(oz),
+                "source_l": float(dl),
+                "source_m": float(dm),
+                "source_n": float(dn),
+                "radius_x": half,
+                "radius_y": half,
+                "radius": half,
+                "cone_deg": cone,
+                "ray_count": 2000,
+                "power": 1.0,
+                "wavelength": float(self._current_wavelength()),
+                "seed": 7,
+            }
+        )
+        specs = self._dedupe_scene_source_ids(specs)
+        self._apply_scene_source_row_action_specs(
+            specs,
+            record_history=record_history,
+            status=f"Added illumination LED {source_id}.",
+        )
+        return source_id
 
     def _source_statistics(self, sample_count: int | None = None, wavelength: float | None = None) -> dict[str, object]:
         source_model = self._current_source_model()

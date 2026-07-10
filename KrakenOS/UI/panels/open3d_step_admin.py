@@ -808,6 +808,11 @@ class Open3DStepAdminPanel:
         if tree is None:
             return "break"
         iid = tree.identify_row(event.y)
+        # bugs/0284: right-clicking the Scene Sources group (its header or its "(empty)" placeholder)
+        # offers the "Add Illumination Source (LED)" entry point rather than the usual no-op on a category.
+        if iid in ("category:sources", "empty:sources"):
+            self._show_scene_sources_context_menu(event)
+            return "break"
         if not iid or iid.startswith("category:") or iid.startswith("empty:"):
             return "break"
         try:
@@ -818,6 +823,27 @@ class Open3DStepAdminPanel:
         self._on_tree_select()  # route the selection to the editor + properties
         self._show_element_context_menu(event, iid)
         return "break"
+
+    def _show_scene_sources_context_menu(self, event) -> None:
+        """bugs/0284: the Scene Sources group's right-click menu. "Add Illumination Source (LED)" creates
+        a first-class emitting-LED scene source; its 0283 glyph + browser row appear on the refresh."""
+        tree = self._tree
+        if tree is None:
+            return
+        menu = tk.Menu(tree, tearoff=False)
+        menu.add_command(label="Scene Sources", state="disabled")
+        menu.add_separator()
+        menu.add_command(
+            label="Add Illumination Source (LED)", command=self._add_illumination_led_source
+        )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _add_illumination_led_source(self) -> None:
+        self.inspector.add_illumination_led_source()
+        self.refresh()  # re-list the tree so the new Scene Sources row appears
 
     def _selection_rows_and_label(self, iid: str) -> tuple[list[int], str | None]:
         rows, label, _display, _source = self._resolve_iid_target(iid)
