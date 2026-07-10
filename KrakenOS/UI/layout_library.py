@@ -36,6 +36,17 @@ EXAMPLE_CATEGORY_ORDER = (
 
 ZEMAX_PRESCRIPTION_SUFFIXES = frozenset({".zmx"})
 
+# Layout modules that stay on disk (imported by ~10 validators / penta phases 175,176 and the portable
+# `_build_coaxial_overlay` / `_build_coupling_fixture` heatmap+coupling fixtures) but are hidden from the
+# editor menu because they are idealized teaching demos, not real vendor setups (user: "far from
+# reality").  Removing them from the menu MUST NOT delete the files or the illumination test suite breaks.
+MENU_HIDDEN_LAYOUT_STEMS = frozenset(
+    {
+        "machine_vision_150mm_coaxial_led",
+        "machine_vision_150mm_coaxial_led_folded",
+    }
+)
+
 
 @dataclass(frozen=True)
 class LayoutDiscovery:
@@ -269,6 +280,8 @@ def discover_layouts(
     machine_vision_files: dict[str, Path] = {}
     for path in sorted(layouts_dir.glob("*.py")):
         if path.name.startswith("_") or path.name == "__init__.py":
+            continue
+        if path.stem in MENU_HIDDEN_LAYOUT_STEMS:
             continue
         try:
             title = load_python_title(path)
