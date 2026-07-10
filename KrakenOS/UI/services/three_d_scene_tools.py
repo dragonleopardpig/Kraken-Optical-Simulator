@@ -3542,19 +3542,99 @@ class ThreeDSceneToolsMixin:
                 for target in targets:
                     try:
                         if int(getattr(target, attr, -1)) == target_index:
-                            return target
+                            # bugs/0289: honour the analysis target only when it IS a detector. Under
+                            # "Auto" with a flood that reaches no image, the analysis index resolves to
+                            # the OBJECT row -- anchoring the heatmap there binned the LED's own launch
+                            # events into a garbage stripe map while real branch detectors (with the
+                            # 23x23 sensor dims) sat unused in the same bundle.
+                            if bool(getattr(target, "is_detector", False)):
+                                return target
                     except Exception:
                         continue
-        detectors = [t for t in targets if bool(getattr(t, "is_detector", False))]
-        if detectors:
+        # bugs/0289: a default-distance PARK (a branch arm that never converged, bugs/0285) is not a
+        # trustworthy heatmap plane -- for a side-LED flood the parks sit beside the beam splitter,
+        # nowhere near the real sensor. Preference order: (1) a detector whose focus is real physics;
+        # (2) the prescription Image-row anchor when its sensor dims resolve (the bugs/0266 statement:
+        # the sensor's pose is an imaging property, so a flood with no reached arm still drapes at the
+        # true sensor); (3) a dimmed park as the legacy fallback (a scatter fixture's parks carry the
+        # real sensor dims and its Image row carries none); (4) the flat best-focus anchor.
+        def _resolved_area(target):
+            try:
+                half_w, half_h = self._detector_target_half_extent(target)
+            except Exception:
+                half_w = half_h = 0.0
+            return float(half_w) * float(half_h)
+
+        def _parked(target):
+            metadata = getattr(target, "metadata", None)
+            return (
+                isinstance(metadata, dict)
+                and str(metadata.get("focus_source", "")) == "default_distance"
+            )
+
+        def _rank(candidates):
+            # Resolved sensor area first (own dims OR the bugs/0276 vendor override), so a dim-less
+            # stub never outranks the real sensor.
             return max(
-                detectors,
+                candidates,
                 key=lambda t: (
+                    _resolved_area(t),
                     float(getattr(t, "active_width_mm", 0.0) or 0.0) * float(getattr(t, "active_height_mm", 0.0) or 0.0),
                     int(getattr(t, "row_index", -1)),
                 ),
             )
+
+        detectors = [t for t in targets if bool(getattr(t, "is_detector", False))]
+        live = [t for t in detectors if not _parked(t)]
+        if live:
+            return _rank(live)
+        synthetic = self._imaging_detector_row_anchor_target()
+        if synthetic is not None and _resolved_area(synthetic) > 0.0:
+            return synthetic
+        parked = [t for t in detectors if _resolved_area(t) > 0.0]
+        if parked:
+            return _rank(parked)
+        if synthetic is not None:
+            return synthetic
         return self._best_focus_surface_anchor_target(scene_bundle)
+
+    def _imaging_detector_row_anchor_target(self):
+        """bugs/0289: synthesize the imaging-detector anchor from the PRESCRIPTION rows when the scene
+        bundle carries no drawable detector target -- a flood that reaches no image spawns only
+        draw-suppressed default-distance stubs, so without this the illumination heatmap either draped
+        onto a stub's park position beside the beam splitter or fell back to the OBJECT target and
+        binned the source's own launch events. The sensor's pose is an IMAGING property (bugs/0266: the
+        illumination must never move the conjugates), so it comes from the final Image row: on-axis at
+        the cumulative-thickness plane, sensor dims resolving through ``_detector_target_half_extent``
+        (incl. the bugs/0276 vendor-camera override). Axial prescription assumed -- folded scenes carry
+        real detector targets in their bundles and never reach this fallback."""
+        rows = list(getattr(self, "rows", []) or [])
+        image_index = None
+        for index in range(len(rows) - 1, -1, -1):
+            if str(getattr(rows[index], "surface", "")).strip() == "Image":
+                image_index = index
+                break
+        if image_index is None:
+            return None
+        try:
+            z_plane = float(self._object_surface_plane_z(image_index))
+        except Exception:
+            return None
+        from KrakenOS.UI.scene_geometry import SceneTarget3D
+
+        return SceneTarget3D(
+            target_id=f"illumination-anchor:image-row:{image_index}",
+            name=str(getattr(rows[image_index], "name", "") or "Image"),
+            role="analysis_target",
+            row_index=int(image_index),
+            trace_surface=int(image_index),
+            surface="Image",
+            center_world=np.asarray((0.0, 0.0, z_plane), dtype=float),
+            normal_world=np.asarray((0.0, 0.0, 1.0), dtype=float),
+            tangent_world=np.asarray((0.0, 1.0, 0.0), dtype=float),
+            diameter=float(getattr(rows[image_index], "diameter", 0.0) or 0.0),
+            is_detector=True,
+        )
 
     def source_illumination_overlay_spec(self, system, scene_bundle, *, wavelength=None):
         """Build the detector relative-illumination heatmap spec (the coaxial-LED dark edges drawn
@@ -3645,7 +3725,7 @@ class ThreeDSceneToolsMixin:
             return None
         x_values = np.asarray(samples.get("x", []), dtype=float)
         y_values = np.asarray(samples.get("y", []), dtype=float)
-        if x_values.size < 50:  # too few hits to bin a meaningful map
+        if x_values.size == 0:
             return None
         target_model = self._source_illumination_target_model(samples)
         # Bin count aims for ~10 hits/bin WITHIN the sensor extent so the map reads smooth, not
@@ -3656,6 +3736,13 @@ class ThreeDSceneToolsMixin:
             in_extent = int(np.sum((x_values >= x0) & (x_values <= x1) & (y_values >= y0) & (y_values <= y1)))
         except Exception:
             in_extent = int(x_values.size)
+        # bugs/0289: the "enough hits to bin a meaningful map" gate must count hits WITHIN the drawn
+        # window, not raw sample count. A 24k-ray side-LED flood that never reaches the sensor still
+        # leaks ~0.3% stray rays; gating on the raw count let those strays bin a garbage density map
+        # (which then shadowed the honest coupled projection). With no explicit sensor dims the extent
+        # IS the data footprint, so in_extent == size and this stays the old behavior.
+        if in_extent < 50:
+            return None
         # bugs/0277 (flag_20260709_114618_526): floor was 16. A sparse coaxial scene lands only ~800
         # rays in the sensor, so sqrt(800/10)=9 -> the 16 floor FORCED ~3 hits/bin (32%+ Poisson
         # noise) and the UNIFORM perp axis speckled dark ("4 dark edges rather than 2"). Drop the floor
@@ -3704,7 +3791,7 @@ class ThreeDSceneToolsMixin:
         records: list = []
         if has_nonmarker:
             try:
-                records.extend(self._collect_ray_analysis_records())
+                records.extend(self._isolated_scene_source_records(system, float(wavelength)))
             except Exception:
                 pass
         if has_marker:
@@ -3713,6 +3800,43 @@ class ThreeDSceneToolsMixin:
             except Exception:
                 pass
         return records
+
+    def _isolated_scene_source_records(self, system, wavelength: float) -> list:
+        """bugs/0289: trace the LAUNCHED scene sources into an ISOLATED keeper (same rays -- identical
+        bundles + seeds as the preview) so their records carry the engine's ``traced_polyline_world``.
+
+        The bugs/0288 relay continues a record's TERMINAL segment onto the object plane, and only the
+        traced polyline holds the true post-exit direction: the preview-bundle records reconstruct from
+        surface ``hits`` alone, whose last segment for a flood that refracts OUT of a solid (a side LED
+        entering the beam-splitter cube) is the IN-GLASS leg -- extending it under-spreads the exit cone
+        by ~n and lands the footprint short (the 0272 lesson: the refracted free-flight point is a
+        terminal event, absent from ``hits``).  During the bugs/0223 async capture/replay window -- or if
+        the isolated trace fails -- fall back to the preview records (the pre-0289 behavior), which are
+        exact whenever the source needs no relay (an object-plane LED)."""
+        if (
+            self.__dict__.get("_preview_trace_bundle_capture") is not None
+            or self.__dict__.get("_preview_trace_bundle_replay") is not None
+        ):
+            return list(self._collect_ray_analysis_records())
+        try:
+            bundles, sources = self._build_scene_source_bundles(float(wavelength))
+            if not bundles:
+                return []
+            rays_illum = Kos.raykeeper(system)
+            prior_force = self.__dict__.get("_force_nonseq_preview_trace", False)
+            self.__dict__["_force_nonseq_preview_trace"] = True
+            try:
+                self._trace_preview_bundles(
+                    system, rays_illum, float(wavelength), bundles, bundle_sources=sources
+                )
+            finally:
+                self.__dict__["_force_nonseq_preview_trace"] = prior_force
+            return self._isolated_ray_analysis_records(system, rays_illum)
+        except Exception:
+            try:
+                return list(self._collect_ray_analysis_records())
+            except Exception:
+                return []
 
     def _detector_target_half_extent(self, target) -> tuple[float, float]:
         """Half-width / half-height (mm) of the sensor's active area: the target's own active dims,
@@ -3793,6 +3917,26 @@ class ThreeDSceneToolsMixin:
             object_radius = float(self.rows[int(object_index)].diameter) / 2.0
         except Exception:
             object_radius = 0.0
+        half_w, half_h = self._detector_target_half_extent(target)
+        try:
+            magnification = self._current_finite_paraxial_magnification()
+        except Exception:
+            magnification = None
+        # bugs/0289: clip the object-plane samples to the IMAGED FOV (the sensor rectangle divided by
+        # the paraxial conjugate), not the object row's drawn radius -- on the vendor MV-150 the row's
+        # 32.6 mm disc is smaller than the 39 mm square the lens images, so the row clip erased real
+        # illumination inside the FOV and carved a fabricated radial rim onto any large footprint.
+        # The 1.3 pad keeps binned data past the projection window (no half-filled boundary bin faking
+        # a dark rim) while staying tight enough that the adaptive bins still resolve the FOV region.
+        clip_radius = None
+        if (
+            magnification is not None
+            and np.isfinite(magnification)
+            and abs(float(magnification)) > 1e-9
+            and half_w > 0.0
+            and half_h > 0.0
+        ):
+            clip_radius = 1.3 * float(np.hypot(half_w, half_h)) / abs(float(magnification))
         samples = object_plane_illumination_samples(
             self,
             system,
@@ -3800,15 +3944,11 @@ class ThreeDSceneToolsMixin:
             ray_records=records,
             object_plane_z=self._object_surface_plane_z(object_index),
             object_radius=object_radius,
+            clip_radius=clip_radius,
         )
         map_data = object_footprint_irradiance_map(samples, int(object_index))
         if map_data is None:
             return None
-        half_w, half_h = self._detector_target_half_extent(target)
-        try:
-            magnification = self._current_finite_paraxial_magnification()
-        except Exception:
-            magnification = None
         if magnification is not None and np.isfinite(magnification) and abs(float(magnification)) > 1e-9:
             # True-scale draw: a footprint that misses the sensor yields None -> correctly blank.
             projected = project_footprint_onto_sensor(map_data, magnification, half_w, half_h)

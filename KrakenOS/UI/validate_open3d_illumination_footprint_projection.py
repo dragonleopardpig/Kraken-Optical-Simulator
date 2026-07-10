@@ -170,13 +170,15 @@ def _check_object_plane_samples(failures: list[str], notes: list[str]) -> None:
     if off_axis["x"].size != 1 or not np.isclose(off_axis["x"][0], 10.0, atol=1e-6):
         failures.append("SAMPLES: RELAY of a tilted terminal segment did not land at x = 10 mm")
 
-    # ABSORBED rays illuminate nothing downstream (the real vendor coaxial flood is eaten by the
-    # beam splitter's +x mechanical face).
-    absorbed = sample([
-        _record(termination="absorb", traced_polyline_world=_polyline((0.0, 0.0, 100.0), (0.0, 0.0, -1.0)))
-    ])
-    if absorbed["x"].size != 0:
-        failures.append("SAMPLES: an ABSORBED ray was relayed onto the object plane")
+    # Only FREE-FLIGHT terminations may relay (bugs/0289): a ray that ended ON something -- absorbed at
+    # a mechanical face, vignetted at a UDA aperture stop (bugs/0179), stopped at a hard-stop target --
+    # deposited its light there; extending it would shine through the blocker.
+    for blocked in ("absorb", "termination", "target_termination", "detector"):
+        ended_on = sample([
+            _record(termination=blocked, traced_polyline_world=_polyline((0.0, 0.0, 100.0), (0.0, 0.0, -1.0)))
+        ])
+        if ended_on["x"].size != 0:
+            failures.append(f"SAMPLES: a ray that ended ON a surface ({blocked!r}) was relayed through it")
 
     # A segment travelling AWAY from the plane never reaches it.
     backward = sample([_record(traced_polyline_world=_polyline((0.0, 0.0, 100.0), (0.0, 0.0, 1.0)))])
@@ -196,9 +198,28 @@ def _check_object_plane_samples(failures: list[str], notes: list[str]) -> None:
     if outside["x"].size != 0:
         failures.append("SAMPLES: illumination outside the imaged object aperture was kept")
 
+    # bugs/0289: the caller's IMAGED-FOV clip overrides the object row radius. On the vendor MV-150 the
+    # row's 16.3 mm disc is SMALLER than the 19.5 mm half-square the lens actually images, so clipping
+    # at the row erased real in-FOV illumination and carved a fabricated radial rim onto any large
+    # footprint. A sample at x=18 (inside the imaged FOV, outside the row disc) must survive.
+    in_fov = object_plane_illumination_samples(
+        editor, None, 0,
+        ray_records=[_record(hits=[{"surface": 0, "x": 18.0, "y": 0.0, "z": 0.0}])],
+        object_plane_z=0.0, object_radius=16.0, clip_radius=27.6,
+    )
+    if in_fov["x"].size != 1:
+        failures.append("SAMPLES: clip_radius did not widen the bound -- in-FOV light outside the row disc was dropped")
+    beyond = object_plane_illumination_samples(
+        editor, None, 0,
+        ray_records=[_record(hits=[{"surface": 0, "x": 30.0, "y": 0.0, "z": 0.0}])],
+        object_plane_z=0.0, object_radius=16.0, clip_radius=27.6,
+    )
+    if beyond["x"].size != 0:
+        failures.append("SAMPLES: clip_radius failed to bound the samples (blow-up guard lost)")
+
     notes.append(
         "samples: on-plane DIRECT kept, off-plane launch rejected, relay lands geometrically, "
-        "absorb/backward/blow-up/off-aperture all dropped"
+        "absorb/backward/blow-up/off-aperture dropped, imaged-FOV clip overrides the row disc"
     )
 
 
@@ -349,6 +370,7 @@ def _check_dispatcher_contract(failures: list[str]) -> None:
         "project_footprint_onto_sensor",
         "_object_surface_plane_z",
         "_current_finite_paraxial_magnification",
+        "clip_radius",  # bugs/0289: samples clipped to the imaged FOV, not the object row disc
     ):
         if needed not in coupled:
             failures.append(f"WIRING: coupled compute does not use {needed}")
@@ -360,6 +382,32 @@ def _check_dispatcher_contract(failures: list[str]) -> None:
 
     if not hasattr(ThreeDSceneToolsMixin, "_object_surface_plane_z"):
         failures.append("WIRING: _object_surface_plane_z is missing")
+
+    # bugs/0289: launched sources are traced ISOLATED so their records carry traced_polyline_world --
+    # the relay needs the true post-exit direction (the hits-only last segment of a flood refracting out
+    # of a solid is the IN-GLASS leg, which under-spreads the exit cone by ~n).
+    records_src = inspect.getsource(ThreeDSceneToolsMixin._coupled_object_illumination_records)
+    if "_isolated_scene_source_records" not in records_src:
+        failures.append("WIRING: coupled records no longer isolated-trace launched sources (bugs/0289)")
+    if not hasattr(ThreeDSceneToolsMixin, "_isolated_scene_source_records"):
+        failures.append("WIRING: _isolated_scene_source_records is missing")
+    else:
+        iso_src = inspect.getsource(ThreeDSceneToolsMixin._isolated_scene_source_records)
+        for needed in ("_build_scene_source_bundles", "_isolated_ray_analysis_records", "_force_nonseq_preview_trace"):
+            if needed not in iso_src:
+                failures.append(f"WIRING: _isolated_scene_source_records must use {needed}")
+        if "_last_scene_bundle =" in iso_src:
+            failures.append("WIRING: _isolated_scene_source_records must not replace the imaging scene bundle (bugs/0266)")
+
+    # bugs/0289: the sensor anchor ranks detectors by RESOLVED dims (own or vendor override) so a flood
+    # that never reaches the image still anchors the heatmap at the real sensor, and the density map's
+    # enough-hits gate counts hits WITHIN the drawn window (stray leaks must not bin a garbage map).
+    anchor_src = inspect.getsource(ThreeDSceneToolsMixin._source_illumination_anchor_target)
+    if "_detector_target_half_extent" not in anchor_src:
+        failures.append("WIRING: anchor target no longer ranks by resolved sensor dims (bugs/0289)")
+    density_src = inspect.getsource(ThreeDSceneToolsMixin._compute_detector_density_illumination_overlay_spec)
+    if "in_extent < 50" not in density_src:
+        failures.append("WIRING: density gate no longer counts in-window hits (bugs/0289)")
 
 
 # --------------------------------------------------------------------------------------------------

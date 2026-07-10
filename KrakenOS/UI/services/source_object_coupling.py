@@ -266,6 +266,16 @@ def _terminal_ray(record: dict[str, object]) -> tuple[np.ndarray, np.ndarray] | 
     return origin, delta / norm
 
 
+# bugs/0289: terminations that mean "the trace ran out of surfaces while the ray was still flying" --
+# the ONLY states the geometric relay may continue. Everything else (absorb, the bugs/0179 UDA
+# aperture-stop vignette, hard-stop targets, detector hits) means the ray ENDED ON something and its
+# light must not be extended through it. Matches the taxonomy in layout_plot_controller's
+# RAY_EVENT_ACTION_LABELS (the Miss/Escape families).
+_FREE_FLIGHT_TERMINATIONS = frozenset(
+    {"no_next_intersection", "no_hit", "escape", "escaped", "miss", "missed_image", "missed_detector"}
+)
+
+
 def object_plane_illumination_samples(
     editor: Any,
     system: Any,
@@ -274,6 +284,7 @@ def object_plane_illumination_samples(
     ray_records: list[dict[str, object]],
     object_plane_z: float,
     object_radius: float,
+    clip_radius: float | None = None,
     plane_tolerance_mm: float = 1e-3,
 ) -> dict[str, object]:
     """bugs/0288: the illumination that actually reaches the OBJECT PLANE, in the object surface's local
@@ -290,13 +301,25 @@ def object_plane_illumination_samples(
     This is the bugs/0287 trace-order-wall bypass: KrakenOS traces in SURFACE-INDEX order, so a flood
     reflecting off a beam splitter (a LATER index) back toward the object (surface 0) runs backward
     through the surface list and is never re-tested against it.  The engine still hands us the ray's true
-    outgoing direction, so we complete the last leg ourselves.  An ABSORBED ray illuminates nothing
-    downstream and is skipped; a terminal segment that does not cross the plane going forward is skipped;
-    near-parallel blow-ups (``|d_z| -> 0`` throws the intersection out to ~1e5 mm) fall out at the
-    aperture clip below rather than needing a magic distance cut.
+    outgoing direction, so we complete the last leg ourselves.  Only a ray whose trace ended in FREE
+    FLIGHT may be relayed (bugs/0289): a ray that ended ON something -- absorbed at a mechanical face,
+    vignetted at an aperture stop (the bugs/0179 UDA block), stopped at a hard-stop target -- deposits its
+    light there, and extending it would shine THROUGH the blocker.  A terminal segment that does not
+    cross the plane going forward is skipped; near-parallel blow-ups (``|d_z| -> 0`` throws the
+    intersection out to ~1e5 mm) fall out at the aperture clip below rather than needing a magic
+    distance cut.
 
-    Only light landing INSIDE the imaged object aperture is relayed to the sensor by the imaging lens, so
-    samples beyond ``object_radius`` are dropped (bugs/0286).  Returns a
+    Only light the imaging lens can relay to the sensor matters, so samples are clipped radially.
+    ``clip_radius`` (bugs/0289) is the caller's IMAGED-FOV bound -- the sensor half-diagonal divided by
+    the paraxial magnification, padded so the binned data extends past the projection window (a clip AT
+    the window would leave the boundary bin half-filled and fake a dark rim on an over-filling flood).
+    The vendor MV-150 exposed why this must not be the object ROW radius: the row's 32.6 mm disc is
+    SMALLER than the 39 mm square the lens actually images (row diameter is a drawing/launch extent,
+    not a baffle), so clipping there erased real illumination inside the imaged FOV and would carve a
+    fabricated radial rim onto any large footprint.  ``object_radius`` remains the fallback bound when
+    the caller has no conjugate.  Light that lands outside the imaged FOV but inside the clip is
+    harmless: the sensor projection never samples it, and a footprint living entirely off-window (the
+    bugs/0286 marked-45-deg-face ring) dies at the projection's peak gate.  Returns a
     ``source_illumination_map_data_from_samples``-shaped samples dict plus ``direct_count`` /
     ``relayed_count`` diagnostics.
     """
@@ -307,6 +330,7 @@ def object_plane_illumination_samples(
     target = str(object_surface_index)
     plane_z = float(object_plane_z)
     tol = abs(float(plane_tolerance_mm))
+    bound = float(clip_radius) if clip_radius and float(clip_radius) > 0.0 else float(object_radius or 0.0)
 
     xs: list[float] = []
     ys: list[float] = []
@@ -349,10 +373,13 @@ def object_plane_illumination_samples(
                 direct_count += 1
             break
 
-        # RELAY: complete the terminal segment onto the object plane.
+        # RELAY: complete the terminal segment onto the object plane -- but only for a ray whose trace
+        # ended in FREE FLIGHT. Anything that ended ON a surface (absorb, UDA vignette, hard-stop,
+        # detector) deposited its light there; extending it would shine through the blocker.
         if hit_xy is None:
-            if str(record.get("termination", "")).strip().lower() == "absorb":
-                continue  # an absorbed ray illuminates nothing beyond the surface that ate it
+            termination = str(record.get("termination", "")).strip().lower()
+            if termination not in _FREE_FLIGHT_TERMINATIONS:
+                continue
             terminal = _terminal_ray(record)
             if terminal is None:
                 continue
@@ -371,9 +398,8 @@ def object_plane_illumination_samples(
 
         if hit_xy is None:
             continue
-        if object_radius and float(object_radius) > 0.0:
-            if float(np.hypot(hit_xy[0], hit_xy[1])) > float(object_radius):
-                continue
+        if bound > 0.0 and float(np.hypot(hit_xy[0], hit_xy[1])) > bound:
+            continue
         xs.append(hit_xy[0])
         ys.append(hit_xy[1])
         weights.append(_weight(record))
