@@ -88,6 +88,11 @@ def _target_branch_detector_draw_suppressed(target, scene_has_diffuse_scatter: b
     metadata = getattr(target, "metadata", None) or {}
     if metadata.get("target_source") != "branch_detector":
         return False
+    # bugs/0285: build_scene_bundle stamps ``draw_suppressed`` on any branch detector whose
+    # draw is gated (scatter / internal bounce / whole-scene scatter / illumination flood),
+    # computed where the full scene context is known. Honour it as the authoritative signal.
+    if metadata.get("draw_suppressed"):
+        return True
     if scene_has_diffuse_scatter:
         return True
     from KrakenOS.UI.services.branch_detectors import _branch_path_draw_suppressed

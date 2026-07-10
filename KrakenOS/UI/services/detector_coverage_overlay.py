@@ -574,6 +574,11 @@ class DetectorCoverageOverlayService:
         # its OWN folded position with its OWN magnification (stored in the target metadata).
         for target in detectors:
             meta = getattr(target, "metadata", None) or {}
+            # bugs/0285: a branch detector whose draw is suppressed (an illumination-flood /
+            # scatter / internal-bounce arm kept only as a ray hard-stop) must not draw its
+            # phantom "Sensor NxN / Image circle" coverage beside the beam splitter.
+            if meta.get("draw_suppressed"):
+                continue
             mag = meta["two_arm_magnification"] if "two_arm_magnification" in meta else sys_mag
             image_radius = meta.get("two_arm_image_circle_radius") or sys_image_radius
             if image_radius is None:

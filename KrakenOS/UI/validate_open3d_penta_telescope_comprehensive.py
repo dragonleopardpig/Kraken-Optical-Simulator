@@ -12193,6 +12193,49 @@ def phase_250_add_illumination_source(
     return result
 
 
+def phase_251_illumination_flood_phantom_branch_detector(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Adding a physical scene-illumination source (an LED) to the MV-150 imaging scene must NOT draw a
+    phantom "Sensor 23x23 / Image circle" detector plane beside the beam-splitter cube
+    (flag_20260710_085210_625 "after adding Scene Source"; the user's "phantom detector and image plane
+    shown at the side of the BS cube"). The flood reflects off the BS into an arm that never converges,
+    so derive_branch_detectors parks a branch detector at the default distance (focus_source ==
+    'default_distance') at x~80 -- and with NO diffuse-scatter object present the bugs/0184 gate never
+    fired, so its plane + 3-D footprint + coverage all drew. The only REAL detector in a flood is the arm
+    reaching the sequential Image (focus_source == 'reached_image'). Fix: `build_scene_bundle` stamps
+    `metadata['draw_suppressed']` on every branch detector whose draw must be gated (scatter / internal
+    bounce / whole-scene scatter, AND an illumination-flood arm that does not reach the Image), computed
+    where the flood + scatter context is known; the single flag is honoured by the 2-D projection, the
+    3-D footprint specs, and the detector-coverage overlay. The TARGET is kept as a ray hard-stop.
+    `validate_open3d_illumination_flood_phantom_branch_detector` (display-free): PREDICATE
+    (`_scene_has_illumination_flood` -- physical LED True; face-bound marker / disabled / non-physical /
+    pupil-ref / empty False, matching the heatmap gate) + PROPAGATE (the shared 2-D predicate honours the
+    stamped flag; a stamped-yet-drawable target proves the 3-D/coverage skip is load-bearing; a clean arm
+    is not falsely suppressed) + REAL SCENE (attachment/machine_vision_150mm_test.py + an added LED: the
+    reflect phantom is suppressed, the on-sensor reached-image detector + heatmap anchor survive, exactly
+    ONE image-plane curve draws, and clearing the source drops the flood predicate -- no over-suppression
+    of a pure imaging scene, bugs/0090 arms still draw).
+    """
+    result = PhaseResult(
+        name="Phase 251: an illumination flood draws no phantom detector plane beside the beam splitter"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_illumination_flood_phantom_branch_detector import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"illumination-flood-phantom-branch-detector guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("illumination-flood-phantom-branch-detector phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12488,6 +12531,7 @@ def main() -> int:
             phase_248_illumination_heatmap_marker_gated,
             phase_249_scene_source_object,
             phase_250_add_illumination_source,
+            phase_251_illumination_flood_phantom_branch_detector,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

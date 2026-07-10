@@ -54,6 +54,7 @@ from .scene_geometry import (
     ray_paths_have_diffuse_scatter,
 )
 from .scene_row_mapping import build_scene_row_mapping
+from .scene_source_analysis import scene_source_spec_is_face_bound_marker
 from ..TraceEvents import TRACE_EVENT_SOURCE_RAYKEEPER, trace_event_to_record
 
 FOLDED_TERMINAL_POLICY_TRACE_EVENTS = "trace_events"
@@ -62,6 +63,31 @@ FOLDED_TERMINAL_POLICIES = {
     FOLDED_TERMINAL_POLICY_TRACE_EVENTS,
     FOLDED_TERMINAL_POLICY_DISPLAY_COMPATIBILITY,
 }
+
+
+def _scene_has_illumination_flood(scene_sources: list | None) -> bool:
+    """True when a PHYSICAL illumination source floods the scene (bugs/0285).
+
+    A physical, enabled illumination source (an LED/scene-source object, NOT a
+    face-bound designation marker per bugs/0282) emits rays that reflect off a beam
+    splitter into arms that never image. Each such arm parks a branch detector at the
+    default distance beside the cube -- the user's "phantom detector and image plane at
+    the side of the BS cube". Like the diffuse-scatter case (bugs/0184) the only REAL
+    detector in a flood is the arm that reaches the sequential Image, so those non-
+    imaging arms' draws are gated (the target is kept as a ray hard-stop). Uses the same
+    marker predicate as the heatmap gate so a display-only face marker never counts.
+    """
+    for source in list(scene_sources or []):
+        if str(getattr(source, "role", "") or "") != "illumination":
+            continue
+        if not bool(getattr(source, "enabled", False)):
+            continue
+        if not bool(getattr(source, "physical", False)):
+            continue
+        if scene_source_spec_is_face_bound_marker(source):
+            continue
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -1029,19 +1055,35 @@ def build_scene_bundle(
         # per-path scatter/bounce gates. A clean (scatter-free) beam splitter keeps
         # both arm planes (bugs/0090).
         scene_has_diffuse_scatter = ray_paths_have_diffuse_scatter(ray_paths)
+        # bugs/0285: a physical illumination flood reflects off a beam splitter into arms
+        # that never converge, parking a phantom branch detector beside the cube. The only
+        # REAL detector in a flood is the arm reaching the sequential Image, so gate every
+        # OTHER branch-detector draw (kept as a ray hard-stop). Mirrors the bugs/0184
+        # scatter gate for the no-scatter-object illumination case.
+        illumination_flood = _scene_has_illumination_flood(scene_sources)
         for offset, branch_detector in enumerate(branch_detectors):
-            scene_targets.append(
-                branch_detector_scene_target(branch_detector, row_index=100000 + offset)
-            )
-            # bugs/0182 + bugs/0183: a diffuse-scatter leaf OR an internal multi-bounce
-            # ghost still earns a detector so it acts as a ray hard-stop
-            # (detector_planes_for_hard_stop bounds the otherwise-escaping rays), but we
-            # DON'T draw its plane -- dozens of such footprints buried the 2-D 'full 3-D'
-            # projection in crisscrossing orange rectangles.
-            if not (
+            target = branch_detector_scene_target(branch_detector, row_index=100000 + offset)
+            # bugs/0182 + bugs/0183 + bugs/0184 + bugs/0285: a diffuse-scatter leaf, an
+            # internal multi-bounce ghost, any leaf in a whole-scene diffuse double-pass, OR
+            # a non-imaging illumination-flood arm still earns a detector so it acts as a ray
+            # hard-stop (detector_planes_for_hard_stop bounds the otherwise-escaping rays),
+            # but its plane/footprint/coverage must NOT draw -- dozens of such footprints
+            # buried the 2-D 'full 3-D' projection in crisscrossing orange rectangles. The
+            # single ``draw_suppressed`` metadata flag, computed here where the scene-scatter
+            # and flood context is known, is honoured by every downstream draw path (2-D
+            # projection, 3-D footprint, detector-coverage overlay).
+            draw_suppressed = (
                 scene_has_diffuse_scatter
                 or _branch_path_draw_suppressed(branch_detector.branch_path)
-            ):
+                or (
+                    illumination_flood
+                    and str(branch_detector.focus_source) != "reached_image"
+                )
+            )
+            if draw_suppressed:
+                target.metadata["draw_suppressed"] = True
+            scene_targets.append(target)
+            if not draw_suppressed:
                 surface_curves.append(branch_detector_plane_curve(branch_detector))
     except Exception:
         branch_detectors = []

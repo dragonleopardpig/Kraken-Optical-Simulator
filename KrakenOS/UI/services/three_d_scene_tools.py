@@ -3103,6 +3103,11 @@ class ThreeDSceneToolsMixin:
         targets = list(getattr(scene_bundle, "targets", []) or [])
         if bool(include_footprints):
             for target in targets:
+                # bugs/0285: skip a branch detector whose draw is suppressed (a scatter /
+                # internal-bounce / illumination-flood arm kept only as a ray hard-stop) so
+                # its orange footprint does not float beside the beam splitter in 3-D.
+                if (getattr(target, "metadata", None) or {}).get("draw_suppressed"):
+                    continue
                 try:
                     row_index = int(getattr(target, "row_index", -1))
                 except Exception:
