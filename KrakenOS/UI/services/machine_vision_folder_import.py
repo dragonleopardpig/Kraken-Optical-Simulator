@@ -898,6 +898,19 @@ def _core_from_datasheet_cardinals(
         object_diameter = round(max(lens_aperture, image_diameter), 4)
 
     settings_base: dict = {"object_mode": object_mode, "wavelength": wavelength}
+    # bug 0295: complete the surrogate the way the hand-authored machine_vision_*
+    # presets are -- carry the field so the object-plane FOV rectangle and the
+    # off-axis ray fans render.  A bare object_mode/wavelength dict left the field
+    # undefined, so the coverage overlay had no image radius (detector_coverage_
+    # overlay: sys_image_radius is None -> skip) and drew the object plane as a
+    # plain disc traced by the on-axis ray alone.  field_value is the datasheet's
+    # max real image height = image-circle/2; once a camera is glued the Stage-2
+    # sync overrides it with the true sensor half-height.
+    field_radius = round(image_diameter / 2.0, 4)
+    if field_radius > 0.0:
+        settings_base["field_type"] = "Real Image Height"
+        settings_base["field_value"] = field_radius
+        settings_base["field_count"] = 3
 
     folder_name = Path(assets.folder).name
     title_seed = f"{folder_name} {cardinals.title}".strip() if cardinals.title else folder_name

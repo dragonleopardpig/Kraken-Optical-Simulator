@@ -12519,6 +12519,40 @@ def phase_258_import_from_inspector_survives(
     return result
 
 
+def phase_259_folder_import_completeness(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """An auto-imported lens surrogate must be a COMPLETE machine-vision setup, not a bare optic (bugs/0295).
+    "Import Lens from Folder" (datasheet-only Path C) used to emit a surrogate whose SETTINGS carried only
+    object_mode + wavelength -- no field -- so the object plane rendered as a plain disc (the coverage overlay has no
+    image radius: detector_coverage_overlay sys_image_radius is None -> the object-FOV rectangle loop continues) and
+    only the on-axis ray launched. User flag: "the Object Plane not showing FOV, just a big circular plane ... The
+    Field parameters are not set ... Rays launching parameters are not set as well (only center ray)." Fix: Path C
+    now carries the field like the hand-authored machine_vision_* presets -- field_type='Real Image Height',
+    field_value = the datasheet max real image height (image-circle/2), field_count=3 -- so the object-plane FOV
+    rectangle + off-axis fans render; a glued camera then overrides field_value with the true sensor half-height
+    (Stage 2). `validate_open3d_folder_import_completeness` is display-free + portable (drives
+    _core_from_datasheet_cardinals + the coverage overlay geometry; no VTK, no vendor PDF/STEP).
+    """
+    result = PhaseResult(
+        name="Phase 259: Folder-import surrogate carries the field (object FOV rectangle + off-axis rays, not a bare disc)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_folder_import_completeness import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folder-import completeness guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else sum(1 for n in notes if n.startswith("FAIL"))
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folder-import completeness phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12822,6 +12856,7 @@ def main() -> int:
             phase_256_effective_illumination_area,
             phase_257_datasheet_lens_import,
             phase_258_import_from_inspector_survives,
+            phase_259_folder_import_completeness,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
