@@ -512,9 +512,14 @@ class ParaxialToolsMixin:
         gap_start = int(last_source_index)
         while gap_start > 1 and _row_is_promoted_mirror_fold(source_rows[gap_start]):
             gap_start -= 1
+        # bugs/0297: sum the gaps as WRITTEN, not clamped at zero. Seating the detector at best
+        # focus on a folded scene legitimately drives the trailing mirror's gap NEGATIVE (the
+        # sensor lands before that mirror's nominal station -- the row carries a 40 mm axial
+        # reserve that is not path), and the ray trace honours it. Clamping made the image
+        # distance read ~8.5 mm long, so a pinned image leg silently came out short.
         total_gap = 0.0
         for row in source_rows[gap_start:]:
-            total_gap += max(float(row.thickness), 0.0)
+            total_gap += float(row.thickness)
         return float(total_gap), int(last_source_index), reference_rows
 
     def _paraxial_total_object_gap(self, rows: list[SurfaceRow] | None = None) -> tuple[float, int]:
@@ -1109,21 +1114,70 @@ class ParaxialToolsMixin:
             "near_min": 0.0,
         }
 
+    def _shared_first_order_reference(self) -> "dict | None":
+        """The ONE first order every conjugate consumer must share, read off the paraxial
+        REFERENCE rows (the straight-equivalent, in which a promoted RA-mirror prism stays a
+        transmissive glass plate -- bugs/0219 -- so its reduced path is carried).
+
+        Returns the cardinals plus their absolute positions in the reference's cumulative-z
+        frame (which maps 1:1 onto path length along the folded beam):
+
+          ``object_principal`` object plane -> front principal plane (H)
+          ``image_principal``  rear principal plane (H') -> the PRESCRIPTION image plane
+          ``h2_z``             rear principal plane, absolute z
+          ``image_z``          the prescription image plane, absolute z
+
+        The magnification readout, the best-focus snap and the FOV solve all derive from these,
+        so they cannot drift apart (bugs/0297)."""
+        try:
+            solve_rows = self.rows
+            if self._layout_needs_paraxial_reference(self.rows):
+                solve_rows, _last_source_index = self._paraxial_reference_rows_for_layout(self.rows)
+            _a, _b, _c, _d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(solve_rows)
+            h1_vertex_z, h2_vertex_z = self._paraxial_vertex_zs(solve_rows)
+        except Exception:
+            return None
+        f = float(effl)
+        if not (np.isfinite(f) and abs(f) > 1e-9):
+            return None
+        image_z = float(sum(float(row.thickness) for row in solve_rows[:-1]))
+        h2_z = float(h2_vertex_z) + float(ppp)
+        return {
+            "f": f,
+            "ppa": float(ppa),
+            "ppp": float(ppp),
+            "object_principal": float(h1_vertex_z) + float(ppa),
+            "image_principal": image_z - h2_z,
+            "h2_z": h2_z,
+            "image_z": image_z,
+        }
+
     def _folded_conjugate_gaps_for_magnification(self, magnitude) -> "dict | None":
         """Folded-aware FOV conjugate solve. For a target |m|, return the object/image DISTANCES
         (object plane -> first optical surface, last optical surface -> sensor -- the folded
         totals) and the gap-row deltas that achieve them, or None (not folded / infeasible).
 
-        The plain QE ``_conjugate_pair`` uses the whole system's principal planes -- which on a
-        folded scene are inflated by the flattened MIRROR PLATES (ppp reads ~-196 mm), so its
-        thin-lens conjugate formula yields a NEGATIVE image distance and bails ("no real-image
-        conjugate"). Here the first order is taken from the LENS BLOCK ONLY (the optical rows
-        between the first surface and the last, with the fold mirrors + object/image gaps
-        excluded), so PPA/PPP are relative to the real lens surfaces and the conjugate is
-        physical. The solved distances then map onto the folded object/image gap totals
-        (``_paraxial_total_object_gap`` / ``_paraxial_total_image_gap``)."""
-        equivalent = self._folded_optical_solid_straight_equivalent_rows()
-        if equivalent is None:
+        The plain QE ``_conjugate_pair`` reads PPA/PPP off the RAW rows, where a promoted RA
+        mirror is a 40 mm BK7 row, and its thin-lens formula then yields a NEGATIVE image
+        distance and bails ("no real-image conjugate"). Solve against the SHARED first-order
+        reference instead (``_shared_first_order_reference``) -- the same one the magnification
+        readout and the best-focus snap use, and the one the ray trace agrees with.
+
+        bugs/0297: this used to solve against a hand-carved LENS-ONLY block (the rows between
+        the first and last lens surface, fold mirrors EXCLUDED). That drops the RA prisms' glass
+        -- ~25 mm of BK7 per fold, a reduced path of t(1-1/n) ~ 8.5 mm on EACH leg -- so the
+        solved gaps neither focused the system (~20 mm residual defocus) nor reached the target
+        magnification, and the (correct) readout then honestly reported a FOV ~9% off the number
+        the user typed. The Gaussian conjugate is now inverted directly on the shared reference:
+
+            object plane -> H   :  s_o = f (1 + 1/m)
+            H' -> image plane   :  s_i = f (1 + m)
+
+        Both deltas are absolute z corrections in the reference frame, so they are exact in one
+        shot: moving the object gap shifts H', the image plane AND the focus by the same amount
+        (the image delta is invariant), and sliding a fold prism along a leg moves ``h2_vertex_z``
+        and ``ppp`` by equal and opposite amounts (the focus z is invariant)."""
+        if self._folded_optical_solid_straight_equivalent_rows() is None:
             return None
         try:
             m = abs(float(magnitude))
@@ -1131,35 +1185,27 @@ class ParaxialToolsMixin:
             return None
         if not (m > 1e-9):
             return None
+        first_order = self._shared_first_order_reference()
+        if first_order is None:
+            return None
         try:
-            object_total, first_lens = self._paraxial_total_object_gap()
+            object_total, _first_lens = self._paraxial_total_object_gap()
             image_total, last_src, _ref = self._paraxial_total_image_gap()
         except Exception:
             return None
         # The image gap starts at the last LENS surface: walk back from the last optical
         # reference through any trailing fold mirror (a fold the beam passes THROUGH, not the
-        # lens). first_lens .. gap_start is the pure lens block in the straight-equivalent.
+        # lens), so the delta lands on the lens->image leg and not inside the mirror.
         gap_start = int(last_src)
         while gap_start > 1 and _row_is_promoted_mirror_fold(self.rows[gap_start]):
             gap_start -= 1
-        if not (0 <= int(first_lens) <= int(gap_start) < len(equivalent)):
+        if not (0 <= gap_start < len(self.rows)):
             return None
-        lens_rows = [SurfaceRow(**asdict(equivalent[i])) for i in range(int(first_lens), int(gap_start) + 1)]
-        if len(lens_rows) < 2:
-            return None
-        # The last lens row is the rear vertex/last surface; its thickness is the gap to the
-        # image side (image-arm gap), NOT internal lens spacing -- zero it so the lens-only
-        # first order (and thus PPP) is not inflated by the last-surface -> mirror distance.
-        lens_rows[-1].thickness = 0.0
-        try:
-            _a, _b, _c, _d, f, ppa, ppp = self._exact_paraxial_solution_for_rows(lens_rows)
-        except Exception:
-            return None
-        if not (np.isfinite(f) and abs(float(f)) > 1e-9):
-            return None
-        f = float(f)
-        object_distance = f * (1.0 + 1.0 / m) - float(ppa)   # object -> first lens surface
-        image_distance = f * (1.0 + m) + float(ppp)           # last lens surface -> sensor
+        f = float(first_order["f"])
+        object_delta = f * (1.0 + 1.0 / m) - float(first_order["object_principal"])
+        image_delta = (float(first_order["h2_z"]) + f * (1.0 + m)) - float(first_order["image_z"])
+        object_distance = float(object_total) + object_delta
+        image_distance = float(image_total) + image_delta
         if not (
             np.isfinite(object_distance) and np.isfinite(image_distance)
             and object_distance > 1e-6 and image_distance > 1e-6
@@ -1173,8 +1219,8 @@ class ParaxialToolsMixin:
             "image_total": float(image_total),
             "object_gap_row": 0,
             "image_gap_row": int(gap_start),
-            "object_delta": float(object_distance) - float(object_total),
-            "image_delta": float(image_distance) - float(image_total),
+            "object_delta": float(object_delta),
+            "image_delta": float(image_delta),
         }
 
     def _apply_folded_object_split(self, fixed_leg: str, value: float) -> "tuple[bool, str]":
@@ -1268,7 +1314,10 @@ class ParaxialToolsMixin:
         mirror_row = next((m for m in folds if int(gap_start) < m < int(image_row)), None)
         if mirror_row is None:
             return None
-        th = [max(float(getattr(r, "thickness", 0.0) or 0.0), 0.0) for r in rows]
+        # bugs/0297: the gaps AS WRITTEN (no zero clamp) -- a best-focus seat legitimately drives
+        # the trailing mirror's gap negative, and clamping it made ``far`` read 0 instead of the
+        # true value, so pinning "mirror -> sensor = 30 mm" landed the sensor 8.5 mm short.
+        th = [float(getattr(r, "thickness", 0.0) or 0.0) for r in rows]
         near = float(sum(th[gap_start:mirror_row]))       # last lens surface -> mirror station
         far = float(sum(th[mirror_row:image_row]))        # mirror station -> sensor
         # Collision floor: keep each leg clear of the mirror SOLID so it cannot slide into the lens

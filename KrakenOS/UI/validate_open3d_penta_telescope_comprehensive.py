@@ -12593,6 +12593,43 @@ def phase_260_camera_coupling_lifecycle(
     return result
 
 
+def phase_261_folded_conjugate_first_order(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The folded FOV solve must target the SAME first order the magnification readout and the ray trace use
+    (bugs/0297). On the two-fold AZ85 periscope the user typed 54x54, pinned object->mirror = 50 mm and
+    mirror->sensor = 30 mm, hit Solve for Thickness -- and got FOV 58.8x58.8 with the system left out of focus.
+    Root cause: _folded_conjugate_gaps_for_magnification solved against a hand-carved LENS-ONLY first order that
+    EXCLUDED the fold mirrors. The RA folds are BK7 right-angle PRISMS (~25 mm of glass each = a reduced path of
+    t(1-1/n) ~ 8.5 mm on every leg), so dropping them put the conjugate ~8.5 mm out on each side: ~20 mm residual
+    defocus and |m| ~9% off target. The readout (straight-equivalent reference, prisms kept as glass plates --
+    bugs/0219) was CORRECT and matched the trace to 5 digits, so it honestly reported the wrong solve's FOV.
+    Fix: one _shared_first_order_reference read by BOTH, with the Gaussian conjugate inverted on it directly
+    (object->H = f(1+1/m), H'->image = f(1+m)); plus the gap sums no longer clamp at zero, because seating the
+    detector at best focus legitimately drives the trailing mirror's gap NEGATIVE and clamping landed a pinned
+    image leg ~8.5 mm short of the typed value. `validate_open3d_folded_conjugate_first_order` is display-free:
+    it drives the REAL fov_solve on the two-fold fixture and checks the readout hits the target, the folded ray
+    trace lands a tight spot, and a pinned leg survives the negative gap.
+    """
+    result = PhaseResult(
+        name="Phase 261: Folded FOV solve targets the shared first order (RA-prism glass; in focus, |m| on target)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_folded_conjugate_first_order import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-conjugate-first-order guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-conjugate-first-order phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12898,6 +12935,7 @@ def main() -> int:
             phase_258_import_from_inspector_survives,
             phase_259_folder_import_completeness,
             phase_260_camera_coupling_lifecycle,
+            phase_261_folded_conjugate_first_order,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

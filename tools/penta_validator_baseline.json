@@ -261,7 +261,8 @@
     "257": "pass",
     "258": "pass",
     "259": "pass",
-    "260": "pass"
+    "260": "pass",
+    "261": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -523,6 +524,7 @@
     "257": "Datasheet-only lens import builds an exact surrogate + Open-3D folder importer",
     "258": "Import-from-inspector keeps the inspector alive across the layout swap (no segfault)",
     "259": "Folder-import surrogate carries the field + syncs to the imported camera (FOV + image plane follow the sensor)",
-    "260": "Camera STEP import/delete keeps the sensor coupling symmetric (decouple on delete + 2D refresh)"
+    "260": "Camera STEP import/delete keeps the sensor coupling symmetric (decouple on delete + 2D refresh)",
+    "261": "Phase 261: Folded FOV solve targets the shared first order (RA-prism glass; in focus, |m| on target)"
   }
 }
