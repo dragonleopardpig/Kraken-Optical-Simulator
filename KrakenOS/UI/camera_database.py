@@ -330,6 +330,42 @@ def camera_image_coverage_mm(name: str) -> tuple[float, float] | None:
     return diagonal, 0.5 * diagonal
 
 
+def camera_model_for_step_path(step_path: str | Path | None) -> str | None:
+    """Best-effort match of an imported camera STEP file back to a known camera
+    model, so importing the vendor STEP couples the surrogate to that camera's
+    sensor exactly like picking it from the dropdown (bug 0295 Stage 2:
+    "after lens imported ... it must synchronize with the subsequent camera").
+
+    Matches on the resolved absolute path first, then falls back to a
+    case-insensitive filename match -- the vendor STEP filename is the stable
+    identifier, so a synced/copied ``3D_CAD_HR25xCXP.STEP`` still resolves.
+    Returns the camera name, or ``None`` when the STEP is not a known vendor
+    camera (the raw body is then shown as-is, no sensor coupling).
+    """
+    if not step_path:
+        return None
+    candidate = Path(str(step_path)).expanduser()
+    try:
+        candidate_resolved = candidate.resolve()
+    except OSError:
+        candidate_resolved = candidate
+    candidate_name = candidate.name.strip().lower()
+    filename_match: str | None = None
+    for name, record in CAMERA_DATABASE.items():
+        db_path = record.get("step_path")
+        if not db_path:
+            continue
+        db_path = Path(str(db_path)).expanduser()
+        try:
+            if db_path.resolve() == candidate_resolved:
+                return name
+        except OSError:
+            pass
+        if filename_match is None and db_path.name.strip().lower() == candidate_name:
+            filename_match = name
+    return filename_match
+
+
 def camera_short_summary(name: str) -> str:
     record = camera_record(name)
     if record is None:

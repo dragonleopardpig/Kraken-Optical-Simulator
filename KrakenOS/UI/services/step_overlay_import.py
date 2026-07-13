@@ -225,10 +225,23 @@ class StepOverlayImportService:
         self._selected_step_label = "camera"
         self._cad_axis_pick_any = False
         self._open3d_trace_refresh_service().clear_step_overlay_physics_preview("camera")
+        # bug 0295 Stage 2: if this STEP is a recognised vendor camera, couple
+        # the surrogate to its sensor (field -> sensor half-diagonal, image
+        # circle -> sensor) so "import lens folder -> import camera" ends in the
+        # same complete state as the hand-authored machine_vision_* presets.
+        coupled_model = None
+        if hasattr(self, "_couple_camera_model_from_step"):
+            coupled_model = self._couple_camera_model_from_step(path)
         self._commit_history_capture()
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
-        self.status_var.set(f"Camera STEP imported: {path.name}. Open or refresh 3D view.")
+        if coupled_model:
+            self.status_var.set(
+                f"Camera STEP imported: {path.name}; recognised as {coupled_model} -- "
+                f"field + image circle synced to its sensor. Open or refresh 3D view."
+            )
+        else:
+            self.status_var.set(f"Camera STEP imported: {path.name}. Open or refresh 3D view.")
         if refresh_open_3d:
             self._refresh_open_3d_views(camera_only=True)
         return path

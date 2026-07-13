@@ -9,6 +9,7 @@ modules.
 
 from __future__ import annotations
 
+from KrakenOS.UI.camera_database import camera_model_for_step_path
 from KrakenOS.UI.custom_surfaces import encode_custom_surface_value
 from KrakenOS.UI.services.fold_insertion import can_insert_fold_mirror, plan_fold_mirror
 from KrakenOS.UI.services.machine_vision_folder_import import (
@@ -2960,6 +2961,28 @@ class LayoutTableWorkbenchMixin:
         self._sync_table()
         self._sync_object_controls()
         return {"image_diameter": float(image_diameter), "real_image_height": real_image_height}
+
+    def _couple_camera_model_from_step(self, step_path) -> str | None:
+        """When an imported camera STEP is a recognised vendor camera, select
+        that model and run the sensor autofill -- the same field/image-circle
+        sync a dropdown selection performs (bug 0295 Stage 2).
+
+        This closes the "import from folder -> create lens surrogate seems not
+        complete" gap: after the surrogate is built, importing the vendor camera
+        STEP now shrinks the field from the datasheet max real image height
+        (image-circle/2) to the true sensor half-diagonal, so the object-plane
+        FOV follows the real sensor instead of the lens's max-sensor capability.
+        Returns the coupled model name, or ``None`` when the STEP is not a known
+        vendor camera (the raw body is then shown as-is).
+        """
+        model = camera_model_for_step_path(step_path)
+        if model is None or model == CAMERA_NONE_LABEL:
+            return None
+        if not hasattr(self, "camera_model_var"):
+            return None
+        self.camera_model_var.set(model)
+        applied = self._apply_camera_coverage_autofill(model)
+        return model if applied is not None else None
 
     def _on_camera_model_changed(self, _event=None) -> None:
         self._begin_history_capture()

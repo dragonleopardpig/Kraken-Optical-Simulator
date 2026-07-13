@@ -12530,12 +12530,15 @@ def phase_259_folder_import_completeness(
     Field parameters are not set ... Rays launching parameters are not set as well (only center ray)." Fix: Path C
     now carries the field like the hand-authored machine_vision_* presets -- field_type='Real Image Height',
     field_value = the datasheet max real image height (image-circle/2), field_count=3 -- so the object-plane FOV
-    rectangle + off-axis fans render; a glued camera then overrides field_value with the true sensor half-height
-    (Stage 2). `validate_open3d_folder_import_completeness` is display-free + portable (drives
-    _core_from_datasheet_cardinals + the coverage overlay geometry; no VTK, no vendor PDF/STEP).
+    rectangle + off-axis fans render. Stage 2: importing the vendor camera STEP now resolves back to its camera model
+    (camera_model_for_step_path) and runs the sensor autofill, so field_value is overridden with the true sensor
+    half-diagonal and the object FOV shrinks from the datasheet max-sensor capability (image-circle/2) to the real
+    sensor -- the "synchronize with the subsequent camera" ask. `validate_open3d_folder_import_completeness` is
+    display-free + portable (drives _core_from_datasheet_cardinals + the coverage overlay geometry + the camera
+    model/coverage lookups; no VTK, no vendor PDF/STEP).
     """
     result = PhaseResult(
-        name="Phase 259: Folder-import surrogate carries the field (object FOV rectangle + off-axis rays, not a bare disc)"
+        name="Phase 259: Folder-import surrogate carries the field + syncs to the imported camera sensor (FOV follows sensor)"
     )
     try:
         from KrakenOS.UI.validate_open3d_folder_import_completeness import run_checks

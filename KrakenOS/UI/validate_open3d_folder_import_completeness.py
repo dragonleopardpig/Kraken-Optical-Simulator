@@ -29,6 +29,11 @@ real datasheet):
     positive half-extent (the "big disc" becomes a real FOV rectangle).
   * C -- the general path: a lens with no datasheet image circle still gets a
     field (from the lens aperture), so no datasheet-only lens is left field-less.
+  * D -- Stage 2: importing the vendor camera STEP resolves back to its camera
+    model (``camera_model_for_step_path``) and couples the surrogate to that
+    sensor, so the field/object-FOV shrink from the datasheet max-sensor
+    capability (image-circle/2 == 50 mm) to the real sensor half-diagonal
+    (hr25MCX == 16.29 mm) -- the "synchronize with the subsequent camera" ask.
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_folder_import_completeness
@@ -121,6 +126,40 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
     ok(core2.settings_base.get("field_type") == "Real Image Height" and fval2 and float(fval2) > 0.0,
        f"C1: a datasheet lens with no image circle still gets a field from the aperture (got {fval2!r})")
 
+    # --- D. Stage 2: importing the vendor camera STEP couples the surrogate to
+    #     its sensor, so the FOV follows the REAL sensor (shrinks from the
+    #     datasheet max-sensor capability to the camera's actual sensor).
+    from KrakenOS.UI.camera_database import (
+        camera_image_coverage_mm,
+        camera_model_for_step_path,
+    )
+
+    model = camera_model_for_step_path("3D_CAD_HR25xCXP.STEP")
+    ok(model == "Allied Vision hr25MCX",
+       f"D1: the vendor camera STEP filename resolves back to its model (got {model!r})")
+    ok(camera_model_for_step_path("random_widget.step") is None,
+       "D2: an unrecognised STEP does not falsely couple a camera")
+
+    coverage = camera_image_coverage_mm(model) if model else None
+    sensor_field = coverage[1] if coverage else None
+    datasheet_field = expected  # image_circle / 2 == 50 mm (the Stage-1 default)
+    ok(sensor_field is not None and 0.0 < float(sensor_field) < datasheet_field,
+       f"D3: coupling the camera shrinks the field from the datasheet max "
+       f"{datasheet_field:g} mm to the real sensor half-diagonal (got {sensor_field!r})")
+
+    # the object FOV follows: same bare-lens inscribed-square geometry, now sized
+    # by the real sensor -> a strictly smaller object FOV than the datasheet field.
+    def _object_fov_half(image_radius: float) -> float:
+        side = dco.recommended_inscribed_sensor_side(image_radius)
+        m = dco.detector_coverage_metrics(side, side, image_radius, mag, sensor_is_real=False)
+        return m.object_fov_half_width
+
+    ds_fov = _object_fov_half(datasheet_field)
+    cam_fov = _object_fov_half(float(sensor_field)) if sensor_field else 0.0
+    ok(0.0 < cam_fov < ds_fov,
+       f"D4: the object FOV follows the sensor "
+       f"({2 * cam_fov:.1f} mm camera-coupled < {2 * ds_fov:.1f} mm datasheet)")
+
     passed = not any(line.startswith("FAIL") for line in notes)
     if verbose:
         for line in notes:
@@ -135,7 +174,9 @@ def main() -> int:
             "Folder-import completeness validation passed: a datasheet-imported "
             "surrogate carries the field (Real Image Height = image-circle/2, "
             "field_count 3) so the object-plane FOV rectangle + off-axis ray fans "
-            "render like the hand-authored machine_vision_* presets."
+            "render like the hand-authored machine_vision_* presets; and importing "
+            "the vendor camera STEP couples the surrogate to its sensor so the FOV "
+            "follows the real sensor (Stage 2)."
         )
         return 0
     print("Folder-import completeness validation FAILED:")
