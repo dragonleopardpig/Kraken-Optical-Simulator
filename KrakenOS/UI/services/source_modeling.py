@@ -1038,6 +1038,58 @@ class SourceModelingMixin:
             object_plane_z = 0.0
         return illumination_emitter_seed_from_module_bounds(bounds, object_plane_z)
 
+    def _coaxial_illuminator_descriptor_from_module(
+        self, *, aperture_fold_fallback: float, aperture_perp_fallback: float, default_fold_angle: float = 45.0
+    ) -> dict[str, object]:
+        """bugs/0292: seed a coaxial-illuminator descriptor (raw aperture + fold geometry) from the
+        imported LED module's world bounds, or the given fallback dims when no module is loaded.
+
+        A coaxial illuminator sits OFF the optical axis and is folded onto it by a beam splitter. The fold
+        plane contains the optical axis (world z) and the module's decentre axis; the module FACE dimension
+        along the optical axis is what the fold foreshortens (effective = aperture*cos(fold_angle)), while
+        the face dimension along the other transverse axis is unchanged.  A meaningfully decentred module is
+        taken as folded (fold_angle = default); an on-axis one is not (fold_angle = 0 -> no foreshorten).
+
+        Best-effort auto-seed: every field rides on the spec and is user-tunable (coaxial_aperture_fold_mm
+        / _perp_mm / _fold_angle_deg / _fold_axis)."""
+        fold_axis = "x"
+        aperture_fold = float(aperture_fold_fallback)
+        aperture_perp = float(aperture_perp_fallback)
+        fold_angle = float(default_fold_angle)
+        bounds = None
+        try:
+            mesh = self._transformed_imported_led_step_mesh()
+            bounds = getattr(mesh, "bounds", None) if mesh is not None else None
+        except Exception:
+            bounds = None
+        if bounds is not None:
+            try:
+                x0, x1, y0, y1, z0, z1 = (float(v) for v in tuple(bounds)[:6])
+            except (TypeError, ValueError):
+                x0 = x1 = y0 = y1 = z0 = z1 = float("nan")
+            if all(np.isfinite(v) for v in (x0, x1, y0, y1, z0, z1)):
+                x_ext, y_ext, z_ext = abs(x1 - x0), abs(y1 - y0), abs(z1 - z0)
+                cx, cy = 0.5 * (x0 + x1), 0.5 * (y0 + y1)
+                aperture_scale = 0.5 * max(x_ext, y_ext, z_ext, 1e-9)
+                is_folded = float(np.hypot(cx, cy)) > 0.25 * aperture_scale
+                if is_folded:
+                    if abs(cx) >= abs(cy):
+                        fold_axis, perp_ext = "x", y_ext
+                    else:
+                        fold_axis, perp_ext = "y", x_ext
+                    if z_ext > 0.0 and perp_ext > 0.0:
+                        aperture_fold, aperture_perp = z_ext, perp_ext
+                    fold_angle = float(default_fold_angle)
+                else:
+                    fold_angle = 0.0  # on-axis module: no fold, keep the fallback face aperture
+        return {
+            "coaxial_illuminator": True,
+            "coaxial_aperture_fold_mm": float(max(aperture_fold, 1e-6)),
+            "coaxial_aperture_perp_mm": float(max(aperture_perp, 1e-6)),
+            "coaxial_fold_angle_deg": float(fold_angle),
+            "coaxial_fold_axis": fold_axis,
+        }
+
     def add_illumination_led_source(self, *, record_history: bool = True) -> str:
         """Add a new physical area-LED illumination source as a first-class scene source (bugs/0284) --
         the "Add Illumination Source (LED)" entry point behind the browser's Scene Sources group. The
@@ -1078,30 +1130,38 @@ class SourceModelingMixin:
         cone = float(self._current_source_cone_angle() or 0.0)
         if not (cone > 0.0):
             cone = 30.0
-        specs.append(
-            {
-                "source_id": source_id,
-                "name": f"Illumination LED {ordinal}",
-                "model": "Random rectangle source",
-                "role": "illumination",
-                "physical": True,
-                "enabled": True,
-                "source_x": float(ox),
-                "source_y": float(oy),
-                "source_z": float(oz),
-                "source_l": float(dl),
-                "source_m": float(dm),
-                "source_n": float(dn),
-                "radius_x": float(half_x),
-                "radius_y": float(half_y),
-                "radius": float(max(half_x, half_y)),
-                "cone_deg": cone,
-                "ray_count": 2000,
-                "power": 1.0,
-                "wavelength": float(self._current_wavelength()),
-                "seed": 7,
-            }
+        led_spec = {
+            "source_id": source_id,
+            "name": f"Illumination LED {ordinal}",
+            "model": "Random rectangle source",
+            "role": "illumination",
+            "physical": True,
+            "enabled": True,
+            "source_x": float(ox),
+            "source_y": float(oy),
+            "source_z": float(oz),
+            "source_l": float(dl),
+            "source_m": float(dm),
+            "source_n": float(dn),
+            "radius_x": float(half_x),
+            "radius_y": float(half_y),
+            "radius": float(max(half_x, half_y)),
+            "cone_deg": cone,
+            "ray_count": 2000,
+            "power": 1.0,
+            "wavelength": float(self._current_wavelength()),
+            "seed": 7,
+        }
+        # bugs/0292: record the coaxial-illuminator descriptor (raw aperture + fold geometry) so the
+        # detector overlay can draw the folded EFFECTIVE illumination area -- the user's ask to launch the
+        # imaging FOV from the 38.9x39 effective illumination, not the 39x39 lens FOV.
+        led_spec.update(
+            self._coaxial_illuminator_descriptor_from_module(
+                aperture_fold_fallback=2.0 * float(half_x),
+                aperture_perp_fallback=2.0 * float(half_y),
+            )
         )
+        specs.append(led_spec)
         specs = self._dedupe_scene_source_ids(specs)
         self._apply_scene_source_row_action_specs(
             specs,

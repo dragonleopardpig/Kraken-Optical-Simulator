@@ -3871,6 +3871,76 @@ class ThreeDSceneToolsMixin:
         except Exception:
             return 0.0
 
+    def _live_coaxial_illuminator_descriptor(self):
+        """bugs/0292: the coaxial-illuminator descriptor of the first LIVE illumination source that carries
+        one (Add Illumination Source attaches it), or None.
+
+        A disabled / non-physical / removed source contributes nothing, matching what
+        _coupled_object_illumination_records treats as a live source."""
+        try:
+            from KrakenOS.UI.scene_source_analysis import coaxial_illuminator_descriptor
+
+            specs = self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []) or [])
+        except Exception:
+            return None
+        for spec in specs:
+            if not (bool(spec.get("enabled", True)) and bool(spec.get("physical", True))):
+                continue
+            descriptor = coaxial_illuminator_descriptor(spec)
+            if descriptor is not None:
+                return descriptor
+        return None
+
+    def _coaxial_illuminator_overlay_spec(self, system, target, descriptor):
+        """bugs/0292: draw the folded coaxial illuminator's EFFECTIVE illumination area on the sensor.
+
+        Build the folded aperture footprint geometrically (aperture along the fold axis foreshortened by
+        cos(fold_angle), cross-fold unchanged), then image it onto the sensor at TRUE scale with the
+        scene's own paraxial |m| and sensor half-extent -- exactly the bugs/0288 projection, but fed a
+        geometric footprint instead of the un-traceable flood.  Under-fill on the fold axis draws the 2
+        dark fold edges; the perp axis over-fills and stays uniform.  Returns None on degenerate geometry
+        or when the imaged footprint misses the sensor (sensor stays blank -- display follows physics)."""
+        from KrakenOS.UI.services.source_object_coupling import (
+            coaxial_illuminator_footprint_map,
+            project_footprint_onto_sensor,
+        )
+
+        try:
+            magnification = self._current_finite_paraxial_magnification()
+        except Exception:
+            magnification = None
+        if magnification is None or not np.isfinite(magnification) or abs(float(magnification)) <= 1e-9:
+            return None
+        half_w, half_h = self._detector_target_half_extent(target)
+        if not (half_w > 0.0 and half_h > 0.0):
+            return None
+        map_data = coaxial_illuminator_footprint_map(
+            float(descriptor.get("aperture_fold_mm", 0.0)),
+            float(descriptor.get("aperture_perp_mm", 0.0)),
+            float(descriptor.get("fold_angle_deg", 45.0)),
+            fold_axis=str(descriptor.get("fold_axis", "x")),
+            penumbra_mm=descriptor.get("penumbra_mm", None),
+        )
+        if map_data is None:
+            return None
+        projected = project_footprint_onto_sensor(map_data, magnification, half_w, half_h)
+        if projected is None:
+            return None
+        chroma = "Mono"
+        try:
+            record = self._current_camera_record()
+            if isinstance(record, dict):
+                chroma = record.get("chroma", "Mono") or "Mono"
+        except Exception:
+            pass
+        return build_source_illumination_overlay(
+            projected,
+            center=np.asarray(getattr(target, "center_world", (0.0, 0.0, 0.0)), dtype=float),
+            normal=np.asarray(getattr(target, "normal_world", (0.0, 0.0, 1.0)), dtype=float),
+            tangent=np.asarray(getattr(target, "tangent_world", (0.0, 1.0, 0.0)), dtype=float),
+            chroma=chroma,
+        )
+
     def _compute_coupled_object_illumination_overlay_spec(self, system, target):
         """bugs/0286 + bugs/0288: the on-sensor illumination heatmap when NO illumination ray reaches the
         sensor.
@@ -3902,6 +3972,18 @@ class ThreeDSceneToolsMixin:
             project_footprint_onto_sensor,
             project_object_map_onto_sensor,
         )
+
+        # bugs/0292: when an "Add Illumination Source" LED carries a coaxial-illuminator descriptor, build
+        # the folded EFFECTIVE illumination area GEOMETRICALLY and image it onto the sensor. This bypasses
+        # the un-traceable folded flood (a split branch ray never consults the later limiting aperture --
+        # 0287/0289 -- so the traced flood over-fills and reads uniform) and realizes the user's ask:
+        # launch the imaging FOV from the 38.9x39 effective illumination, not the 39x39 lens FOV. Prefer
+        # it over the traced-flood fallback below; fall through only if the geometry is degenerate.
+        descriptor = self._live_coaxial_illuminator_descriptor()
+        if descriptor is not None:
+            spec = self._coaxial_illuminator_overlay_spec(system, target, descriptor)
+            if spec is not None:
+                return spec
 
         object_index = self._source_object_coupling_object_index()
         if object_index is None:

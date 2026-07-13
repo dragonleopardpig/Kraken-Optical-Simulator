@@ -134,6 +134,57 @@ def source_spec_vector(spec: dict[str, object], vector_keys, component_keys, def
     )
 
 
+COAXIAL_ILLUMINATOR_KEY = "coaxial_illuminator"
+
+
+def coaxial_illuminator_descriptor(spec: object) -> dict[str, object] | None:
+    """bugs/0292: read a coaxial-illuminator descriptor off a scene-source spec (or a
+    ``SceneSource3D.settings`` dict), or ``None`` for a non-coaxial / non-illuminator spec.
+
+    Attached at "Add Illumination Source (LED)" time (source_modeling.add_illumination_led_source) when the
+    LED feeds the object via a folding beam splitter.  It records the RAW illuminator aperture plus the
+    fold geometry -- NOT a pre-computed 38.9 mm -- so the effective object-plane footprint (aperture along
+    the fold axis foreshortened by cos(fold_angle)) can be derived generally at draw time by
+    ``source_object_coupling.coaxial_illuminator_footprint_map``.  The keys survive spec normalization
+    (``normalize_scene_source_specs`` keeps arbitrary keys) and ride in ``SceneSource3D.settings``.
+    """
+    if isinstance(spec, dict):
+        settings: object = spec
+    else:
+        settings = getattr(spec, "settings", None)
+    if not isinstance(settings, dict):
+        return None
+    if not source_spec_bool(settings, COAXIAL_ILLUMINATOR_KEY, False):
+        return None
+    aperture_fold = source_spec_float(
+        settings, ("coaxial_aperture_fold_mm", "aperture_fold_mm"), 0.0, minimum=0.0
+    )
+    aperture_perp = source_spec_float(
+        settings, ("coaxial_aperture_perp_mm", "aperture_perp_mm"), 0.0, minimum=0.0
+    )
+    if not (aperture_fold > 0.0 and aperture_perp > 0.0):
+        return None
+    fold_angle = source_spec_float(settings, ("coaxial_fold_angle_deg", "fold_angle_deg"), 45.0)
+    axis_raw = str(settings.get("coaxial_fold_axis", settings.get("fold_axis", "x")) or "x").strip().lower()
+    fold_axis = "y" if axis_raw in {"y", "fold_y", "vertical", "v"} else "x"
+    penumbra_mm: float | None = None
+    raw_penumbra = settings.get("coaxial_penumbra_mm", settings.get("penumbra_mm", None))
+    if raw_penumbra is not None:
+        try:
+            candidate = float(raw_penumbra)
+            if np.isfinite(candidate) and candidate > 0.0:
+                penumbra_mm = candidate
+        except (TypeError, ValueError):
+            penumbra_mm = None
+    return {
+        "aperture_fold_mm": float(aperture_fold),
+        "aperture_perp_mm": float(aperture_perp),
+        "fold_angle_deg": float(fold_angle),
+        "fold_axis": fold_axis,
+        "penumbra_mm": penumbra_mm,
+    }
+
+
 def scene_source_from_spec(
     spec: dict[str, object],
     index: int,

@@ -256,7 +256,8 @@
     "252": "pass",
     "253": "pass",
     "254": "pass",
-    "255": "pass"
+    "255": "pass",
+    "256": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -513,6 +514,7 @@
     "252": "object illumination projects onto the sensor as dark edges when no ray reaches it",
     "253": "illumination footprint projects onto the sensor at its true imaged size",
     "254": "Add Illumination Source seeds the emitter from the physical LED module",
-    "255": "Add Illumination Source keeps the real detector (phantom flood branches do not supersede it)"
+    "255": "Add Illumination Source keeps the real detector (phantom flood branches do not supersede it)",
+    "256": "Effective illumination area bounds the imaging FOV (folded coaxial descriptor -> 2 fold-dark edges)"
   }
 }

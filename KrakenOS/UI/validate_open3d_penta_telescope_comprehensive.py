@@ -12412,6 +12412,44 @@ def phase_255_illumination_keeps_real_detector(
     return result
 
 
+def phase_256_effective_illumination_area(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A folded coaxial illuminator must launch the imaging FOV from its EFFECTIVE illumination area, not the
+    full imaging-lens FOV (bugs/0292). The MV-150 side LED is 55x74 mm on the 55x78 face of a 45deg-folded
+    beam-splitter cube; the fold foreshortens the fold axis (55*cos45 = 38.9 mm) while the perpendicular axis
+    stays 74 mm, so the effective area under-fills the 39x39 FOV on the fold axis only -> 2 fold-axis dark
+    edges, uniform perpendicular. The branch-ray engine cannot trace a split flood through to the later
+    limiting aperture (0287/0289 wall), so the footprint is built GEOMETRICALLY from a coaxial-illuminator
+    DESCRIPTOR (aperture + fold angle) attached to the LED spec at Add-Illumination time, then imaged onto the
+    sensor by the existing bugs/0288 project_footprint_onto_sensor using the scene's own |m| and sensor size --
+    no hardcoded FOV, no display-only nudge. `validate_open3d_effective_illumination_area` (display-free): soft
+    aperture edge + geometric footprint map (fold foreshortened by cos, perp unchanged) + descriptor reader
+    (round-trips arbitrary spec keys, non-coaxial -> None) + module-bounds descriptor seed (side LED -> fold
+    axis from decentre, on-axis -> angle 0) + WIRING contract (dispatcher consults the coaxial branch first,
+    overlay uses the kernel and is render-only, add_illumination_led_source attaches the descriptor) + REAL
+    VENDOR SCENE when present (Add LED attaches a descriptor; an explicit 55x74/45deg descriptor drives the
+    production overlay to fold edge < 0.85 dark, perp edge >= 0.85 uniform).
+    """
+    result = PhaseResult(
+        name="Phase 256: Effective illumination area bounds the imaging FOV (folded coaxial descriptor -> 2 fold-dark edges)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_effective_illumination_area import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"effective-illumination-area guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("effective-illumination-area phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12712,6 +12750,7 @@ def main() -> int:
             phase_253_illumination_footprint_projection,
             phase_254_illumination_emitter_module_seed,
             phase_255_illumination_keeps_real_detector,
+            phase_256_effective_illumination_area,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

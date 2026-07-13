@@ -465,6 +465,107 @@ def object_footprint_irradiance_map(
     }
 
 
+def _aperture_soft_edge(coord: np.ndarray, half: float, penumbra: float) -> np.ndarray:
+    """1.0 inside the aperture, raised-cosine roll-off to 0.0 across a band ``penumbra`` wide centred on
+    the edge ``|coord| == half``.
+
+    A real coaxial illuminator is an extended DIFFUSE source (a diffuser plate over an array of small
+    LEDs), so its aperture has no hard optical cut -- the irradiance ramps down over the diffuser's finite
+    width.  That soft ramp straddling the imaged-FOV edge is what makes the fold-axis dark edges visible;
+    a mathematically hard edge 0.05 mm inside the FOV would be invisible (bugs/0292 probe).
+    """
+    half = float(half)
+    penumbra = max(float(penumbra), 1e-9)
+    t = np.clip((np.abs(coord) - (half - 0.5 * penumbra)) / penumbra, 0.0, 1.0)
+    return 0.5 * (1.0 + np.cos(np.pi * t))
+
+
+def coaxial_illuminator_footprint_map(
+    aperture_fold_mm: float,
+    aperture_perp_mm: float,
+    fold_angle_deg: float,
+    *,
+    fold_axis: str = "x",
+    penumbra_mm: float | None = None,
+    grid: int = 181,
+    margin_mm: float = 10.0,
+) -> dict[str, object] | None:
+    """bugs/0292: build the folded coaxial-illuminator aperture as an object-plane footprint map,
+    GEOMETRICALLY (the "Effective Illumination" area).
+
+    A flat area illuminator folded into the optical axis by a ``fold_angle_deg`` beam splitter projects
+    its in-fold-plane dimension onto the object plane FORESHORTENED by ``cos(fold_angle)`` -- the shadow
+    of the tilted illuminated strip on the object plane -- while the cross-fold dimension is unchanged.
+    So the effective illuminated area is ``(aperture_fold*cos(fold_angle)) x aperture_perp`` (e.g. the
+    MV-150's 55x74 mm LED on a 45-deg splitter -> 38.9 x 74 mm).
+
+    We build that rectangle directly instead of tracing the flood, because a split branch ray never
+    consults the later limiting-aperture rows (bugs/0287/0289 engine wall), so the traced folded flood
+    can't foreshorten -- it over-fills and reads uniform.  Fed through ``project_footprint_onto_sensor``
+    with the scene's own |m| and sensor size, this map paints the effective illumination at true imaged
+    scale: under-filling the imaged FOV on the fold axis draws the dark fold edges, over-filling the perp
+    axis stays uniform -- the geometry decides, no explicit gate.
+
+    Nothing is layout-tuned: fold/perp half-extents derive from the aperture + fold angle, and the diffuse
+    soft edge (``penumbra_mm``) defaults to a few percent of the folded aperture.  Returns a
+    ``project_footprint_onto_sensor``-ready map, or ``None`` on degenerate dimensions.
+    """
+    try:
+        aperture_fold = float(aperture_fold_mm)
+        aperture_perp = float(aperture_perp_mm)
+        fold_angle = float(fold_angle_deg)
+    except Exception:
+        return None
+    if not (np.isfinite(aperture_fold) and np.isfinite(aperture_perp) and np.isfinite(fold_angle)):
+        return None
+    if aperture_fold <= 0.0 or aperture_perp <= 0.0:
+        return None
+
+    half_fold = 0.5 * aperture_fold * abs(float(np.cos(np.radians(fold_angle))))
+    half_perp = 0.5 * aperture_perp
+    if not (half_fold > 0.0 and half_perp > 0.0):
+        return None
+
+    if penumbra_mm is None:
+        # diffuser soft edge ~ a few percent of the folded aperture, floored so a small aperture still
+        # rolls off over a resolvable band rather than a single bin.
+        penumbra = max(0.06 * (2.0 * half_fold), 0.5)
+    else:
+        penumbra = max(float(penumbra_mm), 1e-6)
+
+    axis = str(fold_axis or "x").strip().lower()
+    if axis in {"y", "fold_y", "vertical", "v"}:
+        axis = "y"
+        half_x, half_y = half_perp, half_fold
+    else:
+        axis = "x"
+        half_x, half_y = half_fold, half_perp
+
+    n = int(max(9, grid))
+    margin = max(float(margin_mm), 0.0)
+    gx = np.linspace(-(half_x + margin), half_x + margin, n + 1)
+    gy = np.linspace(-(half_y + margin), half_y + margin, n + 1)
+    xc = 0.5 * (gx[:-1] + gx[1:])
+    yc = 0.5 * (gy[:-1] + gy[1:])
+    grid_x, grid_y = np.meshgrid(xc, yc)  # [iy, ix]
+    density = _aperture_soft_edge(grid_x, half_x, penumbra) * _aperture_soft_edge(grid_y, half_y, penumbra)
+    peak = float(np.max(density)) if density.size else 0.0
+    if not (peak > 0.0):
+        return None
+    return {
+        "density": density / peak,
+        "x_edges": gx,
+        "y_edges": gy,
+        "extent": [float(gx[0]), float(gx[-1]), float(gy[0]), float(gy[-1])],
+        "coord": "local",
+        "hit_count": int(density.size),
+        "fold_axis": axis,
+        "fold_half_mm": float(half_fold),
+        "perp_half_mm": float(half_perp),
+        "penumbra_mm": float(penumbra),
+    }
+
+
 def _bilinear_zero_outside(
     density: np.ndarray, x_edges: np.ndarray, y_edges: np.ndarray, xq: np.ndarray, yq: np.ndarray
 ) -> np.ndarray:
