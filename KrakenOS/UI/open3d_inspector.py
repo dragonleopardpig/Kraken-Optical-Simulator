@@ -6247,11 +6247,26 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         untouched.
         """
         token = self._timing_start("import_machine_vision_lens_from_folder")
+        editor = self.editor
+        # bug 0294: the import replaces the working layout, which normally destroys
+        # the 3D inspector (workbench._close_scene_viewers_for_layout_replacement).
+        # We are *inside* this inspector's handler, so letting it tear `self` down
+        # and then refreshing `self` below is a use-after-free that SIGSEGVs on
+        # NVIDIA GLX. Ask the editor to keep this inspector across the swap so we
+        # can refresh it in place; the guard below is a belt-and-suspenders check.
+        editor._keep_scene_viewers_across_layout_replacement = True
         try:
-            model = self.editor.import_machine_vision_lens_from_folder(dialog_parent=self)
+            model = editor.import_machine_vision_lens_from_folder(dialog_parent=self)
             if model is None:
-                self.status_var.set(self.editor.status_var.get())
+                if self.winfo_exists():
+                    self.status_var.set(editor.status_var.get())
                 self._timing_finish(token, status="cancelled")
+                return
+            # If the inspector was torn down anyway, do NOT touch our now-dead
+            # Tk/VTK widgets -- re-open a fresh 3D view on the (live) editor.
+            if not self.winfo_exists() or editor.__dict__.get("_three_d_inspector") is not self:
+                editor.open_3d_view()
+                self._timing_finish(token, status="ok", title=str(model.title))
                 return
             # A brand-new working layout was loaded; clear transient carry /
             # selection state so no stale handles survive the rebuild.
@@ -6262,12 +6277,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._selected_step_feature = None
             self._selected_step_feature_label = None
             self.refresh_from_editor(force_retrace=True)
-            self.status_var.set(self.editor.status_var.get())
+            self.status_var.set(editor.status_var.get())
         except Exception as exc:
             self._timing_finish(token, status="error", error=_short_error_message(exc))
             raise
         else:
             self._timing_finish(token, status="ok", title=str(model.title))
+        finally:
+            editor.__dict__.pop("_keep_scene_viewers_across_layout_replacement", None)
 
     def clear_step_imports(self) -> None:
         self.editor.clear_step_imports()

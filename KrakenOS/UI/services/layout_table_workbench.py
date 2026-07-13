@@ -339,8 +339,18 @@ class LayoutTableWorkbenchMixin:
         self._open3d_step_overlay_physics_preview_labels = set()
 
     def _close_scene_viewers_for_layout_replacement(self) -> None:
+        # bug 0294: "Import Lens from Folder" can be launched from *inside* the 3D
+        # inspector. The import replaces the working layout, which lands here --
+        # destroying the very inspector whose handler is still running. Returning
+        # to that handler and refreshing the now-dead vtkTkRenderWindowInteractor
+        # is a use-after-free that SIGSEGVs on real GL drivers (NVIDIA GLX). When
+        # the initiating inspector asks to survive the swap, keep it: it refreshes
+        # itself in place once the new layout is applied.
+        keep_inspector = bool(
+            self.__dict__.get("_keep_scene_viewers_across_layout_replacement")
+        )
         inspector = self.__dict__.get("_three_d_inspector")
-        if inspector is not None:
+        if inspector is not None and not keep_inspector:
             try:
                 inspector.destroy()
             except Exception:

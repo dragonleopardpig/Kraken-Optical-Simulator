@@ -12485,25 +12485,26 @@ def phase_257_datasheet_lens_import(
     return result
 
 
-def phase_258_vtk_teardown_ordering(
+def phase_258_import_from_inspector_survives(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """Quitting the app with the Open-3D inspector open must NOT segfault (bugs/0294). The inspector embeds a
-    vtkTkRenderWindowInteractor over a GLX render window; letting Python+Tk run the widget destructors at
-    interpreter shutdown SIGSEGVs on real GL drivers (NVIDIA GLX). The "TkRenderWidget destroyed before its
-    vtkRenderWindow" warning fires on every teardown regardless (benign on llvmpipe), so finalize-before-destroy
-    ordering alone does NOT prevent the crash. The fix: the interactive quit (request_quit) shuts the analysis/
-    optimization workers down (no orphans) then os._exit(0)s before any Tk/VTK destructor runs; the headless path
-    still destroy()s normally. `validate_open3d_vtk_teardown_ordering` (display-free source contract): request_quit
-    hard-exits via _hard_exit_after_cleanup after worker shutdown, headless keeps destroy(), and both in-app close
-    paths still finalize the render window first (tidy best-effort). The real crash needs a live NVIDIA GLX display
-    (no GPU here; the Tk widget can't use the EGL offscreen path), so an in-app quit eyeball is owed.
+    """Importing a lens from *inside* the Open-3D inspector must NOT segfault (bugs/0294). "Import Lens from
+    Folder" launched from the inspector replaces the working layout, which runs KrakenLayoutEditor.
+    _close_scene_viewers_for_layout_replacement -- which used to DESTROY the inspector, i.e. the very widget whose
+    handler was still running. Control returned to the handler, which refreshed the now-dead
+    vtkTkRenderWindowInteractor: a use-after-free that SIGSEGVs on NVIDIA GLX (llvmpipe survives, so it never
+    reproduced under Xvfb). Reproduced live on an RTX 4070 via bugs/probe_0294_import_crash.py (exit 139 pre-fix,
+    clean post-fix, same inspector object refreshed in place). Fix: the handler sets editor.
+    _keep_scene_viewers_across_layout_replacement across the import (restored in finally) and guards winfo_exists()
+    before touching widgets; the workbench honours the flag and skips the inspector destroy.
+    `validate_open3d_import_from_inspector_survives` is a display-free source contract (the crash needs an NVIDIA
+    GLX display, absent under Xvfb); the live NVIDIA repro is the in-app eyeball.
     """
     result = PhaseResult(
-        name="Phase 258: Interactive app quit hard-exits before the NVIDIA-GLX-crashy VTK teardown (no segfault)"
+        name="Phase 258: Import-from-inspector keeps the inspector alive across the layout swap (no segfault)"
     )
     try:
-        from KrakenOS.UI.validate_open3d_vtk_teardown_ordering import run_checks
+        from KrakenOS.UI.validate_open3d_import_from_inspector_survives import run_checks
         passed, notes = run_checks()
     except Exception as exc:  # pragma: no cover - defensive
         result.passed = False
@@ -12820,7 +12821,7 @@ def main() -> int:
             phase_255_illumination_keeps_real_detector,
             phase_256_effective_illumination_area,
             phase_257_datasheet_lens_import,
-            phase_258_vtk_teardown_ordering,
+            phase_258_import_from_inspector_survives,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
