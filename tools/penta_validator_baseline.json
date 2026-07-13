@@ -257,7 +257,8 @@
     "253": "pass",
     "254": "pass",
     "255": "pass",
-    "256": "pass"
+    "256": "pass",
+    "257": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -515,6 +516,7 @@
     "253": "illumination footprint projects onto the sensor at its true imaged size",
     "254": "Add Illumination Source seeds the emitter from the physical LED module",
     "255": "Add Illumination Source keeps the real detector (phantom flood branches do not supersede it)",
-    "256": "Effective illumination area bounds the imaging FOV (folded coaxial descriptor -> 2 fold-dark edges)"
+    "256": "Effective illumination area bounds the imaging FOV (folded coaxial descriptor -> 2 fold-dark edges)",
+    "257": "Datasheet-only lens import builds an exact surrogate + Open-3D folder importer"
   }
 }

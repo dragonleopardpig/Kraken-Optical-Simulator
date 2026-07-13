@@ -182,6 +182,11 @@ class Open3DTopControlsPanel:
         add_menu_commands(
             cad_target_menu,
             (
+                MenuCommand(
+                    "Import Lens from Folder...",
+                    self.inspector.import_machine_vision_lens_from_folder,
+                ),
+                None,
                 MenuCommand("Delete Selected STEP", self.inspector.delete_selected_step),
                 MenuCommand("Clear STEP Imports", self.inspector.clear_step_imports),
                 None,

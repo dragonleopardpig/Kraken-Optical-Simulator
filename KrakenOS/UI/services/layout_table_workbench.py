@@ -622,25 +622,39 @@ class LayoutTableWorkbenchMixin:
             return
         self.insert_layout_component_by_name(name, refresh=refresh)
 
-    def import_machine_vision_lens_from_folder(self, folder: str | None = None) -> None:
+    def import_machine_vision_lens_from_folder(
+        self, folder: str | None = None, *, dialog_parent=None
+    ):
         """Item 3: ingest a whole vendor lens folder into one auto-built surrogate.
 
         The user picks a folder; everything useful in it is read and a single
-        first-order surrogate is synthesised: a Zemax sequential prescription OR
-        -- for a real Black-Box lens whose surfaces are encrypted -- the System/
-        Prescription Data text dump drives the optics, the mechanical STEP is
-        wired as the overlay, and a wavefront export is wired onto the first ideal
-        group.  The emitted ``machine_vision_<slug>.py`` is written into the
-        common-layout library, re-discovered, and loaded as the working layout --
-        after which it is also insertable from the right-click Machine Vision
-        cascade (item 2) and foldable (item 1) like any other surrogate.
+        first-order surrogate is synthesised, from the best available optical
+        source (tried in order of fidelity):
+
+        * a Zemax sequential prescription (``.zmx``); OR
+        * for a real Black-Box lens whose surfaces are encrypted, the System/
+          Prescription Data text dump; OR
+        * the vendor **datasheet PDF** alone -- most vendors ship only a
+          datasheet, so the cardinals are scraped from its spec table.
+
+        The mechanical STEP is wired as the overlay and a wavefront export onto
+        the first ideal group.  The emitted ``machine_vision_<slug>.py`` is written
+        into the common-layout library, re-discovered, and loaded as the working
+        layout -- after which it is also insertable from the right-click Machine
+        Vision cascade (item 2) and foldable (item 1) like any other surrogate.
+
+        ``dialog_parent`` re-parents the folder chooser / error dialogs (the Open
+        3D inspector passes itself so the chooser is modal to the 3D window).
+        Returns the built :class:`SurrogateModel` on success, or ``None`` when the
+        chooser was cancelled or the surrogate could not be built.
         """
+        parent = dialog_parent if dialog_parent is not None else self
         if folder is None:
             folder = filedialog.askdirectory(
-                title="Import Machine Vision Lens from Folder", parent=self
+                title="Import Machine Vision Lens from Folder", parent=parent
             )
         if not folder:
-            return
+            return None
         try:
             model = import_lens_folder(folder)
             source = render_surrogate_layout_source(model)
@@ -651,9 +665,9 @@ class LayoutTableWorkbenchMixin:
                 "Import Machine Vision Lens",
                 "Could not build a surrogate from this folder:\n\n"
                 f"{folder}\n\n{exc}",
-                parent=self,
+                parent=parent,
             )
-            return
+            return None
         self.load_layouts()
         self.load_layout_by_name(model.title)
         message = (
@@ -662,6 +676,7 @@ class LayoutTableWorkbenchMixin:
         )
         self.status_var.set(message)
         self.append_progress(message)
+        return model
 
     def _selected_operand_labels(self) -> list[str]:
         if "merit_mode_list" not in self.__dict__:

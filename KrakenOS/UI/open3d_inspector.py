@@ -6235,6 +6235,40 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         else:
             self._timing_finish(token, status="ok", path=str(path))
 
+    def import_machine_vision_lens_from_folder(self) -> None:
+        """3D CAD menu: ingest a whole vendor lens folder into a first-order
+        surrogate and show it here.
+
+        The optical source is whatever the folder provides -- a Zemax ``.zmx``
+        prescription, a Black-Box System/Prescription Data dump, or (the common
+        case) the vendor **datasheet PDF alone**.  The editor builds + loads the
+        surrogate as the working layout; we then rebuild the 3D scene from it.
+        Cancelling the folder chooser (or a build failure) leaves the scene
+        untouched.
+        """
+        token = self._timing_start("import_machine_vision_lens_from_folder")
+        try:
+            model = self.editor.import_machine_vision_lens_from_folder(dialog_parent=self)
+            if model is None:
+                self.status_var.set(self.editor.status_var.get())
+                self._timing_finish(token, status="cancelled")
+                return
+            # A brand-new working layout was loaded; clear transient carry /
+            # selection state so no stale handles survive the rebuild.
+            self._close_step_rotation_handler()
+            self._step_rotation_active_label = None
+            self._step_carry_active_label = None
+            self._step_carry_follow_state = None
+            self._selected_step_feature = None
+            self._selected_step_feature_label = None
+            self.refresh_from_editor(force_retrace=True)
+            self.status_var.set(self.editor.status_var.get())
+        except Exception as exc:
+            self._timing_finish(token, status="error", error=_short_error_message(exc))
+            raise
+        else:
+            self._timing_finish(token, status="ok", title=str(model.title))
+
     def clear_step_imports(self) -> None:
         self.editor.clear_step_imports()
         self._close_step_rotation_handler()

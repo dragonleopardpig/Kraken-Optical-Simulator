@@ -12450,6 +12450,41 @@ def phase_256_effective_illumination_area(
     return result
 
 
+def phase_257_datasheet_lens_import(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A vendor lens folder that ships ONLY a datasheet PDF (no Zemax .zmx, no Black-Box
+    System/Prescription Data dump) must still build a first-order surrogate (bugs/0293). Most vendors don't
+    provide Zemax/Blackbox files, so datasheet-only is the common case. Path C scrapes the Schneider/PYRITE
+    spec table with a pure-stdlib per-font ToUnicode PDF decoder (no new dependency): f'eff + SF + S'F' recover
+    BOTH principal planes (ppa = SF + f'eff, ppp = S'F' - f'eff), so the EXACT two-group solve reproduces all
+    four cardinals (superior to Path B's symmetric approximation); Sigma-d gives the vertex span, F/# the stop,
+    Max-sensor-size the image circle, and the title magnification the finite conjugate. Missing focal distances
+    -> symmetric EFL+span fallback. `validate_datasheet_lens_import` (display-free): principal-plane math + HH
+    cross-check, exact-solve core round-trips EFL/ppa/ppp through a real Parax and traces, symmetric fallback,
+    datasheet PDF is now a valid optical source (unreadable stub still raises), the Open-3D CAD menu wiring
+    (inspector delegates to the editor with dialog_parent + guards cancel + rebuilds; editor returns the model),
+    and the REAL Schneider PYRITE datasheet when present (EFL ~82.39, both principal planes, HH cross-check).
+    """
+    result = PhaseResult(
+        name="Phase 257: Datasheet-only lens import builds an exact surrogate + Open-3D folder importer"
+    )
+    try:
+        from KrakenOS.UI.validate_datasheet_lens_import import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"datasheet-lens-import guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("datasheet-lens-import phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12751,6 +12786,7 @@ def main() -> int:
             phase_254_illumination_emitter_module_seed,
             phase_255_illumination_keeps_real_detector,
             phase_256_effective_illumination_area,
+            phase_257_datasheet_lens_import,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

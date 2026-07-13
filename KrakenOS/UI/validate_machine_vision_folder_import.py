@@ -237,10 +237,9 @@ def run_checks():
         if abs(convenience.effl - model.effl) > 1e-9:
             failures.append("import_lens_folder disagrees with build_surrogate_from_assets")
 
-        # --- a source-less folder is rejected -------------------------------
+        # --- a truly source-less folder (no .zmx / dump / PDF) is rejected ---
         bare = work / "Bare Folder"
         bare.mkdir(parents=True, exist_ok=True)
-        (bare / "datasheet.pdf").write_bytes(b"%PDF-1.4 stub")
         (bare / "body.step").write_text("NOT A REAL STEP FILE\n", encoding="utf-8")
         bare_assets = scan_lens_folder(bare)
         if bare_assets.has_optical_source:
@@ -251,6 +250,22 @@ def run_checks():
             pass
         else:
             failures.append("source-less folder did not raise when building a surrogate")
+
+        # --- a datasheet PDF IS a candidate source (Path C), but an unreadable
+        #     stub still raises a clear error at build time (graceful degrade) --
+        stub = work / "Stub PDF Folder"
+        stub.mkdir(parents=True, exist_ok=True)
+        (stub / "datasheet.pdf").write_bytes(b"%PDF-1.4 stub")
+        (stub / "body.step").write_text("NOT A REAL STEP FILE\n", encoding="utf-8")
+        stub_assets = scan_lens_folder(stub)
+        if not stub_assets.has_optical_source:
+            failures.append("datasheet-PDF folder should report an optical source (Path C candidate)")
+        try:
+            build_surrogate_from_assets(stub_assets, project_root=work)
+        except ValueError:
+            pass
+        else:
+            failures.append("unparseable datasheet PDF did not raise when building a surrogate")
 
     # --- editor + menu wiring ----------------------------------------------
     workbench_src = WORKBENCH_PATH.read_text(encoding="utf-8") if WORKBENCH_PATH.exists() else ""

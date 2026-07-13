@@ -34,6 +34,10 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from KrakenOS.UI.services.datasheet_prescription_import import (
+    DatasheetCardinals,
+    parse_datasheet_cardinals,
+)
 from KrakenOS.UI.services.zemax_prescription_import import (
     ZemaxImportDefaults,
     load_zemax_zmx_data,
@@ -103,7 +107,11 @@ class LensFolderAssets:
 
     @property
     def has_optical_source(self) -> bool:
-        return bool(self.prescription_files or self.prescription_data_files)
+        # A datasheet PDF is a valid last-resort optical source (Path C); most
+        # vendors ship one even when no .zmx / Black-Box dump is available.
+        return bool(
+            self.prescription_files or self.prescription_data_files or self.pdf_files
+        )
 
     @property
     def primary_step(self) -> Path | None:
@@ -206,13 +214,18 @@ def scan_lens_folder(folder: str | Path) -> LensFolderAssets:
 
     if not assets.has_optical_source:
         assets.notes.append(
-            "No Zemax .zmx prescription and no System/Prescription Data dump found; "
-            "cannot derive optics."
+            "No Zemax .zmx prescription, System/Prescription Data dump, or datasheet "
+            "PDF found; cannot derive optics."
         )
     elif not assets.prescription_files and assets.prescription_data_files:
         assets.notes.append(
             "Black-box lens: optics derived from the System/Prescription Data dump "
             "(EFL / F-number / magnification), not a decoded surface prescription."
+        )
+    elif not assets.prescription_files and not assets.prescription_data_files and assets.pdf_files:
+        assets.notes.append(
+            "Datasheet-only lens: optics derived from the datasheet PDF spec table "
+            "(no .zmx prescription or Black-Box dump present)."
         )
     return assets
 
@@ -633,18 +646,23 @@ def build_surrogate_from_assets(
 ) -> SurrogateModel:
     """Build a :class:`SurrogateModel` from classified folder assets.
 
-    Two optical sources are supported, tried in order:
+    Three optical sources are supported, tried in order of fidelity:
 
     * a readable Zemax ``.zmx`` sequential prescription -> exact ``Parax``
       cardinals and a two-group solve that reproduces them (Path A);
     * a Zemax System/Prescription Data dump from a Black-Box lens (no decodable
       surfaces) -> an EFL-correct symmetric two-group surrogate sized to the
-      bundled STEP body and placed at the reported conjugate (Path B).
+      bundled STEP body and placed at the reported conjugate (Path B);
+    * the vendor **datasheet PDF** alone (no ``.zmx`` / no dump) -> cardinals
+      scraped from the spec table; when it lists both focal distances (SF & S'F')
+      the exact two-group solve is used, else an EFL+span symmetric fallback
+      (Path C).  Most vendors ship only a datasheet, so this is the common case.
     """
     if not assets.has_optical_source:
         raise ValueError(
-            "No Zemax .zmx prescription and no System/Prescription Data dump was "
-            "found in the selected folder; cannot derive the lens optics."
+            "No Zemax .zmx prescription, no System/Prescription Data dump, and no "
+            "datasheet PDF was found in the selected folder; cannot derive the "
+            "lens optics."
         )
     if known_glass_names is None:
         known_glass_names = _default_known_glass_names()
@@ -655,8 +673,10 @@ def build_surrogate_from_assets(
 
     if assets.primary_prescription is not None:
         core = _core_from_prescription(assets, known_glass_names, import_defaults)
-    else:
+    elif assets.primary_prescription_data is not None:
         core = _core_from_prescription_data(assets)
+    else:
+        core = _core_from_datasheet(assets)
     return _assemble_surrogate(core, assets, name=name, project_root=project_root)
 
 
@@ -802,6 +822,118 @@ def _core_from_prescription_data(assets: LensFolderAssets) -> _SurrogateCore:
         aperture_value=aperture_value,
         settings_base=settings_base,
         source_label=Path(dump).name,
+        title_seed=title_seed,
+        extra_notes=notes,
+    )
+
+
+def _core_from_datasheet(assets: LensFolderAssets) -> _SurrogateCore:
+    """Path C: first-order cardinals from the vendor datasheet PDF alone.
+
+    When the datasheet lists both focal distances (SF & S'F') BOTH principal
+    planes are recovered, so the exact two-group solve (as Path A) reproduces all
+    four cardinals; otherwise an EFL+span symmetric surrogate is the honest
+    fallback (as Path B).  The conjugate is placed from the datasheet's nominal
+    magnification when present, else the object is left at infinity.
+    """
+    pdf = assets.primary_pdf
+    cardinals = parse_datasheet_cardinals(pdf) if pdf is not None else None
+    if cardinals is None or cardinals.effl is None:
+        raise ValueError(
+            "No Zemax .zmx prescription, no System/Prescription Data dump, and the "
+            "datasheet PDF did not yield an effective focal length; cannot derive "
+            "the lens optics."
+        )
+    return _core_from_datasheet_cardinals(cardinals, assets)
+
+
+def _core_from_datasheet_cardinals(
+    cardinals: DatasheetCardinals, assets: LensFolderAssets
+) -> _SurrogateCore:
+    """Turn scraped datasheet cardinals into a surrogate core (split out so the
+    cardinals->optics step is unit-testable without a real PDF)."""
+    effl = abs(float(cardinals.effl))
+    wavelength = 0.55
+    object_mode = cardinals.object_mode
+
+    # Span: the datasheet's first-to-last vertex distance (Sigma d) keeps the
+    # cardinals self-consistent; else the bundled STEP body extent; else EFL/3.
+    if cardinals.span and cardinals.span > 0.0:
+        span, span_source = round(float(cardinals.span), 4), "datasheet vertex span"
+    else:
+        span, span_source = _surrogate_span_from_assets(effl, assets.primary_step)
+
+    if cardinals.has_principal_planes:
+        ppa = float(cardinals.ppa)
+        ppp = float(cardinals.ppp)
+        solution = solve_two_thin_groups(effl, ppa, ppp, span)
+        solve_note = (
+            "Both principal planes recovered from the datasheet (SF + S'F'); the "
+            "two ideal groups reproduce all four cardinals exactly."
+        )
+    else:
+        solution, ppa, ppp = solve_symmetric_two_groups(effl, span)
+        solve_note = (
+            "Datasheet lists no focal distances; the two ideal groups are a "
+            "symmetric EFL-equivalent (the principal-plane split is nominal)."
+        )
+
+    object_gap, image_gap = _finite_conjugate_gaps(
+        effl, cardinals.magnification, ppa, ppp, object_mode, None
+    )
+
+    fno = cardinals.fno if (cardinals.fno and cardinals.fno > 0.0) else 8.0
+    stop_diameter = round(effl / fno, 4)
+    aperture_type, aperture_value = "FNO", _fmt(fno)
+
+    lens_aperture = round(stop_diameter * 1.4, 4)
+    image_diameter = (
+        round(float(cardinals.image_circle), 4)
+        if (cardinals.image_circle and cardinals.image_circle > 0.0)
+        else lens_aperture
+    )
+    if object_mode == "Finite" and cardinals.magnification:
+        object_diameter = round(image_diameter / abs(float(cardinals.magnification)), 4)
+    else:
+        object_diameter = round(max(lens_aperture, image_diameter), 4)
+
+    settings_base: dict = {"object_mode": object_mode, "wavelength": wavelength}
+
+    folder_name = Path(assets.folder).name
+    title_seed = f"{folder_name} {cardinals.title}".strip() if cardinals.title else folder_name
+
+    notes = [
+        f"Optical span = {span:.4g} mm ({span_source}).",
+        solve_note,
+        "Optics derived from the datasheet PDF; no .zmx prescription or Black-Box "
+        "System/Prescription Data dump was present.",
+    ]
+    hh_check = cardinals.hh_from_cardinals
+    if cardinals.hh is not None and hh_check is not None:
+        notes.append(
+            f"Principal-plane cross-check HH' = {hh_check:.3g} mm vs datasheet "
+            f"{cardinals.hh:.3g} mm."
+        )
+
+    return _SurrogateCore(
+        effl=effl,
+        ppa=ppa,
+        ppp=ppp,
+        span=span,
+        solution=solution,
+        object_mode=object_mode,
+        wavelength=wavelength,
+        object_gap=object_gap,
+        image_gap=image_gap,
+        stop_diameter=stop_diameter,
+        front_aperture=lens_aperture,
+        rear_aperture=lens_aperture,
+        object_diameter=object_diameter,
+        image_diameter=image_diameter,
+        aperture_type=aperture_type,
+        aperture_value=aperture_value,
+        settings_base=settings_base,
+        source_label=assets.primary_pdf.name if assets.primary_pdf else "datasheet",
         title_seed=title_seed,
         extra_notes=notes,
     )
