@@ -91,13 +91,22 @@ def run_checks() -> tuple[bool, list[str]]:
     if sorted(getattr(x, "row_index") for x in c0) != sorted(getattr(x, "row_index") for x in curves):
         failures.append("FAIL: sequential scene (no branch detector) lost its Image curve")
 
-    # 3) Scene with a branch detector but NO Image row: nothing to drop.
+    # 3) The drop is keyed on the target's is_detector flag, NOT on an "Image" row in
+    #    `rows` (bugs/0098 generalised 0093 to drop EVERY superseded sequential detector,
+    #    and the helper never consults `rows`). Removing the "Image" row must therefore
+    #    NOT change the outcome: the stale sequential detector (row 3) is still dropped,
+    #    while the non-detector geometry (object row 0, lens curve row 1) and the branch
+    #    detectors (>= 100000, curve row -1) still survive.
     rows_no_img = [r for r in rows if r.surface != "Image"]
     t2, c2, _ = drop_superseded_image_display(targets, curves, labels, rows_no_img, has_branch_detector=True)
-    if 3 not in sorted(getattr(x, "row_index") for x in c2):
-        failures.append("FAIL: dropped a curve when there was no Image row to supersede")
-    if 3 not in sorted(getattr(x, "row_index") for x in t2):
-        failures.append("FAIL: dropped a target when there was no Image row to supersede")
+    t2_rows = sorted(getattr(x, "row_index") for x in t2)
+    c2_rows = sorted(getattr(x, "row_index") for x in c2)
+    if 3 in t2_rows:
+        failures.append(f"FAIL: stale sequential detector (row 3) not dropped when `rows` lacks 'Image': {t2_rows}")
+    if 0 not in t2_rows or 100000 not in t2_rows or 100001 not in t2_rows:
+        failures.append(f"FAIL: non-detector / branch targets wrongly dropped (rows-independent drop broke): {t2_rows}")
+    if 0 not in c2_rows or 1 not in c2_rows or -1 not in c2_rows:
+        failures.append(f"FAIL: non-detector / branch curves wrongly dropped: {c2_rows}")
 
     # 4) Thickness dimension: the sequential span that would run out to the
     #    superseded Image (row 2->3) is SKIPPED -- the per-branch exit->detector
