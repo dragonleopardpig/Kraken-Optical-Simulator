@@ -255,7 +255,8 @@
     "251": "pass",
     "252": "pass",
     "253": "pass",
-    "254": "pass"
+    "254": "pass",
+    "255": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -511,6 +512,7 @@
     "251": "an illumination flood draws no phantom detector plane beside the beam splitter",
     "252": "object illumination projects onto the sensor as dark edges when no ray reaches it",
     "253": "illumination footprint projects onto the sensor at its true imaged size",
-    "254": "Add Illumination Source seeds the emitter from the physical LED module"
+    "254": "Add Illumination Source seeds the emitter from the physical LED module",
+    "255": "Add Illumination Source keeps the real detector (phantom flood branches do not supersede it)"
   }
 }

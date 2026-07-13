@@ -12372,6 +12372,46 @@ def phase_254_illumination_emitter_module_seed(
     return result
 
 
+def phase_255_illumination_keeps_real_detector(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Adding an illumination LED must NOT drop the scene's real detector (bugs/0291,
+    flag_20260713_090936_572 "the detector and object plane seems missing" after Add LED). Adding a physical
+    LED seeds an illumination flood (0290) that reflects off the promoted beam-splitter cube into arms that
+    never converge, so the branch-detector deriver parks PHANTOM branch detectors beside the cube; bugs/0285
+    marks every non-imaging flood branch `draw_suppressed` (a ray hard-stop only). But
+    `drop_superseded_image_display` dropped EVERY sequential detector whenever any branch detector existed
+    (`has_branch_detector=bool(branch_detectors)`), so the real detector was dropped FOR phantoms that
+    themselves never draw -> the scene lost its only visible detector. The fix (display follows physics): the
+    sequential Image is superseded for two independent reasons only -- a branch detector that will actually
+    DRAW replaces it (bugs/0093/0098/0090), OR the whole scene is a diffuse double-pass so the sequential
+    trace is itself noise (bugs/0184); an illumination flood is neither, so the real detector is kept. The
+    object plane was never dropped -- its "missing" look is a camera-framing artefact.
+    `validate_open3d_illumination_keeps_real_detector` (display-free): HELPER CONTRACT (drop only when
+    superseded, branch rows untouched) + CALL SITE (drop gated on has_drawn_branch_detector OR
+    scene_has_diffuse_scatter, draw_suppressed phantoms excluded, not bool(branch_detectors)) + REAL VENDOR
+    SCENE when present (a synthetic OPT-CO90 + Add LED keeps detector row 8 drawn with its 'Image' label and
+    object plane, while the phantom flood branch stays suppressed).
+    """
+    result = PhaseResult(
+        name="Phase 255: Add Illumination Source keeps the real detector (phantom flood branches do not supersede it)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_illumination_keeps_real_detector import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"illumination-keeps-real-detector guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("illumination-keeps-real-detector phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12671,6 +12711,7 @@ def main() -> int:
             phase_252_coupled_object_illumination_projection,
             phase_253_illumination_footprint_projection,
             phase_254_illumination_emitter_module_seed,
+            phase_255_illumination_keeps_real_detector,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

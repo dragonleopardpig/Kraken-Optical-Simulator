@@ -1035,6 +1035,7 @@ def build_scene_bundle(
     # leaf that reaches the Image, so they get NONE (no behaviour change). The
     # transmit/sequential Image detector is untouched (not duplicated).
     branch_detectors: list = []
+    scene_has_diffuse_scatter = False
     try:
         from KrakenOS.UI.services.branch_detectors import (
             derive_branch_detectors,
@@ -1108,8 +1109,24 @@ def build_scene_bundle(
 
     # bugs/0093: drop the superseded sequential Image's target + plane curve + label
     # when a split derived a branch detector at the true focus (see helper docstring).
+    # The sequential Image is superseded for TWO independent reasons:
+    #   * bugs/0093/0098/0090: a branch detector that will actually DRAW replaces it, OR
+    #   * bugs/0184: the whole scene is a diffuse double-pass, so the sequential trace is
+    #     itself noise (every branch detector is draw-suppressed AND the Image is dropped).
+    # bugs/0291: an illumination flood (bugs/0285) is NEITHER -- it parks branch detectors
+    # that are ALL draw-suppressed (kept only as ray hard-stops, focus_source != reached_image)
+    # WITHOUT any diffuse scatter, and the sequential Image is the ONE real imaging detector.
+    # Dropping it for the phantom flood branches left the scene with NO visible detector at all
+    # ("the detector seems missing" after Add LED illumination). So keep the sequential detector
+    # unless a drawn branch replaces it or the scene is a diffuse double-pass.
+    has_drawn_branch_detector = any(
+        int(getattr(target, "row_index", -1)) >= 100000
+        and not (getattr(target, "metadata", None) or {}).get("draw_suppressed")
+        for target in scene_targets
+    )
+    supersedes_sequential_image = has_drawn_branch_detector or scene_has_diffuse_scatter
     scene_targets, surface_curves, labels = drop_superseded_image_display(
-        scene_targets, surface_curves, labels, rows, has_branch_detector=bool(branch_detectors)
+        scene_targets, surface_curves, labels, rows, has_branch_detector=supersedes_sequential_image
     )
 
     # --- pick regions ---
