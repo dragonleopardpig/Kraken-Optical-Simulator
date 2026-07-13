@@ -12485,6 +12485,37 @@ def phase_257_datasheet_lens_import(
     return result
 
 
+def phase_258_vtk_teardown_ordering(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Quitting the app with the Open-3D inspector open must NOT segfault (bugs/0294). The inspector embeds a
+    vtkTkRenderWindowInteractor; a Tk+VTK widget must finalize its vtkRenderWindow BEFORE the Tk widget is
+    destroyed, else VTK warns "TkRenderWidget destroyed before its vtkRenderWindow" and cores on exit. The
+    inspector's own X-button close (_on_close) finalizes first; the root editor quit (KrakenLayoutEditor.destroy)
+    used to tear the inspector down with a bare .destroy(), skipping the finalize. `validate_open3d_vtk_teardown_
+    ordering` (display-free source contract): _destroy_vtk_render_window calls Finalize(); _on_close and
+    editor.destroy both finalize BEFORE destroying the inspector widget; WM_DELETE_WINDOW routes through _on_close.
+    The real crash needs a live X server (Xvfb segfaults the full renderer), so an in-app quit eyeball is owed.
+    """
+    result = PhaseResult(
+        name="Phase 258: App quit finalizes the embedded VTK render window before the Tk widget (no segfault)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_vtk_teardown_ordering import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"vtk-teardown-ordering guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("vtk-teardown-ordering phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12787,6 +12818,7 @@ def main() -> int:
             phase_255_illumination_keeps_real_detector,
             phase_256_effective_illumination_area,
             phase_257_datasheet_lens_import,
+            phase_258_vtk_teardown_ordering,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

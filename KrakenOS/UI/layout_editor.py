@@ -2982,6 +2982,14 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         except Exception:
             pass
         if self._three_d_inspector is not None:
+            # Finalize the embedded VTK render window BEFORE Tk tears the widget
+            # down. Destroying the vtkTkRenderWidget while its vtkRenderWindow is
+            # still live segfaults on quit; the inspector's own X-button close
+            # (_on_close) already finalizes first, so mirror that order here.
+            try:
+                self._three_d_inspector._destroy_vtk_render_window()
+            except Exception:
+                pass
             try:
                 self._three_d_inspector.destroy()
             except Exception:
