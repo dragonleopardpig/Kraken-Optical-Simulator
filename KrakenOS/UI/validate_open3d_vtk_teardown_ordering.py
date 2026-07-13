@@ -1,25 +1,31 @@
-"""Validate the VTK render-window teardown order on application quit.
+"""Validate the VTK render-window teardown on application quit (bug 0294).
 
-The Open-3D inspector (:class:`Kraken3DInspector`) embeds a
-``vtkTkRenderWindowInteractor``.  A Tk+VTK widget MUST finalize its
-``vtkRenderWindow`` before the Tk widget itself is destroyed -- destroying the
-``vtkTkRenderWidget`` while the render window is still live segfaults on quit
-("A TkRenderWidget is being destroyed before it[s] associated vtkRenderWindow
-is destroyed").
+The Open-3D inspector (:class:`Kraken3DInspector`), the STL-placement dialog and
+the face-role dialog each embed a ``vtkTkRenderWindowInteractor`` over a GLX
+render window.  Two things were learned the hard way:
 
-The inspector's own X-button close (``_on_close``) already does the right thing:
-``_destroy_vtk_render_window()`` (which calls ``render_window.Finalize()``)
-*before* ``self.destroy()``.  But quitting the whole app via the root
-``KrakenLayoutEditor`` window runs ``KrakenLayoutEditor.destroy()``, which used
-to tear the inspector down with a bare ``self._three_d_inspector.destroy()`` --
-skipping the finalize and segfaulting (bug 0294).
+1. **The "TkRenderWidget is being destroyed before it[s] associated
+   vtkRenderWindow" warning is benign and unavoidable** -- a minimal repro
+   (``bugs/probe_0294_vtk_teardown.py``) shows it fires on *every* teardown
+   sequence (with or without ``Finalize()``), yet exits cleanly on llvmpipe.  So
+   finalize-before-destroy ordering, while tidy, does NOT prevent the crash.
+2. **The real segfault is GL-driver-specific** (NVIDIA GLX on the user's box):
+   running the Tk+VTK widget destructors at interpreter shutdown tears the render
+   window down against a context that is already going away.
 
-This guard is display-free: it reads the two source files and asserts the
-finalize-before-destroy order in both teardown paths by textual position, plus
-that the finalize actually calls ``Finalize()`` and the inspector binds
-``WM_DELETE_WINDOW`` to ``_on_close``.  It cannot exercise the real crash (a live
-X server is required; Xvfb/llvmpipe segfaults the full renderer), so an in-app
-quit eyeball is owed.
+The fix is therefore to *not run* the crashy destructor chain on the interactive
+quit path: ``KrakenLayoutEditor.request_quit`` shuts the worker processes down
+(so nothing is orphaned) and then ``os._exit(0)`` before any Tk/VTK widget
+destructor runs.  The headless / programmatic path still uses the ordinary
+``destroy()`` (tests and validators tear down normally), and that ``destroy()``
+still finalizes the inspector render window first as a tidy best effort.
+
+This guard is display-free (source contract): it asserts the interactive quit
+hard-exits after worker shutdown while the headless path does not, plus the
+still-correct finalize-before-destroy ordering in ``_on_close`` and
+``destroy()``.  It cannot exercise the real NVIDIA crash (no GLX GPU here; the
+Tk-embedded widget needs GLX, not the EGL offscreen path), so an in-app quit
+eyeball is owed.
 """
 
 from __future__ import annotations
@@ -106,6 +112,52 @@ def run_checks():
                 "inspector widget (0294 ordering regression)"
             )
 
+    # --- INTERACTIVE quit hard-exits before the Tk/VTK destructors (0294) ---
+    # The real NVIDIA-GLX segfault is not fixable by teardown ordering (the
+    # warning is benign); the interactive quit must skip the destructor chain by
+    # hard-exiting after the worker processes are shut down.
+    request_quit = _method_src(editor_src, "    def request_quit(self) -> None:")
+    if request_quit is None:
+        failures.append("KrakenLayoutEditor has no request_quit method")
+    else:
+        if "self._hard_exit_after_cleanup()" not in request_quit:
+            failures.append(
+                "request_quit does not hard-exit the interactive quit path via "
+                "_hard_exit_after_cleanup (0294 NVIDIA-GLX segfault-on-quit)"
+            )
+        # Headless/programmatic quit must still tear down normally (destroy()),
+        # or the validators/tests that create a headless editor get os._exit'd.
+        head = request_quit.find("if self.headless:")
+        dep = request_quit.find("self.destroy()")
+        if head < 0 or dep < 0 or dep < head:
+            failures.append(
+                "request_quit does not keep the ordinary destroy() teardown on the "
+                "headless path (hard-exit would kill test/validator processes)"
+            )
+
+    hard_exit = _method_src(editor_src, "    def _hard_exit_after_cleanup(self) -> None:")
+    if hard_exit is None:
+        failures.append("KrakenLayoutEditor has no _hard_exit_after_cleanup method")
+    else:
+        exit_pos = hard_exit.find("os._exit(")
+        analysis_pos = hard_exit.find("self._shutdown_analysis_executor()")
+        worker_pos = hard_exit.find("self._shutdown_optimization_worker(")
+        if exit_pos < 0:
+            failures.append(
+                "_hard_exit_after_cleanup does not call os._exit (interactive quit "
+                "would run the crashy Tk/VTK destructor chain)"
+            )
+        if analysis_pos < 0 or worker_pos < 0:
+            failures.append(
+                "_hard_exit_after_cleanup hard-exits without shutting down the "
+                "analysis/optimization workers first (orphaned child processes)"
+            )
+        elif exit_pos >= 0 and (analysis_pos > exit_pos or worker_pos > exit_pos):
+            failures.append(
+                "_hard_exit_after_cleanup calls os._exit BEFORE shutting the workers "
+                "down (orphaned child processes on quit)"
+            )
+
     return (not failures), failures
 
 
@@ -117,9 +169,11 @@ def main() -> int:
             print(f"- {name}")
         return 1
     print(
-        "VTK teardown-ordering validation passed: both the inspector's own close "
-        "and the root editor quit finalize the embedded vtkRenderWindow before the "
-        "Tk widget is destroyed (no segfault-on-quit); in-app quit eyeball owed."
+        "VTK teardown-ordering validation passed: the interactive quit hard-exits "
+        "after worker shutdown (skips the NVIDIA-GLX-crashy Tk/VTK destructor "
+        "chain), the headless path still destroy()s normally, and both in-app close "
+        "paths finalize the embedded vtkRenderWindow before the Tk widget; in-app "
+        "quit eyeball owed."
     )
     return 0
 

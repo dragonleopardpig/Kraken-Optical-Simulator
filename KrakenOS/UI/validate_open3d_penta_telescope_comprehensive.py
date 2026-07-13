@@ -12489,16 +12489,18 @@ def phase_258_vtk_teardown_ordering(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
     """Quitting the app with the Open-3D inspector open must NOT segfault (bugs/0294). The inspector embeds a
-    vtkTkRenderWindowInteractor; a Tk+VTK widget must finalize its vtkRenderWindow BEFORE the Tk widget is
-    destroyed, else VTK warns "TkRenderWidget destroyed before its vtkRenderWindow" and cores on exit. The
-    inspector's own X-button close (_on_close) finalizes first; the root editor quit (KrakenLayoutEditor.destroy)
-    used to tear the inspector down with a bare .destroy(), skipping the finalize. `validate_open3d_vtk_teardown_
-    ordering` (display-free source contract): _destroy_vtk_render_window calls Finalize(); _on_close and
-    editor.destroy both finalize BEFORE destroying the inspector widget; WM_DELETE_WINDOW routes through _on_close.
-    The real crash needs a live X server (Xvfb segfaults the full renderer), so an in-app quit eyeball is owed.
+    vtkTkRenderWindowInteractor over a GLX render window; letting Python+Tk run the widget destructors at
+    interpreter shutdown SIGSEGVs on real GL drivers (NVIDIA GLX). The "TkRenderWidget destroyed before its
+    vtkRenderWindow" warning fires on every teardown regardless (benign on llvmpipe), so finalize-before-destroy
+    ordering alone does NOT prevent the crash. The fix: the interactive quit (request_quit) shuts the analysis/
+    optimization workers down (no orphans) then os._exit(0)s before any Tk/VTK destructor runs; the headless path
+    still destroy()s normally. `validate_open3d_vtk_teardown_ordering` (display-free source contract): request_quit
+    hard-exits via _hard_exit_after_cleanup after worker shutdown, headless keeps destroy(), and both in-app close
+    paths still finalize the render window first (tidy best-effort). The real crash needs a live NVIDIA GLX display
+    (no GPU here; the Tk widget can't use the EGL offscreen path), so an in-app quit eyeball is owed.
     """
     result = PhaseResult(
-        name="Phase 258: App quit finalizes the embedded VTK render window before the Tk widget (no segfault)"
+        name="Phase 258: Interactive app quit hard-exits before the NVIDIA-GLX-crashy VTK teardown (no segfault)"
     )
     try:
         from KrakenOS.UI.validate_open3d_vtk_teardown_ordering import run_checks

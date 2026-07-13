@@ -3045,8 +3045,58 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         super().destroy()
 
     def request_quit(self) -> None:
-        if self.headless or self._confirm_close_with_optional_save():
+        if not (self.headless or self._confirm_close_with_optional_save()):
+            return
+        if self.headless:
             self.destroy()
+            return
+        self._hard_exit_after_cleanup()
+
+    def _hard_exit_after_cleanup(self) -> None:
+        """Interactive quit: release worker processes/threads, then hard-exit.
+
+        The Tk-embedded Open 3D inspector / STL-placement / face-role dialogs each
+        hold a ``vtkTkRenderWindowInteractor`` over a GLX render window. Letting
+        Python + Tk run their destructors at interpreter shutdown SIGSEGVs on real
+        GL drivers (notably NVIDIA GLX): the render window is finalized against a
+        context that is already being torn down. The "TkRenderWidget destroyed
+        before its vtkRenderWindow" warning fires on every quit regardless (it is
+        benign on llvmpipe), so ordering alone cannot fix it.
+
+        So we finish only the app-level work that must NOT be skipped -- shutting
+        down the analysis/optimization workers so no child process is orphaned --
+        flush the streams, then ``os._exit`` before any Tk/VTK widget destructor
+        runs. The OS reclaims the GL contexts and memory. Only the interactive
+        quit path takes this route; the headless/programmatic path still uses the
+        ordinary ``destroy()`` (so tests and validators tear down normally).
+        """
+        for attr_name in (
+            "_active_cell_border_after_id",
+            "_grid_after_id",
+            "_table_selection_after_id",
+            "_autosave_after_id",
+            "_refresh_after_id",
+            "_spinner_after_id",
+            "_legacy_3d_after_id",
+        ):
+            try:
+                self._cancel_after_callback_attr(attr_name)
+            except Exception:
+                pass
+        try:
+            self._shutdown_analysis_executor()
+        except Exception:
+            pass
+        try:
+            self._shutdown_optimization_worker(force=True)
+        except Exception:
+            pass
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+        except Exception:
+            pass
+        os._exit(0)
 
     def _confirm_close_with_optional_save(self) -> bool:
         if not self._layout_has_unsaved_changes():

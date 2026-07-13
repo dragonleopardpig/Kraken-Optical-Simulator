@@ -519,6 +519,6 @@
     "255": "Add Illumination Source keeps the real detector (phantom flood branches do not supersede it)",
     "256": "Effective illumination area bounds the imaging FOV (folded coaxial descriptor -> 2 fold-dark edges)",
     "257": "Datasheet-only lens import builds an exact surrogate + Open-3D folder importer",
-    "258": "App quit finalizes the embedded VTK render window before the Tk widget (no segfault)"
+    "258": "Interactive app quit hard-exits before the NVIDIA-GLX-crashy VTK teardown (no segfault)"
   }
 }
