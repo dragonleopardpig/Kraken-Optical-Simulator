@@ -12630,6 +12630,39 @@ def phase_261_folded_conjugate_first_order(
     return result
 
 
+def phase_262_model_change_marks_2d_stale(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A model change made in the 3D inspector must mark the main 2D layout stale (bugs/0298). The user
+    right-clicked "Snap detector to image plane (remove defocus)", clicked "Done 2D", and the 2D never
+    refreshed. finish_stl_placement ("Done 2D") re-plots ONLY when _stl_placement_dirty is set, and
+    _snap_detector_to_image_plane rewrote the Image row + retraced the 3D without setting it. An AST audit
+    found ELEVEN inspector methods with that shape (best-focus snap, camera registration x2, folder import,
+    glue, LED add, resize solve, wavefront map attach/clear, measure edit, detector carry-drag). The QE
+    solves (bugs/0248) and the STEP import/delete (bugs/0296) had each been patched individually -- the same
+    bug for the third time -- so the INVARIANT is pinned instead of the instance: model changes route through
+    _apply_model_change (mark the 2D stale AND force the retrace), and the guard fails if any inspector method
+    forces a retrace without the pairing, so a twelfth action cannot regress it silently.
+    """
+    result = PhaseResult(
+        name="Phase 262: A 3D model change marks the 2D stale (Done 2D re-plots after the best-focus snap)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_model_change_marks_2d_stale import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"model-change/2D-stale guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("model-change/2D-stale phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12936,6 +12969,7 @@ def main() -> int:
             phase_259_folder_import_completeness,
             phase_260_camera_coupling_lifecycle,
             phase_261_folded_conjugate_first_order,
+            phase_262_model_change_marks_2d_stale,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

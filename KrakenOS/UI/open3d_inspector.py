@@ -2694,7 +2694,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
         try:
-            self.refresh_from_editor(force_retrace=True)
+            self._apply_model_change()
         except Exception as exc:
             self.editor.append_debug(f"Detector carry final refresh failed: {exc}")
         try:
@@ -6283,7 +6283,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._step_carry_follow_state = None
             self._selected_step_feature = None
             self._selected_step_feature_label = None
-            self.refresh_from_editor(force_retrace=True)
+            self._apply_model_change()
             self.status_var.set(editor.status_var.get())
         except Exception as exc:
             self._timing_finish(token, status="error", error=_short_error_message(exc))
@@ -6413,7 +6413,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception as exc:
             self.status_var.set(f"Add illumination LED failed: {exc}")
             return None
-        self.refresh_from_editor(force_retrace=True)
+        self._apply_model_change()
         self.status_var.set(
             f"Added illumination LED source ({source_id}); drag to move it (resize handles coming)."
         )
@@ -6565,7 +6565,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.status_var.set(self.editor.status_var.get())
         if changed:
             try:
-                self.refresh_from_editor(force_retrace=True)
+                self._apply_model_change()
             except Exception as exc:
                 self.editor.append_debug(f"Glue STEP to surrogate refresh failed: {exc}")
 
@@ -15328,7 +15328,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             try:
                 # force_retrace so the moved element actually shifts in the 3D scene -- the measure
                 # endpoints anchor to traced z-stations, so without the retrace they would not move.
-                self.refresh_from_editor(force_retrace=True)
+                self._apply_model_change()
             except Exception:
                 pass
             try:
@@ -16637,7 +16637,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor._invalidate_preview_scene_trace()
         except Exception:
             pass
-        self.refresh_from_editor(force_retrace=True)
+        self._apply_model_change()
         self.status_var.set(msg)
 
     def _snap_detector_to_image_plane(self) -> None:
@@ -16653,7 +16653,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
         if moved:
-            self.refresh_from_editor(force_retrace=True)
+            self._apply_model_change()
 
     def _add_image_plane_camera_menu(self, menu) -> None:
         """Append a 'Register STEP camera (sensor size)' cascade for the single-axis detector,
@@ -16719,7 +16719,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor._invalidate_preview_scene_trace()
         except Exception:
             pass
-        self.refresh_from_editor(force_retrace=True)
+        self._apply_model_change()
 
     def _show_quick_estimation_role_menu(self, event, quantity: str, plane: str | None = None) -> None:
         from KrakenOS.UI.services.quick_estimation import (
@@ -16883,7 +16883,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.status_var.set(
             f"Attached wavefront map (RMS {float(parsed.get('rms_waves', 0.0)):.3g}λ) — surrogate is wavefront-augmented."
         )
-        self.refresh_from_editor(force_retrace=True)
+        self._apply_model_change()
 
     def _clear_surrogate_wavefront_map(self) -> None:
         """Right-click 'Clear wavefront map': drop the OPD map (back to the ideal surrogate); the
@@ -16898,7 +16898,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.editor.__dict__.pop("_spot_field_map_cache", None)
         self.editor.__dict__.pop("_wavefront_spot_cache", None)
         self.status_var.set("Cleared wavefront map — surrogate back to ideal.")
-        self.refresh_from_editor(force_retrace=True)
+        self._apply_model_change()
 
     def _centered_input_dialog(self, title: str, prompt: str, initial: str) -> str | None:
         """Small screen-centred modal text input reusing the reliable
@@ -17304,14 +17304,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             seg_leg_min = float(max(
                 seg_split.get("near_min", 0.0) or 0.0, seg_split.get("far_min", 0.0) or 0.0
             ))
+            # bugs/0299: name each leg by WHERE IT SITS in the folded beam. The old image-side
+            # labels read "last surface → mirror" / "mirror → sensor", so a user pinning "the last
+            # distance" ticked the FIRST of the two (its label starts with "last") and got the
+            # second-to-last leg constrained instead. "first"/"last" now appear ONLY on the legs
+            # that really are first and last; the interior legs are named off the lens.
             if kind == "object":
-                near_lbl = "Constrain object → mirror distance (mm):"
-                far_lbl = "Constrain mirror → first surface distance (mm):"
-                near_name, far_name, total_name = "object → mirror", "mirror → first surface", "object distance"
+                near_lbl = "Constrain object → mirror distance — first leg (mm):"
+                far_lbl = "Constrain mirror → lens front distance (mm):"
+                near_name, far_name, total_name = "object → mirror", "mirror → lens front", "object distance"
             else:
-                near_lbl = "Constrain last surface → mirror distance (mm):"
-                far_lbl = "Constrain mirror → sensor distance (mm):"
-                near_name, far_name, total_name = "last surface → mirror", "mirror → sensor", "image distance"
+                near_lbl = "Constrain lens rear → mirror distance (mm):"
+                far_lbl = "Constrain mirror → sensor distance — last leg (mm):"
+                near_name, far_name, total_name = "lens rear → mirror", "mirror → sensor", "image distance"
             use_near_var = tk.BooleanVar(value=False)
             use_far_var = tk.BooleanVar(value=False)
             near_var = tk.StringVar(value=f"{seg_near0:.6g}")
@@ -17895,7 +17900,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.refresh_imported_step_overlay(label)
         except Exception:
             pass
-        self.refresh_from_editor(force_retrace=True)
+        self._apply_model_change()
         display = self.editor._step_overlay_display_label(label).upper()
         dims = " × ".join(f"{v:.6g}" if v else "·" for v in target_extents)
         self.status_var.set(f"{display} STEP resized to {dims} mm.")
@@ -19537,6 +19542,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         gate as the single 'main 2D is out of date' signal both finish_stl_placement / _on_close
         check."""
         self._stl_placement_dirty = True
+
+    def _apply_model_change(self, *, sampling_mode: str | None = None) -> None:
+        """The prescription changed from inside the 3D inspector: retrace the 3D AND mark the
+        main 2D stale, together.
+
+        bugs/0298: every action that rewrites the model needs BOTH, but only the QE solve paths
+        (bugs/0248) and the STEP import/delete (bugs/0296) remembered the second half — eleven
+        others (the best-focus snap "remove defocus", camera registration, folder import, glue,
+        LED add, resize solve, wavefront map, measure edit, detector carry-drag) retraced the 3D
+        and left the 2D showing the OLD prescription until something else happened to dirty it.
+        Route model changes through here so the pair cannot be split again;
+        `validate_open3d_model_change_marks_2d_stale` enforces it."""
+        self._mark_2d_layout_stale()
+        self.refresh_from_editor(sampling_mode=sampling_mode, force_retrace=True)
 
     def finish_stl_placement(self) -> None:
         if self._stl_placement_dirty:

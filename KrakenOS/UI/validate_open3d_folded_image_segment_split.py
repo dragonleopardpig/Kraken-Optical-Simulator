@@ -169,7 +169,7 @@ def validate_folded_image_segment_split() -> list[Check]:
     apply_src = inspect.getsource(Kraken3DInspector._apply_quick_estimation_fov_solve)
     wired = (
         "_folded_image_conjugate_split()" in popup_src         # gate the image checkboxes on a fold
-        and "Constrain last surface" in popup_src              # the image near-leg label
+        and "Constrain lens rear" in popup_src              # the image near-leg label
         and "mirror → sensor" in popup_src                     # the image far-leg label
         and "segment=segment" in popup_src                     # threaded to the solve
         and "_apply_folded_image_split" in apply_src           # the solve slides the image mirror
@@ -178,7 +178,7 @@ def validate_folded_image_segment_split() -> list[Check]:
         "WIRED: the image FOV popup offers the image near/far checkboxes and the solve honors them",
         wired,
         f"popup_gate={'_folded_image_conjugate_split()' in popup_src} "
-        f"popup_near={'Constrain last surface' in popup_src} popup_far={'mirror → sensor' in popup_src} "
+        f"popup_near={'Constrain lens rear' in popup_src} popup_far={'mirror → sensor' in popup_src} "
         f"solve_applies_split={'_apply_folded_image_split' in apply_src}",
     ))
     return checks

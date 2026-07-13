@@ -1363,7 +1363,7 @@ class ParaxialToolsMixin:
         far_min = float(split.get("far_min", 0.0) or 0.0)
         if near_new < near_min - 1e-6:
             return False, (
-                f"Safe gap: last surface -> mirror must stay >= {near_min:.4g} mm so the mirror "
+                f"Safe gap: lens rear -> mirror must stay >= {near_min:.4g} mm so the mirror "
                 f"does not collide with the lens (requested {near_new:.4g} mm)."
             )
         if far_new < far_min - 1e-6:
@@ -1391,7 +1391,7 @@ class ParaxialToolsMixin:
         from KrakenOS.UI.nonseq_output_ports import carry_free_placed_followers_after_fold
         carry_free_placed_followers_after_fold(rows, [(ng, delta), (fg, -delta)])
         return True, (
-            f"Image distance split: last surface->mirror {near_new:.4g} mm, "
+            f"Image distance split: lens rear->mirror {near_new:.4g} mm, "
             f"mirror->sensor {total - near_new:.4g} mm (total {total:.4g} mm)."
         )
 
