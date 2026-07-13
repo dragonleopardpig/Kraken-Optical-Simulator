@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-13T15:05:00+00:00",
+  "generated_at": "2026-07-13T16:30:00+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -260,7 +260,8 @@
     "256": "pass",
     "257": "pass",
     "258": "pass",
-    "259": "pass"
+    "259": "pass",
+    "260": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -521,6 +522,7 @@
     "256": "Effective illumination area bounds the imaging FOV (folded coaxial descriptor -> 2 fold-dark edges)",
     "257": "Datasheet-only lens import builds an exact surrogate + Open-3D folder importer",
     "258": "Import-from-inspector keeps the inspector alive across the layout swap (no segfault)",
-    "259": "Folder-import surrogate carries the field + syncs to the imported camera (FOV + image plane follow the sensor)"
+    "259": "Folder-import surrogate carries the field + syncs to the imported camera (FOV + image plane follow the sensor)",
+    "260": "Camera STEP import/delete keeps the sensor coupling symmetric (decouple on delete + 2D refresh)"
   }
 }

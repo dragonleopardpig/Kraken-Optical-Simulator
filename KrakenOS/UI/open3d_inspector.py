@@ -6150,6 +6150,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self.status_var.set(self.editor.status_var.get())
                 self._timing_finish(token, status="cancelled")
                 return
+            # bugs/0296: an imported camera STEP couples the vendor sensor into
+            # the field / image-surface aperture, but that model change never
+            # marked the 2D layout dirty -- so "Done 2D" (finish_stl_placement)
+            # skipped its refresh_plot and the layout kept the stale datasheet
+            # FOV. Placement/model changed on any import; mark it dirty so the
+            # 2D layout re-plots on Done 2D / close (matches the promote path).
+            self._stl_placement_dirty = True
             self.editor.select_step_component(label)
             self._step_rotation_active_label = label
             self._step_carry_active_label = label
@@ -6360,6 +6367,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._open3d_carry_grip_service.clear(render=False)
             self._set_step_carry_cursor(False)
             self.editor._live_step_overlay_trace_plan_cache = {}
+            # bugs/0296: a delete (camera decouple restores the field / image
+            # aperture) changes the model, so re-plot the 2D layout on Done 2D.
+            self._stl_placement_dirty = True
             self.refresh_from_editor(force_retrace=True)
             self.status_var.set(f"Deleted imported {display} STEP overlay.")
             return

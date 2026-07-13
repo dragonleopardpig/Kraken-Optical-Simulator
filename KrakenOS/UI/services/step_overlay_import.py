@@ -345,6 +345,12 @@ class StepOverlayImportService:
             self.led_step_object_edge_local_z = None
         if label == "lens":
             self.lens_step_largest_component_only = True
+        if label == "camera" and hasattr(self, "_decouple_camera_model"):
+            # bugs/0296: deleting the camera STEP must also drop its sensor
+            # coupling -- otherwise the coupled image-surface aperture / field
+            # (the "sensor size") stays on the layout after the body is gone
+            # (flag 20260713_160023).
+            self._decouple_camera_model()
         self._clear_step_overlay_axis_anchor(label)
         self._clear_step_overlay_independent_instance(label)  # bugs/0210
         self._open3d_trace_refresh_service().clear_step_overlay_physics_preview(label)

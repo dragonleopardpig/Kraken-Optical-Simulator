@@ -12559,6 +12559,40 @@ def phase_259_folder_import_completeness(
     return result
 
 
+def phase_260_camera_coupling_lifecycle(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Importing / deleting a vendor camera STEP must keep the sensor coupling symmetric (bugs/0296). Two flags on
+    the folder-import surrogate flow: (1) "after BC-GM camera deleted, the sensor size remain on the screen" -- the
+    camera-STEP delete cleared the body but never decoupled the model, so the coupled image-surface aperture / field
+    (the sensor coverage: BC-GN25M12X4 half-diagonal 9.050967) stayed on the layout; (2) "click Done 2D ... it is not
+    updated" -- an imported camera coupled the sensor into the field but the import path never marked the 2D layout
+    dirty, so finish_stl_placement ("Done 2D") skipped its refresh_plot and the 2D kept the stale datasheet FOV. Fix:
+    a stash-on-couple / restore-on-decouple lifecycle (_stash_camera_precouple_field_state / _decouple_camera_model)
+    so deleting the camera (or setting the dropdown back to None) restores the pre-camera field / image aperture, plus
+    the import + delete paths mark the 2D dirty so Done 2D re-plots. `validate_open3d_camera_coupling_lifecycle` is
+    display-free: it runs the REAL couple (_apply_camera_coverage_autofill) + new decouple roundtrip on a stub and
+    structurally asserts the two Tk-only dirty/decouple wirings. The 2D matplotlib re-plot itself owes an in-app eyeball.
+    """
+    result = PhaseResult(
+        name="Phase 260: Camera STEP import/delete keeps the sensor coupling symmetric (decouple on delete + 2D refresh)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_camera_coupling_lifecycle import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"camera-coupling-lifecycle guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("camera-coupling-lifecycle phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12863,6 +12897,7 @@ def main() -> int:
             phase_257_datasheet_lens_import,
             phase_258_import_from_inspector_survives,
             phase_259_folder_import_completeness,
+            phase_260_camera_coupling_lifecycle,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -2962,6 +2962,64 @@ class LayoutTableWorkbenchMixin:
         self._sync_object_controls()
         return {"image_diameter": float(image_diameter), "real_image_height": real_image_height}
 
+    def _stash_camera_precouple_field_state(self) -> None:
+        """bugs/0296: remember the field / image-surface aperture the layout had
+        *before* a camera sensor coupling overwrote it, so deleting (or
+        de-selecting) the camera can put it back. Captured only on the
+        uncoupled->coupled transition (guarded by an existing stash) so that
+        re-coupling to a different camera preserves the original pre-camera
+        state. Interactive-couple only (dropdown / STEP import) -- never on
+        layout load, which has no meaningful "before" to remember.
+        """
+        if getattr(self, "_camera_coverage_precouple_stash", None) is not None:
+            return
+        image_diameter = None
+        if self.rows and self.rows[-1].surface == "Image":
+            try:
+                image_diameter = float(self.rows[-1].diameter)
+            except (TypeError, ValueError):
+                image_diameter = None
+        self._camera_coverage_precouple_stash = {
+            "field_type": self._current_field_type(),
+            "field_value": self.field_value_var.get(),
+            "image_diameter_mode": self._current_image_diameter_mode(),
+            "image_diameter": image_diameter,
+        }
+
+    def _decouple_camera_model(self) -> bool:
+        """bugs/0296: reverse the camera sensor coupling -- reset the camera
+        model to None and restore the pre-couple field / image-surface aperture
+        stashed on the first couple. Called when the camera STEP overlay is
+        deleted (flag 20260713_160023 "after BC-GM camera deleted, the sensor
+        size remain on the screen") and when the dropdown is set back to None,
+        so that no camera means no sensor coverage (the display follows the
+        model). Returns True when a stash was restored.
+        """
+        if hasattr(self, "camera_model_var"):
+            self.camera_model_var.set(CAMERA_NONE_LABEL)
+        stash = getattr(self, "_camera_coverage_precouple_stash", None)
+        if stash is None:
+            return False
+        self._camera_coverage_precouple_stash = None
+        mode = stash.get("image_diameter_mode")
+        if mode in {"Auto", "Manual"}:
+            self._set_image_diameter_mode(mode)
+        image_diameter = stash.get("image_diameter")
+        if image_diameter is not None and self.rows and self.rows[-1].surface == "Image":
+            self.rows[-1].diameter = float(image_diameter)
+        field_type = stash.get("field_type")
+        if field_type and hasattr(self, "field_type_var"):
+            field_value = str(stash.get("field_value", ""))
+            self.field_type_var.set(self._field_type_display_label(field_type))
+            self._last_field_type = field_type
+            self._field_type_defaults[field_type] = field_value
+            self.field_value_var.set(field_value)
+            self._sync_field_mode_ui()
+        self._sync_object_diameter_from_manual_image()
+        self._sync_table()
+        self._sync_object_controls()
+        return True
+
     def _couple_camera_model_from_step(self, step_path) -> str | None:
         """When an imported camera STEP is a recognised vendor camera, select
         that model and run the sensor autofill -- the same field/image-circle
@@ -2980,6 +3038,7 @@ class LayoutTableWorkbenchMixin:
             return None
         if not hasattr(self, "camera_model_var"):
             return None
+        self._stash_camera_precouple_field_state()  # bugs/0296: enable delete-decouple revert
         self.camera_model_var.set(model)
         applied = self._apply_camera_coverage_autofill(model)
         return model if applied is not None else None
@@ -2988,9 +3047,14 @@ class LayoutTableWorkbenchMixin:
         self._begin_history_capture()
         camera_name = self._current_camera_model()
         if camera_name == CAMERA_NONE_LABEL:
+            # bugs/0296: setting the dropdown back to None decouples the sensor
+            # coverage too (symmetric with a camera-STEP delete) -- restore the
+            # pre-couple field / image aperture instead of leaving it stuck.
+            self._decouple_camera_model()
             self._commit_history_capture()
             self._mark_plot_update_pending()
             return
+        self._stash_camera_precouple_field_state()  # bugs/0296: enable decouple revert
         applied = self._apply_camera_coverage_autofill(camera_name)
         self._commit_history_capture()
         self._mark_plot_update_pending()
