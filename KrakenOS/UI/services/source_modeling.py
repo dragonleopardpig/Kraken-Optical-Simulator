@@ -69,6 +69,44 @@ def _short_error_message(exc: Exception, limit: int = 220) -> str:
     return first
 
 
+def illumination_emitter_seed_from_module_bounds(bounds, object_plane_z):
+    """bugs/0290: seed an illumination emitter from a physical LED module's world bounds.
+
+    "Add Illumination Source" used to seat the emitter at the imaging Source panel's origin/radius --
+    a 10x10 mm square on the object plane aimed away from the object -- so it was decoupled from the
+    big imported LED module the user placed, and the detector overlay honestly imaged only that tiny
+    default ("still a small patch of illumination", flag_20260713_073358).  When a module is present the
+    emitter should instead coincide with it (display follows physics).
+
+    Returns ``(origin, direction, half_x, half_y)`` derived purely from the module's axis-aligned world
+    ``bounds`` (x0, x1, y0, y1, z0, z1) and the object-plane z:
+
+      * origin  = the module's OBJECT-FACING face centre (the z-face nearer the object plane -- a
+                  coaxial illuminator emits from the face pointing at the object);
+      * direction = a unit vector from that face toward the object-plane point on the optical axis
+                  (0, 0, object_plane_z), so the flood is centred on the imaged FOV even when the
+                  module body is decentred;
+      * half_x/half_y = the module's transverse half-extents (the emitter is sized to the real LED).
+
+    Returns None for degenerate or non-finite bounds (the caller then keeps the panel default)."""
+    try:
+        x0, x1, y0, y1, z0, z1 = (float(v) for v in tuple(bounds)[:6])
+    except (TypeError, ValueError):
+        return None
+    if not all(np.isfinite(v) for v in (x0, x1, y0, y1, z0, z1)):
+        return None
+    obj_z = float(object_plane_z)
+    z_face = z0 if abs(z0 - obj_z) <= abs(z1 - obj_z) else z1
+    cx, cy = 0.5 * (x0 + x1), 0.5 * (y0 + y1)
+    half_x = max(0.5 * abs(x1 - x0), 0.5)
+    half_y = max(0.5 * abs(y1 - y0), 0.5)
+    dx, dy, dz = -cx, -cy, obj_z - z_face
+    norm = float(np.sqrt(dx * dx + dy * dy + dz * dz))
+    if norm < 1e-9:
+        return None
+    return (cx, cy, z_face), (dx / norm, dy / norm, dz / norm), half_x, half_y
+
+
 class SourceModelingMixin:
     def _current_gaussian_waist_radius(self) -> float:
         var = self.__dict__.get("gaussian_waist_radius_var")
@@ -979,12 +1017,38 @@ class SourceModelingMixin:
                 continue
         return descriptors
 
+    def _illumination_emitter_module_seed(self):
+        """bugs/0290: ``(origin, direction, half_x, half_y)`` seeded from the imported physical LED
+        module, or None when no module is loaded / its geometry is unavailable. Reads the module's
+        world bounds from the same transformed mesh the 3D scene draws, so the emitter coincides with
+        the visible LED. The object-plane z comes from the couplable object row (no hardcoded 0)."""
+        if getattr(self, "imported_led_step_path", None) is None:
+            return None
+        try:
+            mesh = self._transformed_imported_led_step_mesh()
+        except Exception:
+            return None
+        bounds = getattr(mesh, "bounds", None) if mesh is not None else None
+        if bounds is None:
+            return None
+        try:
+            object_index = self._source_object_coupling_object_index()
+            object_plane_z = self._object_surface_plane_z(0 if object_index is None else object_index)
+        except Exception:
+            object_plane_z = 0.0
+        return illumination_emitter_seed_from_module_bounds(bounds, object_plane_z)
+
     def add_illumination_led_source(self, *, record_history: bool = True) -> str:
         """Add a new physical area-LED illumination source as a first-class scene source (bugs/0284) --
         the "Add Illumination Source (LED)" entry point behind the browser's Scene Sources group. The
-        LED is a ``Random rectangle source`` emitter seated at the current source-panel origin, aimed
-        along the current source direction, so the 0283 glyph (aperture panel + arrow) and browser row
-        pick it up on the next rebuild.
+        LED is a ``Random rectangle source`` emitter that the 0283 glyph (aperture panel + arrow) and
+        browser row pick up on the next rebuild.
+
+        bugs/0290: when a physical LED module is imported (``imported_led_step_path``), the emitter is
+        seeded FROM that module -- seated at its object-facing face, sized to its aperture, aimed at the
+        imaged FOV -- so it coincides with the visible LED instead of a tiny 10x10 mm square on the
+        object plane ("still a small patch of illumination"). With no module it falls back to the Source
+        panel origin/direction/radius.
 
         Starts from the REAL normalized specs (NOT ``_scene_source_specs_for_direct_editing``, whose
         empty-scene fallback injects the current Source panel). That matters: the panel fallback on a
@@ -1004,9 +1068,13 @@ class SourceModelingMixin:
         while f"source:led-{ordinal}" in existing_ids:
             ordinal += 1
         source_id = f"source:led-{ordinal}"
-        ox, oy, oz = self._current_source_origin()
-        dl, dm, dn = self._current_source_direction()
-        half = max(float(self._current_source_radius() or 0.0), 5.0)
+        module_seed = self._illumination_emitter_module_seed()
+        if module_seed is not None:
+            (ox, oy, oz), (dl, dm, dn), half_x, half_y = module_seed
+        else:
+            ox, oy, oz = self._current_source_origin()
+            dl, dm, dn = self._current_source_direction()
+            half_x = half_y = max(float(self._current_source_radius() or 0.0), 5.0)
         cone = float(self._current_source_cone_angle() or 0.0)
         if not (cone > 0.0):
             cone = 30.0
@@ -1024,9 +1092,9 @@ class SourceModelingMixin:
                 "source_l": float(dl),
                 "source_m": float(dm),
                 "source_n": float(dn),
-                "radius_x": half,
-                "radius_y": half,
-                "radius": half,
+                "radius_x": float(half_x),
+                "radius_y": float(half_y),
+                "radius": float(max(half_x, half_y)),
                 "cone_deg": cone,
                 "ray_count": 2000,
                 "power": 1.0,

@@ -12331,6 +12331,47 @@ def phase_253_illumination_footprint_projection(
     return result
 
 
+def phase_254_illumination_emitter_module_seed(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """"Add Illumination Source" seeds the emitter from the physical LED module when one is present
+    (bugs/0290, flag_20260713_073358_441 "still a small patch of illumination"). `add_illumination_led_source`
+    used to seat the emitter at the imaging Source panel's origin/direction/radius -- a 10x10 mm square on
+    the object plane aimed +z, AWAY from the object -- so it was decoupled from the big imported LED module
+    the user placed; the detector overlay then honestly imaged that tiny default (~5.9 mm patch on the 39x39
+    FOV). The fix (display follows physics): when a module is imported (`imported_led_step_path`), seed the
+    emitter FROM its transformed CAD bounds -- origin at the OBJECT-FACING face centre, half-extents from the
+    module's transverse world bounds, aim toward the object-plane point on the optical axis -- so the emitter
+    coincides with the visible LED. With no module it falls back to today's panel values, so the pure-imaging
+    path (and phase 253) is unchanged. No hardcoded module size/position: all bounds read from the real mesh.
+    `validate_open3d_illumination_emitter_module_seed` (display-free): SEED MATH (object-facing face + aim
+    toward the FOV axis, half-extents from bounds, geometry-driven face/aim flip when the object is above,
+    thin-axis floor, degenerate/non-finite/mis-shaped -> None) + INSTANCE WIRING (gated on
+    imported_led_step_path, reads the transformed mesh bounds + object-plane z, fails soft to None) +
+    ADD-SOURCE REWIRE (uses the module seed, keeps the panel fallback, per-axis radius_x/radius_y) + REAL
+    VENDOR SCENE when present (a synthetic OPT-CO90 module -- no gitignored STEP needed -- makes the same
+    dispatcher jump from the 7%-lit tiny patch to a 100%-lit filled FOV, emitter at z~187 sized to the module
+    aimed at the object).
+    """
+    result = PhaseResult(
+        name="Phase 254: Add Illumination Source seeds the emitter from the physical LED module"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_illumination_emitter_module_seed import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"illumination-emitter-module-seed guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("illumination-emitter-module-seed phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12629,6 +12670,7 @@ def main() -> int:
             phase_251_illumination_flood_phantom_branch_detector,
             phase_252_coupled_object_illumination_projection,
             phase_253_illumination_footprint_projection,
+            phase_254_illumination_emitter_module_seed,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

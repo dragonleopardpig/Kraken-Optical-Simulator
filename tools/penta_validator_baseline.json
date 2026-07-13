@@ -254,7 +254,8 @@
     "250": "pass",
     "251": "pass",
     "252": "pass",
-    "253": "pass"
+    "253": "pass",
+    "254": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -509,6 +510,7 @@
     "250": "Add Illumination Source (LED) mints a first-class scene source from the browser",
     "251": "an illumination flood draws no phantom detector plane beside the beam splitter",
     "252": "object illumination projects onto the sensor as dark edges when no ray reaches it",
-    "253": "illumination footprint projects onto the sensor at its true imaged size"
+    "253": "illumination footprint projects onto the sensor at its true imaged size",
+    "254": "Add Illumination Source seeds the emitter from the physical LED module"
   }
 }
