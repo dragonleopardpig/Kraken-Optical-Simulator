@@ -12533,12 +12533,15 @@ def phase_259_folder_import_completeness(
     rectangle + off-axis fans render. Stage 2: importing the vendor camera STEP now resolves back to its camera model
     (camera_model_for_step_path) and runs the sensor autofill, so field_value is overridden with the true sensor
     half-diagonal and the object FOV shrinks from the datasheet max-sensor capability (image-circle/2) to the real
-    sensor -- the "synchronize with the subsequent camera" ask. `validate_open3d_folder_import_completeness` is
-    display-free + portable (drives _core_from_datasheet_cardinals + the coverage overlay geometry + the camera
-    model/coverage lookups; no VTK, no vendor PDF/STEP).
+    sensor -- the "synchronize with the subsequent camera" ask. Stage 2b: the same coupling feeds the body's real
+    flange (camera_front_to_sensor_mm) into the bugs/0220 camera placement, so the image/detector plane snaps onto the
+    sensor inside the body ("the image plane is not located at the camera sensor") instead of sitting its full flange
+    behind it. `validate_open3d_folder_import_completeness` is display-free + portable (drives
+    _core_from_datasheet_cardinals + the coverage overlay geometry + the camera model/coverage lookups + the real
+    LayoutPolylineDisplayMixin flange method; no VTK, no vendor PDF/STEP).
     """
     result = PhaseResult(
-        name="Phase 259: Folder-import surrogate carries the field + syncs to the imported camera sensor (FOV follows sensor)"
+        name="Phase 259: Folder-import surrogate carries the field + syncs to the imported camera (FOV + image plane follow the sensor)"
     )
     try:
         from KrakenOS.UI.validate_open3d_folder_import_completeness import run_checks

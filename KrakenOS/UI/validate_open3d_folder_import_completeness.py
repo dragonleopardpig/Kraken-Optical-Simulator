@@ -34,6 +34,14 @@ real datasheet):
     sensor, so the field/object-FOV shrink from the datasheet max-sensor
     capability (image-circle/2 == 50 mm) to the real sensor half-diagonal
     (hr25MCX == 16.29 mm) -- the "synchronize with the subsequent camera" ask.
+  * E -- Stage 2b: the SAME coupling snaps the image/detector plane onto the
+    sensor.  The camera body is placed by bugs/0220
+    (``camera_front_z = image_plane_z - front_to_sensor_mm``); a raw STEP with no
+    coupled model reads flange 0, leaving the sensor its full flange BEHIND the
+    plane, while coupling feeds the body's real flange (hr25MCX == 11.48 mm) so
+    the sensor lands ON the image plane ("the image plane is not located at the
+    camera sensor").  The axial snap already lived in the display code -- Stage 2a
+    is what unblocks it, so this is a regression guard, not new placement code.
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_folder_import_completeness
@@ -160,6 +168,53 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
        f"D4: the object FOV follows the sensor "
        f"({2 * cam_fov:.1f} mm camera-coupled < {2 * ds_fov:.1f} mm datasheet)")
 
+    # --- E. Stage 2b: coupling snaps the image/detector plane onto the sensor.
+    #     The camera STEP is placed by bugs/0220:
+    #         camera_front_z = image_plane_z - front_to_sensor_mm
+    #     so the sensor (front face + the body's physical flange) lands ON the
+    #     image plane.  A raw STEP with no model coupled reads flange 0 -> the
+    #     sensor sits its full flange BEHIND the plane; Stage 2a's model coupling
+    #     is what feeds the real flange in so the snap actually happens.  Drive
+    #     the REAL LayoutPolylineDisplayMixin flange method (display-free) on a
+    #     minimal stub whose only state is camera_model_var, exactly like the
+    #     dropdown/STEP-import path sets it.
+    from KrakenOS.UI.services.layout_polyline_display import LayoutPolylineDisplayMixin
+    from KrakenOS.UI.camera_database import CAMERA_NONE_LABEL, camera_record
+
+    class _CamVar:
+        def __init__(self, value: str) -> None:
+            self._value = value
+
+        def get(self) -> str:
+            return self._value
+
+    class _FakeCameraEditor(LayoutPolylineDisplayMixin):
+        def __init__(self, camera_model: str) -> None:
+            self.camera_model_var = _CamVar(camera_model)
+
+    # the body's true physical flange (fixed CAD geometry, independent of the var)
+    phys_flange = float(camera_record(model)["camera_front_to_sensor_mm"]) if model else 0.0
+    image_plane_z = 328.25  # the flag's prescription Image-row z
+
+    def _sensor_delta_from_plane(flange_used: float) -> float:
+        camera_front_z = image_plane_z - flange_used   # bugs/0220 placement
+        sensor_z = camera_front_z + phys_flange        # physical sensor in the body
+        return sensor_z - image_plane_z
+
+    flange_uncoupled = _FakeCameraEditor(CAMERA_NONE_LABEL)._current_camera_front_to_sensor_mm()
+    flange_coupled = _FakeCameraEditor(model)._current_camera_front_to_sensor_mm() if model else 0.0
+
+    ok(abs(flange_uncoupled) <= 1e-9,
+       f"E1: a raw STEP with no coupled model reads flange 0 (got {flange_uncoupled!r})")
+    ok(phys_flange > 0.0 and abs(flange_coupled - phys_flange) <= 1e-6,
+       f"E2: coupling feeds the body's real flange {phys_flange:g} mm (got {flange_coupled!r})")
+    ok(abs(_sensor_delta_from_plane(flange_uncoupled)) > 1.0,
+       f"E3: uncoupled, the sensor sits its full flange behind the image plane "
+       f"({_sensor_delta_from_plane(flange_uncoupled):.2f} mm off)")
+    ok(abs(_sensor_delta_from_plane(flange_coupled)) <= 1e-6,
+       f"E4: coupling snaps the sensor onto the image plane "
+       f"(delta {_sensor_delta_from_plane(flange_coupled):.3g} mm)")
+
     passed = not any(line.startswith("FAIL") for line in notes)
     if verbose:
         for line in notes:
@@ -176,7 +231,8 @@ def main() -> int:
             "field_count 3) so the object-plane FOV rectangle + off-axis ray fans "
             "render like the hand-authored machine_vision_* presets; and importing "
             "the vendor camera STEP couples the surrogate to its sensor so the FOV "
-            "follows the real sensor (Stage 2)."
+            "follows the real sensor (Stage 2a) and the image plane snaps onto the "
+            "sensor inside the body (Stage 2b)."
         )
         return 0
     print("Folder-import completeness validation FAILED:")

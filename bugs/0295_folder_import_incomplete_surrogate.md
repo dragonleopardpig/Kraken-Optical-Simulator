@@ -59,11 +59,18 @@ back to its vendor camera (resolved path, then case-insensitive filename — the
 model from the dropdown: the field **shrinks from the datasheet max (image-circle/2 = 50 mm for PYRITE) to the
 real sensor half-diagonal (hr25MCX = 16.29 mm)** and the object FOV follows the sensor (70.7 → 23.0 mm).
 
-**Still owed (Stage 2b):** the **Z placement** — putting the image/detector plane exactly at the sensor
-*inside* the camera body (`camera_front_to_sensor_mm`) rather than at the finite-conjugate image gap. The
-presets do this with a hand-tuned `camera_step_placement_offset_xyz`; an automatic solve needs the imported
-body's front-face Z (OCC/in-app) and an NVIDIA GLX eyeball. Sizing + field now sync automatically; the axial
-snap is the remaining piece.
+### Stage 2b (this change) — snap the image/detector plane onto the camera sensor
+**Not new placement code — an *unblocking*.** The axial snap already lives in the display layer:
+`layout_polyline_display._transformed_imported_camera_step_mesh` places the body at
+`camera_front_z = _camera_track_image_plane_z() - _current_camera_front_to_sensor_mm()  # bugs/0220`, so the
+sensor (front face + the body's physical flange) lands **on** the image plane. It was dormant on a raw STEP
+import for exactly the same reason as Stage 2a: with no camera **model** coupled, `_current_camera_record()`
+is `None` → `_current_camera_front_to_sensor_mm()` returns **0.0** → the body is placed with its *front face*
+on the image plane, leaving the real sensor its full flange (hr25MCX = **11.48 mm**) *behind* the plane
+(complaint #2). Stage 2a's model coupling now feeds the real flange in, so the same bugs/0220 formula snaps the
+sensor onto the plane automatically (`delta 11.48 → 0.00 mm`). No hand-tuned
+`camera_step_placement_offset_xyz`, no new nudge — the physics/placement was already correct; it just needed
+the model. (The presets' explicit offset is for hand-authored scenes that never run the STEP-import coupling.)
 
 ## Guard + gate
 `KrakenOS/UI/validate_open3d_folder_import_completeness.py` (`run_checks()`) — display-free + portable (drives
@@ -73,18 +80,23 @@ no vendor PDF/STEP):
 - **A** the surrogate core sets `field_type` / `field_value` (== image-circle/2) / `field_count` ≥ 2;
 - **B** fed that field, `detector_coverage_overlay_specs` emits an `object_fov_rect` with a positive extent;
 - **C** a datasheet lens with no image circle still gets a field (from the aperture);
-- **D** (Stage 2) the vendor camera STEP filename resolves back to its model, an unknown STEP does not
+- **D** (Stage 2a) the vendor camera STEP filename resolves back to its model, an unknown STEP does not
   falsely couple, and coupling shrinks the field (50 → 16.29 mm) so the object FOV follows the sensor
   (70.7 → 23.0 mm).
+- **E** (Stage 2b) drives the **real** `LayoutPolylineDisplayMixin._current_camera_front_to_sensor_mm` on a
+  minimal stub (only `camera_model_var`): uncoupled reads flange **0** and leaves the sensor its full flange
+  *behind* the image plane (`11.48 mm off`); coupling feeds the body's real flange (**11.48 mm**) so the
+  bugs/0220 placement snaps the sensor onto the plane (`delta 0.00 mm`).
 
 Confirmed FAIL against the pre-fix engine (A/B/C fail: `field_value None`, object FOV `0.0×0.0`) and PASS
-after (all A–D). Penta **phase 259** (`phase_259_folder_import_completeness`, title broadened to cover the
-camera sync), baseline title updated.
+after (all A–E). Penta **phase 259** (`phase_259_folder_import_completeness`, title broadened to cover the
+camera sync + image-plane snap), baseline title updated.
 
 ## Owed / limitation
-Stage 1 (field settings + FOV-rect geometry) and Stage 2 (STEP→model coupling → FOV-follows-sensor) are
-verified headless. The **rendered** FOV rectangle + off-axis rays and the **Stage 2b axial snap** (image plane
-*at* the sensor inside the body) need the in-app NVIDIA GLX eyeball — re-import the lens folder, then import
-the vendor camera STEP, and confirm the FOV rectangle shrinks to the sensor and the sensor sits on the image
-plane. The persisted `common_optical_layouts/machine_vision_pyrite_56_80_…py` was regenerated with the field,
-but a fresh import is the real path.
+Stage 1 (field settings + FOV-rect geometry), Stage 2a (STEP→model coupling → FOV-follows-sensor) and Stage 2b
+(model coupling → image-plane-snaps-onto-sensor via the pre-existing bugs/0220 placement) are verified headless.
+The **rendered** FOV rectangle + off-axis rays and the **rendered** axial snap still need the in-app NVIDIA GLX
+eyeball — re-import the lens folder, then import the vendor camera STEP, and confirm the FOV rectangle shrinks to
+the sensor and the sensor sits on the image plane. The persisted
+`common_optical_layouts/machine_vision_pyrite_56_80_…py` was regenerated with the field, but a fresh import is
+the real path.
