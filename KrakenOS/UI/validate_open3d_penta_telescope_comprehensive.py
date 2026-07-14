@@ -12663,6 +12663,37 @@ def phase_262_model_change_marks_2d_stale(
     return result
 
 
+def phase_263_save_layout_from_3d(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A folded 54x54 solve can be driven entirely from Open 3D, but there was no way to persist it
+    without returning to the main window's File -> Save, so the source .py drifted from the exported
+    STEP / flagged scene. Kraken3DInspector.save_layout + a "Save Layout" toolbar button close that gap.
+    The correctness hinge: _write_layout_file reads the editor TABLE back (_read_rows_from_table), while
+    the inspector mutates self.editor.rows in place -- so the inspector's save must re-sync the table from
+    rows FIRST, then delegate to the editor's save_layout, or a 3D-only edit is written stale. The guard
+    checks the method delegates+syncs in that order, reports the saved name, is honest on cancel, and the
+    View toolbar wires the button.
+    """
+    result = PhaseResult(
+        name="Phase 263: Save Layout from the 3D inspector persists the 3D-solved prescription"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_save_layout_button import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"save-layout guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("save-layout phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -12970,6 +13001,7 @@ def main() -> int:
             phase_260_camera_coupling_lifecycle,
             phase_261_folded_conjugate_first_order,
             phase_262_model_change_marks_2d_stale,
+            phase_263_save_layout_from_3d,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

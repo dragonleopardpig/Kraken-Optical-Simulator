@@ -45,6 +45,9 @@ class Open3DTopControlsPanel:
         ttk.Label(view_toolbar, text="View").pack(side="left", padx=(0, 6))
         pack_command_button(view_toolbar, "Refresh", command=self.inspector.refresh_from_editor)
         pack_command_button(view_toolbar, "Snapshot", command=self.inspector.save_snapshot, padx=(8, 0))
+        # Save the current prescription (including a solve done entirely in 3D) back to
+        # the layout .py, so the source file stops drifting from the exported STEP / scene.
+        pack_command_button(view_toolbar, "Save Layout", command=self.inspector.save_layout, padx=(8, 0))
         # Camera-nav cleanup: the cardinal + Iso camera-preset buttons and the +-90
         # rotate buttons were removed from this toolbar -- the Nav Cube is the single
         # camera-navigation control now (its faces/corners drive set_camera_preset's

@@ -12113,6 +12113,39 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor.append_debug(f"Open 3D snapshot failed: {exc}")
             return None
 
+    def save_layout(self) -> bool:
+        """Persist the current scene -- including a solve/edit done entirely in 3D -- to the layout .py.
+
+        The inspector mutates ``self.editor.rows`` in place and every model-change
+        path re-syncs the editor table (``_sync_table``), so the editor's own
+        ``save_layout`` (which reads the table back through ``_read_rows_from_table``)
+        writes the up-to-date prescription. This mirrors the main window's File -> Save
+        (falling back to Save As when the layout has no file yet) so a 54x54 folded
+        solve solved from Open 3D can be saved without returning to the main window.
+        """
+        try:
+            # Make the editor table mirror the live rows before the writer reads it
+            # back, so a 3D-only edit is never lost even if some model-change path
+            # skipped its own sync. Safe here: no in-flight editor-table cell edit
+            # exists while the user is working in the 3D window.
+            self.editor._sync_table()
+            saved = bool(self.editor.save_layout())
+        except Exception as exc:
+            self.status_var.set(f"Save failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D save layout failed: {exc}")
+            return False
+        if not saved:
+            self.status_var.set("Save cancelled")
+            return False
+        path = getattr(self.editor, "current_layout_file", None)
+        name = path.name if path is not None else "layout"
+        self.status_var.set(f"Saved {name}")
+        try:
+            self.editor.append_progress(f"Saved Open 3D layout: {path}")
+        except Exception:
+            pass
+        return True
+
     def _active_mode_badge_text(self) -> str:
         if self._source_target_pick_mode:
             return "SOURCE TARGET\nClick a surface/CAD solid row."
