@@ -4022,7 +4022,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     if feature is not None
                     else None
                 )
-                self._set_step_hover_outline(outline, (hit_key, "reanchor", cell_id), render=False)
+                # bugs/0304: a smooth round imaging lens has NO per-face feature
+                # outline -- its tessellated curved faces make the face pick return
+                # None -- so the hover would highlight nothing, unlike the box-like
+                # camera STEP whose planar faces pick cleanly (the user saw the
+                # camera edge light up but not the lens). Fall back to the
+                # component's already-drawn edge/rim geometry so a Measure snap
+                # confirms WHICH lens edge it locked onto. Keyed at component level
+                # so the merged outline is not rebuilt on every pixel of hover.
+                hover_key = (hit_key, "reanchor", cell_id)
+                if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
+                    fallback = self._step_component_edge_outline(str(step_label))
+                    if fallback is not None and int(getattr(fallback, "n_points", 0)) > 0:
+                        outline = fallback
+                        hover_key = (hit_key, "reanchor-component")
+                self._set_step_hover_outline(outline, hover_key, render=False)
             except Exception:
                 pass
             if self._dimension_anchor_snap_highlight_row is not None:
@@ -4049,6 +4063,59 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 pass
             self._dimension_anchor_snap_highlight_row = None
+
+    def _step_component_edge_outline(self, label: str):
+        """Merged line geometry of a STEP overlay's ALREADY-DRAWN edge/rim actors,
+        for the Measure hover-highlight to confirm a snap onto a component whose
+        smooth curved faces yield no per-face outline (bugs/0304 -- a round imaging
+        lens; the box-like camera highlights fine via its planar face pick).
+
+        Only LINE polydata is taken (the translucent solid body is skipped), copied
+        so recolouring the gold hover outline never mutates the live scene actors.
+        A perfectly smooth singlet with no sharp edges drawn falls back to the
+        synthetic rim circle (``_lens_rim_circle_polyline``), the same view-
+        independent rim the round-lens overlay uses -- so round lenses ALWAYS get
+        an edge highlight, not just this barrel."""
+        if pv is None:
+            return None
+        key = str(label or "").strip().lower()
+        actor_keys = list((getattr(self, "_step_follow_actor_map", None) or {}).get(key, []) or [])
+        merged = None
+        for actor_key in actor_keys:
+            actor = self._actor_by_key.get(str(actor_key))
+            if actor is None:
+                continue
+            try:
+                poly = actor.GetMapper().GetInput()
+            except Exception:
+                poly = None
+            if poly is None:
+                continue
+            try:
+                n_pts = int(poly.GetNumberOfPoints())
+                n_lines = int(poly.GetNumberOfLines())
+            except Exception:
+                n_pts = n_lines = 0
+            # Skip the translucent solid body (polys, no lines); keep only the
+            # edge/rim line actors -- those ARE the "lens edge" the user aims at.
+            if n_pts <= 0 or n_lines <= 0:
+                continue
+            try:
+                part = pv.wrap(poly).copy(deep=True)
+            except Exception:
+                continue
+            merged = part if merged is None else merged.merge(part)
+        if merged is not None and int(getattr(merged, "n_points", 0)) > 0:
+            return merged
+        # No sharp edges drawn (a smooth revolved singlet): synthesise the rim.
+        try:
+            mesh = self.editor._transformed_imported_step_mesh_for_label(key)
+            rim = self._lens_rim_circle_polyline(mesh) if mesh is not None else None
+        except Exception:
+            rim = None
+        if rim is not None and int(getattr(rim, "n_points", 0)) > 0:
+            return rim
+        return None
 
     def _clear_dimension_anchor_preview(self, *, render: bool = True) -> None:
         for actor in list(self._dimension_anchor_preview_actors):

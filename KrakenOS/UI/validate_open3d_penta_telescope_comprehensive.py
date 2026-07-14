@@ -12791,6 +12791,37 @@ def phase_266_measure_folded_axis_snap(
     return result
 
 
+def phase_267_measure_lens_edge_highlight(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The Measure hover highlights a round IMAGING LENS edge, not just a box camera
+    (user flag: with the 0303 axis-snap live, "there is no edge highlight on the Lens
+    Edge ... the Camera edge does highlight, only this particular Image Lens" did not).
+    A box-like camera STEP has planar faces the face pick resolves, so it highlights;
+    a smooth round lens is drawn from a tessellation, so the per-face pick returns None
+    and nothing lights up. Fix: when a recognised STEP component yields no per-face
+    outline, fall back to its ALREADY-DRAWN edge/rim line geometry (or, for a smooth
+    singlet, the synthesised rim circle). Display-free guard: line-merge / body-exclude
+    / unknown-None / rim fallback + hover wiring."""
+    result = PhaseResult(
+        name="Phase 267: Measure highlights a round imaging-lens edge (drawn-edge / rim fallback)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_measure_lens_edge_highlight import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"measure-lens-edge-highlight guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("measure-lens-edge-highlight phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13102,6 +13133,7 @@ def main() -> int:
             phase_264_step_export_matches_display,
             phase_265_camera_folder_import,
             phase_266_measure_folded_axis_snap,
+            phase_267_measure_lens_edge_highlight,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
