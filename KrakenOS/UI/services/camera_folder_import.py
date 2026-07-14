@@ -246,7 +246,11 @@ def parse_camera_datasheet(path: str | Path) -> CameraSpec | None:
     if low is not None and high is not None:
         spec.spectral_range_nm = (low, high)
 
-    res = re.search(r"Resolution\s*:?\s*([\d,]+)\s*[×xX]\s*([\d,]+)", blob)
+    res = re.search(r"(?:Resolution|Active\s*Pixel)\s*:?\s*([\d,]+)\s*[×xX]\s*([\d,]+)", blob)
+    if res is None:
+        # "5120 (H) x 5120 (V)" spec-table form (Bopixel BC-OM/GN datasheets); the
+        # >=3-digit guard keeps it off the pixel-pitch row's own "(H) x (V)".
+        res = re.search(r"([\d,]{3,})\s*\(H\)\s*[×xX]\s*([\d,]{3,})\s*\(V\)", blob)
     if res is not None:
         try:
             spec.resolution_px = (int(res.group(1).replace(",", "")),
@@ -265,8 +269,25 @@ def parse_camera_datasheet(path: str | Path) -> CameraSpec | None:
             spec.sensor_diagonal_mm = float(size.group(3))
 
     pixel = re.search(r"Pixel size\s*:?\s*([\d.]+)\s*[^\d×xX]*[×xX]\s*([\d.]+)", blob)
+    if pixel is None:
+        # "4.5 (H) x 4.5 (V) µm" form; anchor on the micro-sign so the resolution
+        # row's "(H) x (V)" is not misread as a pixel pitch.
+        pixel = re.search(
+            r"([\d.]+)\s*\(H\)\s*[×xX]\s*([\d.]+)\s*\(V\)\s*[µμu]m", blob
+        )
     if pixel is not None:
         spec.pixel_size_um = (float(pixel.group(1)), float(pixel.group(2)))
+
+    if not spec.has_sensor_size and spec.resolution_px and spec.pixel_size_um:
+        # bugs/0307: no explicit "Sensor size ... mm" row (Bopixel PYTHON-25K sheets
+        # -- e.g. BC-OM25M12X2 -- list the sensor only as Active Pixel + Pixel Size):
+        # derive the active-area size from resolution x pixel pitch (um -> mm).
+        rw, rh = spec.resolution_px
+        pw, ph = spec.pixel_size_um
+        spec.sensor_width_mm = rw * pw / 1000.0
+        spec.sensor_height_mm = rh * ph / 1000.0
+        if spec.sensor_diagonal_mm is None:
+            spec.sensor_diagonal_mm = math.hypot(spec.sensor_width_mm, spec.sensor_height_mm)
 
     depths = re.findall(r"(\d+)\s*-?\s*Bit", blob)
     if depths:

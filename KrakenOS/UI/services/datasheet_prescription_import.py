@@ -181,10 +181,75 @@ def _decode_content(stream: bytes, name_to_cmap: dict[str, dict[int, str]]) -> s
     return "".join(out)
 
 
+# bugs/0307: raw literal-harvest fallback for CID-font datasheets with no ToUnicode
+# (BC-OM25M12X2). Shared by the camera + lens (Path C) importers.
+_LITERAL_SHOW_RE = re.compile(rb"\((?:[^()\\]|\\.)*\)", re.S)
+_PDF_ESCAPE_SIMPLE = {0x6E: 10, 0x72: 13, 0x74: 9, 0x62: 8, 0x66: 12}  # n r t b f
+# A CMap decode yielding fewer ASCII letters than this means the datasheet's CID
+# fonts carry no usable ToUnicode -- fall back to raw literal harvesting. A real
+# text-based datasheet returns thousands, so the fallback never fires for it.
+_MIN_DECODED_LETTERS = 64
+
+
+def _ascii_letter_count(text: str) -> int:
+    return sum(1 for ch in text if ("a" <= ch <= "z") or ("A" <= ch <= "Z"))
+
+
+def _unescape_pdf_literal(body: bytes) -> str:
+    """Resolve PDF string escapes (``\\n \\( \\) \\\\ \\ddd`` octal) in one literal
+    show-string, decoding the result as Latin-1 (covers the ``µ`` micro-sign,
+    ``\\265``)."""
+    out = bytearray()
+    i, n = 0, len(body)
+    while i < n:
+        c = body[i]
+        if c == 0x5C and i + 1 < n:  # backslash
+            nxt = body[i + 1]
+            if nxt in _PDF_ESCAPE_SIMPLE:
+                out.append(_PDF_ESCAPE_SIMPLE[nxt])
+                i += 2
+                continue
+            if 0x30 <= nxt <= 0x37:  # up to 3 octal digits
+                j = i + 1
+                digits = bytearray()
+                while j < n and len(digits) < 3 and 0x30 <= body[j] <= 0x37:
+                    digits.append(body[j])
+                    j += 1
+                out.append(int(bytes(digits), 8) & 0xFF)
+                i = j
+                continue
+            out.append(nxt)  # \( \) \\ and any other escaped byte -> literal
+            i += 2
+            continue
+        out.append(c)
+        i += 1
+    return out.decode("latin-1")
+
+
+def _harvest_literal_text(objs: dict[int, bytes]) -> str:
+    """Fallback recovery for datasheets whose CID fonts carry no ToUnicode CMap
+    (so :func:`_decode_content` yields nothing) but whose English spec table is
+    set in simple fonts: harvest the raw ``(..)`` literal show-strings directly,
+    with PDF escapes resolved. Pure stdlib; only reached when the CMap decode is
+    essentially empty, so text-based datasheets are never affected."""
+    parts: list[str] = []
+    for raw in objs.values():
+        stream = _inflate(raw)
+        if b"Tj" not in stream and b"TJ" not in stream:
+            continue
+        for lit in _LITERAL_SHOW_RE.finditer(stream):
+            parts.append(_unescape_pdf_literal(lit.group(0)[1:-1]))
+    return "".join(parts)
+
+
 def extract_pdf_text(path: str | Path) -> str:
     """Best-effort plain text from a (subset-CID-font) vendor datasheet PDF.
 
     Pure stdlib; returns ``""`` on any failure so callers degrade gracefully.
+    When the per-font ToUnicode decode comes back essentially empty -- some
+    datasheets embed CID fonts with no ToUnicode map at all, plus rasterised
+    tables -- fall back to harvesting the raw ``(..)`` literals, which recovers
+    any English spec text that is set in simple (directly Latin-1) fonts.
     """
     try:
         data = Path(path).read_bytes()
@@ -200,7 +265,11 @@ def extract_pdf_text(path: str | Path) -> str:
             stream = _inflate(raw)
             if b"Tf" in stream and (b"Tj" in stream or b"TJ" in stream):
                 chunks.append(_decode_content(stream, name_to_cmap))
-        return "\n".join(chunks)
+        text = "\n".join(chunks)
+        if _ascii_letter_count(text) >= _MIN_DECODED_LETTERS:
+            return text
+        fallback = _harvest_literal_text(objs)
+        return fallback if _ascii_letter_count(fallback) > _ascii_letter_count(text) else text
     except Exception:
         return ""
 

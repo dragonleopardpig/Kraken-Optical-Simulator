@@ -49,6 +49,10 @@ TOP_CONTROLS_PATH = UI_DIR / "panels" / "open3d_top_controls.py"
 
 # Real vendor asset (Filen-synced; may be absent on a bare checkout).
 REAL_PDF = PROJECT_ROOT / "attachment" / "Cameras" / "hr25MCX_Datasheet.pdf"
+# bugs/0307: a CID-font datasheet with NO ToUnicode maps and no explicit "Sensor
+# size" row (only Active Pixel + Pixel Size). The pure-stdlib literal-harvest
+# fallback + resolution*pixel computation must still land the same PYTHON 25K sensor.
+REAL_BC_OM25M_FOLDER = PROJECT_ROOT / "attachment" / "Cameras" / "BC-OM25M"
 
 _SIDECAR = {
     "name": "Contoso Vision cx-test",
@@ -169,6 +173,30 @@ def run_checks() -> tuple[bool, list[str]]:
                 failures.append(f"hr25 spectral range scraped wrong: {spec.spectral_range_nm}")
             if not (spec.lens_mount or "").startswith("M58"):
                 failures.append(f"hr25 lens mount scraped wrong: {spec.lens_mount!r}")
+
+    # --- BC-OM25M: CID-font PDF, sensor only as Active Pixel x Pixel Size -----
+    # (bugs/0307 -- the flagged "Could not extract a sensor size from this folder")
+    if REAL_BC_OM25M_FOLDER.exists():
+        assets = scan_camera_folder(REAL_BC_OM25M_FOLDER)
+        if not assets.has_spec_source:
+            failures.append("BC-OM25M folder reports no spec source (datasheet not classified)")
+        else:
+            try:
+                imp = build_camera_record_from_assets(assets)
+            except Exception as exc:  # the flagged failure was a ValueError here
+                failures.append(f"BC-OM25M build raised {exc!r} (sensor extraction still failing)")
+                imp = None
+            if imp is not None:
+                rec = imp.record
+                if rec.get("sensor_width_mm") != 23.04 or rec.get("sensor_height_mm") != 23.04:
+                    failures.append(
+                        f"BC-OM25M sensor size wrong: "
+                        f"{rec.get('sensor_width_mm')}x{rec.get('sensor_height_mm')} (want 23.04x23.04)"
+                    )
+                if rec.get("resolution_px") not in ((5120, 5120), [5120, 5120]):
+                    failures.append(f"BC-OM25M resolution wrong: {rec.get('resolution_px')}")
+                if rec.get("pixel_size_um") not in ((4.5, 4.5), [4.5, 4.5]):
+                    failures.append(f"BC-OM25M pixel size wrong: {rec.get('pixel_size_um')}")
 
     # --- editor / inspector / menu wiring (source-text asserts) --------------
     def _src(path: Path) -> str:
