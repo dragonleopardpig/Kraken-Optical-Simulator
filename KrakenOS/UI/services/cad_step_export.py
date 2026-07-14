@@ -472,6 +472,50 @@ def _mesh_points_and_triangles_for_step(
     return points[:, :3], np.asarray(triangles, dtype=int)
 
 
+def occ_shell_shape_from_mesh(mesh, *, max_facets_per_mesh: int = 4000):
+    """A single OpenCascade shell (one TopoDS_Shell) tessellating a PyVista mesh.
+
+    bugs/0300: promoted optical-solid rows (the folded BK7 RA prisms) are drawn in
+    the 3D inspector from their STL tessellation, not from the shared ``step_*.step``
+    template that lives in a different local frame. So the faithful STEP body for such
+    a row is that STL, already carried into world by the display transform, written as
+    faceted geometry -- deterministic, no ambiguous box-ICP against the template.
+    Returns ``None`` when the mesh yields no usable triangles.
+    """
+    try:
+        from OCC.Core.BRep import BRep_Builder
+        from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_MakePolygon
+        from OCC.Core.TopoDS import TopoDS_Shell
+        from OCC.Core.gp import gp_Pnt
+    except Exception as exc:
+        raise RuntimeError(f"pythonocc-core is required for STEP export: {exc}") from exc
+
+    prepared = _mesh_points_and_triangles_for_step(mesh, max_facets_per_mesh=max_facets_per_mesh)
+    if prepared is None:
+        return None
+    points, triangles = prepared
+    builder = BRep_Builder()
+    shell = TopoDS_Shell()
+    builder.MakeShell(shell)
+    added = 0
+    for a, b, c in triangles:
+        tri_points = points[[int(a) - 1, int(b) - 1, int(c) - 1], :3]
+        polygon = BRepBuilderAPI_MakePolygon()
+        for x, y, z in tri_points:
+            polygon.Add(gp_Pnt(float(x), float(y), float(z)))
+        polygon.Close()
+        if not polygon.IsDone():
+            continue
+        face = BRepBuilderAPI_MakeFace(polygon.Wire())
+        if not face.IsDone():
+            continue
+        builder.Add(shell, face.Face())
+        added += 1
+    if added <= 0:
+        return None
+    return shell
+
+
 def _write_step_with_analytic_surfaces(
     system,
     rows: list,
@@ -522,9 +566,9 @@ def _write_step_with_analytic_surfaces(
     # --- Phase 1: analytic optical surfaces ---
     n_surf = min(len(sdt), len(rows))
     for j in range(n_surf):
-        surf_label = getattr(rows[j], 'surface', '')
-        if surf_label in {"Object", "Image"}:
-            continue
+        # bugs/0300: export the Object/Image reference planes too (they are drawn in
+        # the 3D inspector). The Drawing / Diameter guards below drop hidden or
+        # degenerate planes, matching the display.
         surf = sdt[j]
         if not getattr(surf, 'Drawing', 1):
             continue
@@ -701,9 +745,10 @@ def _write_step_with_cad_shapes_and_rays(
     if progress_callback is not None:
         progress_callback("Adding analytic optical surfaces", 1, 5)
     for j in range(n_surf):
-        surf_label = getattr(rows[j], 'surface', '')
-        if surf_label in {"Object", "Image"}:
-            continue
+        # bugs/0300: the Object plane (and folded Image plane) are drawn in the 3D
+        # inspector, so export them too -- as flat reference discs at their traced
+        # (folded) placement. The Drawing / Diameter guards below still drop hidden or
+        # degenerate planes, matching the display.
         surf = sdt[j]
         if not getattr(surf, 'Drawing', 1):
             continue

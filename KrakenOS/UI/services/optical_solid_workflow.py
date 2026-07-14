@@ -1180,6 +1180,9 @@ class LayoutOpticalSolidWorkflowMixin:
                 "y_rotation_deg": float(getattr(self, "lens_step_rotation_y_deg", 0.0)),
                 "axis_offset_xy": self._step_axis_offset_xy("lens"),
                 "placement_offset_xyz": self._step_placement_offset_xyz("lens"),
+                "fold_transform": self._optical_axis_fold_world_transform_for_row(
+                    self._lens_front_datum_row_index()
+                ),
             }
         if label == "camera":
             if self.imported_camera_step_path is None:
@@ -1187,7 +1190,11 @@ class LayoutOpticalSolidWorkflowMixin:
             camera_front_z = self._camera_track_image_plane_z() - self._current_camera_front_to_sensor_mm()  # bugs/0220
             return {
                 "path": self.imported_camera_step_path,
-                "largest_component": True,
+                # Align to the FULL assembly, matching the display
+                # (_transformed_imported_camera_step_mesh loads largest_component=False).
+                # largest_component collapses a vendor camera to its densest tiny part
+                # (a ~6 mm sensor-window cover), skewing the export placement (bugs/0300).
+                "largest_component": False,
                 "source_axis": "z",
                 "front_face": "max",
                 "target_front_z": camera_front_z,
@@ -1197,6 +1204,9 @@ class LayoutOpticalSolidWorkflowMixin:
                 "y_rotation_deg": float(getattr(self, "camera_step_rotation_y_deg", 0.0)),
                 "axis_offset_xy": self._step_axis_offset_xy("camera"),
                 "placement_offset_xyz": self._step_placement_offset_xyz("camera"),
+                "fold_transform": self._optical_axis_fold_world_transform_for_row(
+                    self._image_plane_row_index()
+                ),
             }
         if label == "optical":
             if self.imported_optical_step_path is None:
@@ -1253,6 +1263,15 @@ class LayoutOpticalSolidWorkflowMixin:
         )
         if aligned_mesh is None:
             return None
+        # Match the 3D display exactly (bugs/0300): the camera/lens overlays are seated on
+        # the STRAIGHT +Z axis by _cad_mesh_aligned_to_optical_axis, then the display carries
+        # them onto the reflected branch with the anchor row's fold transform
+        # (_transformed_imported_camera/lens_step_mesh call _mesh_with_world_transform the
+        # same way). Fitting the export affine to the FOLDED mesh points lands the native CAD
+        # where the UI shows it instead of floating on the unfolded axis.
+        fold_transform = params.get("fold_transform")
+        if fold_transform is not None:
+            aligned_mesh = self._mesh_with_world_transform(aligned_mesh, fold_transform)
         matrix = _affine_from_point_sets(
             np.asarray(source_mesh.points, dtype=float),
             np.asarray(aligned_mesh.points, dtype=float),
@@ -1478,6 +1497,110 @@ class LayoutOpticalSolidWorkflowMixin:
                     candidates.append(bridge_to_trace @ source_to_bridge)
         return self._best_alignment_affine(source_mesh, target_mesh, candidates)
 
+    def _row_optical_solid_display_world_transform(self, system, row_index: int) -> np.ndarray | None:
+        """The 4x4 world transform the 3D inspector draws a file-backed optical
+        solid with (e.g. a folded RA prism).
+
+        bugs/0300: such a row is rendered from its STL under this runtime
+        transform, not from the shared ``step_*.step`` template it was promoted
+        from (a different local frame). The STEP export must place the STL here
+        so the body lands exactly where the 3D shows it -- saved or not. Prefer
+        the live inspector's own transform (it also covers the saved-STEP-native
+        display tier); otherwise reproduce the runtime tiers deterministically
+        for headless export: the runtime output-port override, else ``TRANS_2A``
+        with the same off-beam re-decenter the inspector applies.
+        """
+        def _valid_4x4(candidate):
+            if candidate is None:
+                return None
+            try:
+                matrix = np.asarray(candidate, dtype=float).reshape(4, 4)
+            except Exception:
+                return None
+            return matrix if np.all(np.isfinite(matrix)) else None
+
+        inspector = getattr(self, "_three_d_inspector", None)
+        if inspector is not None:
+            try:
+                matrix = _valid_4x4(inspector._runtime_transform_for_row(system, int(row_index)))
+            except Exception:
+                matrix = None
+            if matrix is not None:
+                return matrix
+        try:
+            from KrakenOS.UI.nonseq_output_ports import (
+                optical_solid_output_port_runtime_transform_override,
+            )
+        except Exception:
+            optical_solid_output_port_runtime_transform_override = None
+        if optical_solid_output_port_runtime_transform_override is not None:
+            try:
+                override = _valid_4x4(
+                    optical_solid_output_port_runtime_transform_override(system, self.rows, int(row_index))
+                )
+            except Exception:
+                override = None
+            if override is not None:
+                return override
+        transforms = getattr(system, "TRANS_2A", None)
+        if transforms is None:
+            return None
+        try:
+            if not (0 <= int(row_index) < len(transforms)):
+                return None
+            transform = np.asarray(transforms[int(row_index)], dtype=float).reshape(4, 4)
+        except Exception:
+            return None
+        if not np.all(np.isfinite(transform)):
+            return None
+        try:
+            from KrakenOS.UI.services.offbeam_optical_solid import offbeam_neutralized_body_transform
+            from KrakenOS.UI.surface_table_model import surface_row_to_spec
+        except Exception:
+            offbeam_neutralized_body_transform = None
+            surface_row_to_spec = None
+        if offbeam_neutralized_body_transform is not None and surface_row_to_spec is not None:
+            try:
+                built = getattr(system, "SDT", None)
+                if built is not None and 0 <= int(row_index) < min(len(built), len(self.rows)):
+                    redecentered = _valid_4x4(
+                        offbeam_neutralized_body_transform(
+                            transform,
+                            surface_row_to_spec(self.rows[int(row_index)]),
+                            getattr(built[int(row_index)], "DespX", 0.0),
+                            getattr(built[int(row_index)], "DespY", 0.0),
+                        )
+                    )
+                    if redecentered is not None:
+                        return redecentered
+            except Exception:
+                pass
+        return transform
+
+    def _optical_solid_row_world_step_shell(self, row, row_index: int, system):
+        """A faceted OCC shell of a file-backed optical solid, world-placed to
+        match the 3D display.
+
+        bugs/0300: builds the same STL-under-runtime-transform mesh the inspector
+        renders (via ``_stl_mesh_with_world_transform``), then tessellates it into
+        one STEP shell so the exported body is exactly what the user sees. Prisms
+        are flat-faced, so faceting is lossless. Returns ``None`` when no display
+        transform or usable geometry is available.
+        """
+        try:
+            from KrakenOS.UI.services.cad_step_export import occ_shell_shape_from_mesh
+        except Exception as exc:
+            raise RuntimeError(f"faceted STEP shell helper unavailable: {exc}") from exc
+        transform = self._row_optical_solid_display_world_transform(system, int(row_index))
+        if transform is None:
+            return None
+        # _stl_mesh_with_world_transform self-loads pyvista (the osw-module `pv`
+        # global can be a stale None); no separate pv guard here.
+        mesh = self._stl_mesh_with_world_transform(row, transform)
+        if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+            return None
+        return occ_shell_shape_from_mesh(mesh)
+
     def _collect_row_native_step_export_shapes(self, system, progress_callback=None) -> list[tuple[str, object]]:
         shape_items: list[tuple[str, object]] = []
         surfaces = getattr(system, "AAA", None)
@@ -1495,6 +1618,32 @@ class LayoutOpticalSolidWorkflowMixin:
                 continue
             row = self.rows[row_index]
             if getattr(row, "surface", "") in {"Object", "Image"}:
+                continue
+            # bugs/0300: a file-backed optical solid (e.g. a folded RA prism) is
+            # drawn from its STL under the runtime display transform, NOT from the
+            # shared step_*.step template it was promoted from (a different local
+            # frame). Export that same world-placed STL as a faceted shell so the
+            # STEP body matches the 3D exactly -- requirement (2)/(3). STEP-only
+            # rows (no promoted STL) keep the template + placement-affine path.
+            stl_item = self._file_backed_stl_row_at(row_index)
+            if stl_item is not None:
+                if progress_callback is not None:
+                    progress_callback(
+                        f"Preparing S{row_index} {(row.name or row.surface or 'optical solid')}",
+                        row_index + 1,
+                        block_count,
+                    )
+                try:
+                    shell = self._optical_solid_row_world_step_shell(stl_item[0], row_index, system)
+                    if shell is None:
+                        raise RuntimeError("optical-solid STL produced no exportable geometry")
+                    label = f"S{row_index} {row.name or row.element or row.surface or 'optical solid'}"
+                    shape_items.append((label, shell))
+                except Exception as exc:
+                    self.append_debug(
+                        f"3D STEP optical-solid row export skipped for S{row_index} "
+                        f"{row.name or row.surface}: {exc}"
+                    )
                 continue
             source_path = self._resolve_row_saved_step_source_path(row)
             if source_path is None:

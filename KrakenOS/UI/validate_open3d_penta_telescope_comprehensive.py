@@ -12694,6 +12694,39 @@ def phase_263_save_layout_from_3d(
     return result
 
 
+def phase_264_step_export_matches_display(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The 3D STEP export must be exactly what the 3D shows (bugs/0300). On the AZ85 folded periscope the
+    exported STEP was "mostly wrong / useless for production": the two BK7 RA prisms are optical-solid rows
+    (Solid_3d_stl) drawn from their STL under the runtime display transform, but the export placed a SHARED
+    step_*.step template that lives in a different local frame (~11mm off; box-ICP on a 6-point prism is
+    ambiguous ~4mm), and the Object plane was skipped outright. Fix: a file-backed optical-solid row is now
+    exported the way it is drawn -- its STL, carried into world by _row_optical_solid_display_world_transform
+    (the inspector's own _runtime_transform_for_row, else the runtime tiers), written as one faceted OCC shell;
+    the Object/Image skip was removed from both writers. The guard asserts every prism's exported shell bbox
+    equals its display-mesh bbox (<=0.05mm), the Object row is exportable, and the export derives its pose from
+    the 3D's own transform -- so display and export cannot drift apart silently.
+    """
+    result = PhaseResult(
+        name="Phase 264: The 3D STEP export matches the display (folded prisms + Object plane)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_step_export_matches_display import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"step-export-matches-display guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("step-export-matches-display phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13002,6 +13035,7 @@ def main() -> int:
             phase_261_folded_conjugate_first_order,
             phase_262_model_change_marks_2d_stale,
             phase_263_save_layout_from_3d,
+            phase_264_step_export_matches_display,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
