@@ -454,6 +454,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # the browser's "Scene Sources" group can hide/unhide them exactly like a
         # scene row -- re-applied after every refresh via _apply_scene_element_visibility.
         self._hidden_source_ids: set[str] = set()
+        # Full-scene Save/Open: the 3D-session sidecar (<layout>.open3d.json) carries
+        # the inspector-only state the layout .py does not -- measurements, per-item
+        # hidden state, overlay toggles, camera. Restore runs ONCE per layout file
+        # (keyed here) so a routine Update never clobbers live edits; the camera is
+        # buffered and applied after the next rebuild.
+        self._session_restored_for_path: str | None = None
+        self._pending_session_camera: dict | None = None
         self._source_actor_map: dict[str, list[str]] = {}
         self._actor_source_map: dict[str, str] = {}
         self._actor_step_follow_map: dict[str, str] = {}
@@ -12260,6 +12267,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.status_var.set("Save cancelled")
             return False
         path = getattr(self.editor, "current_layout_file", None)
+        # Persist the 3D-session extras (measurements, hidden items, overlay
+        # toggles, camera) so re-opening the layout reproduces the whole scene,
+        # not just the optical prescription the .py already carries.
+        self._write_open3d_session_sidecar(path)
         name = path.name if path is not None else "layout"
         self.status_var.set(f"Saved {name}")
         try:
@@ -12267,6 +12278,240 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
         return True
+
+    def save_layout_as(self) -> bool:
+        """Save the scene to a NEW layout .py (File -> Save As, from the 3D window).
+
+        Mirrors ``save_layout`` but forces the editor's Save-As dialog, then writes
+        the 3D-session sidecar next to the freshly chosen file so the full scene --
+        measurements, hidden items, overlay toggles, camera -- travels with it.
+        """
+        try:
+            self.editor._sync_table()
+            saved = bool(self.editor.save_layout_as())
+        except Exception as exc:
+            self.status_var.set(f"Save As failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D save layout as failed: {exc}")
+            return False
+        if not saved:
+            self.status_var.set("Save As cancelled")
+            return False
+        path = getattr(self.editor, "current_layout_file", None)
+        self._write_open3d_session_sidecar(path)
+        name = path.name if path is not None else "layout"
+        self.status_var.set(f"Saved {name}")
+        try:
+            self.editor.append_progress(f"Saved Open 3D layout as: {path}")
+        except Exception:
+            pass
+        return True
+
+    # Inspector-only 3D-session state that the layout .py does NOT already carry.
+    # (STEP-overlay poses, promoted solids, scene sources, glue, thickness dims,
+    # dimension-anchor overrides etc. are already in the layout settings dict.)
+    _SESSION_TOGGLE_VAR_NAMES = (
+        "show_rays_var",
+        "show_rotation_handles_var",
+        "show_reference_surfaces_var",
+        "show_detector_overlays_var",
+        "show_terminal_diagnostics_var",
+        "show_placement_handles_var",
+        "show_best_focus_surface_var",
+        "show_distortion_grid_var",
+        "show_astigmatism_var",
+        "show_spot_field_map_var",
+        "show_pixel_grid_var",
+        "show_source_illumination_var",
+        "show_source_illumination_rays_var",
+        "show_illumination_marker_rays_var",
+    )
+
+    def _open3d_session_sidecar_path(self, layout_path):
+        """Path of the 3D-session sidecar next to a layout .py (``foo.py`` ->
+        ``foo.open3d.json``). Returns ``None`` when the layout has no file yet."""
+        if not layout_path:
+            return None
+        try:
+            return Path(layout_path).with_suffix(".open3d.json")
+        except Exception:
+            return None
+
+    def _capture_open3d_session_camera(self):
+        """The active camera pose, so 'exactly reproduce' includes the viewpoint."""
+        renderer = getattr(self, "_renderer", None)
+        if renderer is None:
+            return None
+        try:
+            cam = renderer.GetActiveCamera()
+            return {
+                "position": [float(v) for v in cam.GetPosition()],
+                "focal_point": [float(v) for v in cam.GetFocalPoint()],
+                "view_up": [float(v) for v in cam.GetViewUp()],
+                "parallel_scale": float(cam.GetParallelScale()),
+                "parallel_projection": bool(cam.GetParallelProjection()),
+            }
+        except Exception:
+            return None
+
+    def _open3d_session_state_dict(self):
+        """Serialisable snapshot of the inspector-only 3D-session state."""
+        toggles: dict[str, bool] = {}
+        for name in self._SESSION_TOGGLE_VAR_NAMES:
+            var = getattr(self, name, None)
+            if var is None:
+                continue
+            try:
+                toggles[name] = bool(var.get())
+            except Exception:
+                continue
+        state: dict[str, object] = {
+            "version": 1,
+            "measure_segments": [
+                dict(seg) for seg in (getattr(self, "_measure_segments", []) or []) if isinstance(seg, dict)
+            ],
+            "hidden_measure_segments": sorted(
+                int(x) for x in (getattr(self, "_hidden_measure_segments", set()) or set())
+            ),
+            "hidden_scene_rows": sorted(
+                int(x) for x in (getattr(self, "_hidden_scene_rows", set()) or set())
+            ),
+            "hidden_step_labels": sorted(
+                str(x) for x in (getattr(self, "_hidden_step_labels", set()) or set())
+            ),
+            "hidden_source_ids": sorted(
+                str(x) for x in (getattr(self, "_hidden_source_ids", set()) or set())
+            ),
+            "overlay_toggles": toggles,
+        }
+        camera = self._capture_open3d_session_camera()
+        if camera is not None:
+            state["camera"] = camera
+        return state
+
+    def _write_open3d_session_sidecar(self, layout_path) -> None:
+        """Write the 3D-session sidecar next to the saved layout. Best-effort:
+        the layout .py is already saved, so a sidecar failure must not fail it."""
+        sidecar = self._open3d_session_sidecar_path(layout_path)
+        if sidecar is None:
+            return
+        try:
+            import json
+
+            sidecar.write_text(
+                json.dumps(self._open3d_session_state_dict(), indent=2), encoding="utf-8"
+            )
+            # The saved scene IS the live scene now, so mark this layout restored
+            # to keep a later re-open of the same file from reloading over edits.
+            self._session_restored_for_path = str(layout_path)
+        except Exception as exc:
+            try:
+                self.editor.append_debug(f"Open 3D session sidecar write failed: {exc}")
+            except Exception:
+                pass
+
+    def _maybe_restore_open3d_session_state(self) -> None:
+        """Load the 3D-session sidecar (if any) into the inspector BEFORE a full
+        refresh, so the imminent scene build reproduces the saved measurements,
+        hidden items and overlay toggles. Runs once per layout file (the guard),
+        so a routine Update never clobbers live edits."""
+        layout_path = getattr(self.editor, "current_layout_file", None)
+        key = str(layout_path) if layout_path else None
+        if key is None or key == getattr(self, "_session_restored_for_path", None):
+            return
+        # Mark attempted up-front (even when no sidecar exists) so we do not retry
+        # every refresh -- a missing sidecar simply leaves the current state.
+        self._session_restored_for_path = key
+        sidecar = self._open3d_session_sidecar_path(layout_path)
+        if sidecar is None or not sidecar.exists():
+            return
+        try:
+            import json
+
+            state = json.loads(sidecar.read_text(encoding="utf-8"))
+        except Exception as exc:
+            try:
+                self.editor.append_debug(f"Open 3D session sidecar read failed: {exc}")
+            except Exception:
+                pass
+            return
+        if isinstance(state, dict):
+            self._apply_open3d_session_state(state)
+
+    def _apply_open3d_session_state(self, state: dict) -> None:
+        """Populate inspector state from a session dict. Overlay toggles + hidden
+        sets + measurements are honoured by the subsequent rebuild (the scene
+        refresh re-draws measure overlays and re-applies visibility); the camera
+        is buffered for ``_apply_pending_session_camera`` after that rebuild."""
+        toggles = state.get("overlay_toggles")
+        if isinstance(toggles, dict):
+            for name in self._SESSION_TOGGLE_VAR_NAMES:
+                if name not in toggles:
+                    continue
+                var = getattr(self, name, None)
+                if var is None:
+                    continue
+                try:
+                    var.set(bool(toggles[name]))
+                except Exception:
+                    pass
+        segs = state.get("measure_segments")
+        if isinstance(segs, list):
+            self._measure_segments = [dict(seg) for seg in segs if isinstance(seg, dict)]
+        self._hidden_measure_segments = self._coerce_int_set(state.get("hidden_measure_segments"))
+        self._hidden_scene_rows = self._coerce_int_set(state.get("hidden_scene_rows"))
+        labels = state.get("hidden_step_labels")
+        if isinstance(labels, list):
+            self._hidden_step_labels = {str(x).strip().lower() for x in labels}
+        sources = state.get("hidden_source_ids")
+        if isinstance(sources, list):
+            self._hidden_source_ids = {str(x) for x in sources}
+        camera = state.get("camera")
+        if isinstance(camera, dict):
+            self._pending_session_camera = camera
+
+    @staticmethod
+    def _coerce_int_set(values) -> set:
+        out: set = set()
+        if isinstance(values, (list, tuple, set)):
+            for v in values:
+                try:
+                    out.add(int(v))
+                except Exception:
+                    pass
+        return out
+
+    def _apply_pending_session_camera(self) -> None:
+        """Apply a restored camera pose after the rebuild (funnelled through
+        ``refresh_scene`` so it covers both the sync and async trace paths)."""
+        camera = getattr(self, "_pending_session_camera", None)
+        if not isinstance(camera, dict):
+            return
+        self._pending_session_camera = None
+        renderer = getattr(self, "_renderer", None)
+        if renderer is None:
+            return
+        try:
+            cam = renderer.GetActiveCamera()
+            if "parallel_projection" in camera:
+                cam.SetParallelProjection(bool(camera["parallel_projection"]))
+            pos = camera.get("position")
+            foc = camera.get("focal_point")
+            up = camera.get("view_up")
+            if isinstance(pos, (list, tuple)) and len(pos) == 3:
+                cam.SetPosition(float(pos[0]), float(pos[1]), float(pos[2]))
+            if isinstance(foc, (list, tuple)) and len(foc) == 3:
+                cam.SetFocalPoint(float(foc[0]), float(foc[1]), float(foc[2]))
+            if isinstance(up, (list, tuple)) and len(up) == 3:
+                cam.SetViewUp(float(up[0]), float(up[1]), float(up[2]))
+            if "parallel_scale" in camera:
+                cam.SetParallelScale(float(camera["parallel_scale"]))
+            try:
+                renderer.ResetCameraClippingRange()
+            except Exception:
+                pass
+            self.render()
+        except Exception:
+            pass
 
     def _active_mode_badge_text(self) -> str:
         if self._source_target_pick_mode:
@@ -14361,6 +14606,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # view. Skipped on reset_camera (a full reframe is a context change, not a toggle).
         if not reset_camera:
             self._reapply_sensor_isolation_if_active()
+        # Apply a restored camera pose (buffered by a session restore) after the
+        # rebuild -- funnelled here so it covers both the sync and async traces.
+        self._apply_pending_session_camera()
         return result
 
     def _refresh_rays_only(self, rays, scene_bundle: SceneBundle | None = None) -> None:
@@ -14446,6 +14694,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return False
 
     def refresh_from_editor(self, *, sampling_mode: str | None = None, force_retrace: bool = False) -> None:
+        # Full-scene Open: pull any saved 3D-session sidecar into the inspector
+        # BEFORE the build, so this rebuild reproduces the saved measurements,
+        # hidden items and overlay toggles (once per layout file; the camera is
+        # applied after the build, in refresh_scene).
+        self._maybe_restore_open3d_session_state()
         if self._maybe_begin_async_scene_trace(sampling_mode=sampling_mode, force_retrace=force_retrace):
             return
         token = self._timing_start(

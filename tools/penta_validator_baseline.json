@@ -268,7 +268,8 @@
     "264": "pass",
     "265": "pass",
     "266": "pass",
-    "267": "pass"
+    "267": "pass",
+    "268": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -537,6 +538,7 @@
     "264": "Phase 264: The 3D STEP export matches the display (folded BK7 prisms + Object plane)",
     "265": "Phase 265: A vendor camera folder imports + registers its sensor (couples like the dropdown)",
     "266": "Phase 266: Measure snaps to the optical axis on a folded layout (X-cursor object-snap)",
-    "267": "Phase 267: Measure highlights a round imaging-lens edge (drawn-edge / rim fallback)"
+    "267": "Phase 267: Measure highlights a round imaging-lens edge (drawn-edge / rim fallback)",
+    "268": "Phase 268: Save/Open reproduces the whole 3D session (sidecar)"
   }
 }

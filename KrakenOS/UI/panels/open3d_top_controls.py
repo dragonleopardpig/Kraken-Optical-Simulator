@@ -47,7 +47,11 @@ class Open3DTopControlsPanel:
         pack_command_button(view_toolbar, "Snapshot", command=self.inspector.save_snapshot, padx=(8, 0))
         # Save the current prescription (including a solve done entirely in 3D) back to
         # the layout .py, so the source file stops drifting from the exported STEP / scene.
+        # Both write a <layout>.open3d.json sidecar so the full 3D session (measurements,
+        # hidden items, overlay toggles, camera) reproduces on re-open; "Save As" forces a
+        # new file (mirrors the main window's File -> Save As).
         pack_command_button(view_toolbar, "Save Layout", command=self.inspector.save_layout, padx=(8, 0))
+        pack_command_button(view_toolbar, "Save As", command=self.inspector.save_layout_as, padx=(4, 0))
         # Camera-nav cleanup: the cardinal + Iso camera-preset buttons and the +-90
         # rotate buttons were removed from this toolbar -- the Nav Cube is the single
         # camera-navigation control now (its faces/corners drive set_camera_preset's

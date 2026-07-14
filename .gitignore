@@ -96,6 +96,11 @@ instance/
 # Sphinx documentation
 docs/_build/
 
+# Open 3D per-session sidecars (<layout>.open3d.json): the inspector's measurements,
+# hidden items, overlay toggles and camera saved next to a layout. User/workstation
+# data that travels with the layout (Filen), not source -- keep it out of git.
+*.open3d.json
+
 # Local UI attachments, screenshots, and imported CAD are user/workstation data.
 # Keep curated catalogs and Zemax prescriptions explicit in git.
 /attachment/*.png

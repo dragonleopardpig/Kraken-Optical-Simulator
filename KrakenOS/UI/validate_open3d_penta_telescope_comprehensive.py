@@ -12822,6 +12822,34 @@ def phase_267_measure_lens_edge_highlight(
     return result
 
 
+def phase_268_session_persistence(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Full-scene Save/Open (user: "save all visible and invisible items ... must
+    exactly reproduce when re-opened" + "add a Save As in 3D"). The layout .py already
+    carries the optical prescription and heavy settings (STEP poses, promoted solids,
+    scene sources, glue); the inspector-only 3D-session state -- manual measurements,
+    per-item hidden state, overlay toggles, camera -- did not survive a save. Fix: a
+    <layout>.open3d.json sidecar written on Save / Save As and restored (once per layout
+    file) on open. Display-free guard: a real JSON round-trip of every field through a
+    temp sidecar + the restore guard + the save/restore/Save-As wiring."""
+    result = PhaseResult(name="Phase 268: Save/Open reproduces the whole 3D session (sidecar)")
+    try:
+        from KrakenOS.UI.validate_open3d_session_persistence import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"session-persistence guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("session-persistence phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13134,6 +13162,7 @@ def main() -> int:
             phase_265_camera_folder_import,
             phase_266_measure_folded_axis_snap,
             phase_267_measure_lens_edge_highlight,
+            phase_268_session_persistence,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
