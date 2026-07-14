@@ -569,6 +569,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._measure_offset_drag_state: dict[str, object] | None = None
         self._actor_measure_handle_map: dict[str, int] = {}
         self._measure_preview_actors: list[Any] = []
+        # bugs/0303: object-snap feedback -- a live 3-D "X" marker at the resolved
+        # snap point + an "X" cursor while the Measure cursor is over a snappable
+        # surface, so the user sees exactly where the next click lands.
+        self._measure_snap_marker_actors: list[Any] = []
         # bugs/0115 (CAD-flow step 3): after the SECOND Measure click, control
         # transfers straight to that dimension's offset -- the bare mouse moves the
         # standoff (resize cursor) and a plain click finishes -- so the CAD gesture
@@ -14458,7 +14462,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._set_axis_pick_cursor(True)
         except Exception:
             pass
-        self.status_var.set("Measure: click the FIRST edge/surface.")
+        self.status_var.set("Measure: click the FIRST edge/surface (snaps to the optical axis).")
         self._update_mode_badge()
 
     def clear_measurements(self) -> None:
@@ -14479,6 +14483,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         try:
             self._clear_measure_preview()
+        except Exception:
+            pass
+        try:
+            self._clear_measure_snap_marker()
         except Exception:
             pass
         self._refresh_measure_overlays()
@@ -14777,47 +14785,205 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
 
+    def _measure_recognised_component(self, hit_key) -> bool:
+        """True when a pick key belongs to a measurable component -- a STEP overlay
+        (``_actor_step_map``) or an optical/STL row (``_actor_row_map``)."""
+        return hit_key is not None and (
+            hit_key in (self._actor_step_map or {}) or hit_key in (self._actor_row_map or {})
+        )
+
+    @staticmethod
+    def _measure_pick_offset_ring(radius_px: float = 9.0):
+        """Screen-space sample offsets for the Measure object-snap magnetism
+        (bugs/0303): the exact cursor first, then a ring so aiming at a thin
+        silhouette EDGE (drawn PickableOff, so the ray grazes PAST it to whatever
+        is behind) still locks onto the body just inside the silhouette. Pure and
+        display-free so the ordering/geometry is unit-testable."""
+        import math
+
+        ring: list[tuple[float, float]] = [(0.0, 0.0)]
+        r = float(radius_px)
+        for k in range(8):
+            ang = math.pi * k / 4.0
+            ring.append((r * math.cos(ang), r * math.sin(ang)))
+        return ring
+
+    def _measure_resolve_snap(self, x: int, y: int):
+        """Resolve the Measure cursor to the nearest snappable component, tolerating
+        a thin-edge miss (bugs/0303).
+
+        Returns ``(hit_key, world, normal, sx, sy)``: when the exact cursor -- or,
+        only if that misses every component, a nearby ring sample -- lands on a
+        recognised component, the picker is LEFT at that sample (so the gold face
+        highlight resolves at ``(sx, sy)``) and its pick is returned; otherwise the
+        raw exact-cursor pick is returned (``hit_key`` may be unrecognised / None).
+        ``None`` when the pick machinery is unavailable."""
+        if self._picker is None or self._renderer is None:
+            return None
+
+        def _pick(px, py):
+            try:
+                self._picker.Pick(float(px), float(py), 0.0, self._renderer)
+                actor = self._picker.GetActor()
+                if actor is None:
+                    gvp = getattr(self._picker, "GetViewProp", None)
+                    if callable(gvp):
+                        actor = gvp()
+                key = self._actor_key(actor)
+            except Exception:
+                return None, None, None
+            try:
+                world = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+            except Exception:
+                world = None
+            try:
+                normal = np.asarray(self._picker.GetPickNormal(), dtype=float).reshape(-1)[:3]
+            except Exception:
+                normal = None
+            return key, world, normal
+
+        # The exact cursor first -- the common case is unchanged (a body hit).
+        key0, world0, normal0 = _pick(x, y)
+        if self._measure_recognised_component(key0):
+            return key0, world0, normal0, int(x), int(y)
+        # Magnetism: ONLY when the exact pick found no component (e.g. it grazed a
+        # thin edge into empty space) do we sample a small ring around the cursor.
+        for dx, dy in self._measure_pick_offset_ring()[1:]:
+            sx, sy = int(round(x + dx)), int(round(y + dy))
+            key, world, normal = _pick(sx, sy)
+            if self._measure_recognised_component(key):
+                return key, world, normal, sx, sy
+        # Nothing recognised: restore the exact-cursor pick state and return it raw.
+        _pick(x, y)
+        return key0, world0, normal0, int(x), int(y)
+
+    def _set_measure_snap_cursor(self, over_surface: bool) -> None:
+        """Measure tool: a distinct "X" pointer while the cursor is over a snappable
+        surface (bugs/0303) -- the OSNAP "you will snap here" feel -- falling back
+        to the plain crosshair while armed over empty space."""
+        try:
+            if self._vtk_widget is not None:
+                self._vtk_widget.configure(cursor="X_cursor" if over_surface else "crosshair")
+        except Exception:
+            pass
+        try:
+            if self._vtk_interactor is not None:
+                # VTK's interactor has no "X" glyph; the crosshair (9) is the closest.
+                self._vtk_interactor.SetCurrentCursor(9)
+        except Exception:
+            pass
+
+    def _clear_measure_snap_marker(self) -> None:
+        for _actor in getattr(self, "_measure_snap_marker_actors", []) or []:
+            try:
+                self._remove_renderer_view_prop(_actor)
+            except Exception:
+                pass
+        self._measure_snap_marker_actors = []
+
+    def _show_measure_snap_marker(self, world) -> None:
+        """Draw a small view-facing "X" at the resolved snap point so the user sees
+        exactly where the next Measure click lands (bugs/0303 -- the "snap feel").
+        Cleared and redrawn every hover; never pickable."""
+        self._clear_measure_snap_marker()
+        if world is None or self._renderer is None or vtkActor is None:
+            return
+        p = np.asarray(world, dtype=float).reshape(-1)[:3]
+        if p.size < 3 or not np.all(np.isfinite(p)):
+            return
+        try:
+            from vtkmodules.vtkFiltersSources import vtkLineSource
+            from vtkmodules.vtkRenderingCore import vtkPolyDataMapper
+        except Exception:
+            return
+        # A view-facing X: two diagonals spanned by the camera right/up vectors so
+        # the marker reads as an "X" from any orbit. Size tracks the zoom.
+        cam = self._renderer.GetActiveCamera()
+        try:
+            dop = np.asarray(cam.GetDirectionOfProjection(), dtype=float).reshape(3)
+            up = np.asarray(cam.GetViewUp(), dtype=float).reshape(3)
+            right = np.cross(dop, up)
+            right = right / (np.linalg.norm(right) or 1.0)
+            up = np.cross(right, dop)
+            up = up / (np.linalg.norm(up) or 1.0)
+            scale = float(cam.GetParallelScale()) if cam.GetParallelProjection() else float(
+                np.linalg.norm(np.asarray(cam.GetPosition(), dtype=float).reshape(3) - p)
+            )
+        except Exception:
+            right = np.array([1.0, 0.0, 0.0])
+            up = np.array([0.0, 1.0, 0.0])
+            scale = 100.0
+        r = max(min(scale * 0.02, 12.0), 1.5)
+        d1 = (right + up)
+        d1 = d1 / (np.linalg.norm(d1) or 1.0) * r
+        d2 = (right - up)
+        d2 = d2 / (np.linalg.norm(d2) or 1.0) * r
+        for d in (d1, d2):
+            try:
+                src = vtkLineSource()
+                src.SetPoint1(*(p - d).tolist())
+                src.SetPoint2(*(p + d).tolist())
+                mapper = vtkPolyDataMapper()
+                mapper.SetInputConnection(src.GetOutputPort())
+                act = vtkActor()
+                act.SetMapper(mapper)
+                act.PickableOff()
+                prop = act.GetProperty()
+                prop.SetColor(1.0, 0.55, 0.0)
+                prop.SetLineWidth(2.6)
+                self._add_renderer_view_prop(act)
+                self._measure_snap_marker_actors.append(act)
+            except Exception:
+                pass
+
     def _update_measure_hover_highlight(self) -> None:
         """While the Measure tool is armed, hover-highlight the edge/surface under
         the cursor (the gold STEP-face outline / row highlight the re-anchor pick
-        uses) so the user sees what the next click measures (bugs/0108)."""
+        uses) and show an "X" snap marker + cursor at the resolved optical-axis snap
+        point, so the user sees exactly what the next click measures (bugs/0108,
+        bugs/0303)."""
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
             return
-        hit_key = None
         x = y = None
         try:
             x, y = self._vtk_interactor.GetEventPosition()
-            self._picker.Pick(x, y, 0.0, self._renderer)
-            actor = self._picker.GetActor()
-            if actor is None:
-                get_view_prop = getattr(self._picker, "GetViewProp", None)
-                if callable(get_view_prop):
-                    actor = get_view_prop()
-            hit_key = self._actor_key(actor)
         except Exception:
-            hit_key = None
             x = y = None
-        pickable = hit_key is not None and (
-            hit_key in (self._actor_step_map or {}) or hit_key in (self._actor_row_map or {})
+        resolved = (
+            self._measure_resolve_snap(int(x), int(y))
+            if x is not None and y is not None
+            else None
         )
-        if pickable and x is not None and y is not None:
-            self._set_dimension_anchor_snap_highlight(hit_key, int(x), int(y))
+        hit_key = resolved[0] if resolved else None
+        world = resolved[1] if resolved else None
+        sx = resolved[3] if resolved else None
+        sy = resolved[4] if resolved else None
+        pickable = self._measure_recognised_component(hit_key)
+        if pickable and sx is not None:
+            self._set_dimension_anchor_snap_highlight(hit_key, int(sx), int(sy))
+            try:
+                snapped = self._measure_axis_snap_for_pick(hit_key, world)
+            except Exception:
+                snapped = None
+            snap_point = snapped if snapped is not None else world
+            self._show_measure_snap_marker(snap_point)
+            self._set_measure_snap_cursor(True)
             if getattr(self, "_measure_p0", None) is None:
                 self._clear_measure_preview()
-                self.status_var.set("Measure: click the FIRST edge/surface.")
+                self.status_var.set("Measure: click the FIRST edge/surface (snaps to the optical axis).")
             else:
                 # bugs/0115 (Commit 2): rubber-band the forming dimension from the
                 # first anchor to the snapped point under the cursor.
                 try:
-                    world = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
-                    snapped = self._measure_axis_snap_for_pick(hit_key, world)
-                    self._refresh_measure_preview(snapped if snapped is not None else world)
+                    self._refresh_measure_preview(snap_point)
                 except Exception:
                     self._clear_measure_preview()
-                self.status_var.set("Measure: click the SECOND edge/surface.")
+                self.status_var.set("Measure: click the SECOND edge/surface (snaps to the optical axis).")
         else:
             self._clear_dimension_anchor_snap_highlight()
             self._clear_measure_preview()
+            self._clear_measure_snap_marker()
+            self._set_measure_snap_cursor(False)
         try:
             self.render()
         except Exception:
@@ -18240,33 +18406,33 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             and self._renderer is not None
             and self._vtk_interactor is not None
         ):
-            hit_actor = None
+            hit_key = None
             world = None
             normal = None
             try:
                 x, y = self._vtk_interactor.GetEventPosition()
-                self._picker.Pick(x, y, 0.0, self._renderer)
-                hit_actor = self._picker.GetActor()
-                world = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
-                try:
-                    normal = np.asarray(self._picker.GetPickNormal(), dtype=float).reshape(-1)[:3]
-                except Exception:
-                    normal = None
+                # bugs/0303: resolve through the SAME object-snap magnetism the hover
+                # marker uses, so aiming at a thin silhouette edge locks onto the body
+                # (and the recorded point matches the "X" the user was shown).
+                resolved = self._measure_resolve_snap(int(x), int(y))
+                if resolved is not None:
+                    hit_key, world, normal = resolved[0], resolved[1], resolved[2]
             except Exception:
-                hit_actor = None
+                hit_key = None
                 world = None
                 normal = None
-            if hit_actor is not None and world is not None and world.size >= 3:
+            if world is not None and np.asarray(world).size >= 3:
                 # bugs/0115: always-on axis snap (with raw-edge fallback). A click on a
                 # recognised component is pulled onto the optical axis at the clicked
                 # feature's z -- a lens FRONT edge snaps to the front (not the body
                 # centre), the object plane to the on-axis FOV centre -- so the
                 # dimensions align side-by-side along the axis. A bare-edge pick on
                 # nothing recognised (snap is None) keeps the raw point-to-point click.
-                snapped = self._measure_axis_snap_for_pick(self._actor_key(hit_actor), world)
+                snapped = self._measure_axis_snap_for_pick(hit_key, world)
                 if snapped is not None:
                     world = snapped
                     normal = None  # on-axis points span point-to-point along the axis
+                self._clear_measure_snap_marker()
                 self._record_measure_point(world, normal)
             else:
                 self.status_var.set("Measure: click ON an edge/surface (the pick missed).")

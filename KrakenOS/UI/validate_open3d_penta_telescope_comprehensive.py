@@ -12759,6 +12759,38 @@ def phase_265_camera_folder_import(
     return result
 
 
+def phase_266_measure_folded_axis_snap(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The Measure tool measures ALONG the optical axis on a FOLDED RA-mirror layout
+    (user flag: measuring an RA-mirror centre to the imaging-lens edge, "the second
+    click won't highlight, the closest surface does, the arrow lands in the wrong
+    place" -- they want the distance along the axis + an "X" cursor / snap feel).
+    The lens silhouette edge is drawn PickableOff, so aiming at it grazes the pick
+    PAST the lens; the axis projection itself is correct across every folded branch,
+    so the fix is object-snap magnetism (a ring around the cursor) + a live "X" snap
+    marker/cursor, and the recorded point is the on-axis projection. Display-free
+    guard: folded projection + recognition gate + ring purity + hover/click/clear
+    wiring."""
+    result = PhaseResult(
+        name="Phase 266: Measure snaps to the optical axis on a folded layout (X-cursor object-snap)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_measure_folded_axis_snap import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"measure-folded-axis-snap guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("measure-folded-axis-snap phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13069,6 +13101,7 @@ def main() -> int:
             phase_263_save_layout_from_3d,
             phase_264_step_export_matches_display,
             phase_265_camera_folder_import,
+            phase_266_measure_folded_axis_snap,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
