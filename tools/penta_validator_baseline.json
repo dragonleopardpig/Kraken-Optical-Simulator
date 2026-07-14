@@ -265,7 +265,8 @@
     "261": "pass",
     "262": "pass",
     "263": "pass",
-    "264": "pass"
+    "264": "pass",
+    "265": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -531,6 +532,7 @@
     "261": "Phase 261: Folded FOV solve targets the shared first order (RA-prism glass; in focus, |m| on target)",
     "262": "Phase 262: A 3D model change marks the 2D stale (Done 2D re-plots after the best-focus snap)",
     "263": "Phase 263: Save Layout from the 3D inspector persists the 3D-solved prescription",
-    "264": "Phase 264: The 3D STEP export matches the display (folded BK7 prisms + Object plane)"
+    "264": "Phase 264: The 3D STEP export matches the display (folded BK7 prisms + Object plane)",
+    "265": "Phase 265: A vendor camera folder imports + registers its sensor (couples like the dropdown)"
   }
 }

@@ -1691,10 +1691,12 @@ class ScenePlacementMixin:
         self,
         dialog_parent: tk.Misc | None = None,
         *,
+        path: Path | str | None = None,
         refresh_open_3d: bool = True,
     ) -> Path | None:
         return self._step_overlay_import_service().import_camera_step(
             dialog_parent=dialog_parent,
+            path=path,
             refresh_open_3d=refresh_open_3d,
         )
 

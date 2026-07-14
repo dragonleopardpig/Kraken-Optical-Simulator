@@ -12727,6 +12727,38 @@ def phase_264_step_export_matches_display(
     return result
 
 
+def phase_265_camera_folder_import(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A whole vendor *camera* folder imports into a CAMERA_DATABASE record the same
+    way the imaging lens already imports from a folder (user ask: "the Imaging Lens
+    already have import from folder ... Can you do the same to Camera?"). The engine
+    scrapes the datasheet PDF (hr25MCX now decodes via hex-string ToUnicode shows) or
+    reads a curated .json sidecar, persists the record to
+    attachment/Cameras/imported_cameras.json, and camera_database folds that registry
+    into CAMERA_DATABASE -- so importing the vendor STEP reverse-resolves the sensor and
+    couples the field / image circle exactly like picking the camera from the dropdown.
+    Display-free guard: engine + DB merge + reverse-resolve + built-ins-win + the
+    editor / inspector / menu wiring."""
+    result = PhaseResult(
+        name="Phase 265: A vendor camera folder imports + registers its sensor (couples like the dropdown)"
+    )
+    try:
+        from KrakenOS.UI.validate_camera_folder_import import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"camera-folder-import guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("camera-folder-import phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13036,6 +13068,7 @@ def main() -> int:
             phase_262_model_change_marks_2d_stale,
             phase_263_save_layout_from_3d,
             phase_264_step_export_matches_display,
+            phase_265_camera_folder_import,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

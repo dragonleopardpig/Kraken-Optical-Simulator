@@ -45,17 +45,25 @@ from pathlib import Path
 _OBJ_RE = re.compile(rb"\b(\d+) 0 obj\b(.*?)\bendobj", re.S)
 _STREAM_RE = re.compile(rb"stream\r?\n", re.S)
 _FONT_DICT_RE = re.compile(rb"/Font\s*<<(.*?)>>", re.S)
-_FONT_REF_RE = re.compile(rb"/(F\d+)\s+(\d+)\s+0\s+R")
+_FONT_REF_RE = re.compile(rb"/([A-Za-z0-9_+.-]+)\s+(\d+)\s+0\s+R")
 _TOUNICODE_RE = re.compile(rb"/ToUnicode\s+(\d+)\s+0\s+R")
 _BFCHAR_RE = re.compile(rb"beginbfchar(.*?)endbfchar", re.S)
 _BFRANGE_RE = re.compile(rb"beginbfrange(.*?)endbfrange", re.S)
 _HEXPAIR_RE = re.compile(rb"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>")
 _HEXTRIP_RE = re.compile(rb"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>")
-# One content-token: a font switch, a (..)Tj show, or a [..]TJ show.
+# One content-token: a font switch, a (..)Tj / <..>Tj show, or a [..]TJ show.
+# Font resource names are generalised beyond the Schneider ``/F\d+`` template so
+# vendor camera datasheets (Allied Vision ``/F9../F12``, Bopixel ``/C2_0``/``/TT0``)
+# switch CMaps too, and shows may be literal ``(..)`` OR hex ``<..>`` strings
+# (Allied Vision camera sheets use hex shows exclusively).
 _CONTENT_TOKEN_RE = re.compile(
-    rb"/(F\d+)\s+[\d.]+\s+Tf|\((?:[^()\\]|\\.)*\)\s*Tj|\[(?:[^\]]*)\]\s*TJ", re.S
+    rb"/([A-Za-z0-9_+.-]+)\s+[\d.]+\s+Tf"
+    rb"|<([0-9A-Fa-f\s]+)>\s*Tj"
+    rb"|\((?:[^()\\]|\\.)*\)\s*Tj"
+    rb"|\[(?:[^\]]*)\]\s*TJ",
+    re.S,
 )
-_TJ_ELEMENT_RE = re.compile(rb"\((.*?)(?<!\\)\)|(-?\d+)", re.S)
+_TJ_ELEMENT_RE = re.compile(rb"\((.*?)(?<!\\)\)|<([0-9A-Fa-f\s]+)>|(-?\d+)", re.S)
 
 
 def _object_streams(data: bytes) -> dict[int, bytes]:
@@ -131,6 +139,16 @@ def _decode_show(raw: bytes, cmap: dict[int, str]) -> str:
     return "".join(cmap.get(raw[i] * 256 + raw[i + 1], "") for i in range(0, len(raw) - 1, 2))
 
 
+def _decode_hex_show(hex_bytes: bytes, cmap: dict[int, str]) -> str:
+    """Decode a hex show-string ``<0031 0052 ...>`` (whitespace tolerated) as
+    2-byte CID codes through the active CMap.  Camera datasheets (Allied Vision,
+    Bopixel) emit their text this way rather than as literal ``(..)`` strings."""
+    packed = re.sub(rb"\s+", b"", hex_bytes)
+    return "".join(
+        cmap.get(int(packed[i:i + 4], 16), "") for i in range(0, len(packed) - 3, 4)
+    )
+
+
 def _decode_content(stream: bytes, name_to_cmap: dict[str, dict[int, str]]) -> str:
     """Walk a content stream, switching CMaps on ``/Fn Tf`` and decoding every
     ``Tj`` / ``TJ`` show; a large negative ``TJ`` advance renders as a space."""
@@ -138,21 +156,27 @@ def _decode_content(stream: bytes, name_to_cmap: dict[str, dict[int, str]]) -> s
     current: dict[int, str] = {}
     for token in _CONTENT_TOKEN_RE.finditer(stream):
         text = token.group(0)
-        font = re.match(rb"/(F\d+)", text)
+        font = re.match(rb"/([A-Za-z0-9_+.-]+)\s+[\d.]+\s+Tf", text)
         if font is not None:
             current = name_to_cmap.get(font.group(1).decode(), {})
             continue
         stripped = text.rstrip()
         if stripped.endswith(b"Tj"):
-            show = re.search(rb"\((.*)\)\s*Tj", text, re.S)
-            if show is not None:
-                out.append(_decode_show(show.group(1), current))
+            hex_show = re.match(rb"<([0-9A-Fa-f\s]+)>\s*Tj", text)
+            if hex_show is not None:
+                out.append(_decode_hex_show(hex_show.group(1), current))
+            else:
+                show = re.search(rb"\((.*)\)\s*Tj", text, re.S)
+                if show is not None:
+                    out.append(_decode_show(show.group(1), current))
         elif stripped.endswith(b"TJ"):
             array = re.search(rb"\[(.*)\]\s*TJ", text, re.S).group(1)
             for element in _TJ_ELEMENT_RE.finditer(array):
                 if element.group(1) is not None:
                     out.append(_decode_show(element.group(1), current))
-                elif element.group(2) is not None and int(element.group(2)) < -90:
+                elif element.group(2) is not None:
+                    out.append(_decode_hex_show(element.group(2), current))
+                elif element.group(3) is not None and int(element.group(3)) < -90:
                     out.append(" ")
     return "".join(out)
 

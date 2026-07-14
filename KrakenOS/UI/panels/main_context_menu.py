@@ -207,6 +207,10 @@ class MainContextMenu:
                     command=lambda value=machine_vision_name: self.insert_machine_vision_lens_by_name(value),
                 )
         insert_menu.add_cascade(label="Machine Vision Lens", menu=machine_vision_menu)
+        insert_menu.add_command(
+            label="Import Vendor Camera from Folder...",
+            command=self.import_vendor_camera_from_folder,
+        )
         if row.surface == self.beam_splitter_surface:
             insert_menu.add_separator()
             insert_menu.add_command(

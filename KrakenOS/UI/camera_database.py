@@ -8,6 +8,7 @@ diagonal.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
@@ -218,6 +219,71 @@ CAMERA_DATABASE: dict[str, dict[str, object]] = {
         ),
     },
 }
+
+
+# ----------------------------------------------------------------------------
+# Imported-camera registry (attachment/Cameras/imported_cameras.json)
+# ----------------------------------------------------------------------------
+# Vendor cameras brought in via the folder importer
+# (``KrakenOS.UI.services.camera_folder_import``) are persisted to a Filen-synced
+# JSON sidecar next to the vendor assets rather than edited into the literal
+# above.  Fold that registry into ``CAMERA_DATABASE`` at import so
+# ``camera_model_for_step_path`` and the dropdown pick imported cameras up.
+# Hand-authored built-ins always win: an imported camera only ever ADDS a new
+# model, never overrides one.  The path must match
+# ``camera_folder_import.IMPORTED_CAMERAS_JSON``.
+IMPORTED_CAMERAS_JSON = ATTACHMENT_DIR / "Cameras" / "imported_cameras.json"
+
+# The registry JSON stores these as lists / project-relative path strings; the
+# built-in records carry tuples / absolute Paths.  Convert on the way in so an
+# imported record is indistinguishable from a hand-authored one.
+_IMPORTED_TUPLE_FIELDS = (
+    "resolution_px",
+    "pixel_size_um",
+    "spectral_range_nm",
+    "body_dimensions_lwh_mm",
+    "sensor_bit_depths",
+    "pixel_formats",
+)
+_IMPORTED_PATH_FIELDS = ("step_path", "datasheet")
+
+
+def _merge_imported_cameras(path: Path | None = None) -> None:
+    path = Path(path) if path is not None else IMPORTED_CAMERAS_JSON
+    if not path.exists():
+        return
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    if not isinstance(payload, dict):
+        return
+    for name, record in payload.items():
+        if not isinstance(record, dict) or str(name) in CAMERA_DATABASE:
+            continue
+        merged = dict(record)
+        for key in _IMPORTED_PATH_FIELDS:
+            value = merged.get(key)
+            if isinstance(value, str) and value:
+                candidate = Path(value)
+                merged[key] = candidate if candidate.is_absolute() else PROJECT_ROOT / candidate
+        for key in _IMPORTED_TUPLE_FIELDS:
+            if isinstance(merged.get(key), list):
+                merged[key] = tuple(merged[key])
+        CAMERA_DATABASE[str(name)] = merged
+
+
+def refresh_imported_cameras() -> None:
+    """Re-fold the imported-camera registry JSON into ``CAMERA_DATABASE``.
+
+    The import-time merge already ran at module load; call this after the folder
+    importer writes a new record so a *running* session picks the camera up
+    (dropdown + ``camera_model_for_step_path``) without a restart.
+    """
+    _merge_imported_cameras()
+
+
+_merge_imported_cameras()
 
 
 def camera_names() -> list[str]:

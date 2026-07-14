@@ -6293,6 +6293,57 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         finally:
             editor.__dict__.pop("_keep_scene_viewers_across_layout_replacement", None)
 
+    def import_vendor_camera_from_folder(self) -> None:
+        """3D CAD menu: ingest a whole vendor *camera* folder -- register its
+        sensor and place its mechanical STEP as the camera body here.
+
+        The editor scrapes the datasheet PDF (or reads a ``.json`` sidecar) for
+        the sensor size, registers the camera, then imports the folder's STEP;
+        because the sensor is now a known camera, the field / image circle couple
+        to it exactly like picking the camera from the dropdown.  Unlike the lens
+        folder importer this does NOT replace the working layout -- it only adds a
+        camera overlay to the current one -- so the scene wiring matches the
+        camera STEP-overlay path.  Cancelling the chooser (or a build failure)
+        leaves the scene untouched.
+        """
+        label = "camera"
+        token = self._timing_start("import_vendor_camera_from_folder")
+        try:
+            imported = self.editor.import_vendor_camera_from_folder(
+                dialog_parent=self, refresh_open_3d=False
+            )
+            if imported is None:
+                self.status_var.set(self.editor.status_var.get())
+                self._timing_finish(token, status="cancelled")
+                return
+            # The camera STEP overlay + sensor coupling changed the model; mark
+            # the 2D layout dirty so "Done 2D" re-plots (bugs/0296 invariant).
+            self._stl_placement_dirty = True
+            self.editor.select_step_component(label)
+            self._step_rotation_active_label = label
+            self._step_carry_active_label = label
+            self._step_carry_follow_state = None
+            self._step_carry_snap_ray_mode = False
+            self._step_carry_snap_target_mode = False
+            self._step_normal_axis_pick_mode = False
+            self._step_surface_center_axis_pick_mode = False
+            self._step_carry_grid_label = None
+            self._step_carry_grid_spacing_mm = None
+            self._selected_step_feature = None
+            self._selected_step_feature_label = None
+            self._selected_step_feature_center_world = None
+            self._selected_step_feature_surface_center_world = None
+            self._selected_step_feature_normal_world = None
+            self.refresh_from_editor()
+            self.show_step_rotation_handler(label)
+            self.status_var.set(self.editor.status_var.get())
+            self.refresh_step_admin_panel()
+        except Exception as exc:
+            self._timing_finish(token, status="error", error=_short_error_message(exc))
+            raise
+        else:
+            self._timing_finish(token, status="ok", name=str(imported.name))
+
     def clear_step_imports(self) -> None:
         self.editor.clear_step_imports()
         self._close_step_rotation_handler()

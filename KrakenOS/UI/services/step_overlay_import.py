@@ -208,10 +208,16 @@ class StepOverlayImportService:
         self,
         dialog_parent: tk.Misc | None = None,
         *,
+        path: Path | str | None = None,
         refresh_open_3d: bool = True,
     ) -> Path | None:
         le = _layout_module()
-        path = self._ask_step_file("Import camera STEP", le.ATTACHMENT_DIR, parent=dialog_parent)
+        if path is None:
+            path = self._ask_step_file("Import camera STEP", le.ATTACHMENT_DIR, parent=dialog_parent)
+        else:
+            # Folder-import path: the STEP was already chosen by the folder
+            # scanner, so skip the file chooser and use it directly.
+            path = Path(path).expanduser()
         if path is None:
             return None
         self._begin_history_capture()

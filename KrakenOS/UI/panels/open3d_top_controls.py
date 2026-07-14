@@ -189,6 +189,10 @@ class Open3DTopControlsPanel:
                     "Import Lens from Folder...",
                     self.inspector.import_machine_vision_lens_from_folder,
                 ),
+                MenuCommand(
+                    "Import Camera from Folder...",
+                    self.inspector.import_vendor_camera_from_folder,
+                ),
                 None,
                 MenuCommand("Delete Selected STEP", self.inspector.delete_selected_step),
                 MenuCommand("Clear STEP Imports", self.inspector.clear_step_imports),

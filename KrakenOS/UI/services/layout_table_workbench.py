@@ -9,8 +9,16 @@ modules.
 
 from __future__ import annotations
 
-from KrakenOS.UI.camera_database import camera_model_for_step_path
+from KrakenOS.UI.camera_database import (
+    camera_model_for_step_path,
+    refresh_imported_cameras,
+)
 from KrakenOS.UI.custom_surfaces import encode_custom_surface_value
+from KrakenOS.UI.services.camera_folder_import import (
+    build_camera_record_from_assets,
+    scan_camera_folder,
+    write_imported_camera,
+)
 from KrakenOS.UI.services.fold_insertion import can_insert_fold_mirror, plan_fold_mirror
 from KrakenOS.UI.services.machine_vision_folder_import import (
     import_lens_folder,
@@ -688,6 +696,70 @@ class LayoutTableWorkbenchMixin:
         self.status_var.set(message)
         self.append_progress(message)
         return model
+
+    def import_vendor_camera_from_folder(
+        self, folder: str | None = None, *, dialog_parent=None, refresh_open_3d: bool = True
+    ):
+        """Camera analogue of :meth:`import_machine_vision_lens_from_folder`:
+        ingest a whole vendor *camera* folder, register its sensor as a
+        ``CAMERA_DATABASE`` entry, then import the mechanical STEP as the camera
+        body -- which couples the surrogate to that sensor (field -> sensor
+        half-diagonal, image circle -> sensor) exactly like picking the camera
+        from the dropdown.
+
+        The folder must carry the mechanical ``STEP`` plus a spec source: the
+        vendor **datasheet PDF** (its spec table is scraped) or a curated
+        ``.json`` sidecar with at least ``sensor_width_mm`` / ``sensor_height_mm``
+        (for a datasheet whose text cannot be extracted).  The record is
+        persisted to ``attachment/Cameras/imported_cameras.json`` and folded into
+        the live database, so re-importing or a fresh session both find it.
+
+        ``dialog_parent`` re-parents the folder chooser / error dialogs (the Open
+        3D inspector passes itself).  Returns the built
+        :class:`~KrakenOS.UI.services.camera_folder_import.ImportedCamera` on
+        success, or ``None`` when cancelled or the record could not be built.
+        """
+        parent = dialog_parent if dialog_parent is not None else self
+        if folder is None:
+            folder = filedialog.askdirectory(
+                title="Import Vendor Camera from Folder", parent=parent
+            )
+        if not folder:
+            return None
+        try:
+            assets = scan_camera_folder(folder)
+            if assets.primary_step is None:
+                raise ValueError(
+                    "No STEP (.step / .stp) file found in this folder; the camera "
+                    "body CAD is required to place the camera and couple its sensor."
+                )
+            imported = build_camera_record_from_assets(assets)
+            write_imported_camera(imported.name, imported.record)
+            # Fold the just-written record into the live CAMERA_DATABASE so the
+            # STEP import below reverse-resolves it (no app restart needed).
+            refresh_imported_cameras()
+        except Exception as exc:
+            messagebox.showerror(
+                "Import Vendor Camera",
+                "Could not import a camera from this folder:\n\n"
+                f"{folder}\n\n{exc}",
+                parent=parent,
+            )
+            return None
+        # Import the vendor STEP as the camera body.  Because the sensor is now a
+        # known CAMERA_DATABASE entry, import_camera_step reverse-resolves it and
+        # auto-fills the field / image circle to the sensor -- the same complete
+        # state as picking the camera from the dropdown.
+        self.import_camera_step(
+            path=assets.primary_step, dialog_parent=parent, refresh_open_3d=refresh_open_3d
+        )
+        message = (
+            f"Imported camera {imported.name} from {Path(folder).name}: registered "
+            f"its sensor and placed {assets.primary_step.name}."
+        )
+        self.status_var.set(message)
+        self.append_progress(message)
+        return imported
 
     def _selected_operand_labels(self) -> list[str]:
         if "merit_mode_list" not in self.__dict__:
