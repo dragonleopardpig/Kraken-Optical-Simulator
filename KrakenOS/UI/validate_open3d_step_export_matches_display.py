@@ -23,6 +23,11 @@ absent, e.g. on a fresh checkout -- the fixture is not committed):
       _row_optical_solid_display_world_transform, that helper prefers the inspector's
       _runtime_transform_for_row, and _collect_row_native_step_export_shapes branches on
       _file_backed_stl_row_at -- so display and export cannot drift apart silently.
+  (D) NO PHANTOM PLANES (bugs/0301): both writers skip the non-physical bookkeeping rows the
+      3D display skips (the in-path gap-carrier disc, a promoted body's trailing face) via the
+      shared _row_is_non_physical_reference predicate, whose flags equal the display's own skip
+      flags; on AZ85 the gap-carrier row (which would otherwise draw a disc between the RA prism
+      and the lens) is excluded while the Object plane still exports.
 
 Run: .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_step_export_matches_display
 Exit: 0 = pass, 1 = regression.
@@ -183,11 +188,76 @@ def _facet_c_single_source(checks: list[Check]) -> None:
     ))
 
 
+def _facet_d_phantom_reference_rows(checks: list[Check]) -> None:
+    """bugs/0301: the export must NOT draw an analytic disc for the non-physical
+    bookkeeping rows the 3D display skips -- the in-path gap-carrier (a promoted
+    solid's large clear aperture, kept so the trace never clips) and a promoted
+    body's trailing face. On the AZ85 periscope the gap-carrier surfaced as a
+    phantom plane between the RA prism and the imaging lens (attachment/STEP2.png).
+    """
+    from KrakenOS.UI.services import cad_step_export as ce
+    from KrakenOS.UI.services.three_d_scene_tools import ThreeDSceneToolsMixin
+
+    analytic_src = inspect.getsource(ce._write_step_with_analytic_surfaces)
+    cad_src = inspect.getsource(ce._write_step_with_cad_shapes_and_rays)
+    wired = (
+        "_row_is_non_physical_reference" in analytic_src
+        and "_row_is_non_physical_reference" in cad_src
+    )
+    checks.append(Check(
+        "D1 WRITERS SKIP NON-PHYSICAL ROWS: both writers call _row_is_non_physical_reference",
+        wired,
+        "both analytic + CAD writers gate on the predicate"
+        if wired
+        else "a writer does not skip non-physical bookkeeping rows",
+    ))
+
+    pred_src = inspect.getsource(ce._row_is_non_physical_reference)
+    disp_src = inspect.getsource(ThreeDSceneToolsMixin._iter_3d_optical_surface_meshes)
+    flags = ("InPathTrailingSpacer", "StepAnalyticBodyOmitMesh")
+    parity = all(f in pred_src for f in flags) and all(f in disp_src for f in flags)
+    checks.append(Check(
+        "D2 EXPORT MIRRORS DISPLAY SKIPS: the predicate flags are exactly the display's skip flags",
+        parity,
+        f"InPathTrailingSpacer + StepAnalyticBodyOmitMesh present in predicate and display loop: {parity}",
+    ))
+
+    app, system = _load_app()
+    if app is None:
+        checks.append(Check(
+            "D3 PHANTOM ROW EXCLUDED: the in-path gap-carrier is not exported (Object still is)",
+            True,
+            f"skipped -- fixture {_FIXTURE} absent (not committed); source guards D1/D2 still enforce it",
+        ))
+        return
+    sdt = getattr(system, "SDT", None) or []
+    spacer_rows = [j for j, r in enumerate(app.rows) if ce._row_is_non_physical_reference(r)]
+    drawable_spacers = [
+        j for j in spacer_rows
+        if j < len(sdt)
+        and bool(getattr(sdt[j], "Drawing", 1))
+        and float(getattr(sdt[j], "Diameter", 0)) > 0
+        and ce._is_surface_revolution_compatible(sdt[j])
+    ]
+    obj_excluded = any(
+        ce._row_is_non_physical_reference(r)
+        for r in app.rows
+        if getattr(r, "surface", "") == "Object"
+    )
+    ok = bool(spacer_rows) and bool(drawable_spacers) and not obj_excluded
+    checks.append(Check(
+        "D3 PHANTOM ROW EXCLUDED: the in-path gap-carrier is not exported (Object still is)",
+        ok,
+        f"non-physical rows={spacer_rows} (would-draw-without-fix={drawable_spacers}); Object wrongly excluded={obj_excluded}",
+    ))
+
+
 def validate() -> list[Check]:
     checks: list[Check] = []
     _facet_a_prisms(checks)
     _facet_b_object(checks)
     _facet_c_single_source(checks)
+    _facet_d_phantom_reference_rows(checks)
     return checks
 
 

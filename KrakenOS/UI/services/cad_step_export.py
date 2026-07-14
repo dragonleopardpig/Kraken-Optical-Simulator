@@ -516,6 +516,29 @@ def occ_shell_shape_from_mesh(mesh, *, max_facets_per_mesh: int = 4000):
     return shell
 
 
+def _row_is_non_physical_reference(row) -> bool:
+    """True when a prescription row is a bookkeeping placeholder the 3D inspector
+    does NOT draw as a surface disc -- so the STEP export must not draw one either
+    (bugs/0301, the "export must match the display" invariant of bugs/0300).
+
+    Mirrors the display's own skips in the scene-mesh loop:
+      * ``InPathTrailingSpacer`` -- the in-path gap-carrier (bugs/0079/0093) keeps a
+        promoted solid's large clear aperture so the trace never clips, but it is an
+        AIR gap, not a physical surface. Drawn as an analytic disc it becomes a
+        phantom plane ("why is there a big circle?") -- here between the RA prism and
+        the imaging lens.
+      * ``StepAnalyticBodyOmitMesh`` -- the trailing face of an analytic-promoted body
+        whose front row owns the body STL; that body mesh already includes this face.
+    """
+    advanced = getattr(row, "advanced", None)
+    if not isinstance(advanced, dict):
+        return False
+    return bool(
+        advanced.get("InPathTrailingSpacer")
+        or advanced.get("StepAnalyticBodyOmitMesh")
+    )
+
+
 def _write_step_with_analytic_surfaces(
     system,
     rows: list,
@@ -569,6 +592,11 @@ def _write_step_with_analytic_surfaces(
         # bugs/0300: export the Object/Image reference planes too (they are drawn in
         # the 3D inspector). The Drawing / Diameter guards below drop hidden or
         # degenerate planes, matching the display.
+        # bugs/0301: but skip the non-physical bookkeeping rows the display skips too
+        # (the in-path gap-carrier disc, a promoted body's trailing face) -- else they
+        # export as phantom planes.
+        if j < len(rows) and _row_is_non_physical_reference(rows[j]):
+            continue
         surf = sdt[j]
         if not getattr(surf, 'Drawing', 1):
             continue
@@ -749,6 +777,11 @@ def _write_step_with_cad_shapes_and_rays(
         # inspector, so export them too -- as flat reference discs at their traced
         # (folded) placement. The Drawing / Diameter guards below still drop hidden or
         # degenerate planes, matching the display.
+        # bugs/0301: but skip the non-physical bookkeeping rows the display skips too
+        # (the in-path gap-carrier disc, a promoted body's trailing face) -- else they
+        # export as phantom planes.
+        if j < len(rows) and _row_is_non_physical_reference(rows[j]):
+            continue
         surf = sdt[j]
         if not getattr(surf, 'Drawing', 1):
             continue
