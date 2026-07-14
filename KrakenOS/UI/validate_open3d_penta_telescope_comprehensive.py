@@ -12850,6 +12850,39 @@ def phase_268_session_persistence(
     return result
 
 
+def phase_269_camera_coupling_persistence(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Deleting a camera must revert the sensor coupling even AFTER a save/reload (bugs/0306). The 0296 stash-on-
+    couple / restore-on-decouple lifecycle lived only in the running session, so once 0305 ("save everything") made
+    save/reopen the common workflow the user re-flagged "why the bug resurface? Deleting a camera still leave the
+    detector behind." -- a reopened camera layout had no stash, so the decouple had nothing to restore and the
+    coupled image-surface aperture (the PYTHON 25K sensor, half-diagonal 16.2915) stayed on the terminal Image row.
+    Fix: persist the precouple stash (_collect_layout_settings writes camera_precouple_stash; _apply_layout_settings
+    restores it), so the natural pre-camera field / image circle survives the round-trip and a later delete reverts;
+    plus a legacy-file grace path -- a decouple with no stash flips a Manual image-diameter mode back to Auto instead
+    of leaving the aperture pinned to the deleted sensor. `validate_open3d_camera_coupling_persistence` is display-
+    free: it JSON round-trips a real captured stash through the settings touch-points and drives the reopen->delete
+    revert on a stub, plus asserts the legacy no-stash Manual->Auto unlock."""
+    result = PhaseResult(
+        name="Phase 269: Camera delete reverts the sensor coupling after save/reload (persisted precouple stash)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_camera_coupling_persistence import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"camera-coupling-persistence guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("camera-coupling-persistence phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13163,6 +13196,7 @@ def main() -> int:
             phase_266_measure_folded_axis_snap,
             phase_267_measure_lens_edge_highlight,
             phase_268_session_persistence,
+            phase_269_camera_coupling_persistence,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

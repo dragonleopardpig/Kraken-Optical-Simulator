@@ -3071,6 +3071,18 @@ class LayoutTableWorkbenchMixin:
             self.camera_model_var.set(CAMERA_NONE_LABEL)
         stash = getattr(self, "_camera_coverage_precouple_stash", None)
         if stash is None:
+            # bugs/0306: a layout saved with a camera coupled *before* the precouple
+            # stash was persisted (any legacy camera file) has no pre-camera state to
+            # restore. Don't leave the image aperture locked to the now-deleted sensor
+            # -- flip Manual back to the self-computing Auto mode so the aperture is no
+            # longer pinned. The exact pre-camera field can't be reconstructed from a
+            # legacy file, so rebuilding the camera layout records the perfect revert.
+            if self._current_image_diameter_mode() == "Manual":
+                self._set_image_diameter_mode("Auto")
+                self._apply_image_diameter_mode()
+                self._sync_object_diameter_from_manual_image()
+                self._sync_table()
+                self._sync_object_controls()
             return False
         self._camera_coverage_precouple_stash = None
         mode = stash.get("image_diameter_mode")

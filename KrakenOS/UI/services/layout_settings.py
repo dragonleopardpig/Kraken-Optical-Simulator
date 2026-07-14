@@ -229,6 +229,17 @@ class LayoutSettingsService:
             "nonseq_ns_limit": self.nonseq_ns_limit_var.get().strip() if hasattr(self, "nonseq_ns_limit_var") else "200",
             "nonseq_energy_probability": self._current_nonseq_energy_probability(),
             "camera_model": self.camera_model_var.get().strip() if hasattr(self, "camera_model_var") else CAMERA_NONE_LABEL,
+            # bugs/0306: persist the pre-camera field / image-surface aperture stashed on
+            # the first camera couple (0296) so that DELETING the camera in a later
+            # session -- after save/reload -- can still restore the un-coupled state.
+            # The stash was session-only before 0306, so once a coupled layout was saved
+            # and reopened (which 0305 "save everything" made the common path) the
+            # decouple had nothing to restore and the sensor aperture stayed behind.
+            "camera_precouple_stash": (
+                dict(self._camera_coverage_precouple_stash)
+                if isinstance(getattr(self, "_camera_coverage_precouple_stash", None), dict)
+                else None
+            ),
             # Per-branch (two-arm) camera registrations: {branch_path: camera_model}. Persisted so a
             # registered STEP camera survives save/reload (item 1).
             "branch_detector_camera_assignments": {
@@ -566,11 +577,27 @@ class LayoutSettingsService:
             self.nonseq_target_surface_var.set(target)
 
         camera_model = str(settings.get("camera_model", CAMERA_NONE_LABEL)).strip()
+        camera_is_valid = camera_model != CAMERA_NONE_LABEL and camera_record(camera_model) is not None
         if hasattr(self, "camera_model_var"):
-            if camera_model == CAMERA_NONE_LABEL or camera_record(camera_model) is not None:
+            if camera_model == CAMERA_NONE_LABEL or camera_is_valid:
                 self.camera_model_var.set(camera_model)
             else:
                 self.camera_model_var.set(CAMERA_NONE_LABEL)
+        # bugs/0306: restore the pre-camera stash so a delete AFTER save/reload can
+        # revert the sensor coupling. The load-time coverage autofill re-couples the
+        # sensor but never stashes (no meaningful "before" at load), so without the
+        # persisted stash a reopened camera layout had nothing to restore on delete --
+        # the 0296 resurface once 0305 made save/reopen the common path. Gated on a
+        # live camera so a stray stash never blocks the next first-couple capture.
+        if camera_is_valid:
+            precouple = settings.get("camera_precouple_stash", None)
+            if isinstance(precouple, dict) and str(precouple.get("field_type") or "").strip():
+                self._camera_coverage_precouple_stash = {
+                    "field_type": str(precouple.get("field_type")).strip(),
+                    "field_value": precouple.get("field_value"),
+                    "image_diameter_mode": precouple.get("image_diameter_mode"),
+                    "image_diameter": precouple.get("image_diameter"),
+                }
         # Per-branch (two-arm) camera registrations (item 1): restore only valid DB cameras.
         branch_cams = settings.get("branch_detector_camera_assignments", None)
         if isinstance(branch_cams, dict):
