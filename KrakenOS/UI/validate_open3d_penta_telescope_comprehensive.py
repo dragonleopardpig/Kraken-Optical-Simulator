@@ -12949,6 +12949,72 @@ def phase_271_camera_flange_prompt(
     return result
 
 
+def phase_272_camera_refresh_update(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Refreshing the imported-camera registry UPDATES an already-merged camera in a running session
+    (bugs/0310). User flag (flag_20260715_084708): after importing BC-OM25M and entering 12 mm at the
+    flange prompt (0309), "the sensor is not positioned correctly." The 12 mm was written to
+    imported_cameras.json but never reached the live session. Root cause: _merge_imported_cameras
+    skipped any name already in CAMERA_DATABASE (str(name) in CAMERA_DATABASE: continue), so a
+    re-import of an already-folded camera was a no-op -- _current_camera_front_to_sensor_mm kept
+    reading the stale 0 and camera_front_z seated the sensor on the mount face. Fix: snapshot the
+    built-in camera names once (_BUILTIN_CAMERA_NAMES) before the module-load merge and key the guard
+    to THAT set -- built-ins are still never clobbered, but an imported entry is added AND updated on
+    refresh. Display-free guard: refresh updates 0->12, a built-in is never overwritten, a new camera
+    is still added, and the structural change is present."""
+    result = PhaseResult(
+        name="Phase 272: Imported-camera refresh updates an already-merged camera (re-import flange)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_camera_refresh_update import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"camera-refresh-update guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("camera-refresh-update phase failed without detail")
+    return result
+
+
+def phase_273_camera_delete_field_unpin(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Deleting a camera un-pins the camera-set field so the image-circle / object-FOV overlay clears
+    (bugs/0311). User flag (flag_20260715_084524): "After camera deleted, FOV, Max Sensor, Image circle
+    remains." The decouple dropped the detector's explicit sensor (label read "Max sensor") but the
+    green object-FOV cone + "Image circle Ø32.6" stayed. Root cause: coupling pins the field to Real
+    Image Height = sensor half-diagonal, which drives _image_circle_radius; the 0306 legacy no-stash
+    decouple flipped the image APERTURE Manual->Auto but never touched that pinned field. Fix: the
+    couple sets a _camera_pinned_field flag and the legacy decouple, when that flag is set, resets the
+    field to the object-mode default (Angle infinity / Object Height finite). The flag (not a bare
+    field_type test) keeps a surrogate's legitimate Real Image Height field and a user's manual override
+    safe. Display-free guard: pinned reset, unpinned-surrogate untouched, user-override respected,
+    with-stash restore + flag clear, and the couple/decouple/delete wiring."""
+    result = PhaseResult(
+        name="Phase 273: Deleting a camera un-pins the field so the image circle / FOV clears"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_camera_delete_field_unpin import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"camera-delete-field-unpin guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("camera-delete-field-unpin phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13265,6 +13331,8 @@ def main() -> int:
             phase_269_camera_coupling_persistence,
             phase_270_camera_mount_orientation,
             phase_271_camera_flange_prompt,
+            phase_272_camera_refresh_update,
+            phase_273_camera_delete_field_unpin,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

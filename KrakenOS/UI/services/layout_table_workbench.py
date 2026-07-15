@@ -3092,6 +3092,9 @@ class LayoutTableWorkbenchMixin:
             self._field_type_defaults["Real Image Height"] = f"{float(real_image_height):.6g}"
             self.field_value_var.set(f"{float(real_image_height):.6g}")
             self._sync_field_mode_ui()
+            # bugs/0311: mark the field as camera-pinned so decouple can un-pin it
+            # (and never wipe a surrogate's legitimate Real Image Height field).
+            self._camera_pinned_field = True
         camera_info = self._current_camera_record() or {}
         step_path = camera_info.get("step_path")
         if self.imported_camera_step_path is None and step_path:
@@ -3152,6 +3155,18 @@ class LayoutTableWorkbenchMixin:
                 self._sync_object_diameter_from_manual_image()
                 self._sync_table()
                 self._sync_object_controls()
+            # bugs/0311: the couple also pinned the field to Real Image Height =
+            # sensor half-diagonal, which drives the image-circle / object-FOV
+            # overlay. The Manual->Auto flip above freed the image APERTURE but
+            # left that field pinned, so deleting the camera left the image circle
+            # / FOV on-screen (flag 20260715_084524 "After camera deleted, FOV,
+            # Max Sensor, Image circle remains"). Un-pin the field back to the
+            # object-mode default -- no camera means no coverage overlay. Gated on
+            # the couple's own pin flag so a surrogate that *legitimately* uses a
+            # Real Image Height field (no camera) is never wiped.
+            if getattr(self, "_camera_pinned_field", False):
+                self._reset_camera_pinned_field_to_default()
+            self._camera_pinned_field = False
             return False
         self._camera_coverage_precouple_stash = None
         mode = stash.get("image_diameter_mode")
@@ -3171,6 +3186,29 @@ class LayoutTableWorkbenchMixin:
         self._sync_object_diameter_from_manual_image()
         self._sync_table()
         self._sync_object_controls()
+        self._camera_pinned_field = False  # bugs/0311: stash restored the real field
+        return True
+
+    def _reset_camera_pinned_field_to_default(self) -> bool:
+        """bugs/0311: reset a still-pinned camera field back to the object-mode
+        default so the image-circle / object-FOV overlay clears on decouple.
+
+        Coupling a camera pins the field to ``Real Image Height`` = the sensor
+        half-diagonal (``_apply_camera_coverage_autofill``), and that field drives
+        ``_image_circle_radius`` / the object-FOV box. When the camera is decoupled
+        WITHOUT a pre-couple stash to restore (a layout that *loaded* with a camera
+        coupled -- the stash is interactive-only), that pin would otherwise linger.
+        Only touches the field when it is still in the camera-set Real Image Height
+        mode; returns True when a reset was applied.
+        """
+        if self._current_field_type() != "Real Image Height" or not hasattr(self, "field_type_var"):
+            return False
+        default_type = "Angle" if self._current_object_mode() == "Infinity" else "Object Height"
+        self.field_type_var.set(self._field_type_display_label(default_type))
+        self._last_field_type = default_type
+        self._field_type_defaults[default_type] = "0.0"
+        self.field_value_var.set("0.0")
+        self._sync_field_mode_ui()
         return True
 
     def _couple_camera_model_from_step(self, step_path) -> str | None:

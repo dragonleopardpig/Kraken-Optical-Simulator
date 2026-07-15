@@ -272,7 +272,9 @@
     "268": "pass",
     "269": "pass",
     "270": "pass",
-    "271": "pass"
+    "271": "pass",
+    "272": "pass",
+    "273": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -545,6 +547,8 @@
     "268": "Phase 268: Save/Open reproduces the whole 3D session (sidecar)",
     "269": "Camera delete reverts the sensor coupling after save/reload (persisted precouple stash)",
     "270": "Phase 270: Imported camera STEP faces its lens mount toward the beam (geometric bore detect)",
-    "271": "Phase 271: Camera folder import asks for the flange-to-sensor distance when unscrapable"
+    "271": "Phase 271: Camera folder import asks for the flange-to-sensor distance when unscrapable",
+    "272": "Phase 272: Imported-camera refresh updates an already-merged camera (re-import flange)",
+    "273": "Phase 273: Deleting a camera un-pins the field so the image circle / FOV clears"
   }
 }
