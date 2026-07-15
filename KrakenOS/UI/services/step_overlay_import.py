@@ -263,13 +263,13 @@ class StepOverlayImportService:
         path = self._ask_step_file("Import LED STEP", initial_dir, parent=dialog_parent)
         if path is None:
             return None
-        initial_distance = max(float(getattr(self, "led_object_edge_distance_mm", 0.0)), 0.0)
-        if initial_distance <= 0.0:
-            initial_distance = self._default_led_object_edge_distance()
-        edge_distance = self._ask_led_edge_distance(initial_distance, parent=dialog_parent)
-        if edge_distance is None:
-            self.status_var.set("LED STEP import cancelled.")
-            return None
+        # bugs/0318: no working-distance prompt on import -- the modal blocked the
+        # import to ask for a number the user would rather set by eye. Land the LED
+        # at the existing auto default and let them align it (drag along the axis, or
+        # click the live Object->LED dimension to type a new value -> physical move).
+        edge_distance = max(float(getattr(self, "led_object_edge_distance_mm", 0.0)), 0.0)
+        if edge_distance <= 0.0:
+            edge_distance = self._default_led_object_edge_distance()
         self._begin_history_capture()
         self.imported_led_step_path = path
         self.led_step_rotation_x_deg = 0.0
@@ -288,7 +288,8 @@ class StepOverlayImportService:
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
         self.status_var.set(
-            f"LED STEP imported: {path.name}; edge distance={self.led_object_edge_distance_mm:.3g} mm."
+            f"LED STEP imported: {path.name}; landed at {self.led_object_edge_distance_mm:.3g} mm. "
+            "Drag it along the axis or click the Object->LED dimension to change the distance."
         )
         if refresh_open_3d:
             self._refresh_open_3d_views(step_label="led")

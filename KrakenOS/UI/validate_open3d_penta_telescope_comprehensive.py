@@ -13212,6 +13212,37 @@ def phase_279_led_step_hover_all_selectable(
     return result
 
 
+def phase_280_led_import_no_distance_prompt(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Importing an LED STEP no longer pops a modal "working distance" prompt (bugs/0318, user follow-up:
+    "we can remove the LED working distance prompt. Let user align themselves, the thickness overlay can be
+    click -> change value -> physical change"). import_led_step used to block on _ask_led_edge_distance
+    before the body appeared; now it lands the LED at the existing auto default and lets the user align it
+    by eye (drag along the axis, or click the live Object->LED dimension to type a value). The EXPLICIT
+    set_led_edge_distance menu action keeps its prompt. Display-free guard: source wiring (import dropped
+    the modal + cancel path, explicit action kept it), a stub-driven import whose modal RAISES still returns
+    the path + lands at the default + never calls the modal, re-import preserves an existing distance, and
+    the default distance is finite non-negative."""
+    result = PhaseResult(
+        name="Phase 280: Importing an LED STEP does not prompt for a working distance (align by eye)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_import_no_distance_prompt import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-import-no-distance-prompt guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("led-import-no-distance-prompt phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13536,6 +13567,7 @@ def main() -> int:
             phase_277_step_export_measure_dimensions,
             phase_278_step_export_dimension_annotations,
             phase_279_led_step_hover_all_selectable,
+            phase_280_led_import_no_distance_prompt,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

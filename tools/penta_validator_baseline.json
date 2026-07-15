@@ -280,7 +280,8 @@
     "276": "pass",
     "277": "pass",
     "278": "pass",
-    "279": "pass"
+    "279": "pass",
+    "280": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -561,6 +562,7 @@
     "276": "Phase 276: A folded FOV re-solve spills gap overflow onto the fold's other leg (no silent no-op)",
     "277": "Phase 277: The 3D STEP export carries the manual Measure-tool dimensions (toggle-independent)",
     "278": "Phase 278: The exported STEP dimensions carry arrowheads + numeric value text",
-    "279": "Phase 279: Every imported-LED STEP patch highlights + refines to the nearest edge (raw-face fallback)"
+    "279": "Phase 279: Every imported-LED STEP patch highlights + refines to the nearest edge (raw-face fallback)",
+    "280": "Phase 280: Importing an LED STEP does not prompt for a working distance (align by eye)"
   }
 }
