@@ -270,7 +270,8 @@
     "266": "pass",
     "267": "pass",
     "268": "pass",
-    "269": "pass"
+    "269": "pass",
+    "270": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -541,6 +542,7 @@
     "266": "Phase 266: Measure snaps to the optical axis on a folded layout (X-cursor object-snap)",
     "267": "Phase 267: Measure highlights a round imaging-lens edge (drawn-edge / rim fallback)",
     "268": "Phase 268: Save/Open reproduces the whole 3D session (sidecar)",
-    "269": "Camera delete reverts the sensor coupling after save/reload (persisted precouple stash)"
+    "269": "Camera delete reverts the sensor coupling after save/reload (persisted precouple stash)",
+    "270": "Phase 270: Imported camera STEP faces its lens mount toward the beam (geometric bore detect)"
   }
 }

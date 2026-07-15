@@ -1426,6 +1426,66 @@ class LayoutPolylineDisplayMixin:
 
         return self._cached_transformed_step_overlay("optical", signature, build)
 
+    def _camera_step_mount_front_face(self, mesh, *, default: str = "max") -> str:
+        """Which native-z end of a camera STEP is the lens MOUNT -- the face that
+        must look at the incoming beam (bugs/0308).
+
+        A C / F / M-mount is a large circular bore, so the mount end's CENTRE is
+        hollow (no material on the optical axis) while the opposite sensor /
+        electronics end is filled. Return ``"min"`` / ``"max"`` for the emptier-
+        centre end so ``_cad_mesh_aligned_to_optical_axis`` seats the mount at the
+        front; fall back to *default* when the two ends are not clearly different
+        (no confident bore), preserving the legacy orientation. Pure geometry -- no
+        per-vendor table -- so it serves any camera STEP: BC-OM25M's mount is at
+        native min-z, the Allied Vision hr25MCX's at max-z, and both come out
+        mount-forward (the earlier hardcoded "max" reversed BC-OM25M).
+        """
+        try:
+            pts = np.asarray(mesh.points, dtype=float)
+        except Exception:
+            return default
+        if pts.ndim != 2 or pts.shape[0] < 64 or pts.shape[1] < 3:
+            return default
+        z = pts[:, 2]
+        span = float(z.max() - z.min())
+        if not np.isfinite(span) or span <= 1e-6:
+            return default
+        cx = 0.5 * (float(pts[:, 0].min()) + float(pts[:, 0].max()))
+        cy = 0.5 * (float(pts[:, 1].min()) + float(pts[:, 1].max()))
+        r = np.hypot(pts[:, 0] - cx, pts[:, 1] - cy)
+        rmax = float(r.max())
+        if not np.isfinite(rmax) or rmax <= 1e-6:
+            return default
+
+        def central_fraction(at_max: bool) -> float:
+            zend = z.max() if at_max else z.min()
+            slab = np.abs(z - zend) <= 0.12 * span
+            n = int(np.count_nonzero(slab))
+            if n == 0:
+                return 1.0
+            central = int(np.count_nonzero(slab & (r < 0.25 * rmax)))
+            return central / n
+
+        frac_min = central_fraction(False)
+        frac_max = central_fraction(True)
+        # Need a clearly hollow end that is clearly emptier than the other; else
+        # keep the default so an ambiguous body is not flipped on noise.
+        if abs(frac_min - frac_max) < 0.03:
+            return default
+        mount_at_min = frac_min < frac_max
+        bore_fraction = frac_min if mount_at_min else frac_max
+        if bore_fraction > 0.15:
+            return default
+        face = "min" if mount_at_min else "max"
+        try:
+            self.append_debug(
+                f"Camera mount-end detect | min_centre={frac_min:.3f} "
+                f"max_centre={frac_max:.3f} -> front_face={face}"
+            )
+        except Exception:
+            pass
+        return face
+
     def _transformed_imported_camera_step_mesh(self):
         if self.imported_camera_step_path is None:
             return None
@@ -1461,10 +1521,13 @@ class LayoutPolylineDisplayMixin:
             if mesh is None:
                 return None
             mesh = self._apply_step_overlay_resize(mesh, "camera")
+            # bugs/0308: orient the body so the lens MOUNT faces the beam. A fixed
+            # "max" reversed vendor bodies whose mount is at native min-z (BC-OM25M).
+            front_face = self._camera_step_mount_front_face(mesh, default="max")
             aligned = self._cad_mesh_aligned_to_optical_axis(
                 mesh,
                 source_axis="z",
-                front_face="max",
+                front_face=front_face,
                 target_front_z=camera_front_z,
                 label="Camera STEP",
                 roll_deg=float(getattr(self, "camera_step_rotation_z_deg", 0.0)),

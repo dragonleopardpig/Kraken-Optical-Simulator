@@ -1196,7 +1196,9 @@ class LayoutOpticalSolidWorkflowMixin:
                 # (a ~6 mm sensor-window cover), skewing the export placement (bugs/0300).
                 "largest_component": False,
                 "source_axis": "z",
-                "front_face": "max",
+                # bugs/0308: resolved from the mount-bore geometry in
+                # _step_alignment_affine so the export matches the display's orientation.
+                "front_face": "auto",
                 "target_front_z": camera_front_z,
                 "label": "Camera STEP",
                 "roll_deg": float(getattr(self, "camera_step_rotation_z_deg", 0.0)),
@@ -1248,10 +1250,15 @@ class LayoutOpticalSolidWorkflowMixin:
             path,
             largest_component=bool(params.get("largest_component", False)),
         )
+        front_face = str(params.get("front_face", "min"))
+        if front_face == "auto":
+            # bugs/0308: a camera body resolves its mount end from geometry so the
+            # export orientation matches the display (which detects the same way).
+            front_face = self._camera_step_mount_front_face(source_mesh, default="max")
         aligned_mesh = self._cad_mesh_aligned_to_optical_axis(
             source_mesh,
             source_axis=params.get("source_axis", "z"),
-            front_face=str(params.get("front_face", "min")),
+            front_face=front_face,
             target_front_z=float(params.get("target_front_z", 0.0)),
             label=str(params.get("label", "STEP")),
             roll_deg=float(params.get("roll_deg", 0.0)),

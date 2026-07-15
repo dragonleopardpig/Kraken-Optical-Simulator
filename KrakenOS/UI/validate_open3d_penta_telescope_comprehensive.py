@@ -12883,6 +12883,39 @@ def phase_269_camera_coupling_persistence(
     return result
 
 
+def phase_270_camera_mount_orientation(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """An imported camera STEP faces its lens MOUNT toward the beam (bugs/0308). User flag
+    (flag_20260715_075742): "Imported camera is reversed in direction." The overlay was seated
+    with a FIXED front_face="max" in both the display transform and the export params -- right for
+    the Allied Vision hr25MCX (native max-z bore) but backwards for the BC-OM25M (native min-z
+    bore), so its C/M58 mount pointed downstream and the sensor sat on the wrong face. Fix (general,
+    no per-vendor hardcoding): _camera_step_mount_front_face reads the geometry -- a lens mount is a
+    circular bore, so its centre is hollow -- and seats the emptier end toward the beam; the export
+    params emit front_face="auto" and _step_alignment_affine resolves it through the SAME detector,
+    so the STEP export matches the display (bugs/0300 invariant). Display-free guard: synthetic bore
+    meshes (min / max / solid-both / degenerate), display + export wiring, cross-mixin resolution,
+    and the real BC-OM25M -> "min" / hr25MCX -> "max" caches."""
+    result = PhaseResult(
+        name="Phase 270: Imported camera STEP faces its lens mount toward the beam (geometric bore detect)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_camera_mount_orientation import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"camera-mount-orientation guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("camera-mount-orientation phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13197,6 +13230,7 @@ def main() -> int:
             phase_267_measure_lens_edge_highlight,
             phase_268_session_persistence,
             phase_269_camera_coupling_persistence,
+            phase_270_camera_mount_orientation,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
