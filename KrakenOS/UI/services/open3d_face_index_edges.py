@@ -768,9 +768,24 @@ def face_index_for_display_cell(mesh, cell_id: int) -> int | None:
     return face_id if face_id >= 0 else None
 
 
+def _display_cell_point_array(mesh, cell_id: int):
+    """Vertices of one displayed cell, robust across PyVista versions.
+
+    ``DataSet.cell_points`` was removed in PyVista 0.44+; the current spelling is
+    ``get_cell(cell_id).points``. Both call sites here used the old name, so on a
+    modern PyVista every read raised ``AttributeError`` and was swallowed -- silent
+    in production only because a VTK ``pick_point`` and a record ``normal_world``
+    normally stand in. Prefer the modern API, fall back to the legacy one."""
+    surface = pv.wrap(mesh)
+    getter = getattr(surface, "get_cell", None)
+    if callable(getter):
+        return np.asarray(getter(int(cell_id)).points, dtype=float).reshape((-1, 3))
+    return np.asarray(surface.cell_points(int(cell_id)), dtype=float).reshape((-1, 3))
+
+
 def _display_cell_centroid(mesh, cell_id: int):
     try:
-        points = np.asarray(pv.wrap(mesh).cell_points(int(cell_id)), dtype=float).reshape((-1, 3))
+        points = _display_cell_point_array(mesh, int(cell_id))
         if points.shape[0] >= 1:
             return np.mean(points, axis=0)
     except Exception:
@@ -821,7 +836,7 @@ def face_pick_from_display_cell(editor, label: str, faces, cell_id: int, *, pick
     norm = float(np.linalg.norm(normal[:3])) if normal.size >= 3 else 0.0
     if normal.size < 3 or norm <= 1.0e-12 or not np.isfinite(norm):
         try:
-            triangle = np.asarray(pv.wrap(display_mesh).cell_points(int(cell_id)), dtype=float).reshape((-1, 3))[:3]
+            triangle = _display_cell_point_array(display_mesh, int(cell_id))[:3]
             normal = np.cross(triangle[1] - triangle[0], triangle[2] - triangle[0])
             norm = float(np.linalg.norm(normal[:3]))
         except Exception:
@@ -836,3 +851,165 @@ def face_pick_from_display_cell(editor, label: str, faces, cell_id: int, *, pick
         distance=0.0,
         internal=False,
     )
+
+
+def raw_face_feature_for_display_cell(mesh, cell_id: int):
+    """Resolve a picked display cell straight to its own face-group geometry.
+
+    Unlike :func:`face_pick_from_display_cell`, this needs NO analytic metadata
+    record -- it groups purely by the per-cell ``kraken_step_*face_index`` the
+    picker landed on, so it lights up EVERY hovered patch, not just the minority
+    the planar-cluster metadata happens to cover. This is the "all-selectable"
+    fallback for bugs/0317 ("only a few can be selected as highlight"): a display
+    body whose metadata covers ~21% of its triangles still highlights the other
+    ~79% because the outline is derived from the cell's own face index alone.
+
+    Returns ``(face_index, outline_polydata, centroid_world[3], normal_world[3])``
+    or ``None`` when the cell has no analytic face index or degenerates.
+    """
+    face_index = face_index_for_display_cell(mesh, cell_id)
+    if face_index is None:
+        return None
+    triangles = triangles_for_face_indices(mesh, (face_index,))
+    if triangles.size == 0 or triangles.ndim != 3 or triangles.shape[1:] != (3, 3):
+        return None
+    outline = face_outline_from_face_indices(mesh, (face_index,))
+    v0 = triangles[:, 0, :]
+    v1 = triangles[:, 1, :]
+    v2 = triangles[:, 2, :]
+    cross = np.cross(v1 - v0, v2 - v0)
+    areas = 0.5 * np.linalg.norm(cross, axis=1)
+    tri_centroids = triangles.mean(axis=1)
+    total_area = float(np.sum(areas))
+    if total_area > 1.0e-12 and np.isfinite(total_area):
+        centroid = np.sum(tri_centroids * areas[:, None], axis=0) / total_area
+    else:
+        centroid = tri_centroids.mean(axis=0)
+    normal_sum = np.sum(cross, axis=0)
+    norm = float(np.linalg.norm(normal_sum))
+    if norm > 1.0e-12 and np.isfinite(norm):
+        normal = normal_sum / norm
+    else:
+        largest = int(np.argmax(areas)) if areas.size else 0
+        fallback = cross[largest] if cross.shape[0] else np.zeros(3)
+        fnorm = float(np.linalg.norm(fallback))
+        if fnorm <= 1.0e-12 or not np.isfinite(fnorm):
+            return None
+        normal = fallback / fnorm
+    if not (np.all(np.isfinite(centroid)) and np.all(np.isfinite(normal))):
+        return None
+    return (
+        int(face_index),
+        outline,
+        tuple(float(value) for value in centroid[:3]),
+        tuple(float(value) for value in normal[:3]),
+    )
+
+
+def line_segment_pairs(polydata) -> "list[tuple[int, int]]":
+    """Extract ``(i0, i1)`` endpoint index pairs from a line polydata.
+
+    Both outline builders (:func:`_line_polydata`,
+    :func:`_line_polydata_from_index_pairs`) store each edge as a VTK line cell
+    ``[2, i0, i1]``; a polyline cell of ``k`` points contributes ``k-1`` segments.
+    """
+    if polydata is None:
+        return []
+    try:
+        raw = np.asarray(polydata.lines, dtype=np.int64).reshape(-1)
+    except Exception:
+        return []
+    pairs: "list[tuple[int, int]]" = []
+    i = 0
+    n = int(raw.shape[0])
+    while i < n:
+        count = int(raw[i])
+        if count < 2 or i + count >= n:
+            break
+        for j in range(count - 1):
+            pairs.append((int(raw[i + 1 + j]), int(raw[i + 2 + j])))
+        i += count + 1
+    return pairs
+
+
+def _point_segment_distance_2d(px, py, ax, ay, bx, by):
+    """Distance from point ``P`` to segment ``AB`` in 2D, plus clamped ``t``."""
+    abx = bx - ax
+    aby = by - ay
+    denom = abx * abx + aby * aby
+    if denom <= 1.0e-12:
+        return float(np.hypot(px - ax, py - ay)), 0.0
+    t = ((px - ax) * abx + (py - ay) * aby) / denom
+    t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+    cx = ax + t * abx
+    cy = ay + t * aby
+    return float(np.hypot(px - cx, py - cy)), float(t)
+
+
+def nearest_display_edge(points, line_pairs, event_xy, project, tolerance_px: float = 14.0):
+    """Find the outline segment whose screen projection is nearest the cursor.
+
+    ``project`` maps a world point ``(x, y, z)`` to a display ``(x, y)`` or
+    ``None`` (off-screen / no renderer). Pure and display-free-testable: pass a
+    fake ``project`` callable. Endpoints are projected once and memoised across
+    shared edges, so cost is one projection per outline vertex, not per segment.
+
+    Returns ``(ordinal, i0, i1, midpoint_world[3], distance_px)`` for the nearest
+    segment within ``tolerance_px`` (``ordinal`` = its stable position in
+    ``line_pairs``, a compact per-edge dedup tag), else ``None`` (cursor is not
+    near any outline edge, so the caller keeps the whole-face highlight).
+    """
+    try:
+        pts = np.asarray(points, dtype=float).reshape((-1, 3))
+    except Exception:
+        return None
+    if pts.shape[0] < 2:
+        return None
+    try:
+        ex = float(event_xy[0])
+        ey = float(event_xy[1])
+    except Exception:
+        return None
+    projected: "dict[int, tuple[float, float] | None]" = {}
+
+    def project_index(idx: int):
+        if idx in projected:
+            return projected[idx]
+        try:
+            result = project(pts[idx])
+        except Exception:
+            result = None
+        value = None
+        if result is not None:
+            try:
+                value = (float(result[0]), float(result[1]))
+            except Exception:
+                value = None
+        projected[idx] = value
+        return value
+
+    best = None
+    for ordinal, pair in enumerate(line_pairs):
+        try:
+            i0 = int(pair[0])
+            i1 = int(pair[1])
+        except Exception:
+            continue
+        if i0 < 0 or i1 < 0 or i0 >= pts.shape[0] or i1 >= pts.shape[0] or i0 == i1:
+            continue
+        a = project_index(i0)
+        b = project_index(i1)
+        if a is None or b is None:
+            continue
+        distance, _t = _point_segment_distance_2d(ex, ey, a[0], a[1], b[0], b[1])
+        if distance > float(tolerance_px):
+            continue
+        if best is None or distance < best[4]:
+            midpoint = tuple(float(value) for value in ((pts[i0] + pts[i1]) * 0.5)[:3])
+            best = (int(ordinal), i0, i1, midpoint, float(distance))
+    return best
+
+
+def single_edge_polydata(p0, p1):
+    """A one-segment line polydata for the two given world endpoints."""
+    return _line_polydata([(np.asarray(p0, dtype=float), np.asarray(p1, dtype=float))])

@@ -8,7 +8,12 @@ import numpy as np
 
 from KrakenOS.UI.services.open3d_face_index_edges import (
     face_indices_for_record,
+    face_outline_from_face_indices,
     face_pick_from_display_cell,
+    line_segment_pairs,
+    nearest_display_edge,
+    raw_face_feature_for_display_cell,
+    single_edge_polydata,
     triangles_for_face_indices,
 )
 from KrakenOS.UI.services.open3d_face_pick import FaceRayPick
@@ -210,6 +215,61 @@ def round_lens_feature_for_display_xy(inspector: Any, label: str, display_xy):
     }
 
 
+def _edge_refined_feature(
+    inspector: Any,
+    base_feature,
+    base_face_id: str,
+    outline,
+    display_xy,
+    *,
+    tolerance_px: float = 14.0,
+):
+    """Refine a whole-face hover to the single nearest OUTLINE edge under the cursor.
+
+    bugs/0317 "the highlight is not the nearest edge": the whole-face outline
+    already lands local to the cursor (the all-selectable fallback), but a user
+    aligning an EDGE to the optical axis wants the one edge they are near to
+    light up. When the cursor is within ``tolerance_px`` of a projected outline
+    segment, return a feature highlighting just that segment plus a per-edge
+    ``face_id`` (so the hover dedup -- keyed on ``face_id`` -- updates as the
+    cursor slides between edges); otherwise return the whole-face feature
+    unchanged. Returns ``(feature, face_id)``.
+    """
+    if outline is None or base_feature is None:
+        return base_feature, base_face_id
+    try:
+        points = np.asarray(outline.points, dtype=float).reshape((-1, 3))
+    except Exception:
+        return base_feature, base_face_id
+    if points.shape[0] < 2:
+        return base_feature, base_face_id
+    pairs = line_segment_pairs(outline)
+    if not pairs:
+        return base_feature, base_face_id
+    hit = nearest_display_edge(
+        points,
+        pairs,
+        display_xy,
+        inspector._world_to_display_2d,
+        tolerance_px=float(tolerance_px),
+    )
+    if hit is None:
+        return base_feature, base_face_id
+    ordinal, i0, i1, midpoint, _distance = hit
+    edge_line = single_edge_polydata(points[i0], points[i1])
+    if edge_line is None:
+        return base_feature, base_face_id
+    overlay = inspector._hover_overlay_for_feature(midpoint, edge_line)
+    normal = base_feature[2] if len(base_feature) > 2 else None
+    refined = (
+        np.asarray(midpoint, dtype=float).reshape(3),
+        overlay,
+        np.asarray(normal, dtype=float).reshape(3) if normal is not None else None,
+    )
+    edge_face_id = f"{str(base_face_id or '').strip()}e{int(ordinal)}"
+    return refined, edge_face_id
+
+
 def step_feature_pick_for_display_xy(
     inspector: Any,
     label: str,
@@ -256,6 +316,11 @@ def step_feature_pick_for_display_xy(
             pick_point = np.asarray(inspector._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
         except Exception:
             pick_point = None
+        display_mesh = None
+        try:
+            display_mesh = inspector.editor._transformed_imported_step_mesh_for_label(label)
+        except Exception:
+            display_mesh = None
         cell_pick = face_pick_from_display_cell(
             inspector.editor,
             label,
@@ -264,15 +329,53 @@ def step_feature_pick_for_display_xy(
             pick_point=pick_point,
         )
         if cell_pick is not None:
+            base_feature = inspector._feature_from_face_ray_pick(
+                cell_pick,
+                inspector._hover_overlay_for_step_face(label, cell_pick.face),
+            )
+            base_face_id = str(cell_pick.face.get("face_id", "") or "").strip()
+            outline = None
+            if display_mesh is not None:
+                try:
+                    outline = face_outline_from_face_indices(
+                        display_mesh, face_indices_for_record(display_mesh, cell_pick.face)
+                    )
+                except Exception:
+                    outline = None
+            feature, face_id = _edge_refined_feature(
+                inspector, base_feature, base_face_id, outline, display_xy
+            )
             return {
-                "feature": inspector._feature_from_face_ray_pick(
-                    cell_pick,
-                    inspector._hover_overlay_for_step_face(label, cell_pick.face),
-                ),
+                "feature": feature,
                 "surface_center": inspector._surface_center_from_face_ray_pick(cell_pick),
-                "face_id": str(cell_pick.face.get("face_id", "") or "").strip(),
+                "face_id": face_id,
                 "through_pick": cell_pick,
             }
+        # bugs/0317: the picked cell carries an analytic face index but no
+        # metadata record covers it -- the planar-cluster metadata spans only a
+        # minority of the body's triangles (~1/5 on the vendor LED), so most of
+        # the body used to return nothing ("only a few can be selected as
+        # highlight"). Highlight the picked cell's OWN face group straight from
+        # the per-cell face index, no metadata record required, so EVERY hovered
+        # patch lights up (and refine to the nearest edge like the cell path).
+        if display_mesh is not None:
+            raw = raw_face_feature_for_display_cell(display_mesh, int(cell_id))
+            if raw is not None:
+                face_index, raw_outline, centroid, normal = raw
+                base_feature = (
+                    np.asarray(centroid, dtype=float).reshape(3),
+                    inspector._hover_overlay_for_feature(centroid, raw_outline),
+                    np.asarray(normal, dtype=float).reshape(3),
+                )
+                feature, face_id = _edge_refined_feature(
+                    inspector, base_feature, f"F{int(face_index):03d}", raw_outline, display_xy
+                )
+                return {
+                    "feature": feature,
+                    "surface_center": np.asarray(centroid, dtype=float).reshape(3),
+                    "face_id": face_id,
+                    "through_pick": None,
+                }
     except Exception:
         pass
     through_pick = inspector._coarse_step_face_ray_pick_for_display_xy(label, display_xy)

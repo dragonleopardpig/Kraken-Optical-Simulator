@@ -13176,6 +13176,42 @@ def phase_278_step_export_dimension_annotations(
     return result
 
 
+def phase_279_led_step_hover_all_selectable(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Every hovered imported-LED STEP patch highlights, and the highlight refines to the NEAREST
+    edge (flag_20260715_133849: "mouse hover imported LED STEP ... the highlight is not the nearest
+    edge, and only a few can be selected as highlight"). A vendor LED is an analytic STEP body -- every
+    triangle already carries a per-cell kraken_step_selection_face_index (the real LED has 60138 cells
+    over 714 faces, 100% indexed) -- but the hover PICK only lit a cell when its face index mapped to a
+    METADATA record, and those come from planar CLUSTERING capped at 160 faces on a SEPARATE re-saved
+    STL. On the real LED only 165/714 faces got referenced -> 12870/60138 cells (21.4%) could highlight.
+    bugs/0317 adds raw_face_feature_for_display_cell (highlight the cell's OWN face group straight from
+    its per-cell index, no record needed: 21.4% -> 100%) plus nearest_display_edge / _edge_refined_feature
+    (within a pixel tolerance of a projected outline segment, refine to that single edge with a per-edge
+    dedup tag, so aligning an edge to the optical axis lights up the edge you mean). It also fixes a latent
+    PyVista-0.44+ cell_points AttributeError in the OLD face-pick centroid/normal fallback. Display-free
+    guard: synthetic analytic mesh all-selectable delta, raw-feature shape, pure nearest-edge, edge-refine
+    contract, source wiring, and a real-LED ~100% coverage bonus when the (gitignored) analytic cache exists."""
+    result = PhaseResult(
+        name="Phase 279: Every imported-LED STEP patch highlights + refines to the nearest edge (raw-face fallback)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_step_hover_all_selectable import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-step-hover-all-selectable guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("led-step-hover-all-selectable phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13499,6 +13535,7 @@ def main() -> int:
             phase_276_folded_fov_solve_gap_spill,
             phase_277_step_export_measure_dimensions,
             phase_278_step_export_dimension_annotations,
+            phase_279_led_step_hover_all_selectable,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
