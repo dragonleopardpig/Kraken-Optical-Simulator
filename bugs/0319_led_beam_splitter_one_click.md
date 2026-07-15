@@ -115,6 +115,26 @@ all stop gracefully with a status line (glue survives promotion, bugs/0127).
 - Penta **phase 282** (`phase_282_led_clear_aperture_detect`) + **phase 283**
   (`phase_283_led_beam_splitter_orchestration`); baseline updated (`"282"/"283": "pass"`).
 
+## Follow-up fix — the one-click command crashed on HEAD (flag_20260715_164402_516)
+User flag: *"right click and a cube BS seems not functioning."* Root cause: the C3
+`path=` bypass was added to the overlay-import **service** (`step_overlay_import.py`)
+but **not** to the public `ScenePlacementMixin.import_optical_step` **wrapper** that the
+editor actually calls — so step 2 of the pipeline died immediately with
+`TypeError: import_optical_step() got an unexpected keyword argument 'path'`, before
+anything was placed or promoted. The C3 spy validator missed it because the spy *stubs*
+`import_optical_step` (with the right signature) and never exercises the real wrapper.
+- **Fix:** forward `path=` from the mixin wrapper to the service (mirrors
+  `import_camera_step`, which already forwarded it).
+- **Guard (invariant, not instance):** validator **Check E** drives the *real*
+  `ScenePlacementMixin.import_optical_step` through a fake service and proves the `path=`
+  bypass is both accepted and forwarded — red without the fix, green with it.
+- **Verified on the real LED (headless, Xvfb):** `add_beam_splitter_to_led("cube")` now
+  runs end to end — auto-detects opening F111 (score 0.933), centres the LED so the
+  opening lands on-axis, places + glues the 55.5 mm BS, promotes it to S1, and coats the
+  45° diagonal `S001/F003`.
+- The user's recording (an off-axis, unpromoted cube) can't be produced by fixed HEAD —
+  their running app was a stale pre-fix build; a restart is needed to pick up the fix.
+
 ## Remaining — in-app eyeball owed (no GLX render on this box)
 The generator, detector, and orchestration wiring are all verified display-free. What I
 **cannot** check here is the *visual result on the real LED module*: that the BS looks

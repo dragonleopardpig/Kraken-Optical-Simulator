@@ -21,6 +21,10 @@ What it checks
      line, never a half-built scene.
   D. ``_step_analytic_face_inplane_span`` returns the opening's smaller in-plane span
      from an analytic face bbox (the size a BS is cloned to).
+  E. The PUBLIC ``import_optical_step`` wrapper accepts and forwards the ``path=``
+     bypass the pipeline overlays the BS through -- a regression here dies with a
+     TypeError before anything is placed (the spy in A can't catch it because it
+     stubs the call; this exercises the real ScenePlacementMixin wrapper).
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_led_beam_splitter_orchestration
@@ -297,6 +301,41 @@ def _check_span(failures: list[str]) -> None:
         failures.append(f"FAIL(D): in-plane span should be the smaller face extent 40, got {span}")
 
 
+def _check_import_bypass_forwarding(failures: list[str], notes: list[str]) -> None:
+    """The one-click pipeline overlays the BS via ``import_optical_step(path=...)``.
+    The PUBLIC editor method is the ScenePlacementMixin *wrapper*, which delegates to
+    the overlay-import service -- so the wrapper must both accept ``path=`` AND forward
+    it. It once forwarded ``refresh_open_3d`` but dropped ``path``, so the real command
+    died with "unexpected keyword argument 'path'" before it overlaid or promoted
+    anything (the A spy can't see this -- it stubs the call). Exercise the real wrapper
+    through a fake service and prove the bypass reaches it."""
+    recorded: dict = {}
+
+    class _FakeService:
+        def import_optical_step(self, dialog_parent=None, *, path=None, refresh_open_3d=True):
+            recorded["path"] = path
+            recorded["refresh_open_3d"] = refresh_open_3d
+            return path
+
+    class _WrapperEditor:
+        import_optical_step = ScenePlacementMixin.import_optical_step
+
+        def _step_overlay_import_service(self):
+            return _FakeService()
+
+    try:
+        out = _WrapperEditor().import_optical_step(path="bs.step", refresh_open_3d=False)
+    except TypeError as exc:
+        failures.append(f"FAIL(E): import_optical_step rejects the path= bypass: {exc}")
+        return
+    if recorded.get("path") != "bs.step" or out != "bs.step":
+        failures.append(f"FAIL(E): import_optical_step(path=) is not forwarded to the service; got {recorded!r}")
+    if recorded.get("refresh_open_3d") is not False:
+        failures.append("FAIL(E): import_optical_step should forward refresh_open_3d to the service")
+    if not failures:
+        notes.append("import_optical_step(path=) bypass reaches the overlay-import service")
+
+
 def run_checks() -> "tuple[bool, list[str]]":
     failures: list[str] = []
     notes: list[str] = []
@@ -304,6 +343,7 @@ def run_checks() -> "tuple[bool, list[str]]":
     _check_coating_picker(failures)
     _check_graceful_stops(failures)
     _check_span(failures)
+    _check_import_bypass_forwarding(failures, notes)
     return (not failures), failures + notes
 
 
