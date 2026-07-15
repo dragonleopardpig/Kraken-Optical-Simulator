@@ -154,10 +154,17 @@ class StepOverlayImportService:
         self,
         dialog_parent: tk.Misc | None = None,
         *,
+        path: Path | str | None = None,
         refresh_open_3d: bool = True,
     ) -> Path | None:
         le = _layout_module()
-        path = self._ask_step_file("Import optical STEP", le.ATTACHMENT_DIR, parent=dialog_parent)
+        if path is None:
+            path = self._ask_step_file("Import optical STEP", le.ATTACHMENT_DIR, parent=dialog_parent)
+        else:
+            # Programmatic path (e.g. the one-click "Add Beam Splitter to LED"
+            # pipeline, bugs/0319): the STEP was already generated, so skip the
+            # file chooser and use it directly.
+            path = Path(path).expanduser()
         if path is None:
             return None
         self._preserve_unpromoted_step_overlay("optical")

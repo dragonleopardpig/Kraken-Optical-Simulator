@@ -73,21 +73,63 @@ in-process (pythonocc-core), the only part fully verifiable without a GLX displa
 Penta **phase 281** (`phase_281_beam_splitter_factory`) delegates to the guard;
 baseline updated (`"281": "pass"`).
 
-## Remaining — need the user's in-app eyeball (no GLX render on this box)
-- **C2 — LED clear-aperture auto-detect** (find the two openings) + wire the manual
-  `STEP_CLEAR_APERTURE_PICK` fallback. Reliability is exactly what the user was unsure
-  about; the manual pick is the dependable path.
-- **C3 — orchestration** `add_beam_splitter_to_led(kind="cube"|"plate")`: run the
-  pipeline above end-to-end + auto-flag the 45° diagonal as the coating on promote.
-- **C4 — menu wiring** "Add Beam Splitter to LED ▸ Cube / Plate" in
-  `append_element_context_actions` (open3d_face_assignment.py).
-- **In-app eyeball owed:** that the generated BS *looks* right, centers on the LED
-  opening, glues, folds, and promotes correctly on the real LED module
-  (`attachment/LED/OPT-CO90-X-V1.6.2-H.STEP`). The generator's geometry is verified;
-  its *placement* on a real LED is a visual check I cannot make here.
+## Shipped this pass — Components 2–4 (the rest of the pipeline)
+
+### C2 — LED clear-aperture auto-detect (+ manual fallback)
+`KrakenOS/UI/services/led_clear_aperture_detect.py` — pure-geometry (no OCC, no editor)
+scorer for the opening signature: a planar, axis-aligned, window-sized face that is a
+**rim around a hole** (`bbox_fill = area / (span_a·span_b)` low, ~0.15, vs ~1.0 for a
+solid panel). Ranks every qualifier (square outranks rectangular), so an LED that
+already carries a BS (two openings) and the bare illuminator (one) are both handled.
+- Grounded on the real `OPT-CO90-X-V1.6.2-H.STEP`: the object-facing square window
+  **F112** is the clear #1 candidate (score 0.933, squareness 1.0, fill 0.15).
+- Service side (`scene_placement_commands.py`): `auto_detect_step_clear_aperture_candidates(label)`
+  reads the overlay's analytic B-rep faces, scores them, and **verifies** each analytic
+  enumeration index still resolves cleanly on the displayed *selection* mesh (an
+  axisymmetric-grouped face would collapse to a larger cluster → area mismatch → dropped),
+  so the returned `face_index` is exactly what `set_step_clear_aperture` consumes.
+  `auto_set_step_clear_aperture(label)` persists the best; **`[]`/None falls back to the
+  manual `STEP_CLEAR_APERTURE_PICK`** — the dependable path the user asked for.
+
+### C3 — orchestration `add_beam_splitter_to_led(kind)`
+`scene_placement_commands.py` — runs the whole pipeline:
+generate BS sized to the opening span → `import_optical_step(path=…)` (new programmatic
+bypass, mirrors `import_camera_step`) → `set_step_clear_aperture("led", opening)` →
+`center_clear_aperture_on_optical_axis("led")` (opening → `(0,0,z)` on the global axis) →
+place the origin-centred BS at that on-axis opening centre → `set_optical_led_glue(True)` →
+`promote_imported_step_to_optical_solid_row("optical", clear_overlay=True)` →
+`_flag_beam_splitter_coating_face(row)` marks the largest ~45° face
+`Partial Reflecting / Transmitting` (decision 1). Unknown kind / missing LED / no opening
+all stop gracefully with a status line (glue survives promotion, bugs/0127).
+
+### C4 — menu wiring
+`open3d_face_assignment.py` — the LED overlay's right-click / tree menu gains
+**"Add Beam Splitter to LED ▸ Cube / Plate"** (`_add_beam_splitter_to_led_from_context`).
+
+### Verified (display-free)
+- `validate_open3d_led_clear_aperture_detect.py` — **PASS** (pure scorer ranks two rim
+  windows + rejects panel/sliver/wall/thick face; real LED top candidate = F112, score 0.933).
+- `validate_open3d_led_beam_splitter_orchestration.py` — **PASS** (spy editor: the pipeline
+  fires generate→overlay→centre→place→glue→promote→coat *in order* with the right args;
+  BS sized to the opening; coating on the biggest 45° face, never a plain box; graceful stops).
+- Penta **phase 282** (`phase_282_led_clear_aperture_detect`) + **phase 283**
+  (`phase_283_led_beam_splitter_orchestration`); baseline updated (`"282"/"283": "pass"`).
+
+## Remaining — in-app eyeball owed (no GLX render on this box)
+The generator, detector, and orchestration wiring are all verified display-free. What I
+**cannot** check here is the *visual result on the real LED module*: that the BS looks
+right, lands centred on the LED clear-aperture opening, glues, folds the beam, and
+promotes correctly on `attachment/LED/OPT-CO90-X-V1.6.2-H.STEP`. Size defaults to the
+opening's smaller in-plane span (user-resizable); the exact size/seat is an eyeball call.
 
 ## Files
-- `KrakenOS/UI/services/beam_splitter_factory.py` — parametric cube/plate generator + cache.
-- `KrakenOS/UI/validate_open3d_beam_splitter_factory.py` — display-free guard.
-- `KrakenOS/UI/validate_open3d_penta_telescope_comprehensive.py` — `phase_281`.
-- `tools/penta_validator_baseline.json` — phase 281 baseline + title.
+- `KrakenOS/UI/services/beam_splitter_factory.py` — parametric cube/plate generator + cache (C1).
+- `KrakenOS/UI/services/led_clear_aperture_detect.py` — pure clear-aperture opening scorer (C2).
+- `KrakenOS/UI/services/scene_placement_commands.py` — auto-detect service + `add_beam_splitter_to_led` (C2/C3).
+- `KrakenOS/UI/services/step_overlay_import.py` — `import_optical_step(path=)` bypass (C3).
+- `KrakenOS/UI/services/open3d_face_assignment.py` — the "Add Beam Splitter to LED" menu (C4).
+- `KrakenOS/UI/validate_open3d_beam_splitter_factory.py` — C1 guard (`phase_281`).
+- `KrakenOS/UI/validate_open3d_led_clear_aperture_detect.py` — C2 guard (`phase_282`).
+- `KrakenOS/UI/validate_open3d_led_beam_splitter_orchestration.py` — C3 guard (`phase_283`).
+- `KrakenOS/UI/validate_open3d_penta_telescope_comprehensive.py` — `phase_281`–`phase_283`.
+- `tools/penta_validator_baseline.json` — phases 281–283 baseline + titles.

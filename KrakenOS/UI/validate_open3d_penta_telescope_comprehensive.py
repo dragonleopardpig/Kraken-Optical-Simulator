@@ -13274,6 +13274,68 @@ def phase_281_beam_splitter_factory(
     return result
 
 
+def phase_282_led_clear_aperture_detect(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The "Add Beam Splitter to LED" pipeline auto-detects the LED clear-aperture OPENING so it can
+    centre the BS without the user picking the window every time (bugs/0319 C2, user: "Auto-detect is
+    good but not sure how reliable, give user manual option also or a fallback"). The opening signature
+    (grounded on the real OPT-CO90 LED STEP) is a planar, axis-aligned, window-sized face that is a RIM
+    around a hole -- its area is only a fraction of its in-plane bbox -- which cleanly separates it from
+    solid housing panels; an LED that already carries a BS has two such openings, so the detector returns
+    every qualifier ranked. Display-free guard: the pure scorer ranks two rim windows (square first) and
+    rejects a panel/sliver/oversized-wall/thick face; on the real LED STEP (SKIP without OCC) the top
+    candidate is the F112 object window (score > 0.9)."""
+    result = PhaseResult(
+        name="Phase 282: LED clear-aperture auto-detect -- rim-window signature ranks the opening, F112 on the real STEP"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_clear_aperture_detect import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-clear-aperture-detect guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if not n.startswith("SKIP")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("led-clear-aperture-detect phase failed without detail")
+    return result
+
+
+def phase_283_led_beam_splitter_orchestration(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The one-click "Add Beam Splitter to LED" runs the whole pipeline end to end (bugs/0319 C3):
+    generate a parametric BS sized to the LED clear-aperture opening -> overlay it as the "optical"
+    STEP -> set + centre the LED opening on the global axis -> place the BS on that on-axis opening ->
+    glue BS<->LED -> promote to a non-sequential optical solid -> auto-flag the 45-degree diagonal as the
+    BS coating (user decision: "No harm to auto-flag since it is a BS anyway"). The visual placement on a
+    real LED is eyeball-owed (no GLX here); this guard nails the ORCHESTRATION wiring with a spy editor:
+    every step fires in order with the right args, the BS is sized to the opening span, the coating lands
+    on the biggest 45-degree face (never a plain box), and unknown-kind / missing-LED / no-opening all
+    stop gracefully with a status line."""
+    result = PhaseResult(
+        name="Phase 283: Add Beam Splitter to LED -- pipeline generate->overlay->centre->glue->promote->coat"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_beam_splitter_orchestration import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-beam-splitter-orchestration guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if not n.startswith("SKIP")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("led-beam-splitter-orchestration phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13600,6 +13662,8 @@ def main() -> int:
             phase_279_led_step_hover_all_selectable,
             phase_280_led_import_no_distance_prompt,
             phase_281_beam_splitter_factory,
+            phase_282_led_clear_aperture_detect,
+            phase_283_led_beam_splitter_orchestration,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

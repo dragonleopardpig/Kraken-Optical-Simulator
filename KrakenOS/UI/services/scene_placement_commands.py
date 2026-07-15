@@ -35,6 +35,10 @@ from KrakenOS.UI.services.optical_solid_geometry import (
     select_optical_solid_anchor_face,
     transformed_stl_bounds,
 )
+from KrakenOS.UI.services.beam_splitter_factory import generate_beam_splitter
+from KrakenOS.UI.services.led_clear_aperture_detect import (
+    detect_clear_aperture_openings_from_analytic_faces,
+)
 from KrakenOS.UI.services.open3d_face_index_edges import (
     face_index_for_display_cell,
     triangle_array_and_face_index,
@@ -4796,6 +4800,61 @@ class ScenePlacementMixin:
             pass
         return dict(record)
 
+    def auto_detect_step_clear_aperture_candidates(self, label: str):
+        """Rank a STEP overlay's clear-aperture opening candidates (best first).
+
+        Reads the overlay's analytic B-rep faces, scores the rim-around-a-hole
+        opening signature (bugs/0319 C2), and keeps only candidates whose analytic
+        enumeration index still resolves *cleanly* on the displayed selection mesh --
+        so the returned ``face_index`` is exactly what ``set_step_clear_aperture``
+        consumes.  Returns ``[]`` when nothing qualifies, so the caller can fall back
+        to the manual ``STEP_CLEAR_APERTURE_PICK``."""
+        label = str(label or "").strip().lower()
+        if not label:
+            return []
+        source_path = self._step_path_for_label(label)
+        if source_path is None or Path(source_path).suffix.lower() not in {".step", ".stp"}:
+            return []
+        try:
+            document = self._load_step_analytic_document(Path(source_path))
+        except Exception:
+            return []
+        outer_faces = getattr(document, "outer_faces", None)
+        if not outer_faces:
+            return []
+        try:
+            candidates = detect_clear_aperture_openings_from_analytic_faces(outer_faces)
+        except Exception:
+            return []
+        verified = []
+        for cand in candidates:
+            ref_area = float(getattr(cand, "area_mm2", 0.0) or 0.0)
+            if ref_area <= 0.0:
+                continue
+            resolved = self._step_overlay_fine_face_centroid_normal(label, cand.face_index)
+            if resolved is None:
+                continue
+            _centroid, _normal, area = resolved
+            # Guard: the analytic enumeration index must resolve the SAME face on the
+            # displayed selection mesh. A square/rectangular opening is never grouped
+            # (its enumeration index == selection index), but if some other candidate
+            # got axisymmetric-collapsed the selection index would grab a larger
+            # cluster and the area blows up -- drop those and let manual pick cover it.
+            if abs(float(area) - ref_area) > 0.15 * ref_area:
+                continue
+            verified.append(cand)
+        return verified
+
+    def auto_set_step_clear_aperture(self, label: str) -> dict[str, object] | None:
+        """Auto-detect and persist a STEP overlay's clear aperture (best candidate).
+
+        Returns the persisted record, or ``None`` when nothing qualifies so the caller
+        keeps the manual ``STEP_CLEAR_APERTURE_PICK`` as the dependable fallback."""
+        candidates = self.auto_detect_step_clear_aperture_candidates(label)
+        if not candidates:
+            return None
+        return self.set_step_clear_aperture(label, int(candidates[0].face_index))
+
     def clear_step_clear_aperture(self, label: str) -> dict[str, object] | None:
         """Forget a STEP overlay's persisted clear aperture."""
         removed = self._clear_aperture_store().pop(str(label or "").strip().lower(), None)
@@ -4824,6 +4883,196 @@ class ScenePlacementMixin:
             centroid_world,
             face_id=f"clear_aperture:{int(record.get('face_index', -1))}",
         )
+
+    # ---- One-click "Add Beam Splitter to LED" orchestration (bugs/0319 C3) ------
+
+    def _step_analytic_face_inplane_span(self, label: str, face_index) -> "float | None":
+        """The smaller in-plane span (mm) of one analytic outer face's bbox, or None.
+        Used to size a beam splitter to the LED clear-aperture opening it centres on."""
+        source_path = self._step_path_for_label(label)
+        if source_path is None or Path(source_path).suffix.lower() not in {".step", ".stp"}:
+            return None
+        try:
+            document = self._load_step_analytic_document(Path(source_path))
+        except Exception:
+            return None
+        faces = getattr(document, "outer_faces", None) or ()
+        try:
+            idx = int(face_index)
+        except Exception:
+            return None
+        if not (0 <= idx < len(faces)):
+            return None
+        bbox = getattr(faces[idx], "bbox", None)
+        if bbox is None:
+            return None
+        arr = np.asarray(bbox, dtype=float).reshape(-1)
+        if arr.size < 6 or not np.all(np.isfinite(arr[:6])):
+            return None
+        extents = np.sort(np.maximum(arr[3:6] - arr[0:3], 0.0))  # [thickness, span_a, span_b]
+        span_a = float(extents[1])
+        return span_a if span_a > 0.0 else None
+
+    def _led_beam_splitter_opening_plan(self):
+        """Where a beam splitter should centre on the LED: ``(face_index, world
+        centroid, side_mm)``, or None.
+
+        Prefers the C2 auto-detect (rim-window signature); falls back to a manually
+        picked clear aperture (``STEP_CLEAR_APERTURE_PICK``).  ``side_mm`` is the
+        opening's smaller in-plane span (clamped) so the BS is sized to fit."""
+        if self._step_path_for_label("led") is None:
+            return None
+        face_index = None
+        candidates = self.auto_detect_step_clear_aperture_candidates("led")
+        if candidates:
+            face_index = int(candidates[0].face_index)
+        else:
+            record = self.step_clear_aperture("led")
+            if isinstance(record, dict):
+                try:
+                    face_index = int(record.get("face_index"))
+                except Exception:
+                    face_index = None
+        if face_index is None:
+            return None
+        resolved = self._step_overlay_fine_face_centroid_normal("led", face_index)
+        if resolved is None:
+            return None
+        center_world, _normal, _area = resolved
+        span = self._step_analytic_face_inplane_span("led", face_index)
+        side_mm = float(span) if span and span > 0.0 else 25.0
+        side_mm = float(min(max(side_mm, 8.0), 90.0))
+        return int(face_index), np.asarray(center_world, dtype=float).reshape(-1)[:3], side_mm
+
+    def _flag_beam_splitter_coating_face(self, row_index: int, *, tilt_deg: float = 45.0, tol_deg: float = 20.0):
+        """Auto-flag the promoted BS row's 45-degree diagonal as the Beam Splitter
+        coating (bugs/0319 decision 1: "no harm to auto-flag since it is a BS anyway").
+        Picks the largest planar face whose normal sits ~``tilt_deg`` off +Z."""
+        try:
+            _row, _path, metadata = self._optical_solid_face_metadata_for_row(int(row_index))
+        except Exception:
+            return None
+        zhat = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        best_face_id = ""
+        best_area = -1.0
+        for face in list(metadata.get("faces", []) or []):
+            if not isinstance(face, dict):
+                continue
+            normal = np.asarray(face.get("normal", (0.0, 0.0, 1.0)), dtype=float).reshape(-1)[:3]
+            norm = float(np.linalg.norm(normal))
+            if norm <= 1.0e-9 or not np.isfinite(norm):
+                continue
+            cos_to_axis = float(np.clip(abs(float(np.dot(normal / norm, zhat))), 0.0, 1.0))
+            angle = float(np.degrees(np.arccos(cos_to_axis)))
+            if abs(angle - tilt_deg) > tol_deg:
+                continue
+            area = float(face.get("area_mm2", 0.0) or 0.0)
+            if area > best_area:
+                best_area = area
+                best_face_id = str(face.get("face_id", "") or "").strip()
+        if not best_face_id:
+            return None
+        try:
+            return self.assign_optical_solid_face_function(
+                int(row_index),
+                best_face_id,
+                optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_SPLITTER,
+            )
+        except Exception:
+            return None
+
+    def add_beam_splitter_to_led(self, kind: str = "cube") -> dict[str, object] | None:
+        """One-click "Add Beam Splitter to LED" (bugs/0319 C3).
+
+        Generate a parametric BS (cube/plate) sized to the LED clear-aperture opening,
+        overlay it as the "optical" STEP, centre both the LED opening and the BS on the
+        global optical axis, glue the BS to the LED, promote it to a non-sequential
+        optical solid, and auto-flag the 45-degree diagonal as the BS coating.
+
+        The LED opening is auto-detected with the manual ``STEP_CLEAR_APERTURE_PICK`` as
+        the dependable fallback (decision 2).  Returns a summary, or None on a graceful
+        stop (with a status line telling the user what to do)."""
+        kind = str(kind or "").strip().lower()
+        if kind not in ("cube", "plate"):
+            self.status_var.set(f"Add Beam Splitter to LED: unknown kind {kind!r} (want 'cube' or 'plate').")
+            return None
+        if self._step_path_for_label("led") is None:
+            self.status_var.set("Add Beam Splitter to LED: import the LED STEP first.")
+            return None
+        plan = self._led_beam_splitter_opening_plan()
+        if plan is None:
+            self.status_var.set(
+                "Add Beam Splitter to LED: could not find the LED clear-aperture opening. "
+                "Right-click the LED window -> Set as Clear Aperture, then retry."
+            )
+            return None
+        face_index, opening_center, side_mm = plan
+        opening_z = float(opening_center[2])
+
+        # 1) Generate the parametric BS, sized to the opening (regen if cache missing).
+        try:
+            if kind == "cube":
+                solid = generate_beam_splitter("cube", side_mm=side_mm)
+            else:
+                solid = generate_beam_splitter(
+                    "plate",
+                    width_mm=side_mm,
+                    height_mm=side_mm,
+                    thickness_mm=float(min(max(side_mm * 0.12, 2.0), side_mm * 0.5)),
+                    tilt_deg=45.0,
+                )
+        except Exception as exc:
+            self.status_var.set(f"Add Beam Splitter to LED: BS generation failed ({exc}).")
+            return None
+
+        # 2) Overlay the BS as the "optical" STEP (programmatic path bypass).
+        if self.import_optical_step(path=solid.path, refresh_open_3d=False) is None:
+            self.status_var.set("Add Beam Splitter to LED: could not overlay the generated BS.")
+            return None
+
+        # 3) Set the LED clear aperture + centre it on the global optical axis.
+        self.set_step_clear_aperture("led", face_index)
+        self.center_clear_aperture_on_optical_axis("led")
+
+        # 4) Centre the BS on that same opening (now at (0,0,z) on the axis). The BS
+        #    template is origin-centred, so its placement offset IS its world centre.
+        self._set_step_placement_offset_xyz("optical", (0.0, 0.0, opening_z))
+
+        # 5) Glue the BS to the LED so they move as one.
+        self.set_optical_led_glue(True)
+
+        # 6) Promote the BS to a non-sequential optical solid (consume the overlay so
+        #    the scene shows one body; the glue survives promotion, bugs/0127).
+        promoted = self.promote_imported_step_to_optical_solid_row(
+            "optical", open_face_editor=False, clear_overlay=True, refresh_open_3d=False
+        )
+        if promoted is None:
+            self.status_var.set("Add Beam Splitter to LED: BS overlaid + glued, but promotion failed.")
+            return None
+        row_index = int(promoted.get("row_index", -1))
+
+        # 7) Auto-flag the 45-degree diagonal as the BS coating (decision 1).
+        coating = self._flag_beam_splitter_coating_face(row_index)
+
+        self._refresh_open_3d_views()
+        coating_note = (
+            f"; coating on {coating.get('face_id')}"
+            if isinstance(coating, dict)
+            else "; coating auto-flag deferred"
+        )
+        self.status_var.set(
+            f"Added {kind} beam splitter to the LED (S{row_index}, side {side_mm:.1f} mm){coating_note}."
+        )
+        return {
+            "kind": kind,
+            "row_index": row_index,
+            "side_mm": float(side_mm),
+            "opening_face_index": int(face_index),
+            "opening_center": tuple(float(v) for v in opening_center[:3]),
+            "bs_path": str(solid.path),
+            "coating_tilt_deg": float(solid.coating_tilt_deg),
+            "coating_face": (coating.get("face_id") if isinstance(coating, dict) else None),
+        }
 
     @staticmethod
     def _step_orientation_direction_vector(direction_label: object) -> np.ndarray | None:

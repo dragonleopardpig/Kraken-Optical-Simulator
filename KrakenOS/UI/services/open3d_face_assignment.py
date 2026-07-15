@@ -374,6 +374,20 @@ class Open3DFaceAssignmentService:
                 label="Resize Solid...",
                 command=lambda picked_label=step_label: self._open_step_overlay_resize_popup(picked_label),
             )
+            # bugs/0319: one-click "Add Beam Splitter to LED". Only on the LED overlay --
+            # it generates a parametric BS, centres it on the LED clear-aperture opening,
+            # glues, promotes, and auto-flags the 45-degree diagonal coating.
+            if step_label == "led":
+                bs_menu = tk.Menu(menu, tearoff=False)
+                bs_menu.add_command(
+                    label="Cube",
+                    command=lambda: self._add_beam_splitter_to_led_from_context("cube"),
+                )
+                bs_menu.add_command(
+                    label="Plate",
+                    command=lambda: self._add_beam_splitter_to_led_from_context("plate"),
+                )
+                menu.add_cascade(label="Add Beam Splitter to LED", menu=bs_menu)
             if not decoration:
                 menu.add_command(
                     label="Promote to Optical Element",
@@ -583,6 +597,19 @@ class Open3DFaceAssignmentService:
         self.editor.select_step_component(label)
         self._debug_trace("promote_step_from_context", label=label, counts_before=self._debug_actor_counts())
         self.promote_selected_step_to_optical_solid_row()
+
+    def _add_beam_splitter_to_led_from_context(self, kind: str) -> None:
+        """Right-click "Add Beam Splitter to LED -> Cube/Plate" (bugs/0319): run the
+        one-click pipeline (generate BS -> overlay -> centre on the LED clear-aperture
+        opening -> glue -> promote -> auto-flag the diagonal coating)."""
+        try:
+            self.editor.add_beam_splitter_to_led(str(kind))
+        except Exception as exc:
+            self.editor.append_debug(f"Add Beam Splitter to LED ({kind}) failed: {exc}")
+            try:
+                self.editor.status_var.set(f"Add Beam Splitter to LED failed: {exc}")
+            except Exception:
+                pass
 
     def _row_has_step_overlay_promotion(self, row_index: int) -> bool:
         """bugs/0093: a promoted optical-solid row that came from a STEP overlay (so
