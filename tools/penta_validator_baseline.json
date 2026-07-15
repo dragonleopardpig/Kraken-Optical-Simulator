@@ -277,7 +277,8 @@
     "273": "pass",
     "274": "pass",
     "275": "pass",
-    "276": "pass"
+    "276": "pass",
+    "277": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -555,6 +556,7 @@
     "273": "Phase 273: Deleting a camera un-pins the field so the image circle / FOV clears",
     "274": "Phase 274: Deleting an orphaned camera un-pins the field so the image circle / FOV clears",
     "275": "Phase 275: The 3D STEP export writes the thickness dimension overlay as leader tubes",
-    "276": "Phase 276: A folded FOV re-solve spills gap overflow onto the fold's other leg (no silent no-op)"
+    "276": "Phase 276: A folded FOV re-solve spills gap overflow onto the fold's other leg (no silent no-op)",
+    "277": "Phase 277: The 3D STEP export carries the manual Measure-tool dimensions (toggle-independent)"
   }
 }

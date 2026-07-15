@@ -13112,6 +13112,38 @@ def phase_276_folded_fov_solve_gap_spill(
     return result
 
 
+def phase_277_step_export_measure_dimensions(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The 3D STEP export must also carry the manual Measure-tool dimensions, not just the automatic
+    physical-distance overlay (flag_20260715_113521_943: "exported STEP ... thickness overlay is not
+    exported"). bugs/0313 tubed only the BLUE physical-distance overlay; the user's orange Measure-tool
+    segments had no export path, so the STEP opened in FreeCAD with no dimensions. bugs/0315 adds
+    Kraken3DInspector.collect_measure_export_geometry (each visible segment's shaft + two witness polylines,
+    reusing the exact _measure_segment_offset_endpoints the on-screen draw loop uses) and folds it into
+    _step_export_dimension_polylines INDEPENDENT of the physical-distance toggle -- the shared ray-tube writer
+    tubes every entry. Display-free guard: the per-segment geometry has exact endpoints, hidden/empty segments
+    are skipped, the collector exports measure dims even with the toggle OFF (and combines both when ON), and
+    the export reuses the display resolver so it can never drift."""
+    result = PhaseResult(
+        name="Phase 277: The 3D STEP export carries the manual Measure-tool dimensions (toggle-independent)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_step_export_measure_dimensions import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"step-export-measure-dimensions guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("step-export-measure-dimensions phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13433,6 +13465,7 @@ def main() -> int:
             phase_274_orphaned_camera_delete_field_unpin,
             phase_275_step_export_thickness_dimensions,
             phase_276_folded_fov_solve_gap_spill,
+            phase_277_step_export_measure_dimensions,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

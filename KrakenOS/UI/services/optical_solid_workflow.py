@@ -1786,28 +1786,41 @@ class LayoutOpticalSolidWorkflowMixin:
         return envelope
 
     def _step_export_dimension_polylines(self, system) -> list[np.ndarray]:
-        """Physical-distance (thickness) overlay as export polylines: shaft +
-        two leaders per dimension, using a deterministic view-free offset. task
-        #483. Returns [] when the overlay is toggled off or the 3D inspector is
-        not open -- parity with rays exporting only when shown in the browser."""
-        show_var = getattr(self, "show_physical_distances_var", None)
-        if show_var is None or not bool(show_var.get()):
-            return []
+        """Dimension overlays as export polylines: shaft + two leaders per
+        dimension, using a deterministic view-free offset. Covers BOTH the
+        automatic physical-distance overlay (toggle-gated, task #483 / bugs/0313)
+        AND the manual Measure-tool segments (shown -> exported, bugs/0315).
+        Returns [] when nothing is shown or the 3D inspector is not open --
+        parity with rays exporting only when shown in the browser."""
         inspector = getattr(self, "_three_d_inspector", None)
         if inspector is None:
             return []
-        try:
-            service = inspector._open3d_thickness_dimension_service()
-            scene_bundle = getattr(inspector, "_current_scene_bundle", None)
-            polylines = service.collect_export_geometry(system, scene_bundle)
-        except Exception as exc:
-            self.append_debug(f"3D STEP thickness-dimension export skipped: {exc}")
-            return []
         cleaned: list[np.ndarray] = []
-        for poly in polylines:
-            pts = np.asarray(poly, dtype=float)
-            if pts.ndim == 2 and pts.shape[0] >= 2 and pts.shape[1] >= 3:
-                cleaned.append(pts[:, :3])
+
+        def _absorb(polylines) -> None:
+            for poly in polylines or []:
+                pts = np.asarray(poly, dtype=float)
+                if pts.ndim == 2 and pts.shape[0] >= 2 and pts.shape[1] >= 3:
+                    cleaned.append(pts[:, :3])
+
+        # (1) automatic physical-distance overlay -- gated on its toggle (bugs/0313).
+        show_var = getattr(self, "show_physical_distances_var", None)
+        if show_var is not None and bool(show_var.get()):
+            try:
+                service = inspector._open3d_thickness_dimension_service()
+                scene_bundle = getattr(inspector, "_current_scene_bundle", None)
+                _absorb(service.collect_export_geometry(system, scene_bundle))
+            except Exception as exc:
+                self.append_debug(f"3D STEP thickness-dimension export skipped: {exc}")
+
+        # (2) manual Measure-tool dimensions -- independent of the physical-distance
+        # toggle (bugs/0315): a measurement is its own annotation, so it exports
+        # whenever it is shown, exactly like the on-screen orange dimension.
+        try:
+            _absorb(inspector.collect_measure_export_geometry())
+        except Exception as exc:
+            self.append_debug(f"3D STEP measure-dimension export skipped: {exc}")
+
         return cleaned
 
     def _collect_3d_step_export_meshes(self, system) -> list[tuple[str, object]]:

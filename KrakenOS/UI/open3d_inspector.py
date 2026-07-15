@@ -15424,6 +15424,42 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             return None
 
+    def collect_measure_export_geometry(self) -> "list[np.ndarray]":
+        """Manual Measure-tool dimensions as 3D STEP export polylines (bugs/0315).
+
+        Each VISIBLE measure segment yields the same three polylines the on-screen
+        overlay draws -- the offset dimension shaft ``a0->a1`` plus the two witness
+        lines ``p0->a0`` and ``p1->a1`` -- minus the billboard label and grab
+        handle. It reuses the exact ``_measure_segment_offsets`` /
+        ``_measure_segment_offset_endpoints`` resolvers the draw loop uses, so the
+        exported tubes can never drift from what is shown. Hidden segments
+        (``_hidden_measure_segments``) are skipped -- parity with the display, and
+        with the physical-distance overlay export (bugs/0313). Returns [] when
+        there are no measure segments.
+        """
+        out: "list[np.ndarray]" = []
+        segments = getattr(self, "_measure_segments", []) or []
+        if not segments:
+            return out
+        hidden = getattr(self, "_hidden_measure_segments", None) or set()
+        offsets = self._measure_segment_offsets()
+        for seg in segments:
+            try:
+                sid = int(seg.get("id", -1))
+                if sid in hidden:
+                    continue
+                resolved = self._measure_segment_offset_endpoints(seg, offsets.get(sid))
+                if resolved is None:
+                    continue
+                p0, p1, a0, a1, _mid, _dist = resolved
+                for start, end in ((a0, a1), (p0, a0), (p1, a1)):
+                    arr = np.asarray([start, end], dtype=float).reshape(2, 3)
+                    if np.all(np.isfinite(arr)):
+                        out.append(arr)
+            except Exception:
+                continue
+        return out
+
     @staticmethod
     def _measure_label_anchor(mid, p0, p1, handle_radius):
         """Push the dimension value label clear of the midpoint grab sphere so the
